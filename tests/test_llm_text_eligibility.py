@@ -48,11 +48,19 @@ class LLMTextEligibilityTests(unittest.IsolatedAsyncioTestCase):
             'chat_with_fallback',
             'resolve_model',
             'journal_chat_attempt',
+            # Ranking and empty-reply helpers the fallback walk calls.
+            '_model_proven_score',
+            '_model_last_seen',
+            '_chat_response_usable',
+            '_empty_reply_reason',
+            '_record_failure',
         }
         source_functions('app/services/ai/llm_client.py',names,self.scope)
         model_scope={}
-        source_functions('app/models/analysis/llm_model.py',{'_model_type_to_capabilities'},model_scope)
-        tree=ast.parse((ROOT/'app/models/analysis/llm_model.py').read_text())
+        # The analysis path is a façade since the model grouping refactor; the
+        # class itself lives under `app/models/llm/`.
+        source_functions('app/models/llm/llm_model.py',{'_model_type_to_capabilities'},model_scope)
+        tree=ast.parse((ROOT/'app/models/llm/llm_model.py').read_text())
         cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='LLMModel')
         self.capabilities=next(n for n in cls.body if getattr(n,'name',None)=='capabilities')
         self.capabilities.decorator_list=[]
@@ -78,7 +86,9 @@ class LLMTextEligibilityTests(unittest.IsolatedAsyncioTestCase):
         self.called.append(model.id)
         async def chat(messages, **kwargs):
             if model.id in self.errors:raise self.errors[model.id]
-            return {'model':model.id,'messages':messages,'kwargs':kwargs}
+            # A real chat turn carries text; an empty envelope is now a failed
+            # try, so this double must not look like a silent 200.
+            return {'content':'ok','model':model.id,'messages':messages,'kwargs':kwargs}
         return NS(chat=chat)
 
     async def resolve(self):
@@ -143,11 +153,19 @@ class LLMTextEligibilityTests(unittest.IsolatedAsyncioTestCase):
         flagged=self.model(9,default=True);self.models.append(flagged)
         self.assertIs(await self.resolve(),flagged);self.assertEqual((await self.chat())['model'],9)
 
-    async def test_preferred_failure_retains_cost_sorted_fallback_and_arguments(self):
-        preferred=self.model(11,'text,image',default=True);cheap=self.model(8,cost=0.01);expensive=self.model(2,cost=1)
-        self.models=[expensive,cheap,preferred];self.errors[11]=HTTPStatusError(429)
+    async def test_preferred_failure_falls_back_by_proven_use_and_keeps_arguments(self):
+        """After the ★ model fails, the next try is the most proven one, not the cheapest."""
+        preferred=self.model(11,'text,image',default=True)
+        proven=self.model(8,cost=1.0); fresh=self.model(2,cost=0.01)
+        proven.use_count, proven.fail_count = 5, 0
+        fresh.use_count, fresh.fail_count = 0, 0
+        self.models=[fresh,proven,preferred];self.errors[11]=HTTPStatusError(429)
         result=await self.chat(preferred,tools=[{'name':'local'}],temperature=0.2)
-        self.assertEqual(self.called,[11,8]);self.assertEqual(result['kwargs'],{'tools':[{'name':'local'}],'temperature':0.2})
+        self.assertEqual(self.called,[11,8])
+        # `personal_billing_purpose` is a locally-consumed accounting label the
+        # client pops before building the provider payload.
+        forwarded={k:v for k,v in result['kwargs'].items() if k!='personal_billing_purpose'}
+        self.assertEqual(forwarded,{'tools':[{'name':'local'}],'temperature':0.2})
 
     async def test_nonretryable_http_error_not_hidden(self):
         chosen=self.model(11);self.models=[chosen,self.model(8)];self.errors[11]=HTTPStatusError(400)

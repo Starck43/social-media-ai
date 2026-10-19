@@ -176,11 +176,18 @@ class ChatFallbackJournalTests(unittest.IsolatedAsyncioTestCase):
             "_eligible_text_model": lambda m, allowed: True,
             "_allowed_model_types": AsyncMock(return_value=None),
             "LLMModel": NS(id=0, objects=NS(filter=lambda **kw: NS(order_by=lambda *a: None))),
+            # Proven-order ranking helpers, executed from their real source too.
+            "_model_proven_score": lambda m: 0,
+            "_model_last_seen": lambda m: 0.0,
+            "_chat_response_usable": lambda response: True,
+            "_empty_reply_reason": lambda response: "empty_reply",
+            "_record_failure": lambda failures, model, reason: None,
         }
         source_functions("app/services/ai/llm_client.py", {"chat_with_fallback", "journal_chat_attempt"}, self.scope)
         self.models, self.errors, self.forwarded, self.journaled = [], {}, [], []
         self.scope["_llm_models"] = AsyncMock(side_effect=lambda query: list(self.models))
         self.scope["LLMClientFactory"] = NS(create=self.create)
+
         fake = ModuleType("attempt_journal")
         fake.STAGE_CHAT = journal.STAGE_CHAT
         fake.chat_attempt_envelope = journal.chat_attempt_envelope
@@ -191,8 +198,20 @@ class ChatFallbackJournalTests(unittest.IsolatedAsyncioTestCase):
 
         fake.journal_scoped_attempts = sink
         names = ("app", "app.services", "app.services.ai")
+        # The executed source imports the billing guard by its full path; the
+        # isolated run has no such package, so the stub package carries the
+        # double instead of letting a real import (and a real error type) leak in.
+        billing_errors = ModuleType("app.services.billing.errors")
+        billing_errors.raise_personal_billing_block = lambda error: None
+        billing = ModuleType("app.services.billing")
         self.modules = patch.dict(
-            sys.modules, {**{n: ModuleType(n) for n in names}, "app.services.ai.attempt_journal": fake}
+            sys.modules,
+            {
+                **{n: ModuleType(n) for n in names},
+                "app.services.billing": billing,
+                "app.services.billing.errors": billing_errors,
+                "app.services.ai.attempt_journal": fake,
+            },
         )
         self.modules.start()
         self.addCleanup(self.modules.stop)
@@ -228,7 +247,12 @@ class ChatFallbackJournalTests(unittest.IsolatedAsyncioTestCase):
         self.errors[1] = HTTPStatusError(429)
         result = await self.chat(accounting_purpose="learn", temperature=0.2)
         self.assertEqual(result["content"], PRIVATE)
-        self.assertEqual(self.forwarded, [{"tools": None, "temperature": 0.2}] * 2)
+        # The accounting label rides along as a locally-consumed keyword; each
+        # client pops it before building the provider payload.
+        self.assertEqual(
+            [(kw.get("tools"), kw.get("temperature"), kw.get("personal_billing_purpose")) for kw in self.forwarded],
+            [(None, 0.2, "learn"), (None, 0.2, "learn")],
+        )
         self.assertEqual([purpose for purpose, _ in self.journaled], ["learn", "learn"])
         failed, ok = (envelopes["chat"] for _, envelopes in self.journaled)
         self.assertEqual(failed["response"], {"error": journal.CHAT_CALL_FAILED})

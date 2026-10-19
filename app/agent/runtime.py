@@ -691,6 +691,9 @@ async def _run_tool_loop(
         tool_calls = response.get("tool_calls") or []
         content = (response.get("content") or "").strip()
         await _record_usage(session, response.get("usage") or {})
+        hint = _model_failure_hint(response)
+        if hint:
+            reply = _join_replies(reply, hint)
 
         if not tool_calls:
             text = content or "Готово."
@@ -740,6 +743,24 @@ async def _run_tool_loop(
 
     await session.touch()
     return reply
+
+
+def _model_failure_hint(response: dict | None) -> str:
+    """One short line naming each model that failed before the answer.
+
+    The owner asked for exactly this: state which model failed and why, then
+    move on. Provider names and model ids only — never a response body.
+    """
+    from app.services.ai.llm_client import FAILURE_LABELS
+
+    failures = (response or {}).get("_model_failures") or []
+    if not failures:
+        return ""
+    parts = [
+        f"{item.get('model')} — {FAILURE_LABELS.get(item.get('reason'), item.get('reason'))}"
+        for item in failures
+    ]
+    return "Переключил модель: " + "; ".join(parts) + "."
 
 
 def _llm_error_reply(exc: BaseException) -> str:
@@ -887,30 +908,50 @@ async def _chat(messages: list[dict], specs: list[dict]) -> dict:
     temperature = settings.AGENT_TEMPERATURE
 
     tid = current_tenant_id()
-    if tid is not None:
-        tenant = await tenants.get(id=tid)
-        if tenant:
-            if tenant.agent_max_tokens is not None:
-                max_tokens = tenant.agent_max_tokens
-            if tenant.agent_temperature is not None:
-                temperature = tenant.agent_temperature
+    tenant = await tenants.get(id=tid) if tid is not None else None
+    if tenant:
+        if tenant.agent_max_tokens is not None:
+            max_tokens = tenant.agent_max_tokens
+        if tenant.agent_temperature is not None:
+            temperature = tenant.agent_temperature
 
     from app.models import LLMModel
 
-    # Auto-select is the documented fleet default: the model flagged
-    # `is_default` (★ in the settings dropdown), then the lowest id. The
-    # cost-efficient strategy deliberately minimises tariffs first, so with
-    # 0.00 tariffs it outranked the flagged default model and sent the chat
-    # to free rows that are rate-limited.
-    narrative_model = await LLMModel.objects.resolve_default_model("text")
-    return await chat_with_fallback(
+    # The workspace may name the model for this chat; otherwise the ★ default
+    # (`is_default`) starts. Either way the call walks every eligible active
+    # model on failure, most-proven first — see `chat_with_fallback`.
+    narrative_model = await _preferred_agent_model(tenant)
+    failures: list = []
+    response = await chat_with_fallback(
         messages,
         preferred_model=narrative_model,
         tools=specs,
         max_tokens=max_tokens,
         temperature=temperature,
         accounting_purpose="agent_chat",
+        failures=failures,
     )
+    if failures:
+        logger.info("agent_model_failures count=%s reasons=%s", len(failures), [f["reason"] for f in failures])
+    return response
+
+
+async def _preferred_agent_model(tenant: Any):
+    """The model this workspace names for the agent chat, else the ★ default.
+
+    `tenants.agent_model` holds an `llm_models.name` (what the settings select
+    posts). A name that no longer resolves to an active text model must not
+    leave the chat without a model: fall back to the ★ default and say so.
+    """
+    from app.models import LLMModel
+
+    name = (getattr(tenant, "agent_model", None) or "").strip()
+    if name:
+        model = await LLMModel.objects.select_related("provider").filter(name=name, is_active=True).first()
+        if model is not None:
+            return model
+        logger.warning("agent_model_not_found falling back to the default model")
+    return await LLMModel.objects.resolve_default_model("text")
 
 
 async def _cost_today() -> float:

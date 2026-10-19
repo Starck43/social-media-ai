@@ -1081,8 +1081,22 @@ async def journal_chat_attempt(
 
 async def chat_with_fallback(
     messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None,
-    preferred_model: Optional[LLMModel] = None, **kwargs
+    preferred_model: Optional[LLMModel] = None, *, failures: Optional[list[dict[str, Any]]] = None, **kwargs
 ) -> dict[str, Any]:
+    """One chat turn across the eligible fleet: the preferred model first, then the rest.
+
+    Ordering follows the product rule: the workspace's ★ default (or the model
+    it names for this surface) starts, then **every** other eligible active
+    model — most proven first (`use_count - fail_count`, then most recently
+    used), never "cheapest first", which is what sent the chat into free rows
+    whose own counters already read 100% failures.
+
+    A try is a failure when the transport fails, when the provider answers with
+    a retryable status, **or** when it answers 200 with nothing usable (no text,
+    no tool call — e.g. a truncated `max_tokens` envelope). Every switch is
+    appended to `failures` as `{model, provider, reason}` for the caller's
+    hint; the raw provider body never is.
+    """
     # Accounting label only, never sent to the provider.
     accounting_purpose = kwargs.pop("accounting_purpose", "chat")
     kwargs.setdefault("personal_billing_purpose", accounting_purpose)
@@ -1094,11 +1108,10 @@ async def chat_with_fallback(
     text_models = [m for m in models if _eligible_text_model(m, allowed_types)]
     if not text_models and allowed_types is not None:
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
-    # The tier filter always wins over the preferred global model. If the
-    # cost-efficient preference fails/is disallowed, keep fallback economical.
     text_models.sort(key=lambda m: (
         m.id != getattr(preferred_model, "id", None),
-        ((m.input_cost_per_1k or 0) + (m.output_cost_per_1k or 0)) if preferred_model is not None else 0,
+        -_model_proven_score(m),
+        -_model_last_seen(m),
         default_model_sort_key(m),
     ))
 
@@ -1122,19 +1135,29 @@ async def chat_with_fallback(
                     dispatch_id=getattr(error, "personal_dispatch_id", None),
                 )
                 raise
+            if not _chat_response_usable(response):
+                reason = _empty_reply_reason(response)
+                logger.warning("%s/%s returned an empty reply (%s), trying next", model.provider.name, model.model_id, reason)
+                _record_failure(failures, model, reason)
+                last_err = RuntimeError(f"empty_reply:{reason}")
+                continue
             dispatch_id = response.pop("_personal_dispatch_id", None)
             await journal_chat_attempt(client, accounting_purpose, response, dispatch_id=dispatch_id)
+            if failures is not None:
+                response["_model_failures"] = failures
             return response
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             if code == 429:
                 last_err = e
+                _record_failure(failures, model, "rate_limited")
                 logger.warning(f"{model.provider.name}/{model.model_id} rate-limited (429), trying next")
             elif code < 500:
                 # 4xx errors: if tools were provided and error suggests tools/function
                 # calling is not supported, try next model instead of raising immediately.
                 if tools and _is_tools_not_supported_error(e):
                     last_err = e
+                    _record_failure(failures, model, "tools_unsupported")
                     logger.warning(
                         f"{model.provider.name}/{model.model_id} appears not to support tools ({code}), trying next"
                     )
@@ -1142,11 +1165,75 @@ async def chat_with_fallback(
                     raise
             else:
                 last_err = e
+                _record_failure(failures, model, "provider_error")
                 logger.warning(f"{model.provider.name}/{model.model_id} failed ({code}), trying next")
         except (httpx.TimeoutException, httpx.TransportError) as e:
             last_err = e
+            _record_failure(failures, model, "timeout")
             logger.warning(f"{model.provider.name}/{model.model_id} timeout/transport, trying next")
     raise last_err or RuntimeError("No LLM models available")
+
+
+def _model_proven_score(model: LLMModel) -> int:
+    """`use_count - fail_count`: how often this model actually answered.
+
+    A row that only knows failures (free tiers that are always rate-limited)
+    sorts behind one that has served turns, whatever either costs.
+    """
+    return int(getattr(model, "use_count", 0) or 0) - int(getattr(model, "fail_count", 0) or 0)
+
+
+def _model_last_seen(model: LLMModel) -> float:
+    """Most recent success (else last use) as a POSIX timestamp; 0 when unknown."""
+    seen = getattr(model, "last_success_at", None) or getattr(model, "last_used_at", None)
+    try:
+        return float(seen.timestamp()) if seen is not None else 0.0
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+
+
+#: Reasons a chat try counts as failed, as short human-readable labels.
+FAILURE_LABELS = {
+    "rate_limited": "лимит запросов",
+    "provider_error": "ошибка провайдера",
+    "timeout": "таймаут",
+    "tools_unsupported": "не поддерживает инструменты",
+    "empty_reply": "пустой ответ",
+    "truncated": "ответ обрезан",
+}
+
+
+def _record_failure(failures: Optional[list[dict[str, Any]]], model: LLMModel, reason: str) -> None:
+    if failures is None:
+        return
+    failures.append(
+        {
+            "model": model.model_id,
+            "provider": getattr(getattr(model, "provider", None), "name", None),
+            "reason": reason,
+        }
+    )
+
+
+def _empty_reply_reason(response: dict[str, Any]) -> str:
+    """`truncated` when the provider stopped on the output budget, else `empty_reply`."""
+    if (response or {}).get("finish_reason") in ("length", "max_tokens"):
+        return "truncated"
+    return "empty_reply"
+
+
+def _chat_response_usable(response: dict[str, Any]) -> bool:
+    """A chat turn without text and without a tool call carries no work.
+
+    Such a 200 is a silent failure: the loop would answer "Готово." and the
+    user would see an empty turn. It counts as a failed try, so the fleet moves
+    to the next model.
+    """
+    if not isinstance(response, dict):
+        return False
+    if response.get("tool_calls"):
+        return True
+    return bool(str(response.get("content") or "").strip())
 
 
 def _is_tools_not_supported_error(e: httpx.HTTPStatusError) -> bool:

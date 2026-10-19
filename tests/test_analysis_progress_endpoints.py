@@ -181,5 +181,98 @@ async def test_source_progress_fragment_obeys_workspace_admin_diagnostics_gate(
     assert ("Диагностика" in response.body.decode()) is has_diagnostics
 
 
+async def test_source_progress_fragment_adds_run_model_and_counters_for_admins(monkeypatch):
+    job = _job()
+    job.status = "done"
+    source = SimpleNamespace(id=9, tenant_id=41)
+
+    class _SourceQuery:
+        async def first(self):
+            return source
+
+    monkeypatch.setattr(sources.Source.objects, "filter", lambda **criteria: _SourceQuery())
+    monkeypatch.setattr(JobManager, "source_progress_jobs", lambda self, *args, **kwargs: _async_jobs(job))
+    monkeypatch.setattr(sources, "perms_can", lambda request, resource, action: True)
+
+    async def _summary(source_id, job):
+        assert source_id == 9
+        return {
+            "total": 1, "succeeded": 0, "failed": 1,
+            "model": "zai-org/GLM-5.3-Flash", "provider": "river",
+            "error_code": "failed_transport",
+        }
+
+    monkeypatch.setattr(sources, "_run_llm_summary", _summary)
+
+    response = await sources.source_analysis_progress(_request(memberships=[_membership()]), 9)
+
+    body = response.body.decode()
+    assert SECRET not in body
+    assert "zai-org/GLM-5.3-Flash" in body and "failed_transport" in body
+    assert "0 успешно" in body and "1 с ошибками" in body
+
+
+async def test_source_progress_fragment_without_run_summary_stays_truthful(monkeypatch):
+    job = _job()
+    job.status = "done"
+    source = SimpleNamespace(id=9, tenant_id=41)
+
+    class _SourceQuery:
+        async def first(self):
+            return source
+
+    monkeypatch.setattr(sources.Source.objects, "filter", lambda **criteria: _SourceQuery())
+    monkeypatch.setattr(JobManager, "source_progress_jobs", lambda self, *args, **kwargs: _async_jobs(job))
+    monkeypatch.setattr(sources, "perms_can", lambda request, resource, action: True)
+
+    async def _summary(source_id, job):
+        return None
+
+    monkeypatch.setattr(sources, "_run_llm_summary", _summary)
+
+    response = await sources.source_analysis_progress(_request(memberships=[_membership()]), 9)
+
+    body = response.body.decode()
+    assert "Диагностика" in body
+    # Unknown journal facts stay "—", never invented zeros.
+    assert "zai-org" not in body
+    assert ">—<" in body.replace("\n", "").replace(" ", "") or "—" in body
+
+
+def test_run_llm_summary_needs_a_run_window():
+    # A job with no timestamps resolves no window and reads no journal —
+    # diagnostics must not depend on (=fail with) a database connection here.
+    import asyncio
+
+    job = SimpleNamespace(status="done", result={}, error=None, attempts=1)
+    assert asyncio.run(sources._run_llm_summary(9, job)) is None
+
+
+def test_source_run_diagnostics_falls_back_to_the_runs_per_source_error_code(monkeypatch):
+    # A run whose dispatch died before any journal row (River transport refusal,
+    # job 1757) has no llm_attempts to read; the run's own bounded per-source
+    # code must surface instead of a bare "—".
+    view = {"selected": 17, "remaining": 17, "error_code": "failed_transport"}
+    merged = sources._source_run_diagnostics(view, None)
+    assert merged["error_code"] == "failed_transport"
+    # A journal outcome wins over the per-source snapshot: the error code must
+    # not survive a successful tail attempt.
+    journal = {"error_code": "failed_output", "model": "m", "succeeded": 2, "failed": 1}
+    merged = sources._source_run_diagnostics(view, journal)
+    assert merged["error_code"] == "failed_output" and merged["succeeded"] == 2
+    # Non-identifier junk from either side stays unknown, never rendered.
+    merged = sources._source_run_diagnostics({"error_code": "not an identifier!"}, None)
+    assert merged["error_code"] is None
+
+
+def test_source_run_diagnostics_keeps_unknowns_unknown():
+    view = {"selected": 4, "remaining": 9}
+    merged = sources._source_run_diagnostics(view, None)
+    assert merged["selected"] == 4 and merged["remaining"] == 9
+    assert merged["model"] is None and merged["succeeded"] is None and merged["failed"] is None
+    merged = sources._source_run_diagnostics({}, None)
+    assert merged["selected"] is None and merged["model"] is None
+
+
 async def _async_jobs(job):
     return [job]

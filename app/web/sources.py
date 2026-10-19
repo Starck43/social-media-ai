@@ -18,6 +18,7 @@ first-class form fields instead of being invisible defaults:
 
 from __future__ import annotations
 
+import logging
 from contextlib import nullcontext
 from typing import Any
 
@@ -44,6 +45,7 @@ from .deps import (
 )
 
 router = APIRouter(prefix="/sources")
+logger = logging.getLogger(__name__)
 
 
 # Collection modes a source can run in. `user` is not a layer of its own — it is
@@ -597,7 +599,8 @@ async def source_detail(request: Request, source_id: int):
             from .tasks import _diagnostics_admin, _diagnostics_view
 
             if _diagnostics_admin(request):
-                latest_diagnostics = _diagnostics_view(progress_jobs[0], source_id=source.id)
+                view = _diagnostics_view(progress_jobs[0], source_id=source.id)
+                latest_diagnostics = _source_run_diagnostics(view, await _run_llm_summary(source.id, progress_jobs[0]))
     # Live queue fallback (variant B): when the job history is gone (pruned),
     # `collections` is empty even though raw rows are staged. Anyone who may
     # work with tasks sees the counts; readable texts stay admin-only.
@@ -691,7 +694,8 @@ async def source_analysis_progress(request: Request, source_id: int):
         from .tasks import _diagnostics_admin, _diagnostics_view
 
         if _diagnostics_admin(request):
-            diagnostics = _diagnostics_view(jobs[0], source_id=source_id)
+            view = _diagnostics_view(jobs[0], source_id=source_id)
+            diagnostics = _source_run_diagnostics(view, await _run_llm_summary(source_id, jobs[0]))
     return HTMLResponse(
         templates.env.get_template("web/source_analysis_progress.html").render(
             latest_progress=latest_progress, diagnostics=diagnostics
@@ -708,6 +712,60 @@ async def _source_has_running_job(source_id: int) -> dict:
     from app.models.managers.job_manager import JobManager
 
     return await JobManager().source_activity(source_id)
+
+
+def _source_run_diagnostics(view: dict[str, Any], run: dict[str, Any] | None) -> dict[str, Any]:
+    """The source panel's diagnostics dict, shaped for display.
+
+    The shared job-modal diagnostics keep launch bookkeeping (job id, attempt,
+    heartbeat, progress timestamps); the panel repeats none of it. An operator
+    asked about the screenshot case wants the model that served the run and
+    the survived/failed call counts — all journal-derived, allowlisted and
+    bounded, with unknowns preserved as ``None``. The error code prefers the
+    journal outcome and falls back to the run's own per-source code: a run
+    whose dispatch died before any journal row (transport refusal) must still
+    show why.
+    """
+    summary = run if isinstance(run, dict) else {}
+    view_code = view.get("error_code")
+    code = summary.get("error_code") or (view_code if isinstance(view_code, str) and view_code.isidentifier() else None)
+    return {
+        "selected": view.get("selected"),
+        "remaining": view.get("remaining"),
+        "model": summary.get("model"),
+        "provider": summary.get("provider"),
+        "succeeded": summary.get("succeeded"),
+        "failed": summary.get("failed"),
+        "error_code": code,
+    }
+
+
+async def _run_llm_summary(source_id: int, job: Any) -> dict[str, Any] | None:
+    """Model/use counters behind one run, from the immutable attempt journal.
+
+    The window is the run itself: ``started_at`` (fallback ``created_at`` for
+    a job nobody claimed yet) through ``finished_at``, leaving an open end for
+    running jobs so counters grow live between polls. Read-only and bounded;
+    any failure stays ``None`` — diagnostics must never fail the page.
+    """
+    from datetime import datetime, timezone
+
+    started = getattr(job, "started_at", None) or getattr(job, "created_at", None)
+    if not isinstance(started, datetime):
+        return None
+    started = started if started.tzinfo else started.replace(tzinfo=timezone.utc)
+    finished = getattr(job, "finished_at", None)
+    until = finished if isinstance(finished, datetime) else None
+    from app.models.managers.llm_attempt_manager import LLMAttemptManager
+
+    try:
+        return await LLMAttemptManager().run_summary(source_id, since=started, until=until)
+    except Exception as error:  # noqa: BLE001 — diagnostics must never fail the page
+        # Bounded kind only: exception text stays out of logs and responses.
+        from app.jobs.handlers import _error_kind
+
+        logger.warning("source_run_summary_failed source_id=%s error_kind=%s", source_id, _error_kind(error))
+        return None
 
 
 def _mode_view(mode_key: str) -> dict:

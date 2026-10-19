@@ -224,61 +224,65 @@
         </div>
     </div>
 
-    <!-- Collected data ───────────────────────────────────────────────── -->
-    {# Content the model could not analyse at all. These rows stay staged (the
-       raw copy is never dropped) but are no longer offered once they burn
-       `give_up_after_attempts`, so without this note the content would simply
-       be missing and look like it was never collected. #}
-    {% if pending_count > given_up %}
+    <!-- Analysis run status ─────────────────────────────────────────── -->
+{# The live/last run status, moved next to the "Повторить анализ" action:
+   an operator watching a repeat sees the outcome here — scale, per-item
+   counters, and (admins) which model served the run. The polling fragment
+   replaces the whole panel; ids and data attributes are the JS contract. #}
+<div id="source-analysis-progress" data-source-id="{{ source.id }}" class="mt-6">
+    {% if latest_progress %}{% with latest_progress=latest_progress, diagnostics=latest_diagnostics %}{% include "web/source_analysis_progress.html" %}{% endwith %}{% endif %}
+</div>
+
+<!-- Collected data ───────────────────────────────────────────────── -->
+    <!-- Analysis backlog ────────────────────────────────────────────── -->
+    {# One backlog block for both things an operator must see: content still
+       waiting for analysis and content the model failed to process several
+       times in a row. One card, one button — the panel above carries the
+       live/last run status, this card carries the queue itself. #}
+    {% if pending_count > 0 or given_up > 0 %}
         <div data-analysis-backlog class="mt-6 rounded-2xl border border-amber-800/60 bg-amber-50 dark:bg-amber-950/20 p-4">
-            <p class="text-sm text-amber-800 dark:text-amber-300">Материалов в ожидании анализа: {{ pending_count - given_up }}. Они ещё не разобраны полностью; это не готовые результаты.</p>
-            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Запуск обработает оставшиеся материалы в периоде текущей задачи или источника. Для старого неполного результата откройте его дату в списке ниже — повторная попытка там ограничена сохранённым периодом.</p>
-            {% if perms and perms.can('source', 'analyze') and not running.collect and not running.analyze %}
-                <form method="post" action="/app/sources/{{ source.id }}/analyze" class="mt-3">
-                    <input type="hidden" name="_csrf" value="{{ csrf }}">
-                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                    <button type="submit" class="rounded-lg border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-800 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-950/40">Повторить анализ</button>
-                </form>
-            {% endif %}
-        </div>
-    {% endif %}
-    {% if given_up %}
-        <div class="mt-6 rounded-2xl border border-amber-800/60 bg-amber-50 dark:bg-amber-950/20 p-4">
             <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                     <p class="text-sm text-amber-800 dark:text-amber-300">
-                        {{ given_up }} {{ given_up_label }} не удалось проанализировать — модель не ответила на них несколько раз подряд.
+                        {% if pending_count > given_up %}
+                            Материалов в ожидании анализа: {{ pending_count - given_up }}{% if given_up %} (+ {{ given_up }} не разобранных){% else %}; они ещё не разобраны полностью — это не готовые результаты.{% endif %}
+                        {% else %}
+                            Новых материалов в очереди нет{{ " (вне периода осталось " ~ pending_count ~ ")" if pending_count else "" }}.
+                        {% endif %}
+                        {% if given_up %}
+                            Из них {{ given_up }} {{ given_up_label }} не удалось проанализировать: модель не ответила на них несколько раз подряд, автоматические попытки приостановлены.
+                        {% endif %}
                     </p>
-                    {% if window_label %}
-                    <p class="mt-1 text-xs text-amber-800 dark:text-amber-300/70">
-                        Запуск анализа обрабатывает окно {{ window_label }}{% if window_scope %} ({{ window_scope }}){% endif %}{% if given_up_in_window %}: в нём застряло {{ given_up_in_window }}.{% else %} — в нём застрявших нет.{% endif %}
-                        {% if given_up_history %}Остальные {{ given_up_history }} — исторические, вне периода; они попадут в анализ, только если расширить период задачи или источника.{% endif %}
-                    </p>
-                    {% endif %}
-                    <p class="mt-1 text-xs text-amber-800 dark:text-amber-300/70">
-                        Сырые данные сохранены и ждут. Автоматические попытки для них приостановлены;
-                        проверьте настройки модели и сценария, назначенного задаче.
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                        {% if given_up %}
+                            Запуск анализа обрабатывает окно {{ window_label }}{% if window_scope %} ({{ window_scope }}){% endif %}{% if given_up_in_window %}: в нём застряло {{ given_up_in_window }}.{% else %}: застрявших в нём нет.{% endif %}
+                            {% if given_up_history %}Остальные {{ given_up_history }} — исторические, вне периода.{% endif %}
+                            Сырые данные сохранены и ждут — проверьте настройки модели и сценария назначенной задачи.
+                        {% else %}
+                            Запуск обработает оставшиеся материалы в периоде текущей задачи или источника. Для старого неполного результата откройте его дату в списке ниже — повторная попытка там ограничена сохранённым периодом.
+                        {% endif %}
                     </p>
                 </div>
                 {% if running.collect or running.analyze %}
-                    <span class="shrink-0 rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Анализ выполняется">
-                        <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <button type="button" disabled aria-live="polite"
+                            class="shrink-0 inline-flex items-center gap-2 rounded-lg border border-cyan-700/60 bg-cyan-50 px-4 py-2 text-sm font-medium text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300 opacity-70 cursor-wait">
+                        <svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none"
+                             viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                         </svg>
-                        <span class="ml-1">Анализ…</span>
-                    </span>
+                        Выполняется анализ…
+                    </button>
                 {% elif perms and perms.can('source', 'analyze') %}
                     <form method="post" action="/app/sources/{{ source.id }}/analyze" class="shrink-0">
                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                         {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                        <button class="rounded-lg border border-cyan-700/60 px-3 py-1.5 text-xs font-medium text-cyan-800 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-950/40">
-                            Повторить анализ
-                        </button>
+                        <button type="submit" class="rounded-lg border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-800 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-950/40">Повторить анализ</button>
                     </form>
                 {% endif %}
             </div>
         </div>
     {% endif %}
+
     {# The count per source lives in `jobs.result["per_source"]`; the analytics
        table below only shows what the analysis step wrote. This is the answer to
        "did the collect task actually pull anything from here?" #}
@@ -412,9 +416,8 @@
                             <th class="py-2 font-normal">Стоимость</th>
                         </tr>
                     </thead>
-                    <tbody id="source-analysis-progress" data-source-id="{{ source.id }}">
-                        {% with latest_progress=latest_progress, diagnostics=latest_diagnostics %}{% include "web/source_analysis_progress.html" %}{% endwith %}
-                        {% if not recent and not latest_progress %}<tr id="source-analysis-empty"><td colspan="5" class="py-3 text-sm text-slate-500">Анализов пока нет — новые запуски появятся здесь.</td></tr>{% endif %}
+                    <tbody id="source-analysis-history-body">
+                        {% if not recent and not running.analyze and not running.collect %}<tr id="source-analysis-empty"><td colspan="5" class="py-3 text-sm text-slate-500">Анализов пока нет — новые запуски появятся здесь.</td></tr>{% endif %}
                         {% for a in recent %}
                             <tr class="border-b border-slate-200 dark:border-slate-800/60 last:border-0">
                                 <td class="py-2.5 pr-4 text-slate-700 dark:text-slate-300">
@@ -499,38 +502,37 @@
             const sourceId = body.dataset.sourceId;
             const ACTIVE = ["pending", "running", "unconfirmed"];
             const clearStale = () => {
-                const row = body.querySelector("#source-analysis-progress-row");
-                if (row && ACTIVE.includes(row.dataset.progressStatus)) row.remove();
+                const panel = body.querySelector("#source-analysis-progress-row");
+                if (panel && ACTIVE.includes(panel.dataset.progressStatus)) panel.remove();
             };
-            const wasExpanded = (row) => {
-                const details = row && row.querySelector("#source-analysis-progress-details");
+            const wasExpanded = (panel) => {
+                const details = panel && panel.querySelector("#source-analysis-progress-details");
                 return Boolean(details && details.open);
             };
-            const focusedKey = (row) => {
+            const focusedKey = (panel) => {
                 const active = document.activeElement;
-                return row && active && row.contains(active) ? active.dataset.progressFocusKey : null;
+                return panel && active && panel.contains(active) ? active.dataset.progressFocusKey : null;
             };
             let timer = null;
             let stopped = false;
             let inFlight = false;
             let sequence = 0;
             let activeController = null;
-            // The status the row had when this page rendered; polling updates it,
+            // The status the panel had when this page rendered; polling updates it,
             // and an ACTIVE → terminal transition triggers the single reload.
             let previousStatus = body.querySelector("#source-analysis-progress-row")?.dataset.progressStatus || null;
             const showConnectionHint = () => {
                 clearStale();
-                let row = body.querySelector("#source-analysis-connection-row");
-                if (!row) {
-                    row = document.createElement("tr"); row.id = "source-analysis-connection-row";
-                    const cell = document.createElement("td"); cell.colSpan = 5;
-                    cell.className = "py-2.5 text-sm text-slate-500";
-                    cell.textContent = "Статус временно недоступен. Проверяем снова…";
-                    row.appendChild(cell); body.prepend(row);
+                let hint = body.querySelector("#source-analysis-connection-row");
+                if (!hint) {
+                    hint = document.createElement("p"); hint.id = "source-analysis-connection-row";
+                    hint.className = "rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900";
+                    hint.textContent = "Статус временно недоступен. Проверяем снова…";
+                    body.prepend(hint);
                 }
             };
-            // Permanent auth/identity failures are not retried: the row is cleared
-            // to a generic no-status so the table never shows a stale running
+            // Permanent auth/identity failures are not retried: the panel is cleared
+            // to a generic no-status so the page never shows a stale running
             // progress, and polling stops for good instead of hammering a 403/404.
             const stopPermanent = () => {
                 stopped = true;
@@ -539,11 +541,10 @@
                 const hint = body.querySelector("#source-analysis-connection-row");
                 if (hint) hint.remove();
                 if (!body.querySelector("#source-analysis-no-status")) {
-                    const row = document.createElement("tr"); row.id = "source-analysis-no-status";
-                    const cell = document.createElement("td"); cell.colSpan = 5;
-                    cell.className = "py-2.5 text-sm text-slate-500";
-                    cell.textContent = "Статус временно недоступен";
-                    row.appendChild(cell); body.prepend(row);
+                    const line = document.createElement("p"); line.id = "source-analysis-no-status";
+                    line.className = "rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900";
+                    line.textContent = "Статус временно недоступен";
+                    body.prepend(line);
                 }
             };
             const poll = async () => {
@@ -561,30 +562,29 @@
                     const fragment = await response.text();
                     if (!response.ok || !contentType.includes("text/html")) { showConnectionHint(); return; }
                     if (requestSeq !== sequence) return;
-                    const holder = document.createElement("tbody"); holder.innerHTML = fragment.trim();
+                    const holder = document.createElement("div"); holder.innerHTML = fragment.trim();
                     if (holder.children.length > 1 || (holder.firstElementChild && holder.firstElementChild.id !== "source-analysis-progress-row") || (!holder.firstElementChild && fragment.trim())) { showConnectionHint(); return; }
                     const hint = body.querySelector("#source-analysis-connection-row"); if (hint) hint.remove();
-                    const oldRow = body.querySelector("#source-analysis-progress-row");
-                    const emptyRow = body.querySelector("#source-analysis-empty");
-                    const newRow = holder.firstElementChild;
-                    const keepExpanded = oldRow !== null ? wasExpanded(oldRow) : false;
-                    const restoreFocus = oldRow !== null ? focusedKey(oldRow) : null;
-                    if (oldRow && newRow) oldRow.replaceWith(newRow);
-                    else if (!oldRow && newRow) { body.prepend(newRow); if (emptyRow) emptyRow.remove(); }
-                    else if (oldRow && !newRow) oldRow.remove();
-                    if (keepExpanded && newRow) {
-                        const details = newRow.querySelector("#source-analysis-progress-details");
+                    const oldPanel = body.querySelector("#source-analysis-progress-row");
+                    const newPanel = holder.firstElementChild;
+                    const keepExpanded = oldPanel !== null ? wasExpanded(oldPanel) : false;
+                    const restoreFocus = oldPanel !== null ? focusedKey(oldPanel) : null;
+                    if (oldPanel && newPanel) oldPanel.replaceWith(newPanel);
+                    else if (!oldPanel && newPanel) body.prepend(newPanel);
+                    else if (oldPanel && !newPanel) oldPanel.remove();
+                    if (keepExpanded && newPanel) {
+                        const details = newPanel.querySelector("#source-analysis-progress-details");
                         if (details) details.open = true;
                     }
-                    if (restoreFocus && newRow) {
-                        newRow.querySelector(`[data-progress-focus-key="${restoreFocus}"]`)?.focus({ preventScroll: true });
+                    if (restoreFocus && newPanel) {
+                        newPanel.querySelector(`[data-progress-focus-key="${restoreFocus}"]`)?.focus({ preventScroll: true });
                     }
-                    // The polling fragment swaps only this row; the analytics table
-                    // and the header button are server-rendered. When the watched
-                    // run reaches a terminal state, one reload brings the new
-                    // analysis row (date column) and clears the stale spinner.
+                    // The polling fragment swaps only this panel; the repeat-analysis
+                    // button is server-rendered. When the watched run reaches a
+                    // terminal state, one reload brings the new analysis row and
+                    // re-enables the button (or shows the run's own outcome here).
                     const previous = previousStatus;
-                    const current = newRow ? newRow.dataset.progressStatus : null;
+                    const current = newPanel ? newPanel.dataset.progressStatus : null;
                     previousStatus = current ?? previous;
                     if (previous && ACTIVE.includes(previous) && (current === null || !ACTIVE.includes(current))) {
                         stopped = true;
@@ -592,7 +592,7 @@
                         window.location.reload();
                         return;
                     }
-                    delay = newRow && ACTIVE.includes(newRow.dataset.progressStatus) ? 3000 : 10000;
+                    delay = newPanel && ACTIVE.includes(newPanel.dataset.progressStatus) ? 3000 : 10000;
                 } catch (_) { if (!stopped) showConnectionHint(); }
                 finally {
                     clearTimeout(requestTimeout);

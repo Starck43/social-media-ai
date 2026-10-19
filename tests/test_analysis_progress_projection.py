@@ -311,5 +311,15 @@ def test_projection_never_leaks_diagnostics_or_raw_markers():
         "raw": {"leak": True},
     }
     view = project_job(_job(status="done", result=result), 7)
-    assert set(view) == {"job_type", "status", "label", "percent", "processed", "total"}
+    # `job_id` is the one execution handle the source panel needs (to open the
+    # run-status modal); result-envelope diagnostics never pass through.
+    assert set(view) == {"job_id", "job_type", "status", "label", "percent", "processed", "total"}
     assert "selected" not in view and "diagnostics" not in view and "leak" not in view
+
+
+def test_projection_carries_bounded_job_id_for_the_source_panel():
+    view = project_job(_job(status="pending", id=88), 7)
+    assert view["job_id"] == 88
+    for bad in (None, 0, -1, 2.0, "88", True, 10**10):
+        view = project_job(_job(status="pending", id=bad), 7)
+        assert view["job_id"] is None, f"malformed id {bad!r} must stay unknown"

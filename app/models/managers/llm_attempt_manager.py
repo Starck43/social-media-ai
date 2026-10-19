@@ -95,6 +95,60 @@ class LLMAttemptManager(BaseManager):
         # The owned-session context commits before this acknowledgement.
         return created
 
+    async def run_summary(self, source_id: int, *, since: Any, until: Any = None) -> dict[str, Any]:
+        """Bounded read-only attempt envelope for one run window (display only).
+
+        Reads the insert-only journal the same way handlers already trust it
+        (per-source ``text_analysis`` rows created in ``[since, until]``), so a
+        run panel can name the model that actually served the run and count
+        survived vs failed calls. Counters come straight from aggregates; the
+        newest non-success outcome doubles as the bounded error code — the same
+        allowlisted discipline as ``_llm_failure_code`` in jobs handlers. A
+        lookup failure must never fail the caller (diagnostic is a hint), and
+        nothing here ever writes.
+        """
+        scope = [
+            self.model.source_id == source_id,
+            self.model.stage == "text_analysis",
+            self.model.created_at >= since,
+        ]
+        if until is not None:
+            scope.append(self.model.created_at <= until)
+        limits = {"total": 10**9, "succeeded": 10**9}
+        async with self._get_owned_session() as session:
+            counters = (
+                await session.execute(
+                    select(
+                        func.count().label("total"),
+                        func.count().filter(self.model.outcome == "succeeded").label("succeeded"),
+                    ).where(*scope, *self._tenant_criterion())
+                )
+            ).one()
+            newest_result = await session.execute(
+                select(self.model.model_id, self.model.provider_name, self.model.outcome)
+                .where(*scope, *self._tenant_criterion())
+                .order_by(self.model.id.desc())
+                .limit(1)
+            )
+            newest = newest_result.first()
+        total = int(counters.total or 0)
+        succeeded = int(counters.succeeded or 0)
+        outcome = getattr(newest, "outcome", None) if newest is not None else None
+        return {
+            "total": total if 0 <= total <= limits["total"] else None,
+            "succeeded": succeeded if 0 <= succeeded <= limits["succeeded"] else None,
+            "failed": max(0, total - succeeded) if total >= 0 and succeeded >= 0 else None,
+            "model": (str(newest.model_id)[:200] if newest is not None and newest.model_id else None),
+            "provider": (str(newest.provider_name)[:200] if newest is not None and newest.provider_name else None),
+            # The newest attempt decides the displayed code only when it itself
+            # failed: a successful tail run must not show a stale failure code.
+            "error_code": (
+                outcome
+                if isinstance(outcome, str) and outcome and outcome != "succeeded" and outcome.isidentifier()
+                else None
+            ),
+        }
+
     async def accounting_totals(self, utc_day: date | None = None) -> dict[str, Any]:
         """Tenant-scoped captured-journal statistics, never a complete spend cap.
 

@@ -137,7 +137,9 @@ def project_job(job: Any, source_id: int) -> dict[str, Any]:
     if total == 0 and processed == 0 and status in ("done", "empty"):
         status, label = "empty", _STATUS_LABELS["empty"]
         percent = None
+    job_id = getattr(job, "id", None)
     return {
+        "job_id": job_id if type(job_id) is int and 0 < job_id <= 10**9 else None,
         "job_type": getattr(job, "job_type", None), "status": status, "label": label,
         "percent": percent, "processed": processed, "total": total,
     }

@@ -76,7 +76,7 @@
 </div>
 {% if not user %}<div class="shell-guest-theme">{% set theme_id = 'guest' %}{% include "web/_shell_theme.html" %}</div>{% endif %}
 {% if panel_content|trim %}<dialog id="context-panel" class="shell-right-panel" aria-label="Контекст страницы"><button type="button" class="shell-icon-button" data-dialog-close aria-label="Закрыть контекстную панель">{{ icon('close') }}</button>{{ panel_content }}</dialog>{% endif %}
-{% if user and tenant %}
+{% if user and tenant and request.query_params.get('embedded') != '1' %}
 {% include "web/_shell_notifications.html" %}
 {% if perms and perms.can_manage_workspace(tenant.id) %}
 <dialog id="invite-dialog" class="shell-dialog" aria-labelledby="invite-dialog-title" data-invite-dialog {% if request.query_params.get('invite_dialog') == '1' %}data-auto-open{% endif %}>

@@ -5,8 +5,50 @@
 {% block extra_head %}
 <script defer src="{{ static_v('js/task-detail-editor.js') }}"></script>
 <style>
-    dialog.task-editor-dialog { width: min(1100px, calc(100vw - 24px)); }
-    .task-editor-dialog iframe { display: block; width: 100%; height: calc(100dvh - 160px); margin-top: 1rem; border: 0; }
+    {# The iframe owns the scrolling: the dialog is a fixed-height flex
+       column, the heading stays on top and the iframe fills the rest, so
+       the dialog itself never scrolls and the editor document scrolls
+       inside the iframe. Desktop keeps a framed, centered dialog; narrow
+       viewports go edge-to-edge full-height like every mobile sheet. #}
+    dialog.task-editor-dialog {
+        width: min(1100px, calc(100vw - 48px));
+        height: calc(100dvh - 48px);
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    {# display:flex on <dialog> beats the UA's closed-state rule, so an
+       explicitly closed dialog would keep rendering in flow — the white
+       rectangle the reader saw after closing. Pin the UA behaviour back. #}
+    dialog.task-editor-dialog:not([open]) {
+        display: none !important;
+    }
+    .task-editor-dialog .shell-dialog-heading {
+        flex: none;
+        margin: 0;
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--color-border);
+    }
+    .task-editor-dialog iframe {
+        display: block;
+        width: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
+        margin: 0;
+        border: 0;
+    }
+    @media (max-width: 640px) {
+        dialog.task-editor-dialog {
+            width: 100vw;
+            height: 100dvh;
+            max-height: none;
+            margin: 0;
+            border: 0;
+            border-radius: 0;
+        }
+        .task-editor-dialog .shell-dialog-heading { padding: 12px 16px; }
+    }
 </style>
 {% endblock %}
 {% block content %}

@@ -5,16 +5,56 @@
 {% block extra_head %}
 {% if request.query_params.get('embedded') == '1' %}
 <style>
-    .shell-sidebar, .shell-navbar, .shell-drawer, .shell-guest-theme { display: none; }
-    .shell-layout { display: block; min-height: 0; }
-    .shell-content { padding: 1rem; }
+    .shell-sidebar, .shell-navbar, .shell-drawer, .shell-guest-theme { display: none !important; }
+    {# Same scroll discipline as every shell page (shell.css): html, body and
+       the layout are pinned to the iframe viewport, and `.shell-content` is
+       the single scroll container, so the editor scrolls inside the dialog's
+       iframe like any other page. The dialog frame carries the window;
+       spacing belongs to this page's padding. #}
+    html, body {
+        height: 100%;
+        overflow: hidden;
+    }
+    .shell-layout {
+        display: flex;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+    .shell-page {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .shell-content {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-width: 100%;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 20px;
+    }
+    {# Match the dialog frame: the header and the editor body must read as
+       one surface, so follow the shell theme variable instead of Tailwind's
+       page gray (bg-slate-50 / dark:bg-slate-950 on the body class). #}
+    body {
+        background: var(--color-surface);
+    }
+    .shell-notification-dock,
+    .shell-attention-popup {
+        display: none !important;
+    }
+    @media (max-width: 640px) {
+        .shell-content { padding: 16px; }
+    }
 </style>
 {% endif %}
 {% endblock %}
 {% block content %}
 {% set embedded = request.query_params.get('embedded') == '1' %}
 {# The same editor serves the direct URL and the task-detail dialog. #}
-<div x-data="taskEditPage()" x-effect="document.getElementById('page-heading').textContent = editing.name || 'Задача'" class="mx-auto max-w-4xl">
+<div x-data="taskEditPage()" x-effect="document.getElementById('page-heading').textContent = editing.name || 'Задача'"{% if not embedded %} class="mx-auto max-w-4xl"{% endif %}>
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
             <p class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Редактирование задачи</p>
@@ -29,7 +69,7 @@
     <noscript><div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">Редактор требует JavaScript: без него поля и сохранение отключены, чтобы случайно не перезаписать задачу пустыми значениями.</div></noscript>
     <form method="post" action="/app/tasks/{{ task.id }}" :action="'/app/tasks/' + editing.id"
           {% if embedded %}target="_top"{% endif %}
-          class="space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6"
+          class="space-y-4 {% if not embedded %}rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6{% endif %}"
           x-data="{ sending: false }"
           x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }"
           x-on:pageshow.window="sending = false" data-task-editor-form>

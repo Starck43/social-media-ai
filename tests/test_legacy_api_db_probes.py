@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import APIRouter, HTTPException
+from fastapi.routing import iter_route_contexts
 from source_import_isolation import load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -148,7 +149,7 @@ async def test_probe_cancellation_is_not_an_http_failure(entry, handler):
 
 
 def test_legacy_auth_and_schema_declarations_preserved(entry):
-    routes = {route.path: route for route in entry.router.routes}
+    routes = {route.path: route for route in iter_route_contexts(entry.router.routes)}
     auth = entry.get_authenticated_user
     assert [d.call for d in routes["/test-db"].dependant.dependencies] == [auth]
     assert [d.call for d in routes["/test-auth"].dependant.dependencies] == [auth]

@@ -21,7 +21,7 @@ from app.tasks.cron import cron_to_human
 from app.jobs.progress import read_snapshot
 from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR, OPERATOR_CANCELLED_ERROR, outcome_unconfirmed
 from app.types import AgentActionType, BotTriggerType, JobType
-from app.services.monitoring.selection import SelectionError, parse_tracked_users
+from app.services.monitoring.selection import SelectionError
 
 from .deps import (
 	action_tenant_id,
@@ -73,6 +73,9 @@ def _normalize_web_job_type(job_type: str) -> str:
 # says *which* brands/hashtags/… to aim at.
 TARGET_KEYS = ("brands", "competitors", "hashtags", "influencer_names")
 
+# The task's selection keys, written only through `apply_selection`.
+_SELECTION_KEYS = ("tracked_users", "keywords_list", "keywords_match")
+
 
 def apply_selection(payload: dict, tracked_users: str, keywords: list[str], keywords_match: str) -> None:
 	"""Normalise the task's selection into `payload` in place.
@@ -82,25 +85,24 @@ def apply_selection(payload: dict, tracked_users: str, keywords: list[str], keyw
 	(`platform:external_id`). A malformed identity raises `SelectionError`:
 	the task must fail to save, not save a filter that quietly selects nothing.
 	"""
+	# The payload is being built here, not merged into what the task stored:
+	# absent fields must not resurrect values the operator just cleared.
+	existing = {key: value for key, value in payload.items() if key not in _SELECTION_KEYS}
 	try:
-		keys = [user.key() for user in parse_tracked_users(_split_names(tracked_users))]
+		merged = AgentTaskManager.build_selection_payload(
+			tracked_users=_split_names(tracked_users),
+			keywords=list(dict.fromkeys(keywords)),
+			keywords_match=keywords_match or "any",
+			existing=existing,
+		)
 	except SelectionError:
 		raise ValueError(
 			"Проверьте «Отслеживаемые авторы»: укажите платформу и id, например vk:123456"
 		) from None
-	if keys:
-		payload["tracked_users"] = keys
-	else:
-		payload.pop("tracked_users", None)
-	if keywords:
-		payload["keywords_list"] = list(dict.fromkeys(keywords))
-		if keywords_match == "all":
-			payload["keywords_match"] = "all"
-		else:
-			payload.pop("keywords_match", None)
-	else:
-		# A match mode without phrases means nothing; keep the payload honest.
-		payload.pop("keywords_match", None)
+	# The form owns its fields: clearing one clears it, so the payload is
+	# replaced by the writer's result rather than merged key by key here.
+	payload.clear()
+	payload.update(merged)
 
 
 def _split_targets(raw: str) -> list[str]:

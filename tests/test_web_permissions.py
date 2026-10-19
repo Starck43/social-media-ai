@@ -29,6 +29,9 @@ from app.types import ActionType, PlatformRoleType, WorkspaceRoleType
 from app.web.perms import WebPerms
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
+# The add-task modal is the last form on the tasks page; its token is the one
+# its POST is validated against (the page also carries queue/delete forms).
+MODAL_CSRF_RE = re.compile(r'Создать задачу.*?name="_csrf" value="([^"]+)"', re.S)
 DENIED = "Недостаточно прав для этого действия"
 # The toolbar button is the gated one; the same words sit in an always-present
 # modal heading, so the marker has to be the opener, not the label.
@@ -223,21 +226,47 @@ async def _invitee(prefix: str, workspace_role: WorkspaceRoleType, tenant_id: in
     return user
 
 
+def _modal_csrf(html: str) -> str:
+    """The CSRF token of the task add modal.
+
+    The tasks page contains several forms (queue clear, per-row delete, add);
+    taking the first token on the page submits the wrong one and the create
+    request is rejected as a stale session.
+    """
+    match = MODAL_CSRF_RE.search(html)
+    assert match, "no csrf input inside the task add modal"
+    return match.group(1)
+
+
 async def test_owner_may_create_a_task_and_sees_the_button() -> None:
     async with await _client() as client:
         user, tenant_id = await _register(client, "OwnerTask")
+        # A unified social-analysis task needs an active scenario in the
+        # workspace before the form can create one.
+        from app.models import AgentScenario
+
+        with tenant_scope(bypass=True):
+            scenario = await AgentScenario.objects.create(
+                name=_name("owner-scenario"),
+                analysis_types=["sentiment"],
+                is_active=True,
+                tenant_id=tenant_id,
+            )
         name = _name("owner-task")
         task_id = None
         try:
             page = await client.get("/app/tasks")
             assert CREATE_BUTTON in page.text
 
-            token = CSRF_RE.search(page.text).group(1)
+            # The create button opens the add modal; like a browser, submit the
+            # modal's own form, not the hidden task-delete/clear forms.
+            token = _modal_csrf(page.text)
             resp = await client.post(
                 "/app/tasks",
                 data={
                     "name": name,
-                    "job_type": "collect",
+                    "job_type": "analyze",
+                    "scenario_id": str(scenario.id),
                     "cron_custom": "@once",
                     "start_date": "2026-09-01",
                     "_csrf": token,
@@ -254,6 +283,8 @@ async def test_owner_may_create_a_task_and_sees_the_button() -> None:
             if task_id is not None:
                 with tenant_scope(bypass=True):
                     await AgentTask.objects.delete(id=task_id)
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario.id)
             await _drop(user, tenant_id)
 
 
@@ -317,7 +348,8 @@ async def test_non_owner_without_rights_is_read_only_even_when_posting_directly(
                 "/app/tasks",
                 data={
                     "name": name,
-                    "job_type": "collect",
+                    # The web form's task type; `collect` normalises to it anyway.
+                    "job_type": "analyze",
                     "cron_custom": "@once",
                     "start_date": "2026-09-01",
                     "_csrf": token,
@@ -342,6 +374,7 @@ async def test_member_role_decides_for_a_non_owner() -> None:
     external_id = secrets.token_hex(6)
     name = _name("managed-task")
     source_id = None
+    scenario = None
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "MgrOwner")
@@ -355,6 +388,18 @@ async def test_member_role_decides_for_a_non_owner() -> None:
             grants = await TenantUserManager().member_grants(membership)
             assert ("source", ActionType.CREATE) in grants, "premise: MANAGER may create sources"
             assert ("agenttask", ActionType.CREATE) in grants, "premise: MANAGER may create tasks"
+
+            # A unified social-analysis task needs an active scenario in the
+            # workspace before the form can create one.
+            from app.models import AgentScenario
+
+            with tenant_scope(bypass=True):
+                scenario = await AgentScenario.objects.create(
+                    name=_name("manager-scenario"),
+                    analysis_types=["sentiment"],
+                    is_active=True,
+                    tenant_id=tenant_id,
+                )
 
         async with await _client() as m:
             await _login(m, member.username)
@@ -388,7 +433,9 @@ async def test_member_role_decides_for_a_non_owner() -> None:
                 "/app/tasks",
                 data={
                     "name": name,
-                    "job_type": "collect",
+                    # The web form's task type; `collect` normalises to it anyway.
+                    "job_type": "analyze",
+                    "scenario_id": str(scenario.id),
                     "cron_custom": "@once",
                     "start_date": "2026-09-01",
                     "_csrf": token,
@@ -400,6 +447,9 @@ async def test_member_role_decides_for_a_non_owner() -> None:
                 task = await AgentTask.objects.filter(name=name).first()
             assert task is not None, "MANAGER-created task is persisted in the member workspace"
     finally:
+        with tenant_scope(bypass=True):
+            if scenario is not None:
+                await AgentScenario.objects.delete(id=scenario.id)
         if source_id is not None:
             with tenant_scope(bypass=True):
                 await Source.objects.delete(id=source_id)

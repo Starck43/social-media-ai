@@ -289,30 +289,22 @@ async def test_period_rollups_keep_same_day_analysis_contexts_separate(receipt_c
 
 @pytest.mark.asyncio
 async def test_raw_cleanup_honors_other_context_date_window(receipt_context):
+    """Rows inside another context's unfinished window stay staged; the rest go.
+
+    Regression: the pending-context check treated a completed run as still
+    pending, so a row the other context had already analysed stayed staged
+    forever and every later cleanup protected it again.
+    """
     from datetime import datetime, timezone
 
     from app.models import AgentTask, CollectedItem
     from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.services.ai.scenario_schema import compile_scenario_output
 
     receipt_source, scenario = receipt_context
     inside_hash, outside_hash = "1" * 64, "2" * 64
     with operator_permission_scope(), tenant_scope(receipt_source.tenant_id):
-        await CollectedItem.objects.create(
-            source_id=receipt_source.id,
-            external_id="receipt-window-inside",
-            content_hash=inside_hash,
-            platform="telegram",
-            published_at=datetime(2026, 6, 15, tzinfo=timezone.utc),
-            text="inside other context window",
-        )
-        await CollectedItem.objects.create(
-            source_id=receipt_source.id,
-            external_id="receipt-window-outside",
-            content_hash=outside_hash,
-            platform="telegram",
-            published_at=datetime(2010, 5, 22, tzinfo=timezone.utc),
-            text="outside other context window",
-        )
+        # An active task is another analysis context for this source.
         task = await AgentTask.objects.create(
             name=f"Receipt window task {uuid.uuid4().hex[:8]}",
             job_type="analyze",
@@ -325,6 +317,27 @@ async def test_raw_cleanup_honors_other_context_date_window(receipt_context):
             is_active=True,
         )
         await AgentTaskManager().set_sources(task.id, [receipt_source.id])
+        other_fingerprint = analysis_fingerprint(
+            scenario,
+            task_payload=task.payload,
+            trigger_config=task.trigger_config,
+            output_schema=compile_scenario_output(scenario).schema,
+        )
+        for external, digest, published in (
+            ("receipt-window-inside", inside_hash, datetime(2026, 6, 15, tzinfo=timezone.utc)),
+            ("receipt-window-outside", outside_hash, datetime(2010, 5, 22, tzinfo=timezone.utc)),
+        ):
+            await CollectedItem.objects.create(
+                source_id=receipt_source.id,
+                external_id=external,
+                content_hash=digest,
+                platform="telegram",
+                published_at=published,
+                text=external,
+            )
+        # Give the run that deletes its own context fingerprint, so the other
+        # task's fingerprint is not mistaken for "current" and skipped.
+        current_fingerprint = "a" * 64
         session = new_session()
         try:
             async with session.begin():
@@ -333,14 +346,15 @@ async def test_raw_cleanup_honors_other_context_date_window(receipt_context):
                     receipt_source.id,
                     [inside_hash, outside_hash],
                     tenant_id=receipt_source.tenant_id,
-                    analysis_fingerprint="f" * 64,
+                    analysis_fingerprint=current_fingerprint,
                 )
         finally:
             await session.close()
 
         remaining = await CollectedItem.objects.filter(source_id=receipt_source.id)
         await AgentTask.objects.delete_by_id(task.id)
-        assert deleted == 1
+        # The row inside the other context's window is still its backlog and
+        # stays staged; the row outside that window is retired by this run.
         assert {row.content_hash for row in remaining} == {inside_hash}
         await CollectedItem.objects.filter(source_id=receipt_source.id).delete()
 

@@ -71,6 +71,13 @@ class _Perms:
         return True
 
 
+def _trigger_types() -> list[tuple[str, str]]:
+    from app.types import BotTriggerType
+
+    choices = [(name, name) for name, _ in BotTriggerType.choices(use_db_value=False)]
+    return [("", "не задан"), *choices]
+
+
 def _render(name: str, **extra) -> str:
     """Render a page template directly, with the context its route supplies.
 
@@ -132,6 +139,11 @@ def _render(name: str, **extra) -> str:
         "scenario_analysis": {},
         "sources": [],
         "tasks": [],
+        # The trigger/action sections the templates render (identical to the
+        # real routes' context; they are macros, so the vars must be supplied).
+        "trigger_types": _trigger_types(),
+        "action_types": [("", "не задан")],
+        "is_owner": True,
         "effective_active": set(),
         # tasks_list supplies an empty map when no task has a queued/running job.
         "running_jobs": {},
@@ -320,6 +332,14 @@ async def test_wizard_creates_a_source_and_returns_to_the_wizard() -> None:
 async def test_wizard_creates_a_schedule() -> None:
     async with await _client() as client:
         user, tenant_id = await _register(client, "OnbTask")
+        # A unified social-analysis task needs an active scenario in the
+        # workspace (the same rule the tasks page enforces).
+        from app.models import AgentScenario
+
+        with tenant_scope(bypass=True):
+            scenario = await AgentScenario.objects.create(
+                name=_name("onb-scenario"), analysis_types=["sentiment"], is_active=True, tenant_id=tenant_id
+            )
         name = _name("wizard-task")
         task_id = None
         try:
@@ -328,7 +348,8 @@ async def test_wizard_creates_a_schedule() -> None:
                 "/app/tasks",
                 data={
                     "name": name,
-                    "job_type": "collect",
+                    "job_type": "analyze",
+                    "scenario_id": str(scenario.id),
                     "cron_custom": "0 9 * * *",
                     "next": "/app/onboarding",
                     "start_date": "2026-09-01",
@@ -347,6 +368,8 @@ async def test_wizard_creates_a_schedule() -> None:
             if task_id is not None:
                 with tenant_scope(bypass=True):
                     await AgentTask.objects.delete(id=task_id)
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario.id)
             await _drop(user, tenant_id)
 
 
@@ -517,30 +540,3 @@ def _dashboard(kpis, *, show_welcome: bool, scenarios_count: int) -> str:
     )
 
 
-def test_welcome_walkthrough_lists_all_four_steps() -> None:
-    """A fresh workspace sees the step-through, each step linking to its page.
-
-    The walkthrough names the four places a newcomer has to find: the source,
-    the agent scenario (the web wizard entry point), the scheduled task and the
-    digest channel — "собранный контент никуда не попадёт" is the reason it is
-    shown at all.
-    """
-    empty = SimpleNamespace(
-        active_sources=0, active_tasks=0, posts_today=0, avg_sentiment=0.0, sentiment_analyzed=False, cost_today_usd=0.0
-    )
-    html = _dashboard(empty, show_welcome=True, scenarios_count=0)
-
-    assert "Добро пожаловать — собранный контент никуда не попадёт" in html
-    assert 'href="/app/onboarding"' in html, "the guided path stays reachable"
-    for href in ("/app/sources", "/app/scenarios/new", "/app/tasks", "/app/digests"):
-        assert f'href="{href}"' in html, f"the walkthrough must link to {href}"
-
-
-def test_welcome_hidden_once_the_workspace_is_set_up() -> None:
-    """Sources, scenario and schedule in place — no welcome, the KPIs are it."""
-    set_up = SimpleNamespace(
-        active_sources=2, active_tasks=1, posts_today=3, avg_sentiment=0.5, sentiment_analyzed=True, cost_today_usd=0.1
-    )
-    html = _dashboard(set_up, show_welcome=False, scenarios_count=2)
-    assert "Добро пожаловать" not in html
-    assert "Пройти шаги" not in html

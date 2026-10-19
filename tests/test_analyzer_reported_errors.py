@@ -405,8 +405,16 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_duplicate_hashes_count_each_covered_staged_row(self):
         self.staged = [
-            SimpleNamespace(content_hash="same-hash", as_agent_item=Mock(return_value={"text": "same"})),
-            SimpleNamespace(content_hash="same-hash", as_agent_item=Mock(return_value={"text": "same"})),
+            # The projection carries the identity the progress counter matches
+            # against saved coverage (`as_agent_item()` does this for real rows).
+            SimpleNamespace(
+                content_hash="same-hash",
+                as_agent_item=Mock(return_value={"text": "same", "content_hash": "same-hash"}),
+            ),
+            SimpleNamespace(
+                content_hash="same-hash",
+                as_agent_item=Mock(return_value={"text": "same", "content_hash": "same-hash"}),
+            ),
         ]
         self.models.CollectedItem.objects.for_source.return_value = self.staged
         self.models.CollectedItem.objects.count_for_source.return_value = 2

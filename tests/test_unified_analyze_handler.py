@@ -56,8 +56,8 @@ class UnifiedAnalyzeHandlerTests(unittest.IsolatedAsyncioTestCase):
         covered = "covered-hash"
         uncovered = "uncovered-hash"
         self.fixture.staged = [
-            SimpleNamespace(content_hash=covered, as_agent_item=lambda: {"text": "covered"}),
-            SimpleNamespace(content_hash=uncovered, as_agent_item=lambda: {"text": "uncovered"}),
+            SimpleNamespace(content_hash=covered, as_agent_item=lambda: {"text": "covered", "content_hash": covered}),
+            SimpleNamespace(content_hash=uncovered, as_agent_item=lambda: {"text": "uncovered", "content_hash": uncovered}),
         ]
         self.fixture.models.CollectedItem.objects.for_source.return_value = self.fixture.staged
         self.fixture.models.CollectedItem.objects.count_for_source.return_value = 2

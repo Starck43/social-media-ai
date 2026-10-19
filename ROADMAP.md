@@ -96,13 +96,13 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
   spend. Proposed default in P5-T09/P8-T25: candidate artefact + capped confirm.
   Asked by: $local (opencode); status: OPEN
 
-- [ ] Q-4 — one-off data decision for the `monitored_users` removal (P5-T08
-  step 4). Pre-production, so nothing may be assumed: (a) drop the keys without
-  migration of intent, (b) resolve existing lists into `tracked_users` with
-  `utils.resolveScreenName` only where the operator confirms, (c) leave both
-  and let the owner re-enter selections. Proposed: (b) as a reviewable,
-  read-only resolution report first, the migration writes only confirmed rows;
-  decide before step 4 is claimed. Asked by: $local (opencode); status: OPEN
+- [x] Q-4 — one-off data decision for the `monitored_users` removal (P5-T08
+  step 4). Owner decision (2026-10-19): **drop the stored values outright**, no
+  conversion — the owner re-enters selections in new tasks. Implemented as
+  migration `0105` (`payload`/`params` with the key stripped; downgrade is a
+  documented no-op); a pre-migration snapshot of the two affected sources is in
+  `.agents/tmp/monitored_users_backup_0105.json`. Applied locally.
+  Asked by: $local (opencode); status: RESOLVED
 
 
 <!-- Q-<n> — question; context: <link/file>; asked by: <agent>; status: OPEN|RESOLVED(delete row) -->

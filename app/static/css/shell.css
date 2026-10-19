@@ -643,3 +643,16 @@ body[data-shell-section="chat"] .shell-content {
 	overflow-y: auto;
 	flex-shrink: 0;
 }
+
+/* The same selector component is used in pages and lazy invitation dialogs. */
+.shell-popover[data-popover-select] { min-width: 0; }
+.shell-popover[data-popover-select] [data-popover-trigger] { min-height: 44px; }
+.shell-popover[data-popover-select] [data-popover-label] { min-width: 0; overflow-wrap: anywhere; }
+.shell-popover[data-popover-select] .shell-popover-panel { width: 100%; max-height: min(320px, 50dvh); }
+.shell-popover[data-popover-select] .shell-theme-check { flex-shrink: 0; }
+.shell-popover[data-popover-select] [data-popover-option] { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+.shell-popover[data-popover-select] [data-popover-option-label] { grid-column: 1; grid-row: 1; }
+.shell-popover[data-popover-select] [data-popover-option-hint] { grid-column: 1; grid-row: 2; }
+.shell-popover[data-popover-select] .shell-theme-check { grid-column: 2; grid-row: 1 / span 2; }
+.shell-select-chevron { display: block; width: 7px; height: 7px; margin: 0 4px 3px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); flex-shrink: 0; }
+[data-popover-trigger][aria-expanded="true"] .shell-select-chevron { transform: rotate(225deg); margin-bottom: -3px; }

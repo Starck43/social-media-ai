@@ -393,7 +393,7 @@ async def test_another_members_key_cannot_be_disabled_by_id() -> None:
         await _drop_workspaces(tenant_id)
 
 
-async def test_the_last_owner_cannot_be_demoted() -> None:
+async def test_owner_cannot_change_own_role_even_with_a_second_owner() -> None:
     from app.models.managers.tenant_manager import tenant_users
 
     owner: User | None = None
@@ -410,13 +410,12 @@ async def test_the_last_owner_cannot_be_demoted() -> None:
                 f"/app/settings/members/{membership.id}/role",
                 data={"role": "viewer", "_csrf": token},
             )
-            assert "должен остаться хотя бы один" in resp.text
+            assert "Нельзя менять собственную роль" in resp.text
 
             row = await tenant_users.get(id=membership.id)
             assert row.is_owner
 
-            # Promote a second member to owner, then the same demotion is allowed:
-            # the guard counts owners, not the row being edited.
+            # A second owner does not permit changing the caller's own role.
             second = await _invitee("SetCo", WorkspaceRoleType.MANAGER, tenant_id)
             try:
                 second_membership = [
@@ -433,9 +432,9 @@ async def test_the_last_owner_cannot_be_demoted() -> None:
                     f"/app/settings/members/{membership.id}/role",
                     data={"role": "viewer", "_csrf": token},
                 )
-                assert "Роль изменена" in resp.text
+                assert "Нельзя менять собственную роль" in resp.text
                 row = await tenant_users.get(id=membership.id)
-                assert not row.is_owner
+                assert row.is_owner
             finally:
                 await _cleanup(second)
     finally:

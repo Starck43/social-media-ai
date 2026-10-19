@@ -577,8 +577,8 @@ async def membership_role(
 ):
     """Change a member's workspace role.
 
-    Two invariants the admin console cannot enforce for us: the caller must
-    belong to this workspace, and the last owner cannot be demoted — a
+    The caller must belong to this workspace and cannot edit their own role.
+    When editing another member, the last owner cannot be demoted — a
     workspace with no owner has nobody who may manage it at all, so it would
     be unreachable rather than merely restricted.
     """
@@ -600,6 +600,10 @@ async def membership_role(
     membership = await tenant_users.get(id=membership_id, tenant_id=tenant_id)
     if membership is None:
         add_flash(request, "error", "Участник не найден")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+    if membership.user_id == request.state.web_user.id:
+        add_flash(request, "error", "Нельзя менять собственную роль в пространстве")
         return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
     level = member_roles.resolve(role)

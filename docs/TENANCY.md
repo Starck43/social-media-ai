@@ -274,6 +274,18 @@ profile-write flow, durable preference field or permission matrix was added.
 
 ### Web owner/guest context and membership disable
 
+Settings role changes apply only to the target membership in the active workspace,
+never to the account's platform role. A caller cannot change their own workspace
+role, even if another active owner exists: both the web handler and the locked
+`TenantUserManager` mutation reject it. The Team UI exposes access controls only
+for other non-owner members. Existing checks on managing other members and the
+last-owner invariant remain in place.
+
+The settings admin-console entry uses the same `has_admin_access()` predicate as
+the shell and console: an active platform `operator` or `admin` may see it.
+Workspace ownership or workspace-admin status alone does not grant entry.
+
+
 The web shell labels each membership as an owned workspace or granted access,
 with the active role visible beside the page context. Ownership follows the
 existing membership owner contract, not the creator's identity. Workspace data

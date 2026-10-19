@@ -479,4 +479,50 @@ P8-T06 and does not alter its task record.
   Accepted this bounded no-DB contract and removed its open registry row;
   persisted worker/billing acceptance and phase approval are not implied.
 
+- [ ] P8-T25 — settings information layout and compact member access; accept:
+  replace the two segment rows with one settings navigation, describe each
+  section, align forms/buttons and put the model test beside its selector.
+  Owner review: hide owner/self access controls; deny self-role changes in the
+  web handler and locked manager, including with a second owner; keep tariff
+  plans visible at the bottom; scope the admin entry to the existing active
+  platform operator/admin predicate; use the shared picker for settings and
+  invitation selects, including lazily loaded dialog content.
+  Depends: none; owns: settings/invite templates and CSS, shared selector
+  macro/initialization, bounded self-role guards, tenancy docs and focused
+  regression expectations; owner: remote Notion agent;
+  status: READY in PR #222 for owner-authorized merge, not self-accepted DONE.
+  Initial implementation `500900ba86293f063d0bf0bce6f551be788dc023` passed
+  109 isolated tests and 104 browser cases; its review follow-up supersedes
+  the initial hidden tariff comparison and visible owner role editor.
+  Reviewed implementation: `64e3eed0718640ba493535011da811b3e17bb256`.
+  Synchronized dev: `0c757b274aaa6c46054e0bec6298dc30485d8c64`; active
+  #216/#217/#220 heads unchanged and foreign owners/evidence preserved.
+  Sandbox evidence at the reviewed SHA: 123 isolated checks passed across
+  `tests/unit_web/test_settings_review.py`, `test_settings_layout.py`,
+  `test_settings_scopes.py` and `test_template_autoescape.py`; 7 selected
+  `test_workspace_access.py` checks passed with
+  `-k 'team_change_locks_workspace or admin_entry_requires_active_platform_operator_or_admin'`.
+  Both runs used `--noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header`:
+  total 130 passed, 0 failed/skipped (59 intentionally deselected in the second run).
+  `node tests/web_shell_state.cjs`: 38 mocked controller checks passed.
+  `tests/settings_layout_fixtures.py` and `tests/web_settings_layout.cjs`:
+  104 offline browser cases passed (13 states, 375/390/768/1440px, light/dark).
+  Includes role/day picker keyboard selection, hidden form values, repeated
+  lazy invite initialization, option-list bounds, owner/self exclusion, admin
+  entry visibility, always-visible plans, existing model/form confirmations,
+  and desktop account/theme popover regression. Screenshots visually checked
+  on desktop/mobile and light/dark, including open option lists in dialogs.
+  Black/isort, JS syntax and diff checks passed. Runtime/test bytes published
+  through GitHub match the tested sandbox. No new production dependency.
+  Environment: isolated venv, Python 3.13.14, pytest 9.1.1,
+  pytest-asyncio 1.4.0, Jinja2 3.1.6, SQLAlchemy 2.1.5 (offline query checks),
+  Playwright 1.63.0 and Chromium 153.0.8010.12.
+  Three real-DB acceptance files had their self-demotion expectations updated
+  and syntax checked, but were NOT executed remotely: `test_web_settings.py`,
+  `test_settings_membership_acceptance.py`, `test_access_postgres_acceptance.py`.
+  Synthetic checks are not full-suite/real persistence acceptance. No real DB,
+  app/runtime startup, provider call, migration, reset or deployment occurred.
+  The owner explicitly authorized PR closure by merge after these changes;
+  coordinator task/phase acceptance remains separate from this merge authority.
+
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

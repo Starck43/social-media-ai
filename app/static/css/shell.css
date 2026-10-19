@@ -20,6 +20,7 @@
 }
 
 .shell-page {
+	position: relative;
 	flex: 1;
 	min-width: 0;
 	display: flex;
@@ -35,6 +36,28 @@
 	border-bottom: 1px solid var(--color-border);
 	background: transparent;
 	min-width: 0;
+}
+
+/* Flash messages float where they naturally render (right below the navbar)
+ * but as an overlay: vertical position stays the static spot, while the slot
+ * in the flex column is released, so revealing flashes never shifts the page.
+ * Scoped to the direct shell-page child: auth pages (no shell.css) and dialog
+ * bodies keep the in-flow stack. */
+.shell-page > .shell-flashes {
+	position: absolute;
+	left: 0;
+	right: 0;
+	z-index: 30;
+	pointer-events: none;
+	animation: shell-flash-in 300ms ease-out;
+}
+
+.shell-page > .shell-flashes > div {
+	pointer-events: auto;
+}
+
+@keyframes shell-flash-in {
+	from { opacity: 0; }
 }
 
 .shell-page-title {

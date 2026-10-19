@@ -41,7 +41,7 @@ class Source:
 class Job:
     id=Column('id');tenant_id=Column('tenant_id');status=Column('status');locked_at=Column('locked_at')
     run_at=Column('run_at');attempts=Column('attempts');max_attempts=Column('max_attempts');error=Column('error')
-    created_at=Column('created_at')
+    created_at=Column('created_at');initiated_by_user_id=Column('initiated_by_user_id')
 
 
 class Query:
@@ -118,6 +118,8 @@ RESULTS=load('_closure_results','app/jobs/result_outcomes.py')
 
 
 class ContextError(RuntimeError):pass
+class SourceJobBusy(RuntimeError):
+    def __init__(self,job):self.job=job;super().__init__('source already busy')
 
 
 class Fixture:
@@ -148,10 +150,11 @@ class Fixture:
             if value=='invalid':raise ValueError('bad cron')
             return after+timedelta(hours=1)
         imports=imports|{'croniter':SimpleNamespace(croniter=lambda *a:None),
-            'app.core.permissions':SimpleNamespace(require_permission=lambda *a:lambda f:f),
+            'app.core.permissions':SimpleNamespace(require_permission=lambda *a:lambda f:f,get_current_user=lambda:None),
             'app.types':SimpleNamespace(ActionType=SimpleNamespace(CREATE='create',UPDATE='update',DELETE='delete')),
             'app.models.agent_task':SimpleNamespace(AgentTask=Task),
             'app.models.source':SimpleNamespace(Source=Source),
+            'app.jobs.source_activity':SimpleNamespace(SOURCE_JOB_TYPES={'collect','analyze'},SourceJobBusy=SourceJobBusy),
             'app.models.managers.job_manager':SimpleNamespace(JobManager=self.job_module.JobManager),
             'app.core.database':SimpleNamespace(async_session_maker=lambda:Session(self)),
             'sqlalchemy.orm':SimpleNamespace(selectinload=lambda value:value),
@@ -235,6 +238,7 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
         f=self.fixture;f.row.cron_expr='@once'
         await f.manager._admit_task_run(7,now=NOW)
         self.assertIsNone(await f.admit());self.assertEqual(len(f.jobs),1)
+
     async def test_actual_cancellation_rolls_back_uncommitted_insert(self):
         f=self.fixture;before=copy.deepcopy(vars(f.row));f.insert_entered=asyncio.Event()
         task=asyncio.create_task(f.admit())
@@ -319,16 +323,25 @@ class DeliveryFailure(RuntimeError):
     def __init__(self,retryable=False):self.retryable=retryable;super().__init__('known_delivery_failure')
 
 
+class ProgressStopped(RuntimeError):pass
+class ProgressSession:
+    def __init__(self,claim):self.claim=claim;self.lost=False
+    async def settle(self):pass
+
+
 class DispatcherPolicyTests(unittest.IsolatedAsyncioTestCase):
     async def run_error(self,error,allow_retry=True):
-        job=SimpleNamespace(id=11,tenant_id=31,agent_task_id=None,job_type='learn',status='running',
+        job=SimpleNamespace(id=11,tenant_id=31,agent_task_id=None,initiated_by_user_id=None,job_type='learn',status='running',
             attempts=1,started_at=NOW,payload={},result=None)
         jobs=SimpleNamespace(renew_claim=AsyncMock(return_value=True),mark_failed=AsyncMock(),mark_done=AsyncMock())
         async def failed(job_id,*,claim,error,allow_retry,**kwargs):
             return CLAIMS.JobOutcomeReceipt(claim,CLAIMS.OutcomeAck.RETRY if allow_retry else CLAIMS.OutcomeAck.FAILED,error=error)
         jobs.mark_failed.side_effect=failed
+        progress=SimpleNamespace(ProgressSession=ProgressSession,ProgressStopped=ProgressStopped,
+            bind=lambda progress:progress,unbind=lambda token:None)
         module=load('_closure_dispatcher','app/jobs/dispatcher.py',{
             'app.core.tenant_context':SimpleNamespace(tenant_scope=lambda *a,**k:__import__('contextlib').nullcontext()),
+            'app.jobs':SimpleNamespace(progress=progress),
             'app.jobs.claim_outcomes':CLAIMS,'app.jobs.result_outcomes':RESULTS,'app.jobs.recovery_policy':POLICY,
             'app.jobs.handlers':SimpleNamespace(HANDLERS={}),
             'app.models.managers.job_manager':SimpleNamespace(JobManager=lambda:jobs),

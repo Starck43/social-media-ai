@@ -114,6 +114,21 @@ class LLMAttemptManager(BaseManager):
         ]
         if until is not None:
             scope.append(self.model.created_at <= until)
+        return await self._run_summary(scope)
+
+    async def task_run_summary(self, task_id: int, job_id: int) -> dict[str, Any]:
+        """Summarize calls explicitly attributed to this task and Job in the current tenant."""
+        if any(type(value) is not int or value <= 0 for value in (task_id, job_id)):
+            raise ValueError("Task and Job identifiers must be positive integers")
+        return await self._run_summary(
+            [
+                self.model.agent_task_id == task_id,
+                self.model.job_id == job_id,
+            ]
+        )
+
+    async def _run_summary(self, scope: list[Any]) -> dict[str, Any]:
+        """Project bounded journal counters and the last model without exposing response text."""
         limits = {"total": 10**9, "succeeded": 10**9}
         async with self._get_owned_session() as session:
             counters = (

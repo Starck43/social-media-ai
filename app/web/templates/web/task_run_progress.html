@@ -1,0 +1,167 @@
+{% from "web/_run_progress.html" import progress_bar %}
+<div id="task-run-progress" hx-get="/app/tasks/{{ task.id }}/latest-progress" hx-trigger="every {% if job and job.status in ('pending', 'running') %}5{% else %}15{% endif %}s" hx-swap="outerHTML">
+{% if run_scope %}
+<div class="mb-4 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+    <h3 class="text-xs font-medium uppercase tracking-wider text-slate-600 dark:text-slate-400">Охват задачи</h3>
+    <p class="mt-1 text-sm text-slate-700 dark:text-slate-300">Источников: {{ run_scope.total }} · активны: {{ run_scope.active }} · платформ: {{ run_scope.platforms }}</p>
+    {% if task.job_type == 'analyze' %}
+        {% if (task.payload or {}).get('collect_before_analyze') %}
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Запуск собирает доступные публикации и анализирует их. Необработанные записи останутся для следующего запуска.</p>
+        {% else %}
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Запуск анализирует накопленные записи; сбор новых публикаций для этой задачи не включён.</p>
+        {% endif %}
+        {% if run_scope.raw_backlog %}
+        <div class="mt-3 border-t border-slate-200 dark:border-slate-800 pt-3">
+            <h3 class="text-xs font-medium uppercase tracking-wider text-slate-600 dark:text-slate-400">Сырые данные источников задачи</h3>
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Общая очередь выбранных источников за период задачи.</p>
+            <dl class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div class="rounded-lg bg-slate-50 dark:bg-slate-900/60 px-3 py-2"><dd class="font-semibold text-slate-800 dark:text-slate-200">{{ run_scope.raw_backlog.pending }}</dd><dt class="text-xs text-slate-600 dark:text-slate-400">Всего в очереди</dt></div>
+                <div class="rounded-lg bg-slate-50 dark:bg-slate-900/60 px-3 py-2"><dd class="font-semibold text-slate-800 dark:text-slate-200">{{ run_scope.raw_backlog.exhausted }}</dd><dt class="text-xs text-slate-600 dark:text-slate-400">Исчерпали попытки</dt></div>
+                <div class="rounded-lg bg-slate-50 dark:bg-slate-900/60 px-3 py-2"><dd class="font-semibold text-slate-800 dark:text-slate-200">{{ run_scope.raw_backlog.eligible }}</dd><dt class="text-xs text-slate-600 dark:text-slate-400">Доступны для анализа</dt></div>
+            </dl>
+            {% if run_scope.raw_backlog.unknown_sources %}<p class="mt-2 text-xs text-amber-800 dark:text-amber-300">Для {{ run_scope.raw_backlog.unknown_sources }} источников не удалось безопасно определить окно дат; они не включены в подсчёт.</p>{% endif %}
+        </div>
+        {% endif %}
+    {% endif %}
+</div>
+{% endif %}
+{% if not job %}
+<div class="space-y-3">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+            <p class="font-medium text-slate-800 dark:text-slate-200">{% if task.last_run_at %}Последняя отметка запуска{% else %}Ожидает первого запуска{% endif %}</p>
+            {% if task.last_run_at %}
+            <p class="text-xs text-slate-600 dark:text-slate-400">{{ task.last_run_at|human_dt(tz=_tz) }} · {{ legacy_status_label }}</p>
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Детальная статистика этого запуска недоступна.</p>
+            {% else %}
+            <p class="text-xs text-slate-600 dark:text-slate-400">Подробная статистика появится после первого запуска этой задачи.</p>
+            {% endif %}
+        </div>
+    </div>
+    <div>
+        <div class="h-2 rounded-full bg-slate-200 dark:bg-slate-800" role="progressbar" aria-label="Прогресс задачи" {% if not task.last_run_at %}aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"{% else %}aria-valuetext="Данные прогресса прошлого запуска недоступны"{% endif %}></div>
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{% if task.last_run_at %}Данные прогресса прошлого запуска недоступны{% else %}Выполнение ещё не началось{% endif %}</p>
+    </div>
+</div>
+{% else %}
+<div class="flex flex-wrap items-center justify-between gap-2">
+    <div>
+        <p class="font-medium text-slate-800 dark:text-slate-200">
+            {% if summary.status == 'pending' %}В очереди
+            {% elif summary.status == 'running' %}Выполняется
+            {% elif summary.status == 'done' %}{{ summary.label }}
+            {% elif summary.status == 'cancelled' %}{{ summary.label }}
+            {% elif summary.status == 'failed' %}Ошибка
+            {% else %}Статус не подтверждён{% endif %}
+            <span class="font-normal text-slate-500">· Job #{{ job.id }}</span>
+        </p>
+        <p class="text-xs text-slate-600 dark:text-slate-400">{{ summary.title }} · {{ job.created_at|human_dt(tz=_tz) }}</p>
+    </div>
+    {% if summary.heartbeat_unconfirmed %}
+    <span class="rounded-full bg-amber-50 dark:bg-amber-950 px-2 py-1 text-xs text-amber-800 dark:text-amber-300">Статус не подтверждён</span>
+    {% endif %}
+</div>
+
+{% if summary.headline %}
+<p class="mt-3 text-lg font-semibold text-slate-800 dark:text-slate-200">{{ summary.headline.value }} {{ summary.headline.noun }} · {{ summary.headline.label }}</p>
+{% endif %}
+{% if summary.stats %}
+<dl class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+    {% for stat in summary.stats %}
+    <div class="rounded-lg bg-slate-50 dark:bg-slate-900/60 px-3 py-2">
+        <dd class="font-semibold text-slate-800 dark:text-slate-200">{{ stat.value }}</dd>
+        <dt class="text-xs text-slate-600 dark:text-slate-400">{{ stat.label }}</dt>
+    </div>
+    {% endfor %}
+</dl>
+{% endif %}
+{% if summary.outcome_note %}<p class="mt-3 text-sm text-slate-600 dark:text-slate-400">{{ summary.outcome_note }}</p>{% endif %}
+{% if summary.error %}<p class="mt-3 text-sm text-rose-700 dark:text-rose-300">{{ summary.error }}</p>{% endif %}
+{% if summary.activity %}<p class="mt-3 text-sm text-cyan-800 dark:text-cyan-300">{{ summary.activity }}</p>{% endif %}
+{% if summary.hint %}<p class="mt-2 text-sm text-amber-800 dark:text-amber-300">{{ summary.hint }}</p>{% endif %}
+
+{% if summary.progress %}
+<div class="mt-4">
+    {{ progress_bar(summary.progress.phase ~ ' · ' ~ summary.progress.completed ~ ' из ' ~ summary.progress.total ~ ' источников', state='unconfirmed' if summary.heartbeat_unconfirmed else summary.status, percent=summary.progress.percent) }}
+    {% if summary.progress.current %}<p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Сейчас: {{ summary.progress.current }}</p>{% endif %}
+    {% if summary.progress.raw_progress %}
+    <div class="mt-3 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+        <div class="flex justify-between gap-3 text-xs text-slate-600 dark:text-slate-400">
+            <span>Сырой контент · {{ summary.progress.raw_progress.label }}</span>
+            <span>{% if summary.progress.raw_progress.percent is not none %}{{ summary.progress.raw_progress.percent }}%{% else %}—{% endif %}</span>
+        </div>
+        {% if summary.progress.raw_progress.percent is not none %}
+        <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"><div class="h-full bg-emerald-600 dark:bg-emerald-500" style="width: {{ summary.progress.raw_progress.percent }}%"></div></div>
+        {% endif %}
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {% if summary.progress.raw_progress.total is none %}Объём данных пока неизвестен
+            {% else %}{{ summary.progress.raw_progress.processed if summary.progress.raw_progress.processed is not none else '—' }} из {{ summary.progress.raw_progress.total }} записей{% endif %}
+        </p>
+    </div>
+    {% endif %}
+    {% if summary.progress.steps %}
+    <ul class="mt-3 grid gap-1 sm:grid-cols-2">
+        {% for step in summary.progress.steps %}
+        <li class="flex justify-between gap-2 rounded bg-slate-50 dark:bg-slate-900/60 px-2 py-1 text-xs">
+            <span class="truncate text-slate-700 dark:text-slate-300">{{ step.name }}</span>
+            <span class="shrink-0 {% if step.error %}text-rose-700 dark:text-rose-300{% else %}text-slate-500{% endif %}">{{ step.note or step.state }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% if summary.progress.hidden_after %}<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Ещё {{ summary.progress.hidden_after }} источников учтено</p>{% endif %}
+</div>
+{% elif summary.status in ('pending', 'running') %}
+<div class="mt-4">
+    {{ progress_bar('Статус выполнения не подтверждён' if summary.heartbeat_unconfirmed else ('Ожидает запуска' if summary.status == 'pending' else 'Анализ выполняется'), state='unconfirmed' if summary.heartbeat_unconfirmed else summary.status, note='Детальные данные прогресса пока не опубликованы') }}
+</div>
+{% endif %}
+
+{% if summary.raw_coverage %}
+<div class="mt-4 space-y-2">
+    <h3 class="text-xs font-medium uppercase tracking-wider text-slate-600 dark:text-slate-400">Обработка накопленных записей</h3>
+    {% for item in summary.raw_coverage %}
+    <div>
+        <div class="flex justify-between gap-3 text-xs"><span class="truncate">{{ item.name }}</span><span>{% if item.percent is not none %}{{ item.percent }}%{% else %}—{% endif %}</span></div>
+        {% if item.percent is not none %}<div class="mt-1 h-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"><div class="h-full bg-emerald-600 dark:bg-emerald-500" style="width: {{ item.percent }}%"></div></div>{% endif %}
+        <p class="text-xs text-slate-500 dark:text-slate-400">{% if item.total is none %}Объём данных неизвестен{% else %}{{ item.processed if item.processed is not none else '—' }} из {{ item.total }} записей{% endif %}</p>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if sources %}
+<div class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3">
+    <h3 class="text-xs font-medium uppercase tracking-wider text-slate-600 dark:text-slate-400">Источники этого запуска</h3>
+    <ul class="mt-2 flex flex-wrap gap-2">
+        {% for source in sources %}
+        <li><a href="/app/sources/{{ source.source_id }}" class="inline-flex rounded-full px-2 py-1 text-xs {% if source.error %}bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300{% else %}bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300{% endif %} hover:underline">{{ source.name }}{% if source.note %} · {{ source.note }}{% endif %}</a></li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% if summary.diagnostics %}
+<details class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3">
+    <summary class="cursor-pointer text-xs font-medium text-slate-600 dark:text-slate-400">Диагностика администратора</summary>
+    <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+        <div><dt class="text-slate-500">Job / попытка</dt><dd>{{ summary.diagnostics.job_id or '—' }} / {{ summary.diagnostics.attempt if summary.diagnostics.attempt is not none else '—' }}</dd></div>
+        <div><dt class="text-slate-500">Heartbeat UTC</dt><dd>{{ summary.diagnostics.heartbeat_at or 'не подтверждён' }}</dd></div>
+        <div><dt class="text-slate-500">Обновление прогресса UTC</dt><dd>{{ summary.diagnostics.progress_updated_at or '—' }}</dd></div>
+        <div><dt class="text-slate-500">Выбрано / осталось</dt><dd>{{ summary.diagnostics.selected if summary.diagnostics.selected is not none else '—' }} / {{ summary.diagnostics.remaining if summary.diagnostics.remaining is not none else '—' }}</dd></div>
+        <div><dt class="text-slate-500">Код ошибки</dt><dd>{{ summary.diagnostics.error_code or '—' }}</dd></div>
+        <div><dt class="text-slate-500">Последняя модель</dt><dd>{{ summary.diagnostics.model or '—' }}</dd></div>
+        <div><dt class="text-slate-500">Провайдер последнего вызова</dt><dd>{{ summary.diagnostics.provider or '—' }}</dd></div>
+        <div><dt class="text-slate-500">LLM: успешно / ошибки</dt><dd>{{ summary.diagnostics.succeeded if summary.diagnostics.succeeded is not none else '—' }} / {{ summary.diagnostics.failed if summary.diagnostics.failed is not none else '—' }}</dd></div>
+    </dl>
+</details>
+{% endif %}
+{% endif %}
+{% if task.job_type == 'analyze' and can_retry_analysis and not running_job_id and (not job or job.status not in ('pending', 'running')) and (job or task.last_run_at) %}
+<form method="post" action="/app/tasks/{{ task.id }}/retry-analysis" class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
+    <button type="submit" class="rounded-lg border border-cyan-600 px-4 py-2 text-sm font-medium text-cyan-800 hover:bg-cyan-50 dark:text-cyan-300 dark:hover:bg-cyan-950/40">Повторить анализ</button>
+</form>
+{% endif %}
+</div>

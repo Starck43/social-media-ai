@@ -54,11 +54,8 @@
             {% for task in tasks %}
             <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/80">
                 <td class="px-4 py-3 font-medium">
-                    {# The name is the way into the editor, the same way the sources
-                       and scenarios lists do it. The editor is a page, so the name
-                       is a link, not a button opening a modal. #}
-                    {% if perms and perms.can('agenttask', 'update') %}
-                        <a href="/app/tasks/{{ task.id }}/edit"
+                    {% if perms and perms.can('agenttask', 'view') %}
+                        <a href="/app/tasks/{{ task.id }}"
                            class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name|e }}</a>
                     {% else %}
                         {{ task.name|e }}

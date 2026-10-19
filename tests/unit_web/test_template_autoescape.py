@@ -165,18 +165,41 @@ def context(name):
         "effective_active": {5},
         "linked_source_ids": {7},
         "recent_jobs": [],
+        "latest_run": {
+            "job": None,
+            "summary": None,
+            "sources": [],
+            "can_view_sources": False,
+            "run_scope": None,
+            "legacy_status_label": "результат не подтверждён",
+        },
+        "running_job_id": None,
+        "running_job_status": None,
+        "job_outcomes": {},
         "JOB_TYPE_TITLES": {"collect": "Collect"},
         "job_types": [("collect", "Collect")],
         "cron_to_human": lambda value: value,
         "trigger_types": [],
         "action_types": [],
         "running": {"collect": None, "analyze": None},
-        "mode": {"label": name, "hint": name, "is_push": True},
+        "mode": {"key": "pull", "label": name, "hint": name, "is_push": False},
+        "modes": (("pull", name), ("push", name), ("user", name)),
+        "mode_labels": {"pull": name, "push": name, "user": name},
+        "members": [],
+        "token_owner": None,
+        "orphaned_owner_id": None,
+        "owner_label": name,
+        "owner_connection": None,
         "analytics_count": 0,
+        "recent_count": 0,
         "usage_count": 0,
         "can_delete": True,
+        "can_update": True,
+        "can_view_tasks": True,
         "cost_usd": 0,
+        "last_checked_label": "—",
         "is_ready": True,
+        "readiness_hint": "",
         "monitored_users": [name],
         "platforms": [source["platform"]],
         "source_types": [source["source_type"]],
@@ -229,15 +252,12 @@ def test_source_name_and_edit_value_are_inert_on_source_detail(page_env, payload
     rendered = page_env.get_template("web/source_detail.html").render(**context(payload))
     parsed = Document(rendered)
     assert_inert(parsed)
-    scripts = re.findall(r"<script>(.*?)</script>", rendered, re.S)
-    # The source page has separate static polling and job-modal scripts.
-    assert len(scripts) == 2
-    clean = page_env.get_template("web/source_detail.html").render(**context("safe static name"))
-    assert re.findall(r"<script>(.*?)</script>", clean, re.S) == scripts
+    assert not parsed.elements("script")
     assert payload in "".join(parsed.text)
     assert next(attrs["value"] for attrs in parsed.elements("input") if attrs.get("name") == "name") == payload
-    messages = [attrs["data-confirm"] for _, attrs in parsed.tags if "data-confirm" in attrs]
-    assert messages and any(payload in message for message in messages)
+    assert any(attrs.get("action") == "/app/sources/7" for _, attrs in parsed.tags)
+    assert "Настройки источника" in "".join(parsed.text)
+    assert not any(attrs.get("action", "").endswith("/delete-unprocessed") for _, attrs in parsed.tags)
     assert any(
         attrs.get("name") == "_csrf" and attrs.get("value") == "csrf-fixture" for attrs in parsed.elements("input")
     )

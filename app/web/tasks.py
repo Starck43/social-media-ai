@@ -8,6 +8,7 @@ Flow:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -34,6 +35,7 @@ from .deps import (
 )
 
 router = APIRouter(prefix="/tasks")
+logger = logging.getLogger(__name__)
 
 
 def _split_names(raw: str) -> list[str]:
@@ -815,7 +817,11 @@ async def task_detail(request: Request, task_id: int):
 			)
 
 		# Recent jobs for this task.
-		recent_jobs = await Job.objects.filter(agent_task_id=task_id).order_by(Job.created_at.desc()).limit(10)
+		recent_jobs = await (
+			Job.objects.filter(agent_task_id=task_id, tenant_id=source.tenant_id)
+			.order_by(Job.created_at.desc())
+			.limit(10)
+		)
 
 		# Running/pending job for this task (UI guard against duplicate runs).
 		# The status rides along: a pending job has not been claimed by any worker
@@ -831,19 +837,28 @@ async def task_detail(request: Request, task_id: int):
 			# The running job may be outside the recent-10 window.
 			running_job = await Job.objects.filter(
 				agent_task_id=task_id,
+				tenant_id=source.tenant_id,
 				status__in=["pending", "running"],
 			).first()
 			if running_job is not None:
 				running_job_id = running_job.id
 				running_job_status = running_job.status
 
-		# Linked sources.
-		linked_sources = await Source.objects.filter(id__in=await _task_source_ids(task_id)).order_by(Source.name)
+		# Linked sources for display; effective activity also needs all active
+		# tenant sources because an empty source set means "all active sources".
+		tenant_sources = await Source.objects.filter(tenant_id=source.tenant_id)
+		linked_ids = set(await _task_source_ids(task_id))
+		linked_sources = sorted((item for item in tenant_sources if item.id in linked_ids), key=lambda item: item.name)
+		active_source_ids = {item.id for item in tenant_sources if item.is_active}
 
 		# Scenario.
 		scenario = None
 		if source.agent_scenario_id is not None:
 			scenario = await AgentScenario.objects.get(id=source.agent_scenario_id, tenant_id=source.tenant_id)
+		from app.models.managers.agent_task_manager import AgentTaskManager
+
+		effective = await AgentTaskManager().effective_active_map([source], active_source_ids)
+		effective_active = {task_pk for task_pk, active in effective.items() if active}
 
 	# The same outcome classification the run-now modal uses, so a run reads
 	# the same on this page and in the modal: a half-broken collect is not a
@@ -851,6 +866,9 @@ async def task_detail(request: Request, task_id: int):
 	job_outcomes = {
 		job.id: _run_outcome(job.job_type, job.result or {}) for job in recent_jobs if job.status == "done"
 	}
+	run_scope = await _task_run_scope(source, include_raw=perms_can(request, "source", "view"))
+	latest_run = _task_run_panel_data(request, source, recent_jobs[0] if recent_jobs else None, run_scope=run_scope)
+	await _attach_task_llm_diagnostics(request, source, recent_jobs[0] if recent_jobs else None, latest_run)
 
 	return render(
 		request,
@@ -862,12 +880,183 @@ async def task_detail(request: Request, task_id: int):
 		running_job_id=running_job_id,
 		running_job_status=running_job_status,
 		job_outcomes=job_outcomes,
+		effective_active=effective_active,
+		latest_run=latest_run,
 		sources=linked_sources,
 		scenario=scenario,
 		cron_to_human=cron_to_human,
 		JOB_TYPE_TITLES=JOB_TYPE_TITLES,
 		perms_can=perms_can,
 	)
+
+
+async def _task_run_scope(task: Any, *, include_raw: bool = False) -> dict[str, Any] | None:
+	"""Return task source scope and, when authorized, its current raw backlog."""
+	if task.job_type not in ("collect", "analyze"):
+		return None
+	from app.core.tenant_context import tenant_scope
+	from app.models.source import Source
+
+	with tenant_scope(task.tenant_id):
+		all_sources = await Source.objects.filter(tenant_id=task.tenant_id)
+		linked_ids = set(await _task_source_ids(task.id))
+	if linked_ids:
+		scoped = [item for item in all_sources if item.id in linked_ids]
+	else:
+		scoped = [item for item in all_sources if item.is_active]
+	scope: dict[str, Any] = {
+		"total": len(scoped),
+		"active": sum(1 for item in scoped if item.is_active),
+		"platforms": len({item.platform_id for item in scoped}),
+	}
+	if include_raw and task.job_type == "analyze":
+		from app.models.collected_item import CollectedItem
+		from app.models.managers.agent_task_manager import AgentTaskManager
+
+		task_payload = task.payload if isinstance(task.payload, dict) else {}
+		task_dates = task_payload.get("cli_dates")
+		windows = []
+		unknown_sources = 0
+		for source in scoped:
+			source_params = source.params if isinstance(source.params, dict) else {}
+			try:
+				start_date, end_date = AgentTaskManager.resolve_cli_date_window(
+					task_dates, source_params.get("cli_dates")
+				)
+			except ValueError:
+				unknown_sources += 1
+				continue
+			windows.append({"source_id": source.id, "start_date": start_date, "end_date": end_date})
+		with tenant_scope(task.tenant_id):
+			backlog = await CollectedItem.objects.backlog_counts_for_sources(windows)
+		backlog["unknown_sources"] = unknown_sources
+		scope["raw_backlog"] = backlog
+	return scope
+
+
+def _legacy_task_status_label(task: Any) -> str:
+	"""Translate the task's coarse schedule receipt without exposing last_error."""
+	return {
+		"queued": "поставлена в очередь",
+		"ok": "завершилась успешно",
+		"failed": "завершилась с ошибкой",
+		"skipped": "пропущена",
+	}.get(getattr(task, "last_status", None), "результат не подтверждён")
+
+
+async def _attach_task_llm_diagnostics(request: Request, task: Any, job: Any | None, panel: dict[str, Any]) -> None:
+	"""Attach only allowlisted LLM usage aggregates for this task's latest job."""
+	if job is None or not _diagnostics_admin(request):
+		return
+	summary = panel.get("summary")
+	diagnostics = summary.get("diagnostics") if isinstance(summary, dict) else None
+	if not isinstance(diagnostics, dict):
+		return
+	try:
+		from app.models.managers.llm_attempt_manager import LLMAttemptManager
+
+		usage = await LLMAttemptManager().task_run_summary(task.id, job.id)
+	except Exception as exc:
+		logger.warning("task_llm_diagnostics_unavailable kind=%s", type(exc).__name__)
+		return
+	if not isinstance(usage, dict):
+		return
+	for key in ("model", "provider", "succeeded", "failed", "error_code"):
+		if key in usage:
+			if key == "error_code" and not usage[key]:
+				continue
+			diagnostics[key] = usage[key]
+
+
+def _task_run_panel_data(
+	request: Request, task: Any, job: Any | None, *, run_scope: dict[str, Any] | None = None
+) -> dict[str, Any]:
+	"""Build a task-scoped latest-run projection, with diagnostics for admins only."""
+	if job is None:
+		return {
+			"job": None,
+			"summary": None,
+			"sources": [],
+			"can_view_sources": perms_can(request, "source", "view"),
+			"run_scope": run_scope,
+			"legacy_status_label": _legacy_task_status_label(task),
+			"can_retry_analysis": perms_can(request, "agenttask", "update"),
+			"running_job_id": None,
+		}
+
+	summary = _job_summary(job, task.name)
+	# The task page reports the lifecycle and counters, while raw exception text
+	# stays out of the operator UI. Diagnostics retain only their existing allowlist.
+	if summary.get("status") == "failed":
+		summary["error"] = "Задача завершилась с ошибкой. Повторите запуск позже."
+	can_view_sources = perms_can(request, "source", "view")
+	sources = _source_links(job) if can_view_sources else []
+	if summary.get("status") == "done" and job.job_type in ("collect", "analyze"):
+		result = job.result if isinstance(job.result, dict) else {}
+		rows = result.get("per_source")
+		if isinstance(rows, list) and rows:
+			valid_rows = [row for row in rows if isinstance(row, dict) and type(row.get("source_id")) is int]
+			steps = []
+			for row in valid_rows[:50]:
+				failed = row.get("error") is True or row.get("outcome") == "error"
+				steps.append({
+					"source_id": row["source_id"],
+					"name": row.get("name")[:80] if isinstance(row.get("name"), str) else "Источник",
+					"state": "done",
+					"note": _source_note(row),
+					"error": failed,
+				})
+			if steps:
+				summary["progress"] = {
+					"phase": "Обработка источников",
+					"total": len(valid_rows),
+					"completed": len(valid_rows),
+					"percent": 100,
+					"current": None,
+					"steps": steps,
+					"hidden_after": max(0, len(valid_rows) - len(steps)),
+				}
+	if can_view_sources:
+		if job.job_type == "analyze":
+			summary["raw_coverage"] = _raw_coverage(job)
+	else:
+		summary.pop("raw_coverage", None)
+		summary.pop("progress", None)
+	if _diagnostics_admin(request):
+		summary["diagnostics"] = _diagnostics_view(job)
+		if not can_view_sources:
+			summary["diagnostics"].pop("selected", None)
+			summary["diagnostics"].pop("remaining", None)
+	return {
+		"job": job,
+		"summary": summary,
+		"sources": sources,
+		"can_view_sources": can_view_sources,
+		"run_scope": run_scope,
+		"legacy_status_label": _legacy_task_status_label(task),
+		"can_retry_analysis": perms_can(request, "agenttask", "update"),
+		"running_job_id": job.id if getattr(job, "status", None) in ("pending", "running") else None,
+	}
+
+
+@router.get("/{task_id}/latest-progress")
+async def task_latest_progress(request: Request, task_id: int):
+	"""Refresh only the newest Job belonging to this tenant's requested task."""
+	from fastapi.responses import HTMLResponse
+
+	if not perms_can(request, "agenttask", "view"):
+		return HTMLResponse("<p class=\"text-sm text-slate-600\">Нет доступа к задаче.</p>", status_code=403)
+	tenant_id = getattr(request.state, "tenant_id", None)
+	if type(tenant_id) is not int:
+		return HTMLResponse("<p class=\"text-sm text-slate-600\">Задача не найдена.</p>", status_code=404)
+	task = await AgentTask.objects.filter(id=task_id, tenant_id=tenant_id).first()
+	if task is None:
+		return HTMLResponse("<p class=\"text-sm text-slate-600\">Задача не найдена.</p>", status_code=404)
+	job = await Job.objects.filter(agent_task_id=task.id, tenant_id=tenant_id).order_by(Job.created_at.desc()).first()
+	run_scope = await _task_run_scope(task, include_raw=perms_can(request, "source", "view"))
+	panel = _task_run_panel_data(request, task, job, run_scope=run_scope)
+	await _attach_task_llm_diagnostics(request, task, job, panel)
+	return render(request, "web/task_run_progress.html", task=task, **panel)
 
 
 @router.get("/{task_id}/edit")
@@ -1035,15 +1224,17 @@ async def task_run_now(
 		task_id: int,
 		token: str = Form("", alias="_csrf"),
 		tenant_id: int | None = Form(default=None),
+		return_to_detail: str = Form(""),
 ):
+	back = f"/app/tasks/{task_id}" if return_to_detail == "1" else "/app/tasks"
 	if not ensure_csrf(request, token):
 		add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
-		return RedirectResponse("/app/tasks", status_code=302)
+		return RedirectResponse(back, status_code=302)
 
 	tenant_id = action_tenant_id(request, tenant_id)
 
 	# Enqueues a job — the same right the sqladmin run-now action declares.
-	denied = guard_web(request, "agenttask", "update", back="/app/tasks")
+	denied = guard_web(request, "agenttask", "update", back=back)
 	if denied is not None:
 		return denied
 
@@ -1064,6 +1255,7 @@ async def task_run_now(
 
 	existing = await Job.objects.filter(
 		agent_task_id=task_id,
+		tenant_id=tenant_id,
 		status__in=["pending", "running"],
 	).first()
 	if existing is not None:
@@ -1072,7 +1264,7 @@ async def task_run_now(
 			"info",
 			f"Задача «{task.name}» уже выполняется (job #{existing.id})",
 		)
-		return RedirectResponse(f"/app/tasks?job_id={existing.id}", status_code=302)
+		return RedirectResponse(back if return_to_detail == "1" else f"/app/tasks?job_id={existing.id}", status_code=302)
 
 	outcome = await queue_task_now(task, getattr(request.state.web_user, "id", None))
 	if outcome.get("already_running"):
@@ -1081,8 +1273,55 @@ async def task_run_now(
 		add_flash(request, "success", f"Задача «{task.name}» поставлена в очередь на выполнение")
 	job_id = (outcome or {}).get("job_id")
 	if not job_id:
+		return RedirectResponse(back, status_code=302)
+	return RedirectResponse(back if return_to_detail == "1" else f"/app/tasks?job_id={job_id}", status_code=302)
+
+
+@router.post("/{task_id}/retry-analysis")
+async def task_retry_analysis(
+		request: Request,
+		task_id: int,
+		token: str = Form("", alias="_csrf"),
+):
+	"""Reset exhausted rows and queue a retry within this analysis task's scope."""
+	back = f"/app/tasks/{task_id}"
+	if not ensure_csrf(request, token):
+		add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+		return RedirectResponse(back, status_code=302)
+	denied = guard_web(request, "agenttask", "update", back=back)
+	if denied is not None:
+		return denied
+	tenant_id = getattr(request.state, "tenant_id", None)
+	if type(tenant_id) is not int:
+		add_flash(request, "error", "Задача не найдена")
 		return RedirectResponse("/app/tasks", status_code=302)
-	return RedirectResponse(f"/app/tasks?job_id={job_id}", status_code=302)
+	task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
+	if task is None or task.job_type != "analyze":
+		add_flash(request, "error", "Повторный анализ доступен только для задачи анализа соцсетей")
+		return RedirectResponse(back, status_code=302)
+
+	from app.jobs.enqueue import enqueue_task_run
+	from app.jobs.dispatcher import launch_job_background
+	from app.jobs.source_activity import SourceJobBusy
+
+	try:
+		job = await enqueue_task_run(
+			task,
+			initiated_by_user_id=getattr(request.state.web_user, "id", None),
+			retry_exhausted=True,
+		)
+	except ValueError:
+		add_flash(request, "error", "Проверьте период задачи: даты должны быть корректными и идти по порядку")
+		return RedirectResponse(back, status_code=302)
+	except SourceJobBusy:
+		add_flash(request, "info", f"Задача «{task.name}» уже выполняется или ждёт в очереди")
+		return RedirectResponse(back, status_code=302)
+	if job is None:
+		add_flash(request, "info", "В источниках этой задачи нет сырых материалов в настроенном периоде")
+		return RedirectResponse(back, status_code=302)
+	launch_job_background(job.id, allow_retry=False)
+	add_flash(request, "success", f"Повторный анализ по задаче «{task.name}» поставлен в очередь")
+	return RedirectResponse(back, status_code=302)
 
 
 @router.post("/{task_id}")
@@ -1122,30 +1361,32 @@ async def task_update(
 		rate_limit_per_hour: str = Form(""),
 		cooldown_seconds: str = Form(""),
 		run_now: str = Form(""),
+		return_to_detail: str = Form(""),
 		token: str = Form("", alias="_csrf"),
 		tenant_id: int | None = Form(default=None),
 ):
+	back = f"/app/tasks/{task_id}/edit" if return_to_detail == "1" else "/app/tasks"
 	if not ensure_csrf(request, token):
 		add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
-		return RedirectResponse("/app/tasks", status_code=302)
+		return RedirectResponse(back, status_code=302)
 	job_type = _normalize_web_job_type(job_type)
 
 	tenant_id = action_tenant_id(request, tenant_id)
 
-	denied = guard_web(request, "agenttask", "update", back="/app/tasks")
+	denied = guard_web(request, "agenttask", "update", back=back)
 	if denied is not None:
 		return denied
 
 	task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
 	if task is None:
 		add_flash(request, "error", "Задача не найдена")
-		return RedirectResponse("/app/tasks", status_code=302)
+		return RedirectResponse(back, status_code=302)
 
 	cron_expr = cron_expr.strip()
 
 	# Saving under a name another task already holds would fail the unique
 	# constraint; `exclude_id` keeps a task from clashing with its own row.
-	clash = await _duplicate_name(request, "/app/tasks", name.strip()[:100], exclude_id=task_id)
+	clash = await _duplicate_name(request, back, name.strip()[:100], exclude_id=task_id)
 	if clash is not None:
 		return clash
 
@@ -1154,7 +1395,7 @@ async def task_update(
 	tasks_mgr = AgentTaskManager()
 	if not tasks_mgr.validate_cron(cron_expr):
 		add_flash(request, "error", f"Некорректное cron-выражение: {cron_expr}")
-		return RedirectResponse("/app/tasks", status_code=302)
+		return RedirectResponse(back, status_code=302)
 
 	parsed_source_ids: list[int] = []
 	for s in source_ids:
@@ -1175,7 +1416,7 @@ async def task_update(
 		)
 	except ValueError as e:
 		add_flash(request, "error", str(e))
-		return RedirectResponse("/app/tasks", status_code=302)
+		return RedirectResponse(back, status_code=302)
 
 	trigger_action_fields = _trigger_and_action_fields(
 		job_type,
@@ -1205,7 +1446,7 @@ async def task_update(
 		)
 		if scenario_block is not None:
 			add_flash(request, "error", f"Для анализа соцсетей {scenario_block}")
-			return RedirectResponse("/app/tasks", status_code=302)
+			return RedirectResponse(back, status_code=302)
 	if job_type == "analyze":
 		payload.pop("analyze_inline", None)
 	# Editing through the web form removes legacy force keys. Manual web runs
@@ -1262,7 +1503,7 @@ async def task_update(
 		await _check_task_sources(parsed_source_ids, tenant_id)
 	except ValueError as e:
 		add_flash(request, "error", str(e))
-		return RedirectResponse("/app/tasks", status_code=302)
+		return RedirectResponse(back, status_code=302)
 
 	# Same rule as create: a ticked-but-off source activates with the save, so
 	# the activation check below sees the sources as the operator intends them.
@@ -1305,12 +1546,14 @@ async def task_update(
 		else:
 			add_flash(request, "success", f"Задача «{name}» обновлена и поставлена в очередь на выполнение")
 		job_id = (outcome or {}).get("job_id")
+		if return_to_detail == "1":
+			return RedirectResponse(f"/app/tasks/{task_id}", status_code=302)
 		if not job_id:
 			return RedirectResponse("/app/tasks", status_code=302)
 		return RedirectResponse(f"/app/tasks?job_id={job_id}", status_code=302)
 	else:
 		add_flash(request, "success", f"Задача «{name}» обновлена")
-	return RedirectResponse("/app/tasks", status_code=302)
+	return RedirectResponse(f"/app/tasks/{task_id}" if return_to_detail == "1" else "/app/tasks", status_code=302)
 
 
 @router.post("/{task_id}/delete")

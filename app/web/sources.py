@@ -340,6 +340,9 @@ async def source_edit(
     if denied is not None:
         return denied
 
+    submitted_form = await request.form()
+    token_owner_was_posted = "token_owner" in submitted_form
+
     from app.core.tenant_context import tenant_scope
 
     with tenant_scope(tenant_id):
@@ -365,9 +368,9 @@ async def source_edit(
         else:
             st = source.source_type
 
-        # Only check duplicates if external_id changed.
+        # Recheck uniqueness when either half of the platform identifier changes.
         new_external_id = external_id.strip()[:200] or source.external_id
-        if new_external_id != source.external_id:
+        if new_external_id != source.external_id or platform_row.id != source.platform_id:
             dup = await Source.objects.get(
                 tenant_id=tenant_id,
                 platform_id=platform_row.id,
@@ -390,10 +393,10 @@ async def source_edit(
 
         # An empty box means "fall back to the workspace owner", so the key is
         # removed rather than written as None.
-        if token_owner or mode or platform or source_type:
-            owner_id, owner_error = _validate_token_owner(
-                token_owner, {u.id for u in await _workspace_members(tenant_id)}
-            )
+        if token_owner_was_posted:
+            members = await _workspace_members(tenant_id)
+            member_ids = {u.id for u in members}
+            owner_id, owner_error = _validate_token_owner(token_owner, member_ids)
             if owner_error:
                 add_flash(request, "error", owner_error)
                 return RedirectResponse("/app/sources", status_code=302)
@@ -449,24 +452,15 @@ async def source_toggle(
 
 @router.get("/{source_id}")
 async def source_detail(request: Request, source_id: int):
-    """One source: how it collects, what came out of it, what runs it.
-
-    The list page answers "what do I have"; this one answers the two questions
-    that used to require the DB — *why* is nothing collected from it, and
-    *what did it produce*.
-    """
+    """Show source settings, source-level statistics, and linked tasks."""
     from app.core.tenant_context import tenant_scope
     from app.models.ai_analytics import AIAnalytics
-    from app.web.tasks import _diagnostics_admin
 
-    user = getattr(request.state, "web_user", None)
     is_superuser = False
     filter_tenant_id, _tenants = await tenant_filter_context(request, is_superuser)
 
     with tenant_scope(bypass=True) if is_superuser else nullcontext():
         source = await Source.objects.filter(id=source_id).select_related("platform", "tenant").first()
-        # A superuser browsing all workspaces may open any source; anyone else is
-        # confined to the workspace the middleware opened.
         if source is not None and not is_superuser and source.tenant_id != request.state.tenant_id:
             source = None
         if source is None:
@@ -476,195 +470,99 @@ async def source_detail(request: Request, source_id: int):
                 section="sources",
                 source=None,
                 filter_tenant_id=filter_tenant_id,
-                running={"collect": False, "analyze": False},
             )
-
         analytics = await (
             AIAnalytics.objects.filter(source_id=source.id).order_by(AIAnalytics.created_at.desc()).limit(10)
         )
-        analytics_count = (
-            await AIAnalytics.objects.filter(source_id=source.id).values(func.count(AIAnalytics.id)).scalar(0)
+        analytics_count = await (
+            AIAnalytics.objects.filter(source_id=source.id).values(func.count(AIAnalytics.id)).scalar(0)
         )
         cost_cents = await (
             AIAnalytics.objects.filter(source_id=source.id)
             .values(func.coalesce(func.sum(AIAnalytics.estimated_cost), 0))
             .scalar(0)
         )
+
     can_view_tasks = perms_can(request, "agenttask", "view")
     schedules = []
+    task_models = []
     effective_schedules = {}
-    usage_count = None
     if can_view_tasks:
-        from app.core.tenant_context import tenant_scope
         from app.models.managers.agent_task_manager import AgentTaskManager
 
         task_manager = AgentTaskManager()
         with tenant_scope(source.tenant_id):
-            schedules = await task_manager.for_source(source.id, source.tenant_id, source_is_active=source.is_active)
+            task_models = await task_manager.for_source(
+                source.id, source.tenant_id, source_is_active=source.is_active
+            )
             workspace_active_source_ids = await task_manager.get_workspace_active_source_ids()
-            effective_schedules = await task_manager.effective_active_map(schedules, workspace_active_source_ids)
-        usage_count = len(schedules)
-    schedule_tasks = schedules
+            effective_schedules = await task_manager.effective_active_map(task_models, workspace_active_source_ids)
+        schedules = [
+            _schedule_view(task, effective_schedules.get(task.id, False))
+            for task in task_models
+        ]
     is_ready, readiness_hint = await _readiness(
-        source, schedule_tasks if can_view_tasks else None, effective_schedules if can_view_tasks else None
+        source,
+        task_models if can_view_tasks else None,
+        effective_schedules if can_view_tasks else None,
     )
-    schedules = [] if not can_view_tasks else [
-        _schedule_view(task, effective_schedules.get(task.id, False)) for task in schedule_tasks
-    ]
 
     mode_key = (source.params or {}).get("mode", "pull")
     if mode_key not in dict(COLLECTION_MODES):
-        # A row written before the mode existed, or by hand: show the default
-        # rather than an empty badge.
         mode_key = "pull"
-
-    recent = [_analysis_row(a) for a in analytics]
+    recent = [_analysis_row(analysis) for analysis in analytics]
     scores = [row["sentiment"] for row in recent if row["sentiment"] is not None]
     sentiment_label = f"{sum(scores) / len(scores):.2f}" if scores else "—"
 
-    members = {u.id: u for u in await _workspace_members(source.tenant_id)}
-    owner_id = (source.params or {}).get("token_owner")
-    token_owner = members.get(int(owner_id)) if str(owner_id or "").isdigit() else None
-
-    # Check whether the current user IS the workspace owner.
-    user_is_owner = False
-    if user is not None and source.tenant_id is not None:
-        from app.models.tenant import TenantUser
-
-        membership = await TenantUser.objects.filter(
-            tenant_id=source.tenant_id, user_id=user.id, is_active=True
-        ).first()
-        user_is_owner = membership is not None and membership.is_owner
-
-    if token_owner is not None:
+    members = await _workspace_members(source.tenant_id)
+    member_map = {member.id: member for member in members}
+    raw_owner_id = (source.params or {}).get("token_owner")
+    owner_id = int(raw_owner_id) if str(raw_owner_id or "").isdigit() else None
+    token_owner = member_map.get(owner_id)
+    if token_owner:
         owner_label = f"{token_owner.username} (личный токен)"
-        owner_hint = "Сбор идёт под аккаунтом для текущего пространства пользователя"
-    elif user_is_owner:
-        owner_label = "Вы (владелец workspace)"
-        owner_hint = "Токен владельца используется по умолчанию. Можно задать явно для другого участника."
-    elif members:
-        owner_label = "Владелец workspace"
-        owner_hint = "Явно не выбран — используется токен владельца. Можно задать явно."
+    elif owner_id is not None:
+        owner_label = f"Сохранённый участник #{owner_id}"
     else:
-        owner_label = "Не определён"
-        owner_hint = "В этом пространстве нет пользователя с веб-доступом."
-
-    # The owner's own connection, shown in "Чей токен" — the exact place an
-    # operator looks when one source is silent while the rest work.
+        owner_label = "Владелец workspace"
     owner_connection = await source_connection_status(source)
 
-    platforms = await _platforms()
-    source_types_list = list(SourceType)
-
-    # What the collect jobs actually pulled from *this* source. `jobs.result`
-    # carries a per-source breakdown (`per_source`); older rows written before it
-    # existed only have the run-wide totals, so those are reported as unknown
-    # rather than as zero.
-    collections = await _recent_collections(source.id)
-
-    # Content staged for analysis that the model could not process. Rows leave
-    # the staging table only once an analysis stores them, so one that keeps
-    # failing is retried until it burns `give_up_after_attempts` and then stops
-    # being offered. Without surfacing the count, that day simply vanishes from
-    # the source with no trace — the ceiling is doing its job, but silently.
     with tenant_scope(source.tenant_id):
         pending_count = await (
             CollectedItem.objects.filter(source_id=source.id).values(func.count(CollectedItem.id)).scalar(0)
         )
         given_up = await CollectedItem.objects.exhausted_count(source.id)
-        # The runs only ever process the task's configured window, so a stuck-rows
-        # warning is only comparable to the run's "9 из 9" when it says which part
-        # of the backlog that window covers. History outside the window stays
-        # counted and reported separately instead of silently migrating into the
-        # headline number.
-        from app.models.managers.agent_task_manager import AgentTaskManager
-
-        window = await _resolve_source_window(source)
-        cli_dates = window.get("cli_dates") or {}
-        window_bounds = (
-            AgentTaskManager.parse_date(cli_dates.get("start_date")),
-            AgentTaskManager.parse_date(cli_dates.get("end_date")),
-        )
-        given_up_in_window = await CollectedItem.objects.exhausted_count(source.id, **_window_kwargs(window_bounds))
-        given_up_history = max(0, given_up - given_up_in_window)
-        window_label = _window_human_label(window_bounds)
-        running = await _source_has_running_job(source.id)
-        from app.models.managers.job_manager import JobManager
-        from app.web.analysis_progress import project_job
-
-        progress_jobs = await JobManager().source_progress_jobs(source.id, limit=1)
-        latest_progress = project_job(progress_jobs[0], source.id) if progress_jobs else None
-        latest_diagnostics = None
-        if latest_progress is not None:
-            from .tasks import _diagnostics_admin, _diagnostics_view
-
-            if _diagnostics_admin(request):
-                view = _diagnostics_view(progress_jobs[0], source_id=source.id)
-                latest_diagnostics = _source_run_diagnostics(view, await _run_llm_summary(source.id, progress_jobs[0]))
-    # Live queue fallback (variant B): when the job history is gone (pruned),
-    # `collections` is empty even though raw rows are staged. Anyone who may
-    # work with tasks sees the counts; readable texts stay admin-only.
-    live_queue: dict[str, Any] = {"pending": 0, "given_up": 0, "preview": []}
-    show_live_queue = can_view_tasks and not collections and pending_count > 0
-    if show_live_queue:
-        preview_rows: list[Any] = []
-        if _diagnostics_admin(request):
-            preview_rows = await CollectedItem.objects.for_source(source.id, limit=RAW_PREVIEW_LIMIT)
-        live_queue = {
-            "pending": pending_count,
-            "given_up": given_up,
-            "window_label": window_label,
-            "preview": [
-                {
-                    "published_at": row.published_at,
-                    "raw_text": (row.text or "")[:RAW_PREVIEW_CHARS],
-                    "permalink": row.permalink,
-                }
-                for row in preview_rows
-            ],
-        }
-    given_up_label = plural(given_up, "запись", "записи", "записей")
 
     return render(
         request,
         "web/source_detail.html",
         section="sources",
         source=source,
-        pending_count=pending_count,
-        given_up=given_up,
-        given_up_label=given_up_label,
-        given_up_in_window=given_up_in_window,
-        given_up_history=given_up_history,
-        window_label=window_label,
-        window_scope=window.get("scope_label", ""),
         filter_tenant_id=filter_tenant_id,
         mode=_mode_view(mode_key),
-        mode_label=dict(COLLECTION_MODES)[mode_key],
+        modes=COLLECTION_MODES,
+        mode_labels=_MODE_LABELS,
+        members=members,
+        token_owner=token_owner,
+        orphaned_owner_id=owner_id if owner_id is not None and token_owner is None else None,
         monitored_users=(source.params or {}).get("monitored_users") or [],
         owner_label=owner_label,
-        owner_hint=owner_hint,
         owner_connection=owner_connection,
-        token_owner=token_owner,
         schedules=schedules,
-        usage_count=usage_count,
         can_view_tasks=can_view_tasks,
-        can_delete=perms_can(request, "source", "delete"),
-        is_source_admin=_diagnostics_admin(request),
-        recent=recent,
-        analytics_count=analytics_count,
-        cost_usd=float(cost_cents) / 100,
-        sentiment_label=sentiment_label,
-        last_checked_label=_last_checked_label(source.last_checked),
-        collections=collections,
-        live_queue=live_queue,
-        show_live_queue=show_live_queue,
+        can_update=perms_can(request, "source", "update"),
+        is_superuser=is_superuser,
         is_ready=is_ready,
         readiness_hint=readiness_hint,
-        platforms=platforms,
-        source_types=source_types_list,
-        running=running,
-        latest_progress=latest_progress,
-        latest_diagnostics=latest_diagnostics,
+        pending_count=pending_count,
+        given_up=given_up,
+        analytics_count=analytics_count,
+        recent_count=len(recent),
+        sentiment_label=sentiment_label,
+        cost_usd=float(cost_cents) / 100,
+        last_checked_label=_last_checked_label(source.last_checked),
+        platforms=await _platforms(),
+        source_types=list(SourceType),
     )
 
 

@@ -21,6 +21,38 @@ if TYPE_CHECKING:
 SOURCE_BASED_JOB_TYPES = frozenset({"collect", "analyze"})
 
 
+class _RetryAdmissionBusy(Exception):
+    """Sentinel that rolls back retry resets before a busy receipt is returned."""
+
+    def __init__(self, job: Any) -> None:
+        self.job = job
+        super().__init__("Analysis retry admission was busy")
+
+
+class _RetryAdmissionTransaction:
+    """Convert retry-busy only after the database transaction rolls back."""
+
+    def __init__(self, session: Any) -> None:
+        self.transaction = session.begin()
+        self.busy_job = None
+
+    async def __aenter__(self):
+        await self.transaction.__aenter__()
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        if isinstance(exc, _RetryAdmissionBusy):
+            await self.transaction.__aexit__(exc_type, exc, traceback)
+            self.busy_job = exc.job
+            return True
+        return await self.transaction.__aexit__(exc_type, exc, traceback)
+
+
+def _busy_admission_receipt(task_id: int, job: Any) -> dict[str, Any]:
+    """Keep the established task-admission busy receipt shape."""
+    return {"status": "busy", "task_id": task_id, "job": job}
+
+
 class AgentTaskManager(BaseManager):
     """Manager for AgentTask model: cron validation and next-run computation."""
 
@@ -96,6 +128,26 @@ class AgentTaskManager(BaseManager):
 
         parsed = universal_date_parser(value)
         return parsed.date() if parsed else None
+
+    @classmethod
+    def resolve_cli_date_window(cls, primary: Any, fallback: Any = None) -> tuple[Any, Any]:
+        """Resolve optional date bounds and reject malformed or reversed windows."""
+        dates = primary if primary not in (None, "", {}) else fallback
+        if dates in (None, "", {}):
+            dates = {}
+        if not isinstance(dates, dict):
+            raise ValueError("Invalid content date window")
+        start_raw = dates.get("start_date")
+        end_raw = dates.get("end_date")
+        if any(value not in (None, "") and not isinstance(value, str) for value in (start_raw, end_raw)):
+            raise ValueError("Invalid content date window")
+        start = cls.parse_date(start_raw)
+        end = cls.parse_date(end_raw)
+        if (start_raw and start is None) or (end_raw and end is None):
+            raise ValueError("Invalid content date window")
+        if start is not None and end is not None and start > end:
+            raise ValueError("Invalid content date window")
+        return start, end
 
     @staticmethod
     def build_dates_payload(start_date, end_date=None, force_refresh: bool = True) -> dict:
@@ -379,6 +431,7 @@ class AgentTaskManager(BaseManager):
         initiated_by_user_id: Optional[int] = None,
         timezone_name: Optional[str] = None,
         extra_payload: Optional[dict[str, Any]] = None,
+        retry_exhausted: bool = False,
     ) -> Optional[dict[str, Any]]:
         """Internal trigger boundary: insert and schedule advancement commit together.
 
@@ -418,7 +471,7 @@ class AgentTaskManager(BaseManager):
         if scheduled and (not isinstance(expected_next_run_at, datetime) or expected_next_run_at.utcoffset() is None):
             raise ValueError("Scheduled admission requires an aware observed due timestamp")
         async with async_session_maker() as session:
-            async with session.begin():
+            async with _RetryAdmissionTransaction(session) as retry_transaction:
                 # One lock order with direct source admission and staging:
                 # workspace admission gate, then task/staged rows.
                 await JobManager.lock_source_admission(session, tenant_id)
@@ -466,6 +519,58 @@ class AgentTaskManager(BaseManager):
                     payload = dict(row.payload or {})
                     if extra_payload:
                         payload.update({key: value for key, value in extra_payload.items() if value is not None})
+                    retry_reset_count = 0
+                    if retry_exhausted:
+                        if row.job_type != "analyze":
+                            raise ValueError("Exhausted staged content can only be retried by an analysis task")
+                        from ..collected_item import CollectedItem
+                        from ..source import Source
+                        from .collected_item_manager import CollectedItemManager
+
+                        source_rows = list(row.sources or [])
+                        if source_rows:
+                            source_rows = [source for source in source_rows if source.tenant_id == tenant_id]
+                        else:
+                            source_rows = list(
+                                (
+                                    await session.execute(
+                                        select(Source).where(
+                                            Source.tenant_id == tenant_id,
+                                            Source.is_active.is_(True),
+                                        )
+                                    )
+                                )
+                                .scalars()
+                                .all()
+                            )
+                        source_ids = list(dict.fromkeys(source.id for source in source_rows))
+                        payload["source_ids"] = source_ids
+                        source_windows = []
+                        task_dates = payload.get("cli_dates")
+                        for source in source_rows:
+                            source_params = source.params if isinstance(source.params, dict) else {}
+                            start_date, end_date = self.resolve_cli_date_window(
+                                task_dates, source_params.get("cli_dates")
+                            )
+                            source_windows.append((source, start_date, end_date))
+                        staged_exists = False
+                        for source, start_date, end_date in source_windows:
+                            conditions = [CollectedItem.tenant_id == tenant_id, CollectedItem.source_id == source.id]
+                            if start_date is not None:
+                                conditions.append(CollectedItem.published_at >= start_date)
+                            if end_date is not None:
+                                conditions.append(CollectedItem.published_at <= end_date)
+                            exists = await session.execute(
+                                select(CollectedItem.id).where(*conditions).limit(1).with_for_update()
+                            )
+                            if exists.scalar_one_or_none() is None:
+                                continue
+                            staged_exists = True
+                            retry_reset_count += await CollectedItemManager().reset_attempts(
+                                session, source.id, start_date=start_date, end_date=end_date
+                            )
+                        if not staged_exists:
+                            return {"status": "no_staged_content", "task_id": row.id, "reset_count": 0}
                     from app.jobs.source_activity import SOURCE_JOB_TYPES, SourceJobBusy
 
                     jobs = JobManager()
@@ -483,15 +588,27 @@ class AgentTaskManager(BaseManager):
                     except SourceJobBusy as busy:
                         # No trigger/schedule/once-state writes: the existing
                         # job may belong to a different task or methodology.
-                        return {"status": "busy", "task_id": row.id, "job": busy.job}
+                        # A retry may already have reset staged attempt counts;
+                        # let the transaction roll back before returning a receipt.
+                        if retry_exhausted:
+                            raise _RetryAdmissionBusy(busy.job) from busy
+                        return _busy_admission_receipt(row.id, busy.job)
                     row.last_status = "queued"
                     row.last_error = None
                     if once:
                         row.is_active = False
-                    receipt = {"status": "enqueued", "task_id": row.id, "job": job, "once": once}
+                    receipt = {
+                        "status": "enqueued",
+                        "task_id": row.id,
+                        "job": job,
+                        "once": once,
+                        "retry_reset_count": retry_reset_count,
+                    }
                 row.last_run_at = now
                 row.next_run_at = next_fire
                 await session.flush()
+            if retry_transaction.busy_job is not None:
+                return _busy_admission_receipt(task_id, retry_transaction.busy_job)
             # Return only after the owning transaction's commit acknowledgement.
         return receipt
 

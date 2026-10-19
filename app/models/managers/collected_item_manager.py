@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
-from sqlalchemy import JSON, bindparam, func, select, text as sa_text
+from sqlalchemy import JSON, and_, bindparam, case, func, or_, select, text as sa_text
 
 from app.core.config import settings
 from app.utils.content_attachments import normalize_attachments
@@ -259,6 +259,49 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         if end_date is not None:
             query = query.filter(CollectedItem.published_at <= end_date)
         return int(await query.values(func.count(CollectedItem.id)).scalar(0) or 0)
+
+    async def backlog_counts_for_sources(self, source_windows: Sequence[dict[str, Any]]) -> dict[str, int]:
+        """Aggregate staged backlog for many sources and their individual windows.
+
+        The result is a task-wide current-queue snapshot, not a run receipt. A
+        single aggregate query avoids one count round-trip per source on the
+        task progress poll. Callers must omit sources whose configured date
+        window is malformed; silently removing a bad bound would widen scope.
+        """
+        from app.models.collected_item import CollectedItem
+
+        predicates = []
+        for window in source_windows:
+            source_id = window.get("source_id")
+            if type(source_id) is not int or source_id <= 0:
+                continue
+            conditions = [CollectedItem.source_id == source_id]
+            if window.get("start_date") is not None:
+                conditions.append(CollectedItem.published_at >= window["start_date"])
+            if window.get("end_date") is not None:
+                conditions.append(CollectedItem.published_at <= window["end_date"])
+            predicates.append(and_(*conditions))
+        if not predicates:
+            return {"pending": 0, "exhausted": 0, "eligible": 0}
+
+        exhausted = CollectedItem.analyze_attempts >= CollectedItem.give_up_after_attempts
+        rows = await (
+            self.filter(or_(*predicates))
+            .values(
+                func.count(CollectedItem.id),
+                func.coalesce(func.sum(case((exhausted, 1), else_=0)), 0),
+                func.coalesce(func.sum(case((~exhausted, 1), else_=0)), 0),
+            )
+            .rows()
+        )
+        if not rows:
+            return {"pending": 0, "exhausted": 0, "eligible": 0}
+        pending, exhausted_count, eligible = rows[0]
+        return {
+            "pending": int(pending or 0),
+            "exhausted": int(exhausted_count or 0),
+            "eligible": int(eligible or 0),
+        }
 
     async def record_attempts(self, session: Any, source_id: int, hashes: Sequence[str]) -> int:
         """Count one failed analysis attempt against the given staged rows.

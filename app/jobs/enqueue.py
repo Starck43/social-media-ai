@@ -23,15 +23,21 @@ async def enqueue_task_run(
     extra_payload: dict[str, Any] | None = None,
     *,
     initiated_by_user_id: int | None = None,
+    retry_exhausted: bool = False,
 ) -> Any:
     """Enqueue a job for an existing task and mark the task as triggered.
 
     `extra_payload` merges one-off overrides (e.g. a manual `--force-refresh`)
     into the job's payload without persisting them on the task row.
 
+    `retry_exhausted` is reserved for an explicit retry of an analysis
+    task. The manager resets eligible staged-row attempts and admits that same
+    task's job in one transaction; ordinary task runs keep the default behavior.
+
     Returns the created `Job` so callers can track it (run it now, poll its
-    status, show it in a modal). A source-work conflict raises SourceJobBusy;
-    callers must not claim its existing job as a new run of this task.
+    status, show it in a modal). An explicit retry with no staged content
+    returns None. A source-work conflict raises SourceJobBusy; callers must not
+    claim its existing job as a new run of this task.
     """
     from app.core.tenant_context import tenant_scope
     from app.models.managers.agent_task_manager import AgentTaskManager
@@ -42,6 +48,7 @@ async def enqueue_task_run(
             now=datetime.now(timezone.utc),
             extra_payload=extra_payload,
             initiated_by_user_id=initiated_by_user_id,
+            retry_exhausted=retry_exhausted,
         )
         if receipt is None:
             raise ValueError("Task run was not admitted for this workspace")
@@ -51,4 +58,6 @@ async def enqueue_task_run(
             # Never return another task's job as a newly admitted run: inline
             # callers must not claim/execute it under the requested task.
             raise SourceJobBusy(receipt["job"])
+        if receipt["status"] == "no_staged_content":
+            return None
         return receipt["job"]

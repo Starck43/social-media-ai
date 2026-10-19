@@ -1,0 +1,18 @@
+{% macro progress_bar(label, state='unknown', percent=none, processed=none, total=none, note=none) -%}
+{% set known = percent is number and percent is not boolean and 0 <= percent <= 100 %}
+<div data-run-state="{{ state }}" class="space-y-2">
+    <div class="flex items-center justify-between gap-3 text-sm">
+        <span class="inline-flex min-w-0 items-center gap-2 text-slate-700 dark:text-slate-300" role="status">
+            {% if state == 'pending' %}<span class="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-500 motion-reduce:animate-none" aria-hidden="true"></span>
+            {% elif state == 'running' %}<svg class="h-4 w-4 shrink-0 animate-spin text-cyan-600 motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>{% endif %}
+            {{ label }}
+        </span>
+        {% if known %}<span class="shrink-0 font-medium text-slate-700 dark:text-slate-300">{{ percent }}%</span>{% endif %}
+    </div>
+    <div class="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800" role="progressbar" aria-label="{{ label }}" aria-valuemin="0" aria-valuemax="100" {% if known %}aria-valuenow="{{ percent }}"{% else %}aria-valuetext="Процент обработки пока неизвестен"{% endif %}>
+        {% if known %}<div class="h-full rounded-full {% if state == 'failed' %}bg-rose-600{% elif state in ('unconfirmed', 'partial') %}bg-amber-500{% else %}bg-cyan-600 dark:bg-cyan-500{% endif %} transition-[width] duration-300 motion-reduce:transition-none" style="width: {{ percent }}%"></div>{% endif %}
+    </div>
+    {% if processed is not none and total is not none %}<p class="text-xs text-slate-500 dark:text-slate-400">Обработано {{ processed }} из {{ total }} записей</p>{% endif %}
+    {% if note %}<p class="text-xs text-slate-600 dark:text-slate-400">{{ note }}</p>{% endif %}
+</div>
+{%- endmacro %}

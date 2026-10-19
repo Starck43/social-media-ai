@@ -188,8 +188,7 @@ async def test_detail_page_explains_how_the_source_collects() -> None:
             source = await _make_source(tenant_id, "Detailed source", external_id, {"mode": MODE_USER})
             source_id = source.id
 
-            # A source with real analytics used to import a removed dashboard
-            # helper and fail before rendering its recent-results table.
+            # A source with real analytics exercises the source-level summary.
             from datetime import date
 
             from app.models import AIAnalytics
@@ -209,9 +208,12 @@ async def test_detail_page_explains_how_the_source_collects() -> None:
             page = await client.get(f"/app/sources/{source_id}")
             assert page.status_code == 200
             assert "0.80" in page.text
-            assert 'data-coverage="incomplete"' in page.text
-            # The mode is now visible instead of living only in the params JSON.
-            assert "Как собирается" in page.text
+            assert "Статистика источника" in page.text
+            assert "Настройки источника" in page.text
+            assert "Связанные с источником задачи" in page.text
+            assert f"/app/tasks?create=1&amp;source_id={source_id}" in page.text
+            assert 'id="source-analysis-progress"' not in page.text
+            assert "Последние анализы" not in page.text
             assert dict(COLLECTION_MODES)[MODE_USER] in page.text
         finally:
             if source_id is not None:
@@ -433,16 +435,14 @@ async def test_source_name_is_text_in_list_detail_title_dialog_and_input(read_on
         assert list_parser.texts["source-link"] == [stored_name]
         assert detail_parser.texts["title"] == [stored_name + " — AI Monitor"]
         assert detail_parser.texts["h1"] == [stored_name]
-        assert detail_parser.values == [stored_name], "the quoted input must retain the entire original name"
+        if read_only:
+            assert detail_parser.values == [], "read-only viewers must not receive editable source fields"
+        else:
+            assert detail_parser.values == [stored_name], "the quoted input must retain the entire original name"
         assert not list_parser.unsafe and not detail_parser.unsafe
         assert stored_name not in listing.text and stored_name not in detail.text
-        delete_action = f'action="/app/sources/{source.id}/delete"'
-        if read_only:
-            assert delete_action not in detail.text
-        else:
-            assert delete_action in detail.text
-            assert detail_parser.confirms, "the delete form must carry a data-confirm prompt"
-            assert any(f"«{stored_name}»" in confirm for confirm in detail_parser.confirms)
+        assert f'action="/app/sources/{source.id}/delete"' not in detail.text
+        assert not detail_parser.confirms
         with tenant_scope(tenant_id):
             unchanged = await Source.objects.get(id=source.id)
             assert unchanged.name == stored_name and unchanged.is_active

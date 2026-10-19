@@ -15,7 +15,7 @@ Attention feed lives in the floating bell (B), not a home card.
 
 ## Tasks
 
-- [ ] P8-T26 — implement the accepted jobs lifecycle audit: built-in cleanup
+- [x] P8-T26 — implement the accepted jobs lifecycle audit: built-in cleanup
   independent of a scheduled prune task, default 24-hour terminal history,
   administrator-only retention configuration through prefilled prune forms,
   safe linked replay, history-only clear, paginated jobs and useful safe error
@@ -23,7 +23,7 @@ Attention feed lives in the floating bell (B), not a home card.
   isolation, unresolved effects protected, manual web execution without runtime;
   depends: none; owns: jobs lifecycle service/manager/dispatcher, web jobs and
   task forms, application lifespan, task bootstrap, focused tests and subsystem
-  docs; owner: codex-jobs; status: READY. Initial claim: `959a461`;
+  docs; owner: codex-jobs; status: DONE. Initial claim: `959a461`;
   isolated validation base: `37eeaf7` in `/private/tmp/social-jobs-lifecycle-check`;
   integrated onto `1f60dd1` after all 25 owned baseline hashes matched; parallel
   chat changes preserved. Primary OpenCode focused checks: A 79/79, B 52/52,
@@ -34,7 +34,9 @@ Attention feed lives in the floating bell (B), not a home card.
   schema preparation, runtime startup or live provider calls. Compile/Jinja
   syntax and diff checks passed. Final review fixed the web maintenance bypass
   context and verified cancellation with an isolated loop test. All owned Python
-  files match the validated worktree byte for byte; awaiting exact-SHA acceptance.
+  files match the validated worktree byte for byte. Accepted: codex, 2026-10-20,
+  implementation `a5ba8c1fc36f86bbeda692e38f5f9522c05f9f86`; exact parent,
+  27-path commit scope and all 25 validated file hashes verified after commit.
 
 - [x] P8-T01 — home mixed latest-results feed; accept: permitted analyses and
   digest runs merged into ≤5 cards via a bounded read-time projection;

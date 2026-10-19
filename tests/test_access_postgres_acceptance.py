@@ -129,7 +129,7 @@ async def _resolve_web_identity(workspace: Workspace, user: User):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_active_owners_cannot_both_demote_themselves():
+async def test_concurrent_active_owners_cannot_demote_themselves():
     async with _workspace() as workspace:
         first, second = await workspace.new_user(), await workspace.new_user()
         first_membership = await workspace.add_web_member(first, workspace.owner_role_id)
@@ -158,14 +158,14 @@ async def test_concurrent_active_owners_cannot_both_demote_themselves():
             timeout=20,
         )
 
-        assert sorted(outcomes) == [False, True]
+        assert outcomes == [False, False]
         with tenant_scope(workspace.tenant_id):
             memberships = await tenant_users.filter(
                 tenant_id=workspace.tenant_id,
                 channel="web",
                 user_id__in=[first.id, second.id],
             )
-        assert sum(membership.role_id == workspace.owner_role_id for membership in memberships) == 1
+        assert sum(membership.role_id == workspace.owner_role_id for membership in memberships) == 2
 
 
 @pytest.mark.asyncio

@@ -441,6 +441,7 @@ def test_member_templates_have_no_hidden_budget_team_or_agent_fields():
     helpers = runpy.run_path(str(ROOT / "tests/unit_web/test_assistant_shell.py"))
     values = helpers["context"](manager=False)
     values["user"].has_admin_access = lambda: False
+    values["user"].role = None
     values.update(
         is_superuser=False,
         settings_manage=False,
@@ -465,6 +466,7 @@ def test_no_workspace_account_menu_keeps_personal_settings_reachable():
     helpers = runpy.run_path(str(ROOT / "tests/unit_web/test_assistant_shell.py"))
     values = helpers["context"](tenant=False)
     values["user"].has_admin_access = lambda: False
+    values["user"].role = None
     markup = helpers["environment"]().get_template("shell-fixture.html").render(**values)
     assert 'href="/app/settings?tab=account"' in markup
     assert "data-invite-open" not in markup

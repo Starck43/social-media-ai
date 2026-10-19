@@ -464,7 +464,7 @@
    Параметры:
      name — имя поля формы; id — базовый id; current — выбранное значение;
      options — список (value, label, hint); placeholder — текст при пустом. #}
-{% macro popover_select(name, id, options, current='', placeholder='Автовыбор') -%}
+{% macro popover_select(name, id, options, current='', placeholder='Автовыбор', allow_empty=true, label='') -%}
     {# `current` arrives as an id (int), a preselected value or None; '' keeps the
        placeholder. Normalizing here guards every caller: `None|string` would
        otherwise post the literal "None" and fail id validation. #}
@@ -473,16 +473,16 @@
     {% for value, label, hint in options %}
         {% if current|string == value|string %}{% set ns.current_label = label %}{% endif %}
     {% endfor %}
-    <div class="shell-popover" data-shell-popover>
+    <div class="shell-popover" data-shell-popover data-popover-select>
         <input type="hidden" name="{{ name }}" value="{{ current }}" data-popover-value>
-        <button type="button" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-left outline-none focus:border-cyan-500 flex items-center justify-between gap-2" data-popover-trigger aria-expanded="false" aria-controls="{{ id }}-popover" aria-label="{{ placeholder }}">
+        <button id="{{ id }}-trigger" type="button" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-left outline-none focus:border-cyan-500 flex items-center justify-between gap-2" data-popover-trigger aria-expanded="false" aria-controls="{{ id }}-popover" aria-label="{{ label or placeholder }}">
             <span data-popover-label>{{ ns.current_label }}</span>
-            <span aria-hidden="true" class="text-slate-600 dark:text-slate-400">▾</span>
+            <span aria-hidden="true" class="shell-select-chevron"></span>
         </button>
         <div id="{{ id }}-popover" class="shell-popover-panel" hidden role="listbox">
-            <button type="button" role="option" data-popover-option="" aria-selected="{{ 'true' if not current else 'false' }}"><span>{{ placeholder }}</span><span class="shell-theme-check" aria-hidden="true">✓</span></button>
+            {% if allow_empty %}<button type="button" role="option" data-popover-option="" aria-selected="{{ 'true' if not current else 'false' }}"><span>{{ placeholder }}</span><span class="shell-theme-check" aria-hidden="true">✓</span></button>{% endif %}
             {% for value, label, hint in options %}
-            <button type="button" role="option" data-popover-option="{{ value }}" aria-selected="{{ 'true' if current|string == value|string else 'false' }}"><span>{{ label }}</span>{% if hint %}<span class="text-xs text-slate-600 dark:text-slate-400">{{ hint }}</span>{% endif %}<span class="shell-theme-check" aria-hidden="true">✓</span></button>
+            <button type="button" role="option" data-popover-option="{{ value }}" aria-selected="{{ 'true' if current|string == value|string else 'false' }}"><span data-popover-option-label>{{ label }}</span>{% if hint %}<span data-popover-option-hint class="text-xs text-slate-600 dark:text-slate-400">{{ hint }}</span>{% endif %}<span class="shell-theme-check" aria-hidden="true">✓</span></button>
             {% endfor %}
         </div>
     </div>

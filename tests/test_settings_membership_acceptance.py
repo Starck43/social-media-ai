@@ -91,7 +91,7 @@ async def test_owner_can_disable_member_through_settings_endpoint(settings_clien
 
 
 @pytest.mark.asyncio
-async def test_last_owner_and_workspace_admin_restrictions(settings_client, home):
+async def test_self_role_and_workspace_admin_restrictions(settings_client, home):
     client = settings_client
     users, tenant_ids, _ = home
     owner = users[0]
@@ -111,7 +111,7 @@ async def test_last_owner_and_workspace_admin_restrictions(settings_client, home
         data={"role": "viewer", "_csrf": token},
     )
     assert response.status_code == 200
-    assert "нельзя снять последнего владельца" in response.text
+    assert "Нельзя менять собственную роль" in response.text
     assert (await _stored_membership(tenant_id, owner_membership.id)).role_id == owner_role.id
 
     await _login(client, first_admin.username)

@@ -943,6 +943,14 @@ class JobManager(BaseManager["Job"]):
         task.last_run_at = completed_at
         task.last_status = status
         task.last_error = error
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        if status == "ok" and AgentTaskManager.wants_deactivate_after_success(task.payload):
+            # A trial task asked to stop after its first success. Same
+            # transaction as the outcome: the task never reads "ok" while
+            # still scheduled to fire again.
+            task.is_active = False
+            task.next_run_at = None
 
     async def _finalize_claim(
         self,
@@ -1053,6 +1061,7 @@ class JobManager(BaseManager["Job"]):
         await self.update_by_id(job_id, **updates)
         if job:
             await self._record_task_result(job, status="ok")
+            await self._stop_trial_task(job.agent_task_id)
 
     async def mark_failed(
         self,
@@ -1116,6 +1125,22 @@ class JobManager(BaseManager["Job"]):
         )
         await self._record_task_result(job, status="failed", error=error[:2000])
         return False
+
+    async def _stop_trial_task(self, task_id: Optional[int]) -> None:
+        """Close a trial task after its success in the legacy ID-only path.
+
+        The claimed path does this in `_write_task_outcome`'s transaction; this
+        covers the compatibility entry points that write separately.
+        """
+        if not task_id:
+            return
+        from app.models.agent_task import AgentTask
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        task = await AgentTask.objects.get(id=task_id)
+        if task is None or not AgentTaskManager.wants_deactivate_after_success(task.payload):
+            return
+        await AgentTask.objects.update_by_id(task_id, is_active=False, next_run_at=None)
 
     async def reap_stale(self, timeout_minutes: int = 30) -> int:
         """Stop unavailable budgets and quarantine stale owned executions.

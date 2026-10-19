@@ -33,6 +33,9 @@ WORKING_URL_ENV = "POSTGRES_URL"
 TEST_URL_ENV = "TEST_POSTGRES_URL"
 WORKING_SCHEMA_ENV = "DB_SCHEMA"
 TEST_SCHEMA_ENV = "DB_TEST_SCHEMA"
+# The pre-redirect working target, captured by the first `resolve_and_redirect`
+# call so a second caller can never compare the test schema against itself.
+_REDIRECTED_WORKING: list[str] = []
 # Keep aligned with Settings without importing app before the redirect.
 DEFAULT_WORKING_SCHEMA = "public"
 DEFAULT_TEST_SCHEMA = "test_schema"
@@ -370,7 +373,15 @@ def resolve_and_redirect() -> tuple[str, str, str]:
     Return (working_url, test_url, test_schema). Common POSTGRES_URL is allowed
     only with a different test schema. Database-name comparison is deliberately
     conservative; this is not live endpoint/alias identity verification.
+
+    Idempotent on purpose: `tests/conftest.py` and the DB suites' fixtures both
+    call this before importing app modules, and the first call has already
+    repointed `DB_SCHEMA` at the test schema. Reading that redirected value
+    back would make the second call compare the test schema against itself and
+    refuse a target the first call had just approved, so the pre-redirect
+    values are remembered and reused.
     """
+    remembered = _REDIRECTED_WORKING
     test_url = resolve_test_url()
     if not test_url:
         raise RuntimeError(
@@ -379,9 +390,9 @@ def resolve_and_redirect() -> tuple[str, str, str]:
             f"{TEST_URL_ENV} is optional."
         )
 
-    working_url = os.environ.get(WORKING_URL_ENV, "").strip()
+    working_url = remembered[0] if remembered else os.environ.get(WORKING_URL_ENV, "").strip()
     test_schema = resolve_test_schema()
-    working_schema = resolve_working_schema()
+    working_schema = remembered[1] if remembered else resolve_working_schema()
 
     same_database = bool(working_url) and database_name(working_url) == database_name(test_url)
     same_schema = test_schema == working_schema
@@ -392,6 +403,7 @@ def resolve_and_redirect() -> tuple[str, str, str]:
             f"the working data — point {TEST_SCHEMA_ENV} at a separate schema."
         )
 
+    _REDIRECTED_WORKING[:] = [working_url, working_schema]
     os.environ[WORKING_URL_ENV] = test_url
     os.environ[TEST_URL_ENV] = test_url
     os.environ[WORKING_SCHEMA_ENV] = test_schema

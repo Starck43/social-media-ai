@@ -156,6 +156,16 @@ class AgentTaskManager(BaseManager):
         return job_type in SOURCE_BASED_JOB_TYPES
 
     @staticmethod
+    def wants_deactivate_after_success(payload: Any) -> bool:
+        """Whether this task is a trial: stop after its first successful run.
+
+        The owner decides this when the task is created. A recurring schedule
+        that was never confirmed as one-off is a normal task and keeps running;
+        only an explicit `deactivate_after_success` in the payload ends it.
+        """
+        return isinstance(payload, dict) and payload.get("deactivate_after_success") is True
+
+    @staticmethod
     def requires_content_dates(job_type: str) -> bool:
         """Whether a task of this job type needs a content start date.
 

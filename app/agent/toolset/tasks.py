@@ -77,6 +77,14 @@ async def task_list() -> list[dict[str, Any]]:
                     "или @once — разовый запуск через минуту после создания"
                 ),
             },
+            "deactivate_after_success": {
+                "type": "boolean",
+                "description": (
+                    "Пробный прогон: задача выключается после первого успешного выполнения. "
+                    "Спрашивай владельца при создании задачи; по умолчанию false — "
+                    "расписание работает и дальше"
+                ),
+            },
             "job_type": {"type": "string", "enum": list(_get_job_types()), "description": "Что запускать"},
             "source_ids": {
                 "type": "array",
@@ -168,6 +176,7 @@ async def task_add(
     end_date: str | None = None,
     force_refresh: bool = False,
     force_reanalyze: bool = False,
+    deactivate_after_success: bool = False,
     brands: list[str] | None = None,
     competitors: list[str] | None = None,
     hashtags: list[str] | None = None,
@@ -201,6 +210,10 @@ async def task_add(
         )
     except SelectionError as error:
         return {"error": f"Некорректная выборка задачи: {error}"}
+    if deactivate_after_success:
+        # A trial run the owner agreed to stop after success. Stored on the
+        # task, so the scheduler reads the same decision the owner made.
+        payload["deactivate_after_success"] = True
     if excluded_users:
         payload["excluded_users"] = list(excluded_users)
     if period:
@@ -330,6 +343,10 @@ async def task_remove(name: str) -> dict[str, Any]:
                 "type": "string",
                 "description": "Новое cron-выражение (5 полей) или @once",
             },
+            "deactivate_after_success": {
+                "type": "boolean",
+                "description": "Пробный прогон: выключить задачу после первого успешного выполнения",
+            },
             "source_ids": {
                 "type": "array",
                 "items": {"type": "integer"},
@@ -424,6 +441,7 @@ async def task_update(
     hashtags: list[str] | None = None,
     influencer_names: list[str] | None = None,
     topic_list: list[str] | None = None,
+    deactivate_after_success: bool | None = None,
 ) -> dict[str, Any]:
     from app.core.tenant_context import current_tenant_id
     from app.models import AgentTask, Tenant
@@ -502,8 +520,20 @@ async def task_update(
         "payload": updated_payload,
         "agent_scenario_id": scenario_id,
     }
+    if deactivate_after_success is not None:
+        # A trial task gets a live schedule back: it had been switched off
+        # after its success, so re-arming means the next run must be planned.
+        updates["is_active"] = True
+        updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
     if cron is not None:
         updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
+    if deactivate_after_success is not None:
+        # Same key the scheduler reads; clearing it returns the task to a
+        # normal recurring schedule.
+        if deactivate_after_success:
+            updated_payload["deactivate_after_success"] = True
+        else:
+            updated_payload.pop("deactivate_after_success", None)
 
     await AgentTask.objects.update_by_id(task.id, **updates)
 

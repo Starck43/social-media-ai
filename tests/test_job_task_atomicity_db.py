@@ -242,5 +242,35 @@ class AtomicityDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.task_state(), task_before)
 
 
+    async def test_trial_task_switches_itself_off_after_success(self):
+        """A task created with `deactivate_after_success` stops after one good run.
+
+        The flag is the owner's decision at creation; a task without it keeps
+        its schedule even when the run succeeds.
+        """
+        with tenant_scope(self.own.id), service_permission_scope("agenttask", "update"):
+            await AgentTask.objects.update_by_id(
+                self.task.id, payload={"deactivate_after_success": True}, is_active=True
+            )
+        job, claim = await self.acquired(task_id=self.task.id)
+        await self.done(claim, result={"ok": True})
+
+        with tenant_scope(self.own.id):
+            task = await AgentTask.objects.get(id=self.task.id)
+        self.assertFalse(task.is_active, "the trial task must not be scheduled again")
+        self.assertEqual(task.last_status, "ok")
+        self.assertIsNone(task.next_run_at)
+
+    async def test_a_regular_task_stays_scheduled_after_success(self):
+        with tenant_scope(self.own.id), service_permission_scope("agenttask", "update"):
+            await AgentTask.objects.update_by_id(self.task.id, payload={}, is_active=True)
+        job, claim = await self.acquired(task_id=self.task.id)
+        await self.done(claim, result={"ok": True})
+
+        with tenant_scope(self.own.id):
+            task = await AgentTask.objects.get(id=self.task.id)
+        self.assertTrue(task.is_active, "a recurring task is unaffected by a success")
+
+
 if __name__ == "__main__":
     unittest.main()

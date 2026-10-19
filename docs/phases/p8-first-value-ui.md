@@ -361,6 +361,122 @@ P8-T06 and does not alter its task record.
   remain attributed above. Phase/gate approval, full-suite, deployment and schema
   acceptance are not implied by this task closure.
 
+- [ ] P8-T22 — audit and simplify the social analysis web journey; accept:
+  one social analysis task choice collects then analyzes, standalone CLI/API/chat
+  operations remain compatible, partial analysis retains staged input; scenario,
+  source and task pages explain their distinct setup/actions/statistics using
+  shared shell styles and permission-gated diagnostics; focused backend/render
+  checks include the final task editor snapshot; visual testing excluded by
+  the owner's later instruction; depends: none;
+  owns: web task backend and scenario/source/task templates, shared web
+  presentation helpers, final editor follow-up after the explicit P8-T23 handoff,
+  focused tests and subsystem/audit docs; owner: codex-social-analysis;
+  status: BLOCKED. Base: local dev `c98dc9c`, origin/dev `1e0e3a0`
+  verified 2026-10-18; source-picker changes preserved. Task editor changes
+  are serialized after its active source-picker work finishes.
+  Implementation and isolated verification recorded at `a11f1f9` plus reviewed
+  working diff: 210 isolated pytest cases passed through primary OpenCode;
+  Node cron checks and Safari 27.0 actual synthetic POST checks passed. See
+  [audit and layout contract](../audits/2026-10-18-social-analysis-web.md).
+  Persisted PostgreSQL acceptance remains blocked: the local
+  test schema lacks `analyzed_content_receipts`; no migration/reset authorized.
+  The live site returned 502. No paid collection/model run or full responsive
+  visual acceptance is claimed. The final compact selector/button styling
+  follow-up received syntax and diff checks only; it was not visually tested.
+  Source-detail follow-up claimed 2026-10-19 at `401a636`, synchronized with
+  the intervening owner commits through `346cd65`, by
+  codex-social-analysis: retain source aggregates/access and related task links,
+  move all mutable collection settings into an inline form, remove source-page
+  run/history UI and header actions, and keep one source-prefilled task CTA.
+  Existing unrelated working changes and exposed compatibility routes are
+  preserved. Python/Jinja syntax and diff checks passed. Primary OpenCode
+  collected 122 isolated cases: 118 passed; four editor cases exposed a missing
+  constant in the AST test fixture. After that fixture-only correction, the
+  four cases passed in a focused rerun (0 failed/skipped); application code
+  remained unchanged. No visual or database-backed follow-up is claimed.
+  Task-detail follow-up: moved latest task-associated run counters, per-source
+  progress, raw-data coverage and admin-only diagnostics onto task detail; task
+  navbar now exposes edit and run now, with retry in the run panel. Retry resets
+  attempts only for that task's source/date scope and rolls back on busy
+  admission. The canonical editor is reused in a modal; save returns to task
+  detail, and task names link to detail. Current raw backlog uses authorized,
+  windowed batch counts; model-call diagnostics match exact task and Job.
+  Synchronized with the unrelated admin integration at `ddc9b99`, preserving
+  its accepted P8-T21. Primary OpenCode collected 131 no-DB cases: 130 passed
+  initially and one text assertion was corrected; targeted rerun passed 21/21
+  cases after the bound-manager correction, leaving the other 110 unchanged
+  passing cases valid. Python/Jinja/Node syntax and diff checks passed. Actual
+  read-only ORM access for task 1582 passed; the local URI still returns 502.
+  No browser, live execution or persisted worker acceptance is claimed.
+  Closeout 2026-10-19: implementation reviewed for the authorized local commit;
+  source/task implementation committed as
+  `ca4b9b04cb42396765b0d5816abce0f67d8e21df`.
+  Persisted acceptance remains BLOCKED. A fresh catalog query using the existing
+  session factory in a read-only transaction confirmed that
+  `test_schema.analyzed_content_receipts` is absent. No schema change was made;
+  R8 requires explicit authorization for migration. No other active task's
+  acceptance is implied. Visual checks are excluded by the owner's instruction.
+
+- [x] P8-T23 — compact inline source picker on the task edit page; accept:
+  selected sources render as inline chips with a remove control, adding uses
+  a searchable list with shared styles, POST semantics of `source_ids` stay
+  unchanged, and no-JS checkbox fallback is retained. Depends: none; owns:
+  `app/web/templates/web/task_edit.html`, focused render test; owner: $local;
+  status: DONE — accepted: codex, 2026-10-19, implementation commit
+  `a11f1f9e880925b01bf30478dbde62fa6ad0b48c`; isolated no-DB pytest 53/53 passed
+  (`tests/unit_web/test_task_source_picker.py`,
+  `tests/unit_web/test_template_autoescape.py`); rendered script Node syntax
+  check passed. Integration `tests/test_web_task_edit.py` blocked before setup
+  by pre-existing test-schema drift (`analyzed_content_receipts` absent);
+  schema unchanged. Identifier-only reconciliation after local merge
+  `ddc9b99`: this source-picker row formerly duplicated P8-T21, now reserved
+  by the accepted admin related-record editor. Ownership, status and evidence
+  of both tasks are preserved.
+  Coordinator closeout review found the picker acceptance met; the separately
+  blocked PostgreSQL suite is retained as a documented integration limit and
+  does not claim persisted worker acceptance. Removed its open registry row.
+
 ## Phase approval
+
+- [x] P8-T24 — keep incomplete-analysis recovery and its progress on analysis
+  detail; accept: explicit retry launches only after committed admission even
+  without the runtime worker, queue/running/unconfirmed states reflect stored
+  evidence, shared progress UI renders inline, and content refreshes after
+  completion. Task links replace source/queue detours, the detail layout keeps
+  useful stored content and hides empty sections. Preserve tenant/permission,
+  exact-window and transaction guards; no live model calls in verification.
+  Depends: none; owns: analytics web retry/detail routes and templates, shared
+  progress presentation, focused regression tests and analytics docs;
+  owner: codex-analytics-inline-retry; status: DONE — accepted: codex,
+  2026-10-19, implementation commit
+  `78f7003dce35e15bbf4ee1be5a59873b7447bf73`.
+  Claimed 2026-10-19 at local dev `ddc9b99`; preserve the current uncommitted
+  source/task follow-up and accepted unrelated admin integration.
+  Evidence 2026-10-19: reviewed the uncommitted diff on base `ddc9b99`.
+  Explicit retries dispatch only after admission commits; compatible old pending
+  retries require a guarded POST to resume. Inline polling has no write effects;
+  queue and stale-heartbeat states do not claim provider activity. Fresh saved
+  result IDs drive completion navigation, while related tasks replace source
+  detours. Complete summaries with legacy metrics do not trigger recovery reads.
+  Primary OpenCode `QwenPlan/deepseek-v4-flash-0731` collected and passed 232
+  no-DB tests (0 failed, 0 skipped; 35 subtests passed) using
+  `--noconftest -o addopts= -q --tb=short --no-header` across:
+  `tests/unit_web/test_analysis_retry.py`,
+  `tests/unit_web/test_analytics_inline_progress.py`,
+  `tests/unit_web/test_analysis_result_ids.py`,
+  `tests/unit_web/test_run_progress_component.py`,
+  `tests/unit_web/test_analysis_content_layout.py`,
+  `tests/unit_web/test_task_detail_progress.py`,
+  `tests/unit_web/test_template_autoescape.py`,
+  `tests/test_analysis_progress_endpoints.py`,
+  `tests/test_inline_analysis_errors.py`, and
+  `tests/test_analyzer_reported_errors.py`.
+  Updated stale modality-model and durable-stage test doubles without weakening
+  failure assertions. `git diff --check` passed. No migration, browser checks,
+  runtime start, live Job dispatch, provider call or database write was performed.
+  Coordinator reviewed implementation commits `ca4b9b0` and `78f7003` at
+  closeout; the committed app/test contents match the verified working tree.
+  Accepted this bounded no-DB contract and removed its open registry row;
+  persisted worker/billing acceptance and phase approval are not implied.
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

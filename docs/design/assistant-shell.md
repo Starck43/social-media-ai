@@ -30,13 +30,13 @@ Browser titles are retained. Long headings wrap rather than widen the layout.
 | --- | --- | --- |
 | dashboard | Overview / authorized chat icon | Operator data-workspace filter, bounded overview and setup step |
 | sources, tasks | Section / guarded create dialog trigger | Workspace filters, source connection banners, concise setup guidance, tables, dialogs |
-| source_detail | Source name or missing / guarded create-analysis-task link, edit, toggle | Breadcrumb, source access/readiness, permitted schedules, raw backlog and analysis results; destructive tools in a lower details block |
-| task_detail | Task name or missing / edit, toggle, delete under original guards | Queue-aware breadcrumb, task/workspace metadata, canonical editor link, outcomes |
-| task_edit | Task name, synchronized with editing / back link | Existing form, source selector, submitter overrides, confirmations |
+| source_detail | Source name or missing / no page actions | Breadcrumb, source access/readiness, source-wide aggregates, permitted related tasks with a source-prefilled creation link, and an inline collection-settings form for editors |
+| task_detail | Task name or missing / edit, run now, toggle, delete under original guards | Task/source/platform scope, task-associated run statistics and progress, admin diagnostics, retry, editor dialog using the canonical edit URL |
+| task_edit | Task name, synchronized with editing / back to task | One form reused directly or within the task-detail dialog, source selector, submitter overrides, confirmations; save returns to task detail |
 | scenarios | Scenarios / guarded create link | Methodology description and list; task counts only for task viewers |
 | scenario_detail, scenario_wizard | Scenario name or new / guarded save with original form ID | Methodology wizard; permitted task usage and prefilled task creation |
 | analytics | Analytics | Period/workspace filters, metrics and analysis projections |
-| analytics_detail | Analysis title / source context | Analysis breadcrumbs, source/chain links, saved result |
+| analytics_detail | Analysis title / provenance; related task link | Content-first summary, known metrics, inline retry/resume and shared progress, collapsed provenance/chain history; no source or queue detour |
 | analytics_group | Group value | Group breadcrumbs, filters and result list |
 | analytics_chains | Topic chains / retrospective context | Breadcrumb, sort/filter controls and chain list |
 | analytics_chain_detail | Chain name / guarded delete form | Breadcrumbs, period/count and evolution |

@@ -18,7 +18,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
-- [ ] P8-T22 — unified social analysis tasks and operator web journey → [p8](docs/phases/p8-first-value-ui.md) — owner: codex-social-analysis — IN_PROGRESS
+- [ ] P8-T22 — unified social analysis tasks and operator web journey → [p8](docs/phases/p8-first-value-ui.md) — owner: codex-social-analysis — BLOCKED (persisted acceptance: missing test-schema receipts)
 
 - [ ] P8-T20 — provider cost evidence and compact diagnostic controls → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
 
@@ -65,8 +65,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T10 — distributable package runtime completeness (AUD-10) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 
 - [ ] P10-T13 — LLM CLI provider listing and safe model-test contract → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — BLOCKED
-
-- [ ] P8-T21 — compact inline task source picker → [p8](docs/phases/p8-first-value-ui.md) — $local — READY
 
 - [ ] P5-T05 — bounded-output map-reduce analysis pipeline (any model, any volume) → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — IN_PROGRESS
 

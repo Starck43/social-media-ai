@@ -124,10 +124,13 @@ rechecks the row/source workspace and available inputs before enqueueing. A
 missing summary or legacy metric provenance offers investigation, not an
 assertion that analysis never ran or that every absent field should exist.
 
-- A retry queues one ordinary `analyze` batch (currently up to 100 staged inputs)
-  with the current tenant-default scenario. It does not reconstruct the original
-  scenario/task payload or rebuild/close the historical row. Check new results
-  and remaining inputs after execution; another batch may be needed.
+- A retry admits one ordinary `analyze` batch (currently up to 100 staged inputs)
+  and starts that exact committed Job in the web process with the normal atomic
+  claim/heartbeat path. It does not require a separate runtime worker. An active
+  stored scenario is retained when available; otherwise the existing task/source
+  methodology fallback applies. Original task targets are not reconstructed.
+  Saved rows follow the normal context-aware upsert rules; an unchanged old
+  report is never presented as proof that the new batch completed its coverage.
 - `staged_window` is an internal analyze-job payload with required ISO
   `start_date`/`end_date` timestamps. Preview, attempt reset and the worker use
   identical inclusive timestamp bounds, not CLI day truncation. Invalid bounds
@@ -145,6 +148,37 @@ assertion that analysis never ran or that every absent field should exist.
   busy-task bookkeeping and the distinct new-input wakeup boundary.
 - Attempt reset and enqueue share a transaction. Reset failure is not swallowed,
   and enqueue failure cannot commit the reset or report successful admission.
+
+### Inline recovery and progress
+
+`GET /app/analytics/{id}/retry-status` renders a shared progress component on
+the analysis page. A tracked retry requires matching tenant, analysis marker,
+exact single source and stored timestamp window; task-backed or mismatched Jobs
+cannot be substituted. Other active work on the same inputs appears separately
+as a blocking run. Pending means waiting for execution, not confirmed LLM
+activity. Missing/stale heartbeat means unconfirmed activity. Neither state is
+evidence that a provider is busy. Polling GETs never launch or modify Jobs.
+
+`POST /app/analytics/{id}/retry/{job_id}/resume` explicitly resumes a compatible
+legacy pending analysis that an older page enqueued without a web executor.
+It rechecks CSRF and permissions, authenticated actor and owning workspace,
+single-source/window identity, due time, zero attempts and absence of competing
+work under admission/row locks. It never adopts a task-backed run or another
+actor's work. Missing initiator and analysis correlation are stamped before the
+web executor is launched after commit. Repeated requests still use the normal
+atomic claim; a lost web launch does not create a permanent resume latch.
+
+Each source result includes bounded `analytics_ids` from freshly persisted
+analyzer output, recorded before trigger filtering. Historical fallback rows
+are excluded. On completion the page refreshes an upserted current result, or
+opens a unique saved result with the same source/date/period/window; other saved
+results remain available as links. The user stays in analytics, without a
+queue/source navigation detour. Related task links require `agenttask.view`.
+
+The detail layout prioritizes summary, originals, topics and highlights. Empty
+sections and unavailable metric cards are hidden; confirmed zeros are retained.
+Provenance and extra metrics/chain history are collapsed. The explicit incomplete
+marker and its saved reasons remain visible until persisted coverage changes.
 
 The source detail shows remaining and exhausted inputs separately, uses the
 shared stored-data sentiment projection (no dashboard-private imports), and

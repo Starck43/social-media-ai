@@ -20,8 +20,9 @@ base and its behavior is retained. Delivery is tracked by
   to set up a complete run (`app/web/tasks.py`, task form templates).
 - The source header duplicates queue analysis already available next to the
   backlog and offers a collection action that runs inside the HTTP request.
-  Task runs already enqueue work and show progress. Use the task journey for
-  normal launches, retaining the focused queue retry near the actual backlog.
+  Task runs already enqueue work and show progress. The initial implementation
+  retained a focused source-page retry; the 2026-10-19 layout follow-up removes
+  execution controls and run history from the source page altogether.
 - Source schedules show only explicit source links and link every task to the
   general task list. Empty task source sets mean all active sources in the
   worker. Schedule projection must represent that rule and use direct links.
@@ -46,12 +47,12 @@ base and its behavior is retained. Delivery is tracked by
 | Page | Primary action | Useful information | Secondary actions |
 | --- | --- | --- | --- |
 | Sources | Add source | Platform, access readiness, active state | Open source details |
-| Source detail | Create analysis task with this source selected | Access/readiness, last check, raw waiting/suspended counts, saved analyses; explicitly scoped sentiment and estimated spend | Retry stored raw input in its queue block; edit/toggle source; destructive actions in a separate administration block |
+| Source detail | Save collection settings in the inline form | Collection/access, source-wide waiting/suspended counts, last check, saved-analysis totals, recent sentiment sample and estimated spend; permitted related tasks | One task-creation link at the bottom of related tasks, with this source selected; execution history, progress and diagnostics belong to task/run views |
 | Scenarios | Create methodology | Analysis/content types, active/default state, permitted task usage | Open methodology |
 | Scenario editor | Save methodology | Purpose, content coverage, model choices; separate permitted task usage block | Create task with this scenario selected; open a related task |
 | Tasks | Create analysis task | Source/scenario selection, effective activity, schedule, latest outcome, queued/running state | Open task, pause/resume, enqueue a run |
-| Task editor | Save or save and enqueue | Sources → methodology → content period → schedule; explain saving versus an immediate queue request | Optional targets/conditions remain separate from the core setup |
-| Task detail | Enqueue a run | Configuration, next occurrence, actual run outcome, collection and analysis counters, raw coverage and history | Edit task; authorized diagnostics in a separate disclosure |
+| Task editor | Save or save and enqueue, returning to task detail | One form at `/app/tasks/{id}/edit`, reused in the task-detail dialog; sources → methodology → content period → schedule | Optional targets/conditions remain separate from the core setup |
+| Task detail | Edit and run now from the navbar | Configuration, source/platform scope, latest task-associated run counters, per-source progress, raw coverage and run history | Retry analysis beside the run panel; authorized admin diagnostics in a disclosure |
 
 Operators receive actionable status and next steps. Existing administrator
 predicates protect technical diagnostics and raw previews. Task usage must be
@@ -60,6 +61,15 @@ gated before querying by `agenttask.view`; creating a task needs
 Statistics keep their entity and time scope: a recent-analysis sentiment sample
 is not a lifetime average, analytics rows are not raw content rows, and estimated
 analytics cost is not a complete billing ledger.
+
+Task names in the list open task detail. Its run panel refreshes while pending
+or running, and polls less frequently while idle to discover scheduled runs.
+Before a task has an associated Job, the panel shows its configured scope and
+an unstarted or unavailable progress state. Historical source-only jobs cannot
+be attributed to a task. Normal execution remains available even when there is
+no staged input; retrying staged analysis is a separate action. The task editor
+dialog loads the same canonical editor URL on demand and returns to task detail
+after saving; the direct URL remains available without the dialog.
 
 ## Execution contract
 
@@ -98,7 +108,7 @@ The source-picker fallback markup remains; a fully functional native editor
 is not claimed. The incomplete duplicate editor on task detail was removed.
 
 Reviewed source baseline: `a11f1f9e880925b01bf30478dbde62fa6ad0b48c` plus the
-task-scoped changes. The P8-T21 picker commit changed only the editor and its
+task-scoped changes. The P8-T23 picker commit changed only the editor and its
 two test files; its handoff to this task was explicit. No push, schema
 migration, runtime activation or paid request was performed here.
 
@@ -143,3 +153,60 @@ no-JavaScript behavior was inspected in markup, not with JavaScript disabled.
 The final compact selector and action-button styling follow-up received
 template/JavaScript syntax and diff checks only; it was not visually tested.
 P6-T04 remains a separately tracked source-deletion scope defect.
+
+Source-detail follow-up, 2026-10-19, base `346cd65` plus reviewed working diff:
+the page now has three source-level cards and an inline settings form. Source
+run panels, polling, raw previews, history, header and destructive actions were
+removed from this page. The related-tasks card has one source-prefilled create
+link. Existing exposed mutation/progress routes retain their prior contracts.
+The editor preserves an omitted token owner, clears an explicitly empty owner,
+rejects nonmembers, and checks duplicates when the platform changes.
+
+Primary OpenCode `build`, `QwenPlan/deepseek-v4-flash-0731`, isolated scope:
+`tests/unit_web/test_social_analysis_journey.py`,
+`tests/unit_web/test_analysis_retry.py`,
+`tests/unit_web/test_template_autoescape.py`,
+`tests/test_analysis_progress_endpoints.py`. Collection: 122, exit 0. Initial
+execution: 118 passed, four failed because the AST test fixture omitted
+`COLLECTION_MODES`. After correcting only that fixture, the four parameterized
+editor cases passed (exit 0); the other 118 passing cases were not repeated.
+Python/Jinja syntax and diff checks passed. Prepared PostgreSQL-backed source
+render assertions were updated but not executed. No browser/visual check or
+schema operation was performed for this follow-up.
+
+Task-detail correction, 2026-10-19, synchronized base `ddc9b99` plus the
+reviewed working diff: task names open detail, the process panel comes first,
+and navbar edit opens the canonical `/edit` form in a native dialog. Saving
+returns to task detail. The same form remains directly addressable. Run now
+is always available under its original permission; retrying staged analysis
+is a distinct panel action. All counters/progress stay within the HTMX root,
+including the no-Job state; idle polling discovers newly scheduled runs.
+The panel separates the current source backlog in the configured date window
+from latest-Job statistics. Raw counts use one tenant-scoped aggregate and the
+bound `CollectedItem.objects` manager. Malformed windows remain unknown and
+cannot widen explicit retry. Model/provider and successful/failed call counts
+come from journal rows matching both task and Job, under admin access.
+
+Primary OpenCode, same pinned model and isolated flags: 131 cases collected
+across `test_task_detail_progress.py`, `test_task_journal_scope.py`,
+`test_task_source_picker.py`, `test_template_autoescape.py`,
+`test_unified_social_analysis.py`, `test_queue_recovery_admission.py` and
+`test_analysis_progress_endpoints.py`. The main execution passed 130 cases;
+one explanatory-text assertion was updated to the final wording. After the
+bound-manager fix and strengthened fixture, the two task-progress/journal
+files passed all 21 cases (0 failed/skipped); the other 110 passing cases were
+unchanged. Earlier fixture failures remain superseded by this successful scope.
+Node syntax and diff checks passed. Read-only actual ORM access for task 1582
+found one active source/platform, no staged records, a successful coarse run
+receipt and no associated Job. Historical percentages were not inferred from
+source-only runs. No data was changed and no collection/model run was launched.
+The local task URI still returned nginx 502; no live browser acceptance is
+claimed. Ordinary runtime handling of malformed historical `cli_dates` remains
+outside this UI correction; explicit retry and backlog now reject that widening.
+
+Local implementation commit: `ca4b9b04cb42396765b0d5816abce0f67d8e21df`.
+Closeout catalog recheck on 2026-10-19 confirmed that
+`test_schema.analyzed_content_receipts` is absent, using the existing session
+factory in a read-only transaction. Persisted acceptance remains blocked;
+no schema repair is implied by the UI commit. Later owner instructions exclude
+visual testing of the final editor and analytics layout.

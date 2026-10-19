@@ -846,7 +846,12 @@ async def task_detail(request: Request, task_id: int):
 
 	source = None
 	with tenant_scope(bypass=True) if is_superuser else nullcontext():
-		source = await AgentTask.objects.filter(id=task_id).select_related("tenant").first()
+		source = (
+			await AgentTask.objects.filter(id=task_id)
+			.select_related("tenant", "agent_scenario")
+			.prefetch_related("sources")
+			.first()
+		)
 		if source is not None and not is_superuser and source.tenant_id != request.state.tenant_id:
 			source = None
 		if source is None:

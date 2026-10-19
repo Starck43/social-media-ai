@@ -186,6 +186,35 @@ def _format_tool_result(name: str, result: Any) -> str:
         return str(result)
 
 
+def _done_line(name: str, result: Any, body: str) -> str:
+    """One line for a confirmed action: what happened, or the error itself.
+
+    Short commands deserve short receipt. The result stays available to the
+    model as the tool row, so the answer can build on it without the owner
+    reading the payload first.
+    """
+    status = result.get("status") if isinstance(result, dict) else None
+    if isinstance(status, str) and status:
+        labels = {
+            "created": "создано",
+            "updated": "обновлено",
+            "exists": "уже есть",
+            "saved": "сохранено",
+            "sent": "отправлено",
+        }
+        subject = (
+            (result.get("scenario") or {}).get("name")
+            or (result.get("task") or {}).get("name")
+            or result.get("name")
+            or ""
+        )
+        label = labels.get(status, status)
+        return f"Готово · {name}: {label}" + (f" «{subject}»" if subject else "")
+    if isinstance(result, dict) and result.get("error"):
+        return f"Ошибка {name}: {result['error']}"
+    return f"Ошибка выполнения {name}: {body[:500]}"
+
+
 def _join_replies(*parts: Any) -> str:
     """Join reply fragments (e.g. a confirmed tool's result and the next turn)."""
     return "\n\n".join(p for p in parts if p)
@@ -596,7 +625,9 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
                         with memory_actor_scope(fresh.user_id, fresh.is_owner):
                             result = await call_tool(pending["name"], pending["args"])
                 body = _format_tool_result(pending["name"], result)
-                seed = f"Выполнено: {pending['name']}\n{body[:3000]}"
+                # The owner pressed a button; they do not need the tool's raw
+                # JSON echoed back as a message before the model's answer.
+                seed = _done_line(pending["name"], result, body)
             except Exception as e:  # noqa: BLE001
                 _log_runtime_failure(logging.WARNING, "agent_confirmed_tool_failed", e)
                 body = str(e)

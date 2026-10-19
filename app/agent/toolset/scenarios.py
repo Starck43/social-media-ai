@@ -242,7 +242,14 @@ async def scenario_suggest_prompt(description: str) -> dict[str, Any]:
             "ok": False,
             "message": "Модель сейчас недоступна — предложи владельцу написать промпт вручную.",
         }
-    return {"ok": True, "prompt": prompt, "unknown_variables": ScenarioBuilder.unknown_variables(prompt)}
+    # The prompt body is not returned: the next step needs its validity, and
+    # sending thousands of characters made the model narrate its own work
+    # («сгенерирую… проверяю…») instead of showing the result once.
+    return {
+        "ok": True,
+        "unknown_variables": ScenarioBuilder.unknown_variables(prompt),
+        "preview": prompt if len(prompt) <= 400 else prompt[:400] + "…",
+    }
 
 
 @tool(
@@ -374,7 +381,13 @@ async def scenario_create(
 
     await _save_preferences(draft)
 
-    return {"status": "created", "scenario": _full(scenario), "unknown_variables": _unknown_variables(draft)}
+    # Short form only: a preview the owner actually asked to see (name, what it
+    # analyses), not every stored prompt and scope the owner did not request.
+    return {
+        "status": "created",
+        "scenario": _brief(scenario),
+        "unknown_variables": _unknown_variables(draft),
+    }
 
 
 @tool(

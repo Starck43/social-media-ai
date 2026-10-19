@@ -105,7 +105,7 @@ async def test_owner_confirmation_roundtrip(_clean_sessions, monkeypatch):
     first = await agent_runtime.handle_inbound(_inbound("отправь сводку"))
     assert "подтверждение" in first.lower()
     second = await agent_runtime.handle_inbound(_inbound("да"))
-    assert second.startswith("Выполнено")
+    assert second.startswith("Готово ·")
 
 
 async def test_confirmation_cancel(_clean_sessions, monkeypatch):
@@ -166,7 +166,7 @@ async def test_scenario_create_waits_for_confirmation(_clean_sessions, monkeypat
     assert await AgentScenario.objects.count() == before, "nothing may be written before «да»"
 
     second = await agent_runtime.handle_inbound(_inbound("да"))
-    assert second.startswith("Выполнено")
+    assert second.startswith("Готово ·")
     created = await AgentScenario.objects.filter(name="Бренд из чата").first()
     assert created is not None, "the confirmed call must create the scenario"
     assert "brand_mentions" in created.analysis_types, "the preset must have been expanded"
@@ -493,7 +493,7 @@ async def test_confirmed_tool_resumes_the_plan(_clean_sessions, monkeypatch):
     # «да» executes source_add AND immediately asks for the next step — the
     # owner does not have to nudge with «а где сама задача?».
     second = await agent_runtime.handle_inbound(_inbound("да"))
-    assert second.startswith("Выполнено"), second
+    assert second.startswith("Готово ·"), second
     assert "подтверждение" in second.lower(), second
     assert "задачу" in second.lower(), second
     assert "0 21" not in second, f"cron must read as human text, not as an expression: {second!r}"
@@ -513,7 +513,7 @@ async def test_confirmed_tool_resumes_the_plan(_clean_sessions, monkeypatch):
 
     # A second «да» runs task_add — the staged next step fires.
     third = await agent_runtime.handle_inbound(_inbound("да"))
-    assert third.startswith("Выполнено"), third
+    assert third.startswith("Готово ·"), third
     assert "Слежение за Анной" in third, third
 
 

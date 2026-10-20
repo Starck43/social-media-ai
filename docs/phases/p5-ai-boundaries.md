@@ -90,7 +90,7 @@ safely.
   receipt design/implementation and focused tests; owner: codex-analysis-receipts;
   status: IN_PROGRESS.
 
-- [ ] P5-T05 — bounded-output map-reduce analysis pipeline so any text model,
+- [x] P5-T05 — bounded-output map-reduce analysis pipeline so any text model,
   including small output caps (observed: `zai-org/GLM-5.3-Flash` truncated at
   2048 completion tokens), can process any staged volume: per-item map
   extraction with a fixed compact output contract, a bounded reduce/aggregation
@@ -102,10 +102,14 @@ safely.
   is visible in job progress, focused tests via R10 (mocked LLM), costs stay
   journaled and capped; depends: P5-T04 (receipts), P8-T22 (shared
   analyzer/handler files); owns: design doc, app/services/ai/analyzer.py,
-  app/services/ai/attempt_journal.py, app/jobs/handlers.py; owner: $local
-  (opencode); status: IN_PROGRESS (design)
+  app/services/ai/attempt_journal.py, app/jobs/handlers.py; owner: unassigned;
+  status: DROPPED — deferred 2026-10-21 under owner instruction. It existed as
+  design only, is not part of the current pilot/collection plan, and its
+  handler/analyzer ownership blocked collection-time selection. The design
+  remains in `docs/design/analysis-map-reduce.md` as historical reference;
+  re-open as a new task only if measured volume/truncation demand returns.
 
-- [ ] P5-T06 — theme-chain similarity search works against `ai_analytics.main_topics`
+- [x] P5-T06 — theme-chain similarity search works against `ai_analytics.main_topics`
   (json column): the raw SQL silently failed on every call since Oct 1 — an
   uninterpolated `{settings.DB_SCHEMA}` placeholder plus text[]-only array
   operators (`&`, `|`) that PostgreSQL does not define for json or any array
@@ -121,9 +125,11 @@ safely.
   test-schema sync refusal (separate issue, R8). Evidence: fix diff in
   `app/services/ai/theme_matcher.py`, SQL probe outputs vs live workspace;
   depends: none; owns: app/services/ai/theme_matcher.py,
-  tests/test_theme_matcher_sql.py; owner: $local (opencode); status: READY
+  tests/test_theme_matcher_sql.py; owner: $local (opencode); status: DONE
+  (2026-10-21) — no-DB test `tests/test_theme_matcher_sql.py` passed in the
+  owner closure run; SQL probe evidence retained above.
 
-- [ ] P5-T07 — analysis runs to completion for text-only scenarios: staged
+- [x] P5-T07 — analysis runs to completion for text-only scenarios: staged
   attachments without a usable URL are not media for analysis (collector
   found none — VK raw-content audit Q-2), so a post retires on its text
   coverage instead of being withheld forever; a media modality without a
@@ -144,9 +150,11 @@ safely.
   app/models/managers/ai_analytics_manager.py, app/services/ai/theme_matcher.py,
   app/web/templates/web/source_detail.html,
   tests/test_media_coverage_semantics.py, tests/test_theme_matcher_sql.py;
-  owner: $local (opencode); status: READY
+  owner: $local (opencode); status: DONE (2026-10-21) — no-DB media/theme
+  scope passed in the owner closure run; live CLI evidence retained above.
+  P5-T04 receipts remain a separate open task and are not claimed here.
 
-- [ ] P5-T08 — **task selection scope; `monitored_users` removed end to end.**
+- [x] P5-T08 — **task selection scope; `monitored_users` removed end to end.**
   The task, not a source and not a scenario, decides which collected items are
   analysed. Design: `docs/design/task-selection.md`. Selection is applied in
   order — sources (`agent_task_sources`) → `payload.tracked_users`
@@ -206,11 +214,16 @@ safely.
   diagnostics show the selection split; docs (`task-selection`,
   `COLLECTION`, `AGENT_TASKS`, `CLI`, `API`, `DIGEST`,
   `ANALYTICS_AGGREGATION_SYSTEM`) describe the shipped behavior. Depends:
-  P5-T05 (analyzer/handler files), P8-T22. Owns: app/services/monitoring/,
+  P8-T22. Owns: app/services/monitoring/,
   app/services/social/, app/jobs/handlers.py, app/services/ai/analysis_context.py,
   app/models/managers/agent_task_manager.py, app/web/tasks.py,
   app/web/sources.py, templates, app/agent/toolset/tasks.py, cli/, app/api,
-  app/admin/views.py, alembic revision, tests. Owner: unassigned; status: TODO
+  app/admin/views.py, alembic revision, tests. Owner: unassigned;
+  status: DONE (2026-10-21) — closure verified 110 no-DB tests across selection
+  core, handler collect/analyze, web/API task surfaces, CLI flags, payload and
+  fingerprint; `monitored_users` remains only in docs/history and tests that
+  assert its removal. Migration 0105 already stripped stored values (Q-4).
+  The P5-T05 dependency was removed when that design-only task was dropped.
 
 - [ ] P5-T12 — VK repost author snapshot: `wall.get` must request
   `copy_history` (and `extended=1` with the needed `fields`) so each stored item
@@ -226,7 +239,7 @@ safely.
   app/models/managers/collected_item_manager.py, tests. Owner: unassigned;
   status: TODO
 
-- [ ] P5-T13 — VK search sources and safe collection bounds: add
+- [x] P5-T13 — VK search sources and safe collection bounds: add
   `SourceType.SEARCH` (`newsfeed.search` with `q`, date window and optional
   `owner_ids`), `groups.getById` screen-name resolution (since
   `utils.resolveScreenName` answers 1051), author/permalink snapshots on every
@@ -245,7 +258,9 @@ safely.
   Owns: `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
   `app/web/tasks.py`, templates, `app/agent/toolset/`, `cli/`,
   `app/models/scheduling/agent_task.py`, migration 0106, tests. Owner:
-  $local (opencode); status: READY.
+  $local (opencode); status: DONE (2026-10-21) — closure verified 36 no-DB
+  tests (`test_vk_search`, `test_collect_limit`, `test_theme_matcher_sql`,
+  `test_media_coverage_semantics`); Stage A/B builds on this contract.
   Evidence: implementation `app/services/social/vk_client.py`
   (`SEARCH`/`newsfeed.search`, `groups.search`, `users.search`,
   `database.getCities`, `groups.getById` resolution, author/permalink,
@@ -325,21 +340,20 @@ safely.
     `CollectionPlanner` that expands task intent into topologically ordered
     lanes with budgets and cross-lane dedupe. A query lane is a task-scoped
     Source with an auto-generated name/slug.
-    **Implementation handoff:**
-    [stage B plan](../design/collection-plan-stage-b.md). Status: not started;
-    use mocks because Q-5 blocks live VK search.
+    **Implementation plan:**
+    [stage B plan](../design/collection-plan-stage-b.md). Status: DONE
+    (mocks only; Q-5 still blocks live VK search).
     Accept: mocked VK params for `database.getCities`, `users.search`,
     `groups.search`, `newsfeed.search`; lane expansion and dependency order;
     one post found by a wall and by search is stored once; `limit_reached` is
     returned; dry run writes nothing and calls no model; TG returns an explicit
     unsupported reason instead of an empty result.
-    **Status: implementation complete in the working tree (2026-10-21); 49
-    no-DB tests passed through the primary OpenCode test-runner at HEAD
-    `e8e8693`.** Added `pages.py` (`Page`, capabilities, cursors), `planner.py`
-    (lanes, dependencies, budgets, query-source specs, cross-lane dedupe),
-    VK/Telegram adapters, and no-DB tests. Runtime handlers/collector/staging
-    are intentionally untouched; the working `public` schema is untouched.
-    Codex review remains pending.
+    **Status: DONE (2026-10-21); 49 no-DB tests passed through the primary
+    OpenCode test-runner at commit `c6bd826`.** Added `pages.py` (`Page`,
+    capabilities, cursors), `planner.py` (lanes, dependencies, budgets,
+    query-source specs, cross-lane dedupe), VK/Telegram adapters, and no-DB
+    tests. Runtime handlers/collector/staging are intentionally untouched; the
+    working `public` schema is untouched.
 
   - **C. Selection at collection.** Run deterministic task selection before
     staging; store only `selected` and `needs_review` rows with
@@ -391,16 +405,17 @@ safely.
     warning are visible; dry run writes no rows and calls no model; 1051 is
     reported as the named blocker while credentials remain unavailable.
 
-  Depends: P5-T13 (search primitives; READY), P5-T08 (selection before the
-  model; TODO) for stage C; serialize shared analyzer/handler files with
-  P5-T05. Stages A–B can start independently. Owns:
+  Depends: P5-T13 (DONE), P5-T08 (DONE). P5-T05 was dropped, so no
+  analyzer/handler ownership remains. Stages A–B are DONE; stage C can start
+  in the owner's fork #2. Owns:
   `docs/design/collection-plan.md`, `app/services/collection/`,
   `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
   `app/models/collection/`, `app/models/scheduling/`, `app/web/tasks.py`,
   `app/web/sources.py`, `app/web/scenarios.py`, `app/web/templates/`,
   `app/templates/`, `app/core/scenario_presets.py`, `app/admin/views.py`,
   `app/agent/toolset/`, `cli/`, `app/api/`, `app/services/ai/scenario*.py`,
-  one Alembic revision, tests. Owner: $local (opencode); status: IN_PROGRESS.
+  one Alembic revision, tests. Owner: owner (fork #2); status: IN_PROGRESS
+  (stages A–B DONE; C–F open).
   Evidence: [collection plan](../design/collection-plan.md); append stage
   evidence at the exact tested SHA. Test routing: primary OpenCode
   test-runner subagent per stage (RULES.md R10), shared DB sequential (R8).

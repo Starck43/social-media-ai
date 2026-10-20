@@ -1,5 +1,12 @@
 # Map-reduce analysis pipeline (bounded output for any model)
 
+Status: **deferred / not in the current plan** (2026-10-21). P5-T05 was dropped
+under owner instruction: it existed as design only, the current pilot uses the
+bounded staged-batch path and P5-T07 completion fixes, and its handler/analyzer
+ownership blocked collection-time selection. Keep this document as historical
+guidance; re-open as a new task only if measured volume/truncation demand
+returns.
+
 Design for P5-T05 ([phase file](../phases/p5-ai-boundaries.md)). Problem,
 verified evidence and acceptance live in the phase task; this doc is the
 implementation guidance. It follows PRD-07 invariants: typed output cannot gain

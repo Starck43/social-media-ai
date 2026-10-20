@@ -465,19 +465,19 @@ P8-T06 and does not alter its task record.
   into a reviewable plan instead of one concrete task. Scope: `search_plan`
   (free-form request → paraphrase families, platform search queries and a short
   candidate wording for target names, every value proposed and confirmed);
-  `sources_search` (uses the P5-T09 discovery source and returns a capped,
+  `sources_search` (uses the P5-T14 discovery lanes and returns a capped,
   tenant-scoped candidate list — usernames, names, city, reason; returns to the
-  model only a bounded list); `source_add` accepts `mode`, `token_owner`,
-  `monitored_users` and `params` so a candidate becomes a usable source without
-  the web UI; `task_plan` (one multi-step preview: selection keywords, sources,
-  scenario, window, chain hint) executed as confirmed `task_add` calls.
+  model only a bounded list); `source_add` accepts `mode`, `token_owner` and
+  `params` so a confirmed candidate becomes a usable source without the web UI;
+  `task_plan` (one multi-step preview: collection content/queries/city, sources,
+  scenario, window) executed as confirmed `task_add` calls.
   `scenario_suggest_prompt` and `scenario_create` warn when a custom prompt
   omits `{payload_instruction}` and a scenario asks for targets the task does
   not carry. Prompt procedure: never invent usernames, people or organisations;
   ask the owner to confirm every paraphrase and candidate; always state that
   discovery coverage is partial. Accept: mocked-runtime tests cover the plan
   preview, candidate cap, refusal without confirmation and the prompt warning;
-  no live platform call in verification; depends: P5-T08, P5-T09, P5-T11;
+  no live platform call in verification; depends: P5-T08 (DONE), P5-T14;
   owns: app/agent/toolset/, app/agent/prompts.py, focused tests; owner:
   unassigned; status: TODO
 

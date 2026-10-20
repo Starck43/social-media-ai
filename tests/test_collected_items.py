@@ -47,6 +47,7 @@ async def source():
     )
     yield s
     await CollectedItem.objects.filter(source_id=s.id).delete()
+    await CollectionLaneRun.objects.filter(lane_id=f"source:{s.id}").delete()
     await Source.objects.delete_by_id(s.id)
     await Platform.objects.delete_by_id(p.id)
 

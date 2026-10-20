@@ -17,7 +17,33 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
 - [ ] P10-T02 (AUD-02, P1) — remove password hashes from HTTP user responses;
   accept: HTTP/OpenAPI profiles exclude password hashes, existing rights
   preserved; depends: serialize `user.py`/schema writes with P10-T03;
-  owner: unassigned; status: TODO
+  owns: tests/test_http_user_response_privacy.py, docs/validation/http-user-response-privacy.md
+  and scoped Users response contract in docs/API.md;
+  owner: remote Notion agent (fix/http-user-response-redaction); status: READY.
+  Claim before implementation from dev `aeb8c54d74a55710b5080fd0a980fbc0ecf36d8c`.
+  Current UserInDB already excludes hashes (existing `eb6cad6`); this lane adds
+  bounded HTTP/OpenAPI regression evidence and corrects stale response docs,
+  not another runtime/schema or privilege redesign. P10-T03 remains unassigned
+  and unchanged; no shared user.py/schema writes are planned. Open PRs
+  #216/#217/#220/#224/#225/#226 checked; docs/API.md foreign hunks do not overlap
+  the Users response section. Preserve other claims/evidence and Draft PRs.
+  Claim: `6093a08597cfa46a430c628d74fb291060c8deb9`;
+  test/API-doc SHA: `35df749c1ba3b29d71b99089d072f96f00d8e814`.
+  Draft [PR #227](https://github.com/Starck43/social-media-ai/pull/227).
+  Remote self-run at the published SHA: 47 isolated tests passed, exit 0,
+  0 skips/xfails; five HTTP profile-response routes, actual schemas/OpenAPI
+  and route guards with explicit identity/storage doubles. Intentional hash
+  regression in a disposable copy: 18 failed / 29 passed, exit 1 as expected.
+  Black/isort, pip and scoped diff checks passed. No production code changes.
+  Commands, dependency versions, harness correction and limits:
+  [validation](https://github.com/Starck43/social-media-ai/blob/987796aa01ba9dd924207512b2a314bb63fbda97/docs/validation/http-user-response-privacy.md).
+  READY is implementation/evidence review, not DONE or full application/token/
+  middleware/DB acceptance; those checks remain owner-local under R10. No
+  migration, runtime start or merge authorized; keep Draft.
+  Registry synchronized from PR head `987796aa01ba9dd924207512b2a314bb63fbda97`;
+  implementation and test changes remain in that unmerged PR. Evidence above
+  is attributed remote/owner evidence, not a new local execution.
+
 
 - [ ] P10-T03 (AUD-03, P1) — separate self-service profile updates from
   privilege updates; accept: profile updates cannot elevate authority; fresh
@@ -90,7 +116,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   448 files; removed namespace module/asset and dev-only encryption mutants
   each fail as expected (exit 1). Black/isort and scoped diff checks passed.
   Commands, exact versions, initial harness failures and limits:
-  [validation](../validation/wheel-runtime-completeness.md).
+  [validation](https://github.com/Starck43/social-media-ai/blob/fee3869b432779ae4a47ce7235b1cf91394d3b31/docs/validation/wheel-runtime-completeness.md).
   Previous READY handoff is superseded by owner review of the same `fa0c7e9`.
   Owner-reported macOS 15.7.9 x86_64 / Python 3.12.6: pinned and unconstrained
   wheel file/import smoke plus pip check, namespace import and cli --help pass.
@@ -103,6 +129,10 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   installed-wheel no-DB module-import/resource checks before acceptance/merge.
   No new implementation, task acceptance, runtime/DB/provider start or merge
   authorized by this documentation follow-up. Keep Draft, not DONE.
+  Registry synchronized from PR head `fee3869b432779ae4a47ce7235b1cf91394d3b31`;
+  implementation and test changes remain in that unmerged PR. Evidence above
+  is attributed remote/owner evidence, not a new local execution.
+
 
 - [ ] P10-T13 — repair post-migration LLM CLI contracts; owner: remote Notion
   agent; status: BLOCKED. Accept: provider listing without removed default

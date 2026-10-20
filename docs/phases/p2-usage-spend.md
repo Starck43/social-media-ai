@@ -17,6 +17,8 @@ background runs; changing payer requires new payer consent.
 
 ## Tasks
 
+- [x] P2-T10 — audit cache-aware token pricing, reported costs, daily caps and payer/workspace attribution; accept: source-backed findings and bounded correction plan, no runtime changes; depends: none; owns: docs/audits/2026-10-20-token-cache-cost.md; owner: codex-token-cost-audit; status: DONE — coordinator static review at `de9fe31`, 2026-10-20; evidence: [audit](../audits/2026-10-20-token-cache-cost.md); runtime corrections and pytest remain unperformed.
+
 - [x] P2-T01 — model personal billing account identity and fixed task payer
   binding; changing payer requires new payer consent; accept: personal billing
   account identity, fixed task payer for manual and background runs, consent

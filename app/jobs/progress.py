@@ -17,6 +17,8 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional, Sequence
 
+from app.jobs.progress_metrics import record_metrics, read_metrics
+
 logger = logging.getLogger(__name__)
 
 TRACKED_JOB_TYPES = frozenset({"collect", "analyze"})
@@ -27,7 +29,7 @@ _OUTCOMES = frozenset({"collected", "empty", "error", "auth_required", "rate_lim
 # Only bounded counters/flags; never content hashes, hints, messages or payloads.
 _INT_KEYS = ("items", "new_items", "analyzed", "actions")
 _RAW_KEYS = ("raw_total", "raw_selected", "raw_processed")
-_FLAG_KEYS = ("collection_error",)
+_FLAG_KEYS = ("collection_error", "staged_error", "error")
 
 
 class ProgressStopped(RuntimeError):
@@ -63,8 +65,9 @@ def _item(source: Any, state: str, entry: dict | None) -> dict[str, Any]:
                 item[key] = count
         if entry.get("error") is True or outcome == "error":
             item["error"] = True
-        if entry.get("collection_error") is True:
-            item["collection_error"] = True
+        for flag in _FLAG_KEYS:
+            if entry.get(flag) is True:
+                item[flag] = True
     return item
 
 
@@ -133,6 +136,9 @@ class ProgressSession:
         self.calls = 0
         self.lost = False
         self.phase = "processing"
+        self._phase_records = {}
+        self._last_sources = ()
+        self._last_rows = ()
         self._writer = writer or _default_writer
         self._settler = settler or _default_settler
 
@@ -148,6 +154,7 @@ class ProgressSession:
         position = self.calls
         self.calls += 1
         snapshot = build_snapshot(sources, position, per_source, phase=self.phase)
+        self._attach_records(snapshot, sources, per_source)
         try:
             written = await self._writer(self.claim, snapshot)
         except Exception as error:  # noqa: BLE001 — progress must never fail a run
@@ -168,6 +175,7 @@ class ProgressSession:
         if not self.tracked:
             return
         snapshot = build_snapshot(sources, max(0, self.calls - 1), per_source, phase=self.phase)
+        self._attach_records(snapshot, sources, per_source, current=current)
         item = next((entry for entry in snapshot["items"] if entry.get("source_id") == current.get("source_id")), None)
         if item is not None:
             item["state"] = "running"
@@ -189,6 +197,16 @@ class ProgressSession:
             self.lost = True
             raise ProgressStopped()
 
+    def _attach_records(self, snapshot, sources, rows, *, current=None):
+        # Keep references to the handler-owned list: its last source is appended
+        # before begin_phase, even when no extra step() call follows the loop.
+        self._last_sources, self._last_rows = sources, rows
+        phase = self.phase if self.phase != "processing" else (
+            "collection" if self.claim.job_type == "collect" else "analysis"
+        )
+        self._phase_records[phase] = record_metrics(sources, rows, phase, current=current)
+        snapshot["records"] = dict(self._phase_records)
+
     async def settle(self) -> None:
         """After a stopped collect run: finish an operator's discard choice."""
         if getattr(self.claim, "job_type", None) != "collect":
@@ -206,8 +224,16 @@ class ProgressSession:
         """Start a distinct source pass without carrying its completed count."""
         if self.lost:
             raise ProgressStopped()
+        if self._last_sources:
+            previous = self.phase if self.phase != "processing" else (
+                "collection" if self.claim.job_type == "collect" else "analysis"
+            )
+            self._phase_records[previous] = record_metrics(
+                self._last_sources, self._last_rows, previous, complete=True
+            )
         self.phase = phase if phase in {"collection", "analysis"} else "processing"
         self.calls = 0
+        self._last_sources, self._last_rows = (), ()
 
 
 _current: ContextVar[Optional[ProgressSession]] = ContextVar("job_progress_session", default=None)
@@ -271,11 +297,15 @@ def read_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
                 item[key] = count
         if raw.get("error") is True:
             item["error"] = True
-        if raw.get("collection_error") is True:
-            item["collection_error"] = True
+        for flag in _FLAG_KEYS:
+            if raw.get(flag) is True:
+                item[flag] = True
         items.append(item)
     current = progress.get("current")
     return {
+        "records": {key: metrics for key in ("collection", "analysis")
+                    if (metrics := read_metrics((progress.get("records") or {}).get(key))) is not None}
+                    if isinstance(progress.get("records"), dict) else {},
         "phase": progress.get("phase") if progress.get("phase") in {"collection", "analysis"} else "processing",
         "total": total,
         "completed": completed,

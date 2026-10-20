@@ -367,6 +367,11 @@ safely.
     it is selected through the thread; a comment row carries
     `parent_external_id`; likes produce candidates, not text rows; an unknown
     city lands in `needs_review`; the same candidate is not duplicated.
+    **Status: D1 implementation complete in `opencode/p5-t14-stage-d`; the
+    per-source collection context (intent + capabilities + warnings) is wired
+    through `handle_collect`; final test evidence is recorded after the
+    implementation commit.** D2 comments/thread, D3 engagement candidates and
+    D4 city/profile review remain.
 
   - **E. Task UI, admin, templates, presets.** Split the task editor into
     "Кого искать" (city, discovery queries, people/communities, candidate

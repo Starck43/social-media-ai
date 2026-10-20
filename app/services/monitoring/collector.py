@@ -22,6 +22,18 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _collection_summary(context: Any) -> dict | None:
+	"""A bounded task-collection summary, never the task payload itself."""
+	summary = getattr(context, "summary", None)
+	if not callable(summary):
+		return None
+	try:
+		value = summary()
+	except Exception:  # noqa: BLE001 - metadata must not fail a collection
+		return None
+	return value if isinstance(value, dict) else None
+
+
 def _dry_run_preview(content: list[dict], limit: int = 10, text_limit: int = 300) -> list[dict]:
 	"""A bounded, offline preview of a rehearsal batch.
 
@@ -160,6 +172,7 @@ class ContentCollector:
 			dry_run: bool = False,
 			selection_scope: Any = None,
 			task_id: int | None = None,
+			collection_context: Any = None,
 	) -> Optional[dict]:
 		"""
 		Collect content from a single source.
@@ -170,6 +183,8 @@ class ContentCollector:
 			analyze: Whether to run AI analysis on collected content
 			force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
 			run_id: The job this batch belongs to
+			collection_context: Parsed task intent and provider capabilities for
+				this source; metadata only until the comments/engagement lanes land.
 			dry_run: Read-only rehearsal: fetch and report, but write no raw rows,
 				call no model and do not advance `last_checked`
 
@@ -286,6 +301,7 @@ class ContentCollector:
 					"dry_run": True,
 					"preview": _dry_run_preview(content),
 					"selection": selection_preview,
+					"collection": _collection_summary(collection_context),
 				}
 
 			# Write the raw batch first, then analyse it.
@@ -363,6 +379,7 @@ class ContentCollector:
 				},
 				# This run's "seen" ledger, carried in the job result.
 				"content_hashes": hashes,
+				"collection": _collection_summary(collection_context),
 			}
 			if analysis_errors is not None:
 				result["analysis_errors"] = analysis_errors

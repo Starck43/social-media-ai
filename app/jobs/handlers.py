@@ -366,6 +366,8 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                         eligible; a filter over each source's own content, never
                         a collection target (docs/design/task-selection.md)
     """
+    from app.services.collection.context import build_collection_context, platform_name
+    from app.services.collection.intent import CollectionIntentError
     from app.services.monitoring.collector import ContentCollector
     from app.services.social.rate_limit import SourceRateLimited
 
@@ -471,6 +473,35 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         await job_progress.step(sources, stats["per_source"])
         stats["sources"] += 1
         _apply_params(source)
+        try:
+            collection_context = build_collection_context(
+                task_payload,
+                platform=platform_name(source),
+                source_id=source.id,
+            )
+        except CollectionIntentError as error:
+            logger.warning(
+                "collect_collection_intent_invalid task_id=%s source_id=%s error_code=%s",
+                _log_id(getattr(task, "id", None)),
+                _log_id(source.id),
+                str(error),
+            )
+            stats["error"] += 1
+            stats["error_sources"].append(source.name)
+            stats["error_messages"].append(f"{source.name}: {error}")
+            stats["per_source"].append(
+                {
+                    "source_id": source.id,
+                    "name": source.name,
+                    "items": 0,
+                    "new_items": 0,
+                    "outcome": "error",
+                    "analyzed": 0,
+                    "error_code": "collection_intent_invalid",
+                    "error_hint": str(error),
+                }
+            )
+            continue
         # A tracked author is a filter on what a source returns, not a
         # collection target: the source's own wall is always read.
         try:
@@ -483,6 +514,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                 dry_run=dry_run,
                 selection_scope=selection_scope,
                 task_id=getattr(task, "id", None),
+                collection_context=collection_context,
             )
             items = (result or {}).get("content_count", 0)
             new_items = (result or {}).get("new_items", 0)
@@ -523,6 +555,9 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "selected": int((result or {}).get("selected", 0) or 0),
                     "needs_review": int((result or {}).get("needs_review", 0) or 0),
                     "rejected": int((result or {}).get("rejected", 0) or 0),
+                    # Parsed task intent and the provider's honest capabilities
+                    # for this source. D2-D4 consume the same context.
+                    "collection": (result or {}).get("collection") or collection_context.summary(),
                     # This run's "seen" ledger. Written on every collect, whether
                     # or not the analysis succeeded — that is what stops the next
                     # collection from re-reporting the same wall as new.

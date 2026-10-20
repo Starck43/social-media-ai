@@ -65,7 +65,7 @@ async def test_handle_collect_uses_m2m_sources(platform, sources, monkeypatch):
 
         async def fake_collect(
             self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
-            selection_scope=None, task_id=None,
+            selection_scope=None, task_id=None, collection_context=None,
         ):
             called.append(source.id)
             return _fake_result()
@@ -144,7 +144,7 @@ async def test_handle_collect_records_a_per_source_breakdown(platform, sources, 
 
         async def fake_collect(
             self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
-            selection_scope=None, task_id=None,
+            selection_scope=None, task_id=None, collection_context=None,
         ):
             if source.id == sources[1].id:
                 raise RuntimeError("токен истёк")
@@ -186,7 +186,7 @@ async def test_handle_collect_reports_an_empty_source_as_empty(platform, sources
 
         async def fake_collect(
             self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
-            selection_scope=None, task_id=None,
+            selection_scope=None, task_id=None, collection_context=None,
         ):
             return None
 
@@ -225,7 +225,7 @@ async def test_handle_collect_ignores_the_removed_excluded_users_key(platform, s
 
         async def fake_collect(
             self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
-            selection_scope=None, task_id=None,
+            selection_scope=None, task_id=None, collection_context=None,
         ):
             called.append(source.id)
             return _fake_result()
@@ -236,5 +236,81 @@ async def test_handle_collect_ignores_the_removed_excluded_users_key(platform, s
         assert called == [s.id for s in sources]
         assert stats["excluded"] == 0
         assert stats["sources"] == len(sources)
+    finally:
+        await AgentTask.objects.delete_by_id(task.id)
+
+
+async def test_handle_collect_passes_task_collection_context(platform, sources, monkeypatch):
+    """The parsed intent and provider capabilities reach the collector."""
+    from app.jobs.handlers import handle_collect
+    from app.web.tasks import _replace_task_sources
+
+    task = await AgentTask.objects.create(
+        name=f"t_{uuid.uuid4().hex[:6]}",
+        job_type="collect",
+        cron_expr="@once",
+        payload={
+            "collection": {
+                "content_types": ["posts", "comments"],
+                "engagement_types": ["likes"],
+                "comments": {"max_per_post": 5, "total": 40},
+                "city": {"name": "Киров", "mode": "prefer"},
+            }
+        },
+        is_active=True,
+    )
+    try:
+        await _replace_task_sources(task.id, [sources[0].id], task.tenant_id)
+        captured = {}
+
+        async def fake_collect(
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
+            selection_scope=None, task_id=None, collection_context=None,
+        ):
+            captured["context"] = collection_context
+            return _fake_result()
+
+        monkeypatch.setattr("app.services.monitoring.collector.ContentCollector.collect_from_source", fake_collect)
+
+        stats = await handle_collect({"agent_task_id": task.id})
+
+        context = captured["context"]
+        assert context.platform == "vk"
+        assert context.includes_comments is True
+        assert context.engagement_types == ("likes",)
+        row = stats["per_source"][0]
+        assert row["collection"]["comments"] == {"enabled": True, "max_per_post": 5, "total": 40}
+        assert row["collection"]["city"] == {"name": "Киров", "mode": "prefer"}
+    finally:
+        await AgentTask.objects.delete_by_id(task.id)
+
+
+async def test_handle_collect_rejects_a_malformed_collection_block(platform, sources, monkeypatch):
+    """A bad collection config is a source error, not a guessed post-only run."""
+    from app.jobs.handlers import handle_collect
+    from app.web.tasks import _replace_task_sources
+
+    task = await AgentTask.objects.create(
+        name=f"t_{uuid.uuid4().hex[:6]}",
+        job_type="collect",
+        cron_expr="@once",
+        payload={"collection": {"limit": 0}},
+        is_active=True,
+    )
+    try:
+        await _replace_task_sources(task.id, [sources[0].id], task.tenant_id)
+        called = []
+
+        async def fake_collect(self, *args, **kwargs):
+            called.append(True)
+
+        monkeypatch.setattr("app.services.monitoring.collector.ContentCollector.collect_from_source", fake_collect)
+
+        stats = await handle_collect({"agent_task_id": task.id})
+
+        assert called == []
+        assert stats["error"] == 1
+        assert stats["per_source"][0]["error_code"] == "collection_intent_invalid"
+        assert stats["per_source"][0]["error_hint"] == "collection_limit_out_of_range"
     finally:
         await AgentTask.objects.delete_by_id(task.id)

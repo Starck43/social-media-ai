@@ -487,6 +487,18 @@ still selected when its comments match. New selected rows are not re-filtered
 during analysis; legacy NULL-status rows keep the old analysis-time pass once.
 See [collection plan](design/collection-plan.md).
 
+### Task collection context (P5-T14 stage D1)
+
+Each source in a collect run now gets a parsed `CollectionIntent` and that
+provider's capabilities. The handler fails a source with
+`collection_intent_invalid` when a known collection value is malformed, rather
+than collecting a guessed population. Requested operations the provider cannot
+perform (for example comments, likes, city lookup or profiles on Telegram)
+appear as bounded warnings in the per-source result; they are not an empty
+result. Runtime still collects posts only until the comments, engagement and
+profile steps are connected. Older tasks without a `collection` block keep the
+post-only behaviour.
+
 ## Rehearsal (dry run)
 
 `CLI --dry-on` and the task's `dry_run` toggle fetch the platform, count what is

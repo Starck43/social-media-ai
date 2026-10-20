@@ -233,12 +233,18 @@ class JobManager(BaseManager["Job"]):
         run_at: Optional[datetime] = None,
         max_attempts: Optional[int] = None,
         session: Optional["AsyncSession"] = None,
+        supersede_unfinished: bool = False,
     ) -> "Job":
         """Admit an explicit collect/analyze run, or report an occupied source.
 
         Keep low-level enqueue available for new-input wakeups: coalescing a
         wakeup into an already-running batch could strand those new raw inputs.
         All task/manual run surfaces use this guarded boundary instead.
+
+        `supersede_unfinished` is a manual re-run of this same task: its own
+        pending/running jobs are ignored by the conflict check and removed
+        before the new row is inserted. A different task's occupying run still
+        raises `SourceJobBusy` — and nothing is deleted in that case.
         """
         from app.jobs.source_activity import SOURCE_JOB_TYPES, SourceJobBusy, source_conflict
 
@@ -258,6 +264,7 @@ class JobManager(BaseManager["Job"]):
                         run_at=run_at,
                         max_attempts=max_attempts,
                         session=owned,
+                        supersede_unfinished=supersede_unfinished,
                     )
         from app.core.tenant_context import current_tenant_id, is_bypass
 
@@ -267,9 +274,18 @@ class JobManager(BaseManager["Job"]):
         tenant_id = stamped["tenant_id"]
         await self.lock_source_admission(session, tenant_id)
         jobs, task_sources, active = await self._source_activity_context(session, tenant_id, agent_task_id)
-        existing = source_conflict(payload, agent_task_id, jobs, task_sources, active)
+        existing = source_conflict(
+            payload,
+            agent_task_id,
+            jobs,
+            task_sources,
+            active,
+            ignore_task_id=agent_task_id if supersede_unfinished else None,
+        )
         if existing is not None:
             raise SourceJobBusy(existing)
+        if supersede_unfinished and agent_task_id is not None:
+            await self.delete_unfinished_for_task(session, tenant_id=tenant_id, task_id=agent_task_id)
         return await self.enqueue(
             job_type,
             payload,
@@ -718,6 +734,42 @@ class JobManager(BaseManager["Job"]):
                     .execution_options(synchronize_session=False)
                 )
         return True
+
+    async def delete_unfinished_for_task(self, session: "AsyncSession", *, tenant_id: int, task_id: int) -> int:
+        """Remove this task's queued/running rows before a manual re-run.
+
+        A manual "run now" is a replacement, not a second copy of the same
+        one-off work: the caller holds the workspace admission lock, so no
+        other admission can insert a competing row while these are removed.
+        Row locks settle a claim racing with the delete. A running handler
+        loses its claim with the row and stops at the next heartbeat/progress
+        write; terminal rows are history and are left alone.
+
+        Deletion is deliberate: keeping the superseded rows as `failed` made
+        the queue read as if several runs of the same task were still pending.
+        """
+        from sqlalchemy import select
+
+        from ..job import Job as JobModel
+
+        rows = (
+            (
+                await session.execute(
+                    select(JobModel)
+                    .where(
+                        JobModel.tenant_id == tenant_id,
+                        JobModel.agent_task_id == task_id,
+                        JobModel.status.in_(("pending", "running")),
+                    )
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in rows:
+            await session.delete(row)
+        return len(rows)
 
     async def cancel_pending(self, job_id: int) -> bool:
         """Cancel a queued row that no worker has claimed yet (it never ran).

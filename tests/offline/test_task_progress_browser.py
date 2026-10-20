@@ -54,15 +54,21 @@ class TaskProgressBrowser(unittest.TestCase):
                     self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
                     self.assertEqual(self.page.locator('#task-run-progress').count(),1)
 
-    def test_active_states_lock_all_mutations_and_resume_on_swap(self):
-        for state in ('pending','collection','analysis','unconfirmed'):
+    def test_active_states_keep_rerun_available_and_lock_other_mutations(self):
+        for state in ('pending','collection','analysis'):
             self.open(state)
-            self.assertEqual(self.page.locator('[data-task-mutation][aria-disabled="true"]').count(),4)
-            self.assertTrue(self.page.locator('[data-task-run] button').is_disabled())
+            # The run button is the one mutation a busy task still needs: the
+            # server replaces its unfinished run instead of adding a second one.
+            self.assertEqual(self.page.locator('[data-task-mutation][aria-disabled="true"]').count(),3)
+            self.assertFalse(self.page.locator('[data-task-run] button').is_disabled())
+            self.assertEqual(self.page.locator('[data-task-run-label]').inner_text(),'Перезапустить')
             before=self.page.url
             self.page.locator('[data-task-editor-open]').click(force=True)
             self.assertEqual(self.page.url,before)
             self.assertFalse(self.page.locator('#task-editor-dialog').evaluate('node=>node.open'))
+        self.open('unconfirmed')
+        self.assertTrue(self.page.locator('[data-task-run] button').is_disabled())
+        self.assertIn('Проверяем статус',self.page.locator('[data-task-run-label]').inner_text())
         success=(FIXTURES/'success.html').read_text()
         self.page.evaluate('html=>{const doc=new DOMParser().parseFromString(html,"text/html");document.querySelector("#task-run-progress").replaceWith(doc.querySelector("#task-run-progress"));document.dispatchEvent(new Event("htmx:afterSwap"));}',success)
         self.assertFalse(self.page.locator('[data-task-run] button').is_disabled())

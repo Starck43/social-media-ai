@@ -509,6 +509,7 @@ async def queue_task_now(task: "AgentTask", initiated_by_user_id: int | None = N
 			task,
 			extra_payload={"force_refresh": False, "force_reanalyze": False},
 			initiated_by_user_id=initiated_by_user_id,
+			supersede_unfinished=True,
 		)
 	except SourceJobBusy as busy:
 		return {"job_id": busy.job.id, "status": busy.job.status, "already_running": True}
@@ -1365,24 +1366,10 @@ async def task_run_now(
 			add_flash(request, "error", f"Для запуска анализа соцсетей {scenario_block}")
 			return RedirectResponse("/app/tasks", status_code=302)
 
-	# Prevent duplicate runs: if a job is already pending or running for this
-	# task, redirect to it so the user can watch the same modal instead of
-	# creating a second job that would duplicate the work.
-	from app.models.job import Job
-
-	existing = await Job.objects.filter(
-		agent_task_id=task_id,
-		tenant_id=tenant_id,
-		status__in=["pending", "running"],
-	).first()
-	if existing is not None:
-		add_flash(
-			request,
-			"info",
-			f"Задача «{task.name}» уже выполняется (job #{existing.id})",
-		)
-		return RedirectResponse(back if return_to_detail == "1" else f"/app/tasks?job_id={existing.id}", status_code=302)
-
+	# A manual run replaces the task's unfinished work: the admission boundary
+	# deletes that task's pending/running jobs before inserting the new one. A
+	# job pending for *another* task on the same sources is still reported as
+	# busy — replacing it would cancel somebody else's run.
 	outcome = await queue_task_now(task, getattr(request.state.web_user, "id", None))
 	if outcome.get("already_running"):
 		add_flash(request, "info", "Источник уже занят сбором или анализом. Новый запуск не создан")

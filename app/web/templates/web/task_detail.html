@@ -97,7 +97,7 @@
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <input type="hidden" name="return_to_detail" value="1">
                 {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
-                <button type="submit" {% if running_job_id %}disabled{% endif %} class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                <button type="submit" title="{% if running_job_id %}Прервать текущий запуск и запустить заново{% else %}Выполнить сейчас{% endif %}" class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                     <span data-task-run-label>{% if running_job_status == 'pending' %}◷ В очереди{% elif running_job_id %}Выполняется{% else %}Выполнить сейчас{% endif %}</span>
                 </button>
             </form>

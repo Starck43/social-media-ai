@@ -624,7 +624,7 @@ async def run_task_directly(task: Any) -> Optional[dict]:
     from app.models.managers.job_manager import JobManager
 
     with tenant_scope(task.tenant_id):
-        job = await enqueue_task_run(task)
+        job = await enqueue_task_run(task, supersede_unfinished=True)
         claimed = await JobManager.claim_job(job.id)
     if claimed is None:
         raise JobNotAcquiredError(job.id, job.tenant_id) from None

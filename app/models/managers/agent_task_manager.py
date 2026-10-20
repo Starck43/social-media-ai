@@ -540,6 +540,7 @@ class AgentTaskManager(BaseManager):
         timezone_name: Optional[str] = None,
         extra_payload: Optional[dict[str, Any]] = None,
         retry_exhausted: bool = False,
+        supersede_unfinished: bool = False,
     ) -> Optional[dict[str, Any]]:
         """Internal trigger boundary: insert and schedule advancement commit together.
 
@@ -723,17 +724,36 @@ class AgentTaskManager(BaseManager):
                         }
 
                     jobs = JobManager()
-                    admit = jobs.admit_source_job if row.job_type in SOURCE_JOB_TYPES else jobs.enqueue
+                    # A manual re-run replaces this task's unfinished jobs. The
+                    # workspace admission lock above is already held, so the
+                    # delete and the insert commit as one boundary. Source
+                    # admission checks other tasks first: if a foreign source
+                    # run is busy, nothing is deleted and the receipt says so.
+                    supersede = supersede_unfinished and not scheduled
                     try:
-                        job = await admit(
-                            job_type=row.job_type,
-                            payload=payload,
-                            agent_task_id=row.id,
-                            tenant_id=tenant_id,
-                            initiated_by_user_id=initiated_by_user_id,
-                            run_at=now,
-                            session=session,
-                        )
+                        if row.job_type in SOURCE_JOB_TYPES:
+                            job = await jobs.admit_source_job(
+                                job_type=row.job_type,
+                                payload=payload,
+                                agent_task_id=row.id,
+                                tenant_id=tenant_id,
+                                initiated_by_user_id=initiated_by_user_id,
+                                run_at=now,
+                                session=session,
+                                supersede_unfinished=supersede,
+                            )
+                        else:
+                            if supersede:
+                                await jobs.delete_unfinished_for_task(session, tenant_id=tenant_id, task_id=row.id)
+                            job = await jobs.enqueue(
+                                job_type=row.job_type,
+                                payload=payload,
+                                agent_task_id=row.id,
+                                tenant_id=tenant_id,
+                                initiated_by_user_id=initiated_by_user_id,
+                                run_at=now,
+                                session=session,
+                            )
                     except SourceJobBusy as busy:
                         # No trigger/schedule/once-state writes: the existing
                         # job may belong to a different task or methodology.

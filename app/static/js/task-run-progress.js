@@ -6,16 +6,25 @@
         const panel = document.getElementById('task-run-progress');
         if (!panel) return;
         const busy = submitting || panel.dataset.taskBusy === 'true';
+        const status = panel.dataset.taskStatus;
+        const unconfirmed = status === 'unconfirmed' || Boolean(panel.querySelector('[data-progress-connection-note]'));
+        // "Run now" stays available while its own run is pending/running: the
+        // server treats a second press as a replacement (it removes that
+        // task's unfinished jobs first). Unconfirmed state is the exception —
+        // a lost heartbeat is not proof the worker stopped.
+        const canRestart = busy && !submitting && !unconfirmed && (status === 'pending' || status === 'running');
         document.querySelectorAll('[data-task-mutation]').forEach(control => {
-            control.setAttribute('aria-disabled', String(busy));
-            control.querySelectorAll('button').forEach(button => { button.disabled = busy; });
+            const restartable = canRestart && control.hasAttribute('data-task-run');
+            const blocked = busy && !restartable;
+            control.setAttribute('aria-disabled', String(blocked));
+            control.querySelectorAll('button').forEach(button => { button.disabled = blocked; });
         });
         const label = document.querySelector('[data-task-run-label]');
         if (label) {
-            const running = busy && panel.dataset.taskStatus === 'running';
-            label.classList.toggle('task-run-status', running);
-            label.dataset.status = running ? 'running' : panel.dataset.taskStatus;
-            label.textContent = submitting ? 'Отправляем…' : busy ? (running ? 'Выполняется' : panel.dataset.taskStatus === 'unconfirmed' ? 'Проверяем статус' : 'В очереди') : 'Выполнить сейчас';
+            const running = busy && status === 'running';
+            label.classList.toggle('task-run-status', running && !canRestart);
+            label.dataset.status = running ? 'running' : status;
+            label.textContent = submitting ? 'Отправляем…' : canRestart ? 'Перезапустить' : busy ? (running ? 'Выполняется' : status === 'unconfirmed' ? 'Проверяем статус' : 'В очереди') : 'Выполнить сейчас';
         }
     }
     document.addEventListener('click', event => {

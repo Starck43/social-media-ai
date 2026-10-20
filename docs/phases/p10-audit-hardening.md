@@ -98,7 +98,9 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   encryption dependency; accept: wheel contains nested runtime
   packages/assets; encryption dependency in runtime deps; isolated no-dev
   import/asset smoke, no DB/provider; depends: none;
-  owns: pyproject.toml, requirements.txt, tests/wheel_runtime_smoke.py and
+  owns: pyproject.toml, requirements.txt, tests/wheel_runtime_smoke.py,
+  app/admin/setup.py, app/web/deps.py, app/core/logger.py, app/core/config.py,
+  app/main.py (template path only), docs/CONFIGURATION.md and
   docs/validation/wheel-runtime-completeness.md;
   owner: remote Notion agent (fix/wheel-runtime-completeness); status: BLOCKED.
   Claimed before implementation from dev `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
@@ -133,12 +135,17 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   closure work resumes in the existing PR; claim now includes requirements.txt.
   Synchronized dev: `6fbe7a961dafc3b05fccd9cfe99f7652bdc6a33a`; owner's
   integrated #225 code and P10-T02/T10 registry synchronization are preserved.
-  Local report: app/main.py is owned by active social-jobs-lifecycle-check
-  (dirty detached worktree at 37eeaf7); do not edit until explicit agreement.
-  Current bounded implementation scope: runtime driver/asyncio requirements
-  and actual installed app.core.database import with connection tripwires.
-  No app/main/resource/logger implementation is included in this first slice;
-  overall BLOCKED remains until both review gaps pass.
+  Ownership follow-up (owner-relayed, read-only): detached 37eeaf7's dirty
+  app/main.py is byte-identical to dev; its lifecycle work is already integrated
+  in a5ba8c1fc36f86bbeda692e38f5f9522c05f9f86 (verified ancestor of fresh dev).
+  No active net overlap is evidenced; no formal lane sign-off is claimed.
+  Resource-path-only main edit is now claimed; lifespan, maintenance loop and
+  tenant_scope remain untouched. Never modify/clean the old owner's worktree.
+  Other resource/logging paths were reported free; current open PRs rechecked.
+  Scope: driver/asyncio requirements, installed database/main import with
+  connection/runtime tripwires, file-relative assets, CWD-independent writable
+  LOG_DIR (default ~/.social-media-ai/logs) and its configuration documentation.
+  Overall BLOCKED remains until both review gaps pass isolated checks.
   Registry synchronized from PR head `fee3869b432779ae4a47ce7235b1cf91394d3b31`;
   implementation and test changes remain in that unmerged PR. Evidence above
   is attributed remote/owner evidence, not a new local execution.

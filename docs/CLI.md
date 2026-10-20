@@ -96,11 +96,11 @@ python -m cli.main collect [options]
 | `--src`, `-s` | all active | Source ids, urls or platform keyword (`vk`/`telegram`/`max`), comma/space separated |
 | `--tenant` | — | Workspace slug or id |
 | `--tracked` | — | Tracked authors (`platform:external_id`): analysis keeps only items they wrote |
-| `--keywords` | — | Text scope: phrases an item must contain to be analysed |
-| `--excluded` | — | Usernames to skip |
-| `--start-date` | — | Start date `DD-MM-YYYY` (re-fetch window, with `--force-refresh`) |
-| `--end-date` | — | End date `DD-MM-YYYY` (re-fetch window, with `--force-refresh`) |
+| `--keywords` | — | Text scope: phrases an item must contain to be analysed (inflection-aware) |
+| `--start-date` | — | Lower bound `DD-MM-YYYY`; enforced client-side (VK ignores `wall.get` dates) |
+| `--end-date` | — | Upper bound `DD-MM-YYYY` |
 | `--force-refresh` | `false` | Re-fetch the full date range from the API (default: only what is new since the last check) |
+| `--dry-on` | `false` | Rehearsal: fetch and print a bounded preview; no raw rows, no model, cursor unchanged |
 | `--verbose`, `-v` | `false` | Show detailed collection output |
 
 **Examples:**
@@ -115,7 +115,11 @@ python -m cli.main collect --src 739,740 --verbose
 python -m cli.main collect --src vk --verbose
 
 # Collect by source url, keeping only tracked authors and matching phrases
-python -m cli.main collect --src https://vk.com/russkikh_natalia --tracked vk:123456 --keywords "Киров" --excluded spam
+python -m cli.main collect --src https://vk.com/russkikh_natalia --tracked vk:123456 --keywords "Киров"
+
+# Rehearse a window: see the items and relevance without writing anything or
+# calling a model
+python -m cli.main collect --src 3160 --start-date 01-10-2026 --dry-on --verbose
 
 # Re-fetch the full date range from the API (analysis still deduped, so tokens
 # are only spent on genuinely new/changed content)

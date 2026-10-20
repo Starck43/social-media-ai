@@ -79,6 +79,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] P5-T12 — VK author snapshot for reposts (`copy_history`) so tracked users match the carrier → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
 
+- [ ] P5-T13 — VK search sources, inflection-aware text scope, dry-run and 1000-row collection ceiling → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — READY
+
 - [ ] P5-T09 — VK discovery sources: platform search collected in the same run (usernames for `source_add`) → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
 
 - [ ] P5-T10 — VK wall reposts search: author snapshots, selection on author, every repost staged once → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
@@ -88,6 +90,16 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P8-T25 — agent paraphrase/search/compose tools for abstract "find and analyse" requests → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 
 ## Questions
+
+- [ ] Q-5 — which VK application type/credentials should the deployment use for
+  search methods? Context: `newsfeed.search`, `groups.search`, `users.search`
+  and `database.getCities` answer `1051 "Method is not available for this
+  profile type"` for both the personal VK ID token and `VK_SERVICE_KEY`, while
+  `wall.get`/`users.get`/`groups.getById` work. Discovery of designer
+  communities and VK-wide mentions is blocked until the app profile allows
+  those methods (or a different app is configured).
+  Context: [VK search audit](docs/audits/2026-10-20-vk-search-and-task-2027.md);
+  asked by: $local (opencode); status: OPEN
 
 - [ ] Q-3 — is a discovered VK search result a Source row, or a separate
   candidate artefact that the operator confirms? Context: discovery of

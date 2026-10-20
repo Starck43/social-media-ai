@@ -206,7 +206,7 @@ for the fresh RuntimeIdentity (PR #22 and later tenancy follow-ups).
 | Tool | Назначение | Confirm |
 |---|---|---|
 | `task_list` | список всех cron-задач с активностью и следующим запуском | нет |
-| `task_add` | создать задачу: cron, job_type, sources, selection (tracked_users, keywords_list + keywords_match, topics_list, excluded_users) и run-переменные (brands, competitors, hashtags, influencer_names) | да |
+| `task_add` | создать задачу: cron, job_type, sources, selection (tracked_users, keywords_list + keywords_match, topics_list) и run-переменные (brands, competitors, hashtags, influencer_names) | да |
 | `task_update` | изменить задачу: job_type, cron, payload, scenario_id, source_ids (частичное, только переданные поля) | да |
 | `task_remove` | удалить по имени | да |
 | `task_pause` | поставить на паузу / возобновить | да |
@@ -216,6 +216,12 @@ for the fresh RuntimeIdentity (PR #22 and later tenancy follow-ups).
 `warnings` (не ошибка). Это позволяет анализу работать без фокуса, просто шире.
 
 ## Источники в чате
+
+Поиск нового источника: `sources_search(platform="vk", query="дизайн интерьера", kind="group", city="Киров")`
+возвращает кандидатов с `external_id`; выбранный кандидат передаётся в
+`source_add`. Поиск требует пользовательский токен ВК и разрешённого типа
+приложения: при ответе VK `1051` тул возвращает `needs_action: connect_vk`,
+а не пустой список.
 
 Предпочтения сценариев (`app/services/ai/scenario_prefs.py`) пишутся в
 `agent_memory(scope=scenario_prefs)`: режим группировки и список брендов/конкурентов.

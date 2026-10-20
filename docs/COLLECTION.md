@@ -8,7 +8,7 @@ we read** (one of three collection layers).
 
 | Layer | Mechanism | Status | Reaches |
 | --- | --- | --- | --- |
-| **L1 official API** | VK `wall.get`/`wall.getComments` with a service token; Telegram Bot API where the bot is a member/admin | VK done, Telegram push-only (below) | public communities; chats and channels the bot joined |
+| **L1 official API** | VK `wall.get`/`wall.getComments` with a service token; `newsfeed.search` for a query source; Telegram Bot API where the bot is a member/admin | VK done, Telegram push-only (below) | public communities; chats and channels the bot joined; VK-wide posts when search is enabled on the app |
 | **L2 user session** | VK user token (sees what the owner's account sees); Telegram MTProto user session (Telethon) | done | closed communities, walls, historical depth |
 | **L3 browser** | headless browser scraping | planned, last resort | everything without an API |
 
@@ -163,6 +163,38 @@ as `start_time`; `params["force_refresh"]` + `params["cli_dates"]` override it.
 Without any credential the client logs one error and returns no items — no
 request is spent on a call that would answer error 5.
 
+### Search sources
+
+`SourceType.SEARCH` is a phrase, not a wall. The source's `params["query"]`
+holds the text (with `external_id` as the stable slug) and the collector calls
+`newsfeed.search` with `extended=1`, `start_time`/`end_time` and the same
+1000-result ceiling VK applies. `params["owner_ids"]` is an optional list of
+wall ids (`-123` for a community, `456` for a person): results outside it are
+dropped during normalisation, because `newsfeed.search` itself has no owner
+filter. The `profiles`/`groups` arrays from the extended response are used to
+fill each item's author and name.
+
+VK only serves the first 1000 search results by `offset`; the collection limit
+below is the same number, so the two ceilings agree.
+
+### Walls and dates
+
+`wall.get` does **not** honour `start_time`/`end_time` — VK answers with the
+newest page regardless. The lower/upper bound is therefore applied in the
+client after each page: items outside `cli_dates` are dropped, and a page that
+is entirely older than the window stops pagination. `groups.getById` (not
+`utils.resolveScreenName`, which answers error 1051 for this app profile type)
+resolves a community screen name.
+
+### Search API availability
+
+`newsfeed.search`, `groups.search`, `users.search` and `database.getCities`
+answer `1051 "Method is not available for this profile type"` on deployments
+whose VK app type is not allowed to call them. `wall.get`, `users.get` and
+`groups.getById` keep working with the same token. This is an application
+configuration limit, not something the client can bypass; the agent
+`sources_search` tool reports it as an actionable error.
+
 Collection layer per `Source.params["mode"]`:
 
 | Mode | Behaviour |
@@ -297,8 +329,10 @@ reporting a bug, not a fact.
 | Key | Meaning |
 | --- | --- |
 | `mode` | `api` (L1, default) \| `user` (L2, MTProto) \| `auto` (L1 with automatic L2 fallback) \| `browser` (L3, planned) |
+| `query` | SEARCH sources: the phrase passed to `newsfeed.search` |
+| `owner_ids` | SEARCH sources: keep only posts from these walls (community ids negative) |
 | `incremental_mode` | `true` → only fetch what is newer than `last_checked` |
-| `collection.count` / `limit` | page size / max items per run |
+| `collection.count` / `limit` | page size / max items per run (default `SOCIAL_COLLECT_LIMIT`, 1000; never above the hard ceiling) |
 | `collection.filter` | VK wall filter (`all`, `owner`, `others`, `suggests`) |
 | `force_refresh`, `cli_dates` | direct CLI collection date/refetch overrides; web jobs clear legacy force flags |
 
@@ -422,6 +456,17 @@ collect and analyse in one pass; the rows the analysis actually stored are then
 retired immediately. The direct CLI analyze command supports `--keep-raw` for
 diagnostic runs that should preserve staged text even after successful
 analysis; this option does not bypass receipts or enable paid calls by default.
+
+## Rehearsal (dry run)
+
+`CLI --dry-on` and the task's `dry_run` toggle fetch the platform, count what is
+new and return a bounded preview, but write no `collected_items`, call no model
+and do not advance `last_checked`. A rehearsal that moved the cursor would make
+the following real run skip the exact window it rehearsed. In `analyze` the
+same flag stops at the deterministic task selection and reports
+`eligible`/`rejected` counts. The web toggle is shown to workspace
+administrators and owners only; a non-admin submission is ignored with a
+warning, never silently applied.
 
 ## Tests
 

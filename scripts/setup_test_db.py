@@ -333,6 +333,7 @@ async def _seed_reference_rows() -> None:
     await _seed_platforms()
     await _seed_bootstrap_tenant()
     await _seed_permissions()
+    await _seed_role_grants()
 
 
 async def _seed_platforms() -> None:
@@ -365,6 +366,70 @@ async def _seed_permissions() -> None:
 
     with engine.begin() as conn:
         register_model_types(conn, is_upgrade=True)
+
+
+def _insert_ignoring_conflicts(table):
+    """An insert that leaves existing links alone (the link tables have a key)."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    return pg_insert(table).on_conflict_do_nothing()
+
+
+async def _seed_role_grants() -> None:
+    """Give the roles their canonical grants.
+
+    The platform administrator holds every registered permission, and each
+    workspace role holds the grants its preset defines. A test schema created
+    from the model metadata never runs the migrations, so without this step
+    the administrator holds nothing — and every administrator-gated request
+    answers 403 for a role that is supposed to pass.
+    """
+    from app.core.access_catalog import workspace_grants
+    from app.core.database import engine
+    from app.models import ModelType, Permission, PlatformRole, WorkspaceRole
+    from app.models.identity.role import role_permission
+    from app.models.tenancy.workspace_role import workspace_role_permission
+    from sqlalchemy import select
+
+    with engine.begin() as conn:
+        permission_rows = conn.execute(
+            select(Permission.id, ModelType.resource_key, ModelType.model_name, Permission.action_type)
+            .join(ModelType, Permission.model_type_id == ModelType.id)
+        ).all()
+        by_resource = {
+            (resource_key, str(action).lower()): permission_id
+            for permission_id, resource_key, _model_name, action in permission_rows
+        }
+        # The workspace presets name the model ("source"), the platform
+        # catalogue names the resource ("collection.source"); both point at the
+        # same permission rows.
+        by_model = {
+            (model_name, str(action).lower()): permission_id
+            for permission_id, _resource_key, model_name, action in permission_rows
+        }
+        admin_id = conn.execute(
+            select(PlatformRole.id).where(PlatformRole.codename == "admin")
+        ).scalar_one_or_none()
+        if admin_id is not None:
+            conn.execute(
+                _insert_ignoring_conflicts(role_permission),
+                [
+                    {"role_id": admin_id, "permission_id": permission_id}
+                    for permission_id in sorted(set(by_resource.values()))
+                ],
+            )
+        for role_id, codename in conn.execute(select(WorkspaceRole.id, WorkspaceRole.codename)).all():
+            pairs = {
+                (model_name, str(action).lower())
+                for model_name, action in workspace_grants(codename)
+            }
+            rows = [
+                {"role_id": role_id, "permission_id": by_model[pair]}
+                for pair in sorted(pairs)
+                if pair in by_model
+            ]
+            if rows:
+                conn.execute(_insert_ignoring_conflicts(workspace_role_permission), rows)
 
 
 def resolve_and_redirect() -> tuple[str, str, str]:

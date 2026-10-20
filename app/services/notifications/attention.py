@@ -34,6 +34,10 @@ DESTINATIONS = {
     "agentscenario": "/app/scenarios",
     "platform": "",
 }
+
+
+def task_destination(task_id):
+    return f"/app/tasks/{task_id}" if positive_id(task_id) else DESTINATIONS["agenttask"]
 EVENT_LABELS = {
     "report_ready": ("Результат готов", "Откройте раздел, чтобы посмотреть результат."),
     "api_error": ("Сообщение об ошибке", "Операция потребовала внимания. Проверьте доступный раздел."),
@@ -209,6 +213,7 @@ class AttentionFeed:
                 run, emitted = moment(target.last_run_at), moment(row.created_at)
                 item.update(
                     task_id=target.id,
+                    destination=task_destination(target.id),
                     current_task_key=current["key"] if current else None,
                     failure_key=(
                         current["key"]
@@ -236,7 +241,7 @@ class AttentionFeed:
             message="Последний запуск требует проверки. Прочтение сообщения не устраняет причину.",
             state="failed",
             created_at=timestamp(task.last_run_at),
-            destination="/app/tasks",
+            destination=task_destination(task.id),
             action="open",
             read_id=None,
         )

@@ -311,7 +311,14 @@ function notificationPreferences(userId, csrf) {
 }
 
 function notificationsBell(csrf, workspaceId, userId) {
-    const destinations = new Set(['', '/app/settings?tab=connections', '/app/tasks', '/app/sources', '/app/analytics', '/app/digests', '/app/scenarios']);
+    const destinationRoots = ['', '/app/settings?tab=connections', '/app/tasks', '/app/sources', '/app/analytics', '/app/digests', '/app/scenarios'];
+    const destinations = new Set(destinationRoots);
+    const validDestination = (value) => {
+        if (destinations.has(value)) return true;
+        if (typeof value !== 'string' || !value.startsWith('/app/tasks/')) return false;
+        const rest = value.slice('/app/tasks/'.length);
+        return /^[1-9][0-9]*$/.test(rest);
+    };
     return {
         openModal: false, loading: false, items: [], error: '', pending: false,
         hasMore: false, complete: false, contextChanged: false, generation: 0,
@@ -382,7 +389,7 @@ function notificationsBell(csrf, workspaceId, userId) {
             return item && typeof item.key === 'string' && item.key.length > 0 &&
                 ['notification', 'connection', 'task'].includes(item.kind) &&
                 item.workspace_id === workspaceId && item.scope === (item.kind === 'connection' ? 'personal' : 'workspace') &&
-                ['none', 'read', 'open'].includes(item.action) && destinations.has(item.destination) &&
+                ['none', 'read', 'open'].includes(item.action) && validDestination(item.destination) &&
                 (item.kind !== 'connection' || (item.read_id === null && item.destination === '/app/settings?tab=connections')) &&
                 typeof item.title === 'string' && typeof item.message === 'string' && typeof item.created_at === 'string' &&
                 (item.task_id === undefined || (['task', 'notification'].includes(item.kind) && Number.isSafeInteger(item.task_id) && item.task_id > 0)) &&
@@ -514,6 +521,39 @@ function notificationsBell(csrf, workspaceId, userId) {
                 read = true;
                 this.$nextTick(() => this.$refs.dialog?.focus());
             } catch (_) { if (generation === this.generation) this.error = 'Не удалось отметить сообщение прочитанным.'; }
+            finally { if (generation === this.generation) this.pending = false; }
+            if (read) await this.load();
+            if (this.openModal) this.$nextTick(() => this.$refs.dialog?.focus());
+        },
+        linkLabel(item) {
+            if (item.kind === 'connection') return 'Открыть мои подключения';
+            if ((item.kind === 'task' || item.kind === 'notification') && Number.isSafeInteger(item.task_id) && item.task_id > 0) return 'Открыть задачу';
+            return 'Открыть раздел';
+        },
+        hasUnread() { return this.visibleItems().some(n => n.read_id); },
+        async readAll() {
+            if (this.pending || this.loading || this.contextChanged || !this.hasUnread()) return;
+            const generation = this.generation;
+            this.pending = true; this.error = '';
+            let read = false;
+            try {
+                const response = await fetch('/app/notifications/read-all', {
+                    method: 'POST', headers: { ...this.headers(), 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ _csrf: csrf, workspace_id: String(workspaceId) })
+                });
+                if (generation !== this.generation) return;
+                if ([401, 403, 409].includes(response.status) || response.redirected) {
+                    this.reset('Доступ или контекст изменился. Перезагрузите страницу.'); return;
+                }
+                if (!response.ok) throw new Error('read-all');
+                const data = await response.json();
+                if (generation !== this.generation) return;
+                if (!data || !this.matches(data.context || data)) {
+                    this.reset('Не удалось подтвердить доступ к сообщениям. Перезагрузите страницу.'); return;
+                }
+                read = true;
+                this.$nextTick(() => this.$refs.dialog?.focus());
+            } catch (_) { if (generation === this.generation) this.error = 'Не удалось отметить все сообщения прочитанными.'; }
             finally { if (generation === this.generation) this.pending = false; }
             if (read) await this.load();
             if (this.openModal) this.$nextTick(() => this.$refs.dialog?.focus());

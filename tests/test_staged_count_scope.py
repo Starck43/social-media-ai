@@ -156,8 +156,10 @@ class StagedCountScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('CAST(:author AS jsonb)',stmt.text)
         self.assertEqual({name for name,_ in stmt.binds},{'metrics','author','attachments'})
         self.assertEqual(inserted[0]['content_type'],'post')
+        self.assertEqual(inserted[0]['selection_status'],'selected')
         self.assertIsNone(inserted[0]['attachments'])
-        self.assertEqual({key:value for key,value in inserted[0].items() if key not in {'content_type','attachments'}},rows[0])
+        extra = {'content_type','attachments','parent_external_id','lane_id','selection_status','selection_reason'}
+        self.assertEqual({key:value for key,value in inserted[0].items() if key not in extra},rows[0])
 
 if __name__ == '__main__':
     unittest.main()

@@ -351,6 +351,12 @@ safely.
     Accept: rejected text is not stored; only selected/needs_review rows reach
     `collected_items`; a re-run does not duplicate; P5-T08 selection semantics
     are preserved; no model call in the selection path.
+    **Status: implementation complete in `opencode/p5-t14-stage-c`; 247 tests
+    passed through the primary OpenCode test-runner at pre-commit `c6bd826`.
+    Final commit evidence is recorded after the implementation commit.** The
+    collector applies selection before staging, `collection_seen`/
+    `collection_lane_runs` record outcomes, and analysis only re-filters legacy
+    NULL-status rows. No migration; `public` remains untouched.
 
   - **D. Comments and engagement.** Add the `comments` lane
     (`owner_id` + `post_id`, per-post and total caps), thread-level selection,
@@ -391,9 +397,9 @@ safely.
     warning are visible; dry run writes no rows and calls no model; 1051 is
     reported as the named blocker while credentials remain unavailable.
 
-  Depends: P5-T13 (search primitives; READY), P5-T08 (selection before the
-  model; TODO) for stage C; serialize shared analyzer/handler files with
-  P5-T05. Stages A–B can start independently. Owns:
+  Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
+  model; DONE) are closed; P5-T05 was removed, so `handlers.py`/`analyzer.py`
+  are free. Stages A–C are implemented; D–F remain. Owns:
   `docs/design/collection-plan.md`, `app/services/collection/`,
   `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
   `app/models/collection/`, `app/models/scheduling/`, `app/web/tasks.py`,

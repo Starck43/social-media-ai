@@ -23,7 +23,9 @@ class Base(DeclarativeBase): pass
 class Raw(Base):
     __tablename__='collected_items';__table_args__={'schema':'test_schema'}
     id=Column(Integer,primary_key=True);tenant_id=Column(Integer);source_id=Column(Integer)
-    external_id=Column(String);content_type=Column(String);content_hash=Column(String);attachments=Column(JSON(none_as_null=True))
+    external_id=Column(String);content_type=Column(String);parent_external_id=Column(String)
+    lane_id=Column(String);selection_status=Column(String);selection_reason=Column(String)
+    content_hash=Column(String);attachments=Column(JSON(none_as_null=True))
 class Analytics(Base):
     __tablename__='ai_analytics';__table_args__={'schema':'test_schema'}
     id=Column(Integer,primary_key=True);tenant_id=Column(Integer);source_id=Column(Integer);summary_data=Column(JSON)

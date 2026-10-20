@@ -152,7 +152,13 @@ class CollectorOuterLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         result = await self.collect()
         self.assertEqual((result["content_count"], result["new_items"], result["staged"], result["analytics_count"]), (2, 1, 2, 1))
         self.assertEqual(result["analysis_errors"], 1)
-        self.collector._stage_items.assert_awaited_once_with(self.fixture.content, self.source, 42)
+        self.collector._stage_items.assert_awaited_once_with(
+            self.fixture.content,
+            self.source,
+            42,
+            durable=False,
+            selection={"measured-hash": ("selected", "no_tracked_users")},
+        )
         self.collector._retire_staged.assert_awaited_once_with(self.source, self.fixture.fresh)
         self.fixture.checked.assert_awaited_once_with(self.source.id)
         self.assertFalse(any(r.levelno >= logging.WARNING for r in self.sink.records))

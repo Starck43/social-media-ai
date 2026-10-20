@@ -69,6 +69,7 @@ class ContentCollector:
 		source: Source,
 		run_id: Optional[int],
 		*, durable: bool = False,
+		selection: dict[str, tuple[str, str | None]] | None = None,
 	) -> int:
 		"""Park a fetched batch in `collected_items` as the durable copy.
 
@@ -91,8 +92,14 @@ class ContentCollector:
 		# Telegram must not acknowledge a fetched cursor before durable admission.
 		if durable:
 			from app.services.monitoring.staging import admit_telegram_items
-			return await admit_telegram_items(content, source, run_id=run_id)
-		rows = build_staged_rows(content, source, run_id)
+			return await admit_telegram_items(content, source, run_id=run_id, selection=selection)
+		rows = [
+			row
+			for row in build_staged_rows(content, source, run_id, selection=selection)
+			if row.get("selection_status") in ("selected", "needs_review")
+		]
+		if not rows:
+			return 0
 
 		session = new_session()
 		try:
@@ -152,6 +159,7 @@ class ContentCollector:
 			run_id: Optional[int] = None,
 			dry_run: bool = False,
 			selection_scope: Any = None,
+			task_id: int | None = None,
 	) -> Optional[dict]:
 		"""
 		Collect content from a single source.
@@ -224,8 +232,31 @@ class ContentCollector:
 			# how a broken analysis turns every re-collection into "32 new" for
 			# good. Written here, the ledger survives a failed analysis.
 			from app.services.ai.dedup import item_hash
+			from app.services.monitoring.selection import SelectionScope, select_for_collection
+			from app.services.monitoring.selection_store import (
+				limit_reached as selection_limit_reached,
+				record_collection_selection,
+				source_limit,
+			)
 
 			hashes = [item_hash(item) for item in content]
+
+			# Selection is a collection decision now. Apply it to the fetched
+			# batch before staging; only selected/needs-review rows are stored.
+			# Thread mode groups a post with its comments so a matching comment
+			# can keep a non-matching parent.
+			selection_result = select_for_collection(
+				content,
+				selection_scope if selection_scope is not None else SelectionScope(),
+				thread=any(str(item.get("content_type") or "").lower() == "comment" for item in content),
+			)
+			selection_by_hash = {
+				item_hash(decision.item): (decision.status, decision.reason)
+				for decision in selection_result.decisions
+				if isinstance(decision.item, dict)
+			}
+			storable = selection_result.selected + selection_result.needs_review
+			effective_limit = source_limit(source)
 
 			# A dry run answers "what would this source give us?" without
 			# touching the write-ahead copy, spending a model call, or moving the
@@ -234,20 +265,16 @@ class ContentCollector:
 			if dry_run:
 				# A rehearsal must answer the operator's real question: not just
 				# "how many rows came back" but "how many of them would this
-				# task actually analyse". The deterministic selection runs over
-				# the full fetched batch (the preview below is truncated), and
-				# only its counters + a small sample are returned.
-				selection_preview = None
-				if selection_scope is not None:
-					from app.services.monitoring.selection import select_items
-
-					selected = select_items(content, selection_scope)
-					selection_preview = {
-						"eligible": len(selected.eligible),
-						"rejected": len(selected.rejected),
-						"reasons": dict(selected.reasons),
-						"sample": _dry_run_preview(selected.eligible, limit=3, text_limit=240),
-					}
+				# task actually analyse". Selection runs over the full fetched
+				# batch; only its counters and a small sample are returned.
+				selection_preview = {
+					"eligible": len(selection_result.selected),
+					"needs_review": len(selection_result.needs_review),
+					"rejected": len(selection_result.rejected),
+					"reasons": dict(selection_result.reasons),
+					"unknown_tracked_users": list(selection_result.unknown_tracked_users),
+					"sample": _dry_run_preview(selection_result.selected, limit=3, text_limit=240),
+				}
 				return {
 					"source_id": source.id,
 					"content_count": len(content),
@@ -268,18 +295,39 @@ class ContentCollector:
 			# killed) the content is on disk, so a later `analyze` run can pick it
 			# up. Rows are retired per the analyses that actually saved something,
 			# which is why a failed analysis leaves the batch staged for a retry.
-			staged = await self._stage_items(
-				content, source, run_id, durable=all(item.get("platform") == "telegram" for item in content)
+			staged = 0
+			if storable:
+				staged = await self._stage_items(
+					content,
+					source,
+					run_id,
+					durable=all(item.get("platform") == "telegram" for item in content),
+					selection=selection_by_hash,
+				)
+
+			# Rejected text is not stored, but its identity/count/reason is:
+			# `collection_seen` keeps dedupe stable and the lane run explains
+			# why the batch was narrowed. Best-effort; raw staging is already safe.
+			await record_collection_selection(
+				source,
+				content,
+				selection_result,
+				run_id=run_id,
+				task_id=task_id,
+				limit_count=effective_limit,
+				limit_reached=selection_limit_reached(content, effective_limit),
 			)
 
 			analytics = None
 			analysis_errors = None
-			if analyze and content:
+			if analyze and selection_result.selected:
+				# Inline analysis sees only collection-selected items; the later
+				# analyze path reads the same statuses and does not re-filter.
 				# This collector reuses its analyzer across sources/users. Report only
 				# this call's measured delta, never old failures or coerced counters.
 				errors_before = getattr(self.analyzer, "reported_errors", None)
 				analytics = await self.analyzer.analyze_content(
-					content, source, force_reanalyze=force_reanalyze
+					selection_result.selected, source, force_reanalyze=force_reanalyze
 				)
 				errors_after = getattr(self.analyzer, "reported_errors", None)
 				if (
@@ -303,6 +351,16 @@ class ContentCollector:
 				# analysis failed or is deferred — that is the honest count of the
 				# raw copy, not of what survived it.
 				"staged": staged,
+				"selected": len(selection_result.selected),
+				"needs_review": len(selection_result.needs_review),
+				"rejected": len(selection_result.rejected),
+				"selection": {
+					"eligible": len(selection_result.selected),
+					"needs_review": len(selection_result.needs_review),
+					"rejected": len(selection_result.rejected),
+					"reasons": dict(selection_result.reasons),
+					"unknown_tracked_users": list(selection_result.unknown_tracked_users),
+				},
 				# This run's "seen" ledger, carried in the job result.
 				"content_hashes": hashes,
 			}

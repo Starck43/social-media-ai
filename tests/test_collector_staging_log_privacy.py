@@ -64,7 +64,7 @@ class CollectorStagingLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.store = AsyncMock(return_value=3)
         self.delete = AsyncMock(return_value=2)
         self.hashes = [PRIVATE]
-        self.analysed_hashes = Mock(return_value=self.hashes)
+        self.analysed_hashes = Mock(return_value=set(self.hashes))
         imports = {
             "app.core.tenant_context": ns(current_tenant_id=Mock(), is_bypass=Mock(), tenant_scope=Mock()),
             "app.models": ns(Platform=Mock(), Source=Mock(), CollectedItem=ns(
@@ -87,6 +87,7 @@ class CollectorStagingLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.module.logger = logging.Logger("isolated_collector_staging", logging.DEBUG)
         self.module.logger.addHandler(self.sink)
         self.collector = self.module.ContentCollector()
+        self.collector.analyzer.completed_hashes = set()
         self.source = ns(id=17, tenant_id=4)
         self.items = [{"text": PRIVATE, "url": PRIVATE, "external_id": "item", "published_at": "raw-date",
                        "metrics": {"likes": 3}, "views": 8, "author": {"id": "author"}, "media_type": "text"}]
@@ -124,7 +125,10 @@ class CollectorStagingLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.invoke("retire"), 0)
         self.assert_safe_warning("retire")
         self.analysed_hashes.assert_called_once_with(self.analytics)
-        self.delete.assert_awaited_once_with(self.session, 17, self.hashes)
+        args, kwargs = self.delete.await_args
+        self.assertEqual(args, (self.session, 17, set(self.hashes)))
+        self.assertEqual(kwargs["tenant_id"], 4)
+        self.assertIn("analysis_fingerprint", kwargs)
         self.session.close.assert_awaited_once_with()
 
     async def test_hostile_exception_is_not_formatted(self):
@@ -185,7 +189,9 @@ class CollectorStagingLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.invoke("stage"), 3)
         self.store.assert_awaited_once_with(self.session, [{
             "run_id": 29, "source_id": 17, "external_id": "item", "content_hash": PRIVATE,
-            "platform": None, "published_at": "parsed-date", "media_type": "text", "text": PRIVATE,
+            "platform": None, "content_type": "post", "parent_external_id": None, "lane_id": None,
+            "selection_status": "selected", "selection_reason": None,
+            "published_at": "parsed-date", "media_type": "text", "attachments": None, "text": PRIVATE,
             "metrics": {"likes": 3, "views": 8}, "author": {"id": "author"}, "permalink": PRIVATE,
         }])
         self.assertEqual(self.items[0]["permalink"], PRIVATE)
@@ -194,12 +200,15 @@ class CollectorStagingLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_retire_success_keeps_exact_hashes_and_return(self):
         self.assertEqual(await self.invoke("retire"), 2)
-        self.delete.assert_awaited_once_with(self.session, 17, self.hashes)
+        args, kwargs = self.delete.await_args
+        self.assertEqual(args, (self.session, 17, set(self.hashes)))
+        self.assertEqual(kwargs["tenant_id"], 4)
+        self.assertIn("analysis_fingerprint", kwargs)
         self.session.close.assert_awaited_once()
         self.assertFalse(any(r.levelno >= logging.WARNING for r in self.sink.records))
 
     async def test_retire_without_saved_hashes_never_opens_session(self):
-        self.analysed_hashes.return_value = []
+        self.analysed_hashes.return_value = set()
         self.assertEqual(await self.invoke("retire"), 0)
         self.new_session.assert_not_called()
         self.delete.assert_not_awaited()

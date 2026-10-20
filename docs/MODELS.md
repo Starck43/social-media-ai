@@ -193,9 +193,11 @@ See [collection plan](design/collection-plan.md).
 
 **source_id and run_id are logical references, NOT declared FKs.** Unique non-partial index (`source_id`, `content_type`, `external_id`); multiple NULL external IDs remain legal in PostgreSQL. Other indexes: tenant, source/hash, run, source/published, tenant/selection. A failed analysis is not evidence that raw content can be deleted; actual retention/cleanup belongs to runtime policy.
 
-Rows staged before P5-T14 stage C keep `selection_status = NULL`; the current
-collector still stages every fetched row and selection still runs at analysis.
-Stage C changes that to selected/needs-review rows only. See
+Stage C writes only `selected`/`needs_review` rows; rejected text is not
+stored. Analysis reads `selected` rows and legacy `NULL` rows (staged before
+stage C, which still pass through the old analysis-time selection once);
+`needs_review` waits for an operator. Rejected identities/counts live in
+`collection_seen`/`collection_lane_runs`. See
 [collection plan](design/collection-plan.md).
 
 ### `collection_seen`

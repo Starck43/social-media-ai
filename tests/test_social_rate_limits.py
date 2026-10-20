@@ -307,7 +307,7 @@ def stub_collect_job(monkeypatch):
         async def fake_resolve(task, payload=None):
             return sources
 
-        async def fake_collect(self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None):
+        async def fake_collect(self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, **kwargs):
             return await behaviour(source)
 
         monkeypatch.setattr(handlers, "_load_task", fake_load_task)

@@ -474,16 +474,17 @@ retired immediately. The direct CLI analyze command supports `--keep-raw` for
 diagnostic runs that should preserve staged text even after successful
 analysis; this option does not bypass receipts or enable paid calls by default.
 
-### Selection at collection (planned, P5-T14)
+### Selection at collection (P5-T14 stage C)
 
-Today every fetched row is staged and the task's deterministic selection runs
-later, when an `analyze` job drains the backlog. The accepted target applies
-that selection before staging: `collected_items` will contain only `selected`
-and `needs_review` rows, with `content_type`, `parent_external_id` (comments),
-`lane_id` and the selection status/reason. Rejected text is not stored;
-`collection_lane_runs` keeps counts and reasons, and `collection_seen` keeps
-dedupe/new-item identity. A comment-enabled task filters at thread level, so a
-post whose own text lacks the phrase is still selected when its comments match.
+The collector applies the task's deterministic selection before staging:
+`collected_items` contains only `selected` and `needs_review` rows, with
+`content_type`, `parent_external_id` (comments), `lane_id` and the selection
+status/reason. Rejected text is not stored; `collection_lane_runs` keeps counts
+and reasons, and `collection_seen` keeps dedupe/new-item identity, including
+rejected identities so a filter change can re-evaluate them. A comment-enabled
+batch is filtered at thread level, so a post whose own text lacks the phrase is
+still selected when its comments match. New selected rows are not re-filtered
+during analysis; legacy NULL-status rows keep the old analysis-time pass once.
 See [collection plan](design/collection-plan.md).
 
 ## Rehearsal (dry run)

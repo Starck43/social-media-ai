@@ -32,9 +32,13 @@ def bind_managers(models):
     ).NotificationPreferenceManager()
     models.Job.objects = import_module("app.models.managers.job_manager").JobManager()
     models.CollectedItem.objects = import_module("app.models.managers.collected_item_manager").CollectedItemManager()
-    models.CollectionSeen.objects = BaseManager(models.CollectionSeen)
+    models.CollectionSeen.objects = import_module(
+        "app.models.managers.collection_seen_manager"
+    ).CollectionSeenManager()
     models.CollectionCandidate.objects = BaseManager(models.CollectionCandidate)
-    models.CollectionLaneRun.objects = BaseManager(models.CollectionLaneRun)
+    models.CollectionLaneRun.objects = import_module(
+        "app.models.managers.collection_lane_run_manager"
+    ).CollectionLaneRunManager()
     models.AgentMemory.objects = import_module("app.models.managers.agent_memory_manager").AgentMemoryManager()
     models.Platform.objects = import_module("app.models.managers.platform_manager").PlatformManager()
     models.LLMModel.objects = import_module("app.models.managers.llm_model_manager").LLMModelManager()

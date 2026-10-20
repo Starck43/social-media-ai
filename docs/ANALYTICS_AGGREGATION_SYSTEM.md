@@ -41,11 +41,13 @@ analytics layer depends on:
   `SENTIMENT_THRESHOLD`, `ACTIVITY_SPIKE`) belong to the action, not to the
   selection: a keyword alarm and a keyword scope are different intentions.
 
-**Planned P5-T14:** deterministic selection moves to collection. Rejected text
-will not be staged; only `selected`/`needs_review` rows will reach
+**P5-T14 stage C:** deterministic selection now runs at collection. Rejected
+text is not staged; only `selected`/`needs_review` rows reach
 `collected_items`, with counts/reasons in `collection_lane_runs` and dedupe in
-`collection_seen`. A comment-enabled task will filter at thread level (post +
-comments). Content types will be owned by the task, not the scenario. See
+`collection_seen`. A comment-enabled batch is filtered at thread level (post +
+comments). Analysis reads the stored decision for new rows and does not
+re-filter; legacy NULL-status rows keep the old analysis-time pass once. Content
+types still come from the scenario until stage E. See
 [collection plan](design/collection-plan.md).
 
 ## Subject scope (concept, not implemented)

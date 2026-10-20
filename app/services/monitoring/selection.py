@@ -246,8 +246,7 @@ def _phrase_in(haystack: str, phrase: str) -> bool:
     haystack_stems = stem_tokens(haystack)
     width = len(phrase_stems)
     return any(
-        haystack_stems[index : index + width] == phrase_stems
-        for index in range(len(haystack_stems) - width + 1)
+        haystack_stems[index : index + width] == phrase_stems for index in range(len(haystack_stems) - width + 1)
     )
 
 
@@ -345,3 +344,152 @@ def select_items(items: Iterable[Any], scope: SelectionScope) -> SelectionResult
     if tracked:
         result.unknown_tracked_users = sorted(tracked - matched_tracked)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Collection-time decisions
+# ---------------------------------------------------------------------------
+#
+# Stage C moves the deterministic selection to collection. The analyser reads
+# only stored rows, so it needs a per-item status/reason, not just aggregate
+# eligible/rejected counts. `select_items` above remains the legacy analysis
+# path for rows staged before this stage; `select_for_collection` is the new
+# collection path and also supports a thread-level pass for post + comments.
+
+STATUS_SELECTED = "selected"
+STATUS_NEEDS_REVIEW = "needs_review"
+STATUS_REJECTED = "rejected"
+
+THREAD_MATCHED = "thread_matched"
+THREAD_COMMENT_MATCHED = "thread_comment_matched"
+
+
+@dataclass(frozen=True)
+class SelectionDecision:
+    """One item's collection-time outcome."""
+
+    item: Any
+    status: str
+    reason: str
+
+
+@dataclass
+class CollectionSelection:
+    """Per-item decisions plus the aggregate counters/reasons."""
+
+    decisions: list[SelectionDecision] = field(default_factory=list)
+    selected: list[Any] = field(default_factory=list)
+    needs_review: list[Any] = field(default_factory=list)
+    rejected: list[Any] = field(default_factory=list)
+    reasons: dict[str, int] = field(default_factory=dict)
+    unknown_tracked_users: list[str] = field(default_factory=list)
+
+    def count(self, reason: str) -> int:
+        return self.reasons.get(reason, 0)
+
+
+def select_for_collection(
+    items: Iterable[Any],
+    scope: SelectionScope,
+    *,
+    thread: bool = False,
+) -> CollectionSelection:
+    """Apply task selection before staging and return per-item statuses.
+
+    ``thread=True`` groups a post with its comments by ``external_id`` /
+    ``parent_external_id``. If any member matches, the whole thread is kept;
+    a matching comment can therefore keep a non-matching parent post, which is
+    the point of a comment-enabled task. Items whose parent is absent from the
+    batch are evaluated as their own group.
+    """
+    materialised = list(items)
+    tracked = {user.key() for user in scope.tracked_users}
+    matched_tracked: set[str] = set()
+    if thread:
+        groups: dict[str, list[Any]] = {}
+        for item in materialised:
+            groups.setdefault(_thread_key(item), []).append(item)
+        decisions: list[SelectionDecision] = []
+        for group in groups.values():
+            evaluations = [_evaluate_item(item, scope, tracked) for item in group]
+            matched = any(passed for passed, _reason, _keys in evaluations)
+            for item, (passed, reason, keys) in zip(group, evaluations):
+                matched_tracked |= keys
+                if matched:
+                    decisions.append(
+                        SelectionDecision(
+                            item=item,
+                            status=STATUS_SELECTED,
+                            reason=THREAD_COMMENT_MATCHED if _is_comment(item) and passed else THREAD_MATCHED,
+                        )
+                    )
+                else:
+                    decisions.append(SelectionDecision(item=item, status=STATUS_REJECTED, reason=reason))
+    else:
+        decisions = []
+        for item in materialised:
+            passed, reason, keys = _evaluate_item(item, scope, tracked)
+            matched_tracked |= keys
+            decisions.append(
+                SelectionDecision(
+                    item=item,
+                    status=STATUS_SELECTED if passed else STATUS_REJECTED,
+                    reason=reason,
+                )
+            )
+    return _aggregate_decisions(decisions, tracked, matched_tracked)
+
+
+def _evaluate_item(item: Any, scope: SelectionScope, tracked: set[str]) -> tuple[bool, str, set[str]]:
+    if not isinstance(item, Mapping):
+        return False, REJECT_AUTHOR_NOT_TRACKED, set()
+    matched_keys: set[str] = set()
+    if scope.has_author_filter:
+        keys = _author_keys(item)
+        matched = keys & tracked
+        if not matched:
+            return False, REJECT_AUTHOR_NOT_TRACKED, matched_keys
+        matched_keys |= matched
+    if scope.has_text_scope:
+        haystack = _item_text(item)
+        hits = [phrase for phrase in scope.keywords if _phrase_in(haystack, phrase)]
+        passed = len(hits) == len(scope.keywords) if scope.match == MATCH_ALL else bool(hits)
+        if not passed:
+            return False, REJECT_NO_TEXT_MATCH, matched_keys
+        return True, PASS_TEXT_MATCHED, matched_keys
+    return True, PASS_AUTHOR_TRACKED if scope.has_author_filter else PASS_NO_TRACKED_USERS, matched_keys
+
+
+def _aggregate_decisions(
+    decisions: list[SelectionDecision],
+    tracked: set[str],
+    matched_tracked: set[str],
+) -> CollectionSelection:
+    result = CollectionSelection()
+    for decision in decisions:
+        result.decisions.append(decision)
+        result.reasons[decision.reason] = result.reasons.get(decision.reason, 0) + 1
+        if decision.status == STATUS_SELECTED:
+            result.selected.append(decision.item)
+        elif decision.status == STATUS_NEEDS_REVIEW:
+            result.needs_review.append(decision.item)
+        else:
+            result.rejected.append(decision.item)
+    if tracked:
+        result.unknown_tracked_users = sorted(tracked - matched_tracked)
+    return result
+
+
+def _is_comment(item: Any) -> bool:
+    return isinstance(item, Mapping) and str(item.get("content_type") or "").lower() == "comment"
+
+
+def _thread_key(item: Any) -> str:
+    if not isinstance(item, Mapping):
+        return f"item:{id(item)}"
+    external = item.get("external_id") or item.get("id") or id(item)
+    if _is_comment(item):
+        parent = item.get("parent_external_id")
+        if parent:
+            return f"thread:{parent}"
+    return f"thread:{external}"

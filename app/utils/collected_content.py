@@ -26,13 +26,19 @@ def _build_permalink(source: Any, external_id: str | int | None) -> str | None:
 	return None
 
 
-def build_staged_rows(content: list[dict], source: Any, run_id: int | None) -> list[dict]:
+def build_staged_rows(
+	content: list[dict],
+	source: Any,
+	run_id: int | None,
+	selection: dict[str, tuple[str, str | None]] | None = None,
+) -> list[dict]:
 	from app.services.ai.dedup import item_hash
 	from app.utils.date_parsing import universal_date_parser
 	from app.utils.content_attachments import normalize_attachments
 	hashes = [item_hash(item) for item in content]
 	rows: list[dict] = []
 	for item, h in zip(content, hashes):
+		status, selection_reason = selection.get(h, ("selected", None)) if selection else ("selected", None)
 		# Platforms hand the publication date over in several shapes (datetime,
 		# unix seconds, "2026-10-02T10:00:00Z"); normalise once here so the
 		# column, the ordering and the UI all agree on what a date is.
@@ -51,6 +57,11 @@ def build_staged_rows(content: list[dict], source: Any, run_id: int | None) -> l
 				"external_id": str(external_id) if external_id is not None else None,
 				"content_hash": h,
 				"platform": item.get("platform"),
+				"content_type": item.get("content_type") or "post",
+				"parent_external_id": item.get("parent_external_id"),
+				"lane_id": item.get("lane_id"),
+				"selection_status": status,
+				"selection_reason": selection_reason,
 				"published_at": published,
 				"media_type": item.get("media_type") or item.get("type"),
 				"attachments": normalize_attachments(item.get("attachments")),

@@ -3,12 +3,14 @@
 Status: design accepted by the owner on 2026-10-21; implementation is tracked
 by [P5-T14](../phases/p5-ai-boundaries.md). Stage A delivered the payload
 parser, schema and migration 0108. Stage B delivered the `Page[T]` contract,
-planner, VK/Telegram adapters and no-DB tests in the working tree. Collection
-lanes are not wired to runtime yet; selection at collection, comments, UI and
-staged persistence remain future stages. Until P5-T14 is `READY`/`DONE`,
-runtime behavior in [COLLECTION](../COLLECTION.md),
-[task selection](task-selection.md) and [MODELS](../MODELS.md) still applies.
-Stage B implementation plan: [collection plan — stage B](collection-plan-stage-b.md).
+planner, VK/Telegram adapters and no-DB tests. Stage C delivered collection-time
+selection/staging, `seen`/lane evidence and thread-level selection. Collection
+lanes are not wired to runtime yet; comments/engagement, UI and task-owned
+content types remain future stages. Until P5-T14 is `READY`/`DONE`, runtime
+behavior in [COLLECTION](../COLLECTION.md), [task selection](task-selection.md)
+and [MODELS](../MODELS.md) still applies except for the stage-C selection path
+described there. Stage B implementation plan:
+[collection plan — stage B](collection-plan-stage-b.md).
 
 ## Problem
 

@@ -17,7 +17,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.core.tenant_context import tenant_scope
-from app.models import AgentTask, CollectedItem, Platform, Source
+from app.models import AgentTask, CollectedItem, CollectionLaneRun, CollectionSeen, Platform, Source
+from app.services.monitoring.selection import SelectionScope
 from app.types import SourceType
 
 
@@ -152,6 +153,120 @@ async def test_post_and_comment_identity_do_not_collide(source):
     assert comment.parent_external_id == "1"
     rows = await CollectedItem.objects.filter(source_id=source.id)
     assert {(row.content_type, row.external_id) for row in rows} == {("post", "1_2"), ("comment", "1_2")}
+
+
+async def test_analysis_drain_skips_needs_review_but_keeps_legacy_rows(source):
+    selected = await CollectedItem.objects.create(
+        source_id=source.id,
+        external_id="3_1",
+        content_hash="1" * 64,
+        selection_status="selected",
+    )
+    review = await CollectedItem.objects.create(
+        source_id=source.id,
+        external_id="3_2",
+        content_hash="2" * 64,
+        selection_status="needs_review",
+    )
+    legacy = await CollectedItem.objects.create(
+        source_id=source.id,
+        external_id="3_3",
+        content_hash="3" * 64,
+    )
+
+    rows = await CollectedItem.objects.for_source(source.id)
+    assert {row.id for row in rows} == {selected.id, legacy.id}
+    assert review.id not in {row.id for row in rows}
+
+
+async def test_collection_selection_stages_only_selected_rows_and_records_evidence(source):
+    """Rejected text is not staged; its identity still lands in the seen ledger."""
+    items = [
+        {"platform": "vk", "external_id": "1_1", "text": "Поездка в Италию", "published_at": "2026-10-02T10:00:00Z"},
+        {"platform": "vk", "external_id": "1_2", "text": "Совсем другое", "published_at": "2026-10-02T10:00:00Z"},
+    ]
+    c = _collector(items)
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9101,
+        selection_scope=SelectionScope(keywords=("Италия",)),
+    )
+
+    assert result["selected"] == 1
+    assert result["rejected"] == 1
+    assert result["staged"] == 1
+    rows = await CollectedItem.objects.filter(source_id=source.id)
+    assert [row.external_id for row in rows] == ["1_1"]
+    assert rows[0].selection_status == "selected"
+    assert rows[0].selection_reason == "text_matched"
+    seen = {row.external_id: row.status for row in await CollectionSeen.objects.filter(source_id=source.id)}
+    assert seen == {"1_1": "selected", "1_2": "rejected"}
+    lane = await CollectionLaneRun.objects.filter(job_id=9101).first()
+    try:
+        assert lane.fetched == 2
+        assert lane.selected == 1
+        assert lane.rejected == 1
+    finally:
+        await CollectionLaneRun.objects.filter(job_id=9101).delete()
+
+
+async def test_rejected_item_is_seen_not_new_and_can_be_reconsidered(source):
+    items = [
+        {"platform": "vk", "external_id": "4_1", "text": "Поездка в Италию", "published_at": "2026-10-02T10:00:00Z"},
+        {"platform": "vk", "external_id": "4_2", "text": "Совсем другое", "published_at": "2026-10-02T10:00:00Z"},
+    ]
+    c = _collector(items)
+    first = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9201,
+        selection_scope=SelectionScope(keywords=("Италия",)),
+    )
+    assert first["staged"] == 1
+
+    second = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9202,
+        selection_scope=SelectionScope(keywords=("Италия",)),
+    )
+    assert second["new_items"] == 0
+
+    third = await c.collect_from_source(source, analyze=False, run_id=9203, selection_scope=SelectionScope())
+    assert third["selected"] == 2
+    rows = {row.external_id: row for row in await CollectedItem.objects.filter(source_id=source.id)}
+    assert rows["4_2"].selection_status == "selected"
+    assert rows["4_2"].selection_reason == "no_tracked_users"
+
+
+async def test_thread_selection_keeps_a_comment_matching_a_post(source):
+    items = [
+        {"platform": "vk", "external_id": "2_1", "content_type": "post", "text": "пост без фразы"},
+        {
+            "platform": "vk",
+            "external_id": "2_1:9",
+            "content_type": "comment",
+            "parent_external_id": "2_1",
+            "text": "в комментарии Италия",
+            "author": {"platform": "vk", "external_id": "5", "id": 5},
+        },
+    ]
+    c = _collector(items)
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9102,
+        selection_scope=SelectionScope(keywords=("Италия",)),
+    )
+
+    assert result["staged"] == 2
+    rows = {row.external_id: row for row in await CollectedItem.objects.filter(source_id=source.id)}
+    assert set(rows) == {"2_1", "2_1:9"}
+    assert rows["2_1:9"].parent_external_id == "2_1"
+    assert rows["2_1:9"].selection_status == "selected"
 
 
 async def test_inline_analysis_stages_first_then_retires_what_it_saved(source):

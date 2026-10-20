@@ -482,6 +482,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                 run_id=run_id,
                 dry_run=dry_run,
                 selection_scope=selection_scope,
+                task_id=getattr(task, "id", None),
             )
             items = (result or {}).get("content_count", 0)
             new_items = (result or {}).get("new_items", 0)
@@ -517,6 +518,11 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "analyzed": int((result or {}).get("analytics_count", 0) or 0),
                     # Raw rows parked for a later analysis (0 when analysed inline).
                     "staged": int((result or {}).get("staged", 0) or 0),
+                    # Collection-time outcomes: selected rows are analysable,
+                    # needs_review waits for an operator, rejected text is not stored.
+                    "selected": int((result or {}).get("selected", 0) or 0),
+                    "needs_review": int((result or {}).get("needs_review", 0) or 0),
+                    "rejected": int((result or {}).get("rejected", 0) or 0),
                     # This run's "seen" ledger. Written on every collect, whether
                     # or not the analysis succeeded — that is what stops the next
                     # collection from re-reporting the same wall as new.
@@ -911,43 +917,58 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 if staged:
                     from app.services.ai.analyzer import AIAnalyzer
 
-                    # Task selection (docs/design/task-selection.md) runs on the
-                    # staged rows *before* the provider call: an item must come
-                    # from an eligible author and carry the task's phrases. The
-                    # scenario still decides content types — it collected them.
+                    # New rows were selected before staging. Legacy rows (NULL
+                    # status, staged before this stage) still get the old
+                    # deterministic pass so an upgrade does not analyse text
+                    # the task never selected. New selected rows are never
+                    # re-filtered: the collection decision is authoritative.
                     staged_scope = selection.build_scope(task_payload)
                     analyzed_items = [row.as_agent_item() for row in staged]
-                    selected = selection.select_items(analyzed_items, staged_scope)
+                    status_items = [
+                        item
+                        for row, item in zip(staged, analyzed_items)
+                        if getattr(row, "selection_status", None) == "selected"
+                    ]
+                    legacy_items = [
+                        item
+                        for row, item in zip(staged, analyzed_items)
+                        if getattr(row, "selection_status", None) is None
+                    ]
+                    legacy_selected = (
+                        selection.select_items(legacy_items, staged_scope) if legacy_items else None
+                    )
+                    items = status_items + (legacy_selected.eligible if legacy_selected is not None else [])
+                    reasons = dict(legacy_selected.reasons) if legacy_selected is not None else {}
+                    if status_items:
+                        reasons["stored_selected"] = len(status_items)
                     per["selection"] = {
-                        "eligible": len(selected.eligible),
-                        "rejected": len(selected.rejected),
-                        "reasons": dict(selected.reasons),
-                        "unknown_tracked_users": list(selected.unknown_tracked_users),
+                        "eligible": len(items),
+                        "rejected": len(legacy_selected.rejected) if legacy_selected is not None else 0,
+                        "reasons": reasons,
+                        "unknown_tracked_users": (
+                            list(legacy_selected.unknown_tracked_users) if legacy_selected is not None else []
+                        ),
                     }
                     await job_progress.update_current(sources, stats["per_source"], per)
                     if dry_run:
-                        # A rehearsal stops at the deterministic selection: it
-                        # reports what would be sent to the model, calls none,
-                        # and leaves every raw row staged.
+                        # A rehearsal reports what would be sent to the model,
+                        # calls none, and leaves every raw row staged.
                         per["dry_run"] = True
                         continue
-                    if not selected.eligible:
+                    if not items:
                         # Everything staged is outside the task's selection. It
                         # stays staged for retention and is not a paid attempt.
                         stats["skipped"] += 1
-                        if selected.unknown_tracked_users:
+                        if per["selection"]["unknown_tracked_users"]:
                             logger.info(
                                 "analyze_selection_none_unknown_users source_id=%s count=%s",
                                 _log_id(source.id),
-                                len(selected.unknown_tracked_users),
+                                len(per["selection"]["unknown_tracked_users"]),
                             )
                         continue
                     analytics = None
-                    # Selection does not change what the collector produced;
-                    # rows outside it are never retired by an analysis that did
-                    # not cover them, so they leave through normal retention or
-                    # the exhausted-attempts ceiling, not through this path.
-                    items = selected.eligible
+                    # Selection already happened at collection for new rows;
+                    # rejected text is not stored and cannot be retired here.
                     analyzer = AIAnalyzer()
                     fresh = await analyzer.analyze_content(
                         items,

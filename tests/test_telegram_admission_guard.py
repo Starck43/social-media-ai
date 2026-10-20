@@ -119,7 +119,7 @@ class DiagnosticTests(unittest.IsolatedAsyncioTestCase):
         session=NS(begin=lambda:Transaction(),execute=AsyncMock(side_effect=FixtureGuardError('batch_insert_bind')),close=AsyncMock())
         module=load_isolated_source('_admission_guard_privacy',ROOT/'app/services/monitoring/staging.py',{
             'app.core.tenant_context':NS(current_tenant_id=lambda:4,is_bypass=lambda:False),
-            'app.utils.collected_content':NS(build_staged_rows=lambda *args:[]),
+            'app.utils.collected_content':NS(build_staged_rows=lambda *args,**kwargs:[]),
             'app.core.database':NS(new_session=lambda:session),'app.models':NS(Source=Source,CollectedItem=Mock(),Job=Mock())})
         source=NS(id=7,tenant_id=4,external_id='fixture-source')
         with self.assertRaises(module.ContentAdmissionError) as caught:

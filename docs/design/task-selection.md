@@ -4,14 +4,13 @@ How a task decides *which collected items are analysed*. Selection is a
 property of the **task**; a scenario still answers only "how to analyse" and a
 source only "which wall/channel we may read".
 
-> **Planned (P5-T14).** The accepted target moves content types from the
-> scenario to the task and applies deterministic selection at collection rather
-> than at analysis. `collected_items` will hold only `selected`/`needs_review`
-> rows, comments become a typed dependent lane, and a comment-enabled task is
-> filtered at thread level. Sources may also include task-scoped query lanes
-> (`sources.owner_task_id`), which are excluded from the empty-set/"all active"
-> fallback. See [collection plan](collection-plan.md). The current three-layer
-> contract below remains in force until that task is accepted.
+> **P5-T14 stage C implemented.** Deterministic selection now runs before
+> staging: `collected_items` stores only `selected`/`needs_review` rows with a
+> status/reason, rejected text is not stored, and the analyse path does not
+> re-filter new rows. A comment-enabled batch is filtered at thread level (post
+> + comments). Content types still come from the scenario until stage E, and
+> task-scoped query-source fallback remains planned. See
+> [collection plan](collection-plan.md).
 
 ## Why the old model is replaced
 
@@ -37,10 +36,12 @@ The layers are applied in order: an item must come from a task source, carry an
 eligible author, and pass the text scope. The same order is reported in run
 diagnostics, so an operator sees *why* an item was left out.
 
-The planned P5-T14 contract keeps these layers but changes two boundaries:
-selection runs at collection, and a comment-enabled task applies the text scope
-to the post **and its comments together** (thread level). A task-scoped query
-source is an explicit lane, never part of the "all active sources" shortcut.
+Stage C keeps these layers but changes two boundaries: selection runs at
+collection, and a comment-enabled batch applies the text scope to the post
+**and its comments together** (thread level). A task-scoped query source is an
+explicit lane, never part of the "all active sources" shortcut; that fallback
+exclusion is still pending. Legacy rows staged before stage C keep a NULL
+status and still pass through the old analysis-time selection once.
 
 ### Tracked users
 

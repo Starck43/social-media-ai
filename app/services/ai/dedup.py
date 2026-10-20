@@ -149,14 +149,17 @@ async def seen_hashes(source_id: int) -> set[str]:
     disagree with what the staging table holds:
       1. `ai_analytics.summary_data["content_hashes"]` — analysed;
       2. `collected_items.content_hash` — fetched and waiting for analysis;
-      3. `jobs.result["per_source"][].content_hashes` for collect jobs and
+      3. `collection_seen.content_hash` — every collection-time outcome,
+         including rejected rows whose text was never staged, so a filter
+         change can re-evaluate them without calling them new again;
+      4. `jobs.result["per_source"][].content_hashes` for collect jobs and
          `jobs.result["per_source"][].collection.content_hashes` for unified
          analyze jobs — fetched before analysis, so a later staging failure
          cannot make the same fetched content look new again.
     """
     hashes: set[str] = set()
 
-    from app.models import AIAnalytics, CollectedItem, Job
+    from app.models import AIAnalytics, CollectedItem, CollectionSeen, Job
 
     try:
         rows = (
@@ -178,6 +181,11 @@ async def seen_hashes(source_id: int) -> set[str]:
         hashes.update(await CollectedItem.objects.hashes_for_source(source_id))
     except Exception as e:
         logger.warning(f"Seen lookup (staged) failed for source {source_id}: {e}")
+
+    try:
+        hashes.update(await CollectionSeen.objects.hashes_for_source(source_id))
+    except Exception as e:
+        logger.warning(f"Seen lookup (selection ledger) failed for source {source_id}: {e}")
 
     try:
         jobs = (

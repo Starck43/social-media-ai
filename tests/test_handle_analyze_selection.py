@@ -38,7 +38,7 @@ SOURCE = SimpleNamespace(id=11, name="wall", external_id="wall", params={}, tena
 # --- помощники -------------------------------------------------------------
 
 
-def staged(author_id=None, text="", platform="vk", key=None):
+def staged(author_id=None, text="", platform="vk", key=None, selection_status=None):
     """Строка `collected_items` в том виде, в каком её видит обработчик.
 
     Настоящий `as_agent_item()` кладёт `author` снимком и `platform` записи —
@@ -53,7 +53,11 @@ def staged(author_id=None, text="", platform="vk", key=None):
         "permalink": f"https://example.test/{key}",
         "content_hash": f"hash-{key}",
     }
-    return SimpleNamespace(content_hash=f"hash-{key}", as_agent_item=lambda: dict(item))
+    return SimpleNamespace(
+        content_hash=f"hash-{key}",
+        selection_status=selection_status,
+        as_agent_item=lambda: dict(item),
+    )
 
 
 def selection_progress(result):
@@ -199,6 +203,26 @@ class TestItemsAreFilteredBeforeTheModelPays:
 
         assert len(analyze_env.analyzed[-1]) == 2
         assert selection_progress(result)["eligible"] == 2
+
+
+class TestCollectionTimeSelectionIsAuthoritative:
+    def test_stored_selected_rows_are_not_filtered_again(self, analyze_env):
+        """New rows already carry the collection decision; analysis only reads them."""
+        analyze_env.task.payload = {"tracked_users": ["vk:1"], "keywords_list": ["Италия"]}
+        analyze_env.stage(
+            staged(2, "чужой автор, но выбран на сборе", key="a", selection_status="selected"),
+            staged(1, "без фразы, но выбран на сборе", key="b", selection_status="selected"),
+            staged(1, "Италия, ждёт проверки", key="c", selection_status="needs_review"),
+        )
+
+        result = run_analyze(analyze_env)
+
+        sent = analyze_env.analyzed[-1]
+        assert [item["external_id"] for item in sent] == ["post-a", "post-b"]
+        selection = selection_progress(result)
+        assert selection["eligible"] == 2
+        assert selection["rejected"] == 0
+        assert selection["reasons"].get("stored_selected") == 2
 
 
 class TestEmptySelectionLooksAtTheSourceItself:

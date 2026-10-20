@@ -58,6 +58,10 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             "run_id",
             "source_id",
             "content_type",
+            "parent_external_id",
+            "lane_id",
+            "selection_status",
+            "selection_reason",
             "external_id",
             "content_hash",
             "platform",
@@ -88,6 +92,10 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
                 {
                     **row,
                     "content_type": row.get("content_type") or "post",
+                    "parent_external_id": row.get("parent_external_id"),
+                    "lane_id": row.get("lane_id"),
+                    "selection_status": row.get("selection_status") or "selected",
+                    "selection_reason": row.get("selection_reason"),
                     "attachments": normalize_attachments(row.get("attachments")),
                 },
             )
@@ -137,7 +145,17 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         from app.core.tenant_context import current_tenant_id, is_bypass
         from app.models import AIAnalytics
 
-        rows = [{**row, "content_type": row.get("content_type") or "post"} for row in rows]
+        rows = [
+            {
+                **row,
+                "content_type": row.get("content_type") or "post",
+                "parent_external_id": row.get("parent_external_id"),
+                "lane_id": row.get("lane_id"),
+                "selection_status": row.get("selection_status") or "selected",
+                "selection_reason": row.get("selection_reason"),
+            }
+            for row in rows
+        ]
         tenant_id = current_tenant_id()
         if is_bypass() or type(tenant_id) is not int or tenant_id <= 0:
             raise ValueError("content_tenant_invalid")
@@ -209,6 +227,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         limit: int = 50,
         *,
         include_exhausted: bool = False,
+        include_review: bool = False,
         start_date: Any = None,
         end_date: Any = None,
     ) -> list[CollectedItem]:
@@ -231,6 +250,12 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         query = self.filter(source_id=source_id)
         if not include_exhausted:
             query = query.filter(CollectedItem.analyze_attempts < CollectedItem.give_up_after_attempts)
+        if not include_review:
+            # Legacy rows (NULL) remain analysable; collection-time selected rows
+            # pass; needs_review waits for an operator and rejected text is absent.
+            query = query.filter(
+                or_(CollectedItem.selection_status.is_(None), CollectedItem.selection_status == "selected")
+            )
         if start_date is not None:
             query = query.filter(CollectedItem.published_at >= start_date)
         if end_date is not None:
@@ -258,11 +283,22 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         rows = await query.values(CollectedItem.analyze_attempts, CollectedItem.give_up_after_attempts).rows()
         return sum(1 for r in rows if r and r[0] is not None and r[0] >= (r[1] or 0))
 
-    async def count_for_source(self, source_id: int, *, start_date: Any = None, end_date: Any = None) -> int:
+    async def count_for_source(
+        self,
+        source_id: int,
+        *,
+        include_review: bool = False,
+        start_date: Any = None,
+        end_date: Any = None,
+    ) -> int:
         """Count the fixed staged window, including exhausted rows."""
         from app.models.collected_item import CollectedItem
 
         query = self.filter(source_id=source_id)
+        if not include_review:
+            query = query.filter(
+                or_(CollectedItem.selection_status.is_(None), CollectedItem.selection_status == "selected")
+            )
         if start_date is not None:
             query = query.filter(CollectedItem.published_at >= start_date)
         if end_date is not None:

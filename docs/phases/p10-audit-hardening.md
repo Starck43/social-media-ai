@@ -19,7 +19,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   preserved; depends: serialize `user.py`/schema writes with P10-T03;
   owns: tests/test_http_user_response_privacy.py, docs/validation/http-user-response-privacy.md
   and scoped Users response contract in docs/API.md;
-  owner: remote Notion agent (fix/http-user-response-redaction); status: IN_PROGRESS.
+  owner: remote Notion agent (fix/http-user-response-redaction); status: READY.
   Claim before implementation from dev `aeb8c54d74a55710b5080fd0a980fbc0ecf36d8c`.
   Current UserInDB already excludes hashes (existing `eb6cad6`); this lane adds
   bounded HTTP/OpenAPI regression evidence and corrects stale response docs,
@@ -27,6 +27,19 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   and unchanged; no shared user.py/schema writes are planned. Open PRs
   #216/#217/#220/#224/#225/#226 checked; docs/API.md foreign hunks do not overlap
   the Users response section. Preserve other claims/evidence and Draft PRs.
+  Claim: `6093a08597cfa46a430c628d74fb291060c8deb9`;
+  test/API-doc SHA: `35df749c1ba3b29d71b99089d072f96f00d8e814`.
+  Draft [PR #227](https://github.com/Starck43/social-media-ai/pull/227).
+  Remote self-run at the published SHA: 47 isolated tests passed, exit 0,
+  0 skips/xfails; five HTTP profile-response routes, actual schemas/OpenAPI
+  and route guards with explicit identity/storage doubles. Intentional hash
+  regression in a disposable copy: 18 failed / 29 passed, exit 1 as expected.
+  Black/isort, pip and scoped diff checks passed. No production code changes.
+  Commands, dependency versions, harness correction and limits:
+  [validation](../validation/http-user-response-privacy.md).
+  READY is implementation/evidence review, not DONE or full application/token/
+  middleware/DB acceptance; those checks remain owner-local under R10. No
+  migration, runtime start or merge authorized; keep Draft.
 
 - [ ] P10-T03 (AUD-03, P1) — separate self-service profile updates from
   privilege updates; accept: profile updates cannot elevate authority; fresh

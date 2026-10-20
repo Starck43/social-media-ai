@@ -132,9 +132,9 @@ model config, per-usage accounting preserved end to end.
 4. Reduce aggregation into the existing `_save_analysis` path with bounded
    schemas; disabled legacy path; modal/coverage nothing new to render.
 
-Ordering constraint: P5-T04 owns the receipt/dedup layer and P8-T22 owns
-handler/web work right now — implementation slices rebase on their landing;
-the design doc and journal slice have no file conflict.
+Ordering constraint (historical): P5-T04 owns the receipt/dedup layer; P8-T22
+was later dropped/absorbed by P5-T14 stage E. This design is deferred and is
+not part of the current implementation queue.
 
 ## Risks
 

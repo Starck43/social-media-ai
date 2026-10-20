@@ -100,9 +100,9 @@ safely.
   path stays until all slices land. Design: docs/design/analysis-map-reduce.md;
   accept: truncated response no longer zeroes the whole batch, per-item coverage
   is visible in job progress, focused tests via R10 (mocked LLM), costs stay
-  journaled and capped; depends: P5-T04 (receipts), P8-T22 (shared
-  analyzer/handler files); owns: design doc, app/services/ai/analyzer.py,
-  app/services/ai/attempt_journal.py, app/jobs/handlers.py; owner: unassigned;
+  journaled and capped; depends: P5-T04 (receipts); owns: design doc,
+  app/services/ai/analyzer.py, app/services/ai/attempt_journal.py,
+  app/jobs/handlers.py; owner: unassigned;
   status: DROPPED — deferred 2026-10-21 under owner instruction. It existed as
   design only, is not part of the current pilot/collection plan, and its
   handler/analyzer ownership blocked collection-time selection. The design
@@ -144,7 +144,7 @@ safely.
   debug-traced failover path (`text_analysis_attempt_unusable` → completed
   via fallback); new no-DB tests
   `tests/test_media_coverage_semantics.py` (86 total pass via
-  `pytest --noconftest`); depends: P5-T04, P8-T22; owns:
+  `pytest --noconftest`); depends: P5-T04; owns:
   app/services/ai/content_classifier.py, app/services/ai/analyzer.py,
   app/models/managers/llm_model_manager.py,
   app/models/managers/ai_analytics_manager.py, app/services/ai/theme_matcher.py,
@@ -214,7 +214,7 @@ safely.
   diagnostics show the selection split; docs (`task-selection`,
   `COLLECTION`, `AGENT_TASKS`, `CLI`, `API`, `DIGEST`,
   `ANALYTICS_AGGREGATION_SYSTEM`) describe the shipped behavior. Depends:
-  P8-T22. Owns: app/services/monitoring/,
+  none (P8-T22 was dropped; its accepted web work remains). Owns: app/services/monitoring/,
   app/services/social/, app/jobs/handlers.py, app/services/ai/analysis_context.py,
   app/models/managers/agent_task_manager.py, app/web/tasks.py,
   app/web/sources.py, templates, app/agent/toolset/tasks.py, cli/, app/api,
@@ -225,7 +225,7 @@ safely.
   assert its removal. Migration 0105 already stripped stored values (Q-4).
   The P5-T05 dependency was removed when that design-only task was dropped.
 
-- [ ] P5-T12 — VK repost author snapshot: `wall.get` must request
+- [x] P5-T12 — VK repost author snapshot: `wall.get` must request
   `copy_history` (and `extended=1` with the needed `fields`) so each stored item
   carries its carrier (`collected_items.author` = `{id, name, platform}` from
   `from_id` low 31 bits / `signer_id`) and a deterministic `external_id` per
@@ -237,7 +237,10 @@ safely.
   fabricate an author; a tracked author's repost is selected while an untracked
   one is not. Depends: P5-T08. Owns: app/services/social/vk_client.py,
   app/models/managers/collected_item_manager.py, tests. Owner: unassigned;
-  status: TODO
+  status: DROPPED (2026-10-21) — superseded by the P5-T14 plan: reposts are
+  candidate-producing engagement lanes, not text items whose carrier must be
+  analysed. Reopen only if repost-carrier text analysis returns as a product
+  requirement.
 
 - [x] P5-T13 — VK search sources and safe collection bounds: add
   `SourceType.SEARCH` (`newsfeed.search` with `q`, date window and optional

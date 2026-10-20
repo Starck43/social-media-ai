@@ -384,7 +384,7 @@ P8-T06 and does not alter its task record.
   remain attributed above. Phase/gate approval, full-suite, deployment and schema
   acceptance are not implied by this task closure.
 
-- [ ] P8-T22 — audit and simplify the social analysis web journey; accept:
+- [x] P8-T22 — audit and simplify the social analysis web journey; accept:
   one social analysis task choice collects then analyzes, standalone CLI/API/chat
   operations remain compatible, partial analysis retains staged input; scenario,
   source and task pages explain their distinct setup/actions/statistics using
@@ -394,7 +394,12 @@ P8-T06 and does not alter its task record.
   owns: web task backend and scenario/source/task templates, shared web
   presentation helpers, final editor follow-up after the explicit P8-T23 handoff,
   focused tests and subsystem/audit docs; owner: codex-social-analysis;
-  status: BLOCKED. Base: local dev `c98dc9c`, origin/dev `1e0e3a0`
+  status: DROPPED (2026-10-21) — accepted web-journey implementation remains in
+  the code, but the remaining blocked task-editor/scenario/source presentation
+  scope is absorbed by P5-T14 stage E (task-owned collection UI and presets).
+  The old test-schema blocker is also removed by migration 0108. Reopen only
+  if a bounded P5-T14 E gap remains after that stage. Historical evidence:
+  Base: local dev `c98dc9c`, origin/dev `1e0e3a0`
   verified 2026-10-18; source-picker changes preserved. Task editor changes
   are serialized after its active source-picker work finishes.
   Implementation and isolated verification recorded at `a11f1f9` plus reviewed
@@ -461,7 +466,7 @@ P8-T06 and does not alter its task record.
 
 ## Phase approval
 
-- [ ] P8-T25 — the chat agent can turn an abstract "find and analyse" request
+- [ ] P8-T29 — the chat agent can turn an abstract "find and analyse" request
   into a reviewable plan instead of one concrete task. Scope: `search_plan`
   (free-form request → paraphrase families, platform search queries and a short
   candidate wording for target names, every value proposed and confirmed);
@@ -594,7 +599,8 @@ P8-T06 and does not alter its task record.
   its foreign owner, BLOCKED status and historical acceptance remain unchanged.
   No analyzer, receipts, collection algorithms, handler business logic, source
   editor or migrations are in scope. P8-T27 remains reserved by PR #224;
-  existing duplicate P8-T25 rows are preserved, not silently renumbered.
+  the former duplicate agent row was renumbered P8-T29 on 2026-10-21; the
+  settings task keeps P8-T25.
   Implementation: `05949aff7377573e540b47470cc3b7eb763af24d`; all 16 published
   implementation/test files matched the sandbox bytes. Remote self-run evidence:
   58 isolated unit checks and 12 offline Chromium checks (18 subtests) passed;
@@ -610,4 +616,5 @@ P8-T06 and does not alter its task record.
   15 fixture/obsolete-expectation failures; these are documented, not green.
   Coordinator accepts the stated isolated presentation/writer/browser contract;
   broader DB/runtime/manual application acceptance was not run or certified.
-  P8-T22 remains BLOCKED, and foreign evidence is unchanged.
+  P8-T22 was later dropped/absorbed by P5-T14 stage E; its historical
+  blocked state and evidence remain unchanged.

@@ -74,7 +74,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   import/asset smoke, no DB/provider; depends: none;
   owns: pyproject.toml, tests/wheel_runtime_smoke.py and
   docs/validation/wheel-runtime-completeness.md;
-  owner: remote Notion agent (fix/wheel-runtime-completeness); status: READY.
+  owner: remote Notion agent (fix/wheel-runtime-completeness); status: BLOCKED.
   Claimed before implementation from dev `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
   Open PRs #216/#217/#220/#224/#225 checked: no packaging ownership overlap;
   shared registry/phase edits remain task-scoped. Foreign claims/evidence and
@@ -91,9 +91,18 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   each fail as expected (exit 1). Black/isort and scoped diff checks passed.
   Commands, exact versions, initial harness failures and limits:
   [validation](../validation/wheel-runtime-completeness.md).
-  READY is implementation review only, not DONE or application/DB acceptance.
-  Coordinator/owner must review the exact SHA, installed-wheel evidence and
-  remaining CWD-relative asset consumers; keep Draft, no merge authorized.
+  Previous READY handoff is superseded by owner review of the same `fa0c7e9`.
+  Owner-reported macOS 15.7.9 x86_64 / Python 3.12.6: pinned and unconstrained
+  wheel file/import smoke plus pip check, namespace import and cli --help pass.
+  BLOCKED: empty-CWD app import fails at relative app/static; template paths
+  are also CWD-relative and logger creates ./logs. Wheel-only runtime deps miss
+  greenlet and psycopg v3 (SQLAlchemy 2.1.4/2.1.5). Packaging success and safe
+  import smoke do not establish application resource lookup/dependency closure.
+  [Owner review](https://github.com/Starck43/social-media-ai/pull/226#issuecomment-6296837084)
+  is attributed, not a remote rerun. Both blockers require scoped fixes and
+  installed-wheel no-DB module-import/resource checks before acceptance/merge.
+  No new implementation, task acceptance, runtime/DB/provider start or merge
+  authorized by this documentation follow-up. Keep Draft, not DONE.
 
 - [ ] P10-T13 — repair post-migration LLM CLI contracts; owner: remote Notion
   agent; status: BLOCKED. Accept: provider listing without removed default

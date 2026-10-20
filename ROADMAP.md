@@ -68,7 +68,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T07 — digest scope/window/row consistency (AUD-07) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T08 — per-component home pipeline gating (AUD-08) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T09 — truthful pipeline counts/labels (AUD-09) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
-- [ ] P10-T10 — distributable package runtime completeness (AUD-10) → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent (fix/wheel-runtime-completeness) — READY (Draft PR #226; owner review pending)
+- [ ] P10-T10 — distributable package runtime completeness (AUD-10) → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent (fix/wheel-runtime-completeness) — BLOCKED (Draft PR #226; owner review: resource paths and dependency closure)
 
 - [ ] P10-T13 — LLM CLI provider listing and safe model-test contract → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — BLOCKED
 

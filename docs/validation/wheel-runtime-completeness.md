@@ -1,8 +1,75 @@
 # Installed wheel runtime completeness
 
+## Current disposition — BLOCKED after owner review
+
+The previous READY handoff below is historical partial packaging evidence,
+not acceptance of complete wheel-only runtime usability. Owner review of
+`fa0c7e9701f13bdd68b29047b187431538c92e2d` found two blocking gaps. Keep
+Draft PR #226 unmerged; P10-T10 is BLOCKED, not DONE. Original successful
+checks and their limitations are preserved rather than rewritten as failures.
+
+### Owner-reported target-platform evidence
+
+Source: [PR review comment](https://github.com/Starck43/social-media-ai/pull/226#issuecomment-6296837084),
+relayed from the owner's chat report; this agent did not execute these checks.
+macOS 15.7.9, x86_64, CPython 3.12.6; clean `git archive fa0c7e9`; two separate
+venvs (requirements-pinned and unconstrained), empty CWD outside the checkout.
+This is not a run of the Linux Docker image merely because Python 3.12 matches.
+
+- Wheel build exit 0 and both smoke runs pass: 366 Python files, 91 assets,
+  457 matching files. Owner supplied SHA256 prefix `724f613a…`, not a full
+  digest; do not substitute the different Linux wheel hash documented below.
+- Runtime cryptography metadata, clean dev extra, CLI entry point and both
+  `pip check` results pass. `app.templates.filters` imports and `cli --help`
+  work from the empty CWD.
+- Removing `app/web/templates/web/base.html` yields exit 1 naming that file.
+- The owner reports no DB, migrations or providers were run, and no changes
+  to their dirty dev tree. The report includes module imports and CLI help,
+  not execution of application runtime/lifespan/server startup.
+
+### Blocker: resource paths and logging CWD side effects
+
+From an empty CWD, application import fails in `app/admin/setup.py:91`:
+
+```text
+app.mount("/static", StaticFiles(directory="app/static"), ...)
+RuntimeError: Directory 'app/static' does not exist
+```
+
+Also relative to CWD: `app/main.py` (`Jinja2Templates("app/templates")`) and
+`app/web/deps.py` (`FileSystemLoader("app/web/templates")`). The owner observed
+`app/core/logger.py` create `./logs` in that empty directory. The allowlisted
+smoke never loads app.main/app.web and cannot detect these failures. A passing
+smoke from arbitrary CWD is not successful application import/startup there.
+
+### Blocker: undeclared wheel runtime dependencies
+
+Owner's wheel-only installations lack `greenlet` (SQLAlchemy asyncio import
+requires it) and `psycopg` v3 (`app/core/database.py` / SQLAlchemy 2.1.x selects
+the psycopg dialect for `create_engine("postgresql://…")` and raises
+`ModuleNotFoundError: No module named 'psycopg'`). Owner used SQLAlchemy 2.1.4
+pinned / 2.1.5 unconstrained. pyproject declares asyncpg and psycopg2-binary,
+but not these dependencies; requirements.txt includes psycopg[binary] and can
+mask the gap. Successful `pip check` only validates declared requirements,
+not whether runtime imports have a closed dependency set.
+
+### Required next step, not yet implemented
+
+Resolve both blockers in an explicitly scoped continuation or linked,
+separately claimed prerequisite tasks before this PR can be accepted/merged.
+Added evidence must cover installed-wheel app.main/app.core.database imports
+and template/static resolution from an empty CWD without DB connections,
+migrations, provider calls, runtime/lifespan/server startup or deployment.
+Logging's write location and side effects must be explicit. Full raw commands
+and complete wheel hash for the owner's run were not supplied; nothing is
+invented here. No source/dependency/test code or acceptance scope is changed
+by this review-recording patch. READY is retained only as historical status
+for the completed packaging slice, not the overall task.
+
 ## Scope and source pins
 
-- Task: P10-T10 / AUD-10; Draft PR #226, implementation READY, not DONE.
+- Task: P10-T10 / AUD-10; Draft PR #226, currently BLOCKED by owner review.
+  The following remote results describe the earlier completed packaging slice.
 - Initial dev: `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
 - Claim published before implementation: `6bbc97f841beba30756b99ccebc288339980666c`.
 - Dev advanced during execution. GitHub's PR branch update integrated fresh dev
@@ -216,8 +283,9 @@ positive/negative results above were rerun on the published implementation.
   deployment, separately validate resource lookup under the intended working
   directory and ordinary runtime integration through the repository's approved
   local test route. No DB/migration/deploy action is authorized by this handoff.
-  Keep PR Draft; only the coordinator can accept DONE. Merge needs explicit
-  owner confirmation.
+  Keep PR Draft; current owner review blocks merge until both gaps above are
+  resolved. Only the coordinator can accept DONE; merge needs explicit owner
+  confirmation.
 
 ## Pinned runtime environment
 

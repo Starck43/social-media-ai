@@ -398,20 +398,47 @@ class ProbeIsolation(NoNetworkTests):
 
 class EnvironmentBoundary(NoNetworkTests):
     def test_private_environment_and_dotenv_are_suppressed_then_restored(self):
-        from pydantic_settings.sources import DotEnvSettingsSource
+        """Run in a fresh interpreter, because that is the guard's subject.
 
-        url = "postgresql://starck@localhost:5432/social_manager_budget_pr180"
-        with patch.dict(os.environ, {"UNRELATED_PRIVATE_KEY": "never-forward"}):
-            with p.application_environment(url):
-                self.assertNotIn("UNRELATED_PRIVATE_KEY", os.environ)
-                self.assertEqual(os.environ["POSTGRES_URL"], url)
-                self.assertEqual(os.environ["DB_SCHEMA"], p.TARGET_SCHEMA)
-                self.assertEqual(os.environ["AGENT_DAILY_COST_LIMIT"], "0")
-                self.assertEqual(DotEnvSettingsSource._read_env_files(), {})
-                import dotenv
+        `application_environment` refuses an interpreter that has already
+        imported the application — and under pytest this one has. The check
+        therefore runs where it can be true, instead of asserting a clean
+        process it cannot produce.
+        """
+        import subprocess
+        import sys
+        import textwrap
 
-                self.assertFalse(dotenv.load_dotenv())
-            self.assertEqual(os.environ["UNRELATED_PRIVATE_KEY"], "never-forward")
+        script = textwrap.dedent(
+            f"""
+            import json, os, sys
+            sys.path.insert(0, {str(ROOT)!r})
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "_prepare_env_check", {str(ROOT / 'scripts/prepare_llm_budget_fixture.py')!r}
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            from unittest.mock import patch
+            from pydantic_settings.sources import DotEnvSettingsSource
+
+            url = "postgresql://starck@localhost:5432/social_manager_budget_pr180"
+            with patch.dict(os.environ, {{"UNRELATED_PRIVATE_KEY": "never-forward"}}):
+                with module.application_environment(url):
+                    import dotenv
+                    assert "UNRELATED_PRIVATE_KEY" not in os.environ
+                    assert os.environ["POSTGRES_URL"] == url
+                    assert os.environ["DB_SCHEMA"] == module.TARGET_SCHEMA
+                    assert os.environ["AGENT_DAILY_COST_LIMIT"] == "0"
+                    assert DotEnvSettingsSource._read_env_files() == {{}}
+                    assert dotenv.load_dotenv() is False
+                assert os.environ["UNRELATED_PRIVATE_KEY"] == "never-forward"
+            print("ok")
+            """
+        )
+        completed = subprocess.run([sys.executable, "-c", script], cwd=str(ROOT), capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr[-2000:])
+        self.assertIn("ok", completed.stdout)
 
     def test_preimported_app_refused(self):
         import sys

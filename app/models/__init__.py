@@ -24,7 +24,14 @@ from .billing import (
     PersonalLLMReservationState,
     TaskBillingPayer,
 )
-from .collection import CollectedItem, Platform, Source
+from .collection import (
+    CollectedItem,
+    CollectionCandidate,
+    CollectionLaneRun,
+    CollectionSeen,
+    Platform,
+    Source,
+)
 from .identity import ModelType, Permission, PlatformRole, Role, User, UserCredential
 from .llm import (
     LLMAttempt,
@@ -99,6 +106,9 @@ __all__ = [
     "NotificationPreference",
     # Raw collected content
     "CollectedItem",
+    "CollectionSeen",
+    "CollectionCandidate",
+    "CollectionLaneRun",
 ]
 
 # All canonical classes exist before any public model manager is bound.

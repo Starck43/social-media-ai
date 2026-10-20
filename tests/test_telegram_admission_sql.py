@@ -23,7 +23,7 @@ class Base(DeclarativeBase): pass
 class Raw(Base):
     __tablename__='collected_items';__table_args__={'schema':'test_schema'}
     id=Column(Integer,primary_key=True);tenant_id=Column(Integer);source_id=Column(Integer)
-    external_id=Column(String);content_hash=Column(String);attachments=Column(JSON(none_as_null=True))
+    external_id=Column(String);content_type=Column(String);content_hash=Column(String);attachments=Column(JSON(none_as_null=True))
 class Analytics(Base):
     __tablename__='ai_analytics';__table_args__={'schema':'test_schema'}
     id=Column(Integer,primary_key=True);tenant_id=Column(Integer);source_id=Column(Integer);summary_data=Column(JSON)
@@ -52,10 +52,10 @@ class SQLCompilationTests(unittest.IsolatedAsyncioTestCase):
         return [call.args[0] for call in self.session.execute.call_args_list]
     async def test_real_pg_insert_returning_json_binding(self):
         statements=await self.statements();stmt=statements[2];compiled=stmt.compile(dialect=postgresql.dialect())
-        self.assertIn('ON CONFLICT (source_id, external_id) DO NOTHING RETURNING',str(compiled))
+        self.assertIn('ON CONFLICT (source_id, content_type, external_id) DO NOTHING RETURNING',str(compiled))
         self.assertEqual(compiled.params['attachments_m0'],[{'type':'video','url':None}])
-        processor=Raw.attachments.type.bind_processor(postgresql.dialect())
-        self.assertEqual(processor(compiled.params['attachments_m0']),'[{"type": "video", "url": null}]')
+        processor=Raw.attachments.type.dialect_impl(postgresql.dialect()).bind_processor(postgresql.dialect())
+        self.assertEqual(processor(compiled.params['attachments_m0']).obj,[{'type':'video','url':None}])
     async def test_real_pg_tenant_source_lock_and_exact_identity_probe(self):
         statements=await self.statements()
         for index in (0,3):

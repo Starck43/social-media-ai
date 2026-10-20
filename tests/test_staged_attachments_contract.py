@@ -107,7 +107,7 @@ class StagedAttachmentsContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await manager().store_items(session, [row]), 1)
         stmt, params = session.calls[0]
         self.assertIn('CAST(:attachments AS jsonb)', stmt.text)
-        self.assertIn('ON CONFLICT (source_id, external_id) DO NOTHING', stmt.text)
+        self.assertIn('ON CONFLICT (source_id, content_type, external_id) DO NOTHING', stmt.text)
         binds = dict(stmt.binds)
         self.assertEqual(set(binds), {'metrics','author','attachments'})
         self.assertTrue(all(v['type_'].kwargs == {'none_as_null':True} for v in binds.values()))

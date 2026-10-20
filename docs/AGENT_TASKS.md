@@ -17,10 +17,13 @@ is never blocked behind a long collection.
 - `agent_tasks` — one cron definition **and the reaction it produces**:
   `cron_expr`, `job_type`
   (`collect` | `digest` | `prune` | `analyze` | `learn` | `reflect`),
-  `payload` (JSON): **selection keys (collect/analyze):** `cli_dates` (`start_date`/`end_date`), `tracked_users` (author filter, `platform:external_id`), `keywords_list` + `keywords_match` (`any`/`all`), `topics_list`, `brands`, `competitors`, `hashtags`, `influencer_names`; **operational keys (collect/analyze):** `force_refresh`, `force_reanalyze`, `analyze_inline`, `collect_before_analyze`; **read-path keys (digest):** `group_by` (`themes` | `sources` | `entities` | `intent` | `topic_chains`, default `themes`), `time_breakdown` (boolean, default `false` — enables per-date entries within each group), `period` (`day` | `week` | `month`), `scenario_id` (alias for `agent_scenario_id` override). The **`dry_run` column** (not payload) makes the task a rehearsal: collect fetches without staging or calling a model, analyze reports the selection only.
+  `payload` (JSON): **selection keys (collect/analyze):** `cli_dates` (`start_date`/`end_date`), `tracked_users` (author filter, `platform:external_id`), `keywords_list` + `keywords_match` (`any`/`all`), `topics_list`, `brands`, `competitors`, `hashtags`, `influencer_names`; **operational keys (collect/analyze):** `force_refresh`, `force_reanalyze`, `analyze_inline`, `collect_before_analyze`; **read-path keys (digest):** `group_by` (`themes` | `sources` | `entities` | `intent` | `topic_chains`, default `themes`), `time_breakdown` (boolean, default `false` — enables per-date entries within each group), `period` (`day` | `week` | `month`), `scenario_id` (alias for `agent_scenario_id` override). The **`dry_run` column** (not payload) makes the task a rehearsal: collect fetches without staging or calling a model, analyze reports the selection only. **P5-T14 stage A:** the `collection` block and its parser/schema now exist (`content_types`, `engagement_types`, limit, date window, mention queries, city/discovery, comment and candidate caps); existing tasks without the block still mean posts only. Runtime consumers, collection-time selection and the removal of scenario `content_types` from collection are later stages. See [collection plan](design/collection-plan.md).
 - `agent_task_sources` — many-to-many between tasks and `sources`. A task's
   sources are linked here (not in `payload`); an empty set means all active
   sources. The `sources` relationship is loaded via `task.sources` (a list).
+  **Planned P5-T14:** task-scoped query sources (`sources.owner_task_id`) are
+  excluded from the empty-set/"all active" fallback; only an explicit task link
+  activates them.
 - `jobs` — the queue: `job_type`, `payload`, `status`
   (`pending` | `running` | `done` | `failed`), `run_at`, `locked_at`,
   `attempts`, `max_attempts`, `result`, `error`, `llm_cost` (USD spent by the

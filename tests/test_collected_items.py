@@ -124,8 +124,34 @@ async def test_collect_without_inline_analysis_stages_raw_items(source):
     rows = await CollectedItem.objects.filter(source_id=source.id)
     assert len(rows) == 3
     assert {r.text for r in rows} == {"пост номер 0", "пост номер 1", "пост номер 2"}
+    assert {r.content_type for r in rows} == {"post"}
     # The run id is what lets a later analysis retire exactly this batch.
     assert all(r.run_id == 4242 for r in rows)
+
+
+async def test_post_and_comment_identity_do_not_collide(source):
+    """A comment is a different object from its parent post, even with the same id."""
+    post = await CollectedItem.objects.create(
+        source_id=source.id,
+        external_id="1_2",
+        content_type="post",
+        content_hash="a" * 64,
+        text="post",
+    )
+    comment = await CollectedItem.objects.create(
+        source_id=source.id,
+        external_id="1_2",
+        content_type="comment",
+        parent_external_id="1",
+        content_hash="b" * 64,
+        text="comment",
+    )
+
+    assert post.content_type == "post"
+    assert comment.content_type == "comment"
+    assert comment.parent_external_id == "1"
+    rows = await CollectedItem.objects.filter(source_id=source.id)
+    assert {(row.content_type, row.external_id) for row in rows} == {("post", "1_2"), ("comment", "1_2")}
 
 
 async def test_inline_analysis_stages_first_then_retires_what_it_saved(source):

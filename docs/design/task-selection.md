@@ -4,6 +4,15 @@ How a task decides *which collected items are analysed*. Selection is a
 property of the **task**; a scenario still answers only "how to analyse" and a
 source only "which wall/channel we may read".
 
+> **Planned (P5-T14).** The accepted target moves content types from the
+> scenario to the task and applies deterministic selection at collection rather
+> than at analysis. `collected_items` will hold only `selected`/`needs_review`
+> rows, comments become a typed dependent lane, and a comment-enabled task is
+> filtered at thread level. Sources may also include task-scoped query lanes
+> (`sources.owner_task_id`), which are excluded from the empty-set/"all active"
+> fallback. See [collection plan](collection-plan.md). The current three-layer
+> contract below remains in force until that task is accepted.
+
 ## Why the old model is replaced
 
 Until this refactor a task could carry `payload.monitored_users`. It did not
@@ -20,13 +29,18 @@ legacy read path.
 
 | Layer | Where | Meaning |
 | --- | --- | --- |
-| **Sources** | `agent_task_sources` | Walls/channels the task may read. Empty set = every active workspace source (existing semantics). |
+| **Sources** | `agent_task_sources` | Walls/channels the task may read. Empty set = every active workspace source (existing semantics; planned P5-T14 excludes task-scoped query sources from this fallback). |
 | **Tracked users** | `AgentTask.payload["tracked_users"]` | Authors whose items are eligible for analysis. An item is eligible when its author is in the list. |
 | **Text scope** | `AgentTask.payload["keywords_list"]`, `payload["topics_list"]` | Phrases an eligible item must contain (see matching rules). |
 
 The layers are applied in order: an item must come from a task source, carry an
 eligible author, and pass the text scope. The same order is reported in run
 diagnostics, so an operator sees *why* an item was left out.
+
+The planned P5-T14 contract keeps these layers but changes two boundaries:
+selection runs at collection, and a comment-enabled task applies the text scope
+to the post **and its comments together** (thread level). A task-scoped query
+source is an explicit lane, never part of the "all active sources" shortcut.
 
 ### Tracked users
 

@@ -40,6 +40,7 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 		Index("idx_sources_platform_id", "platform_id"),
 		Index("idx_sources_external_id", "external_id"),
 		Index("idx_sources_last_checked", "last_checked"),
+		Index("ix_sources_owner_task_id", "owner_task_id"),
 		{"schema": settings.DB_SCHEMA},
 	)
 
@@ -61,6 +62,14 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 	last_item_id: Mapped[str | None] = mapped_column(
 		String(100), nullable=True,
 		comment="Watermark of the newest ingested item for push-based sources (Telegram Bot API)",
+	)
+	# A query lane owns a task-scoped Source so staged rows and analytics keep a
+	# stable source_id. Such a row is hidden from the global source list and is
+	# excluded from the empty-set/all-active fallback; known walls keep NULL.
+	owner_task_id: Mapped[int | None] = mapped_column(
+		ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="CASCADE"),
+		nullable=True,
+		comment="Task-scoped query lane; hidden from the global source list",
 	)
 
 	# Relationships

@@ -222,6 +222,13 @@ Task create/edit exposes source multi-selection (`agent_task_sources`),
 methodology; task = execution. Empty source selection and payload semantics are
 runtime contracts, not permission grants or a new business-workflow model.
 
+**Planned P5-T14:** the task form gains a `collection` block (content types,
+mention queries, city/discovery, engagement types, limits); the source picker
+hides task-scoped query sources; scenario presets lose their collection-scope
+role. Admin forms/help for the new payload, `sources.owner_task_id` and the
+`collected_items` fields are part of the same task. See
+[collection plan](design/collection-plan.md).
+
 ### LLM testing and prices
 
 [Action implementation](../app/admin/actions.py),

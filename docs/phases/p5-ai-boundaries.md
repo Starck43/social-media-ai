@@ -273,6 +273,131 @@ safely.
   «Тестовый прогон» label/note plus a selection preview («прошли фильтр N из
   M») over the full fetched batch, without staging or calling a model.
 
+- [ ] P5-T14 — universal collection plan: task-owned typed collection,
+  multi-lane search, explicit limits, comments and candidates across VK/TG.
+  Goal: one task declaration (what to collect, where, filters, limits) and a
+  deterministic plan of collection lanes; final selected items land in
+  `collected_items`, discovered people/communities in a separate candidate
+  artefact. Design and field contracts:
+  [collection plan](../design/collection-plan.md). Context: task 2027
+  (interior designers in Kirov / Dreviz trip to Italy), audit
+  [VK search and task 2027](../audits/2026-10-20-vk-search-and-task-2027.md).
+  Resolves Q-3 by the owner decision on 2026-10-21: discovered results are
+  candidates with capped confirmation, not automatically created Sources;
+  query lanes are task-scoped Sources (see below). Q-5 remains the credential
+  blocker for VK search methods.
+
+  Subtasks (each closes with focused tests; do not start a later stage on a
+  shared file owned by an active task without serializing that lane):
+
+  - **A. Contract and schema (no UI, no provider calls).** Add
+    `agent_tasks.payload["collection"]` (content_types, engagement_types,
+    limit, date window, queries, city, discovery, comments, candidates);
+    extend `collected_items` with `content_type`, `parent_external_id`,
+    `lane_id`, `selection_status`, `selection_reason` and replace the unique
+    key with `(source_id, content_type, external_id)`; add
+    `sources.owner_task_id` for task-scoped search sources (hidden from the
+    global source list and excluded from the empty-set/all-active fallback);
+    add `collection_seen`, `collection_candidates`, `collection_lane_runs`;
+    one Alembic revision with backfill.
+    Accept: existing tasks default to `content_types=["posts"]` and keep
+    current behavior; comment identities cannot collide with post identities;
+    migration/backfill verified; no VK or LLM calls.
+    **Status: DONE (2026-10-21).** `app/services/collection/intent.py` parses
+    the block with post-only defaults; migration `0108` adds the fields,
+    `sources.owner_task_id` and the three tables; `store_items`/`admit_items`
+    use the new conflict key. Verification: 127 tests passed through the
+    primary OpenCode test-runner at HEAD `6f9a130` (parser, model fingerprints,
+    JSON staging, Telegram admission, collection handler). The shared
+    `test_schema` was reconciled under the owner's bounded authorization by
+    running the migration's own `upgrade()` in an Alembic operations context
+    without writing a version table; backup schema
+    `test_schema_backup_0108_20261021` is preserved. The working `public`
+    schema was not touched: apply 0108 there only under a separate owner
+    instruction before running the runtime against it. No provider or LLM
+    calls.
+
+  - **B. VK adapters and planner.** Add provider primitives
+    `resolve_city`, `search_people`, `search_communities`, `search_posts`,
+    `fetch_wall`, `fetch_comments`, `fetch_likes`, `fetch_profiles`, and a
+    `Page[T]` envelope (`items`, `next_cursor`, `limit_reached`,
+    `total_available`, `warnings`). Add a capability matrix and a
+    `CollectionPlanner` that expands task intent into topologically ordered
+    lanes with budgets and cross-lane dedupe. A query lane is a task-scoped
+    Source with an auto-generated name/slug.
+    **Implementation handoff:**
+    [stage B plan](../design/collection-plan-stage-b.md). Status: not started;
+    use mocks because Q-5 blocks live VK search.
+    Accept: mocked VK params for `database.getCities`, `users.search`,
+    `groups.search`, `newsfeed.search`; lane expansion and dependency order;
+    one post found by a wall and by search is stored once; `limit_reached` is
+    returned; dry run writes nothing and calls no model; TG returns an explicit
+    unsupported reason instead of an empty result.
+
+  - **C. Selection at collection.** Run deterministic task selection before
+    staging; store only `selected` and `needs_review` rows with
+    `selection_status`/`selection_reason`; record rejected counts and reasons
+    in `collection_lane_runs`; keep dedupe/new-item counts in
+    `collection_seen`; analysis consumes the stored rows without a second
+    selection. Add a thread-level filter hook so a post and its comments are
+    selected together.
+    Accept: rejected text is not stored; only selected/needs_review rows reach
+    `collected_items`; a re-run does not duplicate; P5-T08 selection semantics
+    are preserved; no model call in the selection path.
+
+  - **D. Comments and engagement.** Add the `comments` lane
+    (`owner_id` + `post_id`, per-post and total caps), thread-level selection,
+    `likes`/`reposts` lanes that emit candidates instead of text items, and
+    `profile_enrichment` for author/community city with `city_source` and
+    confidence. Candidate confirmation is manual by default, capped.
+    Accept: fixture where the post text lacks the phrase but a comment contains
+    it is selected through the thread; a comment row carries
+    `parent_external_id`; likes produce candidates, not text rows; an unknown
+    city lands in `needs_review`; the same candidate is not duplicated.
+
+  - **E. Task UI, admin, templates, presets.** Split the task editor into
+    "Кого искать" (city, discovery queries, people/communities, candidate
+    cap), "Что искать" (mention queries, date window, content types,
+    engagement types), "Где читать" (known sources) and limits; group the
+    source picker by type and hide task-scoped search sources; update admin
+    forms/help for the new payload, `owner_task_id` and `collected_items`
+    fields; remove `content_types` from the scenario's collection role (keep
+    methodology, prompt/schema and supported media); update scenario presets,
+    the scenario wizard/detail pages and CLI/API/chat tools to the same payload.
+    Include the admin, `app/web/templates/` and scenario-preset surfaces named
+    by the owner.
+    Accept: web/CLI/API/chat round-trip the same payload; no-JS fallback still
+    saves; admin form tests; existing scenario presets migrate without losing
+    prompts; scenario `content_types` no longer changes collection; tenant and
+    permission checks unchanged.
+
+  - **F. Migrate task 2027 and remove source 3174.** Convert the task to
+    task-scoped lanes (`Древиз`, `Вревиз`, `Кабанов`, `Италия поездка`),
+    `content_types=["posts","comments"]`, limit 1000, date window from
+    2026-10-01, city `Киров` in `prefer` mode; deactivate/delete source 3174
+    after lane parity; fix scenario 1695's `output_schema` so the prompt's
+    fields (`is_relevant`, `author_role`, `author_city`,
+    `is_interior_designer`, `participants`, `quote`, `url`, `confidence`,
+    plus `topic_hint` if chains are kept) are actually validated. Run a live
+    dry-run once Q-5 is unblocked.
+    Accept: 3174 is gone; 2027 runs the lanes; per-lane counts and the limit
+    warning are visible; dry run writes no rows and calls no model; 1051 is
+    reported as the named blocker while credentials remain unavailable.
+
+  Depends: P5-T13 (search primitives; READY), P5-T08 (selection before the
+  model; TODO) for stage C; serialize shared analyzer/handler files with
+  P5-T05. Stages A–B can start independently. Owns:
+  `docs/design/collection-plan.md`, `app/services/collection/`,
+  `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
+  `app/models/collection/`, `app/models/scheduling/`, `app/web/tasks.py`,
+  `app/web/sources.py`, `app/web/scenarios.py`, `app/web/templates/`,
+  `app/templates/`, `app/core/scenario_presets.py`, `app/admin/views.py`,
+  `app/agent/toolset/`, `cli/`, `app/api/`, `app/services/ai/scenario*.py`,
+  one Alembic revision, tests. Owner: $local (opencode); status: IN_PROGRESS.
+  Evidence: [collection plan](../design/collection-plan.md); append stage
+  evidence at the exact tested SHA. Test routing: primary OpenCode
+  test-runner subagent per stage (RULES.md R10), shared DB sequential (R8).
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

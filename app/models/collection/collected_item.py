@@ -50,15 +50,20 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
         # "Что собрано" lists one run's items newest-first.
         Index("ix_collected_items_run_id", "run_id"),
         Index("ix_collected_items_source_published", "source_id", "published_at"),
+        # Review queue for collected rows whose city/identity needs an operator.
+        Index("ix_collected_items_tenant_selection", "tenant_id", "selection_status"),
         # A platform never hands over the same item twice within a live window;
         # the unique key makes a double insert (retry, overlapping run) a no-op
-        # instead of a duplicate. A regular (non-partial) unique index is used
-        # because PostgreSQL treats NULLs as distinct in UNIQUE indexes, so
-        # multiple rows with a NULL external_id stay legal — and only a non-partial
-        # index can serve as an ON CONFLICT DO NOTHING target.
+        # instead of a duplicate. `content_type` is part of the identity because
+        # a comment is a different object from its parent post. A regular
+        # (non-partial) unique index is used because PostgreSQL treats NULLs as
+        # distinct in UNIQUE indexes, so multiple rows with a NULL external_id
+        # stay legal — and only a non-partial index can serve as an ON CONFLICT
+        # DO NOTHING target.
         Index(
-            "uq_collected_items_source_external",
+            "uq_collected_items_source_content_external",
             "source_id",
+            "content_type",
             "external_id",
             unique=True,
         ),
@@ -79,6 +84,16 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
     external_id: Mapped[str | None] = Column(String(255), nullable=True)
     content_hash: Mapped[str] = Column(String(64), nullable=False)
     platform: Mapped[str | None] = Column(String(50), nullable=True)
+    # `post` for legacy rows and wall/search posts; `comment` for a dependent
+    # comment lane. Comments use a composite external_id (`post_id:comment_id`)
+    # so they can never collide with a post id in the same source.
+    content_type: Mapped[str] = Column(String(20), nullable=False, default="post", server_default="post")
+    parent_external_id: Mapped[str | None] = Column(String(255), nullable=True)
+    lane_id: Mapped[str | None] = Column(String(100), nullable=True)
+    # Filled by collection-time selection (P5-T14 stage C). NULL on rows staged
+    # before that stage; analysis keeps its current selection path until then.
+    selection_status: Mapped[str | None] = Column(String(20), nullable=True)
+    selection_reason: Mapped[str | None] = Column(String(64), nullable=True)
 
     published_at: Mapped[Any] = Column(DateTime(timezone=True), nullable=True)
     media_type: Mapped[str | None] = Column(String(20), nullable=True)

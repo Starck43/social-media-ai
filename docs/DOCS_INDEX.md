@@ -25,6 +25,8 @@ foundations and their PRs. Verify current behavior in code, migrations and tests
 - [Agent](AGENT.md) — interactive sessions, tools and permission boundaries.
 - [Agent tasks](AGENT_TASKS.md) — PostgreSQL schedules and jobs.
 - [Collection](COLLECTION.md) — sources, credentials and collection limits.
+- [Collection plan](design/collection-plan.md) — target task-owned collection contract: lanes, typed content, limits, comments and candidates (P5-T14, stage A delivered).
+- [Collection plan — stage B](design/collection-plan-stage-b.md) — VK/Telegram adapters, `Page[T]` and planner implementation handoff (P5-T14, next).
 - [Task selection](design/task-selection.md) — which items a task analyses: sources, tracked users, text scope.
 - [AI pipeline](AI_PIPELINE_AND_PROMPTS.md) — scenarios, prompts, typed outputs and media coverage.
 - [Analytics](ANALYTICS_AGGREGATION_SYSTEM.md) — aggregation, chains and drill-down behavior.

@@ -177,6 +177,22 @@ fill each item's author and name.
 VK only serves the first 1000 search results by `offset`; the collection limit
 below is the same number, so the two ceilings agree.
 
+### Collection plan (P5-T14; stage A schema, runtime pending)
+
+The current contract stores a search phrase as an ordinary `SEARCH` source.
+The accepted target moves collection scope into the task and keeps the source
+row only as a technical, task-scoped lane. A task declares content types
+(posts/comments/...), mention queries, discovery by city, engagement types and
+an explicit limit; `CollectionPlanner` expands that intent into ordered lanes
+and calls several platform methods. Selected rows land in `collected_items`;
+discovered people/communities land in `collection_candidates` and require
+confirmation; comments are a dependent lane on posts; likes/reposts yield
+candidates, not text rows. Every lane reports `limit_reached` instead of
+silently truncating. Stage A has added the payload parser, schema and migration
+0108; the collection path still uses the behavior below until stages B–D wire
+the lanes. The full contract is in
+[collection plan](design/collection-plan.md).
+
 ### Walls and dates
 
 `wall.get` does **not** honour `start_time`/`end_time` — VK answers with the
@@ -456,6 +472,18 @@ collect and analyse in one pass; the rows the analysis actually stored are then
 retired immediately. The direct CLI analyze command supports `--keep-raw` for
 diagnostic runs that should preserve staged text even after successful
 analysis; this option does not bypass receipts or enable paid calls by default.
+
+### Selection at collection (planned, P5-T14)
+
+Today every fetched row is staged and the task's deterministic selection runs
+later, when an `analyze` job drains the backlog. The accepted target applies
+that selection before staging: `collected_items` will contain only `selected`
+and `needs_review` rows, with `content_type`, `parent_external_id` (comments),
+`lane_id` and the selection status/reason. Rejected text is not stored;
+`collection_lane_runs` keeps counts and reasons, and `collection_seen` keeps
+dedupe/new-item identity. A comment-enabled task filters at thread level, so a
+post whose own text lacks the phrase is still selected when its comments match.
+See [collection plan](design/collection-plan.md).
 
 ## Rehearsal (dry run)
 

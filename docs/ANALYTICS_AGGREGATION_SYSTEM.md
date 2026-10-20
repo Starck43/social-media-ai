@@ -41,6 +41,13 @@ analytics layer depends on:
   `SENTIMENT_THRESHOLD`, `ACTIVITY_SPIKE`) belong to the action, not to the
   selection: a keyword alarm and a keyword scope are different intentions.
 
+**Planned P5-T14:** deterministic selection moves to collection. Rejected text
+will not be staged; only `selected`/`needs_review` rows will reach
+`collected_items`, with counts/reasons in `collection_lane_runs` and dedupe in
+`collection_seen`. A comment-enabled task will filter at thread level (post +
+comments). Content types will be owned by the task, not the scenario. See
+[collection plan](design/collection-plan.md).
+
 ## Subject scope (concept, not implemented)
 
 For questions of the form "who X, according to platform Y", the graph is

@@ -57,6 +57,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             "tenant_id",
             "run_id",
             "source_id",
+            "content_type",
             "external_id",
             "content_hash",
             "platform",
@@ -76,13 +77,20 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         placeholders = ", ".join(f"CAST(:{c} AS jsonb)" if c in json_columns else f":{c}" for c in columns)
         stmt = sa_text(
             f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) "
-            "ON CONFLICT (source_id, external_id) DO NOTHING"
+            "ON CONFLICT (source_id, content_type, external_id) DO NOTHING"
         )
         stmt = stmt.bindparams(*(bindparam(column, type_=JSON(none_as_null=True)) for column in json_columns))
         # Same tenant stamping the ORM path does: refuses to write rather than
         # guessing a workspace for rows collected outside a tenant context.
         params = [
-            await self._apply_tenant(session, {**row, "attachments": normalize_attachments(row.get("attachments"))})
+            await self._apply_tenant(
+                session,
+                {
+                    **row,
+                    "content_type": row.get("content_type") or "post",
+                    "attachments": normalize_attachments(row.get("attachments")),
+                },
+            )
             for row in rows
         ]
         result = await session.execute(stmt, params)
@@ -129,6 +137,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         from app.core.tenant_context import current_tenant_id, is_bypass
         from app.models import AIAnalytics
 
+        rows = [{**row, "content_type": row.get("content_type") or "post"} for row in rows]
         tenant_id = current_tenant_id()
         if is_bypass() or type(tenant_id) is not int or tenant_id <= 0:
             raise ValueError("content_tenant_invalid")
@@ -183,7 +192,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         if not pending:
             return 0
         inserted = (await session.execute(insert(model).values(pending).on_conflict_do_nothing(
-            index_elements=[model.source_id, model.external_id],
+            index_elements=[model.source_id, model.content_type, model.external_id],
         ).returning(model.external_id))).scalars().all()
         # A concurrent non-admission writer must not turn a conflicting identity
         # into a successful receipt. Read every pending identity back exactly.

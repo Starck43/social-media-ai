@@ -48,7 +48,7 @@ class SQL:
 
 SA = NS(select=SQL, cast=lambda column, kind: column)
 SRC = type('Source', (), {name: Col(name) for name in ('id','tenant_id','external_id','is_active')})
-RAW = type('Collected', (), {name: Col(name) for name in ('id','tenant_id','source_id','external_id','content_hash')})
+RAW = type('Collected', (), {name: Col(name) for name in ('id','tenant_id','source_id','content_type','external_id','content_hash')})
 AI = type('Analytics', (), {name: Col(name) for name in ('id','tenant_id','source_id','summary_data')})
 
 
@@ -194,7 +194,8 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
         self.context=NS(current_tenant_id=lambda:4,is_bypass=lambda:False)
         self.utility=load('manager_attachments','app/utils/content_attachments.py')
         self.module=load('manager','app/models/managers/collected_item_manager.py',{
-            'sqlalchemy':NS(JSON=object,bindparam=lambda *a,**kw:None,text=lambda *a:None,select=SQL,cast=lambda c,t:c),
+            'sqlalchemy':NS(JSON=object,bindparam=lambda *a,**kw:None,text=lambda *a:None,select=SQL,cast=lambda c,t:c,
+                        and_=lambda *a,**kw:None,case=lambda *a,**kw:None,func=NS(),or_=lambda *a,**kw:None),
             'sqlalchemy.dialects.postgresql':NS(JSONB=object,insert=SQL,array=lambda values:values),
             'app.core.config':NS(settings=NS()),'app.utils.content_attachments':self.utility,
             'app.models.managers.base_manager':NS(BaseManager=Base),
@@ -206,7 +207,7 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
         session=self.session([Result(rows=[]),Result(),Result(rows=['-10077_20']),Result(rows=[('-10077_20','a'*64)])])
         self.assertEqual(await self.manager.admit_items(session,[self.row]),1)
         insert=session.execute.call_args_list[2].args[0]
-        self.assertEqual(insert.conflict['index_elements'],[RAW.source_id,RAW.external_id])
+        self.assertEqual(insert.conflict['index_elements'],[RAW.source_id,RAW.content_type,RAW.external_id])
         self.assertEqual(insert.rows[0]['tenant_id'],4)
         self.assertEqual(insert.rows[0]['attachments'],[{'type':'unknown','url':None}])
         for index in [0,3]:

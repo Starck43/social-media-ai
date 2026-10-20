@@ -26,9 +26,9 @@ MODELS = {
     "CollectedItem": ("collected_item", "collected_items", "CollectedItemManager", True),
 }
 # Schema expression snapshots; a model may only change with an accepted
-# migration. `CollectedItem` moved at e67f06f (nullable staged attachment
-# snapshots, migration 0089); the other two are unchanged since a983a156.
-SCHEMA_FINGERPRINTS = {'CollectedItem': '260a11d3ffa39998d4e56e682f3c57d839510734cb12b031abc3b3b9677cbddf', 'Platform': '4a9416530007127cfc34ec0f987a61622b15ae4373c899933a640c4c5438564f', 'Source': '17dda3650de809cc517af68c2b1676df1f25c8e6f395a80419f2a9c2f9a54c4a'}
+# migration. `CollectedItem` and `Source` moved in migration 0108 (typed
+# collected identity, task-scoped query sources); `Platform` is unchanged.
+SCHEMA_FINGERPRINTS = {'CollectedItem': '3307bf52e75054b334133d00acd43b5e02bf15e2770e00c320a06c1c3f64de9c', 'Platform': '4a9416530007127cfc34ec0f987a61622b15ae4373c899933a640c4c5438564f', 'Source': '2cbfe3dc737f45ac60951be8e33acdedbdda22e84d73721b4ad51df297a423bc'}
 
 
 def _canonical_ast(node):

@@ -61,7 +61,8 @@ def load_method():
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'CollectedItemManager')
     method = next(n for n in cls.body if getattr(n, 'name', None) == 'store_items')
     ns = {'Any':Any,'Sequence':Sequence,'JSON':JsonType,'sa_text':Statement,
-          'bindparam':lambda name, **kwargs:(name,kwargs),'settings':SimpleNamespace(DB_SCHEMA='unit_schema')}
+          'bindparam':lambda name, **kwargs:(name,kwargs),'settings':SimpleNamespace(DB_SCHEMA='unit_schema'),
+          'normalize_attachments':lambda value: value}
     exec(compile(ast.Module(body=[method],type_ignores=[]),str(SOURCE),'exec'),ns)
     return ns['store_items']
 
@@ -150,11 +151,13 @@ class StagedCountScopeTests(unittest.IsolatedAsyncioTestCase):
         rows = [row()]
         _,session,_ = await self.run_store(rows,rowcount=1)
         stmt,inserted = session.calls[0]
-        self.assertIn('ON CONFLICT (source_id, external_id) DO NOTHING',stmt.text)
+        self.assertIn('ON CONFLICT (source_id, content_type, external_id) DO NOTHING',stmt.text)
         self.assertIn('CAST(:metrics AS jsonb)',stmt.text)
         self.assertIn('CAST(:author AS jsonb)',stmt.text)
-        self.assertEqual({name for name,_ in stmt.binds},{'metrics','author'})
-        self.assertEqual(inserted,rows)
+        self.assertEqual({name for name,_ in stmt.binds},{'metrics','author','attachments'})
+        self.assertEqual(inserted[0]['content_type'],'post')
+        self.assertIsNone(inserted[0]['attachments'])
+        self.assertEqual({key:value for key,value in inserted[0].items() if key not in {'content_type','attachments'}},rows[0])
 
 if __name__ == '__main__':
     unittest.main()

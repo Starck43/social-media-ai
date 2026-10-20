@@ -83,6 +83,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] P5-T13 — VK search sources, inflection-aware text scope, dry-run and 1000-row collection ceiling → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — READY
 
+- [ ] P5-T14 — universal collection plan: task-owned typed collection, lanes, limits, comments and candidates → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — IN_PROGRESS
+
 - [ ] P5-T09 — VK discovery sources: platform search collected in the same run (usernames for `source_add`) → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
 
 - [ ] P5-T10 — VK wall reposts search: author snapshots, selection on author, every repost staged once → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
@@ -102,13 +104,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
   those methods (or a different app is configured).
   Context: [VK search audit](docs/audits/2026-10-20-vk-search-and-task-2027.md);
   asked by: $local (opencode); status: OPEN
-
-- [ ] Q-3 — is a discovered VK search result a Source row, or a separate
-  candidate artefact that the operator confirms? Context: discovery of
-  city/industry populations can return hundreds of walls; creating them all as
-  sources with an hourly schedule multiplies collection jobs, rate limits and
-  spend. Proposed default in P5-T09/P8-T25: candidate artefact + capped confirm.
-  Asked by: $local (opencode); status: OPEN
 
 - [x] Q-4 — one-off data decision for the `monitored_users` removal (P5-T08
   step 4). Owner decision (2026-10-19): **drop the stored values outright**, no

@@ -32,13 +32,13 @@ activation and whole-gate acceptance are distinct states.
 
 ### Table inventory
 
-The source defines **45 mapped tables and 3 association tables**:
+The source defines **48 mapped tables and 3 association tables**:
 
 | Domain | Mapped tables | Association tables |
 | --- | --- | --- |
 | Identity | `users`, `roles`, `permissions`, `model_types`, `user_credentials` | `role_permission` |
 | Tenancy | `tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, `workspace_roles` | `workspace_role_permission` |
-| Collection | `platforms`, `sources`, `collected_items` | — |
+| Collection | `platforms`, `sources`, `collected_items`, `collection_seen`, `collection_candidates`, `collection_lane_runs` | — |
 | Analysis | `agent_scenarios`, `ai_analytics`, `analyzed_content_receipts` | — |
 | LLM | `llm_providers`, `llm_models`, `llm_attempts`, `llm_dispatch_receipts`, `llm_outcome_events`, `llm_budget_days`, `llm_budget_reservations` | — |
 | Scheduling | `agent_tasks`, `jobs`, `bot_actions` | `agent_task_sources` |
@@ -178,15 +178,65 @@ evidence/budget tables have the separate timestamp and deletion rules below.
 
 ### `sources`
 
-[Source](../app/models/collection/source.py). Fields: `id`; non-null `platform_id` FK CASCADE; `name` String(255); native `source_type` enum; `external_id` String(100); `params` JSON; `is_active`; nullable `last_checked` timezone-aware DateTime and `last_item_id` String(100).
+[Source](../app/models/collection/source.py). Fields: `id`; non-null `platform_id` FK CASCADE; `name` String(255); native `source_type` enum; `external_id` String(100); `params` JSON; `is_active`; nullable `last_checked` timezone-aware DateTime, `last_item_id` String(100), and `owner_task_id` Integer FK → `agent_tasks` CASCADE.
 
 Unique **(`tenant_id`, `platform_id`, `external_id`)**. There is **no `user_id` or scenario FK**. Token owner selection uses params/personal-vault resolution, not a nonexistent owner column. Relationships: platform, tenant, analytics; tasks through association table. Task selects scenario, with workspace default for taskless runs.
 
+`owner_task_id` was added by 0108 for task-scoped query lanes. The column is
+current schema; hiding such sources from the global list and excluding them from
+the all-active fallback are runtime changes still owned by P5-T14 stages B/E.
+See [collection plan](design/collection-plan.md).
+
 ### `collected_items`
 
-[Source](../app/models/collection/collected_item.py). Fields: `id`; nullable `run_id` Integer; non-null `source_id` Integer; nullable `external_id` String(255); non-null `content_hash` String(64); nullable `platform` String(50), `published_at` timezone-aware DateTime, `media_type` String(20), `text` Text, `metrics`/`author` JSON, `permalink` String(500); nullable `attachments` JSON snapshot added by 0089; non-null `analyze_attempts` default 0 and `give_up_after_attempts` default 3. For attachments, NULL means legacy/unknown and `[]` means explicitly none; snapshots contain only normalized allowlisted fields, not provider payloads or credentials.
+[Source](../app/models/collection/collected_item.py). Fields: `id`; nullable `run_id` Integer; non-null `source_id` Integer; nullable `external_id` String(255); non-null `content_hash` String(64); nullable `platform` String(50), `published_at` timezone-aware DateTime, `media_type` String(20), `text` Text, `metrics`/`author` JSON, `permalink` String(500); nullable `attachments` JSON snapshot added by 0089; non-null `analyze_attempts` default 0 and `give_up_after_attempts` default 3. Migration 0108 adds `content_type` String(20) non-null default `post`, nullable `parent_external_id` String(255), `lane_id` String(100), `selection_status` String(20) and `selection_reason` String(64). For attachments, NULL means legacy/unknown and `[]` means explicitly none; snapshots contain only normalized allowlisted fields, not provider payloads or credentials.
 
-**source_id and run_id are logical references, NOT declared FKs.** Unique non-partial index (`source_id`, `external_id`); multiple NULL external IDs remain legal in PostgreSQL. Other indexes: tenant, source/hash, run, source/published. A failed analysis is not evidence that raw content can be deleted; actual retention/cleanup belongs to runtime policy.
+**source_id and run_id are logical references, NOT declared FKs.** Unique non-partial index (`source_id`, `content_type`, `external_id`); multiple NULL external IDs remain legal in PostgreSQL. Other indexes: tenant, source/hash, run, source/published, tenant/selection. A failed analysis is not evidence that raw content can be deleted; actual retention/cleanup belongs to runtime policy.
+
+Rows staged before P5-T14 stage C keep `selection_status = NULL`; the current
+collector still stages every fetched row and selection still runs at analysis.
+Stage C changes that to selected/needs-review rows only. See
+[collection plan](design/collection-plan.md).
+
+### `collection_seen`
+
+[Source](../app/models/collection/collection_seen.py). Dedupe/new-item ledger
+added by 0108; stores no text. Fields: `id`; `source_id` FK CASCADE;
+`content_type` String(20); `external_id` String(255); `content_hash` String(64);
+`first_seen_at`/`last_seen_at` timezone-aware; `status` String(20) default
+`new`; tenant and timestamps.
+
+Unique **(`tenant_id`, `source_id`, `content_type`, `external_id`)**. Index
+(`tenant_id`, `source_id`). Writers synthesise `hash:<content_hash>` when the
+platform gives no external id. A later run may replace `status`; the ledger is
+not a permanent rejection.
+
+### `collection_candidates`
+
+[Source](../app/models/collection/collection_candidate.py). Discovered
+people/communities and engagement actors. Fields: `id`; `platform` String(50);
+`kind` String(20); `external_id` String(255); nullable `name`, `url`, `city`,
+`city_source`, `city_confidence` Float, `metrics`/`evidence` JSON; `status`
+String(20) default `new`; nullable `source_id` FK SET NULL; nullable
+`discovered_by` String(100); tenant and timestamps.
+
+Unique **(`tenant_id`, `platform`, `kind`, `external_id`)**. Index
+(`tenant_id`, `status`). A confirmed candidate may link/create a Source; the
+row is not a collection target by itself.
+
+### `collection_lane_runs`
+
+[Source](../app/models/collection/collection_lane_run.py). Per-job, per-lane
+counts and bounds. Fields: `id`; nullable `job_id`/`task_id` Integer (logical
+references, no FK so pruning jobs cannot destroy evidence); `lane_id`
+String(100); `lane_type` String(30); nullable `query` Text; non-null
+`fetched`/`selected`/`needs_review`/`rejected` default 0; nullable
+`limit_count` Integer (the SQL-safe name for a lane bound); boolean
+`limit_reached`; nullable `next_cursor`, `total_available`, `error_code`,
+`unsupported_reason`, `started_at`, `finished_at`; tenant and timestamps.
+
+Indexes (`tenant_id`, `job_id`) and (`tenant_id`, `task_id`). This is the
+operator answer to "what did the run actually do?"; rejected text is not stored.
 
 ### `agent_scenarios`
 

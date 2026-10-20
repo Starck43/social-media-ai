@@ -98,7 +98,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   encryption dependency; accept: wheel contains nested runtime
   packages/assets; encryption dependency in runtime deps; isolated no-dev
   import/asset smoke, no DB/provider; depends: none;
-  owns: pyproject.toml, tests/wheel_runtime_smoke.py and
+  owns: pyproject.toml, requirements.txt, tests/wheel_runtime_smoke.py and
   docs/validation/wheel-runtime-completeness.md;
   owner: remote Notion agent (fix/wheel-runtime-completeness); status: BLOCKED.
   Claimed before implementation from dev `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
@@ -129,6 +129,16 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   installed-wheel no-DB module-import/resource checks before acceptance/merge.
   No new implementation, task acceptance, runtime/DB/provider start or merge
   authorized by this documentation follow-up. Keep Draft, not DONE.
+  Owner authorized continuation after local read-only preflight. Dependency
+  closure work resumes in the existing PR; claim now includes requirements.txt.
+  Synchronized dev: `6fbe7a961dafc3b05fccd9cfe99f7652bdc6a33a`; owner's
+  integrated #225 code and P10-T02/T10 registry synchronization are preserved.
+  Local report: app/main.py is owned by active social-jobs-lifecycle-check
+  (dirty detached worktree at 37eeaf7); do not edit until explicit agreement.
+  Current bounded implementation scope: runtime driver/asyncio requirements
+  and actual installed app.core.database import with connection tripwires.
+  No app/main/resource/logger implementation is included in this first slice;
+  overall BLOCKED remains until both review gaps pass.
   Registry synchronized from PR head `fee3869b432779ae4a47ce7235b1cf91394d3b31`;
   implementation and test changes remain in that unmerged PR. Evidence above
   is attributed remote/owner evidence, not a new local execution.

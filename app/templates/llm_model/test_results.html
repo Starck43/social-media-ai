@@ -23,8 +23,12 @@
             <div><dt>Провайдер</dt><dd>{{ provider.name }} · {{ provider.api_format }}</dd></div>
             <div><dt>Возможности</dt><dd>{{ model.model_type or '—' }}</dd></div>
             <div><dt>Максимум ответа</dt><dd>{{ model.max_tokens }} токенов · t = {{ model.default_temperature }}</dd></div>
-            <div><dt>Вход / 1K токенов, USD</dt><dd>{{ model.input_cost_per_1k if model.input_cost_per_1k is not none else 'Неизвестно' }}</dd></div>
-            <div><dt>Выход / 1K токенов, USD</dt><dd>{{ model.output_cost_per_1k if model.output_cost_per_1k is not none else 'Неизвестно' }}</dd></div>
+            <div><dt>Единица входного и выходного тарифа</dt><dd>{{ '1 000 токенов' if model.pricing_token_unit == 1000 else '1 000 000 токенов' }}</dd></div>
+            <div><dt>Вход, USD</dt><dd>{{ model.input_cost_per_1k }}</dd></div>
+            <div><dt>Выход, USD</dt><dd>{{ model.output_cost_per_1k }}</dd></div>
+            <div><dt>Чтение кэша, USD за 1M</dt><dd>{{ model.cache_read_cost_per_1m if model.cache_read_cost_per_1m is not none else 'Не настроено' }}</dd></div>
+            <div><dt>Запись кэша 5 мин, USD за 1M</dt><dd>{{ model.cache_write_5m_cost_per_1m if model.cache_write_5m_cost_per_1m is not none else 'Не настроено' }}</dd></div>
+            <div><dt>Запись кэша 1 час, USD за 1M</dt><dd>{{ model.cache_write_1h_cost_per_1m if model.cache_write_1h_cost_per_1m is not none else 'Не настроено' }}</dd></div>
         </dl>
         <details class="llm-checks"><summary>Локальный статус конфигурации</summary>
             <ul>{% for label, passed in status_checks %}<li><span class="llm-check {{ 'llm-pass' if passed else 'llm-fail' }}">{{ 'OK' if passed else 'Нет' }}</span> {{ label }}</li>{% endfor %}</ul>

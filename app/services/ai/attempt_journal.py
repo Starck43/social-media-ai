@@ -19,7 +19,7 @@ import hashlib
 import json
 import logging
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from typing import Any, Callable, Coroutine, Optional
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,13 @@ OUTCOME_FAILED_TRANSPORT = "failed_transport"
 OUTCOME_UNKNOWN = "unknown"
 
 STAGE_UNIFIED_SUMMARY = "unified_summary"
+CACHE_RATE_FIELDS = (
+    "cache_read_cost_per_1m",
+    "cache_write_5m_cost_per_1m",
+    "cache_write_1h_cost_per_1m",
+)
+PRICING_POLICY_V1 = "provider-price-v1"
+PRICING_POLICY_V2 = "cache-tariff-v2"
 
 
 def _tokens(value: Any) -> Optional[int]:
@@ -53,6 +60,12 @@ def _tokens(value: Any) -> Optional[int]:
     if type(value) is not int or not 0 <= value <= 2147483647:
         return None
     return value
+
+
+def _validate_cache_usage(value: Any) -> dict[str, Any] | None:
+    from app.services.ai.cache_pricing import validate_cache_usage
+
+    return validate_cache_usage(value)
 
 
 def _usage_tokens(envelope: Any) -> tuple[Optional[int], Optional[int]]:
@@ -295,6 +308,15 @@ def build_attempt_records(
                 "prompt_tokens": prompt,
                 "completion_tokens": completion,
                 "outcome": outcome,
+                "cache_usage": (
+                    _validate_cache_usage(envelope.get("accounting_cache_usage"))
+                    if "accounting_cache_usage" in envelope
+                    else None
+                ),
+                "pricing_policy_version": (
+                    PRICING_POLICY_V2 if "accounting_cache_usage" in envelope else PRICING_POLICY_V1
+                ),
+                "pricing_token_unit": None,
             }
         )
         if "accounting_cost_usd" in envelope:
@@ -338,17 +360,44 @@ def price_attempt(record: dict[str, Any], tariff: Optional[dict[str, Any]]) -> d
     are priced, and uncomputable actual cost stays NULL/undefined. Tariff fields
     remain independent snapshot evidence, not a replacement for reported cost.
     """
+    from app.services.ai.cache_pricing import cache_price_usd, pricing_token_unit, validate_cache_usage
+
     priced = dict(record)
     reported = _reported_usd(priced.pop("_reported_cost_usd", None))
     unresolved_report = priced.pop("_unresolved_cost_report", False)
+    tariff_missing = not isinstance(tariff, dict)
     tariff = tariff if isinstance(tariff, dict) else {}
     input_rate = _tariff_rate(tariff.get("input_cost_per_1k"))
     output_rate = _tariff_rate(tariff.get("output_cost_per_1k"))
+    policy = priced.get("pricing_policy_version") or PRICING_POLICY_V1
+    if policy not in {PRICING_POLICY_V1, PRICING_POLICY_V2}:
+        raise ValueError("Unsupported attempt pricing policy")
+    cache_rates = (
+        {field: _tariff_rate(tariff.get(field)) for field in CACHE_RATE_FIELDS}
+        if policy == PRICING_POLICY_V2
+        else {field: None for field in CACHE_RATE_FIELDS}
+    )
+    if policy == PRICING_POLICY_V1:
+        priced["cache_usage"] = None
+        unit = None
+    else:
+        if tariff_missing:
+            unit = None
+        elif "pricing_token_unit" not in tariff:
+            unit = pricing_token_unit()
+        elif tariff["pricing_token_unit"] is None:
+            if any(rate is not None for rate in (input_rate, output_rate, *cache_rates.values())):
+                raise ValueError("A v2 tariff snapshot with configured rates requires an explicit unit")
+            unit = None
+        else:
+            unit = pricing_token_unit(tariff["pricing_token_unit"])
     priced.update(
         {
             "llm_model_row_id": tariff.get("id"),
             "input_cost_per_1k": input_rate,
             "output_cost_per_1k": output_rate,
+            "pricing_token_unit": unit,
+            **cache_rates,
         }
     )
 
@@ -364,6 +413,36 @@ def price_attempt(record: dict[str, Any], tariff: Optional[dict[str, Any]]) -> d
                 "cost_certainty": CERTAINTY_FREE if reported == 0 else CERTAINTY_PRICED,
             }
         )
+        return priced
+
+    if policy == PRICING_POLICY_V2:
+        all_rates = (input_rate, output_rate, *cache_rates.values())
+        if all(rate == 0 for rate in all_rates):
+            priced.update(cost_usd=Decimal(0), cost_certainty=CERTAINTY_FREE)
+            return priced
+        if input_rate is None or output_rate is None or (completion is None and output_rate != 0):
+            priced.update(cost_usd=None, cost_certainty=CERTAINTY_UNDEFINED)
+            return priced
+        cache_input = cache_price_usd(
+            priced.get("cache_usage"),
+            {"input_cost_per_1k": input_rate, **cache_rates},
+            prompt_tokens=prompt,
+            pricing_unit=unit,
+        )
+        if cache_input is None:
+            priced.update(cost_usd=None, cost_certainty=CERTAINTY_UNDEFINED)
+            return priced
+        with localcontext() as context:
+            context.prec = 64
+            cost = cache_input + Decimal(completion or 0) / unit * output_rate
+            if cost > Decimal("999999999.999999999"):
+                priced.update(cost_usd=None, cost_certainty=CERTAINTY_UNDEFINED)
+                return priced
+            rounded_cost = cost.quantize(COST_SCALE, rounding=ROUND_HALF_UP) if cost > 0 else Decimal(0)
+        if rounded_cost != cost:
+            priced.update(cost_usd=None, cost_certainty=CERTAINTY_UNDEFINED)
+            return priced
+        priced.update(cost_usd=rounded_cost, cost_certainty=CERTAINTY_PRICED)
         return priced
 
     if input_rate == 0 and output_rate == 0:
@@ -404,6 +483,8 @@ async def resolve_tariffs(model_ids: set[str]) -> dict[str, Optional[dict[str, A
                 "id": model.id,
                 "input_cost_per_1k": model.input_cost_per_1k,
                 "output_cost_per_1k": model.output_cost_per_1k,
+                **{field: getattr(model, field, None) for field in CACHE_RATE_FIELDS},
+                "pricing_token_unit": getattr(model, "pricing_token_unit", None),
             }
             if model is not None
             else None
@@ -481,6 +562,7 @@ def chat_attempt_envelope(
     raw: Any = None,
     failed: bool = False,
     usage_fields: tuple[str, str] = ("prompt_tokens", "completion_tokens"),
+    api_format: str | None = None,
 ) -> dict[str, Any]:
     """Analyzer-shaped envelope for one chat HTTP attempt.
 
@@ -490,8 +572,14 @@ def chat_attempt_envelope(
     cost rather than a free call.
     """
     request = {"model": model_id, "provider": provider_name, "dispatch_id": dispatch_id}
+    from app.services.ai.cache_pricing import normalize_cache_usage
+
     if failed:
-        return {"request": request, "response": {"error": CHAT_CALL_FAILED}}
+        return {
+            "request": request,
+            "response": {"error": CHAT_CALL_FAILED},
+            "accounting_cache_usage": normalize_cache_usage(None, api_format),
+        }
     raw = raw if isinstance(raw, dict) else {}
     usage = raw.get("usage")
     usage = usage if isinstance(usage, dict) else {}
@@ -505,6 +593,7 @@ def chat_attempt_envelope(
         },
         "accounting_cost_usd": str(reported) if reported is not None else None,
         "accounting_cost_reported": claimed,
+        "accounting_cache_usage": normalize_cache_usage(raw, api_format),
     }
 
 

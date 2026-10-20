@@ -29,8 +29,14 @@ _RECORD_FIELDS = (
     "provider_name",
     "input_cost_per_1k",
     "output_cost_per_1k",
+    "cache_read_cost_per_1m",
+    "cache_write_5m_cost_per_1m",
+    "cache_write_1h_cost_per_1m",
+    "pricing_token_unit",
     "prompt_tokens",
     "completion_tokens",
+    "cache_usage",
+    "pricing_policy_version",
     "cost_usd",
     "cost_certainty",
     "outcome",
@@ -62,6 +68,34 @@ class LLMAttemptManager(BaseManager):
         if set(record) - set(_RECORD_FIELDS) - {"tenant_id"}:
             raise ValueError("Unsupported attempt evidence fields")
         values = {field: record.get(field) for field in _RECORD_FIELDS}
+        from app.services.ai.cache_pricing import validate_cache_usage
+
+        policy = values["pricing_policy_version"]
+        if policy in (None, "provider-price-v1"):
+            if values["pricing_token_unit"] not in (None, 1000) or values["cache_usage"] is not None or any(
+                values[field] is not None
+                for field in ("cache_read_cost_per_1m", "cache_write_5m_cost_per_1m", "cache_write_1h_cost_per_1m")
+            ):
+                raise ValueError("Legacy attempts cannot contain cache tariff evidence")
+        elif policy == "cache-tariff-v2":
+            if values["pricing_token_unit"] is None:
+                if any(
+                    values[field] is not None
+                    for field in (
+                        "input_cost_per_1k",
+                        "output_cost_per_1k",
+                        "cache_read_cost_per_1m",
+                        "cache_write_5m_cost_per_1m",
+                        "cache_write_1h_cost_per_1m",
+                    )
+                ):
+                    raise ValueError("A v2 tariff with configured rates requires an explicit unit")
+            elif type(values["pricing_token_unit"]) is not int or values["pricing_token_unit"] not in (1000, 1_000_000):
+                raise ValueError("Attempt pricing token unit is invalid")
+            if values["cache_usage"] is not None and validate_cache_usage(values["cache_usage"]) != values["cache_usage"]:
+                raise ValueError("Attempt cache usage does not match the normalized evidence contract")
+        else:
+            raise ValueError("Unsupported attempt pricing policy")
         if "tenant_id" in record:
             values["tenant_id"] = record["tenant_id"]
         async with self._get_owned_session() as session:

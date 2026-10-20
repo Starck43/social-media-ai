@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, relationship
 
 from ...core.config import settings
@@ -20,7 +21,16 @@ def _model_type_to_capabilities(model_type: str) -> list[str]:
 @app_label("llm")
 class LLMModel(Base, TimestampMixin):
     __tablename__ = "llm_models"
-    __table_args__ = {"schema": settings.DB_SCHEMA}
+    __table_args__ = (
+        CheckConstraint(
+            "(cache_read_cost_per_1m IS NULL OR cache_read_cost_per_1m >= 0) "
+            "AND (cache_write_5m_cost_per_1m IS NULL OR cache_write_5m_cost_per_1m >= 0) "
+            "AND (cache_write_1h_cost_per_1m IS NULL OR cache_write_1h_cost_per_1m >= 0)",
+            name="ck_llm_models_cache_rates",
+        ),
+        CheckConstraint("pricing_token_unit IN (1000, 1000000)", name="ck_llm_models_pricing_token_unit"),
+        {"schema": settings.DB_SCHEMA},
+    )
 
     id: Mapped[int] = Column(Integer, primary_key=True)
     provider_id: Mapped[int] = Column(
@@ -42,6 +52,10 @@ class LLMModel(Base, TimestampMixin):
 
     input_cost_per_1k: Mapped[float] = Column(Float, nullable=False, default=0.0)
     output_cost_per_1k: Mapped[float] = Column(Float, nullable=False, default=0.0)
+    cache_read_cost_per_1m: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    cache_write_5m_cost_per_1m: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    cache_write_1h_cost_per_1m: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    pricing_token_unit: Mapped[int] = Column(Integer, nullable=False, default=1_000_000, server_default="1000000")
 
     last_request_cost: Mapped[float | None] = Column(
         Float, nullable=True, comment="Estimated cost of the last test request (USD)"
@@ -115,12 +129,17 @@ class LLMModel(Base, TimestampMixin):
             provider = state.attrs.provider.value
             if provider is None:
                 return f"{self.name} ({self.model_id})"
-            return f"{provider.name}/{self.model_id} (${self.input_cost_per_1k:.4f}/${self.output_cost_per_1k:.4f}/1K)"
+            unit = "1K" if getattr(self, "pricing_token_unit", 1000) == 1000 else "1M"
+            return f"{provider.name}/{self.model_id} (${self.input_cost_per_1k}/${self.output_cost_per_1k}/{unit})"
         except Exception:
             return f"{self.name} ({self.model_id})"
 
     def get_cost_per_million(self) -> tuple[float, float]:
-        return self.input_cost_per_1k * 1000, self.output_cost_per_1k * 1000
+        divisor = getattr(self, "pricing_token_unit", 1000) or 1000
+        return (
+            float(Decimal(str(self.input_cost_per_1k)) * Decimal(1_000_000) / Decimal(divisor)),
+            float(Decimal(str(self.output_cost_per_1k)) * Decimal(1_000_000) / Decimal(divisor)),
+        )
 
     def can_handle(self, capability: str) -> bool:
         return capability in self.capabilities

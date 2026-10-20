@@ -84,11 +84,11 @@ class TestPriceUsage:
 
         assert await AIAnalyzer()._price_usage(usage) == Decimal("0.300000")
 
-    async def test_unknown_model_contributes_nothing(self, monkeypatch):
-        # Never fall back to hardcoded rates: an unpriced model must not invent cost.
+    async def test_unknown_model_keeps_aggregate_unknown(self, monkeypatch):
+        # An unavailable tariff must not make a partial aggregate look complete.
         _stub_tariff(monkeypatch, None)
 
-        assert await AIAnalyzer()._price_usage([_usage(5000, 5000)]) == Decimal(0)
+        assert await AIAnalyzer()._price_usage([_usage(5000, 5000)]) is None
 
     async def test_missing_usage_is_free(self, monkeypatch):
         _stub_tariff(monkeypatch, _model(Decimal("1"), Decimal("1")))

@@ -18,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped
 
 from ...core.config import settings
@@ -97,6 +98,7 @@ class LLMOutcomeEvent(Base, TenantScopedMixin):
     outcome: Mapped[str] = Column(String(32), nullable=False)
     prompt_tokens: Mapped[int | None] = Column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = Column(Integer, nullable=True)
+    cache_usage: Mapped[dict | None] = Column(JSONB, nullable=True)
     provider_price_state: Mapped[str] = Column(String(16), nullable=False)
     provider_cost_raw: Mapped[str | None] = Column(String(128), nullable=True)
     cost_usd: Mapped[Decimal | None] = Column(Numeric(18, 9), nullable=True)

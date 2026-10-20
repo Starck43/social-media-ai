@@ -83,7 +83,10 @@ class CostTracker:
         if not prov_models:
             return 0.0
         m = prov_models[0]
-        cost = (input_tokens / 1_000 * m.input_cost_per_1k + output_tokens / 1_000 * m.output_cost_per_1k)
+        from app.services.ai.cache_pricing import model_pricing_token_unit
+
+        unit = model_pricing_token_unit(m)
+        cost = (input_tokens / unit * m.input_cost_per_1k + output_tokens / unit * m.output_cost_per_1k)
         self.session_costs[provider] += cost
         self.session_tokens[provider]["input"] += input_tokens
         self.session_tokens[provider]["output"] += output_tokens

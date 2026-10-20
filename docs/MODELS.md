@@ -121,7 +121,9 @@ are stated in their own section.
 | `name`, `model_id`, `description` | String(100), String(100), nullable Text |
 | `model_type` | String(20), default text; `capabilities` is computed by splitting commas, not a column/native capability enum |
 | `custom_endpoint_path` | Nullable **String(200)**, added by 0086 |
-| `input_cost_per_1k`, `output_cost_per_1k` | Non-null Float, default 0; configured USD per 1K tokens |
+| `input_cost_per_1k`, `output_cost_per_1k` | Non-null Float, default 0; legacy physical names hold raw USD rates per `pricing_token_unit` |
+| `pricing_token_unit` | Non-null Integer, `1000` or `1000000`; old rows keep 1000, new rows default to 1000000 |
+| `cache_read_cost_per_1m`, `cache_write_5m_cost_per_1m`, `cache_write_1h_cost_per_1m` | Nullable Numeric(18,8), always USD per 1M; NULL is unconfigured and zero is explicit zero |
 | `last_request_cost`, `last_request_cost_at` | Nullable Float and timezone-unspecified DateTime |
 | `last_used_at`, `last_success_at`, `last_error_at` | Nullable timezone-unspecified DateTime |
 | `use_count`, `fail_count` | Non-null Integer, default/server default 0 |
@@ -130,12 +132,18 @@ are stated in their own section.
 
 Relationships: provider and text/image/video scenario model references. Only models carry the default flag; migration 0091 removed the provider-level flag. `LLMModelManager.set_default()` clears overlapping defaults per capability. Standard/quality resolution prefers that flag, cost-efficient resolution sorts by combined tariff first, and multimodal resolution prefers broader capabilities within the default rank; all exclude inactive providers. These are application invariants, not database unique constraints. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
 
-The SQLAdmin model editor exposes configuration fields only; cost/usage/history
-telemetry is read-only in details. The short model check is the shared local
+The SQLAdmin editor displays the ordinary input/output raw amounts beside an
+explicit `pricing_token_unit` selector. Changing the selector does not convert
+either amount. New models default to USD per 1M; existing models retain the
+legacy 1K unit until explicitly classified. Cache fields are always USD per
+1M; blank cache rates remain NULL while zero is explicit. The API/tool boundary
+also exposes canonical per-1M prices and true per-1K compatibility fields.
+The short model check is the shared local
 `probe_short()` service used by web settings and admin, not a provider-health or
 accounting acceptance test. See [admin testing modes and price display](ADMIN.md#llm-testing-and-prices)
-for the separate short/mock/explicit paid-probe contracts. This changes no ORM
-columns or migrations.
+for the separate short/mock/explicit paid-probe contracts. Migration 0107
+defines the cache tariff columns; it does not itself apply the schema or update
+existing model prices.
 
 ## Workspace and personal credential tables
 
@@ -236,9 +244,16 @@ Fields: `id` PK; globally unique/non-null `attempt_key` String(64); non-null
 `purpose`, `stage`, `cost_certainty`, `outcome` String(32); nullable plain Integer
 `source_id`, `job_id`, `agent_task_id`, `llm_model_row_id`; nullable Date
 `analysis_date`; nullable `model_id`, `provider_name` String(200); nullable
-Numeric(18,8) tariff snapshots `input_cost_per_1k`, `output_cost_per_1k`; nullable
+Numeric(18,8) tariff snapshots `input_cost_per_1k`, `output_cost_per_1k`, plus
+nullable `pricing_token_unit`; nullable Numeric(18,8) cache-read and TTL-specific
+write tariff snapshots (USD per 1M);
+nullable JSONB `cache_usage` and nullable `pricing_policy_version` (`NULL` means
+legacy evidence). New cache-bearing writes use `cache-tariff-v2` with a required
+1K or 1M unit; legacy `provider-price-v1` snapshots retain 1K semantics and a
+NULL/1000 unit.
 Integer `prompt_tokens`, `completion_tokens`; nullable Numeric(18,9) **Decimal USD**
-`cost_usd`; timezone-aware non-null server `created_at`. Indexes: tenant,
+`cost_usd`; nullable JSONB `cache_usage`; timezone-aware non-null server
+`created_at`. Indexes: tenant,
 (source_id, analysis_date), job. No source/job/task/model FKs or `updated_at`.
 
 Captured analyzer stages, fallback chat attempts, digest summaries and the agent
@@ -264,8 +279,10 @@ Fields: `id`; explicit `tenant_id` FK **RESTRICT**; unique raw `dispatch_id`
 String(32); `purpose`/`stage` String(32); timezone-aware `prepared_at` and its UTC
 `utc_day`; non-null Integer `llm_model_row_id`, `llm_provider_row_id` plus non-null
 `model_id`, `provider_name` String(200); nullable Decimal USD
-`input_cost_per_1k`, `output_cost_per_1k` Numeric(18,8); `tariff_state` (`known`, `free`, `undefined`)
-and `pricing_policy_version`; nullable plain `source_id`, `job_id`,
+`input_cost_per_1k`, `output_cost_per_1k` raw rates and nullable selected
+`pricing_token_unit`; nullable cache-read/TTL-write rates Numeric(18,8), always
+USD per 1M; `tariff_state` (`known`, `free`, `undefined`) and
+`pricing_policy_version`; nullable plain `source_id`, `job_id`,
 `agent_task_id`, `agent_session_id`; server-created timezone-aware `created_at`.
 Execution/model references have no foreign keys. No prompt, secrets, cost,
 reservation or outcome columns exist. Invalid rates remain NULL, not zero.
@@ -288,7 +305,8 @@ attempts**.
 Fields: `id`; explicit `tenant_id` FK RESTRICT; globally unique `event_id`
 String(32); `dispatch_id` FK to the receipt's unique identity, RESTRICT;
 `event_kind`, timezone-aware `observed_at`, `dispatch_state`, `outcome`; nullable
-Integer `prompt_tokens`, `completion_tokens`; `provider_price_state`, nullable decimal-only
+Integer `prompt_tokens`, `completion_tokens`; nullable JSONB `cache_usage`;
+`provider_price_state`, nullable decimal-only
 `provider_cost_raw` String(128), nullable Decimal USD `cost_usd` Numeric(18,9);
 `cost_certainty`, `price_source`, `pricing_policy_version`; server `created_at`.
 No prompt, credentials, raw provider response or mutable model reference is kept.
@@ -296,7 +314,7 @@ No prompt, credentials, raw provider response or mutable model reference is kept
 The definition rejects UPDATE/DELETE/TRUNCATE. An insert trigger binds payer,
 policy and observation time to the receipt, verifies resolved provider amount
 consistency and refuses a free tariff unless both frozen rates are explicitly
-zero. The manager also recomputes all pricing from the persisted receipt and
+zero under the matching policy version. The manager also recomputes all pricing from the persisted receipt and
 requires the enabled receipt/event guards. Metadata bootstrap lacks those guards
 and is not approved. Direct SQL is not an alternative pricing API.
 
@@ -534,11 +552,14 @@ Selected milestones, not a complete replay audit:
 | 0102 | Reservation validator with unambiguous local names |
 | **0103** | Platform task initiator guard correction |
 | **0104** | Durable analysis context receipts; fingerprint-scoped analytics uniqueness with `legacy` default; no historical receipt backfill |
+| **0105** | Remove retired monitored-user configuration |
+| **0106** | Add VK search source type and remove retired task action lists |
+| **0107** | Add model price units, nullable cache tariffs and usage evidence; preserve legacy pricing snapshots |
 
 Static inspection of all checked-in `revision` / `down_revision` declarations,
-including tuple merge parents, gives the single source head **0104**, with chain
-0096 → 0097 → 0098 → 0099 → 0100 → 0101 → 0102 → 0103 → 0104. The 0096/31-table
-inventory belongs to the earlier admin documentation audit. This is not
+including tuple merge parents, gives the single source head **0107**, with chain
+0096 → 0097 → 0098 → 0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106 → 0107.
+The 0096/31-table inventory belongs to the earlier admin documentation audit. This is not
 `alembic current`, an `alembic check`, a replay rehearsal or target-schema
 acceptance. The migrations are the checked-in repository chain; migration 0104
 has been applied on user approval to the local `public` schema and read-only

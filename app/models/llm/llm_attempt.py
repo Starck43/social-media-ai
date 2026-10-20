@@ -6,7 +6,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Column, Date, DateTime, Index, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, Column, Date, DateTime, Index, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped
 
 from ...core.config import settings
@@ -32,6 +33,24 @@ class LLMAttempt(Base, TenantScopedMixin):
     __tablename__ = "llm_attempts"
     __table_args__ = (
         UniqueConstraint("attempt_key", name="uq_llm_attempts_key"),
+        CheckConstraint(
+            "(cache_read_cost_per_1m IS NULL OR cache_read_cost_per_1m >= 0) "
+            "AND (cache_write_5m_cost_per_1m IS NULL OR cache_write_5m_cost_per_1m >= 0) "
+            "AND (cache_write_1h_cost_per_1m IS NULL OR cache_write_1h_cost_per_1m >= 0)",
+            name="ck_llm_attempts_cache_rates",
+        ),
+        CheckConstraint(
+            "COALESCE((((pricing_policy_version IS NULL OR pricing_policy_version = 'provider-price-v1') "
+            "AND (pricing_token_unit IS NULL OR pricing_token_unit = 1000) AND cache_usage IS NULL "
+            "AND cache_read_cost_per_1m IS NULL AND cache_write_5m_cost_per_1m IS NULL "
+            "AND cache_write_1h_cost_per_1m IS NULL) OR "
+            "(pricing_policy_version = 'cache-tariff-v2' AND "
+            "(pricing_token_unit IN (1000, 1000000) OR (pricing_token_unit IS NULL "
+            "AND input_cost_per_1k IS NULL AND output_cost_per_1k IS NULL "
+            "AND cache_read_cost_per_1m IS NULL AND cache_write_5m_cost_per_1m IS NULL "
+            "AND cache_write_1h_cost_per_1m IS NULL)))), FALSE)",
+            name="ck_llm_attempts_pricing_token_unit",
+        ),
         Index("ix_llm_attempts_tenant_id", "tenant_id"),
         Index("idx_llm_attempts_source_date", "source_id", "analysis_date"),
         Index("idx_llm_attempts_job", "job_id"),
@@ -63,6 +82,12 @@ class LLMAttempt(Base, TenantScopedMixin):
     provider_name: Mapped[str | None] = Column(String(200), nullable=True)
     input_cost_per_1k: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
     output_cost_per_1k: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    cache_read_cost_per_1m: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    cache_write_5m_cost_per_1m: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    cache_write_1h_cost_per_1m: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    cache_usage: Mapped[dict | None] = Column(JSONB, nullable=True)
+    pricing_policy_version: Mapped[str | None] = Column(String(32), nullable=True)
+    pricing_token_unit: Mapped[int | None] = Column(Integer, nullable=True)
 
     prompt_tokens: Mapped[int | None] = Column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = Column(Integer, nullable=True)

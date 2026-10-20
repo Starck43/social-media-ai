@@ -21,11 +21,23 @@ from uuid import uuid4
 from source_import_isolation import load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[1]
-journal = load_isolated_source("_scoped_attempt_journal_test", ROOT / "app/services/ai/attempt_journal.py")
+cache_pricing = load_isolated_source("_scoped_cache_pricing", ROOT / "app/services/ai/cache_pricing.py")
+journal = load_isolated_source(
+    "_scoped_attempt_journal_test",
+    ROOT / "app/services/ai/attempt_journal.py",
+    imports={"app.services.ai.cache_pricing": cache_pricing},
+)
 
 PRIVATE = "PRIVATE-CUSTOMER-SECRET"
 PRICED = {"id": 5, "input_cost_per_1k": Decimal("0.5"), "output_cost_per_1k": Decimal("1.5")}
-FREE = {"id": 6, "input_cost_per_1k": Decimal("0"), "output_cost_per_1k": Decimal("0")}
+FREE = {
+    "id": 6,
+    "input_cost_per_1k": Decimal("0"),
+    "output_cost_per_1k": Decimal("0"),
+    "cache_read_cost_per_1m": Decimal("0"),
+    "cache_write_5m_cost_per_1m": Decimal("0"),
+    "cache_write_1h_cost_per_1m": Decimal("0"),
+}
 
 
 class Journal:
@@ -38,9 +50,13 @@ class Journal:
 
 
 def chat_envelope(raw=None, failed=False, **kwargs):
-    return journal.chat_attempt_envelope(
+    value = journal.chat_attempt_envelope(
         model_id="m", provider_name="prov", dispatch_id=uuid4().hex, raw=raw, failed=failed, **kwargs
     )
+    # These fixtures pin legacy v1 behavior; production clients pass api_format
+    # and persist v2 normalized cache evidence.
+    value.pop("accounting_cache_usage", None)
+    return value
 
 
 async def record(envelopes, tariff=PRICED, tenant_id=7, purpose="agent_chat"):
@@ -166,6 +182,7 @@ class ChatFallbackJournalTests(unittest.IsolatedAsyncioTestCase):
         self.scope = {
             "Any": Any,
             "Optional": Optional,
+            "Decimal": Decimal,
             "uuid4": uuid4,
             "logger": Mock(spec=logging.Logger),
             "httpx": NS(HTTPStatusError=HTTPStatusError, TimeoutException=TimeoutError, TransportError=OSError),
@@ -215,6 +232,7 @@ class ChatFallbackJournalTests(unittest.IsolatedAsyncioTestCase):
                 "app.services.billing": billing,
                 "app.services.billing.errors": billing_errors,
                 "app.services.ai.attempt_journal": fake,
+                "app.services.ai.cache_pricing": cache_pricing,
             },
         )
         self.modules.start()

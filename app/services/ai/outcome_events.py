@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Mapping
 
+from .cache_pricing import CACHE_RATE_FIELDS, cache_price_usd, validate_cache_usage
 from .attempt_journal import COST_SCALE, _tokens
 from .dispatch_receipts import validate_receipt
 
@@ -25,6 +26,7 @@ EVENT_FIELDS = (
     "outcome",
     "prompt_tokens",
     "completion_tokens",
+    "cache_usage",
     "provider_price_state",
     "provider_cost_raw",
     "cost_usd",
@@ -86,6 +88,29 @@ def _price(receipt, envelope, prompt, completion):
         "price_source": "receipt_tariff" if receipt["tariff_state"] != "undefined" else "none",
     }
     input_rate, output_rate = receipt["input_cost_per_1k"], receipt["output_cost_per_1k"]
+    policy = receipt["pricing_policy_version"]
+    cache_usage = validate_cache_usage(envelope.get("accounting_cache_usage"))
+    if policy == "cache-tariff-v2":
+        rates = (input_rate, output_rate, *(receipt[field] for field in CACHE_RATE_FIELDS))
+        if all(rate == 0 for rate in rates):
+            return dict(value, cost_usd=Decimal(0), cost_certainty="free")
+        if input_rate is None or output_rate is None or (completion is None and output_rate != 0):
+            return value
+        input_cost = cache_price_usd(
+            cache_usage,
+            {"input_cost_per_1k": input_rate, **{field: receipt[field] for field in CACHE_RATE_FIELDS}},
+            prompt_tokens=prompt,
+            pricing_unit=receipt["pricing_token_unit"],
+        )
+        if input_cost is None:
+            return value
+        with localcontext() as context:
+            context.prec = 64
+            cost = input_cost + Decimal(completion or 0) * output_rate / receipt["pricing_token_unit"]
+        _, exact = _amount(cost)
+        if exact is not None:
+            value.update(cost_usd=exact, cost_certainty="priced")
+        return value
     if input_rate is None or output_rate is None:
         return value
     if input_rate == output_rate == 0:
@@ -139,9 +164,19 @@ def build_outcome_event(
     usage = envelope.get("accounting_usage")
     usage = usage if isinstance(usage, dict) else {}
     prompt, completion = _tokens(usage.get("prompt_tokens")), _tokens(usage.get("completion_tokens"))
+    cache_usage = (
+        validate_cache_usage(envelope.get("accounting_cache_usage"))
+        if receipt["pricing_policy_version"] == "cache-tariff-v2"
+        else None
+    )
     pricing = _price(receipt, envelope, prompt, completion)
     if dispatch_state == "not_dispatched":
-        if pricing["provider_price_state"] != "absent" or prompt is not None or completion is not None:
+        if (
+            pricing["provider_price_state"] != "absent"
+            or prompt is not None
+            or completion is not None
+            or cache_usage is not None
+        ):
             raise ValueError("No-dispatch proof conflicts with provider evidence")
         pricing.update(cost_usd=None, cost_certainty="not_dispatched", price_source="not_dispatched")
     return {
@@ -154,6 +189,7 @@ def build_outcome_event(
         "outcome": outcome,
         "prompt_tokens": prompt,
         "completion_tokens": completion,
+        "cache_usage": cache_usage,
         **pricing,
         "pricing_policy_version": receipt["pricing_policy_version"],
     }
@@ -161,8 +197,10 @@ def build_outcome_event(
 
 def validate_outcome_event(record: Mapping[str, Any], receipt: Mapping[str, Any]) -> dict[str, Any]:
     """Recompute against the persisted payer-bound receipt before insertion."""
-    if set(record) != set(EVENT_FIELDS):
+    if set(record) not in (set(EVENT_FIELDS), set(EVENT_FIELDS) - {"cache_usage"}):
         raise ValueError("Outcome fields do not match the storage contract")
+    record = dict(record)
+    record.setdefault("cache_usage", None)
     if type(record["provider_price_state"]) is not str:
         raise ValueError("Invalid provider report state")
     if record["provider_cost_raw"] is not None and type(record["provider_cost_raw"]) is not str:
@@ -183,6 +221,7 @@ def validate_outcome_event(record: Mapping[str, Any], receipt: Mapping[str, Any]
                 "prompt_tokens": record["prompt_tokens"],
                 "completion_tokens": record["completion_tokens"],
             },
+            "accounting_cache_usage": record["cache_usage"],
             "accounting_cost_reported": record["provider_price_state"] != "absent",
             "accounting_cost_usd": record["provider_cost_raw"],
         },

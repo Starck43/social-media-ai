@@ -96,13 +96,27 @@ async def test_custom_chat_success_records_response_received_and_preserves_shape
     assert response["_personal_dispatch_id"] == receipt["dispatch_id"]
     assert response["finish_reason"] is None
     assert response["raw"] == provider_payload
-    assert response["usage"] == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost": 0.0}
+    assert response["usage"] == {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "cost": 0.000001,
+        "cost_source": "provider",
+        "cost_is_estimate": False,
+    }
     observe.assert_awaited_once_with(
         receipt,
         dispatch_state="response_received",
         outcome="succeeded",
         accounting_envelope={
             "accounting_usage": {"prompt_tokens": 4, "completion_tokens": 2},
+            "accounting_cache_usage": {
+                "format": "unknown",
+                "cache_read_tokens": None,
+                "cache_write_tokens": None,
+                "cache_write_5m_tokens": None,
+                "cache_write_1h_tokens": None,
+            },
             "accounting_cost_usd": "0.000001",
             "accounting_cost_reported": True,
         },

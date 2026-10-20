@@ -2,6 +2,7 @@
 API endpoints for LLM Model management.
 """
 import logging
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -15,6 +16,9 @@ router = APIRouter(prefix="/llm-models", tags=["LLM Models"])
 
 
 def _model_response(m: LLMModel) -> LLMModelResponse:
+    unit = m.pricing_token_unit or 1000
+    input_raw = Decimal(str(m.input_cost_per_1k))
+    output_raw = Decimal(str(m.output_cost_per_1k))
     return LLMModelResponse(
         id=m.id,
         name=m.name,
@@ -23,8 +27,14 @@ def _model_response(m: LLMModel) -> LLMModelResponse:
         provider_id=m.provider_id,
         model_type=m.model_type,
         custom_endpoint_path=m.custom_endpoint_path,
-        input_cost_per_1k=m.input_cost_per_1k,
-        output_cost_per_1k=m.output_cost_per_1k,
+        pricing_token_unit=unit,
+        input_cost_per_1k=input_raw * Decimal(1000) / Decimal(unit),
+        output_cost_per_1k=output_raw * Decimal(1000) / Decimal(unit),
+        input_cost_per_1m=input_raw * Decimal(1_000_000) / Decimal(unit),
+        output_cost_per_1m=output_raw * Decimal(1_000_000) / Decimal(unit),
+        cache_read_cost_per_1m=m.cache_read_cost_per_1m,
+        cache_write_5m_cost_per_1m=m.cache_write_5m_cost_per_1m,
+        cache_write_1h_cost_per_1m=m.cache_write_1h_cost_per_1m,
         max_tokens=m.max_tokens,
         default_temperature=m.default_temperature,
         is_active=m.is_active,
@@ -39,6 +49,23 @@ def _model_response(m: LLMModel) -> LLMModelResponse:
     )
 
 
+def _raw_price_updates(data: dict, unit: int, *, create: bool = False) -> dict:
+    """Translate public per-1K/per-1M rates into the catalog's selected raw unit."""
+    updates = {}
+    for field in ("input", "output"):
+        legacy_key = f"{field}_cost_per_1k"
+        canonical_key = f"{field}_cost_per_1m"
+        legacy = data.pop(legacy_key, None)
+        canonical = data.pop(canonical_key, None)
+        if legacy is not None:
+            canonical = legacy * Decimal(1000)
+        if canonical is not None:
+            updates[legacy_key] = canonical * Decimal(unit) / Decimal(1_000_000)
+        elif create:
+            updates[legacy_key] = 0.0
+    return updates
+
+
 @router.post("/", response_model=LLMModelResponse, status_code=status.HTTP_201_CREATED)
 async def create_llm_model(
     request: LLMModelCreate,
@@ -46,7 +73,10 @@ async def create_llm_model(
 ):
     """Create a new LLM model (default-uniqueness enforced by the manager)."""
     try:
-        model = await LLMModel.objects.create_model(**request.model_dump())
+        data = request.model_dump(exclude_unset=True)
+        unit = data.pop("pricing_token_unit", 1_000_000)
+        prices = _raw_price_updates(data, unit, create=True)
+        model = await LLMModel.objects.create_model(**data, **prices, pricing_token_unit=unit)
         logger.info(f"LLM model created: {model.name} (ID: {model.id})")
         return _model_response(model)
     except ValueError as e:
@@ -112,6 +142,12 @@ async def update_llm_model(
             if not model:
                 raise HTTPException(status_code=404, detail=f"LLM model {model_id} not found")
             return _model_response(model)
+        existing = await LLMModel.objects.get(id=model_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail=f"LLM model {model_id} not found")
+        unit = updates.get("pricing_token_unit", existing.pricing_token_unit)
+        prices = _raw_price_updates(updates, unit)
+        updates.update(prices)
         model = await LLMModel.objects.update_model(model_id, **updates)
         if not model:
             raise HTTPException(status_code=404, detail=f"LLM model {model_id} not found")

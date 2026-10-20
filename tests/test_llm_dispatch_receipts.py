@@ -24,6 +24,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 ROOT = Path(__file__).resolve().parents[1]
 SCOPE = {"tenant_id": 7}
+CACHE_PRICING = load_isolated_source("_receipt_cache_pricing", ROOT / "app/services/ai/cache_pricing.py")
 
 
 class TenantError(RuntimeError):
@@ -31,11 +32,19 @@ class TenantError(RuntimeError):
 
 
 TENANT = SimpleNamespace(TenantContextError=TenantError, current_tenant_id=lambda: SCOPE["tenant_id"])
-JOURNAL = load_isolated_source("_receipt_pricing", ROOT / "app/services/ai/attempt_journal.py")
+JOURNAL = load_isolated_source(
+    "_receipt_pricing",
+    ROOT / "app/services/ai/attempt_journal.py",
+    imports={"app.services.ai.cache_pricing": CACHE_PRICING},
+)
 HELPERS = load_isolated_source(
     "app.services.ai._receipt_helpers",
     ROOT / "app/services/ai/dispatch_receipts.py",
-    imports={"app.services.ai.attempt_journal": JOURNAL, "app.core.tenant_context": TENANT},
+    imports={
+        "app.services.ai.attempt_journal": JOURNAL,
+        "app.services.ai.cache_pricing": CACHE_PRICING,
+        "app.core.tenant_context": TENANT,
+    },
 )
 NOW = datetime(2026, 10, 12, 23, 59, 59, tzinfo=timezone.utc)
 
@@ -73,7 +82,13 @@ class ReceiptBuilderTests(unittest.TestCase):
 
     def test_explicit_zero_rates_are_free_basis_not_actual_provider_price(self):
         value = HELPERS.build_dispatch_receipt(
-            model(input_cost_per_1k=0, output_cost_per_1k=0),
+            model(
+                input_cost_per_1k=0,
+                output_cost_per_1k=0,
+                cache_read_cost_per_1m=0,
+                cache_write_5m_cost_per_1m=0,
+                cache_write_1h_cost_per_1m=0,
+            ),
             tenant_id=7,
             purpose="analysis",
             stage="text",
@@ -231,7 +246,7 @@ def label(name):
 
 LEAF = load_isolated_source(
     "app.models.analysis._receipt_model",
-    ROOT / "app/models/analysis/llm_dispatch_receipt.py",
+    ROOT / "app/models/llm/llm_dispatch_receipt.py",
     imports={
         "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA="receipts_review")),
         "app.core.decorators": SimpleNamespace(app_label=label),
@@ -240,6 +255,30 @@ LEAF = load_isolated_source(
         ),
     },
 )
+
+
+def capture_cache_tariff_additions(schema="receipts_review"):
+    captured = SimpleNamespace(columns={}, checks={}, dropped={})
+    operations = SimpleNamespace(
+        add_column=lambda table, column, **kwargs: captured.columns.setdefault(table, []).append(column),
+        create_check_constraint=lambda name, table, condition, **kwargs: captured.checks.setdefault(table, {}).update(
+            {name: str(condition)}
+        ),
+        drop_constraint=lambda name, table, **kwargs: captured.dropped.setdefault(table, set()).add(name),
+        alter_column=lambda *args, **kwargs: None,
+        execute=lambda *args, **kwargs: None,
+        get_bind=lambda: SimpleNamespace(dialect=postgresql.dialect()),
+    )
+    migration = load_isolated_source(
+        "_cache_tariff_receipt_migration",
+        ROOT / "migrations/versions/0107_add_cache_tariff_evidence.py",
+        imports={
+            "alembic": SimpleNamespace(op=operations),
+            "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),
+        },
+    )
+    migration.upgrade()
+    return migration, captured
 
 
 class BaseManagerDouble:
@@ -401,12 +440,17 @@ class DefinitionTests(unittest.TestCase):
     def test_model_and_migration_columns_and_constraints_match(self):
         migration, captured = self.capture()
         columns = {item.name: item for item in captured.table[1] if isinstance(item, Column)}
+        _, cache_additions = capture_cache_tariff_additions()
+        columns.update({c.name: c for c in cache_additions.columns["llm_dispatch_receipts"]})
         self.assertEqual(set(columns), set(LEAF.LLMDispatchReceipt.__table__.columns.keys()))
         for name, column in columns.items():
             actual = LEAF.LLMDispatchReceipt.__table__.c[name]
             self.assertEqual(str(actual.type), str(column.type))
             self.assertEqual(actual.nullable, column.nullable)
         definitions = {item.name: str(item.sqltext) for item in captured.table[1] if hasattr(item, "sqltext")}
+        for name in cache_additions.dropped.get("llm_dispatch_receipts", set()):
+            definitions.pop(name, None)
+        definitions.update(cache_additions.checks["llm_dispatch_receipts"])
         declared = {
             item.name: str(item.sqltext)
             for item in LEAF.LLMDispatchReceipt.__table__.constraints

@@ -22,6 +22,7 @@ from sqlalchemy.orm import DeclarativeBase
 ROOT = Path(__file__).resolve().parents[1]
 SCOPE = {"tenant_id": 7}
 NOW = datetime(2026, 10, 12, 23, 59, 59, tzinfo=timezone.utc)
+CACHE_PRICING = load_isolated_source("_outcome_cache_pricing", ROOT / "app/services/ai/cache_pricing.py")
 
 
 class TenantError(RuntimeError):
@@ -29,20 +30,32 @@ class TenantError(RuntimeError):
 
 
 TENANT = SimpleNamespace(TenantContextError=TenantError, current_tenant_id=lambda: SCOPE["tenant_id"])
-JOURNAL = load_isolated_source("_outcome_pricing", ROOT / "app/services/ai/attempt_journal.py")
+JOURNAL = load_isolated_source(
+    "_outcome_pricing",
+    ROOT / "app/services/ai/attempt_journal.py",
+    imports={"app.services.ai.cache_pricing": CACHE_PRICING},
+)
 RECEIPTS = load_isolated_source(
     "app.services.ai._outcome_receipts",
     ROOT / "app/services/ai/dispatch_receipts.py",
-    imports={"app.services.ai.attempt_journal": JOURNAL, "app.core.tenant_context": TENANT},
+    imports={
+        "app.services.ai.attempt_journal": JOURNAL,
+        "app.services.ai.cache_pricing": CACHE_PRICING,
+        "app.core.tenant_context": TENANT,
+    },
 )
 EVENTS = load_isolated_source(
     "app.services.ai._outcome_helpers",
     ROOT / "app/services/ai/outcome_events.py",
-    imports={"app.services.ai.attempt_journal": JOURNAL, "app.services.ai.dispatch_receipts": RECEIPTS},
+    imports={
+        "app.services.ai.attempt_journal": JOURNAL,
+        "app.services.ai.cache_pricing": CACHE_PRICING,
+        "app.services.ai.dispatch_receipts": RECEIPTS,
+    },
 )
 
 
-def receipt(input_rate="0.001", output_rate="0.002", **changes):
+def receipt(input_rate="0.001", output_rate="0.002", *, cache_policy=False, **changes):
     model = SimpleNamespace(
         id=4,
         model_id="model",
@@ -58,6 +71,15 @@ def receipt(input_rate="0.001", output_rate="0.002", **changes):
         dispatch_id="a" * 32,
         prepared_at=NOW,
     )
+    if not cache_policy:
+        result["pricing_policy_version"] = "provider-price-v1"
+        result["tariff_state"] = (
+            "undefined"
+            if input_rate is None or output_rate is None
+            else "free"
+            if Decimal(str(input_rate)) == Decimal(str(output_rate)) == 0
+            else "known"
+        )
     result.update(changes)
     return result
 
@@ -94,6 +116,70 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(value["cost_certainty"], "free")
         self.assertEqual(value["provider_cost_raw"], "0")
         self.assertIsNone(value["prompt_tokens"])
+
+    def test_v2_prices_cache_reads_and_retains_normalized_evidence(self):
+        parent = receipt(cache_policy=True)
+        parent["input_cost_per_1k"] = Decimal(".12")
+        parent["output_cost_per_1k"] = Decimal(".4")
+        parent["pricing_token_unit"] = 1_000_000
+        parent["cache_read_cost_per_1m"] = Decimal(".024")
+        parent["tariff_state"] = "known"
+        parent = RECEIPTS.validate_receipt(parent)
+        cache = {
+            "format": "openai",
+            "cache_read_tokens": 800,
+            "cache_write_tokens": 0,
+            "cache_write_5m_tokens": None,
+            "cache_write_1h_tokens": None,
+        }
+        value = event(
+            parent,
+            {
+                "accounting_usage": {"prompt_tokens": 1000, "completion_tokens": 0},
+                "accounting_cache_usage": cache,
+            },
+        )
+        self.assertEqual((value["cost_usd"], value["cost_certainty"]), (Decimal("0.0000432"), "priced"))
+        self.assertEqual(value["cache_usage"], cache)
+
+    def test_v2_missing_cache_usage_is_unknown_but_provider_total_wins(self):
+        parent = receipt(cache_policy=True)
+        parent["input_cost_per_1k"] = Decimal("0.00012")
+        parent["output_cost_per_1k"] = Decimal("0.0004")
+        parent["pricing_token_unit"] = 1_000_000
+        parent["cache_read_cost_per_1m"] = Decimal("0.000024")
+        parent["tariff_state"] = "known"
+        parent = RECEIPTS.validate_receipt(parent)
+        value = event(parent, usage(1000, 0))
+        self.assertEqual(value["cost_certainty"], "undefined")
+        resolved = event(parent, {**provider(0), **usage(1000, 0)})
+        self.assertEqual((resolved["cost_usd"], resolved["cost_certainty"]), (Decimal(0), "free"))
+
+    def test_v2_row_10_receipt_prices_prompt_and_output_exactly(self):
+        parent = receipt(cache_policy=True)
+        parent.update(
+            input_cost_per_1k=Decimal(".12"),
+            output_cost_per_1k=Decimal(".4"),
+            pricing_token_unit=1_000_000,
+            cache_read_cost_per_1m=Decimal(".024"),
+            tariff_state="known",
+        )
+        parent = RECEIPTS.validate_receipt(parent)
+        cache = {
+            "format": "openai",
+            "cache_read_tokens": 800_000,
+            "cache_write_tokens": 0,
+            "cache_write_5m_tokens": None,
+            "cache_write_1h_tokens": None,
+        }
+        value = event(
+            parent,
+            {
+                "accounting_usage": {"prompt_tokens": 1_000_000, "completion_tokens": 100_000},
+                "accounting_cache_usage": cache,
+            },
+        )
+        self.assertEqual(value["cost_usd"], Decimal(".0832"))
 
     def test_no_price_and_empty_tariff_remain_undefined(self):
         value = event(receipt(None, None), usage(100, 100))
@@ -276,11 +362,35 @@ DEPS = {
     "app.models.base": SimpleNamespace(Base=TestBase, TenantScopedMixin=type("Scoped", (), {})),
 }
 PARENT = load_isolated_source(
-    "app.models.analysis._outcome_parent", ROOT / "app/models/analysis/llm_dispatch_receipt.py", imports=DEPS
+    "app.models.llm._outcome_parent", ROOT / "app/models/llm/llm_dispatch_receipt.py", imports=DEPS
 )
 LEAF = load_isolated_source(
-    "app.models.analysis._outcome_model", ROOT / "app/models/analysis/llm_outcome_event.py", imports=DEPS
+    "app.models.llm._outcome_model", ROOT / "app/models/llm/llm_outcome_event.py", imports=DEPS
 )
+
+
+def capture_cache_tariff_additions(schema="outcomes_review"):
+    captured = SimpleNamespace(columns={}, checks={}, dropped={})
+    operations = SimpleNamespace(
+        add_column=lambda table, column, **kwargs: captured.columns.setdefault(table, []).append(column),
+        create_check_constraint=lambda name, table, condition, **kwargs: captured.checks.setdefault(table, {}).update(
+            {name: str(condition)}
+        ),
+        drop_constraint=lambda name, table, **kwargs: captured.dropped.setdefault(table, set()).add(name),
+        alter_column=lambda *args, **kwargs: None,
+        execute=lambda *args, **kwargs: None,
+        get_bind=lambda: SimpleNamespace(dialect=postgresql.dialect()),
+    )
+    migration = load_isolated_source(
+        "_cache_tariff_outcome_migration",
+        ROOT / "migrations/versions/0107_add_cache_tariff_evidence.py",
+        imports={
+            "alembic": SimpleNamespace(op=operations),
+            "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),
+        },
+    )
+    migration.upgrade()
+    return migration, captured
 
 
 class BaseManagerDouble:
@@ -482,11 +592,14 @@ class DefinitionTests(unittest.TestCase):
 
     def test_columns_and_constraints_match_captured_definition(self):
         migration, captured = self.capture()
+        _, cache_additions = capture_cache_tariff_additions()
         declared, defined = LEAF.LLMOutcomeEvent.__table__, captured.table
-        self.assertEqual(set(declared.c.keys()), set(defined.c.keys()))
+        defined_columns = {column.name: column for column in defined.columns}
+        defined_columns.update({c.name: c for c in cache_additions.columns["llm_outcome_events"]})
+        self.assertEqual(set(declared.c.keys()), set(defined_columns))
         for name in declared.c.keys():
             with self.subTest(name=name):
-                actual, expected = declared.c[name], defined.c[name]
+                actual, expected = declared.c[name], defined_columns[name]
                 self.assertEqual(str(actual.type), str(expected.type))
                 self.assertEqual(actual.nullable, expected.nullable)
                 self.assertEqual(actual.primary_key, expected.primary_key)

@@ -25,8 +25,10 @@ MODELS = {
     "Source": ("source", "sources", "SourceManager", True),
     "CollectedItem": ("collected_item", "collected_items", "CollectedItemManager", True),
 }
-# Schema expression snapshots from dev a983a156; no migration accepted here.
-SCHEMA_FINGERPRINTS = {'CollectedItem': 'f6e2a3f3e0fcb200cbbaffc1998711148388b8b2050f008c653b20b6135ea334', 'Platform': '4a9416530007127cfc34ec0f987a61622b15ae4373c899933a640c4c5438564f', 'Source': '17dda3650de809cc517af68c2b1676df1f25c8e6f395a80419f2a9c2f9a54c4a'}
+# Schema expression snapshots; a model may only change with an accepted
+# migration. `CollectedItem` moved at e67f06f (nullable staged attachment
+# snapshots, migration 0089); the other two are unchanged since a983a156.
+SCHEMA_FINGERPRINTS = {'CollectedItem': '260a11d3ffa39998d4e56e682f3c57d839510734cb12b031abc3b3b9677cbddf', 'Platform': '4a9416530007127cfc34ec0f987a61622b15ae4373c899933a640c4c5438564f', 'Source': '17dda3650de809cc517af68c2b1676df1f25c8e6f395a80419f2a9c2f9a54c4a'}
 
 
 def _canonical_ast(node):
@@ -51,7 +53,7 @@ def test_public_legacy_domain_and_leaf_paths_share_one_model_and_manager(name):
     assert name in public.__all__ and name in domain.__all__
     assert domain.__dict__[name] is cls
     assert cls.__module__ == f"app.models.collection.{module}"
-    assert cls._app_label == "social"
+    assert cls._app_label == "collection"
     assert cls.__tablename__ == table_name
     assert cls.__table__ is public.Base.metadata.tables[cls.__table__.fullname]
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1

@@ -183,7 +183,11 @@ class ChatFallbackJournalTests(unittest.IsolatedAsyncioTestCase):
             "_empty_reply_reason": lambda response: "empty_reply",
             "_record_failure": lambda failures, model, reason: None,
         }
-        source_functions("app/services/ai/llm_client.py", {"chat_with_fallback", "journal_chat_attempt"}, self.scope)
+        source_functions(
+            "app/services/ai/llm_client.py",
+            {"chat_with_fallback", "journal_chat_attempt", "_model_price_floor"},
+            self.scope,
+        )
         self.models, self.errors, self.forwarded, self.journaled = [], {}, [], []
         self.scope["_llm_models"] = AsyncMock(side_effect=lambda query: list(self.models))
         self.scope["LLMClientFactory"] = NS(create=self.create)

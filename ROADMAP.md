@@ -18,6 +18,10 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
+- [ ] P2-T12 — preserve cache usage and version complete cache tariffs → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
+- [ ] P2-T13 — bind journal tariff lookup to provider/model identity → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
+- [ ] P2-T14 — enforce complete spend evidence in caps and user reports → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
+
 - [ ] P8-T25 — settings information layout and compact member access → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — READY
 
 - [ ] P8-T22 — unified social analysis tasks and operator web journey → [p8](docs/phases/p8-first-value-ui.md) — owner: codex-social-analysis — BLOCKED (persisted acceptance: missing test-schema receipts)

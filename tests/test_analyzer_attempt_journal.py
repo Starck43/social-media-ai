@@ -44,19 +44,24 @@ class AnalyzerAttemptJournalTests(unittest.IsolatedAsyncioTestCase):
         self.module.PeriodType.DAY = SimpleNamespace(db_value="day")
         self.module.AIAnalytics = SimpleNamespace(
             objects=SimpleNamespace(
-                filter=Mock(return_value=SimpleNamespace(first=AsyncMock(return_value=SimpleNamespace(id=42)))),
+                filter=Mock(return_value=SimpleNamespace(first=AsyncMock(return_value=SimpleNamespace(
+                    id=42,
+                    summary_data={"summary": "existing body", "content_hashes": ["prior-hash"]},
+                )))),
                 update_by_id=AsyncMock(),
                 create=AsyncMock(),
             )
         )
         self.analyzer = self.module.AIAnalyzer()
         self.source = SimpleNamespace(id=1, tenant_id=1, source_type=None)
-        self.scenario = SimpleNamespace(output_schema={"type": "object"}, max_tokens=None)
+        self.scenario = SimpleNamespace(output_schema={"type": "object"}, max_tokens=None, is_active=True)
+        self.analyzer._get_llm_model = AsyncMock(return_value=SimpleNamespace(id=8))
         self.record = self.module._attempt_journal.record_analysis_attempts
 
     async def save(self, **kwargs):
         kwargs.setdefault("task_payload", {"job_id": 9, "agent_task_id": 3})
         kwargs.setdefault("analysis_date", DAY)
+        kwargs.setdefault("content_hashes", ["incoming-hash"])
         return await self.analyzer._save_analysis(
             {"text_analysis": ENVELOPE}, SUMMARY, self.source, {}, "platform", reported_partial=True, **kwargs
         )
@@ -72,8 +77,11 @@ class AnalyzerAttemptJournalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["source"], self.source)
         self.assertEqual(kwargs["analysis_date"], DAY)
         self.assertEqual(kwargs["task_payload"], {"job_id": 9, "agent_task_id": 3})
-        # The skip itself is unchanged: the existing daily row is not written.
-        self.module.AIAnalytics.objects.update_by_id.assert_not_awaited()
+        # Keep the existing body; only preserve its known coverage hashes.
+        self.module.AIAnalytics.objects.update_by_id.assert_awaited_once_with(
+            42,
+            summary_data={"summary": "existing body", "content_hashes": ["prior-hash"]},
+        )
         self.module.AIAnalytics.objects.create.assert_not_awaited()
 
     async def test_journal_runs_before_the_skip_decision(self):

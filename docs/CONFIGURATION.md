@@ -164,6 +164,7 @@ LOG_LEVEL=INFO
 |---|---|---|
 | `POSTGRES_URL` | *(required)* | Async PostgreSQL connection string (`postgresql+asyncpg://user:pass@host:port/db`) |
 | `DB_SCHEMA` | `public` | PostgreSQL schema name |
+| `DB_POOL` | `pool` | Async engine connection reuse: `pool` reuses connections, `null` opens one per session. A pooled asyncpg connection belongs to the event loop that opened it, so a process that runs parts of its work in another loop (the test suite runs several unittest-style cases in a loop of their own) must use `null`. |
 
 ### Redis
 

@@ -1,5 +1,3 @@
-# UNIQUE_STRING_12345
-print("FILE LOADED: test_pr197_offline_gates.py")
 """No-DB regression tests for the PR197 launcher and harness gates.
 
 Every test uses doubles only: no database connection, no DSN resolution, no
@@ -27,6 +25,7 @@ Run standalone:
 from __future__ import annotations
 
 import ast
+import asyncio
 import importlib.util
 import json
 import os
@@ -177,6 +176,33 @@ def base_state(**overrides) -> dict:
     return state
 
 
+def step_0097_state(**overrides) -> dict:
+    """The 0096→0097 step: the baselines table, its triggers and functions.
+
+    The launcher's per-step expectations are explicit, so a fake step that does
+    not create exactly these objects must be stopped as a drift — the fixture
+    has to model the reviewed migration, not an empty one.
+    """
+    state = base_state(from_rev="0096", to_rev="0097")
+    state["after_sets"] = {
+        "tables": state["after_sets"]["tables"] | {"llm_budget_baselines"},
+        "triggers": state["after_sets"]["triggers"]
+        | {
+            "llm_budget_baselines.llm_budget_baselines_immutable",
+            "llm_budget_baselines.llm_budget_baselines_no_truncate",
+            "llm_budget_baselines.llm_budget_baselines_day_binding",
+        },
+        "functions": state["after_sets"]["functions"]
+        | {
+            "reject_llm_budget_baseline_mutation()",
+            "check_llm_budget_baseline_day()",
+        },
+        "constraints": state["after_sets"]["constraints"],
+    }
+    state.update(overrides)
+    return state
+
+
 def valid_approval(**overrides) -> dict:
     approval = {
         "target": ["localhost", 5432, "social_manager_pr180_migration", "starck"],
@@ -253,7 +279,7 @@ class LauncherDoubleTests(unittest.TestCase):
     def test_apply_performs_single_step_to_target_revision_only(self):
         rc, manifest, calls, _ = self.run_launcher(base_state(), apply=True)
         self.assertEqual(rc, 0)
-        self.assertEqual(calls, ["0095:0096"], "exactly one normal step, no head/chain")
+        self.assertEqual(calls, ["0096"], "exactly one normal step, no head/chain")
         self.assertEqual(manifest["after"]["revision"], "0096")
         self.assertEqual(manifest["after"]["retention"], {table: 3 for table in RETENTION_TABLES})
 
@@ -308,14 +334,13 @@ class LauncherDoubleTests(unittest.TestCase):
         self.assertEqual(manifest["status"], "stopped:step-not-allowed")
 
     def test_unexpected_catalog_delta_stops(self):
-        state = base_state()
-        state["after_sets"]["tables"] = {"alembic_version", "llm_budget_days", "llm_budget_reservations"}
-        state["to_rev"] = "0097"
-        state["from_rev"] = "0096"
+        """A step that creates an object outside the reviewed list is drift."""
+        state = step_0097_state()
+        state["after_sets"]["tables"] = state["after_sets"]["tables"] | {"llm_budget_baselines_rogue"}
         rc, manifest, calls, _ = self.run_launcher(state, apply=True)
         self.assertEqual(rc, 3)
-        self.assertEqual(calls, ["0096:0097"], "the step ran once, readback caught the drift")
-        self.assertIn("expected-object-missing", manifest["status"])
+        self.assertEqual(calls, ["0097"], "the step ran once, readback caught the drift")
+        self.assertIn("unexpected-catalog-delta", manifest["status"])
 
     def test_retention_drift_stops(self):
         state = base_state()
@@ -337,9 +362,7 @@ class LauncherDoubleTests(unittest.TestCase):
 
     def test_alembic_called_with_single_revision_not_range(self):
         """Alembic must be called with a single revision step, not a range."""
-        state = base_state()
-        state["to_rev"] = "0097"
-        state["from_rev"] = "0095"
+        state = step_0097_state()
         # We'll capture the call to alembic.command.upgrade
         calls = []
         def upgrade_double(config, revision):
@@ -389,7 +412,7 @@ class LauncherDoubleTests(unittest.TestCase):
         env1 = {"POSTGRES_URL": DSN, "DB_SCHEMA": "public", "SECRET_KEY": "offline-double", "ENVIRONMENT": "test"}
         with (
             patch.object(sqlalchemy, "create_engine", return_value=FakeEngine(state1)),
-            patch.object(alembic.command, "upgrade", lambda config, revision: setattr(state1, "applied", True)),
+            patch.object(alembic.command, "upgrade", lambda config, revision: state1.update(applied=True)),
             patch.dict(os.environ, env1, clear=True),
             patch.object(sys, "argv", argv1),
         ):
@@ -397,9 +420,7 @@ class LauncherDoubleTests(unittest.TestCase):
         self.assertEqual(rc1, 0)
         manifest1_first = manifest_path1.read_text()
         # Second run with same manifest path (should append)
-        state2 = base_state()
-        state2["to_rev"] = "0097"
-        state2["from_rev"] = "0096"
+        state2 = step_0097_state()
         argv2 = [
             "pr197_normal_migration_launcher.py",
             "--dsn", DSN,
@@ -414,7 +435,7 @@ class LauncherDoubleTests(unittest.TestCase):
         env2 = {"POSTGRES_URL": DSN, "DB_SCHEMA": "public", "SECRET_KEY": "offline-double", "ENVIRONMENT": "test"}
         with (
             patch.object(sqlalchemy, "create_engine", return_value=FakeEngine(state2)),
-            patch.object(alembic.command, "upgrade", lambda config, revision: setattr(state2, "applied", True)),
+            patch.object(alembic.command, "upgrade", lambda config, revision: state2.update(applied=True)),
             patch.dict(os.environ, env2, clear=True),
             patch.object(sys, "argv", argv2),
         ):
@@ -506,6 +527,20 @@ class HarnessApprovalTests(unittest.TestCase):
         self.assertEqual(loaded["payers"], list(HARNESS.SYNTHETIC_TENANTS))
 
 
+def harness_double(cls):
+    """A harness instance without its database setup.
+
+    `Pr197PgAcceptance` is an `IsolatedAsyncioTestCase`; building one through
+    `object.__new__` skips `__init__`, and the deallocator then trips over the
+    missing runner attributes. Initialising them by hand is what `__init__`
+    would have done.
+    """
+    instance = object.__new__(cls)
+    instance._asyncioRunner = None
+    instance._asyncioTestLoop = None
+    return instance
+
+
 class HarnessGateTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -513,7 +548,7 @@ class HarnessGateTests(unittest.TestCase):
         cls = HARNESS.Pr197PgAcceptance
         cls.journal_path = self.tmp / "journal.jsonl"
         cls.preconditions_verified = True
-        self.instance = object.__new__(cls)
+        self.instance = harness_double(cls)
         self.instance.approval = {"approval": valid_approval()}
 
     def tearDown(self):
@@ -569,52 +604,43 @@ class HarnessGateTests(unittest.TestCase):
 
 
     def test_probe_never_commits_on_success(self):
-        """Probe must not commit when the statement succeeds (probe failure)."""
-        # We'll create a fake connection that records commit calls.
-        class TrackingFakeConn:
-            def __init__(self):
-                self.commits = 0
-                self.rollbacks = 0
+        """Probe must not commit when the statement succeeds (probe failure).
 
-            async def execute(self, statement, params=None):
-                pass
-
-            async def commit(self):
-                self.commits += 1
-
-            async def rollback(self):
-                self.rollbacks += 1
-
-        # Create a mock async session maker that returns our tracking connection as an async context manager
+        A probe is a statement that MUST fail. If it succeeds, the probe was
+        not a probe — the harness rolls the session back and refuses the run.
+        What it must never do is commit.
+        """
         from unittest.mock import AsyncMock, MagicMock
 
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock()
-        mock_session.commit = AsyncMock(side_effect=lambda: setattr(mock_session, 'commits', getattr(mock_session, 'commits', 0) + 1))
-        mock_session.rollback = AsyncMock(side_effect=lambda: setattr(mock_session, 'rollbacks', getattr(mock_session, 'rollbacks', 0) + 1))
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
 
-        # We need the async session maker to return a context manager that yields mock_session
         mock_session_maker = MagicMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
         mock_session_maker.return_value.__aexit__.return_value = None
 
-        harness_instance = self.__class__.__new__(self.__class__)
-        harness_instance.db = SimpleNamespace()
-        harness_instance.db.async_session_maker = mock_session_maker
+        harness_instance = harness_double(HARNESS.Pr197PgAcceptance)
+        harness_instance.db = SimpleNamespace(async_session_maker=mock_session_maker)
+        # `_install_application` (a classmethod that needs a real database) is
+        # what sets `text` on the class; the double sets it here instead.
+        harness_instance.text = sqlalchemy.text
         harness_instance.approval = {"approval": {
             "write_cases": [], "probe_cases": ["some_case"], "replay_cases": []
         }}
         harness_instance.preconditions_verified = True
 
-        with patch.object(harness_instance, 'gate_probe'):
-            asyncio.run(harness_instance.probe(
-                "some_case", "some_table", "some_operation", "SELECT 1", {}
-            ))
+        with patch.object(harness_instance, "gate_probe"):
+            with self.assertRaises(HARNESS.Blocked):
+                asyncio.run(
+                    harness_instance.probe(
+                        "some_case", "some_table", "some_operation", "SELECT 1", {}
+                    )
+                )
 
-            # Check that commit was not called
-            self.assertEqual(mock_session.commit.call_count, 0, "probe must not commit on success")
-            # Check that rollback was called once
-            self.assertEqual(mock_session.rollback.call_count, 1, "probe must rollback on success")
+        self.assertEqual(mock_session.commit.call_count, 0, "probe must not commit on success")
+        self.assertEqual(mock_session.rollback.call_count, 1, "probe must rollback on success")
 
 
 class HarnessSourceContractTests(unittest.TestCase):

@@ -94,14 +94,22 @@ class VKDirectPhotoSnapshotTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.normalize([{'type':'photo','photo':photo}])['attachments'], [{'type':'image','url':None}])
 
     def test_signed_local_token_and_invalid_urls_remain_missing_media(self):
+        """A rejected URL means the post carries no analyzable media at all.
+
+        The classifier deliberately does not bucket an attachment without a
+        usable URL as media: that would request a media analysis of nothing
+        and withhold the parent post from text coverage for ever. The post
+        itself must survive as text.
+        """
         for url in ['http://cdn.example.org/p.jpg', SAFE+'?sig=PRIVATE', SAFE+'#secret',
                     'https://user:secret@cdn.example.org/p', 'https://127.0.0.1/p',
                     'https://api.telegram.org/file/botPRIVATE/p', None]:
             with self.subTest(url=url):
                 item = self.normalize([self.photo([{'url':url,'width':100,'height':100}])])
                 classified = self.classifier.classify_content([item])
-                self.assertEqual(len(classified['image']), 1)
+                self.assertEqual(classified['image'], [], "a URL-less attachment is not media")
                 self.assertEqual(self.classifier.get_media_urls(classified['image']), [])
+                self.assertEqual(len(classified['text']), 1, "the post must not be lost")
 
     def test_empty_absent_and_malformed_attachment_collection_distinct(self):
         self.assertNotIn('attachments', self.normalize())
@@ -161,11 +169,18 @@ class VKDirectPhotoSnapshotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row['source_id'], 17)
 
     async def test_rejected_vk_photo_remains_incomplete_after_stage_replay(self):
+        """A rejected photo stays an incomplete image after the stage replay.
+
+        The attachment itself is kept (so the gap is visible), but with no URL
+        it is not analyzable media: the post is covered as text, not as an
+        image whose body does not exist.
+        """
         item = self.normalize([self.photo([{'url':SAFE+'?secret=PRIVATE'}])])
         _, restored = await self.stage_replay(item)
         classified = self.classifier.classify_content([restored])
-        self.assertEqual(len(classified['image']), 1)
+        self.assertEqual(classified['image'], [], "a URL-less attachment is not media")
         self.assertEqual(self.classifier.get_media_urls(classified['image']), [])
+        self.assertEqual(len(classified['text']), 1, "the post must not be lost")
         self.assertEqual(restored['attachments'], [{'type':'image','url':None}])
 
 

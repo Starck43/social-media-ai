@@ -29,6 +29,13 @@ from app.types import ActionType, PeriodType, PlatformRoleType, PlatformType, So
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 
+# The real tenant guard, not the suite-wide bypass: this file gives every test
+# its own workspace, and a row written into the bootstrap workspace instead
+# would be shared with every other task of the deployment — the staged-retirement
+# contract ("another context still needs this row") is about *this* workspace's
+# contexts only.
+pytestmark = pytest.mark.tenancy
+
 
 @pytest.fixture
 async def receipt_source():

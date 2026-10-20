@@ -27,6 +27,22 @@ class _StubRequest:
         return f"/_stub/{name}"
 
 
+def _run_now_action():
+    """The action itself, without sqladmin's route wrappers.
+
+    `@action` wraps the method in `login_required` and the accessibility
+    check. Those wrappers read the *configured* admin console: once the app
+    module is imported, the authentication backend answers for the stub
+    request with "not signed in" and the action is never reached. This test
+    is about the action's own contract — the trusted operator enters the
+    admission context — so it calls the unwrapped function.
+    """
+    func = AgentTaskAdmin.run_now_action
+    while hasattr(func, "__wrapped__"):
+        func = func.__wrapped__
+    return func
+
+
 def _admin_user(active=True):
     return SimpleNamespace(id=42, username="operator", is_active=active)
 
@@ -55,7 +71,7 @@ async def test_a_trusted_active_operator_reaches_the_admission_context(monkeypat
     monkeypatch.setattr(AgentTask.objects, "get", _fake_task_get)
     _patch_dispatch(monkeypatch, captured)
 
-    await AgentTaskAdmin().run_now_action(request)
+    await _run_now_action()(AgentTaskAdmin(), request)
 
     assert captured["task_id"] == 7
     assert captured["actor_id"] == 42
@@ -69,11 +85,11 @@ async def test_an_absent_or_inactive_operator_is_denied(monkeypatch):
     _patch_dispatch(monkeypatch, captured)
 
     with pytest.raises(HTTPException) as exc:
-        await AgentTaskAdmin().run_now_action(_StubRequest(admin_user=None))
+        await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=None))
     assert exc.value.status_code == 403
     assert not captured
 
     with pytest.raises(HTTPException) as exc:
-        await AgentTaskAdmin().run_now_action(_StubRequest(admin_user=_admin_user(active=False)))
+        await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=_admin_user(active=False)))
     assert exc.value.status_code == 403
     assert not captured

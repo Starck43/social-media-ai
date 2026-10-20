@@ -2394,7 +2394,9 @@ def _diagnostics_view(job: "Job", source_id: int | None = None) -> dict[str, Any
 			continue
 		collection = row.get("collection") if isinstance(row.get("collection"), dict) else {}
 		outcome = row.get("outcome") or collection.get("outcome")
-		code = row.get("error_code") or collection.get("error_code")
+		# A row-level code, never the job-level one: reusing `code` here would
+		# overwrite the run's own diagnosis with the last source's.
+		row_code = row.get("error_code") or collection.get("error_code")
 		hint = row.get("error_hint") or collection.get("error_hint") or row.get("auth_hint")
 		if not hint and outcome == "empty":
 			hint = "нет записей в выбранном окне"
@@ -2411,7 +2413,7 @@ def _diagnostics_view(job: "Job", source_id: int | None = None) -> dict[str, Any
 				"source_id": row.get("source_id") if type(row.get("source_id")) is int else None,
 				"name": name[:80],
 				"outcome": outcome if isinstance(outcome, str) else None,
-				"error_code": code[:64] if isinstance(code, str) else None,
+				"error_code": row_code[:64] if isinstance(row_code, str) else None,
 				"error_hint": hint[:120] if isinstance(hint, str) else None,
 				"items": items if type(items) is int and 0 <= items <= 10**9 else None,
 				"new_items": new_items if type(new_items) is int and 0 <= new_items <= 10**9 else None,

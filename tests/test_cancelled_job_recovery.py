@@ -93,26 +93,42 @@ class QueueSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Cancelled", repr(signals))
 
     async def test_actual_job_list_flags_cancelled_row_for_review(self):
-        self.query.order_by = lambda *args: self.query
-        self.query.limit = lambda *args: self.query
-        self.source.Job.created_at = SimpleNamespace(desc=lambda: None)
-        self.query.rows = [
-            SimpleNamespace(
-                id=7, status="failed", error=POLICY.OPERATOR_CANCELLED_ERROR, job_type="learn", result={}, payload={}
-            )
-        ]
-        request = SimpleNamespace(state=SimpleNamespace(web_user=SimpleNamespace(is_active=True), tenant_id=31))
+        row = SimpleNamespace(
+            id=7,
+            tenant_id=31,
+            status="failed",
+            error=POLICY.OPERATOR_CANCELLED_ERROR,
+            job_type="learn",
+            result={},
+            payload={},
+            attempts=1,
+            created_at=datetime.now(timezone.utc),
+        )
+        self.manager.page_for_web.return_value = ([row], 1)
+        self.manager.overview_for_web.return_value = (
+            {"pending": 0, "running": 0, "done": 0, "failed": 1, "attention": 1},
+            {"unconfirmed_failed": 1, "overdue_pending": 0, "stale_running": 0, "oldest_overdue_minutes": 0},
+        )
+        request = SimpleNamespace(
+            state=SimpleNamespace(web_user=SimpleNamespace(is_active=True), tenant_id=31),
+            query_params={},
+        )
         await self.source.jobs_list(request)
         rendered = self.deps.render.call_args.kwargs
         self.assertEqual(rendered["unconfirmed_jobs"], {7})
         self.assertEqual(rendered["signals"]["unconfirmed_failed"], 1)
-        self.assertIn({"tenant_id": 31}, self.query.filters)
+        # The page is workspace-scoped through the manager, not through a bare
+        # queryset filter.
+        self.assertEqual(self.manager.page_for_web.await_args.args[0], 31)
 
     def test_existing_template_hides_retry_for_unconfirmed_records(self):
         template = (ROOT / "app/web/templates/web/jobs.html").read_text()
         self.assertIn("job.id in unconfirmed_jobs", template)
         self.assertIn("результат не подтверждён", template)
-        self.assertIn("job.id not in unconfirmed_jobs and job.status in retryable", template)
+        # Retry is offered only for the rows the server marked replayable; an
+        # unconfirmed result is not replayable (`can_replay` blocks it), so the
+        # row keeps its evidence and loses the button.
+        self.assertIn("job.id in retryable", template)
 
 
 class Field:
@@ -209,7 +225,14 @@ def load_prune(query, fields, sqlalchemy):
 
 
 class PruneTests(unittest.IsolatedAsyncioTestCase):
-    async def test_actual_prune_retains_new_legacy_and_other_unconfirmed_evidence(self):
+    async def test_actual_prune_leaves_job_history_to_the_lifecycle_policy(self):
+        """The legacy prune manages raw and analytics data, never Job rows.
+
+        Job history is a built-in retention policy
+        (`cleanup_terminal_job_history`, exercised against a database in
+        `test_jobs_lifecycle_replay_db.py`), so a legacy task cannot drop a run
+        — and in particular cannot drop the evidence of an unconfirmed result.
+        """
         old = datetime.now(timezone.utc) - timedelta(days=90)
         errors = [
             POLICY.OPERATOR_CANCELLED_ERROR,
@@ -250,8 +273,8 @@ class PruneTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(not_=sql_not, or_=sql_or),
         )
         result = await prune({"days": 7})
-        self.assertEqual(query.deleted, [4, 5, 6, 7])
-        self.assertEqual(result["deleted"], 4)
+        self.assertEqual(query.deleted, [])
+        self.assertEqual(result["deleted"], 0)
         self.assertEqual([vars(row) for row in rows], before)
 
 

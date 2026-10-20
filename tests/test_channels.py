@@ -160,13 +160,17 @@ class TestTelegramChannel:
         assert first.user_id == "777"
         assert first.text == "hello"
         assert first.is_channel_post is False
-        assert channel._offset == 101  # update_id + 1
+        # The offset moves only when the consumer asks for the next update:
+        # resuming means the ingest of this one is durable. A crash in between
+        # leaves it unacked, so it is delivered again.
+        assert channel._offset == 0
 
         second = await anext(agen)  # text-less update 101 is skipped
         assert second.text == "world"
         assert second.user_id == "888"
-        assert channel._offset == 103
+        assert channel._offset == 102  # 101 was skipped, 102 is not acked yet
         await agen.aclose()
+        assert channel._offset == 102
 
 
 class TestMaxChannel:

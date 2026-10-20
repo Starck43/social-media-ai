@@ -236,10 +236,15 @@ class MainRegistrationTests(unittest.TestCase):
             "app.api.v1": module_with(entry=SimpleNamespace(router=FakeRouter())),
             "app.core.api_scope": module_with(ApiScopeMiddleware=object),
             "app.core.config": module_with(settings=SimpleNamespace(
-                DEBUG=False, SECRET_KEY="fake-unit-key", BACKEND_CORS_ORIGINS=[], ADMIN_ENABLED=False)),
+                DEBUG=False, ENVIRONMENT="production", SECRET_KEY="fake-unit-key",
+                BACKEND_CORS_ORIGINS=[], ADMIN_ENABLED=False)),
             "app.core.database": module_with(async_engine=object(), init_db=AsyncMock()),
             "app.core.health": health,
-            "app.core.tenant_context": module_with(PlatformScopeMiddleware=object),
+            "app.core.tenant_context": module_with(
+                PlatformScopeMiddleware=object,
+                # `create_application` opens the platform scope around startup.
+                tenant_scope=lambda **kwargs: __import__("contextlib").nullcontext(),
+            ),
             "app.web": module_with(web_router=FakeRouter()),
             "app.web.middleware": module_with(TenantUIMiddleware=object),
         }

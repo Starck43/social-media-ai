@@ -33,14 +33,16 @@ def _client(router, prefix: str) -> TestClient:
 def member(monkeypatch):
     """A caller whose workspace role decides the analytics read right."""
     state = SimpleNamespace(allowed=False, checked=[])
-    user = SimpleNamespace(id=5, has_perm_for=lambda model, action: False)
+    user = SimpleNamespace(id=5, is_active=True, has_perm_for=lambda model, action: False)
     monkeypatch.setattr(deps, "_load_with_rights", AsyncMock(return_value=user))
 
     def decision(_user, model_name, action):
         state.checked.append((model_name, action))
         return state.allowed
 
-    monkeypatch.setattr(deps, "member_decision", decision)
+    # The dependency asks the shared policy (`has_permission`), not a
+    # workspace-role helper: API, console and web answer with one predicate.
+    monkeypatch.setattr(deps, "has_permission", decision)
     return state
 
 

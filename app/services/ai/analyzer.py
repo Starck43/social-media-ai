@@ -282,7 +282,9 @@ class AIAnalyzer:
             agent_scenario,
             trigger_config=trigger_config,
             task_payload=task_payload,
-            output_schema=output_contract.schema,
+            # A run without a scenario has no compiled contract: the built-in
+            # defaults are the effective schema, not an attribute of `None`.
+            output_schema=output_contract.schema if output_contract is not None else None,
         )
         self.current_fingerprint = context_fingerprint
         # Resolve the exact-context receipt before any provider call. A legacy

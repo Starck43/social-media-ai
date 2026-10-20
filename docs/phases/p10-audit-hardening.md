@@ -103,9 +103,10 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   app/admin/setup.py, app/web/deps.py, app/core/logger.py, app/core/config.py,
   app/main.py (template path only), docs/CONFIGURATION.md and
   docs/validation/wheel-runtime-completeness.md;
-  owner: remote Notion agent (fix/wheel-runtime-completeness); status: READY.
-  Draft [PR #226](https://github.com/Starck43/social-media-ai/pull/226), not DONE;
-  owner acceptance/merge is not inferred. Initial claim before implementation:
+  owner: remote Notion agent (fix/wheel-runtime-completeness); status: DONE.
+  [PR #226](https://github.com/Starck43/social-media-ai/pull/226) merged at
+  `c90ac9192103d59d4fcd54f14d050110537af72b` into dev after owner
+  acceptance. Initial claim before implementation:
   `6bbc97f841beba30756b99ccebc288339980666c`, from dev
   `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
   Historical packaging SHA `fa0c7e9701f13bdd68b29047b187431538c92e2d` passed
@@ -141,11 +142,16 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   diff --check and lifecycle AST checks pass. Commands, hashes, versions,
   metadata-only platform.architecture shim, harness failures and limits:
   [current validation](https://github.com/Starck43/social-media-ai/blob/50c319c91cfe1e77f8dc244c29253e4f1a1df3c1/docs/validation/wheel-runtime-completeness.md).
-  READY is the completed remote slice, not real-environment acceptance.
-  Owner/local agent: repeat both expanded wheel-only smokes and pip checks on
-  macOS/Python 3.12 at the new exact SHA; review absolute LOG_DIR/mount policy.
-  No application startup, full regression, real DB, migration/reset, provider,
-  deploy or merge was run/authorized. Keep Draft until owner review; not DONE.
+  Owner handoff reports the target macOS check completed against the exact
+  implementation SHA `60638e5b40a205c233941367c3edf41ea66758f8`; this is
+  attributed owner evidence, not a local rerun or a reconstructed transcript.
+  Independent dependency/resource/logging review found no blocking defect, and
+  PR #226 is merged at `c90ac9192103d59d4fcd54f14d050110537af72b`.
+  Full attribution, review reasoning and acceptance limits:
+  [owner review](../validation/p10-t10-owner-review-2026-10-20.md).
+  DONE covers wheel dependency closure and installed resource lookup only. No
+  application startup, full regression, real DB, migration/reset, provider or
+  deployment was run; those behaviors remain outside this task's acceptance.
 
 - [ ] P10-T13 — repair post-migration LLM CLI contracts; owner: remote Notion
   agent; status: BLOCKED. Accept: provider listing without removed default

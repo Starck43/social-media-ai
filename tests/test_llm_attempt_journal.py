@@ -6,12 +6,13 @@ loads isolated; persistence is exercised through injected doubles, not the
 real manager.
 """
 
+import sys
 import unittest
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from source_import_isolation import load_isolated_source
 
@@ -153,6 +154,15 @@ class BuilderTests(unittest.TestCase):
         self.assertIsNone(record["agent_task_id"])
         records = build(task_payload="not-a-payload")
         self.assertIsNone(only(records, "text_analysis")["job_id"])
+
+    def test_dispatch_row_identity_is_preserved_and_malformed_id_is_ignored(self):
+        records = build({"text_analysis": envelope()})
+        self.assertIsNone(only(records, "text_analysis")["model_row_id"])
+        with_id = envelope()
+        with_id["request"]["llm_model_id"] = 17
+        self.assertEqual(only(build({"text_analysis": with_id}), "text_analysis")["model_row_id"], 17)
+        with_id["request"]["llm_model_id"] = True
+        self.assertIsNone(only(build({"text_analysis": with_id}), "text_analysis")["model_row_id"])
 
     def test_key_is_content_derived_and_stable(self):
         first = only(build(), "text_analysis")
@@ -407,7 +417,8 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
         resolver.assert_not_awaited()
 
     async def test_tariffs_resolve_once_per_unique_model(self):
-        resolver = AsyncMock(return_value={"a": {"id": 1, "input_cost_per_1k": 0.001, "output_cost_per_1k": 0.002}})
+        identity = (None, "prov", "a")
+        resolver = AsyncMock(return_value={identity: {"id": 1, "input_cost_per_1k": 0.001, "output_cost_per_1k": 0.002}})
         await journal.record_analysis_attempts(
             {"text_analysis": envelope(model="a"), "image_analysis": envelope(model="a")},
             None,
@@ -416,7 +427,29 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
             journal=self.FakeJournal(),
             tariff_resolver=resolver,
         )
-        resolver.assert_awaited_once_with({"a"})
+        resolver.assert_awaited_once_with({identity})
+
+    async def test_analyzer_attempts_keep_provider_and_row_identity_separate(self):
+        paid = envelope(model="shared", provider="paid")
+        paid["request"]["llm_model_id"] = 21
+        free = envelope(model="shared", provider="free")
+        free["request"]["llm_model_id"] = 22
+        paid_key, free_key = (21, "paid", "shared"), (22, "free", "shared")
+        resolver = AsyncMock(return_value={
+            paid_key: {"id": 21, "input_cost_per_1k": Decimal("0.5"), "output_cost_per_1k": Decimal("1")},
+            free_key: {"id": 22, "input_cost_per_1k": Decimal("0"), "output_cost_per_1k": Decimal("0")},
+        })
+        journal_sink = self.FakeJournal()
+        await journal.record_analysis_attempts(
+            {"paid_stage": paid, "free_stage": free}, None,
+            source=SimpleNamespace(id=3, tenant_id=7), journal=journal_sink, tariff_resolver=resolver,
+        )
+        resolver.assert_awaited_once_with({paid_key, free_key})
+        rows = {row["provider_name"]: row for row in journal_sink.records}
+        self.assertEqual(rows["paid"]["llm_model_row_id"], 21)
+        self.assertEqual(rows["free"]["llm_model_row_id"], 22)
+        self.assertEqual(rows["paid"]["cost_certainty"], journal.CERTAINTY_PRICED)
+        self.assertEqual(rows["free"]["cost_usd"], Decimal("0E-9"))
 
     def _resolver(self):
         tariffs = {
@@ -425,10 +458,94 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
             "c": {"id": 3, "input_cost_per_1k": 0.001, "output_cost_per_1k": 0.002},
         }
 
-        async def resolve(model_ids):
-            return {model_id: tariffs.get(model_id) for model_id in model_ids}
+        async def resolve(identities):
+            return {identity: tariffs.get(identity[2]) for identity in identities}
 
         return resolve
+
+
+class TariffIdentityTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def models_module(query):
+        module = ModuleType("app.models")
+        module.LLMModel = SimpleNamespace(objects=query)
+        return module
+
+    async def test_exact_row_binding_and_mismatch_fail_closed(self):
+        paid = SimpleNamespace(
+            id=21, model_id="shared", is_active=True, provider=SimpleNamespace(name="paid"),
+            input_cost_per_1k=Decimal("0.5"), output_cost_per_1k=Decimal("1"),
+        )
+        free = SimpleNamespace(
+            id=22, model_id="shared", is_active=True, provider=SimpleNamespace(name="free"),
+            input_cost_per_1k=Decimal("0"), output_cost_per_1k=Decimal("0"),
+        )
+
+        class Query:
+            def __init__(self, values, filters):
+                self.values, self.filters = values, filters
+
+            def filter(self, **filters):
+                return Query(self.values, filters)
+
+            def prefetch_related(self, *_):
+                return self
+
+            async def first(self):
+                return next((v for v in self.values if all(getattr(v, k, None) == x for k, x in self.filters.items())), None)
+
+            def __await__(self):
+                async def values():
+                    return [v for v in self.values if all(getattr(v, k, None) == x for k, x in self.filters.items())]
+                return values().__await__()
+
+        with patch.dict(sys.modules, {"app.models": self.models_module(Query([paid, free], {}))}):
+            tariffs = await journal.resolve_tariffs({(21, "paid", "shared"), (22, "free", "shared")})
+            self.assertEqual(tariffs[(21, "paid", "shared")]["id"], 21)
+            self.assertEqual(tariffs[(22, "free", "shared")]["id"], 22)
+            mismatch = await journal.resolve_tariffs({(21, "free", "shared")})
+            self.assertIsNone(mismatch[(21, "free", "shared")])
+
+    async def test_legacy_identity_requires_one_provider_model_match(self):
+        paid = SimpleNamespace(
+            id=21, model_id="shared", is_active=True, provider=SimpleNamespace(name="paid"),
+            input_cost_per_1k=Decimal("0.5"), output_cost_per_1k=Decimal("1"),
+        )
+        free = SimpleNamespace(
+            id=22, model_id="shared", is_active=True, provider=SimpleNamespace(name="free"),
+            input_cost_per_1k=Decimal("0"), output_cost_per_1k=Decimal("0"),
+        )
+
+        class Query:
+            def __init__(self, values, filters):
+                self.values, self.filters = values, filters
+
+            def filter(self, **filters):
+                return Query(self.values, filters)
+
+            def prefetch_related(self, *_):
+                return self
+
+            async def first(self):
+                return None
+
+            def __await__(self):
+                async def values():
+                    return [v for v in self.values if all(getattr(v, k, None) == x for k, x in self.filters.items())]
+                return values().__await__()
+
+        with patch.dict(sys.modules, {"app.models": self.models_module(Query([paid, free], {}))}):
+            unique = await journal.resolve_tariffs({(None, "paid", "shared")})
+            self.assertEqual(unique[(None, "paid", "shared")]["id"], 21)
+            missing = await journal.resolve_tariffs({(None, None, "shared")})
+            self.assertIsNone(missing[(None, None, "shared")])
+        duplicate_paid = SimpleNamespace(
+            id=23, model_id="shared", is_active=True, provider=SimpleNamespace(name="paid"),
+            input_cost_per_1k=Decimal("0.8"), output_cost_per_1k=Decimal("1.2"),
+        )
+        with patch.dict(sys.modules, {"app.models": self.models_module(Query([paid, duplicate_paid], {}))}):
+            ambiguous = await journal.resolve_tariffs({(None, "paid", "shared")})
+            self.assertIsNone(ambiguous[(None, "paid", "shared")])
 
 
 if __name__ == "__main__":

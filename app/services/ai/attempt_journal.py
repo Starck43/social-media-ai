@@ -169,6 +169,12 @@ def _request_field(envelope: Any, field: str) -> Optional[str]:
     return value if type(value) is str and value else None
 
 
+def _request_row_id(envelope: Any) -> Optional[int]:
+    request = envelope.get("request") if isinstance(envelope, dict) else None
+    value = request.get("llm_model_id") if isinstance(request, dict) else None
+    return value if type(value) is int and value > 0 else None
+
+
 def _response_error(envelope: Any) -> bool:
     if not isinstance(envelope, dict):
         return False
@@ -305,6 +311,7 @@ def build_attempt_records(
                 "agent_task_id": agent_task_id,
                 "model_id": model_id,
                 "provider_name": _request_field(envelope, "provider"),
+                "model_row_id": _request_row_id(envelope),
                 "prompt_tokens": prompt,
                 "completion_tokens": completion,
                 "outcome": outcome,
@@ -465,20 +472,57 @@ def price_attempt(record: dict[str, Any], tariff: Optional[dict[str, Any]]) -> d
     return priced
 
 
-async def resolve_tariffs(model_ids: set[str]) -> dict[str, Optional[dict[str, Any]]]:
-    """Snapshot `llm_models` tariffs once per unique model id (None when unknown)."""
+def _tariff_identity(record: dict[str, Any]) -> tuple[Any, str | None, str | None]:
+    row_id = record.get("model_row_id")
+    if type(row_id) is not int or row_id <= 0:
+        row_id = None
+    provider = record.get("provider_name")
+    model = record.get("model_id")
+    return row_id, provider.lower() if isinstance(provider, str) else None, model
+
+
+def _resolved_tariff(record: dict[str, Any], tariffs: dict[Any, Any]) -> Any:
+    return tariffs.get(_tariff_identity(record))
+
+
+async def resolve_tariffs(identities: set[tuple[Any, str | None, str | None]]) -> dict[
+    tuple[Any, str | None, str | None], Optional[dict[str, Any]]
+]:
+    """Resolve tariffs by dispatch row ID, or unique provider/model identity."""
     from app.models import LLMModel
 
-    tariffs: dict[str, Optional[dict[str, Any]]] = {}
-    for model_id in sorted(model_ids):
+    tariffs: dict[tuple[Any, str | None, str | None], Optional[dict[str, Any]]] = {}
+    for identity in sorted(identities, key=repr):
+        row_id, provider_name, model_id = identity
         model = None
         try:
-            model = await LLMModel.objects.filter(model_id=model_id, is_active=True).first()
+            if row_id is not None:
+                candidate = await LLMModel.objects.filter(id=row_id, is_active=True).prefetch_related("provider").first()
+                candidate_provider = getattr(getattr(candidate, "provider", None), "name", None)
+                if (
+                    candidate is not None
+                    and candidate.model_id == model_id
+                    and isinstance(candidate_provider, str)
+                    and candidate_provider.lower() == provider_name
+                ):
+                    model = candidate
+            elif model_id is not None and provider_name is not None:
+                candidates = await LLMModel.objects.filter(model_id=model_id, is_active=True).prefetch_related(
+                    "provider"
+                )
+                matched = [
+                    candidate
+                    for candidate in candidates
+                    if isinstance(getattr(getattr(candidate, "provider", None), "name", None), str)
+                    and candidate.provider.name.lower() == provider_name
+                ]
+                if len(matched) == 1:
+                    model = matched[0]
         except Exception:
             # Pricing must not break accounting: without a row the attempt is
             # recorded with an unknown tariff, not dropped.
             model = None
-        tariffs[model_id] = (
+        tariffs[identity] = (
             {
                 "id": model.id,
                 "input_cost_per_1k": model.input_cost_per_1k,
@@ -500,7 +544,12 @@ async def record_analysis_attempts(
     analysis_date: Optional[date] = None,
     task_payload: Any = None,
     journal: Any = None,
-    tariff_resolver: Optional[Callable[[set[str]], Coroutine[Any, Any, dict[str, Optional[dict[str, Any]]]]]] = None,
+    tariff_resolver: Optional[
+        Callable[
+            [set[tuple[Any, str | None, str | None]]],
+            Coroutine[Any, Any, dict[tuple[Any, str | None, str | None], Optional[dict[str, Any]]]],
+        ]
+    ] = None,
 ) -> int:
     """Record one journal row per provider attempt of an analyzer execution.
 
@@ -520,7 +569,8 @@ async def record_analysis_attempts(
         return 0
 
     resolver = tariff_resolver or resolve_tariffs
-    tariffs = await resolver({record["model_id"] for record in records if record["model_id"]})
+    identities = {_tariff_identity(record) for record in records}
+    tariffs = await resolver(identities)
 
     if journal is None:
         from app.models.managers.llm_attempt_manager import LLMAttemptManager
@@ -528,7 +578,7 @@ async def record_analysis_attempts(
         journal = LLMAttemptManager()
     created = 0
     for record in records:
-        if await journal.record_attempt(price_attempt(record, tariffs.get(record["model_id"]))):
+        if await journal.record_attempt(price_attempt(record, _resolved_tariff(record, tariffs))):
             created += 1
     return created
 
@@ -563,6 +613,7 @@ def chat_attempt_envelope(
     failed: bool = False,
     usage_fields: tuple[str, str] = ("prompt_tokens", "completion_tokens"),
     api_format: str | None = None,
+    model_row_id: int | None = None,
 ) -> dict[str, Any]:
     """Analyzer-shaped envelope for one chat HTTP attempt.
 
@@ -571,7 +622,12 @@ def chat_attempt_envelope(
     A failed try keeps no usage, so it stays a failed transport with undefined
     cost rather than a free call.
     """
-    request = {"model": model_id, "provider": provider_name, "dispatch_id": dispatch_id}
+    request = {
+        "model": model_id,
+        "provider": provider_name,
+        "dispatch_id": dispatch_id,
+        "llm_model_id": model_row_id,
+    }
     from app.services.ai.cache_pricing import normalize_cache_usage
 
     if failed:
@@ -604,7 +660,12 @@ async def record_scoped_attempts(
     tenant_id: Optional[int],
     task_payload: Any = None,
     journal: Any = None,
-    tariff_resolver: Optional[Callable[[set[str]], Coroutine[Any, Any, dict[str, Optional[dict[str, Any]]]]]] = None,
+    tariff_resolver: Optional[
+        Callable[
+            [set[tuple[Any, str | None, str | None]]],
+            Coroutine[Any, Any, dict[tuple[Any, str | None, str | None], Optional[dict[str, Any]]]],
+        ]
+    ] = None,
 ) -> int:
     """Record non-analyzer attempts (stage -> envelope) for an explicit payer.
 
@@ -627,7 +688,8 @@ async def record_scoped_attempts(
         return 0
 
     resolver = tariff_resolver or resolve_tariffs
-    tariffs = await resolver({record["model_id"] for record in records if record["model_id"]})
+    identities = {_tariff_identity(record) for record in records}
+    tariffs = await resolver(identities)
 
     if journal is None:
         from app.models.managers.llm_attempt_manager import LLMAttemptManager
@@ -635,7 +697,7 @@ async def record_scoped_attempts(
         journal = LLMAttemptManager()
     created = 0
     for record in records:
-        priced = price_attempt(record, tariffs.get(record["model_id"]))
+        priced = price_attempt(record, _resolved_tariff(record, tariffs))
         priced["tenant_id"] = tenant_id
         if await journal.record_attempt(priced):
             created += 1

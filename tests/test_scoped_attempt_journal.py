@@ -50,8 +50,11 @@ class Journal:
 
 
 def chat_envelope(raw=None, failed=False, **kwargs):
+    model_row_id = kwargs.pop("model_row_id", None)
+    provider_name = kwargs.pop("provider_name", "prov")
     value = journal.chat_attempt_envelope(
-        model_id="m", provider_name="prov", dispatch_id=uuid4().hex, raw=raw, failed=failed, **kwargs
+        model_id="m", provider_name=provider_name, dispatch_id=uuid4().hex, raw=raw, failed=failed,
+        model_row_id=model_row_id, **kwargs
     )
     # These fixtures pin legacy v1 behavior; production clients pass api_format
     # and persist v2 normalized cache evidence.
@@ -66,7 +69,7 @@ async def record(envelopes, tariff=PRICED, tenant_id=7, purpose="agent_chat"):
         purpose=purpose,
         tenant_id=tenant_id,
         journal=sink,
-        tariff_resolver=AsyncMock(side_effect=lambda ids: {model_id: tariff for model_id in ids}),
+        tariff_resolver=AsyncMock(side_effect=lambda ids: {identity: tariff for identity in ids}),
     )
     return created, sink.rows
 
@@ -87,6 +90,26 @@ class ScopedAttemptJournalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((row["llm_model_row_id"], row["input_cost_per_1k"]), (5, Decimal("0.5")))
         self.assertIsNone(row["source_id"])
         self.assertNotIn(PRIVATE, repr(row))
+
+    async def test_same_model_id_uses_dispatch_row_identity(self):
+        sink = Journal()
+        identity = (22, "free", "m")
+        paid_identity = (21, "paid", "m")
+        resolver = AsyncMock(return_value={
+            identity: {"id": 22, "input_cost_per_1k": Decimal("0"), "output_cost_per_1k": Decimal("0")},
+            paid_identity: {"id": 21, "input_cost_per_1k": Decimal("0.5"), "output_cost_per_1k": Decimal("1")},
+        })
+        await journal.record_scoped_attempts(
+            {journal.STAGE_CHAT: chat_envelope(
+                {"usage": {"prompt_tokens": 1000, "completion_tokens": 100}},
+                provider_name="free",
+                model_row_id=22,
+            )},
+            purpose="agent_chat", tenant_id=7, journal=sink, tariff_resolver=resolver,
+        )
+        resolver.assert_awaited_once_with({identity})
+        self.assertEqual(sink.rows[0]["llm_model_row_id"], 22)
+        self.assertEqual(sink.rows[0]["cost_usd"], Decimal("0E-9"))
 
     async def test_anthropic_usage_fields(self):
         raw = {"usage": {"input_tokens": 10, "output_tokens": 4}}

@@ -377,6 +377,7 @@ class LLMClient(ABC):
         """
         return {
             "model": self.model_name,
+            "llm_model_id": getattr(self.model, "id", None),
             "prompt": prompt,
             "provider": self.provider.name.lower(),
             "dispatch_id": uuid4().hex,
@@ -1038,7 +1039,12 @@ class CustomClient(LLMClient):
         payload.update(kwargs)
 
         timeout = min(self.timeout, 60.0)
-        request_meta = {"model": self.model_name, "provider": self.provider.name.lower(), "endpoint": endpoint}
+        request_meta = {
+            "model": self.model_name,
+            "llm_model_id": getattr(self.model, "id", None),
+            "provider": self.provider.name.lower(),
+            "endpoint": endpoint,
+        }
         receipt, dispatch_id = await _personal_admission(
             self,
             payload,
@@ -1187,6 +1193,7 @@ async def journal_chat_attempt(
             failed=response is None,
             **({"usage_fields": fields} if fields else {}),
             api_format=getattr(client.provider, "api_format", None),
+            model_row_id=getattr(client.model, "id", None),
         )
         await journal_scoped_attempts({STAGE_CHAT: envelope}, purpose=purpose)
     except Exception:

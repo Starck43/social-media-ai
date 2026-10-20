@@ -48,6 +48,15 @@ from scripts.setup_test_db import resolve_and_redirect  # noqa: E402
 
 WORKING_DATABASE_URL, TEST_DATABASE_URL, TEST_SCHEMA = resolve_and_redirect()
 
+# Several unittest-style cases run each test in an event loop of their own,
+# and a pooled asyncpg connection belongs to the loop that opened it. Without
+# reuse (`DB_POOL=null`) no connection is ever carried into another loop, so
+# the per-test loops stop colliding with the shared engine. Set before the
+# first `app` import: the engine is built at import time.
+import os  # noqa: E402
+
+os.environ["DB_POOL"] = "null"
+
 import pytest  # noqa: E402
 
 import app.models.managers.base_manager as base_manager_module  # noqa: E402

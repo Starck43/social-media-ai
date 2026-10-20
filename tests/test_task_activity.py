@@ -179,45 +179,16 @@ async def test_create_collect_without_start_date_is_refused(client: AsyncClient)
             await _drop(user, tenant_id)
 
 
-async def test_create_collect_stores_dates_and_force_flags(client: AsyncClient) -> None:
-    """The form's date window lands in the payload as `cli_dates` +
-    `force_refresh`, the same keys the CLI and the collectors read."""
+async def test_create_analyze_stores_dates_and_the_default_repeat_policy(client: AsyncClient) -> None:
+    """The form's date window lands in the payload as `cli_dates`, and the web
+    surface keeps the default repeat policy.
+
+    The web form has no "force" control any more: a forced re-read is a CLI
+    diagnostic, so a task created here never stores `force_refresh: true`.
+    """
     async with await _client() as c:
         user, tenant_id = await _register(c, "StoreDate")
-        name = _name("task")
-        task_id = None
-        try:
-            csrf = await _csrf(c, "/app/tasks")
-            resp = await c.post(
-                "/app/tasks",
-                data={
-                    "name": name,
-                    "job_type": "collect",
-                    "cron_custom": "@once",
-                    "start_date": "2026-09-01",
-                    "end_date": "2026-09-30",
-                    "force_refresh": "on",
-                    "_csrf": csrf,
-                },
-            )
-            assert resp.status_code == 200
-            with tenant_scope(bypass=True):
-                task = await AgentTask.objects.get(name=name)
-                task_id = task.id
-                assert task.payload["cli_dates"] == {"start_date": "2026-09-01", "end_date": "2026-09-30"}
-                assert task.payload["force_refresh"] is True
-        finally:
-            if task_id is not None:
-                with tenant_scope(bypass=True):
-                    await AgentTask.objects.delete(id=task_id)
-            await _drop(user, tenant_id)
-
-
-async def test_create_analyze_stores_trigger_and_action(client: AsyncClient) -> None:
-    """An analyze task keeps its trigger/action columns: trigger_config is
-    built from the selected type's own fields, and the guards are stored."""
-    async with await _client() as c:
-        user, tenant_id = await _register(c, "StoreTrig")
+        scenario = await _make_scenario(tenant_id, is_active=True)
         name = _name("task")
         task_id = None
         try:
@@ -228,6 +199,45 @@ async def test_create_analyze_stores_trigger_and_action(client: AsyncClient) -> 
                     "name": name,
                     "job_type": "analyze",
                     "cron_custom": "@once",
+                    "scenario_id": str(scenario.id),
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-30",
+                    "_csrf": csrf,
+                },
+            )
+            assert resp.status_code == 200
+            with tenant_scope(bypass=True):
+                task = await AgentTask.objects.get(name=name)
+                task_id = task.id
+                assert task.payload["cli_dates"] == {"start_date": "2026-09-01", "end_date": "2026-09-30"}
+                assert task.payload["force_refresh"] is False
+                assert task.payload["force_reanalyze"] is False
+        finally:
+            if task_id is not None:
+                with tenant_scope(bypass=True):
+                    await AgentTask.objects.delete(id=task_id)
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario.id)
+            await _drop(user, tenant_id)
+
+
+async def test_create_analyze_stores_trigger_and_action(client: AsyncClient) -> None:
+    """An analyze task keeps its trigger/action columns: trigger_config is
+    built from the selected type's own fields, and the guards are stored."""
+    async with await _client() as c:
+        user, tenant_id = await _register(c, "StoreTrig")
+        scenario = await _make_scenario(tenant_id, is_active=True)
+        name = _name("task")
+        task_id = None
+        try:
+            csrf = await _csrf(c, "/app/tasks")
+            resp = await c.post(
+                "/app/tasks",
+                data={
+                    "name": name,
+                    "job_type": "analyze",
+                    "cron_custom": "@once",
+                    "scenario_id": str(scenario.id),
                     "start_date": "2026-09-01",
                     "trigger_type": "KEYWORD_MATCH",
                     "trigger_keywords": "жалоба, срочно",
@@ -254,6 +264,8 @@ async def test_create_analyze_stores_trigger_and_action(client: AsyncClient) -> 
             if task_id is not None:
                 with tenant_scope(bypass=True):
                     await AgentTask.objects.delete(id=task_id)
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario.id)
             await _drop(user, tenant_id)
 
 
@@ -262,6 +274,7 @@ async def test_edit_preserves_stored_dates_and_trigger(client: AsyncClient) -> N
     keeps the trigger/action columns — a web edit must not drop them."""
     async with await _client() as c:
         user, tenant_id = await _register(c, "EditKeep")
+        scenario = await _make_scenario(tenant_id, is_active=True)
         task = None
         try:
             with tenant_scope(bypass=True):
@@ -277,6 +290,7 @@ async def test_edit_preserves_stored_dates_and_trigger(client: AsyncClient) -> N
                     trigger_type="KEYWORD_MATCH",
                     trigger_config={"keywords": ["old"]},
                     action_type="COMMENT",
+                    agent_scenario_id=scenario.id,
                     tenant_id=tenant_id,
                 )
             csrf = await _csrf(c, "/app/tasks")
@@ -286,6 +300,7 @@ async def test_edit_preserves_stored_dates_and_trigger(client: AsyncClient) -> N
                     "name": task.name,
                     "job_type": "analyze",
                     "cron_expr": "0 * * * *",
+                    "scenario_id": str(scenario.id),
                     "start_date": "2026-09-01",
                     "end_date": "2026-09-15",
                     "trigger_type": "USER_MENTION",
@@ -301,10 +316,14 @@ async def test_edit_preserves_stored_dates_and_trigger(client: AsyncClient) -> N
                 assert updated.payload["cli_dates"] == {"start_date": "2026-09-01", "end_date": "2026-09-15"}
                 assert updated.trigger_type is not None and updated.trigger_type.name == "USER_MENTION"
                 assert updated.trigger_config["usernames"] == ["user_a", "user_b"]
+                # The bound scenario survives the edit.
+                assert updated.agent_scenario_id == scenario.id
         finally:
             if task is not None:
                 with tenant_scope(bypass=True):
                     await AgentTask.objects.delete(id=task.id)
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario.id)
             await _drop(user, tenant_id)
 
 
@@ -444,10 +463,11 @@ async def test_create_reflect_task_starts_active_without_sources(client: AsyncCl
 
 
 @pytest.mark.tenancy
-async def test_create_collect_task_without_sources_starts_inactive(client: AsyncClient) -> None:
-    """A source-based collect task with no active source starts inactive with a warning."""
+async def test_create_analyze_task_without_sources_starts_inactive(client: AsyncClient) -> None:
+    """A source-based analysis task with no active source starts inactive with a warning."""
     async with await _client() as c:
         user, tenant_id = await _register(c, "CreateCollectNoSrc")
+        scenario = await _make_scenario(tenant_id, is_active=True)
         name = _name("task")
         task_id = None
         try:
@@ -456,8 +476,9 @@ async def test_create_collect_task_without_sources_starts_inactive(client: Async
                 "/app/tasks",
                 data={
                     "name": name,
-                    "job_type": "collect",
+                    "job_type": "analyze",
                     "cron_custom": "@once",
+                    "scenario_id": str(scenario.id),
                     "start_date": "2026-09-01",
                     "_csrf": csrf,
                 },
@@ -472,10 +493,14 @@ async def test_create_collect_task_without_sources_starts_inactive(client: Async
             if task_id is not None:
                 with tenant_scope(bypass=True):
                     await AgentTask.objects.delete(id=task_id)
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario.id)
             await _drop(user, tenant_id)
 
 
 async def test_create_with_inactive_scenario_starts_inactive(client: AsyncClient) -> None:
+    """A deactivated scenario may be chosen on purpose: the task is created and
+    starts inactive with the reason, exactly like the edit path."""
     async with await _client() as c:
         user, tenant_id = await _register(c, "CreateInactive")
         scenario = await _make_scenario(tenant_id, is_active=False)
@@ -487,7 +512,7 @@ async def test_create_with_inactive_scenario_starts_inactive(client: AsyncClient
                 "/app/tasks",
                 data={
                     "name": name,
-                    "job_type": "collect",
+                    "job_type": "analyze",
                     "cron_custom": "@once",
                     "scenario_id": str(scenario.id),
                     "start_date": "2026-09-01",
@@ -604,9 +629,13 @@ async def test_editor_shows_bound_inactive_scenario(client: AsyncClient) -> None
                 )
             page = await c.get(f"/app/tasks/{task.id}/edit")
             assert page.status_code == 200, page.text[:500]
-            # the bound (inactive) scenario is listed and rendered selected
-            assert f'value="{scenario.id}"' in page.text, "bound scenario missing from the editor dropdown"
-            assert f'value="{scenario.id}" selected' in page.text, "bound scenario must render selected"
+            # The bound (inactive) scenario is listed and rendered as the
+            # current value of the scenario picker.
+            assert 'name="scenario_id"' in page.text
+            assert f'value="{scenario.id}"' in page.text, "bound scenario missing from the editor"
+            assert (
+                f'data-popover-option="{scenario.id}" aria-selected="true"' in page.text
+            ), "bound scenario must render as selected"
         finally:
             if task is not None:
                 with tenant_scope(bypass=True):

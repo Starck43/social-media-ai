@@ -21,9 +21,14 @@ def load_analyzer():
     from test_scenario_output_contract import load_contract
     schema, _ = load_contract()
     ns = SimpleNamespace
+    cost_parser = load_isolated_source(
+        "_reported_attempt_journal_cost_parser", ROOT / "app/services/ai/attempt_journal.py"
+    )
     # Declared dependency of the analyzer's attempt journal helper; isolated
     # harnesses must declare it so no real import chain or DB is reached.
-    attempt_journal = ns(record_analysis_attempts=AsyncMock())
+    attempt_journal = ns(
+        record_analysis_attempts=AsyncMock(), provider_cost_evidence=cost_parser.provider_cost_evidence
+    )
 
     async def filter_by_context_receipts(content, *_args):
         return content, set()

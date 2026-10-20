@@ -12,11 +12,19 @@ from .config import settings
 T = TypeVar("T")
 
 # Создание async engine
+#
+# `DB_POOL=null` disables connection reuse. A pooled asyncpg connection
+# belongs to the event loop that opened it, so a reused one would break in a
+# process that runs parts of its work in another loop (the test suite runs
+# several unittest-style cases in a loop of their own).
+from sqlalchemy.pool import NullPool
+
 async_engine = create_async_engine(
     settings.POSTGRES_URL.replace("postgresql://", "postgresql+asyncpg://"),
     echo=settings.DEBUG,
     pool_pre_ping=True,
     pool_recycle=3600,  # Пересоздавать соединения каждые 60 минут
+    poolclass=NullPool if settings.DB_POOL.strip().lower() == "null" else None,
 )
 
 # Создание синхронного engine

@@ -49,9 +49,10 @@ RETENTION_TABLES = (
     "llm_attempts",
 )
 
-# Explicit expectations per step. Measured deltas are compared against these;
-# nothing is assumed and nothing outside this list is required to appear, but
-# every measured difference is reported in the manifest.
+# Explicit expectations per step. Measured deltas are compared against these:
+# the step must create exactly the listed objects — nothing missing (the
+# migration did not do its job) and nothing extra (the migration did something
+# nobody reviewed).
 EXPECTED_NEW_TABLES = {"0096": set(), "0097": {"llm_budget_baselines"}}
 EXPECTED_NEW_TRIGGERS = {
     "0096": set(),
@@ -207,10 +208,17 @@ def main() -> int:
         os.environ["DB_SCHEMA"] = args.schema
         sys.path.insert(0, str(ROOT))
 
-        from app.core.config import settings  # noqa: E402
+        from app.core.config import Settings  # noqa: E402
 
-        demand(settings.POSTGRES_URL == args.dsn, "effective-dsn-drift")
-        demand(settings.DB_SCHEMA == args.schema, "effective-schema-drift")
+        # A FRESH settings instance, not the module-level one: if
+        # `app.core.config` was imported before this launcher ran, the cached
+        # object still carries the old DSN and the "process environment is the
+        # only source" promise below would be a lie. The dotenv mechanisms are
+        # still suppressed at this point, so the instance reads the
+        # environment alone — in a fresh process and in an embedded one.
+        effective = Settings()
+        demand(effective.POSTGRES_URL == args.dsn, "effective-dsn-drift")
+        demand(effective.DB_SCHEMA == args.schema, "effective-schema-drift")
 
         from sqlalchemy import create_engine  # noqa: E402
 
@@ -293,6 +301,15 @@ def main() -> int:
                 "functions": sorted(EXPECTED_NEW_FUNCTIONS[args.to_rev] - after["functions"]),
             }
             demand(not any(missing.values()), f"expected-object-missing:{missing}")
+            # Anything the step created beyond the reviewed list is drift too:
+            # a migration that adds an object nobody approved must not pass
+            # silently. The manifest still reports every measured difference.
+            unexpected = {
+                "tables": sorted(set(deltas["tables"]) - EXPECTED_NEW_TABLES[args.to_rev]),
+                "triggers": sorted(set(deltas["triggers"]) - EXPECTED_NEW_TRIGGERS[args.to_rev]),
+                "functions": sorted(set(deltas["functions"]) - EXPECTED_NEW_FUNCTIONS[args.to_rev]),
+            }
+            demand(not any(unexpected.values()), f"unexpected-catalog-delta:{unexpected}")
             lost = {k: sorted(set(before[k]) - after[k]) for k in before}
             retention_after = row_counts(conn, args.schema, RETENTION_TABLES)
             demand(

@@ -78,6 +78,15 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"  # Optional: only needed by frozen Celery/sqladmin storage
     DB_SCHEMA: str = "public"
     DB_TEST_SCHEMA: str = "test_schema"
+    # Connection pool for the async engine: `pool` (default) reuses
+    # connections, `null` opens a new one per session.
+    #
+    # A pooled asyncpg connection belongs to the event loop that created it.
+    # The test suite runs several unittest-style cases in their own loop per
+    # test, so a reused connection would cross a loop boundary and fail with
+    # "got Future attached to a different loop". There, `null` is the only
+    # correct setting: no connection is ever carried into another loop.
+    DB_POOL: str = "pool"
 
     # External platform credentials (optional — integrations are enabled based on presence).
     # Application/infrastructure config, one-per-deployment: read from here. Personal

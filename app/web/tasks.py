@@ -754,7 +754,12 @@ async def task_create(
 			},
 		)
 	if job_type == "analyze":
-		scenario_block = await _unified_analysis_scenario_block(tenant_id, scenario_id)
+		# A deactivated scenario may be chosen on purpose (it is on the task's
+		# list and can be reactivated later), so the task is created and starts
+		# inactive with the reason — the same contract the edit path has.
+		scenario_block = await _unified_analysis_scenario_block(
+			tenant_id, scenario_id, allow_inactive_selected=True
+		)
 		if scenario_block is not None:
 			add_flash(request, "error", f"Для анализа соцсетей {scenario_block}")
 			return RedirectResponse(back, status_code=302)

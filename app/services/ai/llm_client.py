@@ -23,6 +23,12 @@ MINUTE = 60
 _COST_SCALE = Decimal("0.000000001")
 
 
+def _reported_provider_cost_usd(data: Any) -> Decimal | None:
+    from app.services.ai.attempt_journal import provider_cost_evidence
+
+    return provider_cost_evidence(data)[1]
+
+
 def _payload_has_media(value: Any) -> bool:
     if isinstance(value, dict):
         if any(key in value for key in ("image_url", "input_image", "media_url", "media_urls")):
@@ -276,7 +282,9 @@ class LLMClient(ABC):
     def create(cls, model: LLMModel) -> "LLMClient":
         return LLMClientFactory.create(model)
 
-    def _usage_block(self, prompt_tokens: int, completion_tokens: int) -> dict[str, Any]:
+    def _usage_block(
+        self, prompt_tokens: int, completion_tokens: int, *, reported_cost_usd: Decimal | None = None
+    ) -> dict[str, Any]:
         """Normalized usage: token counts + priced USD cost.
 
         `cost` is what the daily cap and DigestRun.llm_cost account from; keep
@@ -288,8 +296,18 @@ class LLMClient(ABC):
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": prompt_tokens + completion_tokens,
-            "cost": price_usage_usd(self.model, prompt_tokens, completion_tokens),
+            "cost": (
+                float(reported_cost_usd.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
+                if reported_cost_usd is not None
+                else price_usage_usd(self.model, prompt_tokens, completion_tokens)
+            ),
         }
+
+    def _usage_block_for_response(self, prompt_tokens: int, completion_tokens: int, data: Any) -> dict[str, Any]:
+        """Prefer a resolved provider USD total; otherwise keep the tariff estimate."""
+        return self._usage_block(
+            prompt_tokens, completion_tokens, reported_cost_usd=_reported_provider_cost_usd(data)
+        )
 
     def _analysis_request_meta(self, prompt: str) -> dict[str, Any]:
         """Allocate a fresh local identity once, before an analyze HTTP attempt.
@@ -332,12 +350,26 @@ class LLMClient(ABC):
             "accounting_cost_reported": claimed,
         }
 
-    def _analyze_usage_projection(self, prompt: Optional[int], completion: Optional[int]) -> dict[str, Any]:
+    def _analyze_usage_projection(
+        self, prompt: Optional[int], completion: Optional[int], data: Any = None
+    ) -> dict[str, Any]:
         """Legacy numeric adapter failures cannot discard a paid API envelope."""
         try:
-            return self._usage_block(prompt, completion)
+            return self._usage_block_for_response(prompt, completion, data) if data is not None else self._usage_block(
+                prompt, completion
+            )
         except (ArithmeticError, TypeError, ValueError):
             prompt, completion = prompt or 0, completion or 0
+            if data is not None:
+                reported = _reported_provider_cost_usd(data)
+                return {
+                    "prompt_tokens": prompt,
+                    "completion_tokens": completion,
+                    "total_tokens": prompt + completion,
+                    "cost": float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
+                    if reported is not None
+                    else 0.0,
+                }
             return {
                 "prompt_tokens": prompt,
                 "completion_tokens": completion,
@@ -446,7 +478,7 @@ class OpenAICompatibleClient(LLMClient):
             "accounting_usage": accounting_usage,
             **accounting_cost,
             "usage": self._analyze_usage_projection(
-                accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]
+                accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"], data
             ),
         }
         await _observe_personal_outcome(
@@ -526,7 +558,9 @@ class OpenAICompatibleClient(LLMClient):
             try:
                 response = self._parse_chat(data)
             except Exception:
-                response, parse_error = {"content": "", "tool_calls": [], "usage": self._usage_block(0, 0)}, True
+                response, parse_error = {
+                    "content": "", "tool_calls": [], "usage": self._usage_block_for_response(0, 0, data)
+                }, True
             response["_personal_dispatch_id"] = dispatch_id
             await _observe_personal_outcome(
                 receipt,
@@ -611,7 +645,9 @@ class OpenAICompatibleClient(LLMClient):
                 {"id": tc.get("id") or fn.get("name", ""), "name": fn.get("name", ""), "arguments": parsed}
             )
         usage = data.get("usage") or {}
-        block = self._usage_block(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+        block = self._usage_block_for_response(
+            usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data
+        )
         block["total_tokens"] = usage.get("total_tokens", 0) or block["total_tokens"]
         return {
             "content": msg.get("content"),
@@ -710,7 +746,7 @@ class AnthropicClient(LLMClient):
             "accounting_usage": accounting_usage,
             **accounting_cost,
             "usage": self._analyze_usage_projection(
-                accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]
+                accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"], data
             ),
         }
         await _observe_personal_outcome(
@@ -778,7 +814,9 @@ class AnthropicClient(LLMClient):
             try:
                 response = self._parse_chat(data)
             except Exception:
-                response, parse_error = {"content": "", "tool_calls": [], "usage": self._usage_block(0, 0)}, True
+                response, parse_error = {
+                    "content": "", "tool_calls": [], "usage": self._usage_block_for_response(0, 0, data)
+                }, True
             response["_personal_dispatch_id"] = dispatch_id
             await _observe_personal_outcome(
                 receipt,
@@ -819,7 +857,9 @@ class AnthropicClient(LLMClient):
         return {
             "content": "\n".join(content_parts) or None,
             "tool_calls": tool_calls,
-            "usage": self._usage_block(usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
+            "usage": self._usage_block_for_response(
+                usage.get("input_tokens", 0), usage.get("output_tokens", 0), data
+            ),
             "finish_reason": data.get("stop_reason"),
             "raw": data,
         }
@@ -899,7 +939,7 @@ class CustomClient(LLMClient):
             "parsed": parsed,
             "accounting_usage": accounting_usage,
             **accounting_cost,
-            "usage": self._analyze_usage_projection(0, 0),
+            "usage": self._analyze_usage_projection(0, 0, data),
         }
         await _observe_personal_outcome(
             receipt,
@@ -956,12 +996,14 @@ class CustomClient(LLMClient):
                 response = {
                     "content": content,
                     "tool_calls": [],
-                    "usage": self._usage_block(0, 0),
+                    "usage": self._usage_block_for_response(0, 0, data),
                     "finish_reason": None,
                     "raw": data,
                 }
             except Exception:
-                response, parse_error = {"content": "", "tool_calls": [], "usage": self._usage_block(0, 0)}, True
+                response, parse_error = {
+                    "content": "", "tool_calls": [], "usage": self._usage_block_for_response(0, 0, data)
+                }, True
             response["_personal_dispatch_id"] = dispatch_id
             await _observe_personal_outcome(
                 receipt,
@@ -1103,7 +1145,6 @@ async def chat_with_fallback(
     caller gets None, which means "try again tomorrow", not "the model broke".
     """
     # Accounting label only, never sent to the provider.
-    accounting_purpose = kwargs.pop("accounting_purpose", "chat")    # Accounting label only, never sent to the provider.
     accounting_purpose = kwargs.pop("accounting_purpose", "chat")
     kwargs.setdefault("personal_billing_purpose", accounting_purpose)
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))

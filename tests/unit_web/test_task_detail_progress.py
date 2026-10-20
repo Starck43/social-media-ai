@@ -193,7 +193,7 @@ async def test_enqueue_task_run_busy_retry_remains_a_conflict(monkeypatch):
 def test_task_run_panel_hides_admin_diagnostics_for_regular_operator(monkeypatch):
     request = SimpleNamespace()
     task = SimpleNamespace(name="Scoped task")
-    job = SimpleNamespace(id=44, job_type="analyze", result={})
+    job = SimpleNamespace(id=44, job_type="analyze", status="done", result={})
     monkeypatch.setattr(tasks, "_job_summary", lambda *_args: {"status": "done", "stats": [{"value": 2}]})
     monkeypatch.setattr(tasks, "_source_links", lambda _job: [{"source_id": 8, "name": "Source"}])
     monkeypatch.setattr(tasks, "_raw_coverage", lambda _job: [{"source_id": 8, "percent": 50}])
@@ -210,7 +210,7 @@ def test_task_run_panel_hides_admin_diagnostics_for_regular_operator(monkeypatch
 
 
 def test_task_run_panel_keeps_legacy_status_and_scope_when_task_has_no_job(monkeypatch):
-    request = SimpleNamespace()
+    request = SimpleNamespace(state=SimpleNamespace(web_user=None))
     task = SimpleNamespace(name="Scoped task", last_status="queued", last_run_at=datetime.now(timezone.utc))
     monkeypatch.setattr(tasks, "perms_can", lambda *_args: False)
 
@@ -225,7 +225,7 @@ def test_task_run_panel_keeps_legacy_status_and_scope_when_task_has_no_job(monke
 def test_task_run_panel_includes_allowlisted_diagnostics_only_for_admin(monkeypatch):
     request = SimpleNamespace()
     task = SimpleNamespace(name="Scoped task")
-    job = SimpleNamespace(id=44, job_type="analyze")
+    job = SimpleNamespace(id=44, job_type="analyze", status="failed", result={})
     monkeypatch.setattr(
         tasks, "_job_summary", lambda *_args: {"status": "failed", "error": "secret raw provider exception"}
     )

@@ -118,6 +118,20 @@ class TaskProgressBrowser(unittest.TestCase):
         self.assertEqual(self.page.locator('[data-progress-connection-note]').count(),1)
         self.assertIn('62 / 100',self.page.locator('[data-phase="analysis"] .run-records-count').inner_text())
 
+    def test_failed_poll_after_terminal_snapshot_locks_until_successful_swap(self):
+        self.open('success')
+        self.assertFalse(self.page.locator('[data-task-run] button').is_disabled())
+        self.page.evaluate("document.dispatchEvent(new CustomEvent('htmx:sendError',{detail:{elt:document.querySelector('#task-run-progress')}}))")
+        panel=self.page.locator('#task-run-progress')
+        self.assertEqual(panel.get_attribute('data-task-busy'),'true')
+        self.assertEqual(panel.get_attribute('data-task-status'),'unconfirmed')
+        self.assertTrue(self.page.locator('[data-task-run] button').is_disabled())
+        self.assertEqual(self.page.locator('[data-progress-connection-note]').count(),1)
+        success=(FIXTURES/'success.html').read_text()
+        self.page.evaluate('html=>{const doc=new DOMParser().parseFromString(html,"text/html");document.querySelector("#task-run-progress").replaceWith(doc.querySelector("#task-run-progress"));document.dispatchEvent(new Event("htmx:afterSwap"));}',success)
+        self.assertEqual(panel.get_attribute('data-task-busy'),'false')
+        self.assertFalse(self.page.locator('[data-task-run] button').is_disabled())
+
     def test_dark_identity_palette_and_accessible_text_contrast(self):
         self.open('dark')
         self.assertTrue(self.page.locator('html').evaluate('node=>node.classList.contains("dark")'))

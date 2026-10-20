@@ -12,6 +12,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
+import pytest
+
 import test_job_claim_outcomes_db as fixtures
 
 from app.core import database as database_module
@@ -24,6 +26,12 @@ from app.models import AgentTask
 
 
 class AtomicityDatabaseTests(unittest.IsolatedAsyncioTestCase):
+    # The real tenant guard, not the suite-wide bypass: this class creates two
+    # workspaces and proves that a Job cannot write the summary of a task that
+    # lives in another one. Under the bypass every row — the foreign task, the
+    # job, the claim — lands in the bootstrap workspace, the "foreign" reference
+    # stops being foreign and the proof silently stops testing anything.
+    pytestmark = pytest.mark.tenancy
     # Reuse arrangement helpers, not the other suite's test methods (no duplicate discovery).
     asyncSetUp = fixtures.ClaimDatabaseTests.asyncSetUp
     cleanup_rows = fixtures.ClaimDatabaseTests.cleanup_rows
@@ -122,6 +130,14 @@ class AtomicityDatabaseTests(unittest.IsolatedAsyncioTestCase):
         await self.seed_summary()
         job, claim = await self.acquired(task_id=self.task.id)
 
+        # The dispatch path commits twice before the outcome: the claim renewal
+        # (one row) and then the coupled outcome (job + task). Only the second
+        # one may lose its ACK — that is the "coupled commit" this test is
+        # about. Injecting into the first would fail the renewal and prove
+        # something else entirely.
+        commits = {"count": 0}
+        coupled_commit = 2
+
         class AckLossTransaction:
             def __init__(self, transaction):
                 self.transaction = transaction
@@ -132,7 +148,9 @@ class AtomicityDatabaseTests(unittest.IsolatedAsyncioTestCase):
             async def __aexit__(self, kind, error, traceback):
                 result = await self.transaction.__aexit__(kind, error, traceback)
                 if kind is None:
-                    raise ConnectionError("injected coupled commit ACK loss")
+                    commits["count"] += 1
+                    if commits["count"] == coupled_commit:
+                        raise ConnectionError("injected coupled commit ACK loss")
                 return result
 
         def factory():

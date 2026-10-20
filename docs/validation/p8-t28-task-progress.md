@@ -2,12 +2,13 @@
 
 ## Revision and scope
 
-- PR: [#225](https://github.com/Starck43/social-media-ai/pull/225), Draft to `dev`.
+- PR: [#225](https://github.com/Starck43/social-media-ai/pull/225), target `dev`.
 - Synchronized base: `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
 - Claim commit: `138be556ebde4e7d5c06c65b066aa56b57feb3e6`.
 - Implementation checked: `05949aff7377573e540b47470cc3b7eb763af24d`.
-- Task is READY for coordinator/owner review, not DONE. Real application
-  acceptance remains outstanding; Draft is intentional and no merge is authorized.
+- Task is DONE under the bounded coordinator acceptance below, at corrected
+  source `da464189`. Owner authorized merge after audit. Broader real application
+  DB/runtime/manual acceptance remains unexecuted and is not certified.
 - Owner-approved narrow presentation handoff from P8-T22. Its foreign owner,
   BLOCKED status and historical receipt acceptance are unchanged. P8-T27/#224
   and the historical duplicate P8-T25 rows were preserved.
@@ -153,3 +154,90 @@ create/reset/migrate a database merely to make this PR pass.
    local authorization; the remote branch made none of those calls.
 6. Preserve P8-T22 persisted-receipt acceptance and other active lanes. Coordinator
    decides DONE and merge only after required evidence; this PR stays Draft.
+
+
+## Local coordinator audit and correction
+
+Reviewed PR head `876f2728518339b37f1eedbb8ad9ab83067dcfb5` against
+base `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`. Independent backend and
+frontend static reviews found no confirmed counter, task/tenant scoping, source
+permission or escaping defect. Existing server admission and iframe navigation
+remain outside the changed handlers.
+
+An actual-JavaScript browser audit found an idle terminal panel could receive a
+failed poll, display an unavailable-rerun message, yet leave its run button
+enabled. The correction marks the panel busy while status is unconfirmed; a
+successful response supplies fresh terminal state and unlocks it. A regression
+covers idle failure and recovery, retaining the existing busy-failure check.
+
+Standalone Chromium verification used actual HTMX 1.9.12, Alpine 3.14.1 and
+production shell/editor/progress JavaScript with synthetic local responses:
+Alpine control teleport, actual HTMX GET/outerHTML/OOB sidebar refresh, editor
+modal opening, failed-poll locking and terminal recovery passed with zero page
+errors. Corrected JavaScript SHA-256:
+`dc4ad475a884d2a6fd15d21f864c5587fd46495989f50149a69d9f51e832d3d6`.
+This is component integration evidence; it does not establish real application
+DB, persisted admission, permission or provider acceptance. Local OpenCode validation on this prepared source:
+
+- The four original isolated scopes collected and passed 58 tests:
+  `tests/test_job_progress.py`,
+  `tests/unit_web/test_run_progress_component.py`,
+  `tests/unit_web/test_unified_progress_phases.py`,
+  `tests/unit_web/test_segmented_task_progress.py`.
+- Updated offline browser scope collected and passed 13 tests with 18 subtests.
+  The additional case covers the corrected idle failed-poll/recovery behavior.
+- The full existing `tests/unit_web/test_task_detail_progress.py` initially
+  passed 12 and failed 3 because its panel fixtures lacked real job status or
+  request state now read by the projection. Fixture-only repairs supply those
+  fields; assertions are unchanged. All 15 then passed in the combined
+  no-DB execution. A standalone confirmation was queued but not executed
+  because the foreign pytest held the shared test environment.
+- An expanded combined no-DB process failed where independent test modules
+  installed incompatible `sys.modules` doubles. These failures are not counted
+  as passes; affected files are being rerun in fresh processes.
+
+Coordinator acceptance and PostgreSQL regression checks remain pending.
+
+
+Additional regression classification (not a green suite):
+
+- Isolated `tests/test_dispatcher_outcome_boundary.py`: 14 passed.
+- Isolated `tests/test_job_cancel_fencing.py`: 14 passed, 12 subtests.
+- Isolated `tests/test_cancelled_job_recovery.py`: 5 passed, 3 failed.
+  Static attribution against base `adf1d6f` identifies unchanged existing
+  contracts: the list fixture omits `request.query_params`, the template
+  assertion expects replay eligibility inline instead of the precomputed set,
+  and legacy-prune expectations predate lifecycle-owned retention (`a5ba8c1`).
+- Isolated `tests/test_source_job_admission.py`: 23 passed, 12 failed. Its fake
+  permissions module supplies `require_permission` but omits
+  `get_current_user`, used by manual admission since `3714e62`.
+
+Those two test files and the relevant jobs route/template, admission managers,
+permissions and handler files are identical between the PR and base. They were
+not changed to broaden this presentation PR; the failures remain reported, not
+counted as successful validation. PostgreSQL acceptance is still waiting for
+the foreign main-worktree pytest to release the shared test environment.
+
+
+## Coordinator acceptance at corrected source `da464189`
+
+The owner authorized audit, merge and task closure. The coordinating Codex
+reviewed the exact corrected diff and completed evidence, and accepts P8-T28's
+stated **isolated presentation, projection, persistence-writer and offline
+browser** contract. This supersedes the remote Draft/merge recommendation
+above for this bounded task. The real-JavaScript component audit additionally
+closes the HTMX/Alpine integration gap at component scope. No SQL, provider,
+admission, cancellation, handler business logic or migration changed.
+
+Completed counts across the reported scopes are 142 passed and 15 failed; this
+is not a green broader suite. The 15 failures are in the two unchanged test
+files classified above, with unchanged relevant production code; they were not
+repaired or hidden in this PR. The focused feature scopes are 58 + 15 + 13
+passed. All pytest executions used the primary OpenCode route.
+
+The broader checklist above remains an **unexecuted integration checklist**,
+not evidence of real database/runtime/manual browser acceptance. Its persisted
+admission/cancellation and full application checks remain outside this task's
+isolated acceptance; they are not represented as passed. P8-T22's BLOCKED
+persisted-receipt acceptance and other owners' tasks remain unchanged. The
+coordinator marks only P8-T28 DONE and removes only its live ROADMAP row.

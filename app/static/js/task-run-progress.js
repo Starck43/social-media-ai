@@ -49,6 +49,9 @@
         const panel = document.getElementById('task-run-progress');
         if (!panel || !target || (target !== panel && !panel.contains(target))) return;
         panel.dataset.taskStatus = 'unconfirmed';
+        // A terminal snapshot can be idle when its next poll fails. Treat that
+        // lost confirmation as busy too, until a successful swap reports state.
+        panel.dataset.taskBusy = 'true';
         // A failed poll is never evidence that the worker stopped.
         if (!panel.querySelector('[data-progress-connection-note]')) {
             const note = document.createElement('p');

@@ -18,7 +18,9 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
-- [ ] P8-T28 — segmented task run progress and source status sidebar → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — READY (PR #225 Draft; owner application acceptance pending)
+- [ ] P2-T12 — preserve cache usage and version complete cache tariffs → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
+- [ ] P2-T13 — bind journal tariff lookup to provider/model identity → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
+- [ ] P2-T14 — enforce complete spend evidence in caps and user reports → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
 
 - [ ] P8-T25 — settings information layout and compact member access → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — READY
 
@@ -58,7 +60,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P8-T13 — named support/escalation ownership + pilot measures → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P9-T01 — one capability-specific activation contract → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
 - [ ] P10-T01 — authorized password recovery (AUD-01, P0) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
-- [ ] P10-T02 — no password hashes in HTTP responses (AUD-02) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
+- [ ] P10-T02 — no password hashes in HTTP responses (AUD-02) → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent (fix/http-user-response-redaction) — READY (Draft PR #227; owner acceptance pending)
 - [ ] P10-T03 — profile vs privilege update separation (AUD-03) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T04 — shared cookie-independent login protection (AUD-04) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T05 — legacy API DB probe alignment (AUD-05) → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — READY
@@ -66,7 +68,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T07 — digest scope/window/row consistency (AUD-07) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T08 — per-component home pipeline gating (AUD-08) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T09 — truthful pipeline counts/labels (AUD-09) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
-- [ ] P10-T10 — distributable package runtime completeness (AUD-10) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
+- [ ] P10-T10 — distributable package runtime completeness (AUD-10) → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent (fix/wheel-runtime-completeness) — BLOCKED (Draft PR #226; owner review: resource paths and dependency closure)
 
 - [ ] P10-T13 — LLM CLI provider listing and safe model-test contract → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — BLOCKED
 

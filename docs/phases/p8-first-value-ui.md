@@ -577,7 +577,7 @@ P8-T06 and does not alter its task record.
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —
 
 
-- [ ] P8-T28 — implement the owner-approved two-stage task run progress;
+- [x] P8-T28 — implement the owner-approved two-stage task run progress;
   accept: shared full/compact collection and analysis record counters with source
   segmentation, honest unknown/partial/dry-run states, no prototype toolbar,
   source names/links and last unsuccessful action only in the task sidebar,
@@ -586,7 +586,7 @@ P8-T06 and does not alter its task record.
   Depends: none; owns: bounded task web presentation/routes, shared progress
   template additions, task progress projection, progress snapshot aggregates,
   focused tests and task documentation; owner: remote Notion agent;
-  status: READY (PR #225 Draft; owner application acceptance pending). Claimed from fresh dev
+  status: DONE (coordinator bounded presentation acceptance at `da464189`; PR #225). Claimed from fresh dev
   `adf1d6fc79ea147863c4c2d7560349140ab2a6cf` on branch
   `ui/task-run-segmented-progress`. Owner explicitly directed this bounded
   follow-up after design approval and review of the new dry-run/collection code.
@@ -602,5 +602,12 @@ P8-T06 and does not alter its task record.
   dry-run semantics, current-run sidebar scope and validation limitations:
   [P8-T28 handoff](../validation/p8-t28-task-progress.md). No real DB/ASGI,
   app/runtime startup, migration/reset, provider or full-suite acceptance was run.
-  Real HTMX/Alpine, persisted admission and owner application checks remain
-  outstanding; not DONE, no merge. P8-T22 and foreign evidence are unchanged.
+  Local coordinator audit corrected an idle failed-poll guard defect in
+  `da464189`. OpenCode: 58 focused checks, full task-detail 15 checks and
+  offline browser 13 checks (18 subtests) passed; actual HTMX/Alpine component
+  swap/OOB/teleport and loss/recovery passed. Existing dispatcher and cancellation
+  fencing checks passed 14 each. Two unchanged broader regression files retain
+  15 fixture/obsolete-expectation failures; these are documented, not green.
+  Coordinator accepts the stated isolated presentation/writer/browser contract;
+  broader DB/runtime/manual application acceptance was not run or certified.
+  P8-T22 remains BLOCKED, and foreign evidence is unchanged.

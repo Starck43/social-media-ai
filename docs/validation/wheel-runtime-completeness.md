@@ -1,6 +1,217 @@
 # Installed wheel runtime completeness
 
-## Current disposition — BLOCKED after owner review
+## Current handoff — READY for owner review (not DONE)
+
+Both `fa0c7e9` review blockers are addressed at implementation/test SHA
+`60638e5b40a205c233941367c3edf41ea66758f8`. These are remote self-run results,
+not a new macOS report or full application acceptance. Keep PR #226 Draft;
+no merge, deployment or real environment execution was performed/authorized.
+
+### Scope, claims and synchronization
+
+- Fresh integrated dev: `6fbe7a961dafc3b05fccd9cfe99f7652bdc6a33a`.
+  Owner-merged PR #225 and foreign P10-T02/T03/T05 evidence/statuses remain intact.
+- Continuation claims were published before these changes: dependency slice
+  `ced26f99474c0038953040361ce930103bd53ffe`, resource/logging slice
+  `779e4b6f00ea1efd925ac70a07039060a9abfa22`.
+- Owner-relayed inspection found the dirty detached `social-jobs-lifecycle-check`
+  main.py byte-identical to integrated dev, not a competing net change. Remote
+  ancestry verification confirms `a5ba8c1fc36f86bbeda692e38f5f9522c05f9f86`
+  is integrated. This is evidence-based non-overlap, not invented lane sign-off.
+  Neither that worktree nor the owner's dirty dev was accessed/cleaned here.
+- Open PRs #216/#217/#220/#224/#227 were rechecked by merge-base diffs: no net
+  changes to this continuation's nine code/config/test paths. Shared registry
+  edits are restricted to P10-T10. No P10-T02 implementation is included.
+
+### Minimal runtime fixes
+
+- Declare `sqlalchemy[asyncio]>=2.0.0` (the supported extra supplies greenlet)
+  and `psycopg[binary]>=3.1.0` in wheel runtime requirements. Preserve existing
+  asyncpg and psycopg2 compatibility. Align requirements.txt's SQLAlchemy extra;
+  it already pins psycopg[binary]. No database module/driver-selection logic changes.
+- Resolve static files, main templates and web templates from installed module
+  paths. In main.py only the pathlib import and template-directory expression
+  change. AST comparisons against fresh dev confirm `lifespan`,
+  `_job_maintenance_loop` and `create_application` are unchanged; tenant_scope
+  import/use is preserved.
+- Keep rotating file logging, but use `LOG_DIR`, default
+  `~/.social-media-ai/logs`, never CWD or site-packages. Explicit values must be
+  absolute after `~` expansion; relative values fail validation. Parent directories
+  are created. Unwritable paths fail explicitly. This changes the historical
+  `./logs` default: service/container owners must configure an absolute writable
+  mounted path and adjust collection as documented in docs/CONFIGURATION.md.
+- The standalone wheel smoke now imports the actual installed database module
+  and main ASGI object. It loads three real template sources via their actual
+  loaders and checks the mounted static directory/logo. Both default and explicit
+  LOG_DIR run in separate fresh subprocesses with empty CWD and temporary HOME.
+
+### Exact-source remote results
+
+Platform: Linux x86_64, CPython 3.13.14. Clean `git archive 60638e5...`, not a
+build of the dirty source tree. Build venv: pip 24.2, setuptools 84.2.0, wheel
+0.48.0; formatting tools Black 26.10.1 / isort 9.0.2. Runtime venvs use pip 24.2.
+
+| Check | Result |
+|---|---|
+| Offline wheel build (`--no-deps --no-build-isolation`) | exit 0 |
+| Fresh wheel-only install, unconstrained | exit 0; no dev extra or requirements install |
+| Fresh wheel-only install, requirements constraints | exit 0; constraints restrict resolution, do not install dev packages |
+| Expanded installed-wheel smoke, unconstrained | exit 0; 368 Python files + 94 assets = 462 matching files |
+| Expanded installed-wheel smoke, pinned | exit 0; same 462 byte-for-byte source/wheel/installed checks |
+| Default + explicit LOG_DIR in each venv | 4 child checks passed; real database/main imports and 4 resource checks per child; CWD unchanged |
+| DB connection / runtime execution / external-operation attempt counters | 0 / 0 / 0 in all 4 children |
+| `pip check` in each final runtime venv | exit 0; `No broken requirements found.` |
+| Black: smoke + core/config; isort: six files total | exit 0; legacy logger formatting deliberately not rewritten |
+| `git diff --check dev SHA` | exit 0 |
+| lifecycle/application factory AST preservation | passed |
+
+Wheel: `social_media_ai-0.4.2-py3-none-any.whl`.
+SHA256: `70c593dafa2f6499712e12cb13c7968496502ad3f04bf21ecadb22bedb10cb49`.
+This is the new Linux build, not the owner's old macOS wheel digest, and does not
+promise timestamp-independent/cross-platform reproducible wheel bytes.
+
+| Runtime package | unconstrained | requirements-constrained |
+|---|---|---|
+| SQLAlchemy | 2.1.5 | 2.1.4 |
+| greenlet | 3.5.6 | 3.5.6 |
+| psycopg / psycopg-binary | 3.3.6 / 3.3.6 | 3.3.6 / 3.3.6 |
+| asyncpg | 0.32.0 | 0.32.0 |
+| cryptography | 50.0.2 | 50.0.2 |
+| FastAPI / Starlette | 0.156.0 / 1.9.0 | 0.143.2 / 1.8.0 |
+| SQLAdmin | 0.32.0 | 0.32.0 |
+| bcrypt | 5.0.0 | 4.0.1 |
+
+Both engines are constructed with synthetic configuration: async dialect asyncpg,
+sync dialect psycopg. No connection is opened. Six safe module imports, namespace
+filters through real admin import, and a synthetic Fernet round trip pass. Dev
+package absence, wheel metadata and CLI entry point are checked by the smoke.
+This is not a claim that every CLI command, lower-bound dependency combination,
+password operation or provider works; in particular the repository's existing
+bcrypt/passlib version compatibility caveat is not exercised or changed here.
+
+### Commands actually executed
+
+The sandbox driver `/data/verify_wheel_repair.sh` executed the following sequence
+(expanded here; all final stages exited 0). `python` was CPython 3.13.14. The build
+venv is isolated from both runtime venvs and was already provisioned with the
+versions above; no dev tools were installed into the runtime environments.
+
+```bash
+ROOT=/data/wheel-repair-final
+REPO=/data/package-runtime-check
+SHA=60638e5b40a205c233941367c3edf41ea66758f8
+mkdir -p "$ROOT/source" "$ROOT/dist"
+git -C "$REPO" fetch origin \
+  refs/heads/dev:refs/remotes/origin/dev \
+  refs/heads/fix/wheel-runtime-completeness:refs/remotes/origin/fix/wheel-runtime-completeness --quiet
+git -C "$REPO" archive "$SHA" | tar -x -C "$ROOT/source"
+cd "$ROOT/source"
+PIP_NO_INDEX=1 /data/wheel-build-venv/bin/python -m pip wheel . \
+  --no-deps --no-build-isolation -w "$ROOT/dist"
+python - <<'PY'
+from pathlib import Path
+import re
+lines = [line.split('#', 1)[0].strip()
+         for line in Path('requirements.txt').read_text().splitlines()]
+Path('/data/wheel-repair-final/constraints.txt').write_text(
+    '\n'.join(re.sub(r'\[[^]]*\]', '', line) for line in lines if line) + '\n')
+PY
+WHEEL="$ROOT/dist/social_media_ai-0.4.2-py3-none-any.whl"
+sha256sum "$WHEEL"
+for MODE in unconstrained pinned; do
+  python -m venv "$ROOT/$MODE"
+  if [ "$MODE" = pinned ]; then
+    "$ROOT/$MODE/bin/python" -m pip install -c "$ROOT/constraints.txt" "$WHEEL"
+  else
+    "$ROOT/$MODE/bin/python" -m pip install "$WHEEL"
+  fi
+  /data/wheel-build-venv/bin/python tests/wheel_runtime_smoke.py \
+    --python "$ROOT/$MODE/bin/python" --wheel "$WHEEL"
+  "$ROOT/$MODE/bin/python" -m pip check
+  "$ROOT/$MODE/bin/python" -m pip list --format=json
+done
+/data/wheel-build-venv/bin/black --check tests/wheel_runtime_smoke.py app/core/config.py
+/data/wheel-build-venv/bin/isort --check-only tests/wheel_runtime_smoke.py \
+  app/core/config.py app/main.py app/admin/setup.py app/web/deps.py app/core/logger.py
+git -C "$REPO" diff --check origin/dev "$SHA"
+```
+
+`INSTALLED_CHECK` is launched with `python -I -B -c` by the controller, timeout
+90 seconds, sanitized synthetic environment, temporary HOME/empty CWD, no inherited
+credentials/PYTHONPATH. It deliberately does not use pytest/root conftest.
+
+### Non-vacuous negative controls
+
+`python /data/wheel_repair_negative.py` completed exit 0 after correcting its
+metadata-removal harness (see below): **9/9 controls produced the expected exit 1**;
+restoring the final wheel/dependencies then passed the expanded smoke (exit 0).
+Scratch environments and archives only; no owner worktree changes.
+
+| Reintroduced defect | Observed expected failure |
+|---|---|
+| StaticFiles uses `app/static` again | `Directory 'app/static' does not exist` |
+| main Jinja loader uses `app/templates` again | `TemplateNotFound`, `analytics_dashboard.html` |
+| web loader uses `app/web/templates` again | `TemplateNotFound`, `web/base.html` |
+| logger uses `Path("logs")` again | assertion rejects CWD logger path vs configured absolute LOG_DIR |
+| Delete wheel `app/web/templates/web/base.html` | missing runtime file named before imports |
+| Replace SQLAlchemy asyncio-extra metadata with plain SQLAlchemy | `SQLAlchemy asyncio support must be runtime` |
+| Remove complete psycopg requirement metadata line | `Default PostgreSQL driver must be runtime` |
+| Uninstall greenlet from disposable runtime venv | `No module named 'greenlet'` |
+| Uninstall psycopg from disposable runtime venv | `No module named 'psycopg'` |
+
+For each of the first four, a separate clean `git archive "$SHA"` source was
+modified with only the stated replacement (logger also restores the Path import),
+built with the same offline wheel command, and installed via:
+
+```bash
+/data/wheel-dependency-runtime/bin/python -m pip install --no-deps --force-reinstall "$MUTANT_WHEEL"
+/data/wheel-build-venv/bin/python "$MUTANT_SOURCE/tests/wheel_runtime_smoke.py" \
+  --python /data/wheel-dependency-runtime/bin/python --wheel "$MUTANT_WHEEL"
+```
+
+Source/wheel/installed inventories agree for these coherent path mutants, so the
+new application/resource checks, not a stale-file mismatch, detect the regression.
+File/metadata mutants change only the specified ZIP entry and are rejected before
+installation; they are deliberately invalid negative artifacts, not deliverables.
+Dependency controls used `python -m pip uninstall -y greenlet` / `psycopg` in that
+disposable venv, followed by the final-source smoke and reinstall of greenlet
+3.5.6 / psycopg 3.3.6. Final evidence venvs under wheel-repair-final were untouched.
+
+### Harness failures, fixes and limits
+
+- Initial expanded smoke assumed every FastAPI route has `.path`; newer
+  `_IncludedRouter` does not. Fixed with `getattr(route, "path", None)`, without
+  changing the required `/static` assertion.
+- Counting even caught audit failures exposed croniter's import-time
+  `platform.architecture()` -> `file` subprocess probe. It was blocked, not run.
+  Smoke substitutes **only platform architecture metadata** with current Python
+  bitness. Subprocess/network/DB/task tripwires remain; counters must be zero.
+  No application/resource/provider module is stubbed. This metadata shim means
+  the smoke is an import/resource check, not an entirely unmodified production
+  interpreter execution or OS-process compatibility test.
+- First psycopg metadata mutant accidentally left a blank line terminating the
+  email-style headers and therefore failed the encryption assertion first.
+  The corrected mutant deletes the whole line including newline; the intended
+  psycopg assertion now fails. The 9/9 result refers to the corrected full run.
+- Guards reject SQLAlchemy do_connect, socket/DNS/bind/sendto, subprocess/fork,
+  loop/task/thread startup, init_db, runtime/worker entry-point imports and
+  reviewed provider constructors. They are regression tripwires, **not a security
+  sandbox or exhaustive proof against every possible third-party side effect**.
+- Importing main constructs the FastAPI/SQLAdmin objects and registers routes;
+  it never enters lifespan, serves requests, starts the maintenance loop, opens
+  DB connections, runs init_db/DDL/migrations, starts providers/runtime or deploys.
+- No pytest/full regression, real auth/permissions, DB/provider or application
+  startup acceptance was run. Import closure at these two resolved dependency
+  sets is not universal compatibility across all allowed versions/Python/OS.
+- The owner's earlier macOS evidence remains attributed below at `fa0c7e9` only.
+  **Owner/local agent next:** use a clean archive of `60638e5...` on macOS 15.7.9,
+  CPython 3.12.6; repeat both runtime-only installs, expanded smoke and pip check.
+  Verify log collection/mount policy for the new absolute LOG_DIR. Do not touch
+  dirty dev, start the app/DB/provider, migrate, reset, deploy, merge or mark DONE.
+
+## Historical evidence (superseded status; original provenance retained)
+
+## Historical disposition — BLOCKED after owner review
 
 The previous READY handoff below is historical partial packaging evidence,
 not acceptance of complete wheel-only runtime usability. Owner review of
@@ -53,7 +264,7 @@ but not these dependencies; requirements.txt includes psycopg[binary] and can
 mask the gap. Successful `pip check` only validates declared requirements,
 not whether runtime imports have a closed dependency set.
 
-### Required next step, not yet implemented
+### Required next step at that time (now addressed above)
 
 Resolve both blockers in an explicitly scoped continuation or linked,
 separately claimed prerequisite tasks before this PR can be accepted/merged.
@@ -66,9 +277,9 @@ invented here. No source/dependency/test code or acceptance scope is changed
 by this review-recording patch. READY is retained only as historical status
 for the completed packaging slice, not the overall task.
 
-## Scope and source pins
+## Historical scope and source pins
 
-- Task: P10-T10 / AUD-10; Draft PR #226, currently BLOCKED by owner review.
+- Task: P10-T10 / AUD-10; Draft PR #226, then BLOCKED by owner review (superseded above).
   The following remote results describe the earlier completed packaging slice.
 - Initial dev: `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
 - Claim published before implementation: `6bbc97f841beba30756b99ccebc288339980666c`.

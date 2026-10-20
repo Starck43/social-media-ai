@@ -2,9 +2,10 @@
 
 A VK source can store either a numeric ID or a short name (screen_name) in
 `external_id` (docs/TENANCY.md, admin "Внешний ID источника"). The VK API only
-accepts numeric `owner_id`, so `VKClient` resolves a screen_name via
-`utils.resolveScreenName` once per run and uses the numeric result when
-building request params. These tests pin that behaviour.
+accepts numeric `owner_id`, so `VKClient` resolves a screen_name once per run:
+`users.get` for a person, then `groups.getById` for a community, and finally
+`utils.resolveScreenName` as a last resort (it answers 1051 for this app
+profile type). These tests pin that behaviour.
 """
 
 import uuid
@@ -77,8 +78,13 @@ def _patch_httpx(monkeypatch, fake_client):
 
 async def test_resolve_user_screen_name(monkeypatch, platform):
     fake = FakeClient()
-    # users.get answers empty (not scripted as a person), then resolveScreenName.
-    fake.script = [{"response": []}, {"response": {"object_id": 123456, "type": "user"}}]
+    # users.get answers empty (not scripted as a person), groups.getById finds
+    # no community, then resolveScreenName answers.
+    fake.script = [
+        {"response": []},
+        {"response": {}},
+        {"response": {"object_id": 123456, "type": "user"}},
+    ]
     _patch_httpx(monkeypatch, fake)
 
     client = VKClient(platform=platform)
@@ -94,7 +100,11 @@ async def test_resolve_user_screen_name(monkeypatch, platform):
 
 async def test_resolve_group_screen_name_gets_minus_prefix(monkeypatch, platform):
     fake = FakeClient()
-    fake.script = [{"response": []}, {"response": {"object_id": 999, "type": "group"}}]
+    # users.get empty → groups.getById resolves the community (its group id).
+    fake.script = [
+        {"response": []},
+        {"response": {"groups": [{"id": 999, "type": "group"}]}},
+    ]
     _patch_httpx(monkeypatch, fake)
 
     client = VKClient(platform=platform)
@@ -102,6 +112,7 @@ async def test_resolve_group_screen_name_gets_minus_prefix(monkeypatch, platform
     resolved = await client._resolve_external_id("some_club")
 
     assert resolved == "-999"
+    assert fake.calls[-1][0].endswith("groups.getById")
 
 
 async def test_resolve_leaves_numeric_untouched(monkeypatch, platform):
@@ -157,11 +168,11 @@ async def test_user_nick_resolves_even_when_resolve_screen_name_is_refused(monke
 
 
 async def test_community_nick_falls_back_to_resolve_screen_name(monkeypatch, platform):
-    """An empty users.get answer means "not a person", so the group path still runs."""
+    """An empty users.get answer means "not a person"; groups.getById is next."""
     fake = FakeClient()
     fake.script = [
         {"response": []},
-        {"response": {"object_id": 777, "type": "group"}},
+        {"response": {"groups": [{"id": 777, "type": "group"}]}},
     ]
     _patch_httpx(monkeypatch, fake)
 
@@ -170,10 +181,26 @@ async def test_community_nick_falls_back_to_resolve_screen_name(monkeypatch, pla
     assert await client._resolve_external_id("some_club") == "-777"
 
 
+async def test_community_nick_falls_back_to_resolve_screen_name_when_group_probe_fails(monkeypatch, platform):
+    """If groups.getById cannot answer, utils.resolveScreenName is the last resort."""
+    fake = FakeClient()
+    fake.script = [
+        {"response": []},
+        {"error": {"error_code": 100, "error_msg": "One of the parameters specified was missing or invalid"}},
+        {"response": {"object_id": 888, "type": "group"}},
+    ]
+    _patch_httpx(monkeypatch, fake)
+
+    client = VKClient(platform=platform)
+    client._access_token = "test-token"
+    assert await client._resolve_external_id("some_club") == "-888"
+
+
 async def test_a_failed_user_probe_does_not_invent_an_id(monkeypatch, platform):
     fake = FakeClient()
     fake.script = [
         {"error": {"error_code": 5, "error_msg": "User authorization failed"}},
+        {"error": {"error_code": 100, "error_msg": "group_id not defined"}},
         {"error": {"error_code": 1051, "error_msg": "Method is not available for this profile type"}},
     ]
     _patch_httpx(monkeypatch, fake)

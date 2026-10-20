@@ -53,11 +53,24 @@ class BaseClient(ABC):
 		offset = 0
 		page_size = settings.SOCIAL_PAGE_SIZE
 		max_pages = settings.SOCIAL_MAX_PAGES
+		# A bounded slice, not "everything the platform has". A date typo or a
+		# first run without a lower bound must not park an archive in
+		# `collected_items`; the operator can lower the cap per source, never
+		# raise it above the deployment's hard ceiling.
+		requested_limit = (source.params.get("collection") or {}).get("limit") or source.params.get("limit")
+		try:
+			collect_limit = int(requested_limit) if requested_limit else settings.SOCIAL_COLLECT_LIMIT
+		except (TypeError, ValueError):
+			collect_limit = settings.SOCIAL_COLLECT_LIMIT
+		collect_limit = max(1, min(collect_limit, settings.SOCIAL_COLLECT_HARD_LIMIT))
 
-		# Get date filters from source
-		force_refresh = source.params.get('force_refresh', False)
+		# Get date filters from source. `wall.get` does not accept
+		# start_time/end_time (VK ignores them), so the window is enforced here
+		# after each page — not only for a forced refresh. Without this a task's
+		# configured start date let older posts through.
 		cli_dates = source.params.get('cli_dates', {}) if source.params else {}
-		start_date = cli_dates.get('start_date') if force_refresh else None
+		start_date = cli_dates.get('start_date')
+		end_date = cli_dates.get('end_date')
 
 		pages_collected = 0
 
@@ -69,21 +82,36 @@ class BaseClient(ABC):
 			logger.info(f"Fetching page {page + 1}, offset: {offset}")
 
 			res = await self._fetch_page(method, params)
-			items = self._extract_items_from_response(res)
+			raw_items = self._extract_items_from_response(res)
 
-			if not items:
+			if not raw_items:
 				break
 
+			items = raw_items
 			if start_date:
 				filtered_items = self._filter_items_by_date(items, start_date)
 				logger.info(f"Date filtering: {len(items)} -> {len(filtered_items)} items after {start_date}")
+				if not filtered_items:
+					# Newest-first pages: once a whole page is older than the
+					# window, every later page is too.
+					break
 				items = filtered_items
+			if end_date:
+				items = self._filter_items_before_date(items, end_date)
 
 			all_items.extend(items)
 			pages_collected += 1
 
-			# Check if we should stop pagination
-			if self._should_stop_pagination(res, items, page_size, len(all_items)):
+			# The cap is a run ceiling, not a page size: stop as soon as the
+			# slice is full and keep exactly the newest-first prefix.
+			if len(all_items) >= collect_limit:
+				all_items = all_items[:collect_limit]
+				break
+
+			# Check if we should stop pagination. Raw page size decides it, not
+			# the filtered count: a page that lost old posts still proves there
+			# are more pages behind it.
+			if self._should_stop_pagination(res, raw_items, page_size, len(all_items)):
 				break
 
 			offset += page_size
@@ -155,6 +183,34 @@ class BaseClient(ABC):
 				filtered.append(item)
 
 		logger.info(f"Date filtering: {len(items)} -> {len(filtered)} items after {start_dt}")
+		return filtered
+
+	def _filter_items_before_date(self, items: list, end_date) -> list:
+		"""Drop items published after the window's end (inclusive end-of-day)."""
+		from datetime import datetime, timezone
+
+		from app.utils.date_parsing import universal_date_parser
+
+		end_dt = universal_date_parser(end_date)
+		if not end_dt:
+			return items
+		if end_dt.tzinfo is None:
+			end_dt = end_dt.replace(tzinfo=timezone.utc)
+		# A date-only end means "through that day", not midnight at its start.
+		if getattr(end_date, "hour", None) is None and getattr(end_date, "minute", None) is None:
+			end_dt = end_dt.replace(hour=23, minute=59, second=59)
+
+		filtered = []
+		for item in items:
+			item_date = item.get("date")
+			if not item_date:
+				continue
+			if isinstance(item_date, (int, float)):
+				item_date = datetime.fromtimestamp(item_date, tz=timezone.utc)
+			elif isinstance(item_date, datetime) and item_date.tzinfo is None:
+				item_date = item_date.replace(tzinfo=timezone.utc)
+			if item_date <= end_dt:
+				filtered.append(item)
 		return filtered
 
 	async def _make_request(self, method: str, params: dict) -> dict:

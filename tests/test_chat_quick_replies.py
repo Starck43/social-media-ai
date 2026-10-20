@@ -123,6 +123,10 @@ def test_a_clarifying_question_must_offer_buttons():
     assert "уточняющий вопрос" in QUICK_REPLIES_SECTION
     assert "ОБЯЗАТЕЛЬНО заканчивается этой\n  строкой" in QUICK_REPLIES_SECTION
     assert "С сегодняшнего дня" in TASK_SECTION
+    # One question per reply: the live model appended «а по какой теме?» to the
+    # start-date question, turning one tap into a paragraph.
+    assert "один уточняющий вопрос — одно" in QUICK_REPLIES_SECTION
+    assert "по одному пункту за раз" in TASK_SECTION
     body, options = split_quick_replies(
         "С какой даты собирать контент?\n[[options: С сегодняшнего дня | За последние 30 дней]]"
     )

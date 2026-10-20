@@ -1,0 +1,36 @@
+/* Shared full/compact record progress; independent of the settings/admin lane. */
+.run-records { --run-text:#26384b; --run-muted:#52657c; --run-track:#e4eaf0; --run-line:#d4dee8; display:grid; gap:28px; margin-top:24px; color:var(--run-text); font-size:14px; line-height:1.5; }
+.run-records-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:10px; font-weight:600; }
+.run-records-heading>span:first-child { display:flex; align-items:center; gap:10px; }
+.run-records-number { display:inline-grid; place-items:center; flex:none; width:24px; height:24px; border:1px solid var(--run-line); border-radius:50%; color:var(--run-muted); }
+.run-records-count { font-variant-numeric:tabular-nums; font-weight:400; text-align:right; }
+.run-records-count b { font-size:16px; }
+.run-records-bar { display:flex; height:14px; gap:4px; }
+.run-records-segment { position:relative; display:block; min-width:0; height:100%; overflow:hidden; border-radius:3px; background:var(--run-track); }
+.run-records-fill { display:block; height:100%; background:var(--source-color,#087f98); transition:width .25s; }
+.run-records-failure { position:absolute; inset:0 0 0 auto; width:6px; background:repeating-linear-gradient(135deg,#a46712 0,#a46712 2px,#ffe1a8 2px,#ffe1a8 4px); }
+.run-records-note { color:var(--run-muted); margin:8px 0 0; }
+.run-records-notice { border:1px solid #d5b36c; border-radius:8px; padding:12px 16px; background:#fff5e4; color:#815000; margin:0; }
+.run-records-results { border-top:1px solid var(--run-line); padding-top:16px; margin:0; }
+.run-records--compact { gap:22px; }
+.task-source-item { padding:10px 0; border-bottom:1px solid var(--run-line,#d4dee8); font-size:14px; overflow-wrap:anywhere; }
+.task-source-link { display:flex; gap:8px; align-items:baseline; min-height:44px; color:inherit; text-decoration:underline; text-underline-offset:3px; }
+.task-source-color { display:inline-block; flex:none; width:8px; height:8px; border-radius:2px; background:var(--source-color); }
+.task-source-action { margin:4px 0 0 16px; color:#815000; }
+.task-source-action--failed { color:#ad3340; }
+.task-run-status { display:inline-flex; align-items:center; gap:8px; font-size:14px; }
+.task-run-status svg { width:16px; height:16px; }
+.task-run-status[data-status="running"]::before { content:""; width:14px; height:14px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:task-run-spin 1.2s linear infinite; }
+.task-run-status[data-status="pending"] svg { animation:none; }
+[data-task-mutation][aria-disabled="true"] { opacity:.6; cursor:not-allowed; }
+.dark .run-records,[data-theme="dark"] .run-records { --run-text:#edf2f7; --run-muted:#b5c3d3; --run-track:#38485b; --run-line:#45566a; }
+.dark .run-records-notice,[data-theme="dark"] .run-records-notice { background:#3d3324; color:#f0c781; border-color:#947444; }
+.dark .task-source-action,[data-theme="dark"] .task-source-action { color:#f0c781; }
+.dark .task-source-action--failed,[data-theme="dark"] .task-source-action--failed { color:#ffb0b8; }
+@keyframes task-run-spin { to { transform:rotate(360deg); } }
+@media(max-width:640px) { .run-records-heading { flex-wrap:wrap; gap:6px; } .run-records-count { margin-left:34px; } .run-records { gap:24px; } }
+@media(prefers-reduced-motion:reduce) { .run-records-fill { transition:none; } .task-run-status svg,.task-run-status::before { animation:none!important; } }
+
+/* Source identity palette adapts to the surface, independently of outcome. */
+:root { --run-source-0:#087f98; --run-source-1:#3579a2; --run-source-2:#6964a5; --run-source-3:#526c42; --run-source-4:#91604c; --run-source-5:#886080; }
+.dark,[data-theme="dark"] { --run-source-0:#44b5c9; --run-source-1:#80add3; --run-source-2:#a9a5df; --run-source-3:#9cbd7f; --run-source-4:#d5a18b; --run-source-5:#c9a2bf; }

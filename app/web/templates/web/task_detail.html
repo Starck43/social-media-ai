@@ -3,6 +3,8 @@
 {% block title %}{% if task %}{{ task.name }} — AI Monitor{% else %}Задача не найдена{% endif %}{% endblock %}
 {% block page_heading %}{{ task.name if task else 'Задача не найдена' }}{% endblock %}
 {% block extra_head %}
+<link rel="stylesheet" href="{{ static_v('css/task-run-progress.css') }}">
+<script defer src="{{ static_v('js/task-run-progress.js') }}"></script>
 <script defer src="{{ static_v('js/task-detail-editor.js') }}"></script>
 <style>
     {# The iframe owns the scrolling: the dialog is a fixed-height flex
@@ -80,50 +82,44 @@
         </div>
 <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions">        <div class="flex flex-wrap items-center gap-2">
             {% if perms_can(request, 'agenttask', 'update') %}
-            <a href="/app/tasks/{{ task.id }}/edit" data-dialog-open="task-editor-dialog" data-task-editor-open
+            <a href="/app/tasks/{{ task.id }}/edit" data-dialog-open="task-editor-dialog" data-task-editor-open data-task-mutation aria-disabled="{{ 'true' if running_job_id else 'false' }}"
                     class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
                 Редактировать
             </a>
-            <form method="post" action="/app/tasks/{{ task.id }}/toggle">
+            <form method="post" action="/app/tasks/{{ task.id }}/toggle" data-task-mutation>
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
-                <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
+                <button {% if running_job_id %}disabled{% endif %} class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
                     {% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}
                 </button>
             </form>
-            {% if running_job_id %}
-            <a id="task-running-badge" href="/app/tasks?job_id={{ running_job_id }}" class="rounded-lg border border-amber-300 dark:border-amber-800 px-4 py-2 text-sm text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40">
-                ⏳ Job #{{ running_job_id }} {% if running_job_status == 'pending' %}в очереди{% else %}выполняется{% endif %}
-            </a>
-            {% else %}
-            <form method="post" action="/app/tasks/{{ task.id }}/run-now">
+            <form method="post" action="/app/tasks/{{ task.id }}/run-now" data-task-mutation data-task-run>
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <input type="hidden" name="return_to_detail" value="1">
                 {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
-                <button type="submit" class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
-                    Выполнить сейчас
+                <button type="submit" title="{% if running_job_id %}Прервать текущий запуск и запустить заново{% else %}Выполнить сейчас{% endif %}" class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                    <span data-task-run-label>{% if running_job_status == 'pending' %}◷ В очереди{% elif running_job_id %}Выполняется{% else %}Выполнить сейчас{% endif %}</span>
                 </button>
             </form>
             {% endif %}
-            {% endif %}
             {% if perms_can(request, 'agenttask', 'delete') %}
-            <form method="post" action="/app/tasks/{{ task.id }}/delete"
+            <form method="post" action="/app/tasks/{{ task.id }}/delete" data-task-mutation
                   data-confirm="«{{ task.name|e }}» будет удалена безвозвратно. Задачи, использующие привязанные источники, останутся."
                   data-confirm-title="Удалить задачу?" data-confirm-label="Удалить навсегда">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
-                <button type="submit" class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">Удалить</button>
+                <button type="submit" {% if running_job_id %}disabled{% endif %} class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">Удалить</button>
             </form>
             {% endif %}
         </div></div></template>
     </div>
 
-    <div class="mt-6 grid gap-4 lg:grid-cols-3">
+    <div class="mt-6 grid items-start gap-4 lg:grid-cols-3">
         <div class="ui-card lg:col-span-2">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Сбор и анализ по задаче</h2>
             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Последний запуск и данные выбранных источников</p>
             <div class="mt-3">
-                {% with job=latest_run.job, summary=latest_run.summary, sources=latest_run.sources, can_view_sources=latest_run.can_view_sources, run_scope=latest_run.run_scope, legacy_status_label=latest_run.legacy_status_label, can_retry_analysis=perms_can(request, 'agenttask', 'update'), running_job_id=running_job_id %}
+                {% with job=latest_run.job, summary=latest_run.summary, sources=latest_run.sources, can_view_sources=latest_run.can_view_sources, run_scope=latest_run.run_scope, legacy_status_label=latest_run.legacy_status_label, can_retry_analysis=perms_can(request, 'agenttask', 'update'), running_job_id=running_job_id, run_progress=latest_run.run_progress %}
                     {% include "web/task_run_progress.html" %}
                 {% endwith %}
             </div>
@@ -170,23 +166,9 @@
                     <dd class="mt-1 text-slate-700 dark:text-slate-300">{{ scenario.name }}</dd>
                 </div>
                 {% endif %}
-                {% if sources %}
-                <div>
-                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Источники ({{ sources|length }})</dt>
-                    <dd class="mt-1 space-y-1">
-                        {% for s in sources %}
-                        <a href="/app/sources/{{ s.id }}" class="block text-sm text-slate-700 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">
-                            {{ s.name }}
-                        </a>
-                        {% endfor %}
-                    </dd>
+                <div id="task-run-sources">
+                    {% with source_inventory=latest_run.source_inventory, can_view_sources=latest_run.can_view_sources %}{% include "web/_task_run_sources.html" %}{% endwith %}
                 </div>
-                {% else %}
-                <div>
-                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Источники</dt>
-                    <dd class="mt-1 text-xs text-slate-600 dark:text-slate-400">все активные</dd>
-                </div>
-                {% endif %}
                 {% set tu = (task.payload or {}).get("tracked_users", []) %}
                 {% if tu %}
                 <div>

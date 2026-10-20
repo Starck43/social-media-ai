@@ -291,8 +291,10 @@ runtime contracts, not permission grants or a new business-workflow model.
   simulated and actual spent tokens stay zero. Timeout is not a provider JSON
   field. Anthropic/custom and multimodal validation remain out of scope. The retired `/admin/llm-model/test-real` route never dispatches;
   an authenticated administrator with valid CSRF receives 410, not a replay.
-- A received real response with valid, reported input/output tokens allows an
-  estimate from configured USD-per-1K rates and an update of `last_request_cost`
+- A received real response with complete usage permits an estimate using the
+  model's explicit ordinary-price unit and cache prices in USD per million tokens.
+  Missing applicable cache counters or prices leave that estimate unknown.
+  A resolved structured provider USD total takes precedence. This permits updating `last_request_cost`
   / `last_request_cost_at`. Missing/invalid raw provider usage stays **unknown**, not zero, even if the
   compatibility chat response synthesizes numeric zeros.
   If saving fails, the answer remains visible with a warning; never automatically

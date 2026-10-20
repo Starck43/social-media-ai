@@ -88,7 +88,7 @@ def setup_admin(app):
     if admin.templates.env is not None:
         register_template_filters(admin.templates.env)
 
-    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parents[1] / "static")), name="static")
     app.state.admin = admin
     if not hasattr(app, "extra"):
         app.extra = {}

@@ -240,6 +240,7 @@ async def run_task(
             task,
             extra_payload={"_one_off": True, "force_refresh": False, "force_reanalyze": False},
             initiated_by_user_id=getattr(_user, "id", None),
+            supersede_unfinished=True,
         )
     except SourceJobBusy as busy:
         raise HTTPException(status_code=409, detail={"code": "source_busy", "job_id": busy.job.id}) from None

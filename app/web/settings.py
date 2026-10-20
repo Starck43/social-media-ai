@@ -214,7 +214,8 @@ async def settings_page(request: Request):
         options = []
         for model in sorted(models, key=default_model_sort_key):
             provider_name = model.provider.name if model.provider else "?"
-            cost = f"${model.input_cost_per_1k:.4f}/${model.output_cost_per_1k:.4f}/1K"
+            unit_label = "1K" if model.pricing_token_unit == 1000 else "1M"
+            cost = f"${model.input_cost_per_1k}/${model.output_cost_per_1k}/{unit_label}"
             label = f"{provider_name}/{model.model_id} ({cost})" + (" ★" if model.is_default else "")
             options.append({"id": model.name, "label": label})
         context["agent_model_options"] = options
@@ -279,7 +280,8 @@ async def settings_page(request: Request):
         options = []
         for model in sorted(models, key=default_model_sort_key):
             provider_name = model.provider.name if model.provider else "?"
-            cost = f"${model.input_cost_per_1k:.4f}/${model.output_cost_per_1k:.4f}/1K"
+            unit_label = "1K" if model.pricing_token_unit == 1000 else "1M"
+            cost = f"${model.input_cost_per_1k}/${model.output_cost_per_1k}/{unit_label}"
             label = f"{provider_name}/{model.model_id} ({cost})" + (" ★" if model.is_default else "")
             options.append({"id": model.name, "label": label})
         context["agent_model_options"] = options

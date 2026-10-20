@@ -11,6 +11,7 @@ import httpx
 
 from app.core.config import settings
 from app.models import LLMModel
+from app.services.ai.cache_pricing import cache_price_usd, model_pricing_token_unit, normalize_cache_usage
 from app.services.ai.json_schema_builder import validate_with_pydantic
 
 logger = logging.getLogger(__name__)
@@ -194,15 +195,16 @@ async def _record_llm_usage(model: LLMModel, success: bool, usage: dict | None =
 
 
 def price_usage_usd(model: LLMModel, prompt_tokens: int, completion_tokens: int) -> float:
-    """Price token usage from llm_models tariffs (USD per 1K tokens) -> USD.
+    """Price token usage using the model's explicit token pricing unit.
 
     Same formula as AIAnalyzer._price_usage but returns plain USD (that one
     returns USD cents for the ai_analytics column). Decimal throughout — tariffs
     have 4+ decimals and cheap models bill well under a cent per call; unknown
     tariffs contribute 0 (never hardcode rates).
     """
-    usd = Decimal(prompt_tokens or 0) / 1000 * Decimal(str(getattr(model, "input_cost_per_1k", 0) or 0)) + (
-        Decimal(completion_tokens or 0) / 1000 * Decimal(str(getattr(model, "output_cost_per_1k", 0) or 0))
+    unit = model_pricing_token_unit(model)
+    usd = Decimal(prompt_tokens or 0) / unit * Decimal(str(getattr(model, "input_cost_per_1k", 0) or 0)) + (
+        Decimal(completion_tokens or 0) / unit * Decimal(str(getattr(model, "output_cost_per_1k", 0) or 0))
     )
     if usd <= 0:
         return 0.0
@@ -304,10 +306,67 @@ class LLMClient(ABC):
         }
 
     def _usage_block_for_response(self, prompt_tokens: int, completion_tokens: int, data: Any) -> dict[str, Any]:
-        """Prefer a resolved provider USD total; otherwise keep the tariff estimate."""
-        return self._usage_block(
-            prompt_tokens, completion_tokens, reported_cost_usd=_reported_provider_cost_usd(data)
-        )
+        """Prefer provider USD totals, then a cache-aware tariff projection."""
+        from app.services.ai.attempt_journal import provider_cost_evidence
+
+        report_claimed, reported = provider_cost_evidence(data)
+        if report_claimed:
+            amount = (
+                float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
+                if reported is not None
+                else 0.0
+            )
+            return {
+                "prompt_tokens": int(prompt_tokens or 0),
+                "completion_tokens": int(completion_tokens or 0),
+                "total_tokens": int(prompt_tokens or 0) + int(completion_tokens or 0),
+                "cost": amount,
+                "cost_source": "provider" if reported is not None else "provider_unresolved",
+                "cost_is_estimate": False,
+            }
+        try:
+            result = self._usage_block(prompt_tokens, completion_tokens)
+        except (ArithmeticError, TypeError, ValueError):
+            result = {
+                "prompt_tokens": int(prompt_tokens or 0),
+                "completion_tokens": int(completion_tokens or 0),
+                "total_tokens": int(prompt_tokens or 0) + int(completion_tokens or 0),
+                "cost": 0.0,
+            }
+            result.update(cost_source="undefined", cost_is_estimate=True)
+            return result
+        if reported is not None:
+            result["cost"] = float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
+            result.update(cost_source="provider", cost_is_estimate=False)
+            return result
+        cache_usage = self._accounting_cache_usage(data)
+        try:
+            cache_input = cache_price_usd(
+                cache_usage,
+                {
+                    "input_cost_per_1k": getattr(self.model, "input_cost_per_1k", None),
+                    "cache_read_cost_per_1m": getattr(self.model, "cache_read_cost_per_1m", None),
+                    "cache_write_5m_cost_per_1m": getattr(self.model, "cache_write_5m_cost_per_1m", None),
+                    "cache_write_1h_cost_per_1m": getattr(self.model, "cache_write_1h_cost_per_1m", None),
+                },
+                prompt_tokens=prompt_tokens,
+                pricing_unit=model_pricing_token_unit(self.model),
+            )
+        except (ArithmeticError, TypeError, ValueError):
+            result.update(cost_source="undefined", cost_is_estimate=True)
+            return result
+        if cache_input is None:
+            result.update(cost_source="flat_tariff_estimate", cost_is_estimate=True)
+            return result
+        try:
+            output_rate = Decimal(str(getattr(self.model, "output_cost_per_1k", None)))
+            unit = model_pricing_token_unit(self.model)
+            amount = cache_input + Decimal(completion_tokens or 0) * output_rate / unit
+            result["cost"] = float(amount.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
+            result.update(cost_source="cache_tariff", cost_is_estimate=True)
+        except (ArithmeticError, TypeError, ValueError):
+            result.update(cost_source="undefined", cost_is_estimate=True)
+        return result
 
     def _analysis_request_meta(self, prompt: str) -> dict[str, Any]:
         """Allocate a fresh local identity once, before an analyze HTTP attempt.
@@ -350,6 +409,10 @@ class LLMClient(ABC):
             "accounting_cost_reported": claimed,
         }
 
+    def _accounting_cache_usage(self, data: Any) -> dict[str, Any]:
+        """Provider-owned cache counters in a bounded client-normalized shape."""
+        return normalize_cache_usage(data, getattr(self.provider, "api_format", None))
+
     def _analyze_usage_projection(
         self, prompt: Optional[int], completion: Optional[int], data: Any = None
     ) -> dict[str, Any]:
@@ -369,6 +432,8 @@ class LLMClient(ABC):
                     "cost": float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
                     if reported is not None
                     else 0.0,
+                    "cost_source": "provider" if reported is not None else "flat_tariff_estimate",
+                    "cost_is_estimate": reported is None,
                 }
             return {
                 "prompt_tokens": prompt,
@@ -476,6 +541,7 @@ class OpenAICompatibleClient(LLMClient):
             "response": data,
             "parsed": parsed,
             "accounting_usage": accounting_usage,
+            "accounting_cache_usage": self._accounting_cache_usage(data),
             **accounting_cost,
             "usage": self._analyze_usage_projection(
                 accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"], data
@@ -552,6 +618,7 @@ class OpenAICompatibleClient(LLMClient):
                 diagnostic["stage"] = "accounting"
             accounting = {
                 "accounting_usage": self._accounting_usage(data),
+                "accounting_cache_usage": self._accounting_cache_usage(data),
                 **self._accounting_cost(data),
             }
             parse_error = False
@@ -744,6 +811,7 @@ class AnthropicClient(LLMClient):
             "response": data,
             "parsed": parsed,
             "accounting_usage": accounting_usage,
+            "accounting_cache_usage": self._accounting_cache_usage(data),
             **accounting_cost,
             "usage": self._analyze_usage_projection(
                 accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"], data
@@ -808,6 +876,7 @@ class AnthropicClient(LLMClient):
 
             accounting = {
                 "accounting_usage": self._accounting_usage(data, "input_tokens", "output_tokens"),
+                "accounting_cache_usage": self._accounting_cache_usage(data),
                 **self._accounting_cost(data),
             }
             parse_error = False
@@ -938,6 +1007,7 @@ class CustomClient(LLMClient):
             "response": data,
             "parsed": parsed,
             "accounting_usage": accounting_usage,
+            "accounting_cache_usage": self._accounting_cache_usage(data),
             **accounting_cost,
             "usage": self._analyze_usage_projection(0, 0, data),
         }
@@ -988,6 +1058,7 @@ class CustomClient(LLMClient):
 
             accounting = {
                 "accounting_usage": self._accounting_usage(data),
+                "accounting_cache_usage": self._accounting_cache_usage(data),
                 **self._accounting_cost(data),
             }
             parse_error = False
@@ -1115,6 +1186,7 @@ async def journal_chat_attempt(
             raw=response.get("raw") if isinstance(response, dict) else None,
             failed=response is None,
             **({"usage_fields": fields} if fields else {}),
+            api_format=getattr(client.provider, "api_format", None),
         )
         await journal_scoped_attempts({STAGE_CHAT: envelope}, purpose=purpose)
     except Exception:
@@ -1234,10 +1306,21 @@ async def chat_with_fallback(
 
 
 def _model_price_floor(model: LLMModel) -> float:
-    """The lowest per-1k price the row declares; 0.0 for a free/incomplete row."""
-    prices = [getattr(model, "input_cost_per_1k", None), getattr(model, "output_cost_per_1k", None)]
-    known = [float(price) for price in prices if price is not None]
-    return max(known) if known else 0.0
+    """Return a comparable USD/1M tariff signal, including configured cache rates."""
+    from app.services.ai.cache_pricing import canonical_decimal, model_pricing_token_unit, CACHE_RATE_FIELDS
+
+    unit = model_pricing_token_unit(model)
+    ordinary = [
+        canonical_decimal(getattr(model, field, None))
+        for field in ("input_cost_per_1k", "output_cost_per_1k")
+    ]
+    prices = [float(rate * Decimal(1_000_000) / unit) for rate in ordinary if rate is not None]
+    prices.extend(
+        float(rate)
+        for field in CACHE_RATE_FIELDS
+        if (rate := canonical_decimal(getattr(model, field, None))) is not None
+    )
+    return max(prices) if prices else 0.0
 
 
 def _model_proven_score(model: LLMModel) -> int:

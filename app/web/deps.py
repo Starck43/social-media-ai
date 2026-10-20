@@ -23,7 +23,7 @@ from app.types import ActionType
 from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS, allows
 
 _j2_env = Environment(
-    loader=FileSystemLoader("app/web/templates", encoding="UTF-8"),
+    loader=FileSystemLoader(str(Path(__file__).resolve().parent / "templates"), encoding="UTF-8"),
     extensions=["jinja2.ext.do"],
     # Stored names, prompts and errors are text, never template-authored HTML.
     autoescape=select_autoescape(("html", "htm", "xml"), default_for_string=True),

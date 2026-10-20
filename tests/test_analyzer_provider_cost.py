@@ -83,7 +83,7 @@ class AnalyzerProviderCostTests(unittest.IsolatedAsyncioTestCase):
                 }
             ]
         )
-        self.assertEqual(total, Decimal(0))
+        self.assertIsNone(total)
 
     async def test_explicit_provider_zero_is_stored_but_legacy_unknown_stays_null(self):
         provider_zero = self.result(amount="0", reported=True, prompt=None, completion=None)

@@ -40,10 +40,16 @@ async def async_session():
 
     stripped = []
     patched_defaults = []
+    # Constructs only PostgreSQL understands. The models are PostgreSQL-shaped,
+    # so SQLite gets the ones it can parse; the rest are removed for the
+    # duration of `create_all` and put back afterwards.
+    pg_only_markers = ("~", "AT TIME ZONE", "::", "date_trunc", "ILIKE", "ANY(", "FILTER (")
     for table in Base.metadata.tables.values():
         for constraint in list(table.constraints):
             sqltext = getattr(constraint, "sqltext", None)
-            if isinstance(constraint, CheckConstraint) and sqltext is not None and "~" in sqltext.text:
+            if isinstance(constraint, CheckConstraint) and sqltext is not None and any(
+                marker in sqltext.text for marker in pg_only_markers
+            ):
                 table.constraints.discard(constraint)
                 stripped.append((table, constraint))
         for column in table.columns:

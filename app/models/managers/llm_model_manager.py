@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
 from .base_manager import BaseManager
@@ -181,6 +182,10 @@ class LLMModelManager(BaseManager):
         custom_endpoint_path: str | None = None,
         input_cost_per_1k: float = 0.0,
         output_cost_per_1k: float = 0.0,
+        pricing_token_unit: int = 1_000_000,
+        cache_read_cost_per_1m: Decimal | None = None,
+        cache_write_5m_cost_per_1m: Decimal | None = None,
+        cache_write_1h_cost_per_1m: Decimal | None = None,
         max_tokens: int = 4096,
         default_temperature: float = 0.3,
         is_active: bool = True,
@@ -209,6 +214,10 @@ class LLMModelManager(BaseManager):
             custom_endpoint_path=custom_endpoint_path,
             input_cost_per_1k=input_cost_per_1k,
             output_cost_per_1k=output_cost_per_1k,
+            pricing_token_unit=pricing_token_unit,
+            cache_read_cost_per_1m=cache_read_cost_per_1m,
+            cache_write_5m_cost_per_1m=cache_write_5m_cost_per_1m,
+            cache_write_1h_cost_per_1m=cache_write_1h_cost_per_1m,
             max_tokens=max_tokens,
             default_temperature=default_temperature,
             is_active=is_active,

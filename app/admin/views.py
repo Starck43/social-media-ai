@@ -50,6 +50,7 @@ from app.types.enums.llm_types import APIFormatType
 from ..services.ai.llm_client import LLMClientFactory
 from .base import BaseAdmin
 from .catalog import PermissionLabelAdmin, PlatformRoleGrantAdmin
+from .price_fields import ExactModelPriceField
 from .widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
 
 logger = logging.getLogger(__name__)
@@ -1290,6 +1291,11 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         await super().after_model_change(data, model, is_created, request)
 
 
+def _catalog_rate(value, token_unit: int) -> str:
+    unit_label = "1K" if token_unit == 1000 else "1M"
+    return f"{model_price(value)} / {unit_label}"
+
+
 class LLMModelAdmin(BaseAdmin, model=LLMModel):
     name = "Модель ИИ"
     name_plural = "Модели ИИ"
@@ -1304,8 +1310,12 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         "provider",
         "model_id",
         "model_type",
+        "pricing_token_unit",
         "input_cost_per_1k",
         "output_cost_per_1k",
+        "cache_read_cost_per_1m",
+        "cache_write_5m_cost_per_1m",
+        "cache_write_1h_cost_per_1m",
         "is_default",
         "is_active",
     ]
@@ -1314,8 +1324,6 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         "name",
         "model_type",
         "max_tokens",
-        "input_cost_per_1k",
-        "output_cost_per_1k",
         "is_default",
         "is_active",
     ]
@@ -1330,8 +1338,12 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             "provider": "Провайдер",
             "model_type": "Тип модели",
             "custom_endpoint_path": "Кастомный endpoint",
-            "input_cost_per_1k": "Вход $/1K",
-            "output_cost_per_1k": "Выход $/1K",
+            "pricing_token_unit": "Единица обычного тарифа",
+            "input_cost_per_1k": "Входной тариф",
+            "output_cost_per_1k": "Выходной тариф",
+            "cache_read_cost_per_1m": "Чтение кэша $/1M",
+            "cache_write_5m_cost_per_1m": "Запись кэша 5 мин $/1M",
+            "cache_write_1h_cost_per_1m": "Запись кэша 1 час $/1M",
             "max_tokens": "Макс. токенов",
             "default_temperature": "Температура",
             "is_active": "Активна",
@@ -1369,8 +1381,12 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         "description",
         "model_type",
         "custom_endpoint_path",
+        "pricing_token_unit",
         "input_cost_per_1k",
         "output_cost_per_1k",
+        "cache_read_cost_per_1m",
+        "cache_write_5m_cost_per_1m",
+        "cache_write_1h_cost_per_1m",
         "max_tokens",
         "default_temperature",
         "is_active",
@@ -1379,9 +1395,13 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 
     form_overrides = {
         "model_type": CommaSeparatedSelectMultipleField,
-        # Explicit fields also support SQLAlchemy 2.1 Float conversion in SQLAdmin.
-        "input_cost_per_1k": FloatField,
-        "output_cost_per_1k": FloatField,
+        "pricing_token_unit": SelectField,
+        # Parse decimal amounts exactly and store the entered raw rate unchanged.
+        "input_cost_per_1k": ExactModelPriceField,
+        "output_cost_per_1k": ExactModelPriceField,
+        "cache_read_cost_per_1m": ExactModelPriceField,
+        "cache_write_5m_cost_per_1m": ExactModelPriceField,
+        "cache_write_1h_cost_per_1m": ExactModelPriceField,
         "default_temperature": FloatField,
         **BaseAdmin.form_overrides,
     }
@@ -1405,8 +1425,33 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             "widget": widgets.ListWidget(prefix_label=False),
             "option_widget": widgets.CheckboxInput(),
         },
-        "input_cost_per_1k": {"label": "Цена входа $/1K токенов", "description": "Например: 0.0015 для GPT-3.5"},
-        "output_cost_per_1k": {"label": "Цена выхода $/1K токенов", "description": "Например: 0.002"},
+        "pricing_token_unit": {
+            "label": "Единица обычного тарифа",
+            "description": "Выбранная единица не пересчитывает цены при изменении.",
+            "choices": [(1000, "USD за 1 000 токенов"), (1000000, "USD за 1 000 000 токенов")],
+            "coerce": int,
+            "default": 1000000,
+        },
+        "input_cost_per_1k": {
+            "label": "Цена входа, USD за выбранное число токенов",
+            "description": "Введите сумму как указано в поле единицы тарифа; изменение единицы не меняет сумму.",
+        },
+        "output_cost_per_1k": {
+            "label": "Цена выхода, USD за выбранное число токенов",
+            "description": "Введите сумму как указано в поле единицы тарифа; изменение единицы не меняет сумму.",
+        },
+        "cache_read_cost_per_1m": {
+            "label": "Чтение кэша $/1M токенов",
+            "description": "Пусто означает, что тариф не настроен",
+        },
+        "cache_write_5m_cost_per_1m": {
+            "label": "Запись кэша 5 мин $/1M токенов",
+            "description": "Пусто означает, что тариф не настроен",
+        },
+        "cache_write_1h_cost_per_1m": {
+            "label": "Запись кэша 1 час $/1M токенов",
+            "description": "Пусто означает, что тариф не настроен",
+        },
         "max_tokens": {
             "label": "Макс. токенов",
             "description": "Максимум токенов генерации (не размер контекстного окна)",
@@ -1461,8 +1506,18 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     column_formatters = {
         "provider": lambda m, a: m.provider.name if m.provider else "—",
         "model_type": lambda m, a: m.model_type if m.model_type else "—",
-        "input_cost_per_1k": lambda m, a: model_price(m.input_cost_per_1k),
-        "output_cost_per_1k": lambda m, a: model_price(m.output_cost_per_1k),
+        "pricing_token_unit": lambda m, a: "1K tokens" if m.pricing_token_unit == 1000 else "1M tokens",
+        "input_cost_per_1k": lambda m, a: _catalog_rate(m.input_cost_per_1k, m.pricing_token_unit),
+        "output_cost_per_1k": lambda m, a: _catalog_rate(m.output_cost_per_1k, m.pricing_token_unit),
+        "cache_read_cost_per_1m": lambda m, a: model_price(m.cache_read_cost_per_1m)
+        if m.cache_read_cost_per_1m is not None
+        else "—",
+        "cache_write_5m_cost_per_1m": lambda m, a: model_price(m.cache_write_5m_cost_per_1m)
+        if m.cache_write_5m_cost_per_1m is not None
+        else "—",
+        "cache_write_1h_cost_per_1m": lambda m, a: model_price(m.cache_write_1h_cost_per_1m)
+        if m.cache_write_1h_cost_per_1m is not None
+        else "—",
         **BaseAdmin.column_formatters,
     }
 

@@ -23,15 +23,36 @@ class PersonalLLMDispatch(Base):
         CheckConstraint(
             "(input_cost_per_1k IS NULL OR (input_cost_per_1k >= 0 AND input_cost_per_1k <= 9999999999.99999999)) "
             "AND (output_cost_per_1k IS NULL OR "
-            "(output_cost_per_1k >= 0 AND output_cost_per_1k <= 9999999999.99999999))",
+            "(output_cost_per_1k >= 0 AND output_cost_per_1k <= 9999999999.99999999)) "
+            "AND (cache_read_cost_per_1m IS NULL OR "
+            "(cache_read_cost_per_1m >= 0 AND cache_read_cost_per_1m <= 9999999999.99999999)) "
+            "AND (cache_write_5m_cost_per_1m IS NULL OR "
+            "(cache_write_5m_cost_per_1m >= 0 AND cache_write_5m_cost_per_1m <= 9999999999.99999999)) "
+            "AND (cache_write_1h_cost_per_1m IS NULL OR "
+            "(cache_write_1h_cost_per_1m >= 0 AND cache_write_1h_cost_per_1m <= 9999999999.99999999))",
             name="ck_personal_llm_dispatch_rates",
         ),
         CheckConstraint(
+            "COALESCE(((pricing_policy_version = 'provider-price-v1' "
+            "AND (pricing_token_unit IS NULL OR pricing_token_unit = 1000) "
+            "AND cache_read_cost_per_1m IS NULL AND cache_write_5m_cost_per_1m IS NULL "
+            "AND cache_write_1h_cost_per_1m IS NULL AND ("
             "(tariff_state = 'undefined' AND (input_cost_per_1k IS NULL OR output_cost_per_1k IS NULL)) OR "
             "(tariff_state = 'free' AND input_cost_per_1k IS NOT NULL AND output_cost_per_1k IS NOT NULL "
             "AND input_cost_per_1k = 0 AND output_cost_per_1k = 0) OR "
             "(tariff_state = 'known' AND input_cost_per_1k IS NOT NULL AND output_cost_per_1k IS NOT NULL "
-            "AND input_cost_per_1k + output_cost_per_1k > 0)",
+            "AND input_cost_per_1k + output_cost_per_1k > 0))) OR "
+            "(pricing_policy_version = 'cache-tariff-v2' AND pricing_token_unit IN (1000, 1000000) "
+            "AND ((tariff_state = 'undefined' "
+            "AND (input_cost_per_1k IS NULL OR output_cost_per_1k IS NULL)) OR "
+            "(tariff_state = 'free' AND input_cost_per_1k IS NOT NULL AND output_cost_per_1k IS NOT NULL "
+            "AND cache_read_cost_per_1m IS NOT NULL AND cache_write_5m_cost_per_1m IS NOT NULL "
+            "AND cache_write_1h_cost_per_1m IS NOT NULL "
+            "AND input_cost_per_1k = 0 AND output_cost_per_1k = 0 "
+            "AND cache_read_cost_per_1m = 0 AND cache_write_5m_cost_per_1m = 0 AND cache_write_1h_cost_per_1m = 0) OR "
+            "(tariff_state = 'known' AND input_cost_per_1k IS NOT NULL AND output_cost_per_1k IS NOT NULL "
+            "AND (cache_read_cost_per_1m IS DISTINCT FROM 0 OR cache_write_5m_cost_per_1m IS DISTINCT FROM 0 "
+            "OR cache_write_1h_cost_per_1m IS DISTINCT FROM 0 OR input_cost_per_1k > 0 OR output_cost_per_1k > 0))))), FALSE)",
             name="ck_personal_llm_dispatch_snapshot",
         ),
         CheckConstraint("utc_day = (prepared_at AT TIME ZONE 'UTC')::date", name="ck_personal_llm_dispatch_utc_day"),
@@ -68,6 +89,10 @@ class PersonalLLMDispatch(Base):
     provider_name: Mapped[str] = Column(String(200), nullable=False)
     input_cost_per_1k: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
     output_cost_per_1k: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    cache_read_cost_per_1m: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    cache_write_5m_cost_per_1m: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    cache_write_1h_cost_per_1m: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)
+    pricing_token_unit: Mapped[int | None] = Column(Integer, nullable=True)
     tariff_state: Mapped[str] = Column(String(16), nullable=False)
     pricing_policy_version: Mapped[str] = Column(String(32), nullable=False)
     source_id: Mapped[int | None] = Column(Integer, nullable=True)

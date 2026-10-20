@@ -14,9 +14,11 @@ from types import MappingProxyType
 from typing import Any, Mapping
 from uuid import uuid4
 
+from .cache_pricing import CACHE_RATE_FIELDS, model_pricing_token_unit
 from .attempt_journal import _tariff_rate
 
-PRICING_POLICY_VERSION = "provider-price-v1"
+LEGACY_PRICING_POLICY_VERSION = "provider-price-v1"
+PRICING_POLICY_VERSION = "cache-tariff-v2"
 RECEIPT_FIELDS = (
     "dispatch_id",
     "tenant_id",
@@ -30,6 +32,8 @@ RECEIPT_FIELDS = (
     "provider_name",
     "input_cost_per_1k",
     "output_cost_per_1k",
+    *CACHE_RATE_FIELDS,
+    "pricing_token_unit",
     "tariff_state",
     "pricing_policy_version",
     "source_id",
@@ -44,10 +48,19 @@ def _positive_id(value: Any) -> bool:
     return type(value) is int and 0 < value <= 2147483647
 
 
-def _tariff_state(input_rate: Decimal | None, output_rate: Decimal | None) -> str:
+def _tariff_state(
+    input_rate: Decimal | None,
+    output_rate: Decimal | None,
+    cache_rates: Mapping[str, Decimal | None] | None = None,
+    policy: str = LEGACY_PRICING_POLICY_VERSION,
+) -> str:
     if input_rate is None or output_rate is None:
         return "undefined"
-    return "free" if input_rate == output_rate == 0 else "known"
+    if policy == LEGACY_PRICING_POLICY_VERSION:
+        return "free" if input_rate == output_rate == 0 else "known"
+    cache_rates = cache_rates or {}
+    rates = (input_rate, output_rate, *(cache_rates.get(field) for field in CACHE_RATE_FIELDS))
+    return "free" if all(rate == 0 for rate in rates) else "known"
 
 
 def _preparation_time(value: Any) -> datetime:
@@ -58,9 +71,18 @@ def _preparation_time(value: Any) -> datetime:
 
 def validate_receipt(record: Mapping[str, Any]) -> dict[str, Any]:
     """Validate a fixed, prompt-free record without mutating its caller."""
-    if set(record) not in (set(RECEIPT_FIELDS), set(RECEIPT_FIELDS) | {"initiated_by_user_id"}):
+    legacy_fields = set(RECEIPT_FIELDS) - set(CACHE_RATE_FIELDS) - {"pricing_token_unit"}
+    if set(record) not in (
+        legacy_fields,
+        legacy_fields | {"initiated_by_user_id"},
+        set(RECEIPT_FIELDS),
+        set(RECEIPT_FIELDS) | {"initiated_by_user_id"},
+    ):
         raise ValueError("Receipt fields do not match the storage contract")
     value = dict(record)
+    for field in CACHE_RATE_FIELDS:
+        value.setdefault(field, None)
+    value.setdefault("pricing_token_unit", None)
     value.setdefault("initiated_by_user_id", None)
     if type(value["dispatch_id"]) is not str or not re.fullmatch(r"[0-9a-f]{32}", value["dispatch_id"]):
         raise ValueError("Invalid receipt identity")
@@ -84,14 +106,28 @@ def validate_receipt(record: Mapping[str, Any]) -> dict[str, Any]:
     value["prepared_at"] = _preparation_time(value["prepared_at"])
     if type(value["utc_day"]) is not date or value["utc_day"] != value["prepared_at"].date():
         raise ValueError("Receipt day must match its UTC preparation time")
-    for field in ("input_cost_per_1k", "output_cost_per_1k"):
+    for field in ("input_cost_per_1k", "output_cost_per_1k", *CACHE_RATE_FIELDS):
         rate = value[field]
         if rate is not None and (type(rate) is not Decimal or _tariff_rate(rate) is None):
             raise ValueError("Receipt rates must be exact representable Decimal USD")
-    if value["tariff_state"] != _tariff_state(value["input_cost_per_1k"], value["output_cost_per_1k"]):
-        raise ValueError("Tariff state does not match its snapshot")
-    if value["pricing_policy_version"] != PRICING_POLICY_VERSION:
+    if value["pricing_policy_version"] not in {LEGACY_PRICING_POLICY_VERSION, PRICING_POLICY_VERSION}:
         raise ValueError("Unsupported receipt pricing policy")
+    if value["pricing_policy_version"] == LEGACY_PRICING_POLICY_VERSION and any(
+        value[field] is not None for field in CACHE_RATE_FIELDS
+    ):
+        raise ValueError("Legacy receipt cannot contain cache tariff evidence")
+    if value["pricing_policy_version"] == LEGACY_PRICING_POLICY_VERSION:
+        if value["pricing_token_unit"] not in (None, 1000):
+            raise ValueError("Legacy receipt unit must preserve USD per 1K semantics")
+    elif type(value["pricing_token_unit"]) is not int or value["pricing_token_unit"] not in (1000, 1_000_000):
+        raise ValueError("V2 receipt requires an explicit supported token unit")
+    if value["tariff_state"] != _tariff_state(
+        value["input_cost_per_1k"],
+        value["output_cost_per_1k"],
+        {field: value[field] for field in CACHE_RATE_FIELDS},
+        value["pricing_policy_version"],
+    ):
+        raise ValueError("Tariff state does not match its snapshot")
     return value
 
 
@@ -119,6 +155,8 @@ def build_dispatch_receipt(
     provider = model.provider
     input_rate = _tariff_rate(model.input_cost_per_1k)
     output_rate = _tariff_rate(model.output_cost_per_1k)
+    cache_rates = {field: _tariff_rate(getattr(model, field, None)) for field in CACHE_RATE_FIELDS}
+    unit = model_pricing_token_unit(model)
     record = {
         "dispatch_id": dispatch_id,
         "tenant_id": tenant_id,
@@ -132,7 +170,9 @@ def build_dispatch_receipt(
         "provider_name": provider.name,
         "input_cost_per_1k": input_rate,
         "output_cost_per_1k": output_rate,
-        "tariff_state": _tariff_state(input_rate, output_rate),
+        **cache_rates,
+        "pricing_token_unit": unit,
+        "tariff_state": _tariff_state(input_rate, output_rate, cache_rates, PRICING_POLICY_VERSION),
         "pricing_policy_version": PRICING_POLICY_VERSION,
         **{field: execution.get(field) for field in EXECUTION_FIELDS},
         "initiated_by_user_id": execution.get("initiated_by_user_id"),

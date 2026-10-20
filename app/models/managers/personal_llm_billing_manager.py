@@ -28,6 +28,13 @@ from .personal_billing_manager import (
     PersonalBillingUnavailable,
 )
 
+CACHE_RATE_FIELDS = (
+    "cache_read_cost_per_1m",
+    "cache_write_5m_cost_per_1m",
+    "cache_write_1h_cost_per_1m",
+)
+SUPPORTED_PRICING_UNITS = (1000, 1_000_000)
+
 UNDEFINED_POLICY_VERSION = "owner-undefined-allow-v1"
 BOUND_POLICY_VERSION = "reviewed-request-envelope-v1"
 BASELINE_VERSION = "reviewed-clean-midnight-v1"
@@ -77,16 +84,59 @@ class PersonalLLMBillingManager(BaseManager):
         uses_tools = request_shape["uses_tools"]
         if uses_tools and policy.request_mode != "text_and_tools":
             raise BudgetAdmissionDenied("Reviewed bound does not support tool inputs")
+        pricing_policy = receipt.get("pricing_policy_version", "provider-price-v1")
+        if pricing_policy == "cache-tariff-v2":
+            unit = receipt.get("pricing_token_unit")
+            if type(unit) is not int or unit not in SUPPORTED_PRICING_UNITS:
+                return "unbounded", None, None
+            cache_rates = [receipt.get(field) for field in CACHE_RATE_FIELDS]
+            # A configured prompt-cache mode can add cost to any request. Missing
+            # cache tariffs cannot support a bounded reservation claim.
+            if any(rate is None for rate in cache_rates):
+                return "unbounded", None, None
+            divisor = Decimal(unit)
+            rates_per_token = [
+                Decimal(receipt["input_cost_per_1k"]) / divisor,
+                Decimal(receipt["output_cost_per_1k"]) / divisor,
+                *(Decimal(rate) / Decimal(1_000_000) for rate in cache_rates),
+            ]
+        elif pricing_policy == "provider-price-v1":
+            divisor = Decimal(1000)
+            rates_per_token = [
+                Decimal(receipt["input_cost_per_1k"]) / divisor,
+                Decimal(receipt["output_cost_per_1k"]) / divisor,
+            ]
+        else:
+            return "unbounded", None, None
         with localcontext() as context:
             context.prec = 64
             # The provider enforces its reviewed context window; without a
             # model tokenizer, price every context token at the higher rate.
             ceiling = (
                 Decimal(policy.max_input_tokens + policy.max_output_tokens)
-                * max(receipt["input_cost_per_1k"], receipt["output_cost_per_1k"])
-            ) / Decimal(1000)
+                * max(rates_per_token)
+            )
             ceiling = ceiling.quantize(Decimal("0.000000001"), rounding=ROUND_CEILING)
         return "bounded", exact_usd(ceiling), policy.version
+
+    @staticmethod
+    def _selected_model_matches_snapshot(fresh_model, model, selected_provider) -> bool:
+        """Bind admission to every raw pricing input plus the selected identity."""
+        return bool(
+            fresh_model is not None
+            and selected_provider is not None
+            and fresh_model.model_id == getattr(model, "model_id", None)
+            and fresh_model.max_tokens == getattr(model, "max_tokens", None)
+            and fresh_model.input_cost_per_1k == getattr(model, "input_cost_per_1k", None)
+            and fresh_model.output_cost_per_1k == getattr(model, "output_cost_per_1k", None)
+            and getattr(fresh_model, "pricing_token_unit", None) == getattr(model, "pricing_token_unit", None)
+            and all(
+                getattr(fresh_model, field, None) == getattr(model, field, None) for field in CACHE_RATE_FIELDS
+            )
+            and fresh_model.provider.id == getattr(selected_provider, "id", None)
+            and fresh_model.provider.name == getattr(selected_provider, "name", None)
+            and fresh_model.provider.api_format == getattr(selected_provider, "api_format", None)
+        )
 
     async def reserve_dispatch(
         self,
@@ -177,16 +227,7 @@ class PersonalLLMBillingManager(BaseManager):
                 raise PersonalBillingUnavailable("Selected model or provider is inactive")
             now = datetime.now(timezone.utc)
             selected_provider = getattr(model, "provider", None)
-            if (
-                fresh_model.model_id != getattr(model, "model_id", None)
-                or fresh_model.max_tokens != getattr(model, "max_tokens", None)
-                or fresh_model.input_cost_per_1k != getattr(model, "input_cost_per_1k", None)
-                or fresh_model.output_cost_per_1k != getattr(model, "output_cost_per_1k", None)
-                or selected_provider is None
-                or fresh_model.provider.id != getattr(selected_provider, "id", None)
-                or fresh_model.provider.name != getattr(selected_provider, "name", None)
-                or fresh_model.provider.api_format != getattr(selected_provider, "api_format", None)
-            ):
+            if not self._selected_model_matches_snapshot(fresh_model, model, selected_provider):
                 raise PersonalBillingUnavailable("Selected model or provider changed; reload configuration before retry")
             receipt = build_dispatch_receipt(
                 fresh_model,

@@ -9,6 +9,7 @@ from app.core.analysis_constants import DEFAULT_ANALYSIS_PARAMS
 from app.core.config import settings
 from app.models import AgentScenario, AIAnalytics, LLMModel, Source
 from app.services.ai.chain_resolver import _normalize, _token_set_ratio, resolve_chain_async
+from app.services.ai.cache_pricing import CACHE_RATE_FIELDS, cache_price_usd, model_pricing_token_unit
 from app.services.ai.content_classifier import ContentClassifier
 from app.services.ai.dedup import batch_hash, filter_by_context_receipts, hashes_hash, item_hash
 from app.services.ai.analysis_context import analysis_fingerprint
@@ -1198,22 +1199,23 @@ class AIAnalyzer:
     #: Scale of AIAnalytics.estimated_cost (USD cents, 6 decimals = 1e-8 USD).
     COST_SCALE = Decimal("0.000001")
 
-    async def _price_usage(self, usage_by_result: list[dict[str, Any]]) -> Decimal:
-        """Use provider totals when resolved, otherwise estimate from model tariffs.
+    async def _price_usage(self, usage_by_result: list[dict[str, Any]]) -> Decimal | None:
+        """Use provider totals or known tariffs; unresolved included spend stays NULL.
 
         Tariff fallback does not account for cache categories or other pricing
         modifiers. Returns USD cents, quantised to the scale of the
         `estimated_cost` column. Decimal throughout: tariffs are USD per 1K with
         4+ decimals, so float would both drift and hide sub-cent calls that
-        cheap models produce on nearly every run. Unknown models contribute 0
-        (never hardcode rates); missing usage rows are priced at 0.
+        cheap models produce on nearly every run. Partial totals would misstate spend.
         """
         total_usd = Decimal(0)
         for entry in usage_by_result:
-            _, reported_cost = _provider_cost_for_usage_entry(entry)
+            report_claimed, reported_cost = _provider_cost_for_usage_entry(entry)
             if reported_cost is not None:
                 total_usd += reported_cost
                 continue
+            if report_claimed:
+                return None
             model_id = entry.get("model_id")
             req_tokens = entry.get("request_tokens", 0) or 0
             resp_tokens = entry.get("response_tokens", 0) or 0
@@ -1223,13 +1225,32 @@ class AIAnalyzer:
                 model = await LLMModel.objects.filter(model_id=model_id, is_active=True).first()
             except Exception as e:
                 logger.warning(f"Cost lookup failed for model {model_id}: {e}")
-                continue
+                return None
             if not model:
                 logger.warning(f"No llm_models row for {model_id}; cost contribution skipped")
-                continue
-            total_usd += Decimal(req_tokens) / 1000 * Decimal(str(model.input_cost_per_1k or 0.0)) + Decimal(
+                return None
+            cache_usage = entry.get("accounting_cache_usage")
+            if cache_usage is not None:
+                cache_input = cache_price_usd(
+                    cache_usage,
+                    {
+                        "input_cost_per_1k": model.input_cost_per_1k,
+                        **{field: getattr(model, field, None) for field in CACHE_RATE_FIELDS},
+                    },
+                    prompt_tokens=req_tokens,
+                    pricing_unit=model_pricing_token_unit(model),
+                )
+                output_rate = model.output_cost_per_1k
+                if cache_input is None or output_rate is None:
+                    return None
+                if cache_input is not None and output_rate is not None:
+                    unit = model_pricing_token_unit(model)
+                    total_usd += cache_input + Decimal(resp_tokens) / unit * Decimal(str(output_rate))
+                    continue
+            unit = model_pricing_token_unit(model)
+            total_usd += Decimal(req_tokens) / unit * Decimal(str(model.input_cost_per_1k or 0.0)) + Decimal(
                 resp_tokens
-            ) / 1000 * Decimal(str(model.output_cost_per_1k or 0.0))
+            ) / unit * Decimal(str(model.output_cost_per_1k or 0.0))
         cents = total_usd * 100
         return cents.quantize(self.COST_SCALE, rounding=ROUND_HALF_UP) if cents > 0 else Decimal(0)
 
@@ -1655,6 +1676,8 @@ class AIAnalyzer:
                     usage_entry["accounting_cost_usd"] = result.get("accounting_cost_usd")
                 else:
                     usage_entry["provider_response"] = response
+                if "accounting_cache_usage" in result:
+                    usage_entry["accounting_cache_usage"] = result.get("accounting_cache_usage")
                 usage_by_result.append(usage_entry)
 
                 # Extract provider from request
@@ -1839,7 +1862,7 @@ class AIAnalyzer:
                         request_tokens=total_request_tokens if total_request_tokens > 0 else None,
                         response_tokens=total_response_tokens if total_response_tokens > 0 else None,
                         estimated_cost=estimated_cost_cents
-                        if estimated_cost_cents > 0 or persist_zero_cost
+                        if estimated_cost_cents is not None and (estimated_cost_cents > 0 or persist_zero_cost)
                         else None,
                         provider_type=primary_provider,
                         media_types=list(media_types_analyzed) if media_types_analyzed else None,
@@ -1863,7 +1886,7 @@ class AIAnalyzer:
                         request_tokens=total_request_tokens if total_request_tokens > 0 else None,
                         response_tokens=total_response_tokens if total_response_tokens > 0 else None,
                         estimated_cost=estimated_cost_cents
-                        if estimated_cost_cents > 0 or persist_zero_cost
+                        if estimated_cost_cents is not None and (estimated_cost_cents > 0 or persist_zero_cost)
                         else None,
                         provider_type=primary_provider,
                         media_types=list(media_types_analyzed) if media_types_analyzed else None,

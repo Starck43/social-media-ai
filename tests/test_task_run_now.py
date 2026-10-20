@@ -698,3 +698,66 @@ async def test_task_detail_renders_active_job_and_sources_inside_authorized_scop
             assert await Job.objects.filter(agent_task_id=task.id).count() == (11 if fallback else 1)
     finally:
         await _drop(owner, tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_manual_rerun_replaces_unfinished_jobs(client, monkeypatch):
+    """A second manual run replaces this task's unfinished jobs.
+
+    One-off tasks (digest/prune and `@once` work) used to accumulate a new
+    pending row on every press while the previous row was still pending or
+    running. The replacement happens inside the admission transaction: the
+    old rows are deleted before the new one is inserted, so the queue holds
+    exactly one run of this task.
+    """
+    from datetime import datetime, timezone
+
+    from app.jobs import dispatcher
+
+    monkeypatch.setattr(dispatcher, "launch_job_background", lambda *args, **kwargs: None)
+
+    user, tenant_id = await _register(client, "rerun")
+    try:
+        now = datetime.now(timezone.utc)
+        with tenant_scope(bypass=True):
+            task = await AgentTask.objects.create(
+                name=_name("rerun-digest"),
+                job_type="digest",
+                cron_expr="@once",
+                payload={"digest_period": "day"},
+                is_active=False,
+                tenant_id=tenant_id,
+            )
+            old_pending = await Job.objects.create(
+                agent_task_id=task.id,
+                tenant_id=tenant_id,
+                job_type="digest",
+                payload={},
+                status="pending",
+                run_at=now,
+            )
+            old_running = await Job.objects.create(
+                agent_task_id=task.id,
+                tenant_id=tenant_id,
+                job_type="digest",
+                payload={},
+                status="running",
+                run_at=now,
+                attempts=1,
+                locked_at=now,
+                started_at=now,
+            )
+
+        token = await _csrf(client, "/app/tasks")
+        response = await client.post(f"/app/tasks/{task.id}/run-now", data={"_csrf": token})
+        assert response.status_code == 200
+
+        with tenant_scope(bypass=True):
+            jobs = await Job.objects.filter(agent_task_id=task.id)
+        remaining = {job.id for job in jobs}
+        assert old_pending.id not in remaining
+        assert old_running.id not in remaining
+        assert len(jobs) == 1, "the rerun must replace, not add to, unfinished jobs"
+        assert jobs[0].status == "pending"
+    finally:
+        await _drop(user, tenant_id)

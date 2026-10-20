@@ -297,6 +297,16 @@ is no export or offboarding flow yet. Lowering the value takes effect at the nex
 | Variable | Default | Description |
 |---|---|---|
 | `LOG_LEVEL` | `INFO` | Python logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+| `LOG_DIR` | `~/.social-media-ai/logs` | Writable directory for rotating `app.log`; absolute path required (`~` is expanded) |
+
+File logging remains enabled. Importing the application logger creates `LOG_DIR`
+and opens `app.log` (10 MiB rotation, five backups), but never creates `./logs`
+or writes into the installed package. The service user's home directory is used
+by default on every platform. Containers/services that previously collected
+`./logs` must set `LOG_DIR` to an absolute writable mounted directory and update
+their log collection configuration. An unwritable directory fails explicitly;
+there is no silent fallback to CWD. Static files and both template roots resolve
+relative to the installed Python modules, not the process working directory.
 
 ---
 

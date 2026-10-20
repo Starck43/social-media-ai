@@ -101,7 +101,7 @@ class LLMModelActions:
                 "request_prompt": question,
                 "max_tokens": probe.get("effective_max_tokens") or limit,
             }
-            estimate = _probe_estimate(model, result.get("usage", {}))
+            estimate = _probe_estimate(model, result.get("usage", {}), result.get("response_json"))
             result["estimated_cost"] = estimate
             if estimate is not None:
                 try:
@@ -180,15 +180,38 @@ class LLMModelActions:
         )
 
 
-def _probe_estimate(model, usage: dict[str, Any]) -> Decimal | None:
+def _probe_estimate(model, usage: dict[str, Any], response: Any = None) -> Decimal | None:
     """Display estimate only; unknown usage/rates are not zero or settled spend."""
     incoming, outgoing = usage.get("prompt_tokens"), usage.get("completion_tokens")
     if any(type(value) is not int or value < 0 for value in (incoming, outgoing)):
         return None
     try:
+        from app.services.ai.attempt_journal import provider_cost_evidence
+        from app.services.ai.cache_pricing import cache_price_usd, model_pricing_token_unit, normalize_cache_usage
+
+        claimed, reported = provider_cost_evidence(response)
+        if claimed:
+            return reported
         rates = [Decimal(str(model.input_cost_per_1k)), Decimal(str(model.output_cost_per_1k))]
         if any(not value.is_finite() or value < 0 for value in rates):
             return None
-        return (incoming * rates[0] + outgoing * rates[1]) / 1000
+        unit = model_pricing_token_unit(model)
+        if isinstance(response, dict) and isinstance(response.get("usage"), dict):
+            cache = normalize_cache_usage(response, getattr(model.provider, "api_format", None))
+            cache_cost = cache_price_usd(
+                cache,
+                {
+                    "input_cost_per_1k": rates[0],
+                    "cache_read_cost_per_1m": getattr(model, "cache_read_cost_per_1m", None),
+                    "cache_write_5m_cost_per_1m": getattr(model, "cache_write_5m_cost_per_1m", None),
+                    "cache_write_1h_cost_per_1m": getattr(model, "cache_write_1h_cost_per_1m", None),
+                },
+                prompt_tokens=incoming,
+                pricing_unit=unit,
+            )
+            if cache_cost is None:
+                return None
+            return cache_cost + Decimal(outgoing) * rates[1] / unit
+        return (incoming * rates[0] + outgoing * rates[1]) / unit
     except (InvalidOperation, TypeError, ValueError):
         return None

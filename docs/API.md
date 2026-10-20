@@ -198,10 +198,16 @@ platform-admin guards, and manager authorization remains unchanged.
 
 The runtime schema fix is already present in `eb6cad6`; the bounded
 [HTTP/OpenAPI verification](validation/http-user-response-privacy.md) adds
-isolated router tests with explicit identity/storage doubles. It is not a full
-application, token, middleware or DB acceptance result. Historical privilege-update
-notes below are outside this response-only verification; they do not represent
-newly validated findings. Never copy real hashes into reports or logs.
+isolated router tests with explicit identity/storage doubles. Owner integration
+acceptance at PR source `987796aa` additionally exercised the full application
+OpenAPI and real ASGI/JWT/middleware/ORM list, me and profile routes: 2 passed,
+including hash-free responses and preserved authorization. See the
+[attributed integration evidence](https://github.com/Starck43/social-media-ai/pull/227#issuecomment-6300278265).
+The list request selected its synthetic record by the real skip/limit manager
+page. Existing legacy rows with invalid email strings still make an unbounded
+default page fail response validation; those rows are outside this response
+privacy acceptance. Historical privilege-update notes below are not P10-T03
+acceptance. Never copy real hashes into reports or logs.
 
 ### List Users
 

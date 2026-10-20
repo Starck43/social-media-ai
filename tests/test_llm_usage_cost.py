@@ -12,7 +12,13 @@ from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
 
 from app.services.ai import llm_client as llm_client_module
-from app.services.ai.llm_client import AnthropicClient, CustomClient, OpenAICompatibleClient, price_usage_usd
+from app.services.ai.llm_client import (
+    AnthropicClient,
+    CustomClient,
+    OpenAICompatibleClient,
+    _model_price_floor,
+    price_usage_usd,
+)
 
 
 def _model(input_cost_per_1k=0.01, output_cost_per_1k=0.02, **extra):
@@ -87,6 +93,25 @@ class TestPriceUsageUsd:
     def test_missing_usage_defaults_to_zero(self):
         assert price_usage_usd(_model(), None, None) == 0.0
 
+    def test_million_unit_catalog_values_are_priced_and_compared_as_usd_per_million(self):
+        model = _model(
+            input_cost_per_1k=0.12,
+            output_cost_per_1k=0.4,
+            pricing_token_unit=1_000_000,
+            cache_read_cost_per_1m=0.024,
+        )
+        assert price_usage_usd(model, 1_000_000, 100_000) == 0.16
+        assert _model_price_floor(model) == 0.4
+
+    def test_cache_only_rate_is_not_treated_as_free_for_comparison(self):
+        model = _model(
+            input_cost_per_1k=0,
+            output_cost_per_1k=0,
+            pricing_token_unit=1_000_000,
+            cache_read_cost_per_1m=0.024,
+        )
+        assert _model_price_floor(model) == 0.024
+
 
 class TestUsageBlock:
     def test_usage_block_always_carries_cost(self):
@@ -127,7 +152,14 @@ class TestAnthropicParseChat:
         }
         parsed = _anthropic_client()._parse_chat(data)
         assert parsed["content"] == "yo"
-        assert parsed["usage"] == {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "cost": 0.002}
+        assert parsed["usage"] == {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+            "cost": 0.002,
+            "cost_source": "flat_tariff_estimate",
+            "cost_is_estimate": True,
+        }
 
 
 class TestProviderCostUsageProjection:
@@ -175,6 +207,25 @@ class TestProviderCostUsageProjection:
             ]
             == 0.002
         )
+
+    def test_known_cache_read_uses_provider_usage_and_cache_rate(self):
+        client = _openai_client(
+            input_cost_per_1k=0.12, output_cost_per_1k=0.4, pricing_token_unit=1_000_000
+        )
+        client.provider.api_format = "openai"
+        client.model.cache_read_cost_per_1m = 0.024
+        result = client._usage_block_for_response(
+            1000,
+            0,
+            {
+                "usage": {
+                    "prompt_tokens_details": {"cached_tokens": 800, "cache_write_tokens": 0}
+                }
+            },
+        )
+        assert result["cost"] == 0.0000432
+        assert result["cost_source"] == "cache_tariff"
+        assert result["cost_is_estimate"] is True
 
     async def test_all_actual_adapter_chat_and_analyze_calls_use_provider_totals(self):
         cases = [

@@ -5,6 +5,7 @@ reassignment plan before committing.
 """
 
 import logging
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.agent.tools import tool
@@ -13,6 +14,56 @@ from app.models.managers.llm_model_manager import LLMModelManager
 from app.services.ai.llm_client import LLMClientFactory, journal_chat_attempt
 
 logger = logging.getLogger(__name__)
+_UNSET = object()
+
+
+def _public_model_prices(model: LLMModel) -> dict[str, Any]:
+    unit = model.pricing_token_unit or 1000
+    input_raw = Decimal(str(model.input_cost_per_1k))
+    output_raw = Decimal(str(model.output_cost_per_1k))
+    return {
+        "pricing_token_unit": unit,
+        "input_cost_per_1k": float(input_raw * Decimal(1000) / Decimal(unit)),
+        "output_cost_per_1k": float(output_raw * Decimal(1000) / Decimal(unit)),
+        "input_cost_per_1m": float(input_raw * Decimal(1_000_000) / Decimal(unit)),
+        "output_cost_per_1m": float(output_raw * Decimal(1_000_000) / Decimal(unit)),
+        "cache_read_cost_per_1m": (
+            float(model.cache_read_cost_per_1m) if model.cache_read_cost_per_1m is not None else None
+        ),
+        "cache_write_5m_cost_per_1m": (
+            float(model.cache_write_5m_cost_per_1m) if model.cache_write_5m_cost_per_1m is not None else None
+        ),
+        "cache_write_1h_cost_per_1m": (
+            float(model.cache_write_1h_cost_per_1m) if model.cache_write_1h_cost_per_1m is not None else None
+        ),
+    }
+
+
+def _raw_price(legacy_per_1k, canonical_per_1m, unit: int) -> float | None:
+    if legacy_per_1k is None or legacy_per_1k is _UNSET:
+        legacy_per_1k = None
+    if canonical_per_1m is None or canonical_per_1m is _UNSET:
+        canonical_per_1m = None
+    if legacy_per_1k is not None and canonical_per_1m is not None:
+        if Decimal(str(legacy_per_1k)) * Decimal(1000) != Decimal(str(canonical_per_1m)):
+            raise ValueError("per-1K and per-1M prices conflict")
+    amount = Decimal(str(canonical_per_1m)) if canonical_per_1m is not None else None
+    if amount is None and legacy_per_1k is not None:
+        amount = Decimal(str(legacy_per_1k)) * Decimal(1000)
+    if amount is None:
+        return None
+    if not amount.is_finite() or amount < 0:
+        raise ValueError("Model prices must be finite and non-negative")
+    return float(amount * Decimal(unit) / Decimal(1_000_000))
+
+
+def _cache_price(value):
+    if value is None:
+        return None
+    amount = Decimal(str(value))
+    if not amount.is_finite() or amount < 0:
+        raise ValueError("Cache prices must be finite and non-negative")
+    return amount
 
 
 # ──────────────────────────────────────────────────────────────
@@ -89,8 +140,7 @@ async def llm_models_list(
             "model_type": m.model_type,
             "custom_endpoint_path": m.custom_endpoint_path,
             "max_tokens": m.max_tokens,
-            "input_cost_per_1k": m.input_cost_per_1k,
-            "output_cost_per_1k": m.output_cost_per_1k,
+            **_public_model_prices(m),
             "default_temperature": m.default_temperature,
             "is_active": m.is_active,
             "is_default": m.is_default,
@@ -167,8 +217,25 @@ async def llm_model_test(model_id: int, prompt: str = "Привет! Расск�
             "model_type": {"type": "string", "enum": ["text", "image", "embedding", "decision"], "default": "text"},
             "description": {"type": "string"},
             "custom_endpoint_path": {"type": "string", "description": "Endpoint path for custom-format providers"},
-            "input_cost_per_1k": {"type": "number", "default": 0.0},
-            "output_cost_per_1k": {"type": "number", "default": 0.0},
+            "pricing_token_unit": {
+                "type": "integer",
+                "enum": [1000, 1000000],
+                "default": 1000000,
+                "description": "Raw catalog unit for input/output rates",
+            },
+            "input_cost_per_1k": {"type": "number", "description": "Legacy public USD per 1K rate"},
+            "output_cost_per_1k": {"type": "number", "description": "Legacy public USD per 1K rate"},
+            "input_cost_per_1m": {"type": "number", "description": "Canonical public USD per 1M rate"},
+            "output_cost_per_1m": {"type": "number", "description": "Canonical public USD per 1M rate"},
+            "cache_read_cost_per_1m": {"type": "number", "description": "USD per 1M cache-read tokens"},
+            "cache_write_5m_cost_per_1m": {
+                "type": "number",
+                "description": "USD per 1M five-minute cache-write tokens",
+            },
+            "cache_write_1h_cost_per_1m": {
+                "type": "number",
+                "description": "USD per 1M one-hour cache-write tokens",
+            },
             "max_tokens": {"type": "integer", "default": 4096},
             "default_temperature": {"type": "number", "default": 0.3},
             "is_active": {"type": "boolean", "default": True},
@@ -185,8 +252,14 @@ async def llm_model_add(
     model_type: str = "text",
     description: str | None = None,
     custom_endpoint_path: str | None = None,
-    input_cost_per_1k: float = 0.0,
-    output_cost_per_1k: float = 0.0,
+    pricing_token_unit: int = 1_000_000,
+    input_cost_per_1k: float | None = None,
+    output_cost_per_1k: float | None = None,
+    input_cost_per_1m: float | None = None,
+    output_cost_per_1m: float | None = None,
+    cache_read_cost_per_1m: float | None = None,
+    cache_write_5m_cost_per_1m: float | None = None,
+    cache_write_1h_cost_per_1m: float | None = None,
     max_tokens: int = 4096,
     default_temperature: float = 0.3,
     is_active: bool = True,
@@ -194,6 +267,10 @@ async def llm_model_add(
 ) -> dict[str, Any]:
     """Create a new LLM model. Requires confirmation."""
     try:
+        if pricing_token_unit not in {1000, 1_000_000}:
+            return {"error": "create_failed", "message": "pricing_token_unit must be 1000 or 1000000"}
+        raw_input = _raw_price(input_cost_per_1k, input_cost_per_1m, pricing_token_unit)
+        raw_output = _raw_price(output_cost_per_1k, output_cost_per_1m, pricing_token_unit)
         model = await LLMModel.objects.create_model(
             provider_id=provider_id,
             name=name,
@@ -201,8 +278,12 @@ async def llm_model_add(
             model_type=model_type,
             description=description,
             custom_endpoint_path=custom_endpoint_path,
-            input_cost_per_1k=input_cost_per_1k,
-            output_cost_per_1k=output_cost_per_1k,
+            input_cost_per_1k=raw_input if raw_input is not None else 0.0,
+            output_cost_per_1k=raw_output if raw_output is not None else 0.0,
+            pricing_token_unit=pricing_token_unit,
+            cache_read_cost_per_1m=_cache_price(cache_read_cost_per_1m),
+            cache_write_5m_cost_per_1m=_cache_price(cache_write_5m_cost_per_1m),
+            cache_write_1h_cost_per_1m=_cache_price(cache_write_1h_cost_per_1m),
             max_tokens=max_tokens,
             default_temperature=default_temperature,
             is_active=is_active,
@@ -222,6 +303,7 @@ async def llm_model_add(
         "model_id": model.model_id,
         "model_type": model.model_type,
         "is_default": model.is_default,
+        **_public_model_prices(model),
     }
 
 
@@ -239,8 +321,14 @@ async def llm_model_add(
             "model_type": {"type": "string", "enum": ["text", "image", "embedding", "decision"]},
             "description": {"type": "string"},
             "custom_endpoint_path": {"type": "string", "description": "Endpoint path for custom-format providers"},
+            "pricing_token_unit": {"type": "integer", "enum": [1000, 1000000]},
             "input_cost_per_1k": {"type": "number"},
             "output_cost_per_1k": {"type": "number"},
+            "input_cost_per_1m": {"type": "number"},
+            "output_cost_per_1m": {"type": "number"},
+            "cache_read_cost_per_1m": {"type": ["number", "null"]},
+            "cache_write_5m_cost_per_1m": {"type": ["number", "null"]},
+            "cache_write_1h_cost_per_1m": {"type": ["number", "null"]},
             "max_tokens": {"type": "integer"},
             "default_temperature": {"type": "number"},
             "is_active": {"type": "boolean"},
@@ -257,8 +345,14 @@ async def llm_model_update(
     model_type: str | None = None,
     description: str | None = None,
     custom_endpoint_path: str | None = None,
-    input_cost_per_1k: float | None = None,
-    output_cost_per_1k: float | None = None,
+    pricing_token_unit: int | None = _UNSET,
+    input_cost_per_1k: float | None = _UNSET,
+    output_cost_per_1k: float | None = _UNSET,
+    input_cost_per_1m: float | None = _UNSET,
+    output_cost_per_1m: float | None = _UNSET,
+    cache_read_cost_per_1m: float | None = _UNSET,
+    cache_write_5m_cost_per_1m: float | None = _UNSET,
+    cache_write_1h_cost_per_1m: float | None = _UNSET,
     max_tokens: int | None = None,
     default_temperature: float | None = None,
     is_active: bool | None = None,
@@ -268,6 +362,12 @@ async def llm_model_update(
     model = await LLMModel.objects.get(id=model_id)
     if not model:
         return {"error": "model_not_found", "message": f"Model {model_id} not found"}
+
+    if pricing_token_unit is None:
+        return {"error": "update_failed", "message": "pricing_token_unit cannot be null"}
+    target_unit = pricing_token_unit if pricing_token_unit is not _UNSET else model.pricing_token_unit
+    if target_unit not in {1000, 1_000_000}:
+        return {"error": "update_failed", "message": "pricing_token_unit must be 1000 or 1000000"}
 
     updates = {}
     if name is not None:
@@ -280,10 +380,29 @@ async def llm_model_update(
         updates["description"] = description
     if custom_endpoint_path is not None:
         updates["custom_endpoint_path"] = custom_endpoint_path
-    if input_cost_per_1k is not None:
-        updates["input_cost_per_1k"] = input_cost_per_1k
-    if output_cost_per_1k is not None:
-        updates["output_cost_per_1k"] = output_cost_per_1k
+    try:
+        if any(
+            value is None
+            for value in (input_cost_per_1k, output_cost_per_1k, input_cost_per_1m, output_cost_per_1m)
+        ):
+            return {"error": "update_failed", "message": "Ordinary prices cannot be null; omit to preserve them"}
+        raw_input = _raw_price(input_cost_per_1k, input_cost_per_1m, target_unit)
+        raw_output = _raw_price(output_cost_per_1k, output_cost_per_1m, target_unit)
+        if raw_input is not None:
+            updates["input_cost_per_1k"] = raw_input
+        if raw_output is not None:
+            updates["output_cost_per_1k"] = raw_output
+        for field, value in (
+            ("cache_read_cost_per_1m", cache_read_cost_per_1m),
+            ("cache_write_5m_cost_per_1m", cache_write_5m_cost_per_1m),
+            ("cache_write_1h_cost_per_1m", cache_write_1h_cost_per_1m),
+        ):
+            if value is not _UNSET:
+                updates[field] = _cache_price(value)
+    except (InvalidOperation, ValueError) as exc:
+        return {"error": "update_failed", "message": str(exc)}
+    if pricing_token_unit is not _UNSET:
+        updates["pricing_token_unit"] = target_unit
     if max_tokens is not None:
         updates["max_tokens"] = max_tokens
     if default_temperature is not None:
@@ -306,6 +425,7 @@ async def llm_model_update(
         "model_id": updated.model_id,
         "model_type": updated.model_type,
         "is_default": updated.is_default,
+        **_public_model_prices(updated),
     }
 
 

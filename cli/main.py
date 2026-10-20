@@ -614,7 +614,7 @@ async def _run_task(
             refresh_extra["force_reanalyze"] = True
 
     where = await tenant_label(target.tenant_id)
-    job = await enqueue_task_run(target, extra_payload=refresh_extra)
+    job = await enqueue_task_run(target, extra_payload=refresh_extra, supersede_unfinished=True)
     rprint(f"[green]Job {job.id} enqueued for task '{target.name}'[/green] in {where}")
     outcome = await run_job_now(job.id, allow_retry=False) or {}
     if outcome.get("status") == "done":  # "done" is the terminal success status

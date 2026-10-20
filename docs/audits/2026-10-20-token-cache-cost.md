@@ -200,3 +200,102 @@ Merged seven-file source digest:
 `0ab5a38d35640fc9682bf89d0c594f2b2a935ebfc57d3031e247aec6c8abe9ab`.
 Scoped diff reviewed; P2-T11 accepted as DONE. P2-T12 through P2-T14 remain
 open: this acceptance does not certify complete cache pricing or daily caps.
+
+## Model price units and cache tariff follow-up
+
+The owner confirmed model 10's stored input/output amounts `0.12` / `0.4`
+are USD per million tokens, with cache-read `0.024` in the same unit. Preserve
+those raw amounts; changing the price unit must never rescale them. Existing
+unclassified models retain their legacy unit until explicitly reviewed.
+
+The prepared follow-up uses explicit model units and immutable versioned
+snapshots of ordinary and cache-read/write rates. The provider's structured
+USD amount remains authoritative. Otherwise, cache categories must be disjoint:
+OpenAI-compatible inclusive input minus reported cache categories, or Anthropic
+ordinary input plus separate read and TTL write buckets. References:
+[OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching),
+[Anthropic cache token categories](https://github.com/anthropics/skills/blob/main/skills/claude-api/shared/prompt-caching.md).
+An API format label alone does not prove a compatible provider implements every
+counter: absent evidence stays unknown, including missing write counters or TTLs.
+
+For one million inclusive input tokens, 800,000 cache reads, explicit zero
+writes and 100,000 output tokens, the confirmed rates yield USD `0.0832`.
+This arithmetic does not certify complete daily caps or attribution; those
+remain separately tracked. Historical v1 amounts are not reinterpreted.
+
+Migration 0107 preserves ordinary price amounts. Its local application and
+model 10 configuration are recorded below under owner-authorized activation.
+
+### Follow-up validation
+
+Candidate: `feat/cache-read-tariff`, base `5401dad2f5375e79fd71277d1dafed8e03e4cfe3`.
+Coordinator reviewed the scoped source changes and migration definition.
+The primary OpenCode exact-model route failed initialization twice with
+`Instruction initialization blocked by unavailable sources: core/instructions`;
+Kilo was unavailable. The owner-authorized Codex test subagent fallback executed
+the following no-DB scopes, each collected and run in a fresh Python process
+with `--noconftest -o addopts= -q --tb=short --no-header` and synthetic settings.
+Foreign pytest processes were allowed to finish before execution.
+
+| Test file (`tests/`) | Passed |
+| --- | ---: |
+| `test_cache_pricing.py` | 12 |
+| `test_model_cache_tariffs.py` | 8 |
+| `test_cache_reservation_bound.py` | 9 |
+| `test_llm_usage_cost.py` | 17 |
+| `test_llm_attempt_journal.py` | 26 |
+| `test_llm_dispatch_receipts.py` | 35 |
+| `test_llm_outcome_events.py` | 46 |
+| `test_scoped_attempt_journal.py` | 15 |
+| `test_personal_billing_transport.py` | 8 |
+| `test_analyzer_provider_cost.py` | 6 |
+| `test_analyzer_pricing.py` | 6 |
+| `test_provider_accounting_price.py` | 25 |
+| `test_analyzer_reported_errors.py` | 34 |
+| `test_analyzer_attempt_journal.py` | 4 |
+| **Total** | **250** |
+
+Final matrix: 249 passed / one stale SQL-shape assertion failed. After correcting
+only that assertion to require explicit units for receipt/personal dispatch,
+the affected eight-test file collected and passed again; the other 13 scopes
+were unchanged. Combined result: 250 passed, zero outstanding failures/skips.
+The final sorted-path + NUL + file bytes + NUL SHA-256 over 35 changed/new
+Python files, including migration 0107, is
+`dc4dae98967782d44c5250a0765d3233fdd942262c1a5133bb9e64431e240768`.
+AST parsing and `git diff --check` passed. Captured DDL and fake session checks
+are not PostgreSQL persistence or browser acceptance. At that validation point,
+no migration, price data
+write, paid provider request, commit or feature-to-dev merge was performed.
+The OpenCode committer availability retry remained blocked by the same error.
+Activation and full cap/report acceptance remain pending.
+
+### Owner-authorized local activation
+
+The owner subsequently authorized applying the migration and committing before
+the remaining tests, including the requested Codex worker committer fallback
+while OpenCode initialization remains blocked. No new tests were run in this
+activation step.
+
+Read-only preflight confirmed localhost:5432/social_manager, public at revision
+0106, no active transactions or DDL locks. A private public-schema pg_dump archive
+was verified with pg_restore list (637 entries, file mode 0600) before changing
+the schema. Alembic applied 0107 successfully; revision and expected columns
+were verified afterward. The backup is retained locally pending final checks.
+
+The existing ORM model manager then updated only model 10's pricing unit to
+1000000 and its cache-read price to Decimal 0.024. Before/after checks confirmed
+the raw input/output amounts remain 0.12 and 0.4. Cache-write prices were not
+assumed or populated.
+
+test_schema has no alembic_version table and was left unchanged. Final test
+preparation must investigate that existing schema and its migration history;
+no baseline, stamp, reset, or unrelated migration was inferred. PostgreSQL
+accounting/replay tests and browser checks remain deferred by the owner.
+Full daily-cap/report acceptance and exact provider/model attribution remain
+separate open tasks.
+
+Commit preparation removed one excess EOF blank line from cache_pricing.py;
+there was no behavior change. The resulting 35-Python-file candidate digest is
+`eb03fb47a9738da7e3bf1589523950e7b107a81a564197ea9f12b4a961eb1612`.
+The earlier digest remains the exact reference for the completed 250 no-DB
+tests. Post-migration and post-preparation tests remain deferred as instructed.

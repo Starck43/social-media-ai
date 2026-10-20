@@ -2,7 +2,7 @@
 
 ## Outcome and revision pins
 
-P10-T02 is READY for owner/coordinator review in Draft PR #227, not DONE.
+P10-T02 owner integration acceptance is complete and the coordinator has accepted the task for DONE. PR #227 carries the task-scoped docs and regression-test closeout.
 The runtime fix was already in dev: `UserInDB` has no password hash field since
 `eb6cad6c56e78768b6482eba312082b849d24712`. This PR adds verification and
 corrects the stale response contract/example, not a second runtime fix.
@@ -165,24 +165,64 @@ cd /data/profile-leak-mutant
 # Expected exit 1, 18 failed / 29 passed.
 ```
 
-## Remaining owner/coordinator acceptance
+## Owner integration acceptance
 
-- Review the exact published SHA and unchanged production schema/router/guards.
-  Only the coordinating owner may accept DONE; task stays READY and PR Draft.
-- In the approved existing local environment, use the repository's sequential
-  primary R10 route to verify real token/ApiScopeMiddleware and ORM behavior:
-  list/me/profile/platform-role responses and the application's full OpenAPI
-  exclude hash properties/values, authorized operations still work, and denied,
-  inactive/revoked and missing targets retain their status and no-write behavior.
-  Use synthetic fixtures, never copy real hashes into evidence or logs.
-- Real session/detachment/lazy-loading behavior, permission/membership changes,
-  manager guards, persistence/concurrency, complete middleware and full suite
-  were not executed here. This is not P10-T03, password recovery or login-defense
-  acceptance; historical docs about those adjacent lanes were not revalidated.
-- No migration/schema implication: this PR changes no production code or schema.
-  No local git commit, subagent, real DB, migration/reset, provider, runtime/
-  application/Compose startup, deploy, direct dev push or merge was performed.
-  Publication uses GitHub MCP; merge still requires explicit owner confirmation.
+Executed against the exact PR source
+`987796aa01ba9dd924207512b2a314bb63fbda97`; fresh dev at test time was
+`e446c044a863d641b27714a4bffe8563ecbb91dd`. The OpenCode test-runner used
+Python 3.12.6, pytest 9.1.1, FastAPI 0.143.2, httpx 0.28.1,
+SQLAlchemy 2.1.4 and greenlet 3.5.6.
+
+The real `app.main.app` was mounted with `httpx.ASGITransport` without
+lifespan/startup. Real JWT creation/validation, middleware, managers and ORM
+sessions were used; there were no auth, identity, storage, manager or policy
+doubles. The full application OpenAPI check and real HTTP/auth/ORM acceptance
+ran as two tests:
+
+```text
+2 passed, 0 failed, 0 skipped, 6 warnings; exit 0
+```
+
+Exact command:
+
+```sh
+.venv/bin/python -m pytest .agents/tmp/test_pr227_users_http.py --noconftest -o addopts= -q --tb=short --no-header
+```
+
+The executed scratch module SHA256 was
+`825be27eb62e867bd92f346df200702c07e84301274c50f4111349d4d5e2c977`.
+Its implementation is local audit evidence and was not added to the PR because
+it loads the approved owner-local environment. The durable
+[owner integration report](https://github.com/Starck43/social-media-ai/pull/227#issuecomment-6300278265)
+records scope and attribution.
+
+OpenAPI excluded password-hash fields from response schemas and components.
+Real `GET /users`, `GET/PUT /users/me` and cross-user profile update returned
+hash-free public profiles. Missing identity returned 401; denied ordinary-user
+list/update returned 403 with no target write. Self-update and permitted admin
+profile update persisted only intended profile fields; role and password hash
+were unchanged. The test removed exactly its synthetic users in `finally`;
+independent read-only verification found no remaining `pr227-` rows.
+
+The first attempt to return the full default user list encountered 262
+pre-existing `@example.invalid` records in shared `test_schema`, rejected by
+the actual `EmailStr` response model. No foreign rows were changed. The passing
+list assertion uses the endpoint's real `skip/limit` and manager query to locate
+the synthetic admin, then asserts that the HTTP page contains that exact ID.
+This accepts hash privacy and rights on the real list route; compatibility of
+unbounded default responses with those historical invalid address strings
+remains a separate follow-up.
+
+Preflight attribution: exact standalone `pgrep -fl pytest` before delegation
+and after execution each returned 1 (no active pytest). Immediately before
+execution OpenCode verified the exact source SHA and ran
+`pgrep -fl pytest; echo "pgrep_exit=$?"`, which reported exit 1. That wrapper
+is recorded accurately. No process was killed.
+
+P10-T03, recovery, login protection, app startup/lifespan, full-suite behavior,
+schema creation/reset/migration, providers and deployment were not tested or
+accepted. PR #227 is accepted at the source SHA above; this report does not
+attribute the run to the later merge/closeout commit.
 
 ## Resolved sandbox dependencies
 

@@ -16,8 +16,13 @@ from unittest.mock import AsyncMock
 from source_import_isolation import load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[1]
+journal_cache = load_isolated_source("_attempt_journal_cache", ROOT / "app/services/ai/cache_pricing.py")
 
-journal = load_isolated_source("_attempt_journal_test", ROOT / "app/services/ai/attempt_journal.py")
+journal = load_isolated_source(
+    "_attempt_journal_test",
+    ROOT / "app/services/ai/attempt_journal.py",
+    imports={"app.services.ai.cache_pricing": journal_cache},
+)
 
 DAY = date(2026, 10, 12)
 PRIVATE = "PRIVATE-CUSTOMER-SECRET"
@@ -203,6 +208,119 @@ class PricingTests(unittest.TestCase):
         priced = self.priced({"id": 4, "input_cost_per_1k": 0.0, "output_cost_per_1k": 0.0})
         self.assertEqual(priced["cost_usd"], Decimal(0))
         self.assertEqual(priced["cost_certainty"], journal.CERTAINTY_FREE)
+
+    def test_v2_prices_cache_reads_and_free_requires_all_five_rates(self):
+        source = envelope(prompt=1000, completion=0)
+        source["accounting_cache_usage"] = {
+            "format": "openai",
+            "cache_read_tokens": 800,
+            "cache_write_tokens": 0,
+            "cache_write_5m_tokens": None,
+            "cache_write_1h_tokens": None,
+        }
+        record = only(build({"text_analysis": source}), "text_analysis")
+        tariff = {
+            "id": 4,
+            "input_cost_per_1k": ".12",
+            "output_cost_per_1k": ".4",
+            "pricing_token_unit": 1_000_000,
+            "cache_read_cost_per_1m": ".024",
+            "cache_write_5m_cost_per_1m": None,
+            "cache_write_1h_cost_per_1m": None,
+        }
+        priced = journal.price_attempt(record, tariff)
+        self.assertEqual((priced["cost_usd"], priced["cost_certainty"]), (Decimal("0.000043200"), "priced"))
+        free_tariff = {**tariff, **{field: 0 for field in journal.CACHE_RATE_FIELDS}}
+        free_tariff.update(input_cost_per_1k=0, output_cost_per_1k=0)
+        free = journal.price_attempt(record, free_tariff)
+        self.assertEqual((free["cost_usd"], free["cost_certainty"]), (Decimal(0), "free"))
+
+    def test_v2_missing_cache_read_is_unknown_and_never_free(self):
+        source = envelope(prompt=1000, completion=0)
+        source["accounting_cache_usage"] = {
+            "format": "openai",
+            "cache_read_tokens": None,
+            "cache_write_tokens": None,
+            "cache_write_5m_tokens": None,
+            "cache_write_1h_tokens": None,
+        }
+        record = only(build({"text_analysis": source}), "text_analysis")
+        tariff = {
+            "id": 4,
+            "input_cost_per_1k": "0.00012",
+            "output_cost_per_1k": "0.0004",
+            "pricing_token_unit": 1_000_000,
+            "cache_read_cost_per_1m": "0.000024",
+            "cache_write_5m_cost_per_1m": None,
+            "cache_write_1h_cost_per_1m": None,
+        }
+        priced = journal.price_attempt(record, tariff)
+        self.assertIsNone(priced["cost_usd"])
+        self.assertEqual(priced["cost_certainty"], "undefined")
+
+    def test_v2_row_10_full_prompt_and_output_is_exact(self):
+        source = envelope(prompt=1_000_000, completion=100_000)
+        source["accounting_cache_usage"] = {
+            "format": "openai",
+            "cache_read_tokens": 800_000,
+            "cache_write_tokens": 0,
+            "cache_write_5m_tokens": None,
+            "cache_write_1h_tokens": None,
+        }
+        record = only(build({"text_analysis": source}), "text_analysis")
+        priced = journal.price_attempt(
+            record,
+            {
+                "id": 4,
+                "input_cost_per_1k": ".12",
+                "output_cost_per_1k": ".4",
+                "pricing_token_unit": 1_000_000,
+                "cache_read_cost_per_1m": ".024",
+                "cache_write_5m_cost_per_1m": None,
+                "cache_write_1h_cost_per_1m": None,
+            },
+        )
+        self.assertEqual(priced["cost_usd"], Decimal(".0832"))
+
+    def test_legacy_v1_attempt_keeps_historical_per_1k_math(self):
+        record = only(build({"text_analysis": envelope(prompt=1000, completion=0)}), "text_analysis")
+        priced = journal.price_attempt(
+            {**record, "pricing_policy_version": None},
+            {"id": 4, "input_cost_per_1k": ".12", "output_cost_per_1k": ".4"},
+        )
+        self.assertEqual(priced["cost_usd"], Decimal(".12"))
+
+    def test_v2_unknown_model_keeps_cache_evidence_without_inventing_unit(self):
+        source = envelope(prompt=1000, completion=0)
+        source["accounting_cache_usage"] = {
+            "format": "openai",
+            "cache_read_tokens": 800,
+            "cache_write_tokens": 0,
+            "cache_write_5m_tokens": None,
+            "cache_write_1h_tokens": None,
+        }
+        record = only(build({"text_analysis": source}), "text_analysis")
+        priced = journal.price_attempt(record, None)
+        self.assertIsNone(priced["pricing_token_unit"])
+        self.assertEqual(priced["cache_usage"], source["accounting_cache_usage"])
+        self.assertIsNone(priced["cost_usd"])
+        self.assertEqual(priced["cost_certainty"], "undefined")
+
+    def test_reported_cost_wins_when_unknown_model_has_no_unit(self):
+        source = envelope(prompt=1000, completion=0)
+        source["accounting_cache_usage"] = {
+            "format": "openai",
+            "cache_read_tokens": 800,
+            "cache_write_tokens": 0,
+            "cache_write_5m_tokens": None,
+            "cache_write_1h_tokens": None,
+        }
+        source["accounting_cost_usd"] = "0.007"
+        source["accounting_cost_reported"] = True
+        record = only(build({"text_analysis": source}), "text_analysis")
+        priced = journal.price_attempt(record, None)
+        self.assertEqual(priced["cost_usd"], Decimal(".007"))
+        self.assertEqual(priced["pricing_token_unit"], None)
 
     def test_zero_tokens_with_positive_tariff_stays_priced(self):
         priced = self.priced({"id": 4, "input_cost_per_1k": 0.001, "output_cost_per_1k": 0.002}, prompt=0, completion=0)

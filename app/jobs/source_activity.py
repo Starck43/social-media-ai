@@ -32,15 +32,19 @@ def job_source_ids(payload: Any, task_id: int | None, task_sources: dict[int, se
     return set(raw)
 
 
-def source_conflict(payload, task_id, jobs, task_sources, active):
+def source_conflict(payload, task_id, jobs, task_sources, active, ignore_task_id=None):
     """Find an active overlapping collect/analyze job, independent of windows.
 
     A busy source is deliberately conservative even when scenarios/periods differ:
     retain the requested task occurrence rather than silently coalescing its work.
+    `ignore_task_id` is the manual-re-run case: that task's own unfinished jobs
+    are about to be replaced and must not count as a foreign occupant.
     """
     requested = job_source_ids(payload, task_id, task_sources, active)
     for job in jobs:
         if job.status not in ACTIVE_JOB_STATUSES or job.job_type not in SOURCE_JOB_TYPES:
+            continue
+        if ignore_task_id is not None and job.agent_task_id == ignore_task_id:
             continue
         if task_id is not None and job.agent_task_id == task_id:
             return job

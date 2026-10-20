@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Awaitable
 
 from fastapi import FastAPI, Request
@@ -26,7 +27,7 @@ from app.web.middleware import TenantUIMiddleware
 logger = logging.getLogger(__name__)
 
 # Настройка шаблонов
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
 
 async def rate_limit_exceeded_handler(

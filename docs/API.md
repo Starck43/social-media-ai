@@ -187,10 +187,21 @@ for exact source revisions, commands and the remaining real-environment checks.
 
 ## Users
 
-**Current security limitation:** list, `/me` and update handlers declare
-`UserInDB`, which includes `hashed_password`; the abbreviated examples below
-are not a safe-response guarantee. Removing that field from public response
-models is an open audit task. Never copy real hashes into reports or logs.
+**Public response contract:** list, `GET/PUT /users/me`, profile update and
+platform-role update handlers use the existing hash-free `UserInDB` response
+schema. Profiles expose only `id`, `username`, `email`, `is_active`, `created_at`
+and `updated_at`; password/hash fields and role/privilege attributes from the
+returned object are not serialized or included in response OpenAPI schemas.
+The response projection does not grant or revoke authority: `/me` keeps its
+identity dependency, operator routes keep their existing model-action or
+platform-admin guards, and manager authorization remains unchanged.
+
+The runtime schema fix is already present in `eb6cad6`; the bounded
+[HTTP/OpenAPI verification](validation/http-user-response-privacy.md) adds
+isolated router tests with explicit identity/storage doubles. It is not a full
+application, token, middleware or DB acceptance result. Historical privilege-update
+notes below are outside this response-only verification; they do not represent
+newly validated findings. Never copy real hashes into reports or logs.
 
 ### List Users
 
@@ -213,7 +224,6 @@ Authorization: Bearer <token>
     "username": "admin",
     "email": "admin@example.com",
     "is_active": true,
-    "is_superuser": true,
     "created_at": "2025-01-01T00:00:00",
     "updated_at": "2025-01-01T00:00:00"
   }

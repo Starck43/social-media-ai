@@ -18,6 +18,7 @@ SOURCE = ROOT / "app/web/settings.py"
 def extracted():
     names = {
         "_personal_access",
+        "_platform_access",
         "_workspace_access",
         "_visible_tabs",
         "_visible_tab",
@@ -40,7 +41,7 @@ def extracted():
         node.args.defaults = [ast.Constant(None) for _ in node.args.defaults]
         node.args.kw_defaults = [ast.Constant(None) if n is not None else None for n in node.args.kw_defaults]
     ns = {
-        "TABS": ("account", "connections", "workspace", "team", "agent", "channels"),
+        "TABS": ("account", "connections", "workspace", "team", "agent", "channels", "platforms"),
         "MANAGER_TABS": frozenset({"agent", "channels"}),
         "BACK": "/app/settings",
         "HTMLResponse": HTMLResponse,

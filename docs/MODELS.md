@@ -557,3 +557,9 @@ history; older downgrades can restore obsolete flags/constraints or discard
 attachments/checkpoints. Never infer a safe automatic rollback from a repository
 merge or metadata-only bootstrap. No create/reset/drop/stamp/migrate operation is
 part of documentation synchronization.
+
+## Deletion rules and complete FK audit
+
+See [Model deletion behavior](MODEL_DELETION.md) for all 100 source-declared FK
+constraints, ORM cascades, restrictive history references, the ModelType/Permission
+passive-delete mismatch, and the pending real-PostgreSQL acceptance scope.

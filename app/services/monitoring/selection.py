@@ -224,18 +224,31 @@ def _normalise(text: str) -> str:
 
 
 def _phrase_in(haystack: str, phrase: str) -> bool:
-    """Whole-phrase, word-bounded, case-insensitive, `ё` = `е`.
+    """Whole-phrase, word-bounded, case-insensitive, `ё` = `е`, inflection-aware.
 
-    Word boundaries are Unicode-aware (`\\w` covers Cyrillic), so "дизайн"
-    matches in "дизайнер" only when the phrase itself ends the word — a phrase
-    is matched literally, never as a stem. A Russian inflected word ("Киров",
-    "Кирове") is a different word, so a place name needs its own phrase for
-    each form the operator cares about; the UI suggests them.
+    A literal word-bounded match wins first, so an exact phrase inside a longer
+    word still means what it meant before. When no exact form occurs, both
+    sides are reduced to their matching stems (`utils/ru_stem.py`), so «Италия»
+    finds «Италию»/«Италии» and «поездка» finds «поездку». Stemming is a
+    matching key, not a lemma: it never widens the phrase to a different word —
+    «дизайн» still does not match «дизайнер» because their stems differ.
     """
     needle = _normalise(phrase)
     if not needle:
         return False
-    return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack) is not None
+    if re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack) is not None:
+        return True
+    from app.utils.ru_stem import stem_tokens
+
+    phrase_stems = stem_tokens(needle)
+    if not phrase_stems:
+        return False
+    haystack_stems = stem_tokens(haystack)
+    width = len(phrase_stems)
+    return any(
+        haystack_stems[index : index + width] == phrase_stems
+        for index in range(len(haystack_stems) - width + 1)
+    )
 
 
 def _item_text(item: Mapping[str, Any]) -> str:

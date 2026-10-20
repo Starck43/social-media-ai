@@ -190,3 +190,57 @@ class TestSelection:
             scope,
         )
         assert len(result.eligible) == 2
+
+
+class TestStemmedWordForms:
+    """Селекция понимает словоформы: разные падежи одного слова — одна тема.
+
+    `app/utils/ru_stem.py` сводит оба конца к общему стем-ключу, поэтому
+    «Италия» находит «Италию»/«Италии», а «поездка» — «поездку». Стем — это
+    ключ матчинга, а не лемма: «дизайн» не расширяется до «дизайнер».
+    """
+
+    def test_italy_wordforms_match_one_keyword(self):
+        scope = selection.build_scope({"keywords_list": ["Италия"]})
+        result = selection.select_items(
+            [
+                item("Поездка в Италию"),
+                item("Отдых в Италии"),
+                item("Италия, Милан"),
+                item("отпуск на Кипре"),
+            ],
+            scope,
+        )
+        assert [i["text"] for i in result.eligible] == ["Поездка в Италию", "Отдых в Италии", "Италия, Милан"]
+        assert result.count(selection.REJECT_NO_TEXT_MATCH) == 1
+
+    def test_keyword_in_oblique_case_matches_nominative_item(self):
+        scope = selection.build_scope({"keywords_list": ["Италию"]})
+        result = selection.select_items([item("Италия — это про еду"), item("Италию не планировали")], scope)
+        assert [i["text"] for i in result.eligible] == ["Италия — это про еду", "Италию не планировали"]
+
+    def test_italy_inflected_keyword_matches_another_inflected_item(self):
+        scope = selection.build_scope({"keywords_list": ["Италии"]})
+        result = selection.select_items([item("говорили об Италии"), item("поехали в Италию")], scope)
+        assert len(result.eligible) == 2
+
+    def test_trip_wordforms_match(self):
+        scope = selection.build_scope({"keywords_list": ["поездка"]})
+        result = selection.select_items(
+            [item("рассказ про поездку"), item("поездка в горы"), item("поезд отходит в 8")],
+            scope,
+        )
+        assert [i["text"] for i in result.eligible] == ["рассказ про поездку", "поездка в горы"]
+
+    def test_design_does_not_match_designer(self):
+        """Стем-ключи «дизайн» и «дизайнер» разные: слово не расширяется."""
+        scope = selection.build_scope({"keywords_list": ["дизайн"]})
+        result = selection.select_items(
+            [item("ищу дизайнера в студию"), item("дизайн интерьера")], scope
+        )
+        assert [i["text"] for i in result.eligible] == ["дизайн интерьера"]
+
+    def test_designer_keyword_does_not_match_design(self):
+        scope = selection.build_scope({"keywords_list": ["дизайнер"]})
+        result = selection.select_items([item("дизайн в Москве")], scope)
+        assert result.eligible == []

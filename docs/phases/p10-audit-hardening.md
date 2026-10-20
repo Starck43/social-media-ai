@@ -94,45 +94,58 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   or eligibility-backed staged counts; depends: P10-T08 (same files);
   owner: unassigned; status: TODO
 
-- [ ] P10-T10 (AUD-10, P2) — distributable package includes runtime code and
-  encryption dependency; accept: wheel contains nested runtime
-  packages/assets; encryption dependency in runtime deps; isolated no-dev
-  import/asset smoke, no DB/provider; depends: none;
-  owns: pyproject.toml, tests/wheel_runtime_smoke.py and
+- [ ] P10-T10 (AUD-10, P2) — distributable package runtime completeness;
+  accept: nested runtime modules/assets and encryption/driver dependencies in
+  wheel; no-dev installed app.core.database/app.main imports, actual template
+  and static lookup from empty CWD; explicit writable LOG_DIR; no DB/provider
+  or runtime/lifespan start; depends: none;
+  owns: pyproject.toml, requirements.txt, tests/wheel_runtime_smoke.py,
+  app/admin/setup.py, app/web/deps.py, app/core/logger.py, app/core/config.py,
+  app/main.py (template path only), docs/CONFIGURATION.md and
   docs/validation/wheel-runtime-completeness.md;
-  owner: remote Notion agent (fix/wheel-runtime-completeness); status: BLOCKED.
-  Claimed before implementation from dev `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
-  Open PRs #216/#217/#220/#224/#225 checked: no packaging ownership overlap;
-  shared registry/phase edits remain task-scoped. Foreign claims/evidence and
-  the existing duplicate P8-T25 are preserved. No runtime, DB or provider start.
-  Draft [PR #226](https://github.com/Starck43/social-media-ai/pull/226).
-  Claim SHA: `6bbc97f841beba30756b99ccebc288339980666c`; synchronized
-  dev: `aeb8c54d74a55710b5080fd0a980fbc0ecf36d8c` (foreign additions retained).
-  Implementation/test SHA: `fa0c7e9701f13bdd68b29047b187431538c92e2d`.
-  Remote self-run: offline wheel builds, 366 Python files + 91 assets verified
-  byte-for-byte in the wheel and installed runtime-only venv; five safe imports
-  and Fernet round-trip passed with pinned and unconstrained runtime deps.
-  Both pip checks passed; no dev packages installed. Fresh-dev baseline misses
-  448 files; removed namespace module/asset and dev-only encryption mutants
-  each fail as expected (exit 1). Black/isort and scoped diff checks passed.
-  Commands, exact versions, initial harness failures and limits:
-  [validation](https://github.com/Starck43/social-media-ai/blob/fee3869b432779ae4a47ce7235b1cf91394d3b31/docs/validation/wheel-runtime-completeness.md).
-  Previous READY handoff is superseded by owner review of the same `fa0c7e9`.
-  Owner-reported macOS 15.7.9 x86_64 / Python 3.12.6: pinned and unconstrained
-  wheel file/import smoke plus pip check, namespace import and cli --help pass.
-  BLOCKED: empty-CWD app import fails at relative app/static; template paths
-  are also CWD-relative and logger creates ./logs. Wheel-only runtime deps miss
-  greenlet and psycopg v3 (SQLAlchemy 2.1.4/2.1.5). Packaging success and safe
-  import smoke do not establish application resource lookup/dependency closure.
-  [Owner review](https://github.com/Starck43/social-media-ai/pull/226#issuecomment-6296837084)
-  is attributed, not a remote rerun. Both blockers require scoped fixes and
-  installed-wheel no-DB module-import/resource checks before acceptance/merge.
-  No new implementation, task acceptance, runtime/DB/provider start or merge
-  authorized by this documentation follow-up. Keep Draft, not DONE.
-  Registry synchronized from PR head `fee3869b432779ae4a47ce7235b1cf91394d3b31`;
-  implementation and test changes remain in that unmerged PR. Evidence above
-  is attributed remote/owner evidence, not a new local execution.
-
+  owner: remote Notion agent (fix/wheel-runtime-completeness); status: READY.
+  Draft [PR #226](https://github.com/Starck43/social-media-ai/pull/226), not DONE;
+  owner acceptance/merge is not inferred. Initial claim before implementation:
+  `6bbc97f841beba30756b99ccebc288339980666c`, from dev
+  `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
+  Historical packaging SHA `fa0c7e9701f13bdd68b29047b187431538c92e2d` passed
+  366 Python + 91 asset byte checks in two no-dev venvs, five safe imports and
+  Fernet; negative missing-file/dev-only-encryption controls failed as expected.
+  Owner macOS 15.7.9 x86_64 / Python 3.12.6 review of that SHA passed the same
+  packaging slice, namespace import, pip checks and cli --help, but found
+  relative resource/log paths and undeclared greenlet/psycopg. Overall status
+  was therefore BLOCKED, not acceptance of complete wheel usability.
+  [Owner report](https://github.com/Starck43/social-media-ai/pull/226#issuecomment-6296837234)
+  remains attributed, not a remote rerun or a report for the new SHA.
+  Owner authorized continuation; claims published before scoped implementation:
+  `ced26f99474c0038953040361ce930103bd53ffe` (dependencies),
+  `779e4b6f00ea1efd925ac70a07039060a9abfa22` (resources/logging).
+  Synchronized dev: `6fbe7a961dafc3b05fccd9cfe99f7652bdc6a33a`; owner's merged
+  #225 work and foreign P10-T02/T03/T05 records are preserved. No new task IDs.
+  Owner-relayed stale-worktree check: main.py dirty at detached 37eeaf7 is
+  byte-identical to dev; its lifecycle changes are integrated in a5ba8c1
+  (remote ancestry verified). No active net overlap is evidenced; no formal
+  lane sign-off is claimed, and the old/dirty worktrees were not modified.
+  Open PRs #216/#217/#220/#224/#227 have no target-path diff at recheck.
+  Current implementation/test SHA: `60638e5b40a205c233941367c3edf41ea66758f8`.
+  Both review gaps addressed: SQLAlchemy asyncio extra and psycopg runtime deps;
+  module-relative static/templates; absolute LOG_DIR default ~/.social-media-ai/logs.
+  main.py lifespan, maintenance loop and application factory AST unchanged.
+  Exact-source remote self-run: Linux x86_64 / Python 3.13.14; offline wheel
+  build exit 0; two new wheel-only venvs (requirements-constrained/unconstrained)
+  each PASS 368 Python files + 94 assets (462 byte matches), real database/main
+  imports, template/static lookups and Fernet. Default/explicit LOG_DIR give
+  four successful child checks total, CWD unchanged; DB/runtime/external attempt
+  counters all zero. Both pip checks exit 0; no dev packages. 9/9 negative
+  controls fail as expected (exit 1), restored smoke passes. Scoped format,
+  diff --check and lifecycle AST checks pass. Commands, hashes, versions,
+  metadata-only platform.architecture shim, harness failures and limits:
+  [current validation](https://github.com/Starck43/social-media-ai/blob/50c319c91cfe1e77f8dc244c29253e4f1a1df3c1/docs/validation/wheel-runtime-completeness.md).
+  READY is the completed remote slice, not real-environment acceptance.
+  Owner/local agent: repeat both expanded wheel-only smokes and pip checks on
+  macOS/Python 3.12 at the new exact SHA; review absolute LOG_DIR/mount policy.
+  No application startup, full regression, real DB, migration/reset, provider,
+  deploy or merge was run/authorized. Keep Draft until owner review; not DONE.
 
 - [ ] P10-T13 — repair post-migration LLM CLI contracts; owner: remote Notion
   agent; status: BLOCKED. Accept: provider listing without removed default

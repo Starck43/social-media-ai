@@ -251,6 +251,48 @@ def _human_cron(args: dict) -> str:
     return cron_to_human(cron)
 
 
+# Task-update arguments in the order an owner cares about them.
+_TASK_UPDATE_LABELS = (
+    ("cron", "расписание"),
+    ("job_type", "тип"),
+    ("brands", "бренды"),
+    ("influencer_names", "авторы"),
+    ("keywords_list", "ключевые слова"),
+    ("topic_list", "темы"),
+    ("hashtags", "хэштеги"),
+    ("competitors", "конкуренты"),
+    ("tracked_users", "авторов записей"),
+    ("start_date", "дата начала"),
+)
+
+
+def _human_task_update(args: dict) -> str:
+    """What a task update changes, in words — never the raw argument dump.
+
+    A preview used to fall back to `{"brands": [...], "keywords_list": [...]}`
+    for this tool, which the owner cannot judge and the model then copied into
+    the chat. Naming the changed fields is enough to approve or refuse.
+    """
+    changed: list[str] = []
+    for key, label in _TASK_UPDATE_LABELS:
+        value = args.get(key)
+        if value in (None, "", []):
+            continue
+        if key == "cron":
+            changed.append(f"{label} — {_human_cron(args)}")
+        elif isinstance(value, list):
+            changed.append(f"{label}: " + ", ".join(str(item) for item in value))
+        else:
+            changed.append(f"{label}: {value}")
+    if args.get("deactivate_after_success"):
+        changed.append("выключить после успешного выполнения")
+    for key, label in (("source_ids", "источники"), ("scenario_id", "сценарий")):
+        if args.get(key) not in (None, []):
+            changed.append(f"новые {label}")
+    detail = "; ".join(changed) if changed else "без изменений полей"
+    return f"изменить задачу «{args.get('name')}» — {detail}"
+
+
 def _human_confirmation(name: str, args: dict) -> str:
     """One human sentence describing what a confirmed write tool will do."""
     renderers = {
@@ -265,6 +307,7 @@ def _human_confirmation(name: str, args: dict) -> str:
             f"создать задачу «{a.get('name')}»: {_JOB_TYPE_LABELS.get(a.get('job_type'), a.get('job_type'))}, "
             f"{_human_cron(a)}" + (f", начиная с {a.get('start_date')}" if a.get("start_date") else "")
         ),
+        "task_update": lambda a: _human_task_update(a),
         "task_remove": lambda a: f"удалить задачу «{a.get('name')}»",
         "task_pause": lambda a: (
             f"{'возобновить' if a.get('pause') is False else 'поставить на паузу'} задачу «{a.get('name')}»"

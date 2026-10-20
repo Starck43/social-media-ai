@@ -13,6 +13,40 @@ def _get_job_types() -> tuple[str, ...]:
     return tuple(HANDLERS.keys())
 
 
+# What `task_add` must carry.
+#
+# These used to be only described in the schema, so a model that sent `name`
+# and a schedule got a task whose `job_type` was empty (scheduled, never
+# readable) or whose `start_date` was missing (first run drained the whole
+# history). A missing required field is now refused at the boundary, together
+# with what is missing, so the same turn can ask the owner instead of creating
+# a half-configured task.
+_REQUIRED_START_DATE = ("start_date", "с какой даты собирать контент")
+
+
+def _missing_task_fields(
+    *,
+    cron: str,
+    job_type: str,
+    start_date: str | None,
+) -> list[str]:
+    """Names of the fields this task must carry but does not."""
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    missing: list[str] = []
+    if not str(job_type or "").strip():
+        missing.append("job_type (что запускать)")
+    if not str(cron or "").strip():
+        missing.append("cron (расписание)")
+    if (
+        job_type
+        and AgentTaskManager.requires_content_dates(job_type)
+        and not AgentTaskManager.parse_date(start_date)
+    ):
+        missing.append(_REQUIRED_START_DATE[0] + " (YYYY-MM-DD — " + _REQUIRED_START_DATE[1] + ")")
+    return missing
+
+
 @tool(
     name="task_list",
     description="Показать все задачи (cron): имя, выражение, тип задачи, активность, время следующего запуска.",
@@ -58,8 +92,9 @@ async def task_list() -> list[dict[str, Any]]:
         "из источников задачи (пусто — материалы самих источников); keywords_list + keywords_match — фразы, "
         "которые должны быть в записи; excluded_users — кого пропускать. Типы контента (посты, комментарии…) "
         "задаются сценарием, а не задачей. "
-        "Для collect/analyze ОБЯЗАТЕЛЬНО указать start_date (с какой даты собирать контент, YYYY-MM-DD) — "
-        "иначе первый запуск вытянет всё с первого поста. "
+        "Обязательные поля: name, cron, job_type; для collect/analyze ещё start_date (с какой даты собирать "
+        "контент, YYYY-MM-DD) — иначе первый запуск вытянет всё с первого поста; для анализа — scenario_id. "
+        "Без них вызов отклоняется со списком пропущенного: не создавай задачу, а спроси владельца. "
         "Конкретные цели анализа (brands, competitors, hashtags, influencer_names) кладутся в payload "
         "задачи, а не в сценарий: сценарий — это методика, задача — конкретика. Если сценарий требует "
         "цель, а она не задана, результат вернёт warnings."
@@ -189,6 +224,15 @@ async def task_add(
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.tasks.cron import next_run_at, resolve_tz
+
+    missing = _missing_task_fields(cron=cron, job_type=job_type, start_date=start_date)
+    if missing:
+        # Refused before anything is written: the same turn asks the owner for
+        # what is missing instead of leaving a scheduled task nobody can run.
+        return {
+            "error": "Не хватает данных задачи: " + ", ".join(missing),
+            "missing": [value.split(" ", 1)[0] for value in missing],
+        }
 
     job_types = _get_job_types()
     if job_type not in job_types:
@@ -513,20 +557,6 @@ async def task_update(
     new_job_type = job_type if job_type is not None else task.job_type
     new_cron = cron if cron is not None else task.cron_expr
 
-    # Compute next_run_at if cron changed
-    tenant = await Tenant.objects.get(id=current_tenant_id())
-    updates: dict[str, Any] = {
-        "job_type": new_job_type,
-        "payload": updated_payload,
-        "agent_scenario_id": scenario_id,
-    }
-    if deactivate_after_success is not None:
-        # A trial task gets a live schedule back: it had been switched off
-        # after its success, so re-arming means the next run must be planned.
-        updates["is_active"] = True
-        updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
-    if cron is not None:
-        updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
     if deactivate_after_success is not None:
         # Same key the scheduler reads; clearing it returns the task to a
         # normal recurring schedule.
@@ -534,6 +564,28 @@ async def task_update(
             updated_payload["deactivate_after_success"] = True
         else:
             updated_payload.pop("deactivate_after_success", None)
+
+    # Compute next_run_at if cron changed
+    tenant = await Tenant.objects.get(id=current_tenant_id())
+    updates: dict[str, Any] = {
+        "job_type": new_job_type,
+        "payload": updated_payload,
+    }
+    # A field the caller did not send keeps its current value. Writing
+    # `agent_scenario_id: None` on every update silently unbound the task's
+    # scenario — the analysis then ran without its methodology. The same
+    # happened to the trial flag, which was set after the payload was written
+    # and therefore never saved at all.
+    if scenario_id is not None:
+        updates["agent_scenario_id"] = scenario_id
+    if cron is not None:
+        updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
+    if deactivate_after_success is not None:
+        # A trial task gets a live schedule back: it had been switched off
+        # after its success, so re-arming means the next run must be planned.
+        updates["is_active"] = True
+        if cron is None:
+            updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
 
     await AgentTask.objects.update_by_id(task.id, **updates)
 

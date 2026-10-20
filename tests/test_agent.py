@@ -543,5 +543,25 @@ async def test_confirmation_previews_are_human(_clean_sessions):
     assert "удалить задачу «Слежение за Анной»" in cancel
 
 
+def test_task_update_preview_names_the_changed_fields():
+    """A staged task update reads as what changes, never as an argument dump."""
+    from app.agent.runtime import _human_confirmation
+
+    preview = _human_confirmation(
+        "task_update",
+        {
+            "name": "Разовый анализ",
+            "brands": ["Древиз"],
+            "influencer_names": ["Александр Кабанов"],
+            "keywords_list": ["Древиз", "Кабанов"],
+        },
+    )
+    assert "изменить задачу «Разовый анализ»" in preview
+    assert "бренды: Древиз" in preview
+    assert "авторы: Александр Кабанов" in preview
+    assert "ключевые слова: Древиз, Кабанов" in preview
+    assert "{" not in preview and "[" not in preview
+
+
 async def _noop_async(*args, **kwargs):
     return object()

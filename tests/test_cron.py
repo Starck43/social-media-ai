@@ -111,6 +111,12 @@ class TestCronToHuman:
         # Regression: previously raised ValueError on int('*')
         assert cron_to_human("* * * * *") == "Ежедневно в *:*"
 
+    def test_one_time_date_is_a_date_not_a_monthly_rule(self):
+        # «Разово на завтра» used to be written as `0 9 <day> <month> *`, which
+        # cron reads as "the 16th of June, every year" — a year away.
+        assert cron_to_human("0 9 16 6 *") == "Один раз 16.06 в 09:00"
+        assert cron_to_human("0 9 1 * *") == "Ежемесячно 1-го в 09:00"
+
     def test_malformed_returns_raw(self):
         assert cron_to_human("bad") == "bad"
         assert cron_to_human("0 9 * *") == "0 9 * *"

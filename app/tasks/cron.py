@@ -56,6 +56,14 @@ def cron_to_human(cron_expr: str | None) -> str:
         return f"Еженедельно ({days}) в {_field(hour)}:{_field(minute)}"
     if day_of_month != "*" and month == "*" and dow == "*":
         return f"Ежемесячно {day_of_month}-го в {_field(hour)}:{_field(minute)}"
+    if day_of_month != "*" and month != "*" and dow == "*" and minute.isdigit() and hour.isdigit():
+        # A one-time fire (`0 9 16 6 *`) is a date, not a monthly rule. It
+        # stays a valid cron — VK limits the year — but the owner reads it as
+        # the day it will run.
+        try:
+            return f"Один раз {int(day_of_month):02d}.{int(month):02d} в {int(hour):02d}:{int(minute):02d}"
+        except ValueError:
+            return cron_expr
     return cron_expr
 
 

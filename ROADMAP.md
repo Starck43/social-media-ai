@@ -18,7 +18,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
-- [ ] P8-T27 — settings Platforms tab, admin control styles and FK deletion audit → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — IN_PROGRESS
+- [ ] P8-T27 — settings Platforms tab, admin control styles and FK deletion audit → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED (owner-local PostgreSQL acceptance)
 
 - [ ] P8-T25 — settings information layout and compact member access → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — READY
 

@@ -17,13 +17,50 @@ Attention feed lives in the floating bell (B), not a home card.
 
 - [ ] P8-T27 — implement the Platforms settings tab for active platform admins,
   correct admin button contrast and bulk-delete confirmation wrapping, and
-  audit all app/models FK/ORM deletion rules. Accept: isolated handler, model
-  metadata and offline browser regressions; enumerate deferred PostgreSQL
-  acceptance separately. No unreviewed cascade/schema changes. Owns: bounded
-  settings/admin styles, focused tests and deletion documentation; depends: none;
-  owner: remote Notion agent; status: IN_PROGRESS. Synchronized dev:
-  `213980a4955e034894f6552234708d402babc43c`; active PRs #216/#217/#220
-  unchanged; preserve foreign tasks, including pre-existing duplicate P8-T25.
+  audit all app/models FK/ORM deletion rules. Owns: bounded settings/admin styles,
+  focused tests and deletion documentation; depends: none; owner: remote Notion
+  agent; status: BLOCKED on owner-local PostgreSQL/ASGI acceptance; PR #224 Draft.
+  Runtime implementation: `39fa3fc633d5de4fe78c74aa918e528de4e7afcc`.
+  Synchronized dev: `213980a4955e034894f6552234708d402babc43c`; active
+  #216/#217/#220 heads unchanged, foreign records preserved (including the
+  pre-existing duplicate P8-T25). No cascade/model/schema/migration change.
+  The global tab supports catalog read/create/edit/activation via existing
+  managers, rechecks active platform-admin status and CSRF, and works without
+  workspace membership. No global workspace bypass, params/secret projection
+  or delete action. Neutral/solid/action controls keep contrast in both themes,
+  including input groups, input-submit form groups and direct footer buttons.
+  All 200 selected IDs wrap/scroll inside the SQLAdmin confirmation; selected
+  keys and DELETE URL remain unchanged. Full FK map: `docs/MODEL_DELETION.md`.
+  Source audit: all 113 app/models Python files parse; 45 actual canonical ORM
+  mappers/48 tables configure; all 100 FK constraints resolve and DDL compiles
+  for PostgreSQL (34 CASCADE, 16 SET NULL, 46 RESTRICT, 4 NO ACTION). Real loaded-
+  child ORM cascade traversal is checked without flushing or executing DELETE.
+  Known unchanged mismatch: ModelType.permissions passive delete-orphan vs
+  Permission.model_type_id NO ACTION; see report for retirement/association risk.
+  Isolated pytest: 285 passed, 0 failed/skipped at implementation `84bd024`:
+  unit_web/test_settings_platforms.py, test_model_deletion_inventory.py,
+  test_settings_scopes.py, test_settings_review.py, test_settings_layout.py and
+  test_template_autoescape.py; `--noconftest -p no:cacheprovider -o addopts=''
+  -q --tb=short --no-header`. Those source/test files remain byte-identical at
+  `39fa3fc`; the follow-up changes only admin CSS and its browser fixture.
+  Offline browser: 32 actual Settings/SQLAdmin cases passed at the final CSS
+  bytes (320/390/768/1440px, light/dark, existing/empty/no-workspace/global
+  catalog, shared picker/form serialization, bulk-delete list, 21 button variants
+  across standalone/input-group/form-group/footer contexts, normal/hover text
+  contrast >=4.5). Existing settings: 104 cases passed at unchanged web bytes;
+  mocked shell/controller checks: 38 passed. SQLAdmin model-page regressions:
+  144 viewport/theme/state cases plus submission, keyboard, busy/bfcache and
+  no-JS checks passed at `39fa3fc`. Representative desktop/mobile, empty/picker/modal
+  screenshots opened and reviewed; no horizontal overflow. All 19 published
+  runtime/test/doc files verified against sandbox bytes. Black/isort, JS syntax
+  and diff checks passed. Python 3.13.14, SQLAlchemy 2.1.4, SQLAdmin 0.32.0,
+  FastAPI 0.143.2, Starlette 1.8.0, Jinja2 3.1.6, pytest 9.1.1,
+  pytest-asyncio 1.4.0, Chromium 153.0.8010.12. No DB, runtime/application startup,
+  real provider, migration/reset or live deletion executed. Real installed-FK,
+  loaded/unloaded ORM vs bulk-SQL deletion/rollback and authenticated persistence
+  acceptance remain pending on the sequential local route. Synthetic checks
+  are not real deletion, tenant-isolation or full-suite acceptance; do not merge
+  or self-accept as DONE while those required checks remain outstanding.
 
 - [x] P8-T26 — implement the accepted jobs lifecycle audit: built-in cleanup
   independent of a scheduled prune task, default 24-hour terminal history,

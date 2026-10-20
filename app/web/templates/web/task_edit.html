@@ -70,7 +70,8 @@
     <form method="post" action="/app/tasks/{{ task.id }}" :action="'/app/tasks/' + editing.id"
           {% if embedded %}target="_top"{% endif %}
           class="space-y-4 {% if not embedded %}rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6{% endif %}"
-          x-data="{ sending: false }"
+          x-data="{ sending: false, schedOnce: false }"
+          x-on:schedule-once.window="schedOnce = $event.detail"
           x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }"
           x-on:pageshow.window="sending = false" data-task-editor-form>
         <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -90,7 +91,8 @@
         {{ task_retention_fields("edit", "editing.job_type", edit.retention_success_hours, edit.retention_failure_hours) }}
         <div>
             <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Расписание</label>
-            <div x-data="editSched" class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+            <div x-data="editSched" x-init="$data.schedNotifyEl = $el.closest('form'); $data.notifyOnce()"
+                 class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
                 <div class="flex flex-wrap gap-2">
                     <button type="button" @click="applyPreset('daily')"
                             class="rounded-lg border px-3 py-1.5 text-sm"
@@ -114,7 +116,7 @@
                     </button>
                 </div>
 
-                <template x-if="!isOnce && freq !== 'custom'">
+                <template x-if="!isOnce">
                     <div>
                         <div class="grid grid-cols-2 gap-3">
                             <div>
@@ -175,16 +177,7 @@
                     </div>
                 </template>
 
-                <template x-if="freq === 'custom'">
-                    <div>
-                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Точное cron-выражение</label>
-                                <input type="text" name="cron_expr" x-model="rawCron" @input="markChanged()" required class="{{ control('font-mono') }}">
-                        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Текущая запись сохранится без изменений, пока вы не измените её явно.</p>
-                        <button type="button" @click="useBuilder()" class="mt-2 text-xs text-cyan-700 dark:text-cyan-400 hover:underline">Перейти к простому расписанию</button>
-                    </div>
-                </template>
-                <template x-if="freq !== 'custom'"><input type="hidden" name="cron_expr" :value="cron"></template>
-                <button x-show="freq !== 'custom'" type="button" @click="useCustom()" class="text-xs text-cyan-700 dark:text-cyan-400 hover:underline">Ввести cron вручную</button>
+                <input type="hidden" name="cron_expr" :value="cron">
             </div>
         </div>
         {% if sources %}
@@ -378,7 +371,8 @@
             </button>
             <button type="submit" name="run_now" value="on"
                     class="inline-flex min-h-11 items-center justify-center whitespace-normal break-normal hyphens-none rounded-lg bg-cyan-500 px-4 py-2 text-center text-sm font-semibold leading-tight text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
-                    x-bind:disabled="sending">
+                    x-bind:disabled="sending"
+                    x-text="schedOnce ? 'Сохранить и выполнить' : 'Сохранить и поставить в очередь'">
                 Сохранить и поставить в очередь
             </button>
             </div>
@@ -519,6 +513,10 @@
                     whitelist: TASK_EDIT.whitelist || "",
                 }
                 this.editSched.load(this.editing.cron_expr)
+                // The schedule widget notifies the form scope (own Alpine
+                // scope) so the run button label follows @once correctly.
+                this.editSched.schedNotifyEl = document.querySelector('[data-task-editor-form]');
+                this.editSched.notifyOnce();
                 // Drop linked ids missing from the tenant catalog (e.g. a
                 // source removed elsewhere) so chips never render nameless.
                 this.sourceById = Object.fromEntries(SOURCES.map((s) => [s.id, s]));

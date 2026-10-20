@@ -1,6 +1,7 @@
 /* Shared cron editor for task creation and editing.
- * Existing expressions are retained byte-for-byte until the operator changes
- * a schedule control; unsupported expressions stay visible in the raw field.
+ * Only builder-supported schedules are offered in the UI; existing
+ * unsupported expressions fall back to a daily 09:00 default once the
+ * operator touches the schedule controls.
  */
 (function installTaskScheduleBuilder() {
     const pad = (value) => String(value).padStart(2, "0");
@@ -38,6 +39,12 @@
         return null;
     }
 
+    function notifyOnce(target) {
+        if (target && typeof target.dispatchEvent === "function") {
+            target.dispatchEvent(new CustomEvent("schedule-once", { detail: Boolean(this.isOnce), bubbles: true }));
+        }
+    }
+
     window.taskScheduleBuilder = function taskScheduleBuilder(initialCron = "") {
         const parsed = parseCron(initialCron);
         return {
@@ -45,7 +52,7 @@
             rawCron: initialCron,
             dirty: !initialCron,
             time: parsed?.time || "09:00",
-            freq: parsed?.freq || (initialCron ? "custom" : "daily"),
+            freq: parsed?.freq || "daily",
             isOnce: parsed?.isOnce || false,
             weekdays: parsed?.weekdays || [1],
             monthday: parsed?.monthday || 1,
@@ -56,17 +63,21 @@
                 { value: 7, label: "Вс" },
             ],
             intervalOptions,
+            schedNotifyEl: null,
+            notifyOnce() {
+                notifyOnce.call(this, this.schedNotifyEl);
+            },
             load(cron) {
                 const value = cron || "";
                 const parsedValue = parseCron(value);
                 this.originalCron = value;
                 this.rawCron = value;
                 this.dirty = false;
-                Object.assign(this, parsedValue || { isOnce: false, freq: "custom", time: "09:00", weekdays: [1], monthday: 1, everyHours: 6 });
+                Object.assign(this, parsedValue || { isOnce: false, freq: "daily", time: "09:00", weekdays: [1], monthday: 1, everyHours: 6 });
+                this.notifyOnce();
             },
             get cron() {
                 if (!this.dirty && this.originalCron) return this.originalCron;
-                if (this.freq === "custom") return this.rawCron;
                 if (this.isOnce) return "@once";
                 const [hour, minute] = this.time.split(":");
                 switch (this.freq) {
@@ -93,24 +104,8 @@
             markChanged() {
                 this.dirty = true;
             },
-            useCustom() {
-                this.rawCron = this.cron;
-                this.freq = "custom";
-                this.isOnce = false;
-                this.dirty = true;
-            },
-            useBuilder() {
-                this.freq = "daily";
-                this.isOnce = false;
-                this.time = "09:00";
-                this.weekdays = [1];
-                this.monthday = 1;
-                this.everyHours = 6;
-                this.dirty = true;
-            },
             applyPreset(key) {
                 this.dirty = true;
-                this.freq = key === "once" ? "daily" : this.freq === "custom" ? "daily" : this.freq;
                 this.isOnce = false;
                 if (key === "daily") {
                     this.freq = "daily";
@@ -125,6 +120,7 @@
                 } else if (key === "once") {
                     this.isOnce = true;
                 }
+                this.notifyOnce();
             },
             toggleDay(value) {
                 this.dirty = true;

@@ -8,7 +8,7 @@ import asyncio
 import logging
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from test_analyzer_reported_errors import load_analyzer
 
@@ -38,16 +38,35 @@ class AnalyzerExceptionLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.module = load_analyzer()
         self.analyzer = self.module.AIAnalyzer()
         self.source = SimpleNamespace(id=7, tenant_id=2, source_type=None)
-        self.scenario = SimpleNamespace(output_schema={"type": "object"}, max_tokens=None)
+        self.scenario = SimpleNamespace(output_schema={"type": "object"}, max_tokens=None, is_active=True)
         self.good = {"parsed": {"analysis": "useful"}, "response": {}}
         self.saved = SimpleNamespace(id=9)
         self.sink = RecordSink()
         self.module.logger = logging.Logger("isolated_analyzer_privacy", logging.DEBUG)
         self.module.logger.addHandler(self.sink)
-        self.model = SimpleNamespace(name="model")
+        self.model = SimpleNamespace(name="model", id=1)
         self.analyzer._get_llm_model = AsyncMock(return_value=self.model)
+        # The analyzer's bounded text failover looks up a second model through
+        # the real manager (it is imported inside the function); without a
+        # workspace that lookup fails, and the failure is logged as a warning —
+        # which is exactly what these tests assert must not happen.
+        from app.models.managers.llm_model_manager import LLMModelManager
+
+        self._candidates = patch.object(
+            LLMModelManager, "capability_candidates", AsyncMock(return_value=[])
+        )
+        self._candidates.start()
+        self.addCleanup(self._candidates.stop)
+        # The validator and the output contract are bound at import time; the
+        # doubles are installed on the analyzer module itself.
+        self.module.validate_with_pydantic = Mock(side_effect=lambda parsed, model, strict: parsed)
+        self.contract = SimpleNamespace(model=object(), schema={"type": "object"})
+        self.module.compile_scenario_output = Mock(return_value=self.contract)
         self.module.ContentClassifier.prepare_text_content = Mock(return_value=PRIVATE)
         self.module.ContentClassifier.get_media_urls = Mock(return_value=[PRIVATE])
+        # The text path selects the texts it will analyse; without the double
+        # it would find nothing and return no result at all.
+        self.module.ContentClassifier.select_text_content = Mock(side_effect=lambda items: items)
         self.module.PromptBuilder.get_unified_summary_prompt = Mock(return_value=PRIVATE)
         self.client = SimpleNamespace(analyze=AsyncMock(return_value=self.good))
         self.module.LLMClientFactory.create.return_value = self.client
@@ -107,7 +126,15 @@ class AnalyzerExceptionLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
 
     async def success(self, stage):
         result = await self.call_stage(stage)
-        self.assertIs(result, self.saved if stage == "base" else self.good)
+        if stage == "base":
+            self.assertIs(result, self.saved)
+        else:
+            # The analyzer returns the parsed answer with the hashes it
+            # submitted attached; the content itself must be the answer.
+            self.assertEqual(
+                {key: value for key, value in result.items() if not key.startswith("_")},
+                self.good,
+            )
         self.assertEqual(self.analyzer.reported_errors, 0)
         self.assertFalse(any(r.levelno >= logging.ERROR for r in self.sink.records))
 

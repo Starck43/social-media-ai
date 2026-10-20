@@ -880,6 +880,13 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             fresh = []
             staged = []
             analytics = None
+            # Failure-code horizon: only LLM attempts of THIS run may label it.
+            # It is taken before the staging read, because a failure there is
+            # part of this run too — and the handler below reports the code of
+            # that failure.
+            from datetime import datetime, timezone
+
+            attempt_journal_since = datetime.now(timezone.utc)
             try:
                 try:
                     raw_total = await CollectedItem.objects.count_for_source(
@@ -897,10 +904,6 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     start_date=window.get("start_date"),
                     end_date=window.get("end_date"),
                 )
-                # Failure-code horizon: only LLM attempts of THIS run may label it.
-                from datetime import datetime, timezone
-
-                attempt_journal_since = datetime.now(timezone.utc)
                 per.update({"raw_total": raw_total, "raw_selected": len(staged), "raw_processed": 0})
                 await job_progress.update_current(sources, stats["per_source"], per)
                 progress_attempted = True

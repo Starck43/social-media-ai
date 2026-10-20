@@ -8,7 +8,7 @@ import asyncio
 import logging
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import test_partial_analysis_coverage as storage_fixtures
 
@@ -43,15 +43,33 @@ class AnalyzerSchemaWarningPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.sink = RecordSink()
         self.module.logger = logging.Logger("isolated_schema_warning", logging.DEBUG)
         self.module.logger.addHandler(self.sink)
-        self.analyzer._get_llm_model = AsyncMock(return_value=SimpleNamespace(name="model"))
+        # The model double needs an id: the analyzer's bounded text failover
+        # excludes the model it already used.
+        self.analyzer._get_llm_model = AsyncMock(return_value=SimpleNamespace(name="model", id=1))
         self.module.ContentClassifier.select_text_content = Mock(side_effect=lambda items: items)
         self.module.ContentClassifier.prepare_text_content = Mock(return_value=PRIVATE)
         self.module.ContentClassifier.get_media_urls = Mock(return_value=[PRIVATE])
         self.client = SimpleNamespace(analyze=AsyncMock(return_value=self.fixture.good))
         self.module.LLMClientFactory.create.return_value = self.client
-        self.module.validate_with_pydantic.side_effect = lambda parsed, model, strict: parsed
+        # The analyzer binds the validator at import time; when the real
+        # json_schema_builder is already loaded, the isolated import map cannot
+        # substitute it. The double is therefore installed on the analyzer
+        # module itself.
+        self.module.validate_with_pydantic = Mock(side_effect=lambda parsed, model, strict: parsed)
         self.contract = SimpleNamespace(model=object(), schema={"type": "object"})
         self.module.compile_scenario_output = Mock(return_value=self.contract)
+        # The analyzer looks up a second model for its bounded text failover.
+        # That lookup goes through the real manager (it is imported inside the
+        # function), so it is patched here: without a workspace it would fail,
+        # and the failure is logged as a warning — which is exactly what this
+        # test asserts must not happen.
+        from app.models.managers.llm_model_manager import LLMModelManager
+
+        self._candidates = patch.object(
+            LLMModelManager, "capability_candidates", AsyncMock(return_value=[])
+        )
+        self._candidates.start()
+        self.addCleanup(self._candidates.stop)
 
     async def invoke(self, stage):
         f = self.fixture

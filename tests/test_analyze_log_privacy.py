@@ -79,9 +79,20 @@ class AnalyzeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             yield
 
         self.scope = scope
+        selection_double = module_with(
+            build_scope=lambda payload: SimpleNamespace(has_author_filter=False, has_text_scope=False),
+            select_items=lambda items, scope: SimpleNamespace(eligible=list(items), rejected=[]),
+            SelectionError=ValueError,
+        )
         modules = {
             "app.services.social.credentials": module_with(AuthorizationRequired=RuntimeError),
-            "app.core.tenant_context": module_with(tenant_scope=scope),
+            "app.core.tenant_context": module_with(
+                tenant_scope=scope,
+                # The analyze path reads the active workspace of the job and
+                # whether the platform bypass is in effect.
+                current_tenant_id=lambda: 1,
+                is_bypass=lambda: False,
+            ),
             "app.models": module_with(
                 AgentScenario=SimpleNamespace(objects=SimpleNamespace(get_default_scenario=self.get_default_scenario)),
                 AIAnalytics=SimpleNamespace(
@@ -89,7 +100,15 @@ class AnalyzeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                     created_at=SimpleNamespace(desc=lambda: None),
                 ),
                 BotAction=SimpleNamespace(objects=SimpleNamespace()),
-                CollectedItem=SimpleNamespace(objects=SimpleNamespace(for_source=self.for_source)),
+                CollectedItem=SimpleNamespace(objects=SimpleNamespace(
+                    for_source=self.for_source,
+                    # The handler reads the backlog size before draining it;
+                    # without the double that read fails and logs a warning
+                    # the test would then count as an extra record.
+                    count_for_source=AsyncMock(return_value=0),
+                )),
+                # The monitoring package reads the platform of a source.
+                Platform=SimpleNamespace(objects=SimpleNamespace()),
                 Source=SimpleNamespace(
                     objects=SimpleNamespace(
                         filter=lambda **kwargs: SimpleNamespace(select_related=AsyncMock(return_value=[self.source]))
@@ -100,22 +119,47 @@ class AnalyzeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                 trigger_evaluator=SimpleNamespace(should_analyze=self.should_analyze)
             ),
             "app.services.social.guards": module_with(
-                extract_target_user=lambda payload: None, guards_checker=SimpleNamespace()
+                guards_checker=SimpleNamespace()
             ),
-            "app.types": module_with(BotActionStatus=SimpleNamespace(PENDING="pending")),
+            "app.types": module_with(
+                BotActionStatus=SimpleNamespace(PENDING="pending"),
+                SourceType=SimpleNamespace(),
+                NotificationType=SimpleNamespace(),
+            ),
+            # The collector and the client factory are imported inside the
+            # handler; the doubles keep the isolated run away from the platform.
+            "app.services.monitoring": module_with(
+                ContentCollector=SimpleNamespace(),
+                # `from app.services.monitoring import selection` binds the
+                # attribute, not the submodule.
+                selection=selection_double,
+            ),
+            # The collector module itself stays real: the test arranges its
+            # failures there.
+            "app.services.monitoring.selection": selection_double,
+            "app.services.social.factory": module_with(get_social_client=lambda platform: SimpleNamespace()),
             "app.services.ai.analyzer": module_with(
                 AIAnalyzer=lambda: SimpleNamespace(analyze_content=self.analyze_content)
             ),
             "app.services.ai.dedup": module_with(analysed_hashes=lambda analytics: []),
             "app.core.database": module_with(new_session=AsyncMock()),
             "app.models.managers.agent_task_manager": module_with(
-                AgentTaskManager=SimpleNamespace(parse_date=lambda v: v)
+                # The handler resolves the scenario of a taskless run through
+                # the manager, so the double must be callable.
+                AgentTaskManager=lambda: SimpleNamespace(
+                    parse_date=lambda v: v,
+                    get_source_scenario=AsyncMock(return_value=self.scenario),
+                )
             ),
         }
         patcher = patch.dict("sys.modules", modules)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.handlers = load_isolated_source("_analyze_log_privacy_test", "app/jobs/handlers.py", imports=modules)
+        # The failure-code lookup reads the LLM attempt journal; the isolated
+        # run has no journal, and the lookup must not become the failure the
+        # test is about.
+        self.handlers._llm_failure_code = AsyncMock(return_value=None)
         self.logger = self.handlers.logger
 
     async def run_analyze(self, payload=None):

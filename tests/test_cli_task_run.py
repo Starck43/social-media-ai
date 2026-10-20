@@ -28,7 +28,6 @@ RUN_ARGS = dict(
     job_type="collect",
     sources=None,
     tracked=None,
-    excluded=None,
     scenario=None,
     period=None,
     tenant=None,
@@ -124,6 +123,9 @@ async def test_task_run_reports_a_failing_job():
 
 async def test_task_run_uses_the_workspace_of_the_task():
     other = await tenants.create(name=_uniq("WS "), slug=_uniq("ws-"))
+    # A workspace task needs something to work on: the runtime snapshots the
+    # sources it would collect, and an empty workspace has none.
+    await _make_source(other.id)
     task = await _make_task(other.id, _uniq("run-scoped-"))
 
     await _cli(_run_task, task=str(task.id), **RUN_ARGS)
@@ -135,6 +137,7 @@ async def test_task_run_uses_the_workspace_of_the_task():
 
 async def test_one_off_run_lands_in_the_requested_workspace():
     other = await tenants.create(name=_uniq("WS "), slug=_uniq("ws-"))
+    await _make_source(other.id)
 
     await _cli(_run_task, task=None, **{**RUN_ARGS, "tenant": other.slug})
 
@@ -148,6 +151,7 @@ async def test_one_off_run_lands_in_the_requested_workspace():
 async def test_repeated_one_off_runs_do_not_collide():
     """Two one-offs in the same workspace must not violate the unique name."""
     other = await tenants.create(name=_uniq("WS "), slug=_uniq("ws-"))
+    await _make_source(other.id)
 
     for _ in range(2):
         await _cli(_run_task, task=None, **{**RUN_ARGS, "tenant": other.slug})

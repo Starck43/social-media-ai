@@ -47,6 +47,13 @@ def load_analyzer():
             AIAnalytics=type("Analytics", (), {}),
             LLMModel=type("Model", (), {}),
             Source=type("Source", (), {}),
+            # The analyzer records the hashes it covered; the isolated run has
+            # no receipt store, so the call is a double.
+            AnalyzedContentReceipt=type("Receipt", (), {
+                "objects": type("Objects", (), {
+                    "record_successes": AsyncMock(return_value=None),
+                })(),
+            }),
         ),
         "app.services.ai.attempt_journal": attempt_journal,
         "app.services.ai.analysis_context": ns(analysis_fingerprint=Mock(return_value="fixture-fingerprint")),

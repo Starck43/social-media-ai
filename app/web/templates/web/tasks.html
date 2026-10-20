@@ -2,6 +2,7 @@
 {% extends "web/base.html" %}
 {% block title %}Задачи — AI Monitor{% endblock %}
 {% block page_heading %}Задачи{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ static_v('css/task-run-progress.css') }}">{% endblock %}
 {% block content %}
 <div x-data="tasksPage()">
     <div class="ui-card mb-4">
@@ -129,17 +130,17 @@
                             class="flex items-center justify-center rounded-md border border-amber-700 p-1.5 text-amber-800 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
                             aria-label="Job {% if rj.status == 'pending' %}в очереди{% else %}выполняется{% endif %}">
                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                  stroke-width="1.5" stroke="currentColor" class="h-4 w-4 animate-spin">
+                                  stroke-width="1.5" stroke="currentColor" class="h-4 w-4{% if rj.status == 'running' %} animate-spin motion-reduce:animate-none{% endif %}">
                                <path stroke-linecap="round" stroke-linejoin="round"
                                      d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                              </svg>
                          </a>
                          {% else %}
-                        <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
+                        <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline" x-data="{ sending: false }" @submit="if (sending) { $event.preventDefault(); return }; sending = true">
                             <input type="hidden" name="_csrf" value="{{ csrf }}">
                             {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                                              value="{{ filter_tenant_id }}">{% endif %}
-                             <button title="Выполнить сейчас" aria-label="Выполнить сейчас"
+                             <button title="Выполнить сейчас" aria-label="Выполнить сейчас" :disabled="sending" :aria-busy="sending"
                                      class="flex items-center justify-center rounded-md border border-cyan-700 p-1.5 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950">
                                  <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"
                                       stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
@@ -157,7 +158,7 @@
                             <input type="hidden" name="_csrf" value="{{ csrf }}">
                             {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                                              value="{{ filter_tenant_id }}">{% endif %}
-                             <button
+                             <button {% if task.id in running_jobs %}disabled{% endif %}
                                  aria-label="{% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}"
                                  title="{% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}"
                                  class="flex items-center justify-center rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -474,10 +475,14 @@
                 </button>
             </div>
 
+            <template x-if="runModal.data.run_progress_html"><div x-html="runModal.data.run_progress_html"></div></template>
+            <template x-if="runModal.data.run_progress_html && runModal.data.outcome === 'partial'"><p class="mt-4 text-sm text-amber-700 dark:text-amber-300">Выполнено частично. Подробности у источников на странице задачи.</p></template>
+            <template x-if="runModal.data.run_progress_html && runModal.data.status === 'failed'"><p class="mt-4 text-sm text-rose-700 dark:text-rose-300" x-text="runModal.data.error"></p></template>
+            <template x-if="runModal.data.task_url"><a :href="runModal.data.task_url" class="mt-4 inline-block rounded-lg bg-cyan-600 px-4 py-3 text-sm text-white">Открыть задачу →</a></template>
             <template x-if="runModal.loading">
                 <div class="mt-5">
                     <div class="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
-                        <svg x-show="!runModal.networkError && !runModal.data.heartbeat_unconfirmed && !(runModal.data.progress && runModal.data.progress.raw_progress && runModal.data.progress.raw_progress.status === 'unconfirmed')" class="h-5 w-5 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
+                        <svg x-show="runModal.data.status === 'running' && !runModal.networkError && !runModal.data.heartbeat_unconfirmed && !(runModal.data.progress && runModal.data.progress.raw_progress && runModal.data.progress.raw_progress.status === 'unconfirmed')" class="h-5 w-5 animate-spin motion-reduce:animate-none text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
                              viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
                                     stroke-width="4"></circle>
@@ -491,7 +496,7 @@
                         <span class="ml-auto shrink-0 text-xs text-slate-600 dark:text-slate-400"
                               x-text="runModal.elapsedLabel"></span>
                     </div>
-                    <template x-if="runModal.data.activity">
+                    <template x-if="!runModal.data.run_progress_html && runModal.data.activity">
                         <p class="mt-2 text-sm text-slate-600 dark:text-slate-400" x-text="runModal.data.activity"></p>
                     </template>
                     <template x-if="runModal.data.hint">
@@ -499,7 +504,7 @@
                            x-text="runModal.data.hint"></p>
                     </template>
                     {# Real per-source progress of long collect/analyze runs. #}
-                    <template x-if="runModal.data.progress">
+                    <template x-if="!runModal.data.run_progress_html && runModal.data.progress">
                         <div class="mt-4">
                         <template x-if="runModal.data.progress.raw_progress">
                             <div class="mb-3 rounded-lg bg-slate-50 dark:bg-slate-950/60 p-3">
@@ -619,6 +624,7 @@
                 </div>
             </template>
 
+            <template x-if="!runModal.loading && runModal.data.run_progress_html"><div class="mt-4 flex justify-end"><button @click="closeRunModal()" class="rounded-lg border px-4 py-3 text-sm">Закрыть</button></div></template>
             {# Raw diagnostics are admin-only noise once the run has ended: the
                outcome box carries the useful statistics. Keep them visible only
                while the job is in flight, and render just the rows that carry
@@ -637,7 +643,7 @@
                 </div>
             </template>
 
-            <template x-if="!runModal.loading">
+            <template x-if="!runModal.loading && !runModal.data.run_progress_html">
                 <div class="mt-5">
                     <template x-if="runModal.data.status === 'done'">
                         {# The tone follows the outcome, not the status: a clean run,
@@ -737,7 +743,7 @@
                             </ul>
                             <template x-if="runModal.data.progress && runModal.data.progress.raw_progress"><p class="mt-3 text-xs text-amber-800 dark:text-amber-300" x-text="`Сырой контент текущего источника: ${runModal.data.progress.raw_progress.processed === null ? '—' : runModal.data.progress.raw_progress.processed} из ${runModal.data.progress.raw_progress.total === null ? '—' : runModal.data.progress.raw_progress.total} записей · ${runModal.data.progress.raw_progress.percent === null ? '—' : `${runModal.data.progress.raw_progress.percent}%`}`"></p></template>
                             <template x-if="(runModal.data.raw_coverage || []).length"><div class="mt-3 space-y-2"><template x-for="item in runModal.data.raw_coverage" :key="item.source_id"><div><div class="flex justify-between text-xs"><span x-text="item.name"></span><span x-text="item.percent === null ? '—' : `${item.percent}%`"></span></div><div class="mt-1 h-1 overflow-hidden rounded-full bg-slate-800"><div class="h-full bg-emerald-500" :style="`width: ${item.percent === null ? 0 : item.percent}%`"></div></div></div></template></div></template>
-                            <template x-if="runModal.data.progress">
+                            <template x-if="!runModal.data.run_progress_html && runModal.data.progress">
                                 <div class="mt-3">
                                     <p class="text-xs text-amber-800 dark:text-amber-300"
                                        x-text="`Обработано до остановки: ${runModal.data.progress.completed} из ${runModal.data.progress.total}`"></p>
@@ -934,7 +940,7 @@
                         { label: "Обновлено", value: d.progress_updated_at ? rel(d.progress_updated_at) : null },
                         { label: "Выбрано записей", value: has(d.selected) ? d.selected : null },
                         { label: "Осталось записей", value: has(d.remaining) ? d.remaining : null },
-                        { label: "Код", value: d.error_code },
+                        { label: "Код", value: d.error_code ? "есть ошибка; см. журнал Job" : null },
                     ].filter((row) => has(row.value) && row.value !== "")
                 },
                 // Tone per outcome: green only for a clean run with results,

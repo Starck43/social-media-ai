@@ -1,0 +1,5 @@
+# QA-only tools, not application dependencies. pytest constraints match pyproject.
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+Jinja2==3.1.6
+playwright==1.63.0

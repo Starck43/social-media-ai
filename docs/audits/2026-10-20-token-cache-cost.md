@@ -136,3 +136,61 @@ follow the documented formulas. No pytest or live invoice reconciliation run.
 No production accuracy certification. Findings are ready for correction scoping;
 implementation is not part of this audit. Shared registry/phase edits are scoped
 to the audit task; reconcile with fresh dev before any future publish/merge.
+
+## Implementation follow-up: provider totals in projections
+
+P2-T11, branch `audit/token-cache-cost`, based on audit commit `5146696`:
+resolved structured provider USD totals now take precedence in the client usage
+projections consumed by chat, digest and learning, and in analyzer modality cost
+projections. Explicit provider zero must be retained, including in analytics
+storage when every included stage reports zero. Missing token counts or a missing
+model row must not discard an otherwise resolved provider amount. The existing
+provider-cost parser and its currency/precision checks remain the source of this
+price evidence; generated text and legacy normalized projection cost are excluded.
+
+This is a bounded correction of finding 2, not whole billing acceptance. Analytics
+still excludes the separate unified-summary attempt from its modality aggregate;
+the journal records that attempt separately. Without a resolved provider report,
+legacy tariff estimates still ignore cache categories, and unknown values can
+still contribute zero in old projections. Full usage/tariff snapshots, provider
+identity binding, conservative reservation bounds and honest incomplete-spend
+reporting remain open as P2-T12/P2-T13/P2-T14. No migration is included or applied.
+
+Validation retry (2026-10-20): the OpenCode exact-model route recovered.
+The first focused run had 94 passed / 10 failed. Pristine baseline `de9fe31`
+reproduced 8 of those failures in obsolete journal fixtures (11 passed / 8 failed,
+19 collected). The new transport fixtures also needed the real provider's
+`auth_header` default. Fixtures now load the actual price-floor helper, provide
+active scenarios and existing coverage/body data, and assert that partial updates
+preserve prior body/coverage rather than suppressing the current update contract.
+
+Repairing the AST fixture also exposed a source-confirmed duplicate
+`kwargs.pop("accounting_purpose", "chat")`: the second pop discarded explicit
+`learn` labels. The duplicate is removed; the existing strict forwarding/journal
+purpose assertions remain intact. These are bounded accounting and harness
+corrections, not changes to payer identity, tariff selection or reservation policy.
+
+Final audit-worktree TEST RUN PASS via OpenCode build,
+`QwenPlan/deepseek-v4-flash-0731`: collected 104; executed 104 passed,
+0 failed/skipped/errors, 43 subtests; collection and execution exit 0.
+Base `51466965fd80c37344f361c9bd1acb828f5e6ce3` plus prepared source digest below.
+No DB or live provider calls. Independent code review and `git diff --check` passed.
+
+Exact positional scope, collection (`--collect-only`) then execution:
+`tests/test_llm_usage_cost.py`, `tests/test_analyzer_provider_cost.py`,
+`tests/test_analyzer_pricing.py`, `tests/test_provider_accounting_price.py`,
+`tests/test_scoped_attempt_journal.py`, `tests/test_analyzer_reported_errors.py`,
+`tests/test_analyzer_attempt_journal.py`; flags
+`--noconftest -o addopts= -q --tb=short --no-header`, worktree `.venv/bin/python -m pytest`.
+Transport/admission/observation/model lookups/storage are local doubles; required
+configuration is synthetic, without private environment or paid calls.
+
+Prepared source reference: combined SHA-256 of the seven changed Python files
+(sorted paths, each encoded path + NUL + file bytes + NUL):
+`6105f007cafc2d460859e921a25fa58429dd0b5eb59de5f61e56688a7b91cbe2`.
+Files: `app/services/ai/llm_client.py`, `app/services/ai/analyzer.py`,
+`tests/test_llm_usage_cost.py`, `tests/test_analyzer_provider_cost.py`,
+`tests/test_analyzer_reported_errors.py`, `tests/test_scoped_attempt_journal.py`,
+`tests/test_analyzer_attempt_journal.py`.
+
+Integration with fresh dev and acceptance at the resulting revision remain pending.

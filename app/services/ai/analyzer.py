@@ -30,6 +30,28 @@ logger = logging.getLogger(__name__)
 TEXT_MODEL_FALLBACK_LIMIT = 2
 
 
+def _provider_cost_for_usage_entry(entry: dict[str, Any]) -> tuple[bool, Decimal | None]:
+    """Resolve client-owned or legacy raw provider cost without reading projections."""
+    from app.services.ai.attempt_journal import provider_cost_evidence
+
+    if "accounting_cost_reported" in entry:
+        if entry.get("accounting_cost_reported") is not True:
+            return False, None
+        amount = entry.get("accounting_cost_usd")
+        if amount is not None:
+            return provider_cost_evidence({"total_cost": amount})
+        return True, None
+    raw_response = entry.get("provider_response")
+    if isinstance(raw_response, dict):
+        return provider_cost_evidence(raw_response)
+    return False, None
+
+
+def _projection_token_count(value: Any) -> int:
+    """Keep valid raw counts; malformed projection values contribute zero."""
+    return value if type(value) is int and value >= 0 else 0
+
+
 def _analysis_error_kind(error: Exception) -> str:
     """Allowlisted categories only; never format provider messages or tracebacks."""
     if isinstance(error, TimeoutError):
@@ -1177,9 +1199,10 @@ class AIAnalyzer:
     COST_SCALE = Decimal("0.000001")
 
     async def _price_usage(self, usage_by_result: list[dict[str, Any]]) -> Decimal:
-        """Price token usage from llm_models rates (USD per 1K tokens).
+        """Use provider totals when resolved, otherwise estimate from model tariffs.
 
-        Returns the estimated cost in USD cents, quantised to the scale of the
+        Tariff fallback does not account for cache categories or other pricing
+        modifiers. Returns USD cents, quantised to the scale of the
         `estimated_cost` column. Decimal throughout: tariffs are USD per 1K with
         4+ decimals, so float would both drift and hide sub-cent calls that
         cheap models produce on nearly every run. Unknown models contribute 0
@@ -1187,6 +1210,10 @@ class AIAnalyzer:
         """
         total_usd = Decimal(0)
         for entry in usage_by_result:
+            _, reported_cost = _provider_cost_for_usage_entry(entry)
+            if reported_cost is not None:
+                total_usd += reported_cost
+                continue
             model_id = entry.get("model_id")
             req_tokens = entry.get("request_tokens", 0) or 0
             resp_tokens = entry.get("response_tokens", 0) or 0
@@ -1205,6 +1232,14 @@ class AIAnalyzer:
             ) / 1000 * Decimal(str(model.output_cost_per_1k or 0.0))
         cents = total_usd * 100
         return cents.quantize(self.COST_SCALE, rounding=ROUND_HALF_UP) if cents > 0 else Decimal(0)
+
+    @staticmethod
+    def _all_provider_costs_resolved_zero(usage_by_result: list[dict[str, Any]]) -> bool:
+        """Persist zero only when every included stage has an explicit provider zero."""
+        return bool(usage_by_result) and all(
+            (reported := _provider_cost_for_usage_entry(entry)[1]) is not None and reported == 0
+            for entry in usage_by_result
+        )
 
     def _build_trace_payload(self, analysis_results: dict[str, Any]) -> dict[str, Any]:
         """Build response_payload trace: full responses in DEBUG, metadata otherwise."""
@@ -1602,20 +1637,26 @@ class AIAnalyzer:
                 prompt_text = result.get("request", {}).get("prompt")
 
                 # Extract token usage from response
-                response = result.get("response", {})
-                usage = response.get("usage", {})
+                response = result.get("response")
+                response = response if isinstance(response, dict) else {}
+                usage = response.get("usage")
+                usage = usage if isinstance(usage, dict) else {}
 
-                req_tokens = usage.get("prompt_tokens", 0) or 0
-                resp_tokens = usage.get("completion_tokens", 0) or 0
+                req_tokens = _projection_token_count(usage.get("prompt_tokens"))
+                resp_tokens = _projection_token_count(usage.get("completion_tokens"))
                 total_request_tokens += req_tokens
                 total_response_tokens += resp_tokens
-                usage_by_result.append(
-                    {
-                        "model_id": result.get("request", {}).get("model"),
-                        "request_tokens": req_tokens,
-                        "response_tokens": resp_tokens,
-                    }
-                )
+                usage_entry = {
+                    "model_id": result.get("request", {}).get("model"),
+                    "request_tokens": req_tokens,
+                    "response_tokens": resp_tokens,
+                }
+                if "accounting_cost_reported" in result:
+                    usage_entry["accounting_cost_reported"] = result.get("accounting_cost_reported")
+                    usage_entry["accounting_cost_usd"] = result.get("accounting_cost_usd")
+                else:
+                    usage_entry["provider_response"] = response
+                usage_by_result.append(usage_entry)
 
                 # Extract provider from request
                 provider = result.get("request", {}).get("provider")
@@ -1742,9 +1783,10 @@ class AIAnalyzer:
             }
 
         # Cost from llm_models prices (input_cost_per_1k / output_cost_per_1k, USD).
-        # estimated_cost stores USD cents with sub-cent precision; NULL is kept for
-        # "unknown or free" so a zero-cost row never looks like a pricing bug.
+        # Unified summary remains journaled but outside this analytics aggregate.
+        # Unknown zero totals stay NULL; a fully resolved provider zero is stored.
         estimated_cost_cents = await self._price_usage(usage_by_result)
+        persist_zero_cost = estimated_cost_cents == 0 and self._all_provider_costs_resolved_zero(usage_by_result)
 
         # Debug tracing only: full LLM responses go to response_payload when
         # DEBUG is on; in production keep metadata (usage + parsed keys) only,
@@ -1797,7 +1839,9 @@ class AIAnalyzer:
                         parent_analysis_id=parent_analysis_id,
                         request_tokens=total_request_tokens if total_request_tokens > 0 else None,
                         response_tokens=total_response_tokens if total_response_tokens > 0 else None,
-                        estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
+                        estimated_cost=estimated_cost_cents
+                        if estimated_cost_cents > 0 or persist_zero_cost
+                        else None,
                         provider_type=primary_provider,
                         media_types=list(media_types_analyzed) if media_types_analyzed else None,
                     )
@@ -1819,7 +1863,9 @@ class AIAnalyzer:
                         parent_analysis_id=parent_analysis_id,
                         request_tokens=total_request_tokens if total_request_tokens > 0 else None,
                         response_tokens=total_response_tokens if total_response_tokens > 0 else None,
-                        estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
+                        estimated_cost=estimated_cost_cents
+                        if estimated_cost_cents > 0 or persist_zero_cost
+                        else None,
                         provider_type=primary_provider,
                         media_types=list(media_types_analyzed) if media_types_analyzed else None,
                     )

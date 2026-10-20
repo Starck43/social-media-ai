@@ -8,8 +8,11 @@ Decimal math, tariffs from llm_models (never hardcoded), no DB.
 """
 
 from types import SimpleNamespace
+from contextlib import ExitStack
+from unittest.mock import AsyncMock, patch
 
-from app.services.ai.llm_client import AnthropicClient, OpenAICompatibleClient, price_usage_usd
+from app.services.ai import llm_client as llm_client_module
+from app.services.ai.llm_client import AnthropicClient, CustomClient, OpenAICompatibleClient, price_usage_usd
 
 
 def _model(input_cost_per_1k=0.01, output_cost_per_1k=0.02, **extra):
@@ -17,6 +20,7 @@ def _model(input_cost_per_1k=0.01, output_cost_per_1k=0.02, **extra):
         name="Stub",
         base_url="https://stub.invalid/v1",
         get_api_key=lambda: "k",
+        auth_header=None,  # mirrors LLMProvider.auth_header default; _headers() falls back to Bearer
         **extra.pop("provider", {}),
     )
     return SimpleNamespace(
@@ -36,6 +40,35 @@ def _openai_client(**model_kwargs):
 
 def _anthropic_client(**model_kwargs):
     return AnthropicClient(_model(**model_kwargs))
+
+
+def _custom_client(**model_kwargs):
+    model_kwargs.setdefault("custom_endpoint_path", "/generate")
+    return CustomClient(_model(provider={"api_format": "custom"}, **model_kwargs))
+
+
+class _Response:
+    status_code = 200
+
+    def __init__(self, data):
+        self.data = data
+
+    def json(self):
+        return self.data
+
+
+class _HTTPClient:
+    def __init__(self, data):
+        self.data = data
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def post(self, *_args, **_kwargs):
+        return _Response(self.data)
 
 
 class TestPriceUsageUsd:
@@ -95,3 +128,126 @@ class TestAnthropicParseChat:
         parsed = _anthropic_client()._parse_chat(data)
         assert parsed["content"] == "yo"
         assert parsed["usage"] == {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "cost": 0.002}
+
+
+class TestProviderCostUsageProjection:
+    def test_provider_totals_override_chat_tariffs_in_supported_parsers(self):
+        openai_data = {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {
+                "prompt_tokens": 1000,
+                "completion_tokens": 100,
+                "prompt_tokens_details": {"cached_tokens": 800},
+                "total_cost": "0.123456789",
+            },
+        }
+        anthropic_data = {
+            "content": [{"type": "text", "text": "ok"}],
+            "usage": {"input_tokens": 1000, "output_tokens": 100, "cost": "0.123456789"},
+        }
+        assert (
+            _openai_client(input_cost_per_1k=0, output_cost_per_1k=0)._parse_chat(openai_data)["usage"]["cost"]
+            == 0.123456789
+        )
+        assert (
+            _anthropic_client(input_cost_per_1k=1, output_cost_per_1k=1)._parse_chat(anthropic_data)["usage"]["cost"]
+            == 0.123456789
+        )
+
+    def test_explicit_zero_and_missing_tokens_remain_resolved(self):
+        client = _openai_client(input_cost_per_1k=10, output_cost_per_1k=10)
+        parsed_zero = client._parse_chat(
+            {
+                "choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "cost": 0},
+            }
+        )
+        parsed_total = client._parse_chat({"choices": [{"message": {"content": "ok"}}], "cost": "0.25"})
+        assert parsed_zero["usage"]["cost"] == 0.0
+        assert parsed_total["usage"]["cost"] == 0.25
+
+    def test_generated_text_is_ignored_and_tariff_fallback_remains(self):
+        client = _openai_client()
+        assert client._usage_block_for_response(100, 50, {"content": "cost: 9.99"})["cost"] == 0.002
+        assert (
+            client._usage_block_for_response(100, 50, {"usage": {"prompt_tokens": 100, "completion_tokens": 50}})[
+                "cost"
+            ]
+            == 0.002
+        )
+
+    async def test_all_actual_adapter_chat_and_analyze_calls_use_provider_totals(self):
+        cases = [
+            (
+                _openai_client(input_cost_per_1k=0, output_cost_per_1k=0),
+                {
+                    "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_cost": "0.31"},
+                },
+            ),
+            (
+                _anthropic_client(input_cost_per_1k=2, output_cost_per_1k=2),
+                {
+                    "content": [{"type": "text", "text": "{}"}],
+                    "usage": {"input_tokens": 10, "output_tokens": 2, "cost": "0.31"},
+                },
+            ),
+            (
+                _custom_client(input_cost_per_1k=2, output_cost_per_1k=2),
+                {"text": "{}", "usage": {"prompt_tokens": 10, "completion_tokens": 2}, "cost": "0.31"},
+            ),
+        ]
+        for client, data in cases:
+            for method in ("chat", "analyze"):
+                patches = [
+                    patch.object(llm_client_module, "_personal_admission", new=AsyncMock(return_value=(None, None))),
+                    patch.object(llm_client_module, "_verify_personal_dispatch_day", new=AsyncMock()),
+                    patch.object(llm_client_module, "_observe_personal_outcome", new=AsyncMock()),
+                    patch.object(llm_client_module, "_record_llm_usage", new=AsyncMock()),
+                    patch.object(llm_client_module.httpx, "AsyncClient", side_effect=lambda: _HTTPClient(data)),
+                    patch.object(client, "_rate_limit", new=AsyncMock()),
+                ]
+                with ExitStack() as stack:
+                    for mocked in patches:
+                        stack.enter_context(mocked)
+                    result = (
+                        await client.chat([{"role": "user", "content": "hi"}])
+                        if method == "chat"
+                        else await client.analyze("hi")
+                    )
+                assert result["usage"]["cost"] == 0.31
+
+    async def test_chat_parse_failure_and_malformed_usage_keep_valid_provider_total(self):
+        client = _openai_client(input_cost_per_1k=10, output_cost_per_1k=10)
+        data = {"choices": [], "usage": "malformed", "total_cost": "0.42"}
+        patches = [
+            patch.object(client, "_rate_limit", new=AsyncMock()),
+            patch.object(llm_client_module, "_personal_admission", new=AsyncMock(return_value=(None, None))),
+            patch.object(llm_client_module, "_verify_personal_dispatch_day", new=AsyncMock()),
+            patch.object(llm_client_module, "_observe_personal_outcome", new=AsyncMock()),
+            patch.object(llm_client_module, "_record_llm_usage", new=AsyncMock()),
+            patch.object(llm_client_module.httpx, "AsyncClient", side_effect=lambda: _HTTPClient(data)),
+        ]
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+            response = await client.chat([{"role": "user", "content": "hi"}])
+        assert response["usage"]["cost"] == 0.42
+
+        # A malformed usage object prevents token extraction but cannot hide the
+        # provider total from the analyze projection.
+        analyze_data = {
+            "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+            "usage": "malformed",
+            "cost": "0.42",
+        }
+        with ExitStack() as stack:
+            for mocked in (
+                patches[0],
+                patch.object(llm_client_module, "_personal_admission", new=AsyncMock(return_value=(None, None))),
+                patches[2],
+                patch.object(llm_client_module, "_observe_personal_outcome", new=AsyncMock()),
+                patches[4],
+                patch.object(llm_client_module.httpx, "AsyncClient", side_effect=lambda: _HTTPClient(analyze_data)),
+            ):
+                stack.enter_context(mocked)
+            result = await client.analyze("hi")
+        assert result["usage"]["cost"] == 0.42

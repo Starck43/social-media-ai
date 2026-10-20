@@ -19,7 +19,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   preserved; depends: serialize `user.py`/schema writes with P10-T03;
   owns: tests/test_http_user_response_privacy.py, docs/validation/http-user-response-privacy.md
   and scoped Users response contract in docs/API.md;
-  owner: remote Notion agent (fix/http-user-response-redaction); status: READY.
+  owner: remote Notion agent (fix/http-user-response-redaction); status: DONE.
   Claim before implementation from dev `aeb8c54d74a55710b5080fd0a980fbc0ecf36d8c`.
   Current UserInDB already excludes hashes (existing `eb6cad6`); this lane adds
   bounded HTTP/OpenAPI regression evidence and corrects stale response docs,
@@ -37,9 +37,27 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Black/isort, pip and scoped diff checks passed. No production code changes.
   Commands, dependency versions, harness correction and limits:
   [validation](https://github.com/Starck43/social-media-ai/blob/987796aa01ba9dd924207512b2a314bb63fbda97/docs/validation/http-user-response-privacy.md).
-  READY is implementation/evidence review, not DONE or full application/token/
-  middleware/DB acceptance; those checks remain owner-local under R10. No
-  migration, runtime start or merge authorized; keep Draft.
+  Owner R10 integration acceptance against exact PR source
+  `987796aa01ba9dd924207512b2a314bb63fbda97`; fresh dev at test time:
+  `e446c044a863d641b27714a4bffe8563ecbb91dd`. OpenCode, Python 3.12.6,
+  pytest 9.1.1, FastAPI 0.143.2, httpx 0.28.1, SQLAlchemy 2.1.4,
+  greenlet 3.5.6: 2 passed, 0 failed/skipped, 6 warnings, exit 0.
+  Actual app OpenAPI plus real ASGI/JWT/middleware/ORM list, me, self-update
+  and cross-user profile routes: no hash disclosure; 401/403 denials, permitted
+  profile updates and no denied persistence; role/hash unchanged. No dependency,
+  identity, storage, manager or AST-policy doubles. Scratch module SHA256
+  `825be27eb62e867bd92f346df200702c07e84301274c50f4111349d4d5e2c977`;
+  command and attributed runner/preflight details:
+  [owner integration evidence](https://github.com/Starck43/social-media-ai/pull/227#issuecomment-6300278265).
+  The first unpaged list attempt exposed 262 pre-existing `@example.invalid`
+  rows rejected by response EmailStr validation. The passing test paginated to
+  its synthetic admin through the real manager and asserted that exact ID;
+  foreign rows were untouched. Thus default pagination over those legacy rows
+  remains a separate data-compatibility issue, not a hash/rights failure.
+  Own synthetic rows were removed and absence verified. P10-T03, recovery,
+  login protection, full-suite behavior and default-page legacy rows are not
+  accepted by this task. No migrations, schema setup/reset, lifespan, providers
+  or deployment. PR #227 is accepted and merged at the current closeout.
   Registry synchronized from PR head `987796aa01ba9dd924207512b2a314bb63fbda97`;
   implementation and test changes remain in that unmerged PR. Evidence above
   is attributed remote/owner evidence, not a new local execution.

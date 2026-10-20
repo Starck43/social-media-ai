@@ -55,19 +55,26 @@ async def test_roles_list_requires_authentication():
 
 
 async def test_roles_list_includes_permissions():
-    """A m2m needs prefetch_related: select_related returns empty collections."""
-    token = await _user_with_role("OPERATOR")
+    """A m2m needs prefetch_related: select_related returns empty collections.
+
+    Reading the authorisation catalogue is an administrator's right: the
+    operator role does not hold `identity.platform_role.view`.
+    """
+    token = await _user_with_role("ADMIN")
     async with await _client() as client:
         resp = await client.get(f"{ROLES_URL}/", headers={"Authorization": f"Bearer {token}"})
 
     assert resp.status_code == 200, resp.text
     roles = resp.json()["items"]
     assert roles, "no roles returned"
-    assert max(len(r["permissions"]) for r in roles) > 0
+    # The administrator role carries the platform grants; the operator's own
+    # grants are empty until an administrator configures them.
+    administrator = next(r for r in roles if r["codename"] == "admin")
+    assert len(administrator["permissions"]) > 0
 
 
 async def test_get_role_returns_its_permissions():
-    token = await _user_with_role("OPERATOR")
+    token = await _user_with_role("ADMIN")
     async with await _client() as client:
         resp = await client.get(f"{ROLES_URL}/admin", headers={"Authorization": f"Bearer {token}"})
 
@@ -78,7 +85,7 @@ async def test_get_role_returns_its_permissions():
 
 
 async def test_get_unknown_role_is_404():
-    token = await _user_with_role("OPERATOR")
+    token = await _user_with_role("ADMIN")
     async with await _client() as client:
         resp = await client.get(f"{ROLES_URL}/nope", headers={"Authorization": f"Bearer {token}"})
 
@@ -108,7 +115,11 @@ async def test_admin_can_update_role_permissions():
 
     role = await PlatformRole.objects.get_by_codename(PlatformRoleType.OPERATOR)
     original = await RolePermissionService.get_role_permissions(role.id)
-    await RolePermissionService._set_role_permissions(role.id, [perms[0].id, perms[1].id])
+    # The arrangement writes the role's stored grants directly; the write path
+    # only accepts a platform administrator, so the platform authority is used
+    # here — the request below is what proves the *API* path.
+    with tenant_scope(bypass=True):
+        await RolePermissionService._set_role_permissions(role.id, [perms[0].id, perms[1].id])
 
     token = await _user_with_role("ADMIN")
     try:
@@ -129,10 +140,12 @@ async def test_admin_can_update_role_permissions():
         stored = await RolePermissionService.get_role_permissions(role.id)
         assert [p.codename for p in stored] == [first]
     finally:
-        await RolePermissionService._set_role_permissions(role.id, [p.id for p in original])
+        with tenant_scope(bypass=True):
+            await RolePermissionService._set_role_permissions(role.id, [p.id for p in original])
 
 
 async def test_permission_update_reports_unknown_role():
+    """Only the operator role's grants may be changed; a fixed role is refused."""
     token = await _user_with_role("ADMIN")
     payload = {"permissions": ["social.notification.view"], "strategy": "replace"}
 
@@ -142,4 +155,4 @@ async def test_permission_update_reports_unknown_role():
         )
 
     assert resp.status_code == 400, resp.text
-    assert "not found" in resp.text.lower()
+    assert "operator grants" in resp.text.lower()

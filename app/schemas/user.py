@@ -57,6 +57,12 @@ class UserInDBBase(UserBase):
     created_at: datetime
     updated_at: datetime
 
+    # The stored address is shown as it is. The write paths validate the
+    # address (`UserCreate`, `UserUpdate`); a *read* must not fail because a
+    # row holds an address the strict input rule would have refused — one such
+    # row used to take the whole user list down with a validation error.
+    email: str
+
     model_config = ConfigDict(from_attributes=True)
 
 

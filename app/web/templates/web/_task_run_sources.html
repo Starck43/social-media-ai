@@ -1,0 +1,13 @@
+{% if can_view_sources and source_inventory %}
+<dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Источники ({{ source_inventory|length }})</dt>
+<dd class="mt-1">
+    {% for source in source_inventory %}
+    <div class="task-source-item">
+        <a class="task-source-link" href="/app/sources/{{ source.source_id }}"><span class="task-source-color" style="--source-color:var(--run-source-{{ source.shade }},{{ source.color }})" aria-hidden="true"></span>{{ source.name }}</a>
+        {% if source.last_action %}<p class="task-source-action{% if source.failed %} task-source-action--failed{% endif %}">{{ source.last_action }}{% if source.code %} · {{ source.code }}{% endif %}</p>{% endif %}
+    </div>
+    {% endfor %}
+</dd>
+{% elif can_view_sources %}
+<dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Источники</dt><dd class="mt-1 text-sm">Источники не выбраны или недоступны.</dd>
+{% endif %}

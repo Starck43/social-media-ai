@@ -109,7 +109,7 @@ async def test_latest_progress_endpoint_looks_up_task_and_job_in_same_tenant(mon
 
     assert name == "web/task_run_progress.html"
     assert task_query.kwargs == {"id": 21, "tenant_id": 7}
-    assert job_query.kwargs == {"agent_task_id": 21, "tenant_id": 7}
+    assert job_query.kwargs == {"agent_task_id": 21, "tenant_id": 7, "status__in": ["pending", "running"]}
     assert context["job"] is job_row
 
 
@@ -266,11 +266,13 @@ def test_task_detail_template_renders_task_run_actions_and_progress_counters():
         summary=summary,
         sources=[],
         can_view_sources=True,
+        run_progress={"state": "running", "phases": [{"key": "analysis", "label": "Анализ данных", "processed": 3, "total": 10, "percent": 30, "segments": [], "note": "Успешно обработано"}]},
         _tz="UTC",
     )
     assert 'role="progressbar"' in output
-    assert "1 из 2 источников" in output
-    assert "3" in output and "новых записей" in output
+    assert "3</b> / 10 записей" in output
+    assert "Анализ данных" in output
+    assert "из 2 источников" not in output
 
     page_source = (ROOT / "app/web/templates/web/task_detail.html").read_text()
     assert "return_to_detail" in page_source
@@ -305,13 +307,12 @@ def test_task_run_partial_shows_pre_run_status_scope_and_retry_only_for_prior_ru
         _tz="UTC",
     )
     assert "Ожидает первого запуска" in output
-    assert "Источников: 4 · активны: 3 · платформ: 2" in output
-    assert "анализирует накопленные записи" in output
-    assert "сбор новых публикаций для этой задачи не включён" in output
+    assert "Источников: 4" not in output
+    assert "Источники этого запуска" not in output
     assert "Запуск собирает доступные публикации" not in output
     assert "Повторить анализ" not in output
     assert output.count('id="task-run-progress"') == 1
-    assert output.rfind("Охват задачи") < output.rfind("</div>")
+    assert "Охват задачи" not in output
 
 
 def test_task_run_partial_keeps_all_run_content_inside_htmx_root():
@@ -344,9 +345,9 @@ def test_task_run_partial_keeps_all_run_content_inside_htmx_root():
     assert output.index("3") < output.rfind("</div>")
     assert 'role="progressbar"' not in output
     assert 'action="/app/tasks/21/retry-analysis"' in output
-    assert "Сырые данные источников задачи" in output
-    assert "Общая очередь выбранных источников за период задачи" in output
-    assert "10" in output and "3" in output and "7" in output
+    assert "Сырые данные источников задачи" not in output
+    assert "Общая очередь выбранных источников за период задачи" not in output
+    assert "raw_backlog" not in output
 
 
 @pytest.mark.asyncio

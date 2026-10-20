@@ -16,3 +16,27 @@
     {% if note %}<p class="text-xs text-slate-600 dark:text-slate-400">{{ note }}</p>{% endif %}
 </div>
 {%- endmacro %}
+
+{% macro record_progress(view, compact=false) -%}
+{% if view %}
+<div class="run-records{% if compact %} run-records--compact{% endif %}" data-record-progress data-run-state="{{ view.state }}">
+    {% if view.dry_run %}<p class="run-records-notice">Тестовый прогон (dry-run): данные не сохраняются, модель не вызывается.</p>{% endif %}
+    {% for phase in view.phases %}
+    <section class="run-records-phase" data-phase="{{ phase.key }}">
+        <div class="run-records-heading"><span><span class="run-records-number" aria-hidden="true">{{ loop.index }}</span>{{ phase.label }}</span>
+            <span class="run-records-count">{% if phase.processed is not none %}<b>{{ phase.processed }}</b> / {% if phase.total is not none %}{{ phase.total }} записей{% else %}всего уточняется{% endif %}{% else %}—{% endif %}</span>
+        </div>
+        <div class="run-records-bar" role="progressbar" aria-label="{{ phase.label }}" aria-valuemin="0" aria-valuemax="100" {% if phase.percent is not none %}aria-valuenow="{{ phase.percent }}"{% else %}aria-valuetext="{{ phase.note }}"{% endif %}>
+            {% for segment in phase.segments %}{% if segment.weight > 0 %}
+            <span class="run-records-segment" data-source-id="{{ segment.source_id }}" style="flex:{{ segment.weight }};--source-color:var(--run-source-{{ segment.shade }},{{ segment.color }})">
+                <span class="run-records-fill" style="width:{{ segment.fill }}%"></span>{% if segment.failed %}<span class="run-records-failure" style="width:{{ segment.failed_width }}%" aria-hidden="true"></span>{% endif %}
+            </span>
+            {% endif %}{% else %}<span class="run-records-segment" style="flex:1"></span>{% endfor %}
+        </div>
+        <p class="run-records-note">{{ phase.note }}</p>
+    </section>
+    {% endfor %}
+    {% if view.results %}<p class="run-records-results">Результаты анализа: <b>{{ view.results }}</b></p>{% endif %}
+</div>
+{% endif %}
+{%- endmacro %}

@@ -19,6 +19,7 @@ from app.models import AgentScenario, AgentTask, Job, Source
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.tasks.cron import cron_to_human
 from app.jobs.progress import read_snapshot
+from app.web.task_progress import project_run, sidebar_sources
 from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR, OPERATOR_CANCELLED_ERROR, outcome_unconfirmed
 from app.types import AgentActionType, BotTriggerType, JobType
 from app.services.monitoring.selection import SelectionError
@@ -952,9 +953,12 @@ async def task_detail(request: Request, task_id: int):
 	job_outcomes = {
 		job.id: _run_outcome(job.job_type, job.result or {}) for job in recent_jobs if job.status == "done"
 	}
-	run_scope = await _task_run_scope(source, include_raw=perms_can(request, "source", "view"))
-	latest_run = _task_run_panel_data(request, source, recent_jobs[0] if recent_jobs else None, run_scope=run_scope)
-	await _attach_task_llm_diagnostics(request, source, recent_jobs[0] if recent_jobs else None, latest_run)
+	run_scope = await _task_run_scope(source, include_sources=perms_can(request, "source", "view"))
+	latest_job = next((item for item in recent_jobs if item.id == running_job_id), None)
+	if latest_job is None:
+		latest_job = running_job if running_job_id is not None else (recent_jobs[0] if recent_jobs else None)
+	latest_run = _task_run_panel_data(request, source, latest_job, run_scope=run_scope)
+	await _attach_task_llm_diagnostics(request, source, latest_job, latest_run)
 
 	return render(
 		request,
@@ -976,7 +980,7 @@ async def task_detail(request: Request, task_id: int):
 	)
 
 
-async def _task_run_scope(task: Any, *, include_raw: bool = False) -> dict[str, Any] | None:
+async def _task_run_scope(task: Any, *, include_raw: bool = False, include_sources: bool = False) -> dict[str, Any] | None:
 	"""Return task source scope and, when authorized, its current raw backlog."""
 	if task.job_type not in ("collect", "analyze"):
 		return None
@@ -995,6 +999,8 @@ async def _task_run_scope(task: Any, *, include_raw: bool = False) -> dict[str, 
 		"active": sum(1 for item in scoped if item.is_active),
 		"platforms": len({item.platform_id for item in scoped}),
 	}
+	if include_sources:
+		scope["inventory"] = [{"source_id": item.id, "name": item.name[:160]} for item in sorted(scoped, key=lambda item: (item.name, item.id))]
 	if include_raw and task.job_type == "analyze":
 		from app.models.collected_item import CollectedItem
 		from app.models.managers.agent_task_manager import AgentTaskManager
@@ -1058,8 +1064,14 @@ def _task_run_panel_data(
 	request: Request, task: Any, job: Any | None, *, run_scope: dict[str, Any] | None = None
 ) -> dict[str, Any]:
 	"""Build a task-scoped latest-run projection, with diagnostics for admins only."""
+	can_view_sources = perms_can(request, "source", "view")
+	run_progress = project_run(job, task, authorized=can_view_sources)
+	inventory = (run_scope or {}).get("inventory", []) if can_view_sources else []
+	source_inventory = sidebar_sources(inventory, job, admin=_diagnostics_admin(request))
 	if job is None:
 		return {
+			"run_progress": run_progress,
+			"source_inventory": source_inventory,
 			"job": None,
 			"summary": None,
 			"sources": [],
@@ -1114,6 +1126,8 @@ def _task_run_panel_data(
 			summary["diagnostics"].pop("selected", None)
 			summary["diagnostics"].pop("remaining", None)
 	return {
+		"run_progress": run_progress,
+		"source_inventory": source_inventory,
 		"job": job,
 		"summary": summary,
 		"sources": sources,
@@ -1138,11 +1152,13 @@ async def task_latest_progress(request: Request, task_id: int):
 	task = await AgentTask.objects.filter(id=task_id, tenant_id=tenant_id).first()
 	if task is None:
 		return HTMLResponse("<p class=\"text-sm text-slate-600\">Задача не найдена.</p>", status_code=404)
-	job = await Job.objects.filter(agent_task_id=task.id, tenant_id=tenant_id).order_by(Job.created_at.desc()).first()
-	run_scope = await _task_run_scope(task, include_raw=perms_can(request, "source", "view"))
+	job = await Job.objects.filter(agent_task_id=task.id, tenant_id=tenant_id, status__in=["pending", "running"]).order_by(Job.created_at.desc()).first()
+	if job is None:
+		job = await Job.objects.filter(agent_task_id=task.id, tenant_id=tenant_id).order_by(Job.created_at.desc()).first()
+	run_scope = await _task_run_scope(task, include_sources=perms_can(request, "source", "view"))
 	panel = _task_run_panel_data(request, task, job, run_scope=run_scope)
 	await _attach_task_llm_diagnostics(request, task, job, panel)
-	return render(request, "web/task_run_progress.html", task=task, **panel)
+	return render(request, "web/task_run_progress.html", task=task, sidebar_oob=True, **panel)
 
 
 @router.get("/{task_id}/edit")
@@ -2483,6 +2499,13 @@ async def job_status(request: Request, job_id: int):
 			summary["diagnostics"].pop("remaining", None)
 	if summary.get("status") in ("pending", "running"):
 		summary["can_cancel"] = bool(perms_can(request, "agenttask", "update"))
+	from .deps import templates
+
+	view = project_run(job, task, authorized=can_view_sources)
+	if view:
+		view["state"] = "unconfirmed" if summary.get("heartbeat_unconfirmed") else summary["status"]
+		summary["run_progress_html"] = str(templates.get_template("web/_run_progress.html").module.record_progress(view, compact=True))
+		summary["task_url"] = f"/app/tasks/{task.id}" if task is not None else None
 	return JSONResponse(summary)
 
 

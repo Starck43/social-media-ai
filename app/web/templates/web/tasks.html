@@ -418,17 +418,17 @@
                                 источников: платформа:id. Пусто — материалы самих источников.</p>
                         </div>
                     </template>
-                    <template x-if="task.job_type === 'analyze'">
-                        <div>
-                            <label for="add-excluded" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Исключить
-                                пользователей</label>
-                            <input id="add-excluded" name="excluded_users" x-model="task.excluded_users"
-                                   placeholder="username1, username2"
-                                   class="{{ control() }}">
-                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую или пробел.</p>
-                        </div>
-                    </template>
                 </div>
+
+                {% if perms and (perms.is_owner or perms.workspace_role in ['owner', 'admin']) %}
+                <template x-if="task.job_type === 'analyze'">
+                    <label class="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                        <input type="checkbox" name="dry_run" value="on" x-model="task.dry_run"
+                               class="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500">
+                        <span>Тестовый прогон (dry-run): собрать и показать выборку, ничего не сохранять и не звать модель</span>
+                    </label>
+                </template>
+                {% endif %}
 
                 {{ task_trigger_actions("task", "task.job_type", trigger_types, action_types) }}
 
@@ -438,12 +438,12 @@
                             class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                         Отмена
                     </button>
-                    <button type="submit" x-bind:disabled="sending"
-                            class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button type="submit"
+                            class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                         Сохранить
                     </button>
-                    <button type="submit" name="run_now" value="on" x-bind:disabled="sending"
-                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    <button type="submit" name="run_now" value="on"
+                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400"
                             x-text="schedOnce ? 'Сохранить и выполнить' : 'Сохранить и поставить в очередь'">
                         Сохранить и поставить в очередь
                     </button>
@@ -824,7 +824,6 @@
                 digest_group_by: "themes",
                 digest_time_breakdown: false,
                 tracked_users: "",
-                excluded_users: "",
                 brands: "",
                 competitors: "",
                 hashtags: "",
@@ -840,10 +839,9 @@
                 trigger_baseline_hours: 24,
                 trigger_spike_multiplier: 3.0,
                 action_type: "",
-                blacklist: "",
-                whitelist: "",
                 rate_limit_per_hour: "",
                 cooldown_seconds: "",
+                dry_run: false,
             },
             targetDefs: TARGET_FIELDS,
             activeTargetTypes() {

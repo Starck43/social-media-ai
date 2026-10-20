@@ -92,7 +92,7 @@
                 </button>
             </form>
             {% if running_job_id %}
-            <a href="/app/tasks?job_id={{ running_job_id }}" class="rounded-lg border border-amber-300 dark:border-amber-800 px-4 py-2 text-sm text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40">
+            <a id="task-running-badge" href="/app/tasks?job_id={{ running_job_id }}" class="rounded-lg border border-amber-300 dark:border-amber-800 px-4 py-2 text-sm text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40">
                 ⏳ Job #{{ running_job_id }} {% if running_job_status == 'pending' %}в очереди{% else %}выполняется{% endif %}
             </a>
             {% else %}
@@ -209,14 +209,11 @@
                     </dd>
                 </div>
                 {% endif %}
-                {% set eu = (task.payload or {}).get("excluded_users", []) %}
-                {% if eu %}
+                {% if task.dry_run %}
                 <div>
-                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Исключённые</dt>
-                    <dd class="mt-1 flex flex-wrap gap-1.5">
-                        {% for u in eu %}
-                        <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-1 text-xs text-slate-700 dark:text-slate-300">{{ u }}</span>
-                        {% endfor %}
+                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Режим</dt>
+                    <dd class="mt-1">
+                        <span class="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">Тестовый прогон (dry-run)</span>
                     </dd>
                 </div>
                 {% endif %}

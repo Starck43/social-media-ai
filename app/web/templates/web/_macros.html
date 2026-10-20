@@ -226,16 +226,6 @@
 
         <div class="grid grid-cols-2 gap-3">
             <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Чёрный список</label>
-                <input name="blacklist" placeholder="user1, user2" :value="{{ m }}.blacklist" class="{{ control() }}">
-            </div>
-            <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Белый список</label>
-                <input name="whitelist" placeholder="user1, user2" :value="{{ m }}.whitelist" class="{{ control() }}">
-            </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-            <div>
                 <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит действий в час</label>
                 <input name="rate_limit_per_hour" type="number" min="0" :value="{{ m }}.rate_limit_per_hour"
                        class="{{ control() }}">

@@ -62,7 +62,9 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
             "_analysis_dispatch_clients",
             ROOT / "app/services/ai/llm_client.py",
             imports={
-                "app.core.config": SimpleNamespace(settings=SimpleNamespace(LLM_DEFAULT_TIMEOUT=60.0)),
+                "app.core.config": SimpleNamespace(
+                    settings=SimpleNamespace(LLM_DEFAULT_TIMEOUT=60.0, PERSONAL_BILLING_ENABLED=False)
+                ),
                 "app.models": SimpleNamespace(LLMModel=Model),
                 "app.services.ai.attempt_journal": SimpleNamespace(
                     provider_cost_evidence=lambda data: test.journal.provider_cost_evidence(data),
@@ -528,7 +530,10 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 client.model.input_cost_per_1k = float("nan")
                 self.raw["cost"] = "0.01"
                 result = await client.analyze("same")
-                self.assertEqual(result["usage"]["cost"], 0.0)  # Adapter only, not monetary authority.
+                # The provider's own total is not an estimate: it is what was
+                # charged, and the adapter passes it through even when the
+                # local tariff is unusable. The journal prices the attempt.
+                self.assertEqual(result["usage"]["cost"], 0.01)
                 priced = self.journal.price_attempt(
                     self.records(result)[0],
                     {"id": 4, "input_cost_per_1k": float("nan"), "output_cost_per_1k": 1},

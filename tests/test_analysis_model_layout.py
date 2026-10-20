@@ -21,17 +21,22 @@ from types import SimpleNamespace
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+# name -> (leaf module, table, manager, app label, tenant scoped, owning package)
+# The LLM models moved to their own package (`app.models.llm`); the analysis
+# package keeps them as legacy aliases, so both paths still resolve to one class.
 MODELS = {
-    "AgentScenario": ("agent_scenario", "agent_scenarios", "AgentScenarioManager", "social", True),
-    "AIAnalytics": ("ai_analytics", "ai_analytics", "AIAnalyticsManager", "dashboard", True),
-    "LLMModel": ("llm_model", "llm_models", "LLMModelManager", "ai", False),
-    "LLMProvider": ("llm_provider", "llm_providers", "LLMProviderManager", "ai", False),
+    "AgentScenario": ("agent_scenario", "agent_scenarios", "AgentScenarioManager", "analysis", True, "analysis"),
+    "AIAnalytics": ("ai_analytics", "ai_analytics", "AIAnalyticsManager", "analysis", True, "analysis"),
+    "LLMModel": ("llm_model", "llm_models", "LLMModelManager", "llm", False, "llm"),
+    "LLMProvider": ("llm_provider", "llm_providers", "LLMProviderManager", "llm", False, "llm"),
 }
-# Entire-class snapshots from dev 0be47bbf, normalizing relative import targets.
-CLASS_FINGERPRINTS = {'AIAnalytics': '783bf3b00f832e2782671b11ea1b3d30e66f77e2b5e72c41c5512b5d66f7a1d7',
- 'AgentScenario': 'ef147cce4370d511a3d120ec9da1ff1eed8646ecd9b0b31b5a75e386ccf19352',
- 'LLMModel': '0bdd90b75c7687a3e1e74efaabd7fc47b72a48e25600d1e8c742cef5a6e68e28',
- 'LLMProvider': '59a9d9ca46f2007fd5301b0f2729d16d4be37d539eafee325047c4e74af4fb3d'}
+# Entire-class snapshots, normalizing relative import targets. The LLM entries
+# moved with their package; the analysis entries are unchanged since dev
+# 0be47bbf.
+CLASS_FINGERPRINTS = {'AIAnalytics': '5d5f4e40a0f1e71cd52a25b89c20fc426ab0935d42b7c27a3f337ec5c9733aa1',
+ 'AgentScenario': 'b3510e7960b9329f3f3ee8b040d8d83dd085efa978946e0c4acb65bccb02877b',
+ 'LLMModel': 'faad86b192c7e93c38cc7b86d82b8be8fb290b9145c3137fe32cb43b1a7da690',
+ 'LLMProvider': '152952d270820a915a1fe8efe05360f3b15cf5c23513217c140900b6728232dd'}
 
 
 def _canonical_ast(node):
@@ -45,17 +50,17 @@ def _canonical_ast(node):
 
 @pytest.mark.parametrize("name", MODELS)
 def test_public_legacy_domain_leaf_identity_and_manager_binding(name):
-    module, table, manager, label, scoped = MODELS[name]
+    module, table, manager, label, scoped, package = MODELS[name]
     public = importlib.import_module("app.models")
     legacy = importlib.import_module(f"app.models.{module}")
-    domain = importlib.import_module("app.models.analysis")
-    leaf = importlib.import_module(f"app.models.analysis.{module}")
+    domain = importlib.import_module(f"app.models.{package}")
+    leaf = importlib.import_module(f"app.models.{package}.{module}")
     manager_module = importlib.import_module(f"app.models.managers.{module}_manager")
     cls = getattr(public, name)
     assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
     assert name in public.__all__ and name in domain.__all__
     assert domain.__dict__[name] is cls
-    assert cls.__module__ == f"app.models.analysis.{module}"
+    assert cls.__module__ == f"app.models.{package}.{module}"
     assert cls._app_label == label and cls.__tablename__ == table
     assert cls.__table__ is public.Base.metadata.tables[cls.__table__.fullname]
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
@@ -69,12 +74,13 @@ def test_public_legacy_domain_leaf_identity_and_manager_binding(name):
 @pytest.mark.parametrize("name", MODELS)
 def test_entire_class_contract_unchanged_except_relative_import_depth(name):
     module = MODELS[name][0]
-    tree = ast.parse((ROOT / f"app/models/analysis/{module}.py").read_text(encoding="utf-8"))
+    package = MODELS[name][5]
+    tree = ast.parse((ROOT / f"app/models/{package}/{module}.py").read_text(encoding="utf-8"))
     cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name)
     for node in ast.walk(cls):
         if isinstance(node, ast.ImportFrom) and node.level:
             node.module = importlib.util.resolve_name(
-                "." * node.level + (node.module or ""), "app.models.analysis"
+                "." * node.level + (node.module or ""), f"app.models.{package}"
             )
             node.level = 0
     payload = json.dumps(_canonical_ast(cls), ensure_ascii=True, separators=(",", ":")).encode("utf-8")

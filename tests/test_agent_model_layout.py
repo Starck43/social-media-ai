@@ -27,13 +27,15 @@ MODELS = {
     "AgentMemory": "agent_memory",
     "AgentFeedback": "agent_feedback",
 }
-# Dev0be47bbf class snapshots. Resolve imports, restore canonical append's old
-# name and exclude its explicitly tested compatibility wrapper for comparison.
+# Class snapshots, resolving imports, restoring canonical append's old name
+# and excluding its explicitly tested compatibility wrapper for comparison.
+# The agent models moved to their own package (`app.models.agent`) after
+# dev 0be47bbf, so the snapshots follow the current files.
 CLASS_FINGERPRINTS = {
-    "AgentFeedback": "4d8f1724a7a1015b618a814a66e89300169c728e96dc20adb2cb5dd5112cd590",
-    "AgentMemory": "f7ecd5ce520890ed3f472bc5caaeb1b9c24cfb1495c31ed186556e776b44fed7",
-    "AgentMessage": "79c18f9c188737a68e5727b6488529dd50e7fd2bba3b230794e7fac4de419493",
-    "AgentSession": "310cd3f44417f50a6e837438a99a6408afd098b112f8450d8dd79975d13ea560",
+    "AgentFeedback": "ddc6e45f1d08cdd0d376c3fc2ed3a03761197d90cf694db545ddc7c045d9067d",
+    "AgentMemory": "e3a39f85ca111dde93e386e8349541f7a44bd6cc3a826f7645f73fa4e3a7216e",
+    "AgentMessage": "9459d645fd085fdab217d7a779d97bb4e77ae139758f60f0f9af47f9bf536439",
+    "AgentSession": "e24a427316754a36856d2132c7d8ff81e500dd8120c3491c8f326c7960ebc0f7",
 }
 
 
@@ -57,7 +59,7 @@ def test_all_paths_single_mapper_tenant_scope_and_original_manager(name):
     assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
     assert cls.__module__ == f"app.models.agent.{module}"
     assert name in domain.__all__ and name in public.__all__
-    assert cls._app_label == "social" and cls.__tenant_scoped__
+    assert cls._app_label == "agent" and cls.__tenant_scoped__
     assert cls.__table__ is public.Base.metadata.tables[cls.__table__.fullname]
     assert "tenant_id" in cls.__table__.c
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
@@ -99,11 +101,32 @@ def test_unique_foreign_key_and_cost_role_contracts_do_not_change():
     from app.models.agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 
     def unique_columns(model, name):
-        value = next(c for c in model.__table__.constraints if isinstance(c, UniqueConstraint) and c.name == name)
+        """The columns of a named unique key — a constraint or a unique index."""
+        value = next(
+            (
+                c
+                for c in list(model.__table__.constraints) + list(model.__table__.indexes)
+                if getattr(c, "name", None) == name
+            ),
+            None,
+        )
+        assert value is not None, f"{model.__tablename__} has no unique key {name}"
         return tuple(c.name for c in value.columns)
 
     assert unique_columns(AgentSession, "uq_agent_session_tenant_channel_chat") == ("tenant_id", "channel", "chat_id")
-    assert unique_columns(AgentMemory, "uq_agent_memory_tenant_scope_key") == ("tenant_id", "scope", "key")
+    # Personal memory rows are isolated by user; the owner-only legacy bucket
+    # (user_id IS NULL) keeps its own key namespace.
+    assert unique_columns(AgentMemory, "uq_agent_memory_tenant_user_scope_key") == (
+        "tenant_id",
+        "user_id",
+        "scope",
+        "key",
+    )
+    assert unique_columns(AgentMemory, "uq_agent_memory_tenant_scope_key_legacy") == (
+        "tenant_id",
+        "scope",
+        "key",
+    )
     assert isinstance(AgentMessage.__table__.c.role.type, String)
     assert isinstance(AgentMessage.__table__.c.cost.type, Float) and AgentMessage.__table__.c.cost.nullable
     for model, column, table, ondelete in [

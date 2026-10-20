@@ -65,6 +65,26 @@ class _StubUser:
     def _is_superuser_role(self) -> bool:
         return self._superuser
 
+    def has_admin_access(self) -> bool:
+        """Mirror the real `User.has_admin_access`: an active platform operator.
+
+        Every stub stands for a signed-in operator; the *rights* differ, not
+        the access to the console. The admin backend asks this before it
+        computes any grant, so a stub without it fails with an
+        AttributeError instead of answering the question.
+        """
+        return True
+
+    @property
+    def is_platform_admin(self) -> bool:
+        """Mirror the real `User.is_platform_admin`: the platform admin role.
+
+        A platform admin passes every gate (the wildcard grant); an operator
+        with narrower rights does not. It is a property on the model, so the
+        stub must be one too — a bound method would always be truthy.
+        """
+        return self._superuser
+
     def model_permissions(self, model_name: str) -> set[ActionType]:
         if self._superuser:
             return set(ActionType)
@@ -260,15 +280,33 @@ async def test_a_viewer_opens_the_models_its_role_covers():
 
 
 async def test_a_viewer_is_refused_the_models_its_role_does_not_cover():
-    """The role grants no `user` right at all: no menu entry, no route."""
-    async with _signed_in(await _operator(await _role("VIEWER"))) as client:
-        for url in ("/admin/user/list", "/admin/role/list", "/admin/agent-task/list"):
-            assert (await client.get(url)).status_code == 403, url
+    """The role grants no `user` right at all: no menu entry, no route.
+
+    A "viewer" in the console is a platform operator whose catalog rights are
+    restricted to the models it may read — the platform roles themselves are
+    user/operator/admin, and the workspace roles (viewer, analyst, …) are a
+    different axis.
+    """
+    role = await _role("OPERATOR")
+    async with _restricted(
+        role,
+        lambda permission: permission.action_type is ActionType.VIEW
+        and permission.model_type.resource_key in {"collection.source", "collection.platform"},
+    ):
+        async with _signed_in(await _operator(role)) as client:
+            for url in ("/admin/user/list", "/admin/platform-role/list", "/admin/agent-task/list"):
+                assert (await client.get(url)).status_code == 403, url
 
 
 async def test_the_menu_follows_the_same_grants_as_the_routes():
-    async with _signed_in(await _operator(await _role("VIEWER"))) as client:
-        index = await client.get("/admin/", follow_redirects=True)
+    role = await _role("OPERATOR")
+    async with _restricted(
+        role,
+        lambda permission: permission.action_type is ActionType.VIEW
+        and permission.model_type.resource_key in {"collection.source", "collection.platform"},
+    ):
+        async with _signed_in(await _operator(role)) as client:
+            index = await client.get("/admin/", follow_redirects=True)
     assert index.status_code == 200
     assert "/admin/source/list" in index.text
     assert "/admin/user/list" not in index.text
@@ -327,10 +365,10 @@ async def _restricted(role: Role, keep) -> AsyncIterator[Role]:
 async def test_the_dashboard_outside_the_console_asks_the_same_question():
     """`/dashboard` is a plain route in `app.admin.endpoints`, so nothing would
     have stopped it from showing analytics to a role without the right."""
-    role = await _role("VIEWER")
+    role = await _role("OPERATOR")
 
     def sources_only(permission) -> bool:
-        return permission.model_type is not None and permission.model_type.model_name == "source"
+        return permission.model_type is not None and permission.model_type.resource_key == "collection.source"
 
     async with _restricted(role, sources_only):
         async with _signed_in(await _operator(role)) as client:

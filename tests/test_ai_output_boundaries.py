@@ -149,6 +149,12 @@ class Column:
     def asc(self):
         return self
 
+    def desc(self):
+        return self
+
+    def in_(self, *values):
+        return ("in", values)
+
 
 class Query:
     def __init__(self, rows):
@@ -162,6 +168,12 @@ class Query:
 
     def limit(self, count):
         return Query(self.rows[:count])
+
+    def first(self):
+        """Awaitable, like SQLAlchemy's `Query.first()`."""
+        async def result():
+            return self.rows[0] if self.rows else None
+        return result()
 
     def __await__(self):
         async def result():
@@ -177,8 +189,8 @@ def module_with(**values):
 
 class BoundaryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.rows = [SimpleNamespace(id=11, role="user", content="Short reports"),
-                     SimpleNamespace(id=12, role="assistant", content="Understood")]
+        self.rows = [SimpleNamespace(id=11, role="user", content="Short reports", session_id=31),
+                     SimpleNamespace(id=12, role="assistant", content="Understood", session_id=31)]
         self.facts = [SimpleNamespace(id=21, key="style", value="old", source="learn", confidence=0.8, updated_at=None)]
         self.memory = SimpleNamespace(
             as_dict=AsyncMock(return_value={}),
@@ -186,6 +198,11 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
             apply_learn_batch=AsyncMock(return_value=True),
             delete_by_id=AsyncMock(),
             update_by_id=AsyncMock(),
+            # The reflect pass writes a fact back by its own id.
+            update_fact_by_id=AsyncMock(return_value=True),
+            delete_fact_by_id=AsyncMock(return_value=True),
+            # The reflect pass reads the tenant's fact snapshot first.
+            snapshot=AsyncMock(return_value=self.facts),
         )
         self.model = SimpleNamespace(name="mock-model")
         self.resolve_model = AsyncMock(return_value=self.model)
@@ -201,12 +218,38 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
             ),
             "app.core.config": module_with(settings=SimpleNamespace()),
             "app.models": module_with(
-                AgentMessage=SimpleNamespace(id=Column(), objects=Query(self.rows)),
+                AgentMessage=SimpleNamespace(id=Column(), session_id=Column(), objects=Query(self.rows)),
                 AgentMemory=SimpleNamespace(scope=Column(), objects=Query(self.facts)),
+                # The learning module reads the actor's sessions and the
+                # feedback rows of the reflect pass; both are doubles here.
+                AgentSession=SimpleNamespace(
+                    id=Column(), chat_id=Column(), channel=Column(), is_owner=Column(),
+                    objects=Query([SimpleNamespace(id=31)]),
+                ),
+                AgentFeedback=SimpleNamespace(
+                    session_id=Column(), vote=Column(), created_at=Column(), objects=Query([])
+                ),
                 LLMModel=SimpleNamespace(objects=SimpleNamespace(resolve_default_model=self.resolve_model))),
+            "app.agent.identity": module_with(current_memory_actor=lambda: (5, True)),
+            "app.models.managers.tenant_manager": module_with(
+                # One active web membership of the actor, and the channel
+                # binding a messenger membership would need.
+                tenant_users=SimpleNamespace(filter=AsyncMock(return_value=[
+                    SimpleNamespace(
+                        tenant_id=7, user_id=5, is_active=True, is_owner=True,
+                        channel="web", external_user_id="5", ai_chat_enabled=True,
+                    )
+                ])),
+                tenant_channels=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(id=1))),
+            ),
             "app.models.managers.agent_memory_manager": module_with(agent_memory=self.memory),
             "app.models.managers.agent_feedback_manager": module_with(
-                agent_feedback=SimpleNamespace(recent_notes=AsyncMock(return_value=[]))),
+                agent_feedback=SimpleNamespace(
+                    recent_notes=AsyncMock(return_value=[]),
+                    # A query chain, not a coroutine: the caller awaits the
+                    # result of `.order_by(...).limit(...)`.
+                    filter=lambda *args, **kwargs: Query([]),
+                )),
             "app.services.tenancy.resolver": module_with(current_daily_cost_limit=self.limit, daily_cost_today=self.spent),
             "app.services.ai.llm_client": module_with(chat_with_fallback=self.chat,
                 LLMClientFactory=SimpleNamespace(create=lambda model: self.client)),
@@ -236,7 +279,11 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.memory.apply_learn_batch.assert_awaited_once()
         call = self.memory.apply_learn_batch.await_args
         self.assertEqual(call.args[0].facts[0].model_dump(), fact())
-        self.assertEqual(call.kwargs, {"expected_watermark": 10, "new_watermark": 12})
+        # The learn batch is scoped to the sessions the actor may write to.
+        self.assertEqual(
+            call.kwargs,
+            {"expected_watermark": 10, "new_watermark": 12, "authorized_session_ids": {31}},
+        )
         self.memory.write.assert_not_awaited()
         self.learning.set_watermark.assert_not_awaited()
         self.assertEqual(result["llm_cost"], 0.12)
@@ -335,7 +382,10 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["reason"], "empty transcript")
         call = self.memory.apply_learn_batch.await_args
         self.assertEqual(call.args[0].facts, [])
-        self.assertEqual(call.kwargs, {"expected_watermark": 10, "new_watermark": 12})
+        self.assertEqual(
+            call.kwargs,
+            {"expected_watermark": 10, "new_watermark": 12, "authorized_session_ids": {31}},
+        )
         self.chat.assert_not_awaited()
         self.learning.set_watermark.assert_not_awaited()
 
@@ -358,7 +408,8 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.learn_reply({"ops": [{"op": "update", "id": 21, "value": "new", "confidence": 0.5}],
                           "prompt_advice": "Review style"})
         result = await self.learning.run_reflect()
-        self.memory.update_by_id.assert_awaited_once_with(21, value="new", confidence=0.5, source="reflect")
+        # The fact is updated through the dedicated fact API, not the generic row writer.
+        self.memory.update_fact_by_id.assert_awaited_once_with(21, value="new", confidence=0.5, source="reflect")
         self.assertEqual(result["prompt_advice"], "Review style")
         self.assertEqual(result["updated"], 1)
         self.memory.write.assert_not_awaited()

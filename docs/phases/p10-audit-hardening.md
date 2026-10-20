@@ -71,8 +71,13 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
 - [ ] P10-T10 (AUD-10, P2) — distributable package includes runtime code and
   encryption dependency; accept: wheel contains nested runtime
   packages/assets; encryption dependency in runtime deps; isolated no-dev
-  import/asset smoke, no DB/provider; depends: none; owner: unassigned;
-  status: TODO
+  import/asset smoke, no DB/provider; depends: none;
+  owns: pyproject.toml, tests/wheel_runtime_smoke.py and scoped validation doc;
+  owner: remote Notion agent (fix/wheel-runtime-completeness); status: IN_PROGRESS.
+  Claimed before implementation from dev `adf1d6fc79ea147863c4c2d7560349140ab2a6cf`.
+  Open PRs #216/#217/#220/#224/#225 checked: no packaging ownership overlap;
+  shared registry/phase edits remain task-scoped. Foreign claims/evidence and
+  the existing duplicate P8-T25 are preserved. No runtime, DB or provider start.
 
 - [ ] P10-T13 — repair post-migration LLM CLI contracts; owner: remote Notion
   agent; status: BLOCKED. Accept: provider listing without removed default

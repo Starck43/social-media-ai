@@ -333,6 +333,13 @@ safely.
     one post found by a wall and by search is stored once; `limit_reached` is
     returned; dry run writes nothing and calls no model; TG returns an explicit
     unsupported reason instead of an empty result.
+    **Status: implementation complete in the working tree (2026-10-21); 49
+    no-DB tests passed through the primary OpenCode test-runner at HEAD
+    `e8e8693`.** Added `pages.py` (`Page`, capabilities, cursors), `planner.py`
+    (lanes, dependencies, budgets, query-source specs, cross-lane dedupe),
+    VK/Telegram adapters, and no-DB tests. Runtime handlers/collector/staging
+    are intentionally untouched; the working `public` schema is untouched.
+    Codex review remains pending.
 
   - **C. Selection at collection.** Run deterministic task selection before
     staging; store only `selected` and `needs_review` rows with

@@ -188,9 +188,10 @@ and calls several platform methods. Selected rows land in `collected_items`;
 discovered people/communities land in `collection_candidates` and require
 confirmation; comments are a dependent lane on posts; likes/reposts yield
 candidates, not text rows. Every lane reports `limit_reached` instead of
-silently truncating. Stage A has added the payload parser, schema and migration
-0108; the collection path still uses the behavior below until stages B–D wire
-the lanes. The full contract is in
+silently truncating. Stage A added the payload parser, schema and migration
+0108; stage B added the adapters and planner. The collection path still uses
+the behavior below until stages C–D wire the lanes and staging. The full
+contract is in
 [collection plan](design/collection-plan.md).
 
 ### Walls and dates

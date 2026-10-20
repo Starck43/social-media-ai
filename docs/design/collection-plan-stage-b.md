@@ -1,6 +1,8 @@
 # Collection plan — stage B implementation handoff
 
-Status: ready for a fresh chat. Stage A is complete; stage B is **not started**.
+Status: stage B implementation is complete in the current working tree; 49
+no-DB tests passed through the primary OpenCode test-runner at HEAD `e8e8693`.
+Codex review and commit remain pending. Stage A is committed as `e8e8693`.
 Parent task: [P5-T14](../phases/p5-ai-boundaries.md). Target contract:
 [collection plan](collection-plan.md).
 
@@ -43,6 +45,7 @@ New/owned:
 - `tests/test_collection_planner.py`
 - `tests/test_vk_collection_adapter.py`
 - `tests/test_collection_pages.py`
+- `tests/test_telegram_collection_adapter.py`
 - `docs/design/collection-plan-stage-b.md` (this file; update evidence only)
 - `docs/phases/p5-ai-boundaries.md` (Stage B evidence only)
 
@@ -83,9 +86,8 @@ Rules:
 
 - `limit_reached=True` means the lane returned its bound and more may exist.
 - An unsupported lane returns `unsupported_reason`, never a normal empty page.
-- A cursor is opaque to callers; the adapter interprets it. For VK offset
-  search it may be `{"offset": N}`; do not trust offsets across days without
-  dedupe.
+- A cursor is opaque to callers; the adapter interprets it. Stage B uses a
+  plain offset string for VK; do not trust offsets across days without dedupe.
 - `Page` is immutable; no ORM objects inside. Normalise to plain dicts with
   `external_id`, `text`, `published_at`, `author`, `metrics`, `permalink`,
   `content_type`, `parent_external_id` (comments only).
@@ -123,7 +125,7 @@ HTTP path or bypass `resolve_token`.
 | `search_people` | `users.search` | Existing `search_users`; city via `city` id; `fields` already set. |
 | `search_communities` | `groups.search` | Existing `search_groups`; city id/country id. |
 | `search_posts` | `newsfeed.search` | `q`, `count`, `offset`, `start_time`, `end_time`, `extended=1`; owner filter is client-side in `_normalize_response`. |
-| `fetch_wall` | `wall.get` | Existing `_build_params`/`_fetch_page`/`_normalize_response`; preserve date-window handling. |
+| `fetch_wall` | `wall.get` | Existing `_fetch_page`/`_normalize_response`; equivalent wall params; the date window is applied client-side because VK ignores `start_time`/`end_time` for `wall.get`. |
 | `fetch_comments` | `wall.getComments` | **New:** pass `owner_id` and `post_id`; `extended=1`; normalise comment + author; `content_type="comment"`, `parent_external_id=<post id>`, composite `external_id`. |
 | `fetch_likes` | `likes.getList` | `type=post`, `owner_id`, `item_id`, `count`, `offset`, `extended=1`, `fields`; map to `Candidate(kind="person")`. |
 | `fetch_reposts` | `wall.getReposts` | If unavailable for a profile, return `unsupported_reason`; do not fake empty. |
@@ -166,6 +168,7 @@ class CollectionLane:
     lane_type: str          # wall_posts | post_search | candidate_search |
                             # comments | likes | reposts | profile_enrichment
     platform: str
+    output_type: str        # items | candidates | profiles
     limit: int | None = None
     depends_on: tuple[str, ...] = ()
     source_id: int | None = None
@@ -177,6 +180,8 @@ class CollectionPlan:
     task_id: int | None
     tenant_id: int
     lanes: tuple[CollectionLane, ...]
+    query_sources: tuple[QuerySourceSpec, ...] = ()
+    total_limit: int = 0
     warnings: tuple[str, ...] = ()
 ```
 
@@ -198,7 +203,10 @@ class CollectionPlan:
    its producers.
 8. Topologically sort; reject cycles with a bounded planner error.
 9. Deduplicate lanes with the same type/query/source. Keep a stable lane id
-   (`wall:<source_id>`, `search:<slug>`, `comments:<parent_lane>`).
+   (`wall:<source_id>`, `search:<slug>`, `comments:<parent_lane>`). The pure
+   `dedupe_items()`/`dedupe_candidates()` helpers define cross-lane identity:
+   `(platform, content_type, external_id)` and
+   `(platform, kind, external_id)`. Stage C persists the deduplicated set.
 10. Enforce budgets: `intent.limit` for items; `comments.max_per_post` and
     `comments.total`; `candidates.limit`. A bound hit sets `limit_reached` on
     the lane result, never silently truncates.
@@ -239,6 +247,8 @@ No live VK/Telegram/LLM. Mock HTTP/`VKClient`/provider methods.
 - Comments lane depends on each post lane; likes/reposts depend on posts.
 - Discovery people/communities and profile enrichment order.
 - Duplicate query/source dedupe.
+- Cross-lane item/candidate identity: wall + search post dedupe; post vs
+  comment remain distinct.
 - Total/per-lane/comment/candidate budgets; `limit_reached` propagation.
 - Telegram unsupported lanes produce warnings, not silent omission.
 - Query source spec unique per task/query, `owner_task_id` set, never explains
@@ -255,6 +265,12 @@ No live VK/Telegram/LLM. Mock HTTP/`VKClient`/provider methods.
 - `1051` produces an explicit credentials/unsupported warning; no fake empty
   page.
 - No DB writes, no `last_checked` update, no model call.
+
+`tests/test_telegram_collection_adapter.py`:
+
+- Existing channel pull wraps into a page and reports its limit.
+- People/community/post/comments/likes/reposts lanes return named unsupported
+  reasons, never indistinguishable empty pages.
 
 Test routing: primary OpenCode test-runner (`.agents/skills/test-runner/`);
 shared DB only if a test needs it, sequential under R8. Stage B should be

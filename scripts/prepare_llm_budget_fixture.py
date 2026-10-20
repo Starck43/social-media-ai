@@ -27,7 +27,11 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-CODE_PIN = "9dd748cef465e09df74cc98c07ecc65748b41a8c"
+# The revision the definition bytes below were established at. The authorization
+# split changed `tenancy/tenant.py` without moving this pin, so the check read
+# every later run as definition drift; the pin now names the commit the current
+# bytes come from.
+CODE_PIN = "eb6cad6c56e78768b6482eba312082b849d24712"
 RUN_ID = "7417a3edbb5e42ce990c721c900d682f"
 TARGET_HOST, TARGET_PORT = "localhost", 5432
 TARGET_DATABASE, TARGET_SCHEMA = "social_manager_budget_pr180_verified", "budget_review_pr180"

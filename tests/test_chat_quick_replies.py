@@ -13,6 +13,22 @@ def test_trailing_marker_becomes_options_and_is_removed():
     assert options == ["За неделю", "За месяц", "За вчера"]
 
 
+def test_marker_followed_by_a_closing_sentence_still_offers_buttons():
+    """A question with «или напишите своё» after the choices keeps its buttons.
+
+    The model put the closing sentence after the marker, the marker stopped
+    being the last thing in the reply, and the owner got prose instead of
+    one-tap answers — the exact shape the live probe produced.
+    """
+    body, options = split_quick_replies(
+        "С какой даты собирать контент?\n[[options: С сегодняшнего дня | За последние 30 дней]]\n"
+        "Если нужна другая дата — напишите её."
+    )
+    assert options == ["С сегодняшнего дня", "За последние 30 дней"]
+    assert "С какой даты" in body and "напишите её" in body
+    assert "[[" not in body
+
+
 def test_marker_in_the_middle_is_left_untouched():
     text = "Строка [[options: A | B]] внутри\nи дальше"
     assert split_quick_replies(text) == (text, [])
@@ -94,6 +110,24 @@ def test_system_prompt_forbids_restating_and_word_answers():
     assert "сразу к делу" in DEFAULT_SYSTEM_PROMPT
     assert "кнопки действия" in QUICK_REPLIES_SECTION
     assert "Не пиши «напишите да или нет»" in QUICK_REPLIES_SECTION
+
+
+def test_a_clarifying_question_must_offer_buttons():
+    """A question with a handful of answers is asked as buttons, not prose.
+
+    The agent asked «с какой даты собирать посты?» as plain text, so the owner
+    had to type a date although «С сегодняшнего дня» was an obvious choice.
+    """
+    from app.agent.prompts import QUICK_REPLIES_SECTION, TASK_SECTION
+
+    assert "уточняющий вопрос" in QUICK_REPLIES_SECTION
+    assert "ОБЯЗАТЕЛЬНО заканчивается этой\n  строкой" in QUICK_REPLIES_SECTION
+    assert "С сегодняшнего дня" in TASK_SECTION
+    body, options = split_quick_replies(
+        "С какой даты собирать контент?\n[[options: С сегодняшнего дня | За последние 30 дней]]"
+    )
+    assert body.startswith("С какой даты")
+    assert options == ["С сегодняшнего дня", "За последние 30 дней"]
 
 
 def test_help_text_offers_quick_replies():

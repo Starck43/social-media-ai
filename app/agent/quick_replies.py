@@ -21,7 +21,38 @@ MAX_OPTION_LENGTH = 60
 # Short labels keep confirmation buttons readable next to a long question.
 MAX_CONFIRMATION_LABEL = 32
 
-_MARKER_RE = re.compile(r"\n?[ \t]*\[\[\s*(?:options|варианты)\s*:\s*([^\[\]]*?)\s*\]\][ \t]*\Z", re.IGNORECASE)
+# One marker, one parser. The model may put the choices on their own line
+# (the asked-for form) or after a sentence on the same line, and may add a
+# closing sentence after them («если нужна другая дата — напишите её»). All
+# three are the same choice list; only a marker inside a sentence is prose.
+_MARKER_TOKEN_RE = re.compile(
+    r"\[\[\s*(?:options|варианты)\s*:\s*([^\[\]]*?)\s*\]\]",
+    re.IGNORECASE,
+)
+# Text after the choices that is a way out, not a second message: a sentence
+# under ~120 characters is appended to the question, anything longer means the
+# marker was mid-reply and is left as plain text.
+_MAX_TRAILING_LENGTH = 160
+
+
+def _marker_candidate(body: str):
+    """(match, trailing text) for the choice marker, or (None, None).
+
+    The marker counts when it ends its line: nothing but blanks after it, or
+    only a short closing sentence. A marker with the reply continuing after it
+    is prose, and treating it as choices would cut the sentence in half.
+    """
+    for candidate in _MARKER_TOKEN_RE.finditer(body):
+        before = body[body.rfind("\n", 0, candidate.start()) + 1 : candidate.start()]
+        if before.strip() and not before.rstrip().endswith(("?", ":", "!")):
+            continue
+        trailing = body[candidate.end() :].strip()
+        if len(trailing) > _MAX_TRAILING_LENGTH:
+            continue
+        return candidate, trailing
+    return None, None
+
+
 _CONFIRMATION_PREFIX = "Требуется подтверждение:"
 # The instruction sentence the confirmation text ends with; the buttons make
 # it redundant once «Ответьте «да» или «нет»» is no longer the only way to act.
@@ -32,13 +63,32 @@ _DETAILS_OPTION = "Покажи данные"
 _CONFIRM_OPTION = "Да, подтверждаю"
 
 
+def _line_marker(body: str):
+    """The marker that starts a line, or None.
+
+    A marker inside a sentence is prose («… [[options: …]] внутри»), not a
+    choice list; `finditer` alone cannot tell them apart, so the line start is
+    checked here. Returns (match, trailing_text_after_marker).
+    """
+    for candidate in _MARKER_TRAILING_RE.finditer(body):
+        before = body[body.rfind("\n", 0, candidate.start()) + 1 : candidate.start()]
+        if not before.strip():
+            return candidate, body[candidate.end() :].strip()
+    # The marker may itself follow the question on the same line-with-newline
+    # (`\n` consumed by the pattern); try the plain marker too.
+    plain = _MARKER_RE_PLAIN.search(body)
+    if plain is not None and body.rfind("\n", 0, plain.start()) + 1 == plain.start():
+        return plain, None
+    return None, None
+
+
 def split_quick_replies(text: str | None) -> tuple[str, list[str]]:
     """Return the reply without a trailing marker and its validated options."""
     if not text:
         return "", []
     body = text.rstrip()
     options: list[str] = []
-    match = _MARKER_RE.search(body)
+    match, trailing = _marker_candidate(body)
     if match:
         body = body[: match.start()].rstrip()
         seen: set[str] = set()
@@ -50,6 +100,8 @@ def split_quick_replies(text: str | None) -> tuple[str, list[str]]:
             options.append(label)
             if len(options) == MAX_OPTIONS:
                 break
+    if options and trailing:
+        body = f"{body}\n\n{trailing}".strip()
     if not options and body.lstrip().startswith(_CONFIRMATION_PREFIX):
         options = confirmation_options(body)
         body = strip_instruction(body)

@@ -368,6 +368,12 @@ safely.
     Accept: rejected text is not stored; only selected/needs_review rows reach
     `collected_items`; a re-run does not duplicate; P5-T08 selection semantics
     are preserved; no model call in the selection path.
+    **Status: DONE in `opencode/p5-t14-stage-c` at `fad9cb7`; 247 tests passed
+    through the primary OpenCode test-runner (140 no-DB + 4 selected staging
+    contract + 103 DB, 51 subtests).** The collector applies selection before
+    staging, `collection_seen`/`collection_lane_runs` record outcomes, and
+    analysis only re-filters legacy NULL-status rows. No migration; `public`
+    remains untouched. The branch is not merged into `dev` yet.
 
   - **D. Comments and engagement.** Add the `comments` lane
     (`owner_id` + `post_id`, per-post and total caps), thread-level selection,

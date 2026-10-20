@@ -3,12 +3,14 @@
 Status: design accepted by the owner on 2026-10-21; implementation is tracked
 by [P5-T14](../phases/p5-ai-boundaries.md). Stage A delivered the payload
 parser, schema and migration 0108. Stage B delivered the `Page[T]` contract,
-planner, VK/Telegram adapters and no-DB tests, committed as `c6bd826`.
-Collection lanes are not wired to runtime yet; selection at collection,
-comments, UI and staged persistence remain future stages. Until P5-T14 is `READY`/`DONE`,
-runtime behavior in [COLLECTION](../COLLECTION.md),
-[task selection](task-selection.md) and [MODELS](../MODELS.md) still applies.
-Stage B implementation plan: [collection plan — stage B](collection-plan-stage-b.md).
+planner, VK/Telegram adapters and no-DB tests, committed as `c6bd826`. Stage C
+(selection before staging, lane-run/seen evidence, legacy NULL-status fallback)
+is complete on branch `opencode/p5-t14-stage-c` at `fad9cb7` and is not merged
+into `dev` yet. Comments, engagement, UI/presets and the task-2027 migration
+remain stages D–F. Until P5-T14 is `READY`/`DONE`, runtime behavior in
+[COLLECTION](../COLLECTION.md), [task selection](task-selection.md) and
+[MODELS](../MODELS.md) still describes `dev`. Stage B implementation plan:
+[collection plan — stage B](collection-plan-stage-b.md).
 
 ## Problem
 

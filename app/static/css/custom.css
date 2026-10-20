@@ -99,7 +99,7 @@ main {
     border-top: 1px solid var(--tblr-border-color);
 }
 
-.card-footer > *:first-child {
+.card-footer > :not(.btn):first-child {
     color: var(--tblr-primary) !important;
     flex: 1000;
 }
@@ -275,16 +275,12 @@ label {
     align-items: baseline;
 }
 
-.form-group input:not(:focus) {
+.form-group input:not(:focus):not(.btn) {
     background-color: var(--tblr-bg-forms);
 }
 
-[data-theme="dark"] .form-group input:not(:focus) {
+[data-theme="dark"] .form-group input:not(:focus):not(.btn) {
     background-color: var(--tblr-bg-forms) !important;
-}
-
-.input-group .btn {
-    --tblr-btn-bg: var(--tblr-bg-surface-tertiary);
 }
 
 .input-group {

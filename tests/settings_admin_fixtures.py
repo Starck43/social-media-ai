@@ -85,6 +85,17 @@ def render(out):
     {% for kind in ['default','primary','secondary','light','outline-secondary','danger','success','info','warning'] %}
     <button class="btn {{ 'btn-' + kind if kind != 'default' else '' }}" data-test-kind="{{ kind }}">{{ kind }}</button>
     {% endfor %}</div>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+    {% for context in ['input-group', 'form-group', 'card-footer'] %}
+    {% for kind in ['primary', 'secondary', 'light', 'danger'] %}
+    <div class="{{ context }}">
+    {% if context == 'form-group' %}
+    <input type="submit" class="btn btn-{{ kind }}" data-test-kind="{{ context }}-{{ kind }}" value="{{ kind }}">
+    {% else %}
+    <button class="btn btn-{{ kind }}" data-test-kind="{{ context }}-{{ kind }}">{{ kind }}</button>
+    {% endif %}
+    </div>
+    {% endfor %}{% endfor %}</div>
     {% for i in range(200) %}<label class="d-none"><input type="checkbox" class="select-box" checked><input type="hidden" value="{{ 1276-i }}"></label>{% endfor %}
     </div></section>{% include 'sqladmin/modals/delete.html' %}{% endblock %}"""
     )

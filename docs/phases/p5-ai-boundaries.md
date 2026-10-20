@@ -351,7 +351,7 @@ safely.
     Accept: rejected text is not stored; only selected/needs_review rows reach
     `collected_items`; a re-run does not duplicate; P5-T08 selection semantics
     are preserved; no model call in the selection path.
-    **Status: DONE in `opencode/p5-t14-stage-c` at `e5fc76c`; 247 tests passed
+    **Status: DONE in `opencode/p5-t14-stage-c` at `fad9cb7`; 247 tests passed
     through the primary OpenCode test-runner (140 no-DB + 4 selected staging
     contract + 103 DB, 51 subtests).** The collector applies selection before
     staging, `collection_seen`/`collection_lane_runs` record outcomes, and

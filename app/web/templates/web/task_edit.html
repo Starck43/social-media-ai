@@ -10,16 +10,25 @@
        the layout are pinned to the iframe viewport, and `.shell-content` is
        the single scroll container, so the editor scrolls inside the dialog's
        iframe like any other page. The dialog frame carries the window;
-       spacing belongs to this page's padding. #}
+       spacing belongs to this page's padding.
+
+       `clip`, not `hidden`: the toggles keep their checkbox `sr-only`, which
+       is absolutely positioned outside the flow. `hidden` still lets the
+       browser scroll such a box programmatically when the input receives
+       focus (a click or Tab below the fold), so the shell itself shifted up
+       and left the lower half of the dialog blank. `clip` forbids that scroll
+       while `.shell-content` keeps its own `overflow-y: auto`. #}
     html, body {
         height: 100%;
         overflow: hidden;
+        overflow: clip;
     }
     .shell-layout {
         display: flex;
         height: 100%;
         min-height: 0;
         overflow: hidden;
+        overflow: clip;
     }
     .shell-page {
         flex: 1 1 auto;
@@ -343,10 +352,15 @@
         </div>
 
         {{ task_trigger_actions("editing", "editing.job_type", trigger_types, action_types, edit.trigger_type, edit.action_type) }}
-        {% if can_dry_run %}
-        {{ switch_toggle("dry_run", "Тестовый прогон (dry-run)", checked=edit.dry_run, attrs={'x-model': 'editing.dry_run'}, hint="Собрать и показать выборку, ничего не сохранять и не звать модель") }}
-        {% endif %}
-        {{ switch_toggle("is_active", "Активна", checked=False, attrs={'x-model': 'editing.is_active'}) }}
+        {# One switch per row: the two labels are inline-flex, so without a
+           column wrapper they shared a line and the long dry-run hint crowded
+           the "Активна" toggle. #}
+        <div class="flex flex-col gap-2">
+            {% if can_dry_run %}
+            {{ switch_toggle("dry_run", "Тестовый прогон (dry-run)", checked=edit.dry_run, attrs={'x-model': 'editing.dry_run'}, hint="Собрать и показать выборку, ничего не сохранять и не звать модель") }}
+            {% endif %}
+            {{ switch_toggle("is_active", "Активна", checked=False, attrs={'x-model': 'editing.is_active'}) }}
+        </div>
         <p class="text-xs text-slate-600 dark:text-slate-400">Сохранение обновит параметры; второй вариант сохранит задачу и сразу поставит запуск в очередь.</p>
         <div class="flex flex-col gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
             {# Delete lives with the edit form, not in the row: it is the one

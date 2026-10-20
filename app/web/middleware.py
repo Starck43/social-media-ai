@@ -87,6 +87,7 @@ class TenantUIMiddleware:
             and not memberships
             and path not in NO_WORKSPACE_PATHS
             and path not in PERSONAL_ACCOUNT_PATHS
+            and not (path == "/app/settings/platforms" and getattr(user, "is_platform_admin", False))
             and not (request.method in ("GET", "HEAD") and path in ("/app/settings", "/app/settings/"))
         ):
             await self._redirect(scope, receive, send, "/app/invite")

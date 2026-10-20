@@ -303,48 +303,90 @@ label {
    Преемственные от web: rounded-lg, cyan primary
 */
 .btn {
-    --tblr-btn-color: var(--tblr-btn-fg, #ffffff);
+    --tblr-btn-color: var(--tblr-body-color);
+    --tblr-btn-hover-color: var(--tblr-body-color);
+    --tblr-btn-active-color: var(--tblr-body-color);
+    --tblr-btn-bg: var(--tblr-bg-surface);
+    --tblr-btn-hover-bg: var(--tblr-bg-surface-tertiary);
     --tblr-btn-disabled-bg: rgba(var(--tblr-bg-surface-rgb), 0.3);
     border-radius: 0.5rem;
     font-weight: 500;
 }
 
 .btn-primary {
-    background-color: var(--tblr-primary);
-    border-color: var(--tblr-primary);
-}
-
-.btn-primary:hover {
-    background-color: var(--tblr-primary-darken);
-    border-color: var(--tblr-primary-darken);
+    --tblr-btn-color: #fff;
+    --tblr-btn-hover-color: #fff;
+    --tblr-btn-active-color: #fff;
+    --tblr-btn-bg: var(--color-cyan-700);
+    --tblr-btn-hover-bg: var(--color-cyan-700);
+    --tblr-btn-active-bg: var(--color-cyan-700);
+    background-color: var(--tblr-btn-bg);
+    border-color: var(--tblr-btn-bg);
 }
 
 .btn-secondary {
-    background-color: var(--tblr-secondary);
-    border-color: var(--tblr-secondary);
+    --tblr-btn-color: #fff;
+    --tblr-btn-hover-color: #fff;
+    --tblr-btn-active-color: #fff;
+    --tblr-btn-bg: var(--color-slate-600);
+    --tblr-btn-hover-bg: var(--color-slate-700);
+    --tblr-btn-active-bg: var(--color-slate-700);
+    background-color: var(--tblr-btn-bg);
+    border-color: var(--tblr-btn-bg);
 }
 
-.btn-secondary:hover {
-    background-color: var(--tblr-secondary-darken, var(--tblr-secondary));
-    border-color: var(--tblr-secondary-darken, var(--tblr-secondary));
-}
-
-.btn-outline-secondary {
-    color: var(--tblr-secondary);
-    border-color: var(--tblr-border-color);
-    background: transparent;
-}
-
-.btn-outline-secondary:hover {
-    color: var(--tblr-body-color);
-    background-color: var(--tblr-bg-surface-tertiary);
-}
-
-.btn-light {
-    --tblr-light: transparent;
-    --tblr-light-fg: var(--tblr-body-color);
+.btn-outline-secondary, .btn-light {
+    --tblr-btn-color: var(--tblr-body-color);
+    --tblr-btn-hover-color: var(--tblr-body-color);
+    --tblr-btn-active-color: var(--tblr-body-color);
+    --tblr-btn-bg: var(--tblr-bg-surface);
+    --tblr-btn-hover-bg: var(--tblr-bg-surface-tertiary);
+    --tblr-btn-active-bg: var(--tblr-bg-surface-tertiary);
     --tblr-btn-border-color: var(--tblr-border-color);
+    color: var(--tblr-btn-color);
+    background-color: var(--tblr-btn-bg);
+    border-color: var(--tblr-border-color);
 }
+
+.btn-danger, .btn-success, .btn-info, .btn-warning {
+    --tblr-btn-color: #fff;
+    --tblr-btn-hover-color: #fff;
+    --tblr-btn-active-color: #fff;
+}
+.btn-danger { --tblr-btn-bg: #be123c; --tblr-btn-hover-bg: #9f1239; --tblr-btn-active-bg: #9f1239; }
+.btn-success { --tblr-btn-bg: #047857; --tblr-btn-hover-bg: #065f46; --tblr-btn-active-bg: #065f46; }
+.btn-info { --tblr-btn-bg: #0369a1; --tblr-btn-hover-bg: #075985; --tblr-btn-active-bg: #075985; }
+.btn-warning { --tblr-btn-bg: #fbbf24; --tblr-btn-hover-bg: #f59e0b; --tblr-btn-active-bg: #f59e0b; --tblr-btn-color: #020617; --tblr-btn-hover-color: #020617; --tblr-btn-active-color: #020617; }
+
+[data-theme="dark"] .btn-primary, html.dark .btn-primary {
+    --tblr-btn-color: #020617;
+    --tblr-btn-hover-color: #020617;
+    --tblr-btn-active-color: #020617;
+    --tblr-btn-bg: var(--color-cyan-400);
+    --tblr-btn-hover-bg: var(--color-cyan-500);
+    --tblr-btn-active-bg: var(--color-cyan-500);
+}
+
+.btn-primary:hover, .btn-secondary:hover { background-color: var(--tblr-btn-hover-bg); border-color: var(--tblr-btn-hover-bg); }
+
+.dropdown-menu { background-color: var(--tblr-bg-surface); color: var(--tblr-body-color); }
+.dropdown-item { color: var(--tblr-body-color); white-space: normal; overflow-wrap: anywhere; }
+.dropdown-item:hover, .dropdown-item:focus { color: var(--tblr-body-color); background-color: var(--tblr-bg-surface-tertiary); }
+
+/* SQLAdmin inserts the full comma-separated selection with .text(). Never
+   truncate or change that selection; wrap and scroll its confirmation instead. */
+.modal-content { min-width: 0; max-width: 100%; background-color: var(--tblr-bg-surface); color: var(--tblr-body-color); }
+.modal-body, .modal-footer, .modal-footer .row > .col { min-width: 0; }
+#modal-delete-text, [id^="modal-confirmation-"] .modal-body {
+    overflow-wrap: anywhere;
+    white-space: normal;
+    max-height: min(40vh, 18rem);
+    overflow-y: auto;
+}
+.modal-content .text-muted { color: var(--color-text-secondary) !important; }
+.modal-footer { background-color: var(--tblr-bg-surface-secondary); }
+.modal-footer .row { flex-wrap: nowrap; }
+.modal-footer .btn { white-space: normal; min-height: 44px; }
 
 .btn i {
     margin-right: 5px;

@@ -1530,3 +1530,24 @@ using the current password and does not require a workspace.
 Workspace team AI access uses CSRF-protected
 `POST /app/settings/members/{id}/ai`, with `enabled=1` or `0`. It is limited to the
 current workspace and the same delegation restrictions as member-role changes.
+
+
+### Global platform catalog in web Settings
+
+`GET /app/settings?tab=platforms` selects the actual Settings section (not an
+admin-console redirect). Only an active authenticated platform administrator
+receives this tab/data; workspace ownership and operator grants do not open it.
+The section is available without a workspace. Other workspace tabs retain their
+membership checks and do not inherit platform authority.
+
+`POST /app/settings/platforms` rechecks the platform-admin role and `_csrf` before
+any manager call. Fields: `platform_id` (0/omitted creates, positive edits), `name`
+(nonempty, max 50), `base_url` (HTTP(S), max 255, no URL username/password),
+`enabled=on` (omitted means inactive); create additionally requires
+`platform_type=vk|telegram`. Existing platform type and params are not changed.
+Uses the existing Platform manager. Handler denial is 403; missing edit target is
+404; successful save or validation/uniqueness feedback redirects to the tab with
+a flash message. No delete, sync, live API probe, personal credentials or global
+provider/model editing is exposed by this section.
+See [tenancy boundaries](TENANCY.md#web-settings-and-ownedgranted-workspace-context)
+and [deletion policy](MODEL_DELETION.md).

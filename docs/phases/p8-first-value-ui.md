@@ -15,6 +15,16 @@ Attention feed lives in the floating bell (B), not a home card.
 
 ## Tasks
 
+- [ ] P8-T27 — implement the Platforms settings tab for active platform admins,
+  correct admin button contrast and bulk-delete confirmation wrapping, and
+  audit all app/models FK/ORM deletion rules. Accept: isolated handler, model
+  metadata and offline browser regressions; enumerate deferred PostgreSQL
+  acceptance separately. No unreviewed cascade/schema changes. Owns: bounded
+  settings/admin styles, focused tests and deletion documentation; depends: none;
+  owner: remote Notion agent; status: IN_PROGRESS. Synchronized dev:
+  `213980a4955e034894f6552234708d402babc43c`; active PRs #216/#217/#220
+  unchanged; preserve foreign tasks, including pre-existing duplicate P8-T25.
+
 - [x] P8-T26 — implement the accepted jobs lifecycle audit: built-in cleanup
   independent of a scheduled prune task, default 24-hour terminal history,
   administrator-only retention configuration through prefilled prune forms,

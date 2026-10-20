@@ -1,6 +1,6 @@
 """Workspace settings `/app/settings` (docs/API.md).
 
-Four tabs, one page. What belongs here and what stays in `/admin` is not a
+Scoped sections on one page. What belongs here and what stays in `/admin` is not a
 preference — it follows `docs/TENANCY.md`:
 
 * **workspace** — the profile of the current workspace, and of nothing else.
@@ -14,6 +14,7 @@ preference — it follows `docs/TENANCY.md`:
   fallback for platforms without an OAuth flow (and for anyone who prefers it).
   A user only ever sees and writes their own secrets, never another member's.
 * **channels** — where digests and the agent are delivered.
+* **platforms** — the global catalog, active platform administrators only.
 
 Deliberately absent: `llm_providers` / `llm_models`. The fleet is global and
 one-per-deployment, so it stays in the sqladmin console with its connection
@@ -38,7 +39,7 @@ router = APIRouter(prefix="/settings")
 
 BACK = "/app/settings"
 
-TABS: tuple[str, ...] = ("account", "connections", "workspace", "team", "agent", "channels")
+TABS: tuple[str, ...] = ("account", "connections", "workspace", "team", "agent", "channels", "platforms")
 #: Tabs that only configure the workspace; a member who cannot manage it does
 #: not get them (their forms are refused anyway by `_guard_workspace_settings`).
 MANAGER_TABS: frozenset[str] = frozenset({"agent", "channels"})
@@ -152,17 +153,23 @@ def _workspace_access(request: Request, tenant_id: int | None) -> bool:
     )
 
 
+def _platform_access(request: Request) -> bool:
+    user = getattr(request.state, "web_user", None)
+    return bool(_personal_access(request) and getattr(user, "is_platform_admin", False))
+
+
 def _visible_tabs(request: Request, tenant_id: int | None) -> tuple[str, ...]:
-    """Personal data is caller-owned; concrete workspace capabilities gate shared data."""
+    """Keep global administration independent of workspace ownership or membership."""
     if not _personal_access(request):
         return ()
+    global_tabs = ("platforms",) if _platform_access(request) else ()
+    workspace_tabs = tuple(tab for tab in TABS if tab != "platforms")
     if not _workspace_access(request, tenant_id):
-        # Existing personal connection write/OAuth routes still require onboarding.
-        return ("account",)
+        return ("account",) + global_tabs
     perms = getattr(request.state, "web_perms", None)
     if perms is not None and perms.can_manage_workspace(tenant_id):
-        return TABS
-    return tuple(tab for tab in TABS if tab not in MANAGER_TABS)
+        return workspace_tabs + global_tabs
+    return tuple(tab for tab in workspace_tabs if tab not in MANAGER_TABS) + global_tabs
 
 
 def _visible_tab(request: Request, tenant_id: int | None, visible: tuple[str, ...]) -> str:
@@ -188,10 +195,20 @@ async def settings_page(request: Request):
         "settings_manage": manage,
         "settings_team_visible": manage,
         "is_superuser": False,
-        "settings_scope": "personal" if tab in ("account", "connections") else "workspace",
+        "settings_scope": (
+            "global" if tab == "platforms" else ("personal" if tab in ("account", "connections") else "workspace")
+        ),
     }
 
-    if tab == "workspace":
+    if tab == "platforms":
+        from app.models.platform import Platform
+        from app.types import PlatformType
+
+        context.update(
+            platforms=await Platform.objects.filter().order_by(Platform.id),
+            platform_type_options=[(kind.db_value, kind.label, "") for kind in PlatformType],
+        )
+    elif tab == "workspace":
         tenant = request.state.tenant
         if manage:
             # Full configuration and quota projections require concrete-target capability.
@@ -293,6 +310,60 @@ async def settings_page(request: Request):
     response = render(request, "web/settings.html", section="settings", **context)
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@router.post("/platforms")
+async def platform_save(
+    request: Request,
+    name: str = Form(...),
+    base_url: str = Form(...),
+    platform_type: str = Form(""),
+    platform_id: int = Form(0),
+    enabled: str = Form(""),
+    token: str = Form("", alias="_csrf"),
+):
+    """Edit the global catalog without exposing destructive cascades or personal secrets."""
+    if not _platform_access(request):
+        return HTMLResponse("Недостаточно прав", status_code=403)
+    if not ensure_csrf(request, token):
+        return HTMLResponse("Неверный CSRF-токен", status_code=403)
+    from urllib.parse import urlsplit
+
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.platform import Platform
+    from app.types import PlatformType
+
+    name, base_url = name.strip(), base_url.strip()
+    try:
+        url = urlsplit(base_url)
+        valid_url = url.scheme in ("http", "https") and bool(url.hostname) and not url.username and not url.password
+        # Accessing port rejects malformed authorities without making a network request.
+        url.port
+    except ValueError:
+        valid_url = False
+    if not name or len(name) > 50 or len(base_url) > 255 or not valid_url or platform_id < 0:
+        add_flash(request, "error", "Укажите название до 50 символов и корректный HTTP(S) URL без логина и пароля")
+        return RedirectResponse(BACK + "?tab=platforms", status_code=302)
+    try:
+        if platform_id:
+            result = await Platform.objects.update_by_id(
+                platform_id, name=name, base_url=base_url, is_active=enabled == "on"
+            )
+            if result is None:
+                return HTMLResponse("Платформа не найдена", status_code=404)
+        else:
+            kind = PlatformType.get_by_value(platform_type)
+            if kind is None:
+                raise ValueError("Unknown platform type")
+            await Platform.objects.create_platform(
+                name=name, platform_type=kind, base_url=base_url, is_active=enabled == "on"
+            )
+    except (ValueError, IntegrityError):
+        add_flash(request, "error", "Не удалось сохранить: проверьте тип и уникальность названия платформы")
+    else:
+        add_flash(request, "success", "Платформа сохранена")
+    return RedirectResponse(BACK + "?tab=platforms", status_code=302)
 
 
 async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:

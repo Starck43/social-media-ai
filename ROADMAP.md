@@ -18,7 +18,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
-- [ ] P8-T28 — segmented task run progress and source status sidebar → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — IN_PROGRESS
+- [ ] P8-T28 — segmented task run progress and source status sidebar → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — READY (PR #225 Draft; owner application acceptance pending)
 
 - [ ] P8-T25 — settings information layout and compact member access → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — READY
 

@@ -586,7 +586,7 @@ P8-T06 and does not alter its task record.
   Depends: none; owns: bounded task web presentation/routes, shared progress
   template additions, task progress projection, progress snapshot aggregates,
   focused tests and task documentation; owner: remote Notion agent;
-  status: IN_PROGRESS. Claimed from fresh dev
+  status: READY (PR #225 Draft; owner application acceptance pending). Claimed from fresh dev
   `adf1d6fc79ea147863c4c2d7560349140ab2a6cf` on branch
   `ui/task-run-segmented-progress`. Owner explicitly directed this bounded
   follow-up after design approval and review of the new dry-run/collection code.
@@ -595,3 +595,12 @@ P8-T06 and does not alter its task record.
   No analyzer, receipts, collection algorithms, handler business logic, source
   editor or migrations are in scope. P8-T27 remains reserved by PR #224;
   existing duplicate P8-T25 rows are preserved, not silently renumbered.
+  Implementation: `05949aff7377573e540b47470cc3b7eb763af24d`; all 16 published
+  implementation/test files matched the sandbox bytes. Remote self-run evidence:
+  58 isolated unit checks and 12 offline Chromium checks (18 subtests) passed;
+  desktop/mobile template screenshots inspected. Exact commands, counter units,
+  dry-run semantics, current-run sidebar scope and validation limitations:
+  [P8-T28 handoff](../validation/p8-t28-task-progress.md). No real DB/ASGI,
+  app/runtime startup, migration/reset, provider or full-suite acceptance was run.
+  Real HTMX/Alpine, persisted admission and owner application checks remain
+  outstanding; not DONE, no merge. P8-T22 and foreign evidence are unchanged.

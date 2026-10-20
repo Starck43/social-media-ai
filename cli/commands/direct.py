@@ -24,7 +24,6 @@ from rich import print as rprint
 from rich.panel import Panel
 from rich.table import Table
 
-from cli._inputs import parse_usernames
 from cli.run import resolve_sources, run_handler
 
 
@@ -68,17 +67,19 @@ def cmd_analyze(
     src: str = typer.Option(None, "--src", "-s", help="Source ids, urls or platform (vk/telegram/max)"),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active)"),
     scenario: int = typer.Option(None, "--scenario", help="AgentScenario ID to apply"),
-    excluded: str = typer.Option(None, "--excluded", help="Usernames to skip"),
     keep_raw: bool = typer.Option(False, "--keep-raw", help="Keep staged raw content after successful analysis"),
+    dry_on: bool = typer.Option(
+        False, "--dry-on", help="Rehearsal: report the selection without calling a model or saving anything"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
 ):
     """Run the analyze job handler (trigger evaluation + bot actions) directly."""
-    excluded_users = parse_usernames(excluded)
-
     async def _main():
         tenant_id, payload, sources = await _resolve(
-            tenant, src, scenario_id=scenario, excluded_users=excluded_users, keep_raw=keep_raw
+            tenant, src, scenario_id=scenario, keep_raw=keep_raw
         )
+        if dry_on:
+            payload["dry_run"] = True
         if verbose:
             for s in sources:
                 rprint(f"[dim]🎯 Источник: {s.name} (id={s.id}, platform={s.platform.name})[/dim]")

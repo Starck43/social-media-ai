@@ -17,7 +17,7 @@ _OPERATIONAL_KEYS = {
     "initiated_by_user_id", "_initiated_by_user_id", "created_at", "updated_at",
     "start_date", "end_date", "cli_dates", "staged_window", "date_range", "time_range",
     "period", "period_type", "scenario_id", "source_id",
-    "source_ids", "tenant_id", "analyze_inline", "excluded_users",
+    "source_ids", "tenant_id", "analyze_inline", "dry_run",
 }
 
 

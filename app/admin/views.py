@@ -1903,8 +1903,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             "action_type": "Действие после анализа",
             "rate_limit_per_hour": "Лимит действий в час",
             "cooldown_seconds": "Пауза между действиями (сек)",
-            "blacklist": "Чёрный список",
-            "whitelist": "Белый список",
+            "dry_run": "Тестовый прогон (dry-run)",
         },
         **BaseAdmin.column_labels,
     )
@@ -1925,8 +1924,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "action_type",
         "rate_limit_per_hour",
         "cooldown_seconds",
-        "blacklist",
-        "whitelist",
+        "dry_run",
     ]
 
     form_overrides = {

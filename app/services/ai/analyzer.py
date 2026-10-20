@@ -1248,7 +1248,6 @@ class AIAnalyzer:
         canonical = json.dumps(self._make_json_serializable(config), sort_keys=True, ensure_ascii=False)
         payload_keys = {
             "cli_dates",
-            "excluded_users",
             "brands",
             "competitors",
             "hashtags",

@@ -717,10 +717,9 @@ class AgentTaskManager(BaseManager):
                             "trigger_type": trigger_type,
                             "trigger_config": dict(row.trigger_config or {}) if row.trigger_config else None,
                             "action_type": action_type,
-                            "blacklist": list(row.blacklist or []),
-                            "whitelist": list(row.whitelist or []),
                             "rate_limit_per_hour": row.rate_limit_per_hour,
                             "cooldown_seconds": row.cooldown_seconds,
+                            "dry_run": bool(row.dry_run),
                         }
 
                     jobs = JobManager()

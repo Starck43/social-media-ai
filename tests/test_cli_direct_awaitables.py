@@ -196,14 +196,15 @@ class DirectAwaitableTests(unittest.TestCase):
         self.assertEqual(payload, {"source_ids": [11]})
         self.resolve_sources.assert_awaited_once_with("11", None)
 
-    def test_analyze_dispatches_once_with_shared_username_parsing(self):
-        result = self.direct.cmd_analyze(
-            src="11", tenant="workspace", scenario=3, excluded="@A,@A", verbose=True
-        )
+    def test_analyze_dispatches_once_with_scenario(self):
+        result = self.direct.cmd_analyze(src="11", tenant="workspace", scenario=3, verbose=True)
         self.assertIs(result, self.stats)
-        self.assert_dispatch(
-            "analyze", {"scenario_id": 3, "excluded_users": ["A", "A"]}
-        )
+        self.assert_dispatch("analyze", {"scenario_id": 3, "keep_raw": False})
+
+    def test_analyze_dry_on_adds_dry_run_to_the_payload(self):
+        result = self.direct.cmd_analyze(src="11", tenant="workspace", scenario=3, dry_on=True, verbose=True)
+        self.assertIs(result, self.stats)
+        self.assert_dispatch("analyze", {"scenario_id": 3, "keep_raw": False, "dry_run": True})
 
     def test_digest_dispatches_once_with_false_time_breakdown(self):
         result = self.direct.cmd_digest(

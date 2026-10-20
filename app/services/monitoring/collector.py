@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
 from app.models import Platform, Source
@@ -20,6 +20,28 @@ except ImportError:
 	NOTIFICATIONS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+def _dry_run_preview(content: list[dict], limit: int = 10, text_limit: int = 300) -> list[dict]:
+	"""A bounded, offline preview of a rehearsal batch.
+
+	Only the fields an operator needs to judge relevance; the full text stays
+	in the platform response and is never persisted or logged by this path.
+	"""
+	rows: list[dict] = []
+	for item in content[:limit]:
+		date = item.get("date") or item.get("published_at")
+		author = item.get("author") if isinstance(item.get("author"), dict) else None
+		rows.append(
+			{
+				"external_id": item.get("external_id") or item.get("id"),
+				"date": date.isoformat() if hasattr(date, "isoformat") else date,
+				"author": author,
+				"text": (item.get("text") or "")[:text_limit],
+				"permalink": item.get("permalink"),
+			}
+		)
+	return rows
 
 
 class ContentCollector:
@@ -128,6 +150,8 @@ class ContentCollector:
 			analyze: bool = True,
 			force_reanalyze: bool = False,
 			run_id: Optional[int] = None,
+			dry_run: bool = False,
+			selection_scope: Any = None,
 	) -> Optional[dict]:
 		"""
 		Collect content from a single source.
@@ -137,6 +161,9 @@ class ContentCollector:
 			content_type: Type of content to collect (posts, comments, etc.)
 			analyze: Whether to run AI analysis on collected content
 			force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
+			run_id: The job this batch belongs to
+			dry_run: Read-only rehearsal: fetch and report, but write no raw rows,
+				call no model and do not advance `last_checked`
 
 		Returns:
 			Dict with collection results or None if failed
@@ -199,6 +226,40 @@ class ContentCollector:
 			from app.services.ai.dedup import item_hash
 
 			hashes = [item_hash(item) for item in content]
+
+			# A dry run answers "what would this source give us?" without
+			# touching the write-ahead copy, spending a model call, or moving the
+			# collection cursor: a rehearsal that advanced `last_checked` would
+			# make the following real run skip exactly the window it rehearsed.
+			if dry_run:
+				# A rehearsal must answer the operator's real question: not just
+				# "how many rows came back" but "how many of them would this
+				# task actually analyse". The deterministic selection runs over
+				# the full fetched batch (the preview below is truncated), and
+				# only its counters + a small sample are returned.
+				selection_preview = None
+				if selection_scope is not None:
+					from app.services.monitoring.selection import select_items
+
+					selected = select_items(content, selection_scope)
+					selection_preview = {
+						"eligible": len(selected.eligible),
+						"rejected": len(selected.rejected),
+						"reasons": dict(selected.reasons),
+						"sample": _dry_run_preview(selected.eligible, limit=3, text_limit=240),
+					}
+				return {
+					"source_id": source.id,
+					"content_count": len(content),
+					"new_items": new_count,
+					"analyzed": False,
+					"analytics_count": 0,
+					"staged": 0,
+					"content_hashes": hashes,
+					"dry_run": True,
+					"preview": _dry_run_preview(content),
+					"selection": selection_preview,
+				}
 
 			# Write the raw batch first, then analyse it.
 			#

@@ -95,10 +95,11 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
         Integer, nullable=True, comment="Max actions per hour for this task"
     )
     cooldown_seconds: Mapped[int | None] = Column(Integer, nullable=True, comment="Min seconds between actions")
-    blacklist: Mapped[list[str] | None] = Column(JSON, nullable=True, comment="Usernames/IDs to never act on")
-    whitelist: Mapped[list[str] | None] = Column(
-        JSON, nullable=True, comment="Usernames/IDs to always act on (if set, only these)"
-    )
+    # Whether this task only rehearses: collect/analyze report what would happen
+    # without staging raw rows or calling a model. Set by an admin on the task
+    # form, and available as `--dry-on` in the CLI. Never a side effect of an
+    # unrelated run.
+    dry_run: Mapped[bool] = Column(Boolean, nullable=False, default=False, server_default="false")
 
     # Owning workspace (tenant);
     tenant: Mapped["Tenant"] = relationship("Tenant")

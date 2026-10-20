@@ -3,7 +3,7 @@
 Flow:
 - sources are linked via the m2m `agent_task_sources` table (not payload)
 - scenario is set via `agent_scenario_id` FK (not payload)
-- payload keeps flat keys: period, tracked_users, excluded_users, ...
+- payload keeps flat keys: period, tracked_users, keywords_list, ...
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def _build_trigger_config(
 
 
 def _payload_from_form(
-		job_type, excluded_users, start_date, end_date,
+		job_type, start_date, end_date,
 		digest_period=None, digest_group_by=None, digest_time_breakdown=False,
 		retention_success_hours=24, retention_failure_hours=24,
 ) -> dict:
@@ -211,8 +211,6 @@ def _payload_from_form(
 			raise ValueError("Срок хранения должен быть целым числом от 1 до 8760 часов")
 		return payload
 	payload: dict = {}
-	if excluded_users:
-		payload["excluded_users"] = _split_names(excluded_users)
 	if AgentTaskManager.requires_content_dates(job_type):
 		start = AgentTaskManager.parse_date(start_date)
 		if start is None:
@@ -242,17 +240,15 @@ def _trigger_and_action_fields(
 		trigger_baseline_hours: str,
 		trigger_spike_multiplier: str,
 		action_type: str,
-		blacklist: str,
-		whitelist: str,
 		rate_limit_per_hour: str,
 		cooldown_seconds: str,
 ) -> dict:
 	"""The model columns (not payload) an analyze task carries.
 
 	No-op for every other job type — the fields are only rendered for
-	`analyze`. Explicitly (re)setting blacklist/whitelist/guards lets the
-	operator clear them: an update that omits the key keeps the old value,
-	which is what the "merge into payload" rule is *not* meant to apply to.
+	`analyze`. Explicitly (re)setting guards lets the operator clear them: an
+	update that omits the key keeps the old value, which is what the "merge into
+	payload" rule is *not* meant to apply to.
 	"""
 	fields: dict = {}
 	if job_type != "analyze":
@@ -275,8 +271,6 @@ def _trigger_and_action_fields(
 	)
 
 	fields["action_type"] = AgentActionType.get_by_name(action_type) if action_type else None
-	fields["blacklist"] = _split_names(blacklist) or None
-	fields["whitelist"] = _split_names(whitelist) or None
 	try:
 		fields["rate_limit_per_hour"] = int(rate_limit_per_hour) if rate_limit_per_hour else None
 		fields["cooldown_seconds"] = int(cooldown_seconds) if cooldown_seconds else None
@@ -312,7 +306,6 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"scenario_id": task.agent_scenario_id,
 		"tracked_users": ", ".join(payload.get("tracked_users") or []),
 		"keywords_match": payload.get("keywords_match") or "any",
-		"excluded_users": ", ".join(payload.get("excluded_users") or []),
 		"start_date": cli_dates.get("start_date") or "",
 		"end_date": cli_dates.get("end_date") or "",
 		"digest_period": payload.get("period") or "day",
@@ -329,10 +322,9 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"trigger_baseline_hours": trigger_config.get("baseline_period_hours", 24),
 		"trigger_spike_multiplier": trigger_config.get("spike_multiplier", 3.0),
 		"action_type": getattr(task, "action_type", None).name if getattr(task, "action_type", None) else "",
-		"blacklist": ", ".join(task.blacklist or []),
-		"whitelist": ", ".join(task.whitelist or []),
 		"rate_limit_per_hour": task.rate_limit_per_hour or "",
 		"cooldown_seconds": task.cooldown_seconds or "",
+		"dry_run": bool(getattr(task, "dry_run", False)),
 	}
 	# The analysis targets live in payload under their own keys (brands, …) and
 	# are edited as comma separated strings, like the selection fields above.
@@ -649,7 +641,6 @@ async def task_create(
 		scenario_id: int = Form(default=None),
 		tracked_users: str = Form(""),
 		keywords_match: str = Form("any"),
-		excluded_users: str = Form(""),
 		brands: str = Form(""),
 		competitors: str = Form(""),
 		hashtags: str = Form(""),
@@ -671,10 +662,9 @@ async def task_create(
 		trigger_baseline_hours: str = Form(""),
 		trigger_spike_multiplier: str = Form(""),
 		action_type: str = Form(""),
-		blacklist: str = Form(""),
-		whitelist: str = Form(""),
 		rate_limit_per_hour: str = Form(""),
 		cooldown_seconds: str = Form(""),
+		dry_run: str = Form(""),
 		run_now: str = Form(""),
 		token: str = Form("", alias="_csrf"),
 		tenant_id: int | None = Form(default=None),
@@ -700,6 +690,14 @@ async def task_create(
 	denied = guard_web(request, "agenttask", "create", back=back)
 	if denied is not None:
 		return denied
+
+	# A rehearsal is an operator diagnostic: only an administrator or owner may
+	# put a task into it, and the toggle never silently applies to a task the
+	# person cannot manage.
+	dry_run_flag = dry_run == "on"
+	if dry_run_flag and not _can_manage_job_retention(request):
+		add_flash(request, "warning", "Тестовый прогон доступен только администратору и владельцу пространства")
+		dry_run_flag = False
 
 	cron_expr = cron_custom.strip()
 
@@ -730,7 +728,6 @@ async def task_create(
 	try:
 		payload = _payload_from_form(
 			job_type,
-			excluded_users,
 			start_date,
 			end_date,
 			digest_period=digest_period,
@@ -791,8 +788,6 @@ async def task_create(
 		trigger_baseline_hours,
 		trigger_spike_multiplier,
 		action_type,
-		blacklist,
-		whitelist,
 		rate_limit_per_hour,
 		cooldown_seconds,
 	)
@@ -844,6 +839,7 @@ async def task_create(
 			agent_scenario_id=None if job_type == "prune" else scenario_id,
 			is_active=is_active,
 			next_run_at=next_run,
+			dry_run=dry_run_flag,
 			**trigger_action_fields,
 		)
 		if parsed_source_ids:
@@ -1235,6 +1231,7 @@ async def task_edit_page(request: Request, task_id: int):
 		job_types=_web_job_type_choices(allow_retention=_can_manage_job_retention(request)),
 		trigger_types=BotTriggerType.choices(),
 		action_types=AgentActionType.choices(),
+		can_dry_run=_can_manage_job_retention(request),
 		cron_to_human=cron_to_human,
 		is_superuser=is_superuser,
 		filter_tenant_id=filter_tenant_id,
@@ -1435,7 +1432,6 @@ async def task_update(
 		scenario_id: int = Form(default=None),
 		tracked_users: str = Form(""),
 		keywords_match: str = Form("any"),
-		excluded_users: str = Form(""),
 		brands: str = Form(""),
 		competitors: str = Form(""),
 		hashtags: str = Form(""),
@@ -1457,10 +1453,9 @@ async def task_update(
 		trigger_baseline_hours: str = Form(""),
 		trigger_spike_multiplier: str = Form(""),
 		action_type: str = Form(""),
-		blacklist: str = Form(""),
-		whitelist: str = Form(""),
 		rate_limit_per_hour: str = Form(""),
 		cooldown_seconds: str = Form(""),
+		dry_run: str = Form(""),
 		run_now: str = Form(""),
 		return_to_detail: str = Form(""),
 		token: str = Form("", alias="_csrf"),
@@ -1480,6 +1475,11 @@ async def task_update(
 	denied = guard_web(request, "agenttask", "update", back=back)
 	if denied is not None:
 		return denied
+
+	dry_run_flag = dry_run == "on"
+	if dry_run_flag and not _can_manage_job_retention(request):
+		add_flash(request, "warning", "Тестовый прогон доступен только администратору и владельцу пространства")
+		dry_run_flag = False
 
 	task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
 	if task is None:
@@ -1517,7 +1517,6 @@ async def task_update(
 	try:
 		new_payload = _payload_from_form(
 			job_type,
-			excluded_users,
 			start_date,
 			end_date,
 			digest_period=digest_period,
@@ -1543,8 +1542,6 @@ async def task_update(
 		trigger_baseline_hours,
 		trigger_spike_multiplier,
 		action_type,
-		blacklist,
-		whitelist,
 		rate_limit_per_hour,
 		cooldown_seconds,
 	)
@@ -1646,6 +1643,7 @@ async def task_update(
 			agent_scenario_id=None if job_type == "prune" else scenario_id,
 			is_active=requested_active and activation_blocked is None,
 			next_run_at=next_run,
+			dry_run=dry_run_flag,
 			**trigger_action_fields,
 		)
 		await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
@@ -1768,6 +1766,8 @@ def _run_outcome(job_type: str, result: dict[str, Any]) -> str:
 		# A source deferred by a platform rate limit was not collected this run.
 		if type(result.get("rate_limited")) is int and result["rate_limited"] > 0:
 			return "partial"
+		if result.get("dry_run"):
+			return "dry_run"
 		# Jobs recorded before `new_items` existed have no such key; fall back
 		# to the total rather than calling a legacy run "no data".
 		found = result.get("new_items", result.get("items", 0))
@@ -1783,10 +1783,12 @@ def _run_outcome(job_type: str, result: dict[str, Any]) -> str:
 			)
 		):
 			return "partial"
+		if result.get("dry_run"):
+			return "dry_run"
 		if _as_int(result.get("analyzed")):
 			return "ok"
-		# Skipped sources are the ones without an active scenario — a different
-		# fact from "there was nothing to analyse", and a different fix.
+		# `skipped` conflates "no active scenario" with "nothing staged to
+		# analyse"; the note below stays neutral instead of naming one cause.
 		return "skipped" if _as_int(result.get("skipped")) else "no_data"
 	if job_type == "prune":
 		return "no_data" if not _as_int(result.get("deleted")) else "ok"
@@ -1798,17 +1800,20 @@ _OUTCOME_LABELS = {
 	"no_data": "Новых данных нет",
 	"partial": "Выполнено частично",
 	"skipped": "Пропущено",
+	"dry_run": "Тестовый прогон",
 }
 
 _OUTCOME_NOTES = {
 	"collect": {
 		"no_data": "Все источники ответили, но новых записей не нашлось — всё уже собрано ранее.",
 		"partial": "Часть источников не ответила, требует авторизации или отложена из-за лимита запросов платформы — подробности ниже.",
+		"dry_run": "Тестовый прогон: записи получены, но не сохранены; анализ не запускался.",
 	},
 	"analyze": {
 		"no_data": "Нечего анализировать — новых данных нет.",
 		"partial": "Анализ завершён частично: часть источников не удалось собрать или обработать.",
-		"skipped": "Источники пропущены: вероятно, нет активного сценария.",
+		"skipped": "Часть источников пропущена: нет активного сценария или нет накопленных записей для анализа — подробности в диагностике.",
+		"dry_run": "Тестовый прогон: данные не сохранены, модель не вызывалась. Выключите «Тестовый прогон», чтобы выполнить анализ.",
 	},
 	"prune": {
 		"no_data": "Удалять нечего — старых записей нет.",
@@ -1907,6 +1912,14 @@ def _source_note(entry: dict[str, Any]) -> str:
 			outcome = "error"
 	if outcome == "error":
 		note = "ошибка"
+		code = entry.get("error_code") or stage.get("error_code")
+		hint = entry.get("error_hint") or stage.get("error_hint")
+		if code:
+			note = f"ошибка · {code}"
+		if hint:
+			note = f"{note} · {hint}"
+	elif outcome == "auth_required":
+		note = "нужна авторизация"
 	elif outcome == "rate_limited":
 		note = "отложено: лимит запросов"
 	elif outcome == "collected":
@@ -1929,6 +1942,8 @@ def _source_note(entry: dict[str, Any]) -> str:
 	if outcome != "error" and analyzed:
 		count = int(analyzed)
 		note = f"{count} {_plural(count, 'результат', 'результата', 'результатов')} анализа"
+	if stage.get("dry_run") is True or entry.get("dry_run") is True:
+		note = f"тест · {note}"
 	return note
 
 
@@ -2157,6 +2172,9 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 			"Обнаружены ошибки анализа. Полнота результата не подтверждена; "
 			"ошибки источников и обработки накопленных данных могут пересекаться."
 		)
+	if result.get("dry_run"):
+		prefix = "Тестовый прогон: данные не сохранены, модель не вызывалась."
+		note = f"{prefix} {note}" if note else prefix
 	if note:
 		summary["outcome_note"] = note
 	if job_type == "analyze":
@@ -2345,12 +2363,48 @@ def _diagnostics_view(job: "Job", source_id: int | None = None) -> dict[str, Any
 	attempt = getattr(job, "attempts", None)
 	if type(attempt) is not int or not 0 <= attempt <= 10**9:
 		attempt = None
+	# Per-source bounded causes. A collection failure is recorded as a platform
+	# code (`api_15`) plus an allowlisted hint; raw provider text stays out. An
+	# `empty` outcome is included too: "no posts in the window" is the answer an
+	# operator is looking for when nothing was collected.
+	source_errors: list[dict[str, Any]] = []
+	for row in (per_source or snapshot_rows)[:20]:
+		if not isinstance(row, dict):
+			continue
+		collection = row.get("collection") if isinstance(row.get("collection"), dict) else {}
+		outcome = row.get("outcome") or collection.get("outcome")
+		code = row.get("error_code") or collection.get("error_code")
+		hint = row.get("error_hint") or collection.get("error_hint") or row.get("auth_hint")
+		if not hint and outcome == "empty":
+			hint = "нет записей в выбранном окне"
+		if not hint and outcome == "rate_limited":
+			hint = "платформа просит повторить позже"
+		name = row.get("name") if type(row.get("name")) is str else "Источник"
+		items = row.get("items", collection.get("items"))
+		new_items = row.get("new_items", collection.get("new_items"))
+		selection = collection.get("selection") if isinstance(collection.get("selection"), dict) else {}
+		eligible = selection.get("eligible")
+		rejected = selection.get("rejected")
+		source_errors.append(
+			{
+				"source_id": row.get("source_id") if type(row.get("source_id")) is int else None,
+				"name": name[:80],
+				"outcome": outcome if isinstance(outcome, str) else None,
+				"error_code": code[:64] if isinstance(code, str) else None,
+				"error_hint": hint[:120] if isinstance(hint, str) else None,
+				"items": items if type(items) is int and 0 <= items <= 10**9 else None,
+				"new_items": new_items if type(new_items) is int and 0 <= new_items <= 10**9 else None,
+				"eligible": eligible if type(eligible) is int and 0 <= eligible <= 10**9 else None,
+				"rejected": rejected if type(rejected) is int and 0 <= rejected <= 10**9 else None,
+			}
+		)
 	return {
 		"job_id": job_id, "attempt": attempt,
 		"heartbeat_at": heartbeat_at,
 		"progress_updated_at": updated_at,
 		"selected": selected, "remaining": remaining,
 		"error_code": code,
+		"source_errors": source_errors,
 	}
 
 

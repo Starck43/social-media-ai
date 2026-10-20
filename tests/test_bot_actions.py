@@ -62,8 +62,6 @@ async def task(scenario, source):
         action_type=AgentActionType.COMMENT,
         rate_limit_per_hour=5,
         cooldown_seconds=60,
-        blacklist=["baduser"],
-        whitelist=None,
         is_active=True,
     )
     # Do it here, as the docstring promises: a task with no linked sources means
@@ -155,27 +153,32 @@ class TestBotActionModel:
 
 
 class TestGuardsChecker:
-    async def test_blacklist_blocks_action(self, task):
+    async def test_retired_recipient_fields_are_not_read(self, task):
+        """blacklist/whitelist are gone: the target user is never a reason to block.
+
+        Guards bound how much an automation may do (limits/cooldowns); they no
+        longer decide who it may address.
+        """
         checker = GuardsChecker()
         allowed, reason = await checker.check(task, target_user="baduser")
-        assert allowed is False
-        assert "blacklisted" in reason.lower()
+        assert allowed is True
+        assert reason is None
 
-    async def test_whitelist_blocks_unlisted_user(self, scenario):
+    async def test_task_without_guard_columns_is_checked_fine(self, scenario):
+        """A task created without the removed columns passes the budget checks."""
         task = await AgentTask.objects.create(
-            name="Whitelist Task",
+            name="Plain Task",
             cron_expr="0 * * * *",
             job_type="analyze",
             agent_scenario_id=scenario.id,
             action_type=AgentActionType.COMMENT,
-            whitelist=["gooduser"],
             is_active=True,
         )
         try:
             checker = GuardsChecker()
             allowed, reason = await checker.check(task, target_user="otheruser")
-            assert allowed is False
-            assert "whitelist" in reason.lower()
+            assert allowed is True
+            assert reason is None
         finally:
             await AgentTask.objects.delete_by_id(task.id)
 

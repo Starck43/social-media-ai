@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -168,6 +169,15 @@ class Settings(BaseSettings):
     DATA_RETENTION_MONTHS: int = Field(default=1, ge=1)
 
     LOG_LEVEL: str = "WARNING"
+    LOG_DIR: Path = Field(default_factory=lambda: Path.home() / ".social-media-ai" / "logs")
+
+    @field_validator("LOG_DIR")
+    @classmethod
+    def _absolute_log_dir(cls, value: Path) -> Path:
+        value = value.expanduser()
+        if not value.is_absolute():
+            raise ValueError("LOG_DIR must be an absolute path")
+        return value
 
     def telegram_owner_ids(self) -> list[int]:
         """Parse TELEGRAM_OWNER_IDS ('1, 2, 3') into a list of ints."""

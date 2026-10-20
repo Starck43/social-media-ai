@@ -17,7 +17,16 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
 - [ ] P10-T02 (AUD-02, P1) — remove password hashes from HTTP user responses;
   accept: HTTP/OpenAPI profiles exclude password hashes, existing rights
   preserved; depends: serialize `user.py`/schema writes with P10-T03;
-  owner: unassigned; status: TODO
+  owns: tests/test_http_user_response_privacy.py, docs/validation/http-user-response-privacy.md
+  and scoped Users response contract in docs/API.md;
+  owner: remote Notion agent (fix/http-user-response-redaction); status: IN_PROGRESS.
+  Claim before implementation from dev `aeb8c54d74a55710b5080fd0a980fbc0ecf36d8c`.
+  Current UserInDB already excludes hashes (existing `eb6cad6`); this lane adds
+  bounded HTTP/OpenAPI regression evidence and corrects stale response docs,
+  not another runtime/schema or privilege redesign. P10-T03 remains unassigned
+  and unchanged; no shared user.py/schema writes are planned. Open PRs
+  #216/#217/#220/#224/#225/#226 checked; docs/API.md foreign hunks do not overlap
+  the Users response section. Preserve other claims/evidence and Draft PRs.
 
 - [ ] P10-T03 (AUD-03, P1) — separate self-service profile updates from
   privilege updates; accept: profile updates cannot elevate authority; fresh

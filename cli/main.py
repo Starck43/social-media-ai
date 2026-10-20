@@ -234,9 +234,6 @@ def task_add(
         "--tracked",
         help="Tracked authors, platform:id (e.g. vk:123456): only their items are analysed",
     ),
-    excluded_users: str = typer.Option(
-        None, "--excluded", help="Comma/space separated usernames to skip (collect/analyze)"
-    ),
     scenario_id: int = typer.Option(None, "--scenario", help="AgentScenario ID to apply when the task runs"),
     start_date: str = typer.Option(None, "--start-date", help="Collect content from this date (DD-MM-YYYY) for collect/analyze"),
     end_date: str = typer.Option(None, "--end-date", help="Collect content until this date (DD-MM-YYYY)"),
@@ -286,8 +283,6 @@ def task_add(
     except SelectionError as error:
         rprint(f"[red]Invalid selection: {error}[/red]")
         raise typer.Exit(1) from error
-    if excluded_users:
-        parsed_payload["excluded_users"] = _split_names(excluded_users)
     for raw, key in (
         (brands, "brands"),
         (competitors, "competitors"),
@@ -386,9 +381,6 @@ def task_update(
     tracked_users: str = typer.Option(
         None, "--tracked", help="New tracked authors, platform:id"
     ),
-    excluded_users: str = typer.Option(
-        None, "--excluded", help="New comma/space separated excluded usernames (collect/analyze)"
-    ),
     scenario_id: int = typer.Option(None, "--scenario", help="New AgentScenario ID"),
     period: str = typer.Option(None, "--period", help="Period for digest: day | week"),
     start_date: str = typer.Option(None, "--start-date", help="New start_date (YYYY-MM-DD) for collect/analyze"),
@@ -450,8 +442,6 @@ def task_update(
                     except Exception as error:  # selection input, not a runtime fault
                         rprint(f"[red]Invalid selection: {error}[/red]")
                         raise typer.Exit(1)
-                if excluded_users is not None:
-                    updated_payload["excluded_users"] = _split_names(excluded_users)
                 if period is not None:
                     updated_payload["period"] = period
                 for raw, key in (
@@ -516,7 +506,6 @@ async def _run_task(
     job_type: str,
     sources: str | None,
     tracked: str | None,
-    excluded: str | None,
     scenario: int | None,
     period: str | None,
     tenant: str | None,
@@ -576,8 +565,6 @@ async def _run_task(
             except SelectionError as error:
                 rprint(f"[red]Invalid selection: {error}[/red]")
                 raise typer.Exit(1) from error
-        if excluded:
-            payload["excluded_users"] = _split_names(excluded)
         if period:
             payload["period"] = period
         if start_date or end_date:
@@ -648,7 +635,6 @@ def _make_task_run_command(job_type: str) -> Callable:
             None, "--tracked", help="Tracked authors, platform:id (one-off run)"
         ),
         keywords: str = typer.Option(None, "--keywords", help="Text scope phrases (one-off run)"),
-        excluded: str = typer.Option(None, "--excluded", help="Usernames to skip (one-off run)"),
         scenario: int = typer.Option(None, "--scenario", help="AgentScenario ID (one-off run)"),
         period: str = typer.Option(None, "--period", help="Period for digest/collect: day | week | last month etc."),
         tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id for a one-off run"),
@@ -672,7 +658,6 @@ def _make_task_run_command(job_type: str) -> Callable:
                 sources=sources,
                 tracked=tracked,
                 keywords=keywords,
-                excluded=excluded,
                 scenario=scenario,
                 period=period,
                 tenant=tenant,

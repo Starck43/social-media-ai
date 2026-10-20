@@ -99,3 +99,36 @@ async def test_a_tenant_scoped_collect_gets_a_job_and_stamps_run_id(monkeypatch)
                 await CollectedItem.objects.delete(run_id=job_id)
                 await Job.objects.delete_by_id(job_id)
         await tenants.delete_by_id(tenant.id)
+
+
+def test_collect_cmd_has_dry_on_and_writes_dry_run_payload():
+    """`--dry-on` кладёт `payload["dry_run"] = True` — иначе репетиция не дошла бы до хендлера.
+
+    AST-проверка без БД: тот же контракт, что в `test_cli_selection_flags.py`,
+    продублирован здесь, чтобы file-owner мог гонять этот файл отдельно.
+    """
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(
+        (Path(__file__).resolve().parents[1] / "cli" / "commands" / "collect.py").read_text(encoding="utf-8")
+    )
+    source = ast.unparse(tree)
+    assert 'if dry_on:' in source
+    assert "payload['dry_run'] = True" in source
+    assert "--dry-on" in source
+
+
+def test_collect_has_no_trace_of_excluded():
+    import ast
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1] / "cli" / "commands" / "collect.py"
+    ).read_text(encoding="utf-8")
+    locations = [
+        f"{number}: {line.strip()[:80]}"
+        for number, line in enumerate(source.splitlines(), start=1)
+        if "--excluded" in line or "excluded_users" in line
+    ]
+    assert not locations, "collect.py ещё содержит excluded:\n" + "\n".join(locations)

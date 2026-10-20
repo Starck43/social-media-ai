@@ -144,3 +144,45 @@ class TestSelectionGoesThroughTheSingleWriter:
                         continue
                     flags = [a.value for a in default.args if isinstance(a, ast.Constant)]
                     assert "--tracked" in flags, f"{path.name}:{function.name} — опция не называет флаг"
+
+
+class TestDryRunFlagPresent:
+    def test_manual_collect_has_dry_on(self):
+        tree = _tree(COLLECT)
+        flags = _option_flags(_functions(tree)["collect_cmd"])
+        assert "--dry-on" in flags, f"collect: {sorted(flags)}"
+
+    def test_collect_writes_dry_run_into_the_payload(self):
+        """`--dry-on` обязан дойти до хендлера как `payload["dry_run"] = True`."""
+        tree = _tree(COLLECT)
+        guards = [
+            node
+            for node in ast.walk(_functions(tree)["collect_cmd"])
+            if isinstance(node, ast.If) and "dry_on" in ast.unparse(node.test)
+        ]
+        assert any("payload['dry_run'] = True" in ast.unparse(guard.body[0]) for guard in guards)
+
+    def test_analyze_command_has_dry_on_and_writes_dry_run(self):
+        from pathlib import Path
+
+        direct = _tree(Path(__file__).resolve().parents[1] / "cli" / "commands" / "direct.py")
+        cmd = _functions(direct)["cmd_analyze"]
+        flags = _option_flags(cmd)
+        assert "--dry-on" in flags, f"analyze: {sorted(flags)}"
+        guards = [
+            node
+            for node in ast.walk(cmd)
+            if isinstance(node, ast.If) and "dry_on" in ast.unparse(node.test)
+        ]
+        assert any("payload['dry_run'] = True" in ast.unparse(guard.body[0]) for guard in guards)
+
+
+class TestExcludedFlagsAreGone:
+    @pytest.mark.parametrize("path", [MAIN, COLLECT], ids=["main", "collect"])
+    def test_no_excluded_option_or_key_anywhere(self, path):
+        locations = [
+            f"{number}: {line.strip()[:80]}"
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+            if "--excluded" in line or "excluded_users" in line
+        ]
+        assert not locations, f"{path.name} ещё содержит настройку:\n" + "\n".join(locations)

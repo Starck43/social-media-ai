@@ -35,7 +35,11 @@ def _run(coro):
 
 
 def _parse_date(value: Optional[str]):
-    """Parse a CLI date string (DD-MM-YYYY / DD.MM.YYYY / ISO) to a date object."""
+    """Parse a CLI date string (DD-MM-YYYY / DD.MM.YYYY / ISO) to an ISO date string.
+
+    A `date` object is not JSON-serializable and this value is stored on the job
+    payload, which is a JSON column — keep the wire format.
+    """
     from app.utils.date_parsing import universal_date_parser
 
     if not value:
@@ -43,7 +47,7 @@ def _parse_date(value: Optional[str]):
     parsed = universal_date_parser(value)
     if parsed is None:
         raise typer.BadParameter(f"Invalid date: {value!r}. Use DD-MM-YYYY (e.g. 01-05-2025)")
-    return parsed.date()
+    return parsed.date().isoformat()
 
 
 def _report(stats: dict) -> None:
@@ -60,10 +64,30 @@ def _report(stats: dict) -> None:
         ("error", "Ошибки"),
         ("items", "Записей собрано"),
         ("analytics", "Аналитики создано"),
-        ("excluded", "Исключено"),
     ):
         table.add_row(label, str(stats.get(k, 0)))
     rprint(Panel.fit(table, title="[bold green]📊 СБОР ЗАВЕРШЁН[/bold green]", border_style="green"))
+    if stats.get("dry_run"):
+        rprint("[yellow]Тестовый прогон (dry-run): сырые данные не сохранены, анализ не запускался.[/yellow]")
+        for row in stats.get("per_source") or []:
+            preview = row.get("preview") or []
+            selection = row.get("selection") if isinstance(row.get("selection"), dict) else None
+            if not preview and not selection:
+                continue
+            rprint(f"[bold]{row.get('name')}[/bold] — {row.get('items', 0)} записей, превью:")
+            if selection:
+                total = int(selection.get("eligible") or 0) + int(selection.get("rejected") or 0)
+                rprint(
+                    f"  [cyan]пройдут фильтр задачи: {selection.get('eligible', 0)} из {total}[/cyan] "
+                    f"[dim]({selection.get('reasons')})[/dim]"
+                )
+            for item in preview:
+                author = item.get("author") or {}
+                who = author.get("name") or author.get("external_id") or "?"
+                text = (item.get("text") or "").replace("\n", " ")[:220]
+                rprint(f"  [dim]{item.get('date')} · {who} · {item.get('permalink') or ''}[/dim]")
+                if text:
+                    rprint(f"    {text}")
     if stats.get("empty"):
         rprint("[dim]Без контента = источник опрошен, но записей нет (это не ошибка).[/dim]")
     if stats.get("error_messages"):
@@ -79,13 +103,17 @@ def collect_cmd(
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active sources)"),
     tracked: str = typer.Option(None, "--tracked", help="Tracked authors, platform:id (analysis filter)"),
     keywords: str = typer.Option(None, "--keywords", help="Text scope phrases for analysis"),
-    excluded: str = typer.Option(None, "--excluded", help="Usernames to skip"),
     start_date: str = typer.Option(None, "--start-date", help="Start date DD-MM-YYYY (with --force-refresh)"),
     end_date: str = typer.Option(None, "--end-date", help="End date DD-MM-YYYY (with --force-refresh)"),
     force_refresh: bool = typer.Option(
         False,
         "--force-refresh",
         help="Re-fetch the full date range from the API (default: only what is new since the last check)",
+    ),
+    dry_on: bool = typer.Option(
+        False,
+        "--dry-on",
+        help="Rehearsal: fetch and print a bounded preview, write no raw rows, call no model, keep the cursor",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed collection output"),
 ):
@@ -100,6 +128,8 @@ def collect_cmd(
             raise typer.Exit(1)
 
         payload = {"source_ids": [s.id for s in sources]}
+        if dry_on:
+            payload["dry_run"] = True
         if tracked or keywords:
             from app.models.managers.agent_task_manager import AgentTaskManager
             from app.services.monitoring.selection import SelectionError
@@ -113,8 +143,6 @@ def collect_cmd(
             except SelectionError as error:
                 rprint(f"[red]Invalid selection: {error}[/red]")
                 raise typer.Exit(1) from error
-        if excluded:
-            payload["excluded_users"] = parse_usernames(excluded)
         if force_refresh or start_date or end_date:
             payload["force_refresh"] = True
             cli_dates = {}

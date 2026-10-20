@@ -131,11 +131,18 @@ async def test_edit_page_renders_targets_for_the_bound_scenario(client: AsyncCli
         # Values round-trip: the stored brand is bound to its input.
         assert "Coca Cola" in page.text
         # Selection belongs to the task: tracked authors and text scope are
-        # rendered, `excluded_users` stays, the removed key is gone.
+        # rendered; `excluded_users` and `monitored_users` are both gone, the
+        # rehearsal toggle is present.
         assert 'name="tracked_users"' in page.text
         assert 'name="keywords_match"' in page.text
-        assert 'name="excluded_users"' in page.text
+        assert 'name="excluded_users"' not in page.text
         assert 'name="monitored_users"' not in page.text
+        assert 'name="dry_run"' in page.text
+        # `run_now` must reach the POST: a submit button disabled by Alpine
+        # before submission is omitted from the form data, which silently
+        # turned "Сохранить и выполнить" into a plain save.
+        assert 'name="run_now" value="on"' in page.text
+        assert 'x-bind:disabled="sending"' not in page.text
         # The web surface always uses the default repeat policy.
         assert 'name="force_reanalyze"' not in page.text
         assert "Переанализировать всё (игнорировать хеши)" not in page.text

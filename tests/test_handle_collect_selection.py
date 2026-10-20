@@ -129,15 +129,20 @@ class TestTrackedUsersAreNotACollectionTarget:
         assert env.collector.collect_monitored_users.await_count == 0
         assert stats["items"] == 3
 
-    def test_excluded_users_still_skips_before_collection(self, env):
-        """`excluded_users` — про источник задачи; его не трогаем."""
+    def test_excluded_users_in_payload_is_not_read(self, env):
+        """Удалённый ключ не имеет читателя: сбор идёт как обычно.
+
+        «excluded_users» убран из алгоритмов/форм/CLI вместе с blacklist и
+        whitelist; оставшийся в чужом payload ключ не влияет на сбор.
+        """
         env.task.payload = {"tracked_users": ["vk:1"], "excluded_users": ["wall"]}
 
         stats = _collect(env)
 
-        env.collector.collect_from_source.assert_not_awaited()
-        env.collector.collect_monitored_users.assert_not_awaited()
-        assert stats["excluded"] == 1
+        env.collector.collect_from_source.assert_awaited_once()
+        assert env.collector.collect_monitored_users.await_count == 0
+        assert stats["excluded"] == 0
+        assert stats["sources"] == 1
 
     def test_collect_analysis_flag_and_run_id_are_unchanged(self, env):
         """Остальные аргументы сбора (analyze, run_id) рефакторинг не задевает."""

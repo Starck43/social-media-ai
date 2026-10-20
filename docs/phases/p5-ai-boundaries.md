@@ -226,6 +226,53 @@ safely.
   app/models/managers/collected_item_manager.py, tests. Owner: unassigned;
   status: TODO
 
+- [ ] P5-T13 — VK search sources and safe collection bounds: add
+  `SourceType.SEARCH` (`newsfeed.search` with `q`, date window and optional
+  `owner_ids`), `groups.getById` screen-name resolution (since
+  `utils.resolveScreenName` answers 1051), author/permalink snapshots on every
+  VK item, inflection-aware text scope (`utils/ru_stem.py`), a per-source
+  1000-row ceiling (`SOCIAL_COLLECT_LIMIT`), `--dry-on`/task `dry_run`, and the
+  agent `sources_search` tool. Remove the retired `excluded_users`,
+  `blacklist` and `whitelist` from algorithms, forms, CLI and chat tools.
+  Accept: a SEARCH source builds `newsfeed.search` params with the date window
+  and owner filter; wall collection drops out-of-window items (VK ignores
+  `wall.get` dates); «Италия» selects «Италию»/«Италии» but not «дизайнер» for
+  «дизайн»; a dry run writes no `collected_items`, calls no model and leaves
+  `last_checked` unchanged; more than 1000 rows per source is impossible;
+  web/CLI/chat expose the same payload without the removed fields. Live VK
+  evidence: task 2027 dry-run on sources 3145/3160 (see
+  `docs/audits/2026-10-20-vk-search-and-task-2027.md`). Depends: P5-T08.
+  Owns: `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
+  `app/web/tasks.py`, templates, `app/agent/toolset/`, `cli/`,
+  `app/models/scheduling/agent_task.py`, migration 0106, tests. Owner:
+  $local (opencode); status: READY.
+  Evidence: implementation `app/services/social/vk_client.py`
+  (`SEARCH`/`newsfeed.search`, `groups.search`, `users.search`,
+  `database.getCities`, `groups.getById` resolution, author/permalink,
+  `owner_ids`), `app/services/social/base.py` (1000-row ceiling, client-side
+  date window), `app/services/monitoring/collector.py` (`dry_run` + preview),
+  `app/services/monitoring/selection.py` + `app/utils/ru_stem.py`,
+  `app/jobs/handlers.py`, `app/web/tasks.py` + templates, `cli/`,
+  `app/agent/toolset/sources.py` (`sources_search`, SEARCH `source_add`),
+  migration `0106`. Tests: `tests/test_vk_search.py` (19),
+  `test_collect_limit.py` (5), `TestStemmedWordForms` (6),
+  `test_cli_selection_flags.py`, `test_cli_collect.py`,
+  `test_cli_username_parsing.py` (101 no-DB), DB suites
+  `test_handle_collect*`, `test_handle_analyze_selection`,
+  `test_web_task_*`, `test_admin_task_form`, `test_admin_task_run_now`,
+  `test_api_task_selection`, `test_analysis_fingerprint_selection`,
+  `test_collected_items` (all green; 6 pre-existing `test_task_activity`
+  failures and loop-bound DB tests are unrelated). Live: task 2027 dry-run
+  (4 sources, 11 items fetched, 0 rows written, 0 LLM), `wall.get` date window
+  verified, VK search methods return 1051 (Q-5). Audit:
+  `docs/audits/2026-10-20-vk-search-and-task-2027.md`. UI follow-up: the
+  `run_now` button no longer loses its value to `x-bind:disabled` (a click now
+  queues the job), the admin diagnostics lists every source with its outcome,
+  counts and a bounded platform code (`api_1051`), a finished run removes the
+  stale «выполняется» badge on the next poll, and a dry run gets its own
+  «Тестовый прогон» label/note plus a selection preview («прошли фильтр N из
+  M») over the full fetched batch, without staging or calling a model.
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

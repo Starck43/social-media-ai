@@ -53,6 +53,36 @@ def _error_kind(error: BaseException) -> str:
     return "unexpected_error"
 
 
+# A platform error code is a bounded, meaningful cause an operator can act on.
+# The raw provider text is not stored or rendered; only the numeric code and a
+# short hint from this allowlist reach the admin diagnostics.
+_PROVIDER_ERROR_HINTS = {
+    "5": "токен недействителен",
+    "6": "слишком много запросов в секунду",
+    "9": "flood control",
+    "14": "требуется капча",
+    "15": "доступ к стене только у участников",
+    "18": "страница удалена",
+    "29": "исчерпан лимит метода",
+    "100": "неверные параметры запроса",
+    "214": "доступ к альбому ограничен",
+    "1051": "метод недоступен для типа приложения",
+}
+
+
+def _provider_error(error: BaseException) -> tuple[str, str | None]:
+    """`(code, hint)` for a collection failure, safe for the admin panel."""
+    import re
+
+    if isinstance(error, AuthorizationRequired):
+        return "auth_required", "нужна авторизация"
+    match = re.search(r"Ошибка API \((\d+)\)", str(error))
+    if match:
+        code = match.group(1)
+        return f"api_{code}", _PROVIDER_ERROR_HINTS.get(code, "ошибка платформы")
+    return _error_kind(error), None
+
+
 async def _load_task(task_id: int | None):
     """Load the AgentTask (with its m2m sources) that triggered this job, if any.
 
@@ -150,10 +180,9 @@ def _replay_task_view(snapshot: dict[str, Any]):
         trigger_type=trigger_type,
         trigger_config=snapshot.get("trigger_config") or {},
         action_type=None,
-        blacklist=[],
-        whitelist=[],
         rate_limit_per_hour=None,
         cooldown_seconds=None,
+        dry_run=bool(snapshot.get("dry_run")),
         sources=[],
         agent_scenario=None,
     )
@@ -336,7 +365,6 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         tracked_users:  list[str] — provider:external_id authors whose items are
                         eligible; a filter over each source's own content, never
                         a collection target (docs/design/task-selection.md)
-        excluded_users:  list[str] — skip these users
     """
     from app.services.monitoring.collector import ContentCollector
     from app.services.social.rate_limit import SourceRateLimited
@@ -344,7 +372,15 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     snapshot = _effective_replay_snapshot(payload)
     task = None if snapshot else await _load_task(payload.get("agent_task_id"))
     task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
-    excluded_users = task_payload.get("excluded_users") or []
+    # A rehearsal writes no raw rows, calls no model and leaves the collection
+    # cursor where it was. A task carries the flag (an admin's toggle); a
+    # taskless CLI run may pass it in the payload.
+    if snapshot is not None:
+        dry_run = bool(snapshot.get("dry_run"))
+    elif task is None:
+        dry_run = bool(payload.get("dry_run"))
+    else:
+        dry_run = bool(task_payload.get("dry_run")) or bool(getattr(task, "dry_run", False))
     # Optional per-run overrides merged into each source's params (the collector
     # reads force_refresh/cli_dates/incremental_mode from source.params).
     # Web task rows may contain historical force flags. They are never runtime
@@ -373,10 +409,6 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
 
     collector = ContentCollector()
 
-    def _is_excluded(source) -> bool:
-        external = (source.external_id or "").lstrip("@")
-        return external in excluded_users
-
     def _apply_params(source) -> None:
         params = dict(source.params or {})
         params.pop("force_refresh", None)
@@ -399,6 +431,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         "error_sources": [],
         "excluded_sources": [],
         "error_messages": [],
+        "dry_run": dry_run,
         # Sources whose platform rate limit did not clear within the bounded
         # retry budget: deferred to the next run, neither failed nor empty.
         "rate_limited": 0,
@@ -435,12 +468,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         selection_scope = selection.SelectionScope()
 
     for source in sources:
-        # Before the exclusion check: progress counts every resolved source.
         await job_progress.step(sources, stats["per_source"])
-        if _is_excluded(source):
-            stats["excluded"] += 1
-            stats["excluded_sources"].append(source.name)
-            continue
         stats["sources"] += 1
         _apply_params(source)
         # A tracked author is a filter on what a source returns, not a
@@ -449,9 +477,11 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
             analysis_errors = 0
             result = await collector.collect_from_source(
                 source,
-                analyze=bool(analyze_inline),
+                analyze=bool(analyze_inline) and not dry_run,
                 force_reanalyze=force_reanalyze,
                 run_id=run_id,
+                dry_run=dry_run,
+                selection_scope=selection_scope,
             )
             items = (result or {}).get("content_count", 0)
             new_items = (result or {}).get("new_items", 0)
@@ -491,6 +521,17 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     # or not the analysis succeeded — that is what stops the next
                     # collection from re-reporting the same wall as new.
                     "content_hashes": list((result or {}).get("content_hashes") or []),
+                    "dry_run": bool((result or {}).get("dry_run")),
+                    **(
+                        {"preview": (result or {}).get("preview")}
+                        if (result or {}).get("dry_run")
+                        else {}
+                    ),
+                    **(
+                        {"selection": (result or {}).get("selection")}
+                        if (result or {}).get("selection")
+                        else {}
+                    ),
                 }
             )
             if analysis_errors:
@@ -511,6 +552,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "analyzed": 0,
                     "retry_after": math.ceil(e.retry_after) if e.retry_after else None,
                     "hint": e.hint,
+                    "error_code": "rate_limited",
                 }
             )
         except Exception as e:
@@ -518,6 +560,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
             stats["error"] += 1
             stats["error_sources"].append(source.name)
             stats["error_messages"].append(f"{source.name}: {e}")
+            error_code, error_hint = _provider_error(e)
             stats["per_source"].append(
                 {
                     "source_id": source.id,
@@ -531,6 +574,10 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "outcome": "auth_required" if isinstance(e, AuthorizationRequired) else "error",
                     "analyzed": 0,
                     "auth_hint": getattr(e, "hint", "") if isinstance(e, AuthorizationRequired) else "",
+                    # Bounded cause for the admin diagnostics: the numeric
+                    # platform code and an allowlisted hint, never raw text.
+                    "error_code": error_code,
+                    "error_hint": error_hint,
                 }
             )
     return stats
@@ -686,7 +733,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     Scenario comes from the task's `agent_scenario` (fallback: tenant default).
     Payload may carry:
         scenario_id: int | None — explicit scenario override
-        excluded_users: list[str] — users to skip
+        dry_run: bool — report the selection without calling a model
 
     Flow:
     1. Get sources and their scenarios
@@ -697,7 +744,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     from app.models import AgentScenario, AIAnalytics, BotAction, CollectedItem
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.services.ai.trigger_evaluator import trigger_evaluator
-    from app.services.social.guards import extract_target_user, guards_checker
+    from app.services.social.guards import guards_checker
     from app.types import BotActionStatus
 
     snapshot = _effective_replay_snapshot(payload)
@@ -717,7 +764,12 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     scenario_id = (
         snapshot.get("scenario_id") if snapshot else task_payload.get("scenario_id") or payload.get("scenario_id")
     )
-    excluded_users = task_payload.get("excluded_users") or []
+    if snapshot is not None:
+        dry_run = bool(snapshot.get("dry_run"))
+    elif task is None:
+        dry_run = bool(payload.get("dry_run"))
+    else:
+        dry_run = bool(task_payload.get("dry_run")) or bool(getattr(task, "dry_run", False))
     force_reanalyze = bool(payload.get("force_reanalyze")) if task is None and snapshot is None else False
     keep_raw = bool(payload.get("keep_raw")) if task is None and snapshot is None else False
     # The content window gates which staged rows this run drains — the same
@@ -740,6 +792,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
         "error_sources": [],
         "staged_errors": 0,
         "per_source": [],
+        "dry_run": dry_run,
     }
     if collection_stats is not None:
         # Keep collection diagnostics alongside analysis results so the single
@@ -778,9 +831,6 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
 
     for source in sources:
         await job_progress.step(sources, stats["per_source"])
-        if (source.external_id or "").lstrip("@") in excluded_users:
-            stats["skipped"] += 1
-            continue
         # Per-source counters, so the run-now modal can link to each source and
         # the source page can show what the agent analysed *here*. `analyzed` and
         # `actions_created` below stay run-wide; these are this source's share.
@@ -790,6 +840,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             "analyzed": 0,
             "actions": 0,
             "analytics_ids": [],
+            "dry_run": dry_run,
         }
         progress_attempted = False
         try:
@@ -871,6 +922,12 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                         "unknown_tracked_users": list(selected.unknown_tracked_users),
                     }
                     await job_progress.update_current(sources, stats["per_source"], per)
+                    if dry_run:
+                        # A rehearsal stops at the deterministic selection: it
+                        # reports what would be sent to the model, calls none,
+                        # and leaves every raw row staged.
+                        per["dry_run"] = True
+                        continue
                     if not selected.eligible:
                         # Everything staged is outside the task's selection. It
                         # stays staged for retention and is not a paid attempt.
@@ -1051,8 +1108,9 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 if target_post.get("external_id"):
                     action_payload["external_id"] = target_post["external_id"]
 
-                # Check guards (target user from the analysis feeds blacklist/whitelist)
-                allowed, reason = await guards_checker.check(task, target_user=extract_target_user(action_payload))
+                # Check the task's rate/cooldown guards. Recipient lists were
+                # retired, so only the budget is enforced here.
+                allowed, reason = await guards_checker.check(task)
                 if not allowed:
                     logger.info(f"Action blocked by guards: {reason}")
                     continue
@@ -1106,7 +1164,20 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             if collection_row is not None:
                 per["collection"] = {
                     key: collection_row.get(key)
-                    for key in ("outcome", "items", "new_items", "error", "rate_limited", "content_hashes")
+                    for key in (
+                        "outcome",
+                        "items",
+                        "new_items",
+                        "error",
+                        "rate_limited",
+                        "content_hashes",
+                        "dry_run",
+                        "preview",
+                        "error_code",
+                        "error_hint",
+                        "auth_hint",
+                        "selection",
+                    )
                     if key in collection_row
                 }
                 if collection_row.get("error") is True or collection_row.get("outcome") in {

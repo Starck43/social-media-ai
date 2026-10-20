@@ -104,6 +104,12 @@ class Settings(BaseSettings):
     # Common social collection defaults
     SOCIAL_PAGE_SIZE: int = 50
     SOCIAL_MAX_PAGES: int = 20
+    # Hard ceiling on rows fetched per source in one run. A typo in a date
+    # window or an accidental "all history" must not park a wall's full archive
+    # in `collected_items`; an operator can raise it per source with
+    # `params.collection.limit`, never above `SOCIAL_COLLECT_HARD_LIMIT`.
+    SOCIAL_COLLECT_LIMIT: int = 1000
+    SOCIAL_COLLECT_HARD_LIMIT: int = 1000
     SOCIAL_REQUEST_TIMEOUT: float = 30.0
     # Platform rate limits during collection: retries of a short limit and the cap
     # on one pause (seconds). A limit that does not clear defers the source.

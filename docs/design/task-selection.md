@@ -76,7 +76,9 @@ phrases matched against the item text plus its author name and permalink, within
 the content types the scenario already selected:
 
 - matching is case-insensitive, word-bounded, `ё` = `е`; a phrase matches as a
-  contiguous sequence of words;
+  contiguous sequence of words, and Russian inflections are folded to a common
+  stem (`utils/ru_stem.py`) so «Италия» matches «Италию»/«Италии». Stemming is a
+  matching key, not a synonym: «дизайн» still does not match «дизайнер»;
 - `payload["keywords_match"]` is `"any"` (default) or `"all"`;
 - the same list is *also* offered to the model as analysis context
   (`{payload_instruction}`), but the deterministic scope is what decides whether

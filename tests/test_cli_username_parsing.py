@@ -99,56 +99,68 @@ class CliUsernameParsingTests(unittest.TestCase):
                         inputs.parse_usernames(value), legacy_collect_usernames(value)
                     )
 
-    def test_all_three_command_sites_use_the_shared_helper(self):
+    def test_tracked_goes_through_the_shared_helper_in_collect(self):
         # `--tracked` replaced `--monitored`: the same tokenizer still normalises
         # the operator's input before the task-selection writer validates it.
-        expected = {"collect": ["tracked", "excluded"], "direct": ["excluded"]}
-        for module, arguments in expected.items():
-            tree = ast.parse((_ROOT / "cli" / "commands" / f"{module}.py").read_text())
-            with self.subTest(module=module):
-                self.assertTrue(
-                    any(
-                        isinstance(node, ast.ImportFrom)
-                        and node.module == "cli._inputs"
-                        and any(name.name == "parse_usernames" for name in node.names)
-                        for node in tree.body
-                    )
-                )
-                calls = [
-                    node
-                    for node in ast.walk(tree)
-                    if isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Name)
-                    and node.func.id == "parse_usernames"
-                ]
-                self.assertEqual(
-                    sorted(ast.unparse(call.args[0]) for call in calls),
-                    sorted(arguments),
-                )
-                self.assertTrue(
-                    all(len(call.args) == 1 and not call.keywords for call in calls)
-                )
-
-    def test_collect_payload_guards_remain_distinct_from_analyze(self):
-        collect = ast.parse((_ROOT / "cli" / "commands" / "collect.py").read_text())
-        guard = next(
-            node
-            for node in ast.walk(collect)
-            if isinstance(node, ast.If)
-            and "tracked" in ast.unparse(node.test)
+        tree = ast.parse((_ROOT / "cli" / "commands" / "collect.py").read_text())
+        self.assertTrue(
+            any(
+                isinstance(node, ast.ImportFrom)
+                and node.module == "cli._inputs"
+                and any(name.name == "parse_usernames" for name in node.names)
+                for node in tree.body
+            )
         )
-        # `--tracked` goes through the one selection writer, never straight into
-        # `payload["tracked_users"]` (docs/design/task-selection.md).
-        self.assertIn("build_selection_payload", ast.unparse(guard))
-        excluded_guard = next(
+        calls = [
             node
-            for node in ast.walk(collect)
-            if isinstance(node, ast.If)
-            and isinstance(node.test, ast.Name)
-            and node.test.id == "excluded"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "parse_usernames"
+        ]
+        self.assertEqual(
+            sorted(ast.unparse(call.args[0]) for call in calls),
+            ["tracked"],
+        )
+        self.assertTrue(
+            all(len(call.args) == 1 and not call.keywords for call in calls)
+        )
+
+    def test_direct_commands_no_longer_import_the_retired_helper(self):
+        direct = ast.parse((_ROOT / "cli" / "commands" / "direct.py").read_text())
+        self.assertEqual(
+            [
+                node
+                for node in direct.body
+                if isinstance(node, ast.ImportFrom) and node.module == "cli._inputs"
+            ],
+            [],
         )
         self.assertEqual(
-            ast.unparse(excluded_guard.body[0]), "payload['excluded_users'] = parse_usernames(excluded)"
+            [
+                node
+                for node in ast.walk(direct)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "parse_usernames"
+            ],
+            [],
+        )
+
+    def test_dry_run_payload_writers_distinct_per_command(self):
+        """`--dry-on` — единственный новый guard: он пишет `payload["dry_run"] = True`.
+
+        Никаких следов `excluded` ни в collect, ни в direct (файл/строка в
+        сообщении, чтобы уборка оставалась точечной).
+        """
+        collect = ast.parse((_ROOT / "cli" / "commands" / "collect.py").read_text())
+        collect_guards = [
+            node
+            for node in ast.walk(collect)
+            if isinstance(node, ast.If) and ast.unparse(node.test) == "dry_on"
+        ]
+        self.assertTrue(
+            any("payload['dry_run'] = True" in ast.unparse(guard.body[0]) for guard in collect_guards)
         )
         direct = ast.parse((_ROOT / "cli" / "commands" / "direct.py").read_text())
         analyze = next(
@@ -156,9 +168,17 @@ class CliUsernameParsingTests(unittest.TestCase):
             for node in direct.body
             if isinstance(node, ast.FunctionDef) and node.name == "cmd_analyze"
         )
-        self.assertEqual(
-            ast.unparse(analyze.body[1]), "excluded_users = parse_usernames(excluded)"
+        analyze_guards = [
+            node
+            for node in ast.walk(analyze)
+            if isinstance(node, ast.If) and ast.unparse(node.test) == "dry_on"
+        ]
+        self.assertTrue(
+            any("payload['dry_run'] = True" in ast.unparse(guard.body[0]) for guard in analyze_guards)
         )
+        direct_text = (_ROOT / "cli" / "commands" / "direct.py").read_text()
+        self.assertNotIn("excluded", direct_text)
+
 
 
 if __name__ == "__main__":

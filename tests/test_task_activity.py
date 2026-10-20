@@ -233,8 +233,6 @@ async def test_create_analyze_stores_trigger_and_action(client: AsyncClient) -> 
                     "trigger_keywords": "жалоба, срочно",
                     "trigger_match": "all",
                     "action_type": "COMMENT",
-                    "blacklist": "spammer",
-                    "whitelist": "client",
                     "rate_limit_per_hour": "5",
                     "cooldown_seconds": "60",
                     "_csrf": csrf,
@@ -248,10 +246,10 @@ async def test_create_analyze_stores_trigger_and_action(client: AsyncClient) -> 
                 assert task.trigger_config["keywords"] == ["жалоба", "срочно"]
                 assert task.trigger_config["match"] == "all"
                 assert task.action_type is not None and task.action_type.name == "COMMENT"
-                assert task.blacklist == ["spammer"]
-                assert task.whitelist == ["client"]
                 assert task.rate_limit_per_hour == 5
                 assert task.cooldown_seconds == 60
+                # The rehearsal toggle defaults to off on the web surface.
+                assert task.dry_run is False
         finally:
             if task_id is not None:
                 with tenant_scope(bypass=True):

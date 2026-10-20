@@ -90,7 +90,7 @@ async def task_list() -> list[dict[str, Any]]:
         " Источники задаются списком source_ids (связываются с задачей); пустой список = все активные. "
         "Выборка задаётся задачей: tracked_users — авторы (platform:external_id), чьи записи анализируются "
         "из источников задачи (пусто — материалы самих источников); keywords_list + keywords_match — фразы, "
-        "которые должны быть в записи; excluded_users — кого пропускать. Типы контента (посты, комментарии…) "
+        "которые должны быть в записи. Типы контента (посты, комментарии…) "
         "задаются сценарием, а не задачей. "
         "Обязательные поля: name, cron, job_type; для collect/analyze ещё start_date (с какой даты собирать "
         "контент, YYYY-MM-DD) — иначе первый запуск вытянет всё с первого поста; для анализа — scenario_id. "
@@ -141,11 +141,6 @@ async def task_list() -> list[dict[str, Any]]:
                 "type": "string",
                 "enum": ["any", "all"],
                 "description": "any — любая из фраз, all — все (по умолчанию any)",
-            },
-            "excluded_users": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Опционально: список username для исключения (collect/analyze)",
             },
             "scenario_id": {"type": "integer", "description": "Опционально: ID сценария агента"},
             "period": {"type": "string", "description": "Период для digest: day | week (default day)"},
@@ -204,7 +199,6 @@ async def task_add(
     tracked_users: list[str] | None = None,
     keywords_list: list[str] | None = None,
     keywords_match: str | None = None,
-    excluded_users: list[str] | None = None,
     scenario_id: int | None = None,
     period: str | None = None,
     start_date: str | None = None,
@@ -258,8 +252,6 @@ async def task_add(
         # A trial run the owner agreed to stop after success. Stored on the
         # task, so the scheduler reads the same decision the owner made.
         payload["deactivate_after_success"] = True
-    if excluded_users:
-        payload["excluded_users"] = list(excluded_users)
     if period:
         payload["period"] = period
     # Specific analysis targets (brands, competitors, hashtags, …) live on the
@@ -368,7 +360,7 @@ async def task_remove(name: str) -> dict[str, Any]:
     name="task_update",
     description=(
         "Изменить существующую задачу. Можно поменять: job_type (collect, digest, prune, analyze, learn, reflect), "
-        "cron-расписание, payload (tracked_users, keywords_list, excluded_users, brands, competitors и т.д.), "
+        "cron-расписание, payload (tracked_users, keywords_list, brands, competitors и т.д.), "
         "scenario_id, source_ids. Передавайте только те поля, которые нужно изменить. "
         "Неизменные поля остаются текущими. job_type можно сменить полностью."
     ),
@@ -410,11 +402,6 @@ async def task_remove(name: str) -> dict[str, Any]:
                 "type": "string",
                 "enum": ["any", "all"],
                 "description": "any — любая из фраз, all — все",
-            },
-            "excluded_users": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Новый список excluded users (collect/analyze)",
             },
             "scenario_id": {"type": "integer", "description": "Новый ID сценария агента"},
             "period": {"type": "string", "description": "Период для digest: day | week"},
@@ -473,7 +460,6 @@ async def task_update(
     tracked_users: list[str] | None = None,
     keywords_list: list[str] | None = None,
     keywords_match: str | None = None,
-    excluded_users: list[str] | None = None,
     scenario_id: int | None = None,
     period: str | None = None,
     start_date: str | None = None,
@@ -516,8 +502,6 @@ async def task_update(
         )
     except SelectionError as error:
         return {"error": f"Некорректная выборка задачи: {error}"}
-    if excluded_users is not None:
-        updated_payload["excluded_users"] = list(excluded_users)
     if period is not None:
         updated_payload["period"] = period
     for key, value in (

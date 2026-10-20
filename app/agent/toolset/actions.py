@@ -101,7 +101,7 @@ async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
         return {"success": False, "error": "Invalid action ID", "code": "invalid_arguments", "dry_run": True}
 
     from app.models import AgentScenario, BotAction, Source
-    from app.services.social.guards import extract_target_user, guards_checker
+    from app.services.social.guards import guards_checker
     from app.types import BotActionStatus
 
     action = await BotAction.objects.get(id=action_id)
@@ -115,7 +115,7 @@ async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
     source = await Source.objects.get(id=action.source_id)
     if scenario is None or source is None:
         return {"success": False, "error": "Action references are not available in this workspace", "dry_run": True}
-    allowed, _reason = await guards_checker.check_for_action(action, target_user=extract_target_user(action.payload))
+    allowed, _reason = await guards_checker.check_for_action(action)
     if not allowed:
         return {
             "success": False,

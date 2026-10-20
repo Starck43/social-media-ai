@@ -2,7 +2,7 @@
 
 Verifies that `handle_collect` correctly applies the task's m2m sources,
 tracked-user selection is a filter over the source's own content, and the
-excluded_users filter skips a source (docs/design/task-selection.md).
+the retired excluded_users key has no reader (docs/design/task-selection.md).
 """
 
 import uuid
@@ -64,7 +64,8 @@ async def test_handle_collect_uses_m2m_sources(platform, sources, monkeypatch):
         called = []
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
+            selection_scope=None,
         ):
             called.append(source.id)
             return _fake_result()
@@ -142,7 +143,8 @@ async def test_handle_collect_records_a_per_source_breakdown(platform, sources, 
         await _replace_task_sources(task.id, [sources[0].id, sources[1].id], task.tenant_id)
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
+            selection_scope=None,
         ):
             if source.id == sources[1].id:
                 raise RuntimeError("токен истёк")
@@ -183,7 +185,8 @@ async def test_handle_collect_reports_an_empty_source_as_empty(platform, sources
         await _replace_task_sources(task.id, [sources[0].id], task.tenant_id)
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
+            selection_scope=None,
         ):
             return None
 
@@ -198,8 +201,12 @@ async def test_handle_collect_reports_an_empty_source_as_empty(platform, sources
         await AgentTask.objects.delete_by_id(task.id)
 
 
-async def test_handle_collect_excludes_users(platform, sources, monkeypatch):
-    """A source matching an excluded username is skipped before collection."""
+async def test_handle_collect_ignores_the_removed_excluded_users_key(platform, sources, monkeypatch):
+    """The retired `excluded_users` key has no reader: every source collects.
+
+    The field was removed from algorithms/forms/CLI together with
+    blacklist/whitelist; a leftover payload key must not silently skip sources.
+    """
     from app.jobs.handlers import handle_collect
 
     task = await AgentTask.objects.create(
@@ -217,7 +224,8 @@ async def test_handle_collect_excludes_users(platform, sources, monkeypatch):
         called = []
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
+            selection_scope=None,
         ):
             called.append(source.id)
             return _fake_result()
@@ -225,9 +233,8 @@ async def test_handle_collect_excludes_users(platform, sources, monkeypatch):
         monkeypatch.setattr("app.services.monitoring.collector.ContentCollector.collect_from_source", fake_collect)
 
         stats = await handle_collect({"agent_task_id": task.id})
-        assert called == [sources[0].id, sources[1].id]
-        assert sources[2].id not in called
-        assert stats["excluded"] == 1
-        assert stats["sources"] == 2
+        assert called == [s.id for s in sources]
+        assert stats["excluded"] == 0
+        assert stats["sources"] == len(sources)
     finally:
         await AgentTask.objects.delete_by_id(task.id)

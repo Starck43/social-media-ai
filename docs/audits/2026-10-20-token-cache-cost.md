@@ -193,4 +193,10 @@ Files: `app/services/ai/llm_client.py`, `app/services/ai/analyzer.py`,
 `tests/test_analyzer_reported_errors.py`, `tests/test_scoped_attempt_journal.py`,
 `tests/test_analyzer_attempt_journal.py`.
 
-Integration with fresh dev and acceptance at the resulting revision remain pending.
+Coordinator integration acceptance: candidate `b4f6d39` merged with dev
+`adf1d6f`. OpenCode repeated collection and execution on the merged index:
+104 collected, 104 passed, 0 failed/skipped, 43 subtests, exit 0.
+Merged seven-file source digest:
+`0ab5a38d35640fc9682bf89d0c594f2b2a935ebfc57d3031e247aec6c8abe9ab`.
+Scoped diff reviewed; P2-T11 accepted as DONE. P2-T12 through P2-T14 remain
+open: this acceptance does not certify complete cache pricing or daily caps.

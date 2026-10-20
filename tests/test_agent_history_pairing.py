@@ -18,7 +18,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-ROOT = Path(sys.argv.pop(1)) if len(sys.argv) > 1 else Path.cwd()
+ROOT = Path(__file__).resolve().parents[1]
+# Standalone runs may point at a source copy: `python test_agent_history_pairing.py
+# /path/to/copy`. Under pytest the first argument is a node id, not a
+# directory, so the repository root is used instead.
+if len(sys.argv) > 1:
+    _candidate = Path(sys.argv.pop(1))
+    if _candidate.is_dir():
+        ROOT = _candidate
 
 
 def extract(path, selected, namespace):

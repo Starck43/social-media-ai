@@ -19,7 +19,15 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 from unittest.mock import patch
 
-ROOT = Path(sys.argv.pop(1)).resolve() if len(sys.argv) > 1 else Path.cwd()
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+# Standalone runs may point at a source copy; under pytest the first argument
+# is a node id, not a directory.
+if len(sys.argv) > 1:
+    _candidate = Path(sys.argv.pop(1))
+    if _candidate.is_dir():
+        ROOT = _candidate.resolve()
 if os.environ.get('DB_TEST_SCHEMA') != 'test_schema':
     raise SystemExit('STOP: explicitly set DB_TEST_SCHEMA=test_schema')
 url = os.environ.get('POSTGRES_URL', '')
@@ -57,6 +65,13 @@ def runtime_helpers():
 
 
 class SessionStateDatabaseTests(unittest.IsolatedAsyncioTestCase):
+    # The real tenant guard: this class creates two workspaces and proves that a
+    # session of one workspace cannot be patched through another. Under the
+    # suite-wide bypass every row lands in the bootstrap workspace, the
+    # cross-tenant case stops being cross-tenant and the proof stops testing
+    # anything.
+    pytestmark = pytest.mark.tenancy
+
     async def asyncSetUp(self):
         self.tenants = []
         self.addAsyncCleanup(self.cleanup_owned_rows)

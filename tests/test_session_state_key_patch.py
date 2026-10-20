@@ -18,7 +18,13 @@ from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-ROOT = Path(sys.argv.pop(1)) if len(sys.argv) > 1 else Path.cwd()
+ROOT = Path(__file__).resolve().parents[1]
+# Standalone runs may point at a source copy; under pytest the first argument
+# is a node id, not a directory.
+if len(sys.argv) > 1:
+    _candidate = Path(sys.argv.pop(1))
+    if _candidate.is_dir():
+        ROOT = _candidate
 MANAGER = 'app/models/managers/agent_session_manager.py'
 RUNTIME = 'app/agent/runtime.py'
 

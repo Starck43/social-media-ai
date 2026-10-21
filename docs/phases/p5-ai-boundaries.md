@@ -414,7 +414,9 @@ safely.
     by its post, not a matching commenter; a platform without profile support
     skips the gate with `profiles_unsupported` instead of reviewing the whole
     batch. 341 tests passed through the primary OpenCode test-runner (221
-    no-DB + 4 staging contract + 116 DB, 51 subtests).
+    no-DB + 4 staging contract + 116 DB, 51 subtests). Stages D3–D4 were
+    merged into `dev` after the integration merge `fc7ff52`, and the same
+    scope passed on that SHA.
 
   - **E. Task UI, admin, templates, presets.** Split the task editor into
     "Кого искать" (city, discovery queries, people/communities, candidate

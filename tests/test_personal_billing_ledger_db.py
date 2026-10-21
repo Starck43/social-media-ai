@@ -91,6 +91,9 @@ async def test_provider_actual_overshoot_is_settled_fully_and_freezes_account(
         model_type="text",
         input_cost_per_1k=1.0,
         output_cost_per_1k=1.0,
+        cache_read_cost_per_1m=0,
+        cache_write_5m_cost_per_1m=0,
+        cache_write_1h_cost_per_1m=0,
         max_tokens=64,
         default_temperature=0.0,
         is_active=True,
@@ -199,6 +202,9 @@ async def _acceptance_environment(monkeypatch, marker: str):
         model_type="text",
         input_cost_per_1k=1.0,
         output_cost_per_1k=1.0,
+        cache_read_cost_per_1m=0,
+        cache_write_5m_cost_per_1m=0,
+        cache_write_1h_cost_per_1m=0,
         max_tokens=64,
         default_temperature=0.0,
         is_active=True,
@@ -357,3 +363,206 @@ async def test_task_dispatch_allows_only_trusted_nonmember_operator_initiator(
     dispatch = await PersonalLLMDispatch.objects.get(dispatch_id=admission["dispatch_id"])
     assert dispatch.payer_user_id == env["user_id"]
     assert dispatch.initiated_by_user_id == initiator.id
+
+
+def _inject_undefined_tariff(monkeypatch):
+    """Make the stored provider snapshot represent a genuinely missing ordinary rate."""
+    from app.models.managers import personal_llm_billing_manager
+
+    original_builder = personal_llm_billing_manager.build_dispatch_receipt
+
+    def build_undefined_receipt(*args, **kwargs):
+        receipt = original_builder(*args, **kwargs)
+        receipt["output_cost_per_1k"] = None
+        receipt["tariff_state"] = "undefined"
+        return receipt
+
+    monkeypatch.setattr(personal_llm_billing_manager, "build_dispatch_receipt", build_undefined_receipt)
+    return original_builder
+
+
+@pytest.mark.asyncio
+@pytest.mark.personal_billing_db
+async def test_undefined_tariff_is_rejected_before_receipt_or_dispatch_for_finite_cap(monkeypatch):
+    """A finite cap cannot reserve a dispatch whose price obligation is undefined."""
+    from app.models import LLMDispatchReceipt, PersonalLLMDispatch
+    from app.services.ai.budget_admission import BudgetAdmissionDenied
+
+    env = await _acceptance_environment(monkeypatch, uuid4().hex)
+    _inject_undefined_tariff(monkeypatch)
+    request_shape = {
+        "adapter": "openai_chat_completions",
+        "provider_name": env["provider_name"],
+        "model_id": env["model_id"],
+        "has_media": False,
+        "uses_tools": False,
+        "requested_output_tokens": 1,
+    }
+
+    with tenant_scope(env["tenant_id"]), permission_scope(env["user"]):
+        with pytest.raises(BudgetAdmissionDenied, match="reviewed provider/model request bound"):
+            await reserve_personal_dispatch(
+                env["model"],
+                purpose="analysis",
+                stage="text_analysis",
+                execution={"source_id": None},
+                request_shape=request_shape,
+            )
+
+        assert await LLMDispatchReceipt.objects.filter(tenant_id=env["tenant_id"]).count() == 0
+        assert await PersonalLLMDispatch.objects.filter(account_id=env["account_id"]).count() == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.personal_billing_db
+async def test_unlimited_unknown_hold_blocks_later_finite_cap_admission(monkeypatch):
+    """Unlimited accounts may track unknown obligations, which block later capped calls while unresolved."""
+    from app.models import (
+        LLMDispatchReceipt,
+        PersonalLLMDispatch,
+        PersonalLLMReservation,
+        PersonalLLMReservationState,
+    )
+    from app.services.ai.budget_admission import BudgetAdmissionDenied
+    from app.models.managers import personal_llm_billing_manager
+
+    env = await _acceptance_environment(monkeypatch, uuid4().hex)
+    original_builder = _inject_undefined_tariff(monkeypatch)
+    request_shape = {
+        "adapter": "openai_chat_completions",
+        "provider_name": env["provider_name"],
+        "model_id": env["model_id"],
+        "has_media": False,
+        "uses_tools": False,
+        "requested_output_tokens": 1,
+    }
+
+    with tenant_scope(env["tenant_id"]), permission_scope(env["user"]):
+        await PersonalBillingAccount.objects.configure_self(Decimal("0"))
+        admission = await reserve_personal_dispatch(
+            env["model"],
+            purpose="analysis",
+            stage="text_analysis",
+            execution={"source_id": None},
+            request_shape=request_shape,
+        )
+        receipt = {key: value for key, value in admission.items() if not key.startswith("__")}
+        reservation = await PersonalLLMReservation.objects.get(dispatch_id=receipt["dispatch_id"])
+        state = await PersonalLLMReservationState.objects.get(dispatch_id=receipt["dispatch_id"])
+        assert reservation.ceiling_state == "undefined"
+        assert state.status == "reserved"
+
+        await PersonalBillingAccount.objects.configure_self(Decimal("1"))
+        monkeypatch.setattr(personal_llm_billing_manager, "build_dispatch_receipt", original_builder)
+        with pytest.raises(BudgetAdmissionDenied, match="Current-day unresolved unknown liability"):
+            await reserve_personal_dispatch(
+                env["model"],
+                purpose="analysis",
+                stage="text_analysis",
+                execution={"source_id": None},
+                request_shape=request_shape,
+            )
+
+        assert await LLMDispatchReceipt.objects.filter(tenant_id=env["tenant_id"]).count() == 1
+        assert await PersonalLLMDispatch.objects.filter(account_id=env["account_id"]).count() == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.personal_billing_db
+async def test_self_spend_summary_separates_settled_sources_and_open_reservations(monkeypatch):
+    """Report each canonical dispatch once and distinguish paid evidence from open liability."""
+    from app.models import LLMOutcomeEvent, PersonalBillingAccount
+
+    env = await _acceptance_environment(monkeypatch, uuid4().hex)
+    request_shape = {
+        "adapter": "openai_chat_completions",
+        "provider_name": env["provider_name"],
+        "model_id": env["model_id"],
+        "has_media": False,
+        "uses_tools": False,
+        "requested_output_tokens": 1,
+    }
+
+    with tenant_scope(env["tenant_id"]), permission_scope(env["user"]):
+        reported_admission = await reserve_personal_dispatch(
+            env["model"],
+            purpose="analysis",
+            stage="text_analysis",
+            execution={"source_id": None},
+            request_shape=request_shape,
+        )
+        reported_receipt = {key: value for key, value in reported_admission.items() if not key.startswith("__")}
+        reported = build_outcome_event(
+            reported_receipt,
+            event_id=uuid4().hex,
+            observed_at=max(datetime.now(timezone.utc), reported_receipt["prepared_at"]),
+            dispatch_state="response_received",
+            outcome="succeeded",
+            accounting_envelope={
+                "accounting_usage": {"prompt_tokens": 8, "completion_tokens": 1},
+                "accounting_cost_reported": True,
+                "accounting_cost_usd": "0.000005000",
+            },
+        )
+        await LLMOutcomeEvent.objects.record_event(reported)
+        await observe_personal_outcome(tenant_id=env["tenant_id"], event_id=reported["event_id"])
+
+        reconstructed_admission = await reserve_personal_dispatch(
+            env["model"],
+            purpose="analysis",
+            stage="text_analysis",
+            execution={"source_id": None},
+            request_shape=request_shape,
+        )
+        reconstructed_receipt = {
+            key: value for key, value in reconstructed_admission.items() if not key.startswith("__")
+        }
+        reconstructed = build_outcome_event(
+            reconstructed_receipt,
+            event_id=uuid4().hex,
+            observed_at=max(datetime.now(timezone.utc), reconstructed_receipt["prepared_at"]),
+            dispatch_state="response_received",
+            outcome="succeeded",
+            accounting_envelope={
+                "accounting_usage": {"prompt_tokens": 8, "completion_tokens": 1},
+                "accounting_cache_usage": {
+                    "format": "openai",
+                    "cache_read_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "cache_write_5m_tokens": None,
+                    "cache_write_1h_tokens": None,
+                },
+            },
+        )
+        await LLMOutcomeEvent.objects.record_event(reconstructed)
+        await observe_personal_outcome(tenant_id=env["tenant_id"], event_id=reconstructed["event_id"])
+
+        await reserve_personal_dispatch(
+            env["model"],
+            purpose="analysis",
+            stage="text_analysis",
+            execution={"source_id": None},
+            request_shape=request_shape,
+        )
+        await PersonalBillingAccount.objects.configure_self(Decimal("0"))
+        _inject_undefined_tariff(monkeypatch)
+        await reserve_personal_dispatch(
+            env["model"],
+            purpose="analysis",
+            stage="text_analysis",
+            execution={"source_id": None},
+            request_shape=request_shape,
+        )
+        summary = await PersonalBillingAccount.objects.self_spend_summary()
+
+    assert summary["dispatch_count"] == 4
+    assert summary["provider_reported_usd"] == "0.000005000"
+    assert summary["tariff_reconstructed_usd"] == "0.000009000"
+    assert summary["settled_usd"] == "0.000014000"
+    assert Decimal(summary["reserved_usd"]) > 0
+    assert summary["pending_count"] == 2
+    assert summary["unknown_count"] == 1
+    assert summary["complete"] is False
+    assert summary["legacy_history_included"] is False
+    assert len(summary["by_workspace"]) == 1
+    assert summary["by_workspace"][0]["tenant_id"] == env["tenant_id"]

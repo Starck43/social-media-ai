@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import select
+from sqlalchemy import case, func, or_, select
 
 from app.core.permissions import get_current_user
 from app.core.tenant_context import current_tenant_id, is_bypass
@@ -106,6 +106,151 @@ class PersonalBillingManager(BaseManager):
             return (
                 await session.execute(select(PersonalBillingAccount).where(PersonalBillingAccount.user_id == actor_id))
             ).scalar_one_or_none()
+
+    async def self_spend_summary(self, utc_day: date | None = None) -> dict:
+        """Report today's payer-bound dispatch costs by workspace, never projections.
+
+        Provider amounts and receipt-tariff reconstruction remain separate;
+        open reservations and unknown events are visible. Historical attempts
+        without reviewed payer attribution are explicitly outside this report.
+        """
+        from ..billing.billing import PersonalBillingAccount
+        from ..billing.dispatch import PersonalLLMDispatch
+        from ..billing.ledger import PersonalLLMReservation, PersonalLLMReservationState
+        from ..tenancy.tenant import Tenant
+        from ..llm.llm_outcome_event import LLMOutcomeEvent
+
+        actor_id = self._actor_id()
+        day = utc_day or datetime.now(timezone.utc).date()
+        if type(day) is not date:
+            raise ValueError("A UTC billing date is required")
+        zero = Decimal(0)
+
+        async with self._get_owned_session() as session:
+            account_id = (
+                await session.execute(
+                    select(PersonalBillingAccount.id).where(PersonalBillingAccount.user_id == actor_id)
+                )
+            ).scalar_one_or_none()
+            if account_id is None:
+                rows = []
+            else:
+                settled = func.coalesce(func.sum(PersonalLLMReservationState.settled_usd), zero)
+                reserved = func.coalesce(func.sum(PersonalLLMReservationState.reserved_usd), zero)
+                provider_reported = func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                LLMOutcomeEvent.price_source == "provider",
+                                LLMOutcomeEvent.cost_usd,
+                            ),
+                            else_=zero,
+                        )
+                    ),
+                    zero,
+                )
+                tariff_reconstructed = func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                LLMOutcomeEvent.price_source == "receipt_tariff",
+                                LLMOutcomeEvent.cost_usd,
+                            ),
+                            else_=zero,
+                        )
+                    ),
+                    zero,
+                )
+                pending_count = func.count().filter(PersonalLLMReservationState.status == "reserved")
+                unknown_count = func.count().filter(
+                    or_(
+                        LLMOutcomeEvent.cost_certainty == "undefined",
+                        (
+                            LLMOutcomeEvent.event_id.is_(None)
+                            & PersonalLLMReservation.ceiling_state.in_(("undefined", "unbounded"))
+                        ),
+                    )
+                )
+                statement = (
+                    select(
+                        PersonalLLMDispatch.tenant_id,
+                        Tenant.name,
+                        func.count(PersonalLLMDispatch.id),
+                        settled,
+                        reserved,
+                        provider_reported,
+                        tariff_reconstructed,
+                        pending_count,
+                        unknown_count,
+                    )
+                    .select_from(PersonalLLMDispatch)
+                    .join(
+                        PersonalLLMReservationState,
+                        PersonalLLMReservationState.dispatch_id == PersonalLLMDispatch.dispatch_id,
+                    )
+                    .join(
+                        PersonalLLMReservation,
+                        PersonalLLMReservation.dispatch_id == PersonalLLMDispatch.dispatch_id,
+                    )
+                    .join(Tenant, Tenant.id == PersonalLLMDispatch.tenant_id)
+                    .outerjoin(
+                        LLMOutcomeEvent,
+                        LLMOutcomeEvent.event_id == PersonalLLMReservationState.latest_event_id,
+                    )
+                    .where(
+                        PersonalLLMDispatch.payer_user_id == actor_id,
+                        PersonalLLMDispatch.account_id == account_id,
+                        PersonalLLMDispatch.utc_day == day,
+                    )
+                    .group_by(PersonalLLMDispatch.tenant_id, Tenant.name)
+                    .order_by(PersonalLLMDispatch.tenant_id)
+                )
+                rows = (await session.execute(statement)).all()
+
+        by_workspace = []
+        totals = {
+            "dispatch_count": 0,
+            "settled_usd": zero,
+            "reserved_usd": zero,
+            "provider_reported_usd": zero,
+            "tariff_reconstructed_usd": zero,
+            "pending_count": 0,
+            "unknown_count": 0,
+        }
+        for row in rows:
+            values = {
+                "tenant_id": int(row[0]),
+                "workspace": str(row[1]),
+                "dispatch_count": int(row[2]),
+                "settled_usd": Decimal(row[3] or zero),
+                "reserved_usd": Decimal(row[4] or zero),
+                "provider_reported_usd": Decimal(row[5] or zero),
+                "tariff_reconstructed_usd": Decimal(row[6] or zero),
+                "pending_count": int(row[7] or 0),
+                "unknown_count": int(row[8] or 0),
+            }
+            by_workspace.append(values)
+            for key in totals:
+                totals[key] += values[key]
+        return {
+            "scope": "payer_bound_personal_dispatches",
+            "utc_day": day.isoformat(),
+            "currency": "USD",
+            **{
+                key: str(value) if isinstance(value, Decimal) else value
+                for key, value in totals.items()
+            },
+            "estimated_usd": None,
+            "legacy_history_included": False,
+            "complete": totals["pending_count"] == 0 and totals["unknown_count"] == 0,
+            "by_workspace": [
+                {
+                    key: str(value) if isinstance(value, Decimal) else value
+                    for key, value in workspace.items()
+                }
+                for workspace in by_workspace
+            ],
+        }
 
     async def consent_task_payer(self, task_id: int):
         """Bind the caller as a task's payer after fresh user, membership and task checks."""

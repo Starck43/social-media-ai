@@ -287,15 +287,50 @@ The existing ORM model manager then updated only model 10's pricing unit to
 the raw input/output amounts remain 0.12 and 0.4. Cache-write prices were not
 assumed or populated.
 
-test_schema has no alembic_version table and was left unchanged. Final test
-preparation must investigate that existing schema and its migration history;
-no baseline, stamp, reset, or unrelated migration was inferred. PostgreSQL
-accounting/replay tests and browser checks remain deferred by the owner.
-Full daily-cap/report acceptance and exact provider/model attribution remain
-separate open tasks.
+Initially, read-only catalog inspection found no `alembic_version` table and
+none of the new unit/cache columns. After explicit owner authorization, a
+verified private backup was made and only `test_schema` was restored from its
+actual pre-0093 baseline (0092), then advanced through the migration chain to
+0108. The historical baseline was verified in a detached worktree; temporary
+compatibility adjustments were confined to an external script/copy after the
+old SQLAlchemy enum constructor and psycopg bind inference blocked stock
+bootstrap/migration execution. No tracked migration was changed. The immutable
+receipt guards were verified at 0108; `public` remained at 0107. The PostgreSQL
+acceptance run for P2-T14 passed. Browser acceptance was not run: the local app
+had no listener on port 8000. P2-T12 persistence/replay and UI checks remain
+open.
+
+### P2-T14 spend evidence and acceptance
+
+At commit `626176328c04ac90d7c18f95dd0ed38d571e7f88`, finite personal caps
+reject dispatches without a safe bound, unresolved open obligations remain
+held, and the payer/day report separates provider-reported, receipt-reconstructed,
+reserved, and unknown values. Aggregation uses canonical dispatch receipts and
+is scoped by payer and workspace; legacy estimates are not presented as exact
+spend. Validation: `tests/test_personal_billing_ledger_db.py` 8 passed on
+`test_schema` 0108, and four no-DB scopes passed 56 tests total. The DB run did
+not mutate schema. OpenCode failed initialization and Kilo was unavailable, so
+the authorized Codex test subagent ran these scopes. Safari/browser rendering
+was not part of P2-T14's acceptance and was not tested. The task commit is
+merged into local `dev`; pushing its feature branch failed over both SSH and
+HTTPS due to GitHub connection errors.
 
 Commit preparation removed one excess EOF blank line from cache_pricing.py;
 there was no behavior change. The resulting 35-Python-file candidate digest is
 `eb03fb47a9738da7e3bf1589523950e7b107a81a564197ea9f12b4a961eb1612`.
 The earlier digest remains the exact reference for the completed 250 no-DB
-tests. Post-migration and post-preparation tests remain deferred as instructed.
+tests at the candidate.
+
+### Integrated no-DB regression run
+
+At dev `e446c044a863d641b27714a4bffe8563ecbb91dd`, the Codex test subagent
+ran the same 14 assigned cache/accounting files sequentially in fresh Python
+processes after the primary OpenCode route failed initialization and Kilo was
+unavailable. Each file was collected and executed with
+`--noconftest -o addopts= -q --tb=short --no-header`. Result: 251 passed,
+0 failed, 0 skipped, 183 subtests. No DB setup, migration, provider call,
+source edit, or Git change occurred in the test run. This validates the
+isolated arithmetic, model, receipt, journal and reservation unit/SQL-shape
+contracts at the integrated code revision; it does not validate PostgreSQL
+persistence or browser rendering. The required test schema is missing the
+0107 columns and Alembic history, so no DB-backed acceptance is claimed.

@@ -401,7 +401,7 @@ class PersonalLLMBillingManager(BaseManager):
                 cap_snapshot = None
             else:
                 cap_snapshot = cap
-                if ceiling_state == "unbounded":
+                if ceiling_state in {"undefined", "unbounded"}:
                     raise BudgetAdmissionDenied("Capped payer requires a reviewed provider/model request bound")
 
             day = now.date()
@@ -438,6 +438,9 @@ class PersonalLLMBillingManager(BaseManager):
                         func.count(PersonalLLMReservationState.id).filter(
                             PersonalLLMReservation.ceiling_state == "unbounded"
                         ),
+                        func.count(PersonalLLMReservationState.id).filter(
+                            PersonalLLMReservation.ceiling_state == "undefined"
+                        ),
                     ).where(
                         PersonalLLMReservationState.account_id == account.id,
                         PersonalLLMReservationState.utc_day < day,
@@ -448,23 +451,22 @@ class PersonalLLMBillingManager(BaseManager):
                     )
                 )
             ).one()
-            previous_reserved, previous_count, previous_unbounded = (
+            previous_reserved, previous_count, previous_unbounded, previous_undefined = (
                 Decimal(previous_open[0]),
                 int(previous_open[1]),
                 int(previous_open[2]),
+                int(previous_open[3]),
             )
-            if cap_snapshot is not None and ceiling_state != "undefined" and previous_count:
-                if (
-                    ceiling_state == "unbounded"
-                    or previous_unbounded
-                    or previous_reserved + budget_day.settled_usd + budget_day.reserved_usd + (ceiling or 0)
-                    > cap_snapshot
-                ):
+            if cap_snapshot is not None and previous_count:
+                if previous_unbounded or previous_undefined:
+                    raise BudgetAdmissionDenied("Prior-day unresolved unknown liability blocks capped admission")
+                if previous_reserved + budget_day.settled_usd + budget_day.reserved_usd + (ceiling or 0) > cap_snapshot:
                     raise BudgetAdmissionDenied("Prior-day unresolved liability consumes capped capacity")
-            if cap_snapshot is not None and ceiling_state != "undefined":
-                if budget_day.unbounded_count or (
-                    ceiling_state != "undefined"
-                    and budget_day.settled_usd + budget_day.reserved_usd + previous_reserved + (ceiling or 0)
+            if cap_snapshot is not None:
+                if budget_day.unbounded_count or budget_day.undefined_count:
+                    raise BudgetAdmissionDenied("Current-day unresolved unknown liability blocks capped admission")
+                if (
+                    budget_day.settled_usd + budget_day.reserved_usd + previous_reserved + (ceiling or 0)
                     > cap_snapshot
                 ):
                     raise BudgetAdmissionDenied("Personal daily limit would be exceeded")

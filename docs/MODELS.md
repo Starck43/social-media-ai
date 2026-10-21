@@ -224,7 +224,9 @@ String(20) default `new`; nullable `source_id` FK SET NULL; nullable
 
 Unique **(`tenant_id`, `platform`, `kind`, `external_id`)**. Index
 (`tenant_id`, `status`). A confirmed candidate may link/create a Source; the
-row is not a collection target by itself.
+row is not a collection target by itself. Collection writes are
+insert-if-absent: a re-collection keeps the first evidence and never resets an
+operator's `confirmed`/`rejected` decision.
 
 ### `collection_lane_runs`
 

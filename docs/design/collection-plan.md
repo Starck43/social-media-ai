@@ -10,10 +10,14 @@ thread-level selection. Stage D1 delivered
 provider capabilities and explicit unsupported warnings; stage D2 executes the
 comments lane (`app/services/collection/comments.py`): author-eligible parents
 are expanded within per-post and total caps, and the post + comments thread is
-selected as a unit. Engagement candidates and profile/city enrichment are still
-future stages. Runtime stays posts+comments; collection lanes are not wired to
-the runtime planner yet; UI and task-owned content types remain future stages.
-Stages C–D2 are merged into `dev` (integration merge `3e4da0d`). Until P5-T14
+selected as a unit. Stage D3 stores `likes`/`reposts` actors as candidates
+(`app/services/collection/candidates.py`): one task-wide cap, cross-lane
+identity dedupe, confirmation status that a re-collection never resets, and no
+`collected_items` row for a person. Profile/city enrichment remains a future
+stage. Runtime collects posts, comments and engagement candidates; collection
+lanes are not wired to the runtime planner yet; UI and task-owned content types
+remain future stages. Stages C–D2 are merged into `dev` (integration merge
+`3e4da0d`); stage D3 is committed on `opencode/p5-t14-stage-d`. Until P5-T14
 is `READY`/`DONE`, runtime behavior in
 [COLLECTION](../COLLECTION.md), [task selection](task-selection.md) and
 [MODELS](../MODELS.md) still applies except for the stage-C selection path

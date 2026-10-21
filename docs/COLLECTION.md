@@ -512,8 +512,24 @@ counted in `errors`/`error_codes` and never fails the post batch. Comment rows
 carry `content_type="comment"` and `parent_external_id`, and the thread is
 selected as a unit, so a matching comment keeps its parent post. A platform
 without comment support keeps its `comments_unsupported` warning and fetches
-nothing. Engagement candidates (likes/reposts) and profile/city enrichment
-remain future stages.
+nothing. Profile/city enrichment remains future work.
+
+### Engagement candidates (P5-T14 stage D3)
+
+A task whose `collection.engagement_types` lists `likes` and/or `reposts` reads
+those lanes for the author-eligible posts and stores the result as candidates,
+never as `collected_items`: a candidate answers "who reacted", not "what was
+said", so it does not inflate `content_count` and never reaches the analysis.
+One task-wide `collection.candidates.limit` bounds every lane together, and an
+identity seen in both lanes (or in a re-run) is stored once. `confirm` decides
+the stored status: `manual` (default) keeps candidates `new` for an operator,
+`auto` marks them `confirmed` within the same cap and still creates no source.
+A re-collection keeps the first evidence and never resets an existing
+decision. The per-source `candidates` block reports `fetched`, `by_lane`,
+`duplicates`, `invalid`, `stored`, `limit_reached`
+(`candidates_limit_reached`) and `errors`/`error_codes`; a rehearsal reports
+the same counts with `stored: 0` and `dry_run: true`. Profile/city enrichment
+remains future work.
 
 ## Rehearsal (dry run)
 
@@ -522,7 +538,9 @@ new and return a bounded preview, but write no `collected_items`, call no model
 and do not advance `last_checked`. A rehearsal that moved the cursor would make
 the following real run skip the exact window it rehearsed. A comment-enabled
 task rehearses its comment lane too: the fetch is read-only, so the preview
-reports the same cap evidence a real run would store. In `analyze` the
+reports the same cap evidence a real run would store. An engagement lane is
+previewed the same way, with `stored: 0` and `dry_run: true` in its
+`candidates` block. In `analyze` the
 same flag stops at the deterministic task selection and reports
 `eligible`/`rejected` counts. The web toggle is shown to workspace
 administrators and owners only; a non-admin submission is ignored with a

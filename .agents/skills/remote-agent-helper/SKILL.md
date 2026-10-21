@@ -32,7 +32,9 @@ The remote agent (Starck43 on origin) prepares bounded packages with an "Owner h
 ## Running checks
 
 - Approved environment: `/Users/admin/Projects/social-media-ai/.venv/bin/python` (Python 3.12.6); black/isort from the same venv. No blind installs, no env copying.
-- Standalone suites: `python tests/test_<name>.py` (unittest style).
+- Standalone suites: `python tests/<domain>/test_<name>.py` (unittest style; since the
+  regroup, only conftest.py and shared `*_fixtures/_layout/_support/help` helpers plus
+  `.cjs` assets live directly in `tests/`, suites live in domain subdirs).
 - DB discipline: before any DB runner, `ps aux | grep -E "pytest|test_<...>" | grep -v grep` must show zero concurrent runners (shared sequential `test_schema`). One DB command at a time.
 - DB standalone runners read `POSTGRES_URL` before app imports and do not load `.env`: source the main repo `.env` into the process env only — `set -a && . /Users/admin/Projects/social-media-ai/.env && set +a` — never copy the file, never echo values. App `Settings` also needs the rest of `.env` (SECRET_KEY etc.).
 - No full suite, pytest collection with conftest bootstrap, schema create/reset/drop/stamp/migration, or live/browser/provider actions unless explicitly requested.

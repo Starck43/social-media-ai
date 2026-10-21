@@ -7,11 +7,14 @@ planner, VK/Telegram adapters and no-DB tests, committed as `c6bd826`. Stage C
 delivered collection-time selection/staging, lane-run/`seen` evidence and
 thread-level selection. Stage D1 delivered
 `app/services/collection/context.py`: one parsed task intent per source plus
-provider capabilities and explicit unsupported warnings. Runtime stays
-posts-only until the comments/engagement/profile steps land; collection lanes
-are not wired to runtime yet; UI and task-owned content types remain future
-stages. Stages C–D1 are committed on `opencode/p5-t14-stage-d` and are not
-merged into `dev` yet. Until P5-T14 is `READY`/`DONE`, runtime behavior in
+provider capabilities and explicit unsupported warnings; stage D2 executes the
+comments lane (`app/services/collection/comments.py`): author-eligible parents
+are expanded within per-post and total caps, and the post + comments thread is
+selected as a unit. Engagement candidates and profile/city enrichment are still
+future stages. Runtime stays posts+comments; collection lanes are not wired to
+the runtime planner yet; UI and task-owned content types remain future stages.
+Stages C–D2 are committed on `opencode/p5-t14-stage-d` and are not merged into
+`dev` yet. Until P5-T14 is `READY`/`DONE`, runtime behavior in
 [COLLECTION](../COLLECTION.md), [task selection](task-selection.md) and
 [MODELS](../MODELS.md) still applies except for the stage-C selection path
 described there. Stage B implementation plan:

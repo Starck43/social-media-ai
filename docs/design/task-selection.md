@@ -38,9 +38,12 @@ diagnostics, so an operator sees *why* an item was left out.
 
 Stage C keeps these layers but changes two boundaries: selection runs at
 collection, and a comment-enabled batch applies the text scope to the post
-**and its comments together** (thread level). A task-scoped query source is an
-explicit lane, never part of the "all active sources" shortcut; that fallback
-exclusion is still pending. Legacy rows staged before stage C keep a NULL
+**and its comments together** (thread level). Which posts are expanded for
+comments is decided by the author layer only: a post whose own text does not
+match can still carry the matching comment that made the task comment-enabled.
+A task-scoped query source is an explicit lane, never part of the "all active
+sources" shortcut; that fallback exclusion is still pending. Legacy rows staged
+before stage C keep a NULL
 status and still pass through the old analysis-time selection once.
 
 ### Tracked users

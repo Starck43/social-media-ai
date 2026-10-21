@@ -388,8 +388,15 @@ safely.
     passed through the primary OpenCode test-runner.** The per-source
     collection context (intent + capabilities + warnings) is wired through
     `handle_collect`; malformed collection values fail the source instead of
-    collecting a guessed population. D2 comments/thread, D3 engagement
-    candidates and D4 city/profile review remain.
+    collecting a guessed population. D2 is implemented in the same branch at
+    `2d9ba33`: author-eligible posts are expanded through the provider
+    `fetch_comments` within per-post and total caps, both caps are reported
+    (`comments_per_post_limit`, `comments_total_limit`), a failed post is
+    counted without failing the batch, and comment rows are staged with
+    `parent_external_id` while the thread is selected as a unit. 313 tests
+    passed through the primary OpenCode test-runner (203 no-DB + 4 staging
+    contract + 106 DB, 51 subtests). D3 engagement candidates and D4
+    city/profile review remain.
 
   - **E. Task UI, admin, templates, presets.** Split the task editor into
     "Кого искать" (city, discovery queries, people/communities, candidate
@@ -422,8 +429,8 @@ safely.
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`
-  carry no competing ownership. Stages A–C and D1 are implemented; D2–D4 and
-  E–F remain. Owns:
+  carry no competing ownership. Stages A–C and D1–D2 are implemented; D3–D4
+  and E–F remain. Owns:
   `docs/design/collection-plan.md`, `app/services/collection/`,
   `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
   `app/models/collection/`, `app/models/scheduling/`, `app/web/tasks.py`,
@@ -431,7 +438,7 @@ safely.
   `app/templates/`, `app/core/scenario_presets.py`, `app/admin/views.py`,
   `app/agent/toolset/`, `cli/`, `app/api/`, `app/services/ai/scenario*.py`,
   one Alembic revision, tests. Owner: owner (fork #2); status: IN_PROGRESS
-  (stages A–C and D1 DONE; D2–D4, E–F open).
+  (stages A–C and D1–D2 DONE; D3–D4, E–F open).
   Evidence: [collection plan](../design/collection-plan.md); append stage
   evidence at the exact tested SHA. Test routing: primary OpenCode
   test-runner subagent per stage (RULES.md R10), shared DB sequential (R8).

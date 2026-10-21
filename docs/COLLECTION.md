@@ -495,16 +495,34 @@ provider's capabilities. The handler fails a source with
 than collecting a guessed population. Requested operations the provider cannot
 perform (for example comments, likes, city lookup or profiles on Telegram)
 appear as bounded warnings in the per-source result; they are not an empty
-result. Runtime still collects posts only until the comments, engagement and
-profile steps are connected. Older tasks without a `collection` block keep the
-post-only behaviour.
+result. Older tasks without a `collection` block keep the post-only behaviour.
+
+### Comment lane (P5-T14 stage D2)
+
+A task whose `collection.content_types` includes `comments` expands that lane
+after the post batch is fetched and before selection. Only posts that pass the
+task's **author** filter are expanded: the text scope is deliberately not
+applied there, because a post whose own text lacks the phrase is exactly the
+case a comment lane exists for. Comments are read through the provider adapter
+(`fetch_comments`) in pages bounded by `collection.comments.max_per_post`, and
+the run stops at `collection.comments.total` across all parents. Hitting either
+cap sets `limit_reached` and names it (`comments_per_post_limit`,
+`comments_total_limit`) in the per-source `comments` block; a failed post is
+counted in `errors`/`error_codes` and never fails the post batch. Comment rows
+carry `content_type="comment"` and `parent_external_id`, and the thread is
+selected as a unit, so a matching comment keeps its parent post. A platform
+without comment support keeps its `comments_unsupported` warning and fetches
+nothing. Engagement candidates (likes/reposts) and profile/city enrichment
+remain future stages.
 
 ## Rehearsal (dry run)
 
 `CLI --dry-on` and the task's `dry_run` toggle fetch the platform, count what is
 new and return a bounded preview, but write no `collected_items`, call no model
 and do not advance `last_checked`. A rehearsal that moved the cursor would make
-the following real run skip the exact window it rehearsed. In `analyze` the
+the following real run skip the exact window it rehearsed. A comment-enabled
+task rehearses its comment lane too: the fetch is read-only, so the preview
+reports the same cap evidence a real run would store. In `analyze` the
 same flag stops at the deterministic task selection and reports
 `eligible`/`rejected` counts. The web toggle is shown to workspace
 administrators and owners only; a non-admin submission is ignored with a

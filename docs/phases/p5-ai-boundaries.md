@@ -504,6 +504,15 @@ safely.
       per-lane counts and the limit warning (the runtime does not execute the
       planned lanes yet — Q-6), and whether `is_relevant` should become a real
       runtime gate (Q-7).
+    - Follow-up (code `8c3ca84`, docs `559e0ba`): because VK's global search
+      is refused for this app profile (1051 with both tokens — Q-9), the
+      operator's browser list is the only source of communities, so
+      `python -m cli.main collection import <task_id>` resolves a pasted list
+      with the methods that still work (`groups.getById`, `users.get` — read
+      only) and turns each entry into a task-owned wall lane: an existing
+      workspace source is reused as-is, a lane of another task is refused,
+      nothing is deleted, and the command is idempotent. The city gate still
+      parks community posts in `needs_review` (Q-8).
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`

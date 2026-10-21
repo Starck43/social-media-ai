@@ -104,5 +104,28 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
   Context: [p5 phase](docs/phases/p5-ai-boundaries.md); asked by: $local
   (opencode); status: OPEN
 
+- [ ] Q-8 — should `city.mode=prefer` keep an item whose author city is unknown?
+  Context: `city_decision` (`app/services/monitoring/selection.py:441`) sends an
+  unknown city to `needs_review` in every mode, so a community post (a group
+  declares no city in its VK profile) never reaches the analysis: the trip post
+  of «Древиз» was found by the text scope and parked as `city_unknown`. Either
+  `prefer` keeps the unknown city (only a known mismatch is noted), or the city
+  is taken from the community instead of the post author.
+  Context: [collection plan](docs/design/collection-plan.md),
+  [p5 phase](docs/phases/p5-ai-boundaries.md); asked by: $local (opencode);
+  status: OPEN
+
+- [ ] Q-9 — will the deployment move to a Standalone VK application so the
+  global search family opens? Context: a read-only probe answered 1051 for
+  `newsfeed.search`, `groups.search`, `users.search`, `database.getCities` and
+  `utils.resolveScreenName` with BOTH the service key and the personal user
+  token, while `users.get`, `groups.getById` and `wall.get` work — the gate is
+  the app profile (app `54798450`, a web app with a localhost redirect), not the
+  token. The vk.ru web search uses internal endpoints and is no evidence of
+  API access. Until it opens, communities are imported from the operator's
+  list (`python -m cli.main collection import`).
+  Context: [VK search audit](docs/audits/2026-10-20-vk-search-and-task-2027.md);
+  asked by: $local (opencode); status: OPEN
+
 - [ ] Q-1 — compress `docs/validation/llm-budget-pg-runner.md` (807-line evidence ledger) to a short summary after P2-T01 activation completes; keep the example JSONs (pinned by `tests/test_budget_isolated_fixture_coherence.py`); context: docs/validation/; asked by: opencode; status: OPEN
 - [ ] Q-2 — verify source 2939 VK post origin and missing media references against the original API response, if obtainable; context: [VK raw content audit](docs/audits/2026-10-18-vk-raw-content.md); owner: codex-vk-raw-audit; status: OPEN

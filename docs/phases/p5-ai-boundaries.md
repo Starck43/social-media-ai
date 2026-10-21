@@ -433,6 +433,8 @@ safely.
     saves; admin form tests; existing scenario presets migrate without losing
     prompts; scenario `content_types` no longer changes collection; tenant and
     permission checks unchanged.
+    Status: IN_PROGRESS (E1–E2 implemented in the task editor and create
+    modal; E3–E5 open).
 
   - **F. Migrate task 2027 and remove source 3174.** Convert the task to
     task-scoped lanes (`Древиз`, `Вревиз`, `Кабанов`, `Италия поездка`),

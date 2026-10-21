@@ -24,7 +24,10 @@ every source. Stage E delivers the task editor split
 picker with hidden task-local query lanes, scenario `content_types` as supported
 media, admin help/columns for the collection payload, lanes and collected items,
 and one shared writer (`app/services/collection/intent.py::apply_collection`)
-for web, CLI, API and chat. Stages C–D4 are merged into `dev` (integration merges
+for web, CLI, API and chat. Stage F applied the data migration of task 2027
+(task-scoped lanes, the legacy search source retired, the scenario output
+contract pinned); its live dry-run waits for Q-5. Stages C–D4 are merged into
+`dev` (integration merges
 `3e4da0d` and `fc7ff52`). Until P5-T14
 is `READY`/`DONE`, runtime behavior in
 [COLLECTION](../COLLECTION.md), [task selection](task-selection.md) and
@@ -336,16 +339,29 @@ One Alembic revision (after the current head):
   `collection.content_types=["posts"]` on read/default and keep current
   behavior.
 
-Data migration for task 2027:
+Data migration for task 2027 (applied on 2026-10-21, code `c9cc0b4`):
 
-- create task-scoped query lanes for `Древиз`, `Вревиз`, `Кабанов`,
-  `Италия поездка`;
+- task-scoped query lanes for `Древиз`, `Вревиз`, `Кабанов`,
+  `Италия поездка` were created as sources `3176`–`3179`
+  (`owner_task_id=2027`) and linked next to the walls `3145` and `3160`;
 - `content_types=["posts","comments"]`, limit 1000, date from 2026-10-01,
-  city `Киров` in `prefer` mode;
-- deactivate/delete source 3174 after lane parity;
-- fix scenario 1695's `output_schema` (the prompt currently asks for fields the
-  generated schema does not contain); keep `topic_hint` if chains are retained;
-- run a live dry-run only after Q-5 unblocks VK search methods.
+  city `Киров` in `prefer` mode are stored in the task's `collection` block;
+- source 3174 was deactivated and unlinked (the row is kept for its trail);
+- scenario 1695's `output_schema` was written explicitly, so the fields its
+  prompt asks for are validated (`topic_hint` stays in the contract);
+- the live dry-run is still waiting for Q-5 to unblock the VK search methods.
+
+The migration itself is a reviewed tool, not a one-off script:
+`python -m cli.main collection lanes <task_id> --query … --apply` plans first
+and writes second, and
+`python -m cli.main scenarios output-schema <scenario_id> --add-field … --apply`
+does the same for a scenario contract. Both are dry-run by default.
+
+What the runtime still does not do: it resolves the task's sources and builds a
+per-source collection context, but it does not execute the planned lanes, so
+per-lane counts and the lane limit warning are not written yet (Q-6). A
+task-scoped search lane runs as an ordinary source, and the VK search methods
+answer `1051`, which the handler already reports per source as `api_1051`.
 
 ## Acceptance
 

@@ -24,6 +24,8 @@ is never blocked behind a long collection.
   **Task-owned query lanes (P5-T14):** a query source (`sources.owner_task_id`)
   is a `Source` owned by one task, hidden from the global source list and from
   the task's “all active” fallback; only an explicit link activates it.
+  `python -m cli.main collection lanes <task_id>` moves an existing task onto
+  its own lanes (dry run unless `--apply`).
 - `jobs` — the queue: `job_type`, `payload`, `status`
   (`pending` | `running` | `done` | `failed`), `run_at`, `locked_at`,
   `attempts`, `max_attempts`, `result`, `error`, `llm_cost` (USD spent by the

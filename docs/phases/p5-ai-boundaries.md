@@ -460,11 +460,55 @@ safely.
     Accept: 3174 is gone; 2027 runs the lanes; per-lane counts and the limit
     warning are visible; dry run writes no rows and calls no model; 1051 is
     reported as the named blocker while credentials remain unavailable.
+    Status: BLOCKED — the data part is applied to the live workspace, the live
+    dry-run waits for Q-5.
+    Evidence (code `c9cc0b4`, live workspace `owner` on 2026-10-21):
+    - Tooling: `app/services/collection/lane_migration.py` (pure plan + the
+      single idempotent writer) with the CLI `collection lanes`
+      (`cli/commands/collection.py`), and `app/services/ai/scenario_output_fields.py`
+      with the CLI `scenarios output-schema` (`cli/commands/scenarios.py`).
+      Both commands are dry-run by default; a lane is reused by
+      (workspace, platform, `external_id`), a retired source is deactivated and
+      unlinked but never deleted, and a lane of another task is never linked or
+      retired.
+    - Schema: migration `0108` was applied to the live `public` schema
+      (0107 → 0108): `sources.owner_task_id` plus `collection_seen`,
+      `collection_candidates`, `collection_lane_runs`. The 943 existing
+      `collected_items` rows kept their content with `content_type='post'`.
+    - Task 2027: four task-scoped lanes were created — `3176` (`Древиз`),
+      `3177` (`Вревиз`), `3178` (`Кабанов`), `3179` (`Италия поездка`), each
+      `source_type=SEARCH`, `owner_task_id=2027`, `params={"query": …,
+      "mode": "auto"}` — and linked together with the walls `3145` and `3160`.
+      Legacy search source `3174` is deactivated and unlinked. The payload now
+      carries the canonical block (`content_types=["posts","comments"]`,
+      `limit=1000`, `queries` = the four phrases, `city` = `Киров`/`prefer`,
+      `date_window.start=2026-10-01`); the legacy `cli_dates`, `keywords_list`,
+      `brands` and `collect_before_analyze` keys survived. The task keeps
+      `dry_run=True` and stays inactive.
+    - Scenario 1695: an explicit `output_schema` is stored (26 properties; the
+      derived contract plus `is_relevant`, `author_role`, `author_city`,
+      `is_interior_designer`, `participants`, `cities`, `dates`, `quote`, `url`;
+      `is_relevant` is required, `required` ⊆ `properties`). The base prompt now
+      enumerates exactly those fields. The contract compiles into the analyzer
+      model, a complete answer is accepted and an answer without
+      `is_relevant` is rejected with `output_required_field_missing` — the
+      prompt's fields are validated now.
+    - Tests: 31 passed for the two new modules; the CLI scope passed 30 with
+      3 pre-existing failures (no bootstrap sources in `test_schema`); the AI
+      contract scope passed 57 with 1 pre-existing failure; the scenario suites
+      passed 49 with 5 pre-existing failures; `test_scenario_output_contract.py`
+      passed 22 with its 11 pre-existing failures (stale isolated analyzer stub).
+      The pre-existing failures are unchanged on the base revision.
+    - Still open: the live dry-run (Q-5/`1051` — `newsfeed.search` answers
+      1051, and the runtime already names it as `api_1051` per source), the
+      per-lane counts and the limit warning (the runtime does not execute the
+      planned lanes yet — Q-6), and whether `is_relevant` should become a real
+      runtime gate (Q-7).
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`
   carry no competing ownership. Stages A–D are DONE, stage E is READY for
-  review, and F remains. Owns:
+  review, and F is applied but blocked on the live dry-run (Q-5). Owns:
   `docs/design/collection-plan.md`, `app/services/collection/`,
   `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
   `app/models/collection/`, `app/models/scheduling/`, `app/web/tasks.py`,
@@ -472,7 +516,7 @@ safely.
   `app/templates/`, `app/core/scenario_presets.py`, `app/admin/views.py`,
   `app/agent/toolset/`, `cli/`, `app/api/`, `app/services/ai/scenario*.py`,
   one Alembic revision, tests. Owner: owner (fork #2); status: IN_PROGRESS
-  (stages A–D DONE, E READY, F open).
+  (stages A–D DONE, E READY, F applied but blocked on Q-5).
   Evidence: [collection plan](../design/collection-plan.md); append stage
   evidence at the exact tested SHA. Test routing: primary OpenCode
   test-runner subagent per stage (RULES.md R10), shared DB sequential (R8).

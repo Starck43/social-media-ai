@@ -315,6 +315,54 @@ python -m cli.main task pause <name> --resume  # resume
 
 ---
 
+## Collection lanes
+
+Move a task that still collects from workspace-level search sources onto its
+own **task-scoped lanes**: one `Source` row per search phrase that only this
+task may read (`sources.owner_task_id`). The task payload receives the
+canonical `collection` block, written through the same writer the web editor
+and the API use.
+
+```bash
+python -m cli.main collection lanes <task_id> [options]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|---|---|---|
+| `--query` | — | Search phrase of one lane (repeatable); at least one is required |
+| `--content-types` | `posts` | Comma separated content types (`posts`, `comments`) |
+| `--limit` | `1000` | Collection limit of the task |
+| `--city` | — | City of the collection (`--city-mode` says how strict it is) |
+| `--city-mode` | `prefer` | City mode: `prefer`, `require`, `review` |
+| `--date-from` / `--date-to` | — | Collection window (`YYYY-MM-DD`) |
+| `--retire-source` | — | Legacy workspace-level search source to deactivate and unlink (repeatable) |
+| `--platform` | inferred | Platform of the lanes; inferred from the task's sources when they agree |
+| `--tenant` | — | Workspace slug or id; must match the task's workspace |
+| `--apply` | off | Write the plan. Without it the command only prints it |
+
+Without `--apply` nothing is written: the command prints the lanes it would
+create (`external_id`, name, phrase), the resulting `collection` block, the
+sources it would retire and the sources that stay linked.
+
+The migration is idempotent: a lane is looked up by
+(workspace, platform, `external_id`) and reused, so a second run creates no
+duplicates. A retired source is deactivated and unlinked, never deleted — the
+row keeps the trail of what it collected. A source that belongs to another
+task is never linked or retired.
+
+**Example:**
+```bash
+# Give task 2027 its own search lanes and retire the legacy search source
+python -m cli.main collection lanes 2027 --tenant owner \
+  --query "Древиз" --query "Вревиз" --query "Кабанов" --query "Италия поездка" \
+  --content-types posts,comments --limit 1000 --city "Киров" --city-mode prefer \
+  --date-from 2026-10-01 --retire-source 3174 --apply
+```
+
+---
+
 ## Digest
 
 Build and publish digests manually.
@@ -575,6 +623,47 @@ python -m cli.main scenarios seed-default --tenant owner
 
 # Replace existing default
 python -m cli.main scenarios seed-default --tenant owner --force
+```
+
+### Set Output Schema
+
+```bash
+python -m cli.main scenarios output-schema <scenario_id> [options]
+```
+
+Writes an explicit `output_schema` for a scenario. A scenario without one gets
+its contract derived from `analysis_types` + `scope` at run time, so the fields
+its prompt asks for are never validated. This command extends the derived
+contract with the named fields — the derived properties and their requirements
+stay untouched — and stores it per row through the guarded write path.
+
+**Options:**
+
+| Option | Default | Description |
+|---|---|---|
+| `--add-field` | — | Extra output field as `name:type` (repeatable); types: `string`, `number`, `integer`, `boolean`, `array`, `object`, `null` |
+| `--require` | — | Field name to add to `required` (repeatable); a name that is not a property is skipped with a warning |
+| `--base-prompt-file` | — | UTF-8 file with a new `base_prompt`, stored in the same reviewed operation |
+| `--tenant` | `owner` | Workspace slug or id |
+| `--apply` | off | Write the schema. Without it the command only prints the schema and the diff |
+
+A field that already exists in the contract is not overwritten: the existing
+definition is kept and reported as a warning. The candidate schema is checked
+against the scenario contract before it can reach the database.
+
+**Example:**
+```bash
+# Show what would be stored for scenario 1695 (dry run)
+python -m cli.main scenarios output-schema 1695 --tenant owner \
+  --add-field is_relevant:boolean --add-field author_role:string \
+  --add-field author_city:string --add-field is_interior_designer:boolean \
+  --add-field participants:array --add-field cities:array --add-field dates:array \
+  --add-field quote:string --add-field url:string --require is_relevant
+
+# Store it together with a reviewed prompt
+python -m cli.main scenarios output-schema 1695 --tenant owner \
+  --add-field is_relevant:boolean --add-field author_role:string \
+  --base-prompt-file ./prompt-1695.txt --require is_relevant --apply
 ```
 
 ---

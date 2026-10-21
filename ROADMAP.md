@@ -85,5 +85,24 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 <!-- Q-<n> — question; context: <link/file>; asked by: <agent>; status: OPEN|RESOLVED(delete row) -->
 
+- [ ] Q-6 — should the runtime execute the planned lanes (per-lane counts in
+  `collection_lane_runs`, `limit_reached` warning) or is the current per-source
+  execution enough? Context: `plan_collection`/`query_source_spec` are pure and
+  uncalled; `handle_collect` resolves the task's sources and builds a
+  per-source `CollectionContext`, so a task-scoped SEARCH lane runs as an
+  ordinary source and its failure is reported per source (`api_1051`), but no
+  lane-level counts or limit warnings are written.
+  Context: [collection plan](docs/design/collection-plan.md),
+  [p5 phase](docs/phases/p5-ai-boundaries.md); asked by: $local (opencode);
+  status: OPEN
+
+- [ ] Q-7 — should scenario 1695's `is_relevant` become a real runtime gate, or
+  stay a validated field only? Context: the analyzer's only relevance gate is
+  `scope["relevance_filter"]` + `is_meaningful` + `min_confidence`;
+  `is_relevant` is read nowhere, so writing it into `output_schema` only
+  validates the value.
+  Context: [p5 phase](docs/phases/p5-ai-boundaries.md); asked by: $local
+  (opencode); status: OPEN
+
 - [ ] Q-1 — compress `docs/validation/llm-budget-pg-runner.md` (807-line evidence ledger) to a short summary after P2-T01 activation completes; keep the example JSONs (pinned by `tests/test_budget_isolated_fixture_coherence.py`); context: docs/validation/; asked by: opencode; status: OPEN
 - [ ] Q-2 — verify source 2939 VK post origin and missing media references against the original API response, if obtainable; context: [VK raw content audit](docs/audits/2026-10-18-vk-raw-content.md); owner: codex-vk-raw-audit; status: OPEN

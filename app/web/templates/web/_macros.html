@@ -164,52 +164,67 @@
 {%- endmacro %}
 
 
-{# Collection intent («Кого искать», «Что искать», «Лимиты»).
+{# Collection intent («Кто искать», «Что искать», «Лимиты»).
 
    Plain server-rendered controls: the form still saves when JavaScript never
    runs, so every value the POST must carry is an attribute here, not an Alpine
    binding. The hidden `collection_configured` marker tells the handlers this
    block was part of the submission. `v` is a flat mapping (edit context or
-   `_collection_edit({})` defaults); `model` is the job_type path. #}
+   `_collection_edit({})` defaults); `model` is the job_type path.
+
+   The split is by search, and every label/hint names its search: «Кто искать»
+   is the population search (сообщества и люди), «Что искать» is the mention
+   search over the found material and the task's sources, and the text scope
+   («Ключевые слова» in the selection block) stays where it was. The author
+   city is deliberately not asked here: a stored block keeps its `city`, the
+   form just no longer offers it. #}
 {% macro task_collection_fields(v, idp='collection', model='editing.job_type') -%}
     {% set content_types = v.get('collection_content_types', ['posts']) %}
     {% set engagement_types = v.get('collection_engagement_types', []) %}
     <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
               class="space-y-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
-        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Кого искать</legend>
+        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Кто искать</legend>
         <input type="hidden" name="collection_configured" value="1">
         <div class="grid grid-cols-2 gap-3">
             <div>
-                <label for="{{ idp }}-city" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Город</label>
-                <input id="{{ idp }}-city" name="collection_city" maxlength="120"
-                       value="{{ v.get('collection_city', '') }}" placeholder="Киров" class="{{ control() }}">
-                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Поиск по словам город не фильтрует: он ранжирует найденное и отправляет неизвестное на проверку.</p>
+                <label for="{{ idp }}-discovery-queries" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Темы для поиска</label>
+                <input id="{{ idp }}-discovery-queries" name="collection_discovery_queries"
+                       value="{{ v.get('collection_discovery_queries', '') }}" placeholder="дизайн интерьера, ремонт"
+                       class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Поиск сообществ и людей: фразы через запятую описывают, кого искать.</p>
             </div>
             <div>
-                <label for="{{ idp }}-city-mode" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Режим города</label>
-                <select id="{{ idp }}-city-mode" name="collection_city_mode" class="{{ control() }}">
-                    <option value="prefer" {% if v.get('collection_city_mode', 'prefer') == 'prefer' %}selected{% endif %}>Предпочтительно</option>
-                    <option value="require" {% if v.get('collection_city_mode') == 'require' %}selected{% endif %}>Строго</option>
-                    <option value="review" {% if v.get('collection_city_mode') == 'review' %}selected{% endif %}>Неизвестное — на проверку</option>
+                <label for="{{ idp }}-discovery-queries-match" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Совпадение фраз</label>
+                <select id="{{ idp }}-discovery-queries-match" name="collection_discovery_queries_match" class="{{ control() }}">
+                    <option value="any" {% if v.get('collection_discovery_queries_match', 'any') == 'any' %}selected{% endif %}>любая фраза</option>
+                    <option value="all" {% if v.get('collection_discovery_queries_match') == 'all' %}selected{% endif %}>все фразы</option>
                 </select>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Тоже про поиск сообществ и людей: «любая фраза» — хотя бы одна, «все фразы» — только полное совпадение по всем.</p>
             </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
-            {{ switch_toggle("collection_people", "Искать людей", checked=v.get('collection_people', false)) }}
             {{ switch_toggle("collection_communities", "Искать сообщества", checked=v.get('collection_communities', false)) }}
+            {{ switch_toggle("collection_people", "Искать людей", checked=v.get('collection_people', false)) }}
         </div>
-        <div>
-            <label for="{{ idp }}-discovery-queries" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Темы для поиска людей и сообществ</label>
-            <input id="{{ idp }}-discovery-queries" name="collection_discovery_queries"
-                   value="{{ v.get('collection_discovery_queries', '') }}" placeholder="дизайн интерьера, ремонт"
-                   class="{{ control() }}">
-            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Независимо от поиска упоминаний. Найденные кандидаты не становятся источниками без подтверждения.</p>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label for="{{ idp }}-discovery-city" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Город поиска</label>
+                <input id="{{ idp }}-discovery-city" name="collection_discovery_city" maxlength="120"
+                       value="{{ v.get('collection_discovery_city', '') }}" placeholder="Киров" class="{{ control() }}">
+            </div>
+            <div>
+                <label for="{{ idp }}-discovery-city-id" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Id города</label>
+                <input id="{{ idp }}-discovery-city-id" name="collection_discovery_city_id" type="number" min="1"
+                       value="{{ v.get('collection_discovery_city_id', '') }}" class="{{ control() }}">
+            </div>
         </div>
+        <p class="-mt-2 text-xs text-slate-600 dark:text-slate-400">Про поиск сообществ и людей: сужает поиск кандидатов этим городом (id — код города ВКонтакте). Это не фильтр по городу автора записи.</p>
         <div class="grid grid-cols-2 gap-3">
             <div>
                 <label for="{{ idp }}-candidates-limit" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит кандидатов</label>
                 <input id="{{ idp }}-candidates-limit" name="collection_candidates_limit" type="number" min="1" max="1000"
                        value="{{ v.get('collection_candidates_limit', 100) }}" class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Находится поиском сообществ и людей; кандидаты не становятся источниками без подтверждения.</p>
             </div>
             <div>
                 <label for="{{ idp }}-candidates-confirm" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Подтверждение кандидатов</label>
@@ -250,11 +265,21 @@
                 ) }}
             </ul>
         </div>
-        <div>
-            <label for="{{ idp }}-queries" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Поиск упоминаний по словам</label>
-            <input id="{{ idp }}-queries" name="collection_queries" value="{{ v.get('collection_queries', '') }}"
-                   placeholder="Древиз, Италия поездка" class="{{ control() }}">
-            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Фразы через запятую; каждая становится отдельным поисковым запросом задачи.</p>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label for="{{ idp }}-queries" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Фразы для поиска упоминаний</label>
+                <input id="{{ idp }}-queries" name="collection_queries" value="{{ v.get('collection_queries', '') }}"
+                       placeholder="Древиз, Италия поездка" class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Фразы через запятую; каждая становится отдельным поисковым запросом задачи.</p>
+            </div>
+            <div>
+                <label for="{{ idp }}-queries-match" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Совпадение фраз</label>
+                <select id="{{ idp }}-queries-match" name="collection_queries_match" class="{{ control() }}">
+                    <option value="any" {% if v.get('collection_queries_match', 'any') == 'any' %}selected{% endif %}>любая фраза</option>
+                    <option value="all" {% if v.get('collection_queries_match') == 'all' %}selected{% endif %}>все фразы</option>
+                </select>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Про поиск упоминаний в найденном и в моих источниках: «любая фраза» — хотя бы одна, «все фразы» — только все сразу.</p>
+            </div>
         </div>
         <div>
             <label for="{{ idp }}-limit" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит объектов за прогон</label>

@@ -1058,8 +1058,9 @@ def _authored_post(external_id, author_id="7", text="пост"):
     }
 
 
-async def test_an_unknown_city_lands_in_needs_review(source):
-    """An author without a declared city waits for an operator, not a guess."""
+async def test_prefer_keeps_an_unknown_city_selected(source):
+    """A community that declares no city must not park every post: `prefer`
+    keeps the item and the reason says the city is unknown, not rejected."""
     c = _collector([_authored_post("4_1")])
     adapter = _CollectionAdapter(profiles={})
 
@@ -1070,8 +1071,8 @@ async def test_an_unknown_city_lands_in_needs_review(source):
         collection_context=_CollectionContext(adapter, engagements=(), city="Киров"),
     )
 
-    assert result["selected"] == 0
-    assert result["needs_review"] == 1
+    assert result["selected"] == 1
+    assert result["needs_review"] == 0
     assert result["staged"] == 1
     assert result["profiles"]["city"] == "Киров"
     assert result["profiles"]["requested"] == 1
@@ -1084,6 +1085,25 @@ async def test_an_unknown_city_lands_in_needs_review(source):
         "mismatch": 0,
     }
     row = await CollectedItem.objects.get(source_id=source.id, external_id="4_1")
+    assert row.selection_status == "selected"
+    assert row.selection_reason == "city_unknown"
+
+
+async def test_review_mode_still_sends_an_unknown_city_to_needs_review(source):
+    c = _collector([_authored_post("4_1b")])
+    adapter = _CollectionAdapter(profiles={})
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9206,
+        collection_context=_CollectionContext(adapter, engagements=(), city="Киров", mode="review"),
+    )
+
+    assert result["selected"] == 0
+    assert result["needs_review"] == 1
+    assert result["staged"] == 1
+    row = await CollectedItem.objects.get(source_id=source.id, external_id="4_1b")
     assert row.selection_status == "needs_review"
     assert row.selection_reason == "city_unknown"
 

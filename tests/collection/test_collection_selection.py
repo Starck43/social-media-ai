@@ -104,7 +104,9 @@ def test_staged_rows_carry_selection_status_and_comment_parent():
 # ---------------------------------------------------------------------------
 
 
-def test_city_prefer_keeps_a_known_mismatch_and_reviews_the_unknown():
+def test_city_prefer_keeps_a_known_mismatch_and_does_not_block_the_unknown():
+    """`prefer` never parks an item on the city: a known mismatch is noted,
+    an unknown city is kept with a reason that says so."""
     inside = _post("1_1", "пост", city="Киров")
     outside = _post("1_2", "пост", city="Москва")
     unknown = _post("1_3", "пост")
@@ -115,13 +117,15 @@ def test_city_prefer_keeps_a_known_mismatch_and_reviews_the_unknown():
         city=CityScope(name="Киров"),
     )
 
-    assert result.selected == [inside, outside]
-    assert result.needs_review == [unknown]
+    assert result.selected == [inside, outside, unknown]
+    assert result.needs_review == []
+    assert result.rejected == []
     assert result.city_matched == 1
+    assert result.count(CITY_UNKNOWN) == 1
     assert [(decision.status, decision.reason) for decision in result.decisions] == [
         (STATUS_SELECTED, "no_tracked_users"),
         (STATUS_SELECTED, CITY_MISMATCH),
-        (STATUS_NEEDS_REVIEW, CITY_UNKNOWN),
+        (STATUS_SELECTED, CITY_UNKNOWN),
     ]
 
 
@@ -135,6 +139,22 @@ def test_city_require_rejects_a_known_mismatch():
     assert result.rejected == [outside]
     assert result.needs_review == [unknown]
     assert [decision.reason for decision in result.decisions] == [CITY_MISMATCH, CITY_UNKNOWN]
+
+
+def test_city_review_still_parks_the_unknown_for_an_operator():
+    """`review` keeps its meaning: unknown → на проверку, a known mismatch is kept."""
+    outside = _post("1_1", "пост", city="Москва")
+    unknown = _post("1_2", "пост")
+
+    result = select_for_collection([outside, unknown], SelectionScope(), city=CityScope(name="Киров", mode="review"))
+
+    assert result.selected == [outside]
+    assert result.needs_review == [unknown]
+    assert result.rejected == []
+    assert [(decision.status, decision.reason) for decision in result.decisions] == [
+        (STATUS_SELECTED, CITY_MISMATCH),
+        (STATUS_NEEDS_REVIEW, CITY_UNKNOWN),
+    ]
 
 
 def test_city_does_not_reopen_an_item_rejected_by_the_text_layer():
@@ -151,7 +171,8 @@ def test_city_does_not_reopen_an_item_rejected_by_the_text_layer():
     assert result.decisions[0].reason == "no_text_match"
 
 
-def test_city_reviews_the_whole_thread_by_its_post_not_by_a_commenter():
+def test_city_prefer_selects_a_thread_whose_post_city_is_unknown():
+    """`prefer` must not park a community thread: the post's unknown city keeps it."""
     post = _post("1_1", "пост без фразы")
     comment = _post("1_1:9", "в комментарии Италия", author="2", content_type="comment", parent="1_1", city="Киров")
 
@@ -162,8 +183,31 @@ def test_city_reviews_the_whole_thread_by_its_post_not_by_a_commenter():
         city=CityScope(name="Киров"),
     )
 
-    # The post's author is unknown, so the thread waits for an operator even
-    # though the matching commenter declares the task's city.
+    # The thread is decided by its post, so the matching commenter cannot make
+    # the city count as matched — but in `prefer` an unknown post city only
+    # renames the reason, it no longer waits for an operator.
+    assert result.selected == [post, comment]
+    assert result.needs_review == []
+    assert result.reasons.get(CITY_UNKNOWN) == 2
+    assert [(decision.status, decision.reason) for decision in result.decisions] == [
+        (STATUS_SELECTED, CITY_UNKNOWN),
+        (STATUS_SELECTED, CITY_UNKNOWN),
+    ]
+
+
+def test_city_review_parks_a_thread_whose_post_city_is_unknown():
+    post = _post("1_1", "пост без фразы")
+    comment = _post("1_1:9", "в комментарии Италия", author="2", content_type="comment", parent="1_1", city="Киров")
+
+    result = select_for_collection(
+        [post, comment],
+        SelectionScope(keywords=("Италия",)),
+        thread=True,
+        city=CityScope(name="Киров", mode="review"),
+    )
+
+    # The post's author is unknown, so in `review` the thread waits for an
+    # operator even though the matching commenter declares the task's city.
     assert result.selected == []
     assert result.needs_review == [post, comment]
     assert [decision.reason for decision in result.decisions] == [CITY_UNKNOWN, CITY_UNKNOWN]

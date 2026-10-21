@@ -27,6 +27,13 @@ CITY_REQUIRE = "require"
 CITY_REVIEW = "review"
 CITY_MODES = (CITY_PREFER, CITY_REQUIRE, CITY_REVIEW)
 
+# How the phrase lists of one search combine: "any" — at least one phrase
+# matches, "all" — every phrase must match. The mention-search queries and the
+# discovery (population) phrases each carry their own mode.
+MATCH_ANY = "any"
+MATCH_ALL = "all"
+MATCH_MODES = (MATCH_ANY, MATCH_ALL)
+
 CONFIRM_MANUAL = "manual"
 CONFIRM_AUTO = "auto"
 CONFIRM_MODES = (CONFIRM_MANUAL, CONFIRM_AUTO)
@@ -55,12 +62,16 @@ COLLECTION_ERROR_TEXT = {
     "collection_limit_invalid": "лимит сбора должен быть целым числом",
     "collection_limit_out_of_range": "лимит сбора вне допустимого диапазона",
     "collection_queries_invalid": "проверьте список фраз для поиска упоминаний",
+    "collection_queries_match_invalid": "неизвестный режим совпадения фраз поиска упоминаний",
     "collection_city_name_invalid": "укажите название города",
     "collection_city_mode_invalid": "неизвестный режим города",
     "collection_date_window_reversed": "дата начала позже даты окончания",
     "collection_start_date_invalid": "некорректная дата начала",
     "collection_end_date_invalid": "некорректная дата окончания",
     "collection_discovery_queries_invalid": "проверьте фразы для поиска людей и сообществ",
+    "collection_discovery_queries_match_invalid": "неизвестный режим совпадения фраз поиска людей и сообществ",
+    "collection_discovery_city_name_invalid": "укажите название города поиска людей и сообществ",
+    "collection_discovery_city_id_invalid": "некорректный идентификатор города поиска людей и сообществ",
     "collection_comments_max_per_post_out_of_range": "лимит комментариев на запись вне допустимого диапазона",
     "collection_comments_total_out_of_range": "общий лимит комментариев вне допустимого диапазона",
     "collection_candidates_limit_out_of_range": "лимит кандидатов вне допустимого диапазона",
@@ -88,12 +99,26 @@ class CityIntent:
 
 
 @dataclass(frozen=True)
+class DiscoveryCityIntent:
+    """The city the population search is scoped to, with the platform's city id.
+
+    This is not the author-city filter (the top-level ``city``): it narrows
+    where the people/community search looks, it never rejects a collected item.
+    """
+
+    name: str
+    id: int | None = None
+
+
+@dataclass(frozen=True)
 class DiscoveryIntent:
     """People/community discovery, independent from mention-search queries."""
 
     people: bool = False
     communities: bool = False
     queries: tuple[str, ...] = ()
+    queries_match: str = MATCH_ANY
+    city: DiscoveryCityIntent | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +153,7 @@ class CollectionIntent:
     start_date: date | None = None
     end_date: date | None = None
     queries: tuple[str, ...] = ()
+    queries_match: str = MATCH_ANY
     city: CityIntent | None = None
     discovery: DiscoveryIntent = field(default_factory=DiscoveryIntent)
     comments: CommentLimits = field(default_factory=CommentLimits)
@@ -181,6 +207,7 @@ def parse_collection_intent(payload: Mapping[str, Any] | None) -> CollectionInte
 
     start_date, end_date = _date_window(raw, payload)
     queries = _phrases(raw.get("queries"), "collection_queries")
+    queries_match = _match_mode(raw.get("queries_match"), "collection_queries_match")
     city = _city(raw.get("city"))
     discovery = _discovery(raw.get("discovery"))
     comments = _comment_limits(raw.get("comments"))
@@ -194,6 +221,7 @@ def parse_collection_intent(payload: Mapping[str, Any] | None) -> CollectionInte
         start_date=start_date,
         end_date=end_date,
         queries=queries,
+        queries_match=queries_match,
         city=city,
         discovery=discovery,
         comments=comments,
@@ -214,10 +242,12 @@ def collection_block(intent: CollectionIntent) -> dict[str, Any]:
         "engagement_types": list(intent.engagement_types),
         "limit": intent.limit,
         "queries": list(intent.queries),
+        "queries_match": intent.queries_match,
         "discovery": {
             "people": intent.discovery.people,
             "communities": intent.discovery.communities,
             "queries": list(intent.discovery.queries),
+            "queries_match": intent.discovery.queries_match,
         },
         "comments": {
             "max_per_post": intent.comments.max_per_post,
@@ -228,6 +258,8 @@ def collection_block(intent: CollectionIntent) -> dict[str, Any]:
             "confirm": intent.candidates.confirm,
         },
     }
+    if intent.discovery.city is not None:
+        block["discovery"]["city"] = {"name": intent.discovery.city.name, "id": intent.discovery.city.id}
     if intent.city is not None:
         block["city"] = {"name": intent.city.name, "mode": intent.city.mode}
     if intent.start_date is not None or intent.end_date is not None:
@@ -351,6 +383,20 @@ def _phrases(value: Any, field_name: str) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _match_mode(value: Any, field_name: str) -> str:
+    """`any`/`all` for a phrase list; absent (or blank) means `any`."""
+    if value is None:
+        return MATCH_ANY
+    if not isinstance(value, str):
+        raise CollectionIntentError(f"{field_name}_invalid")
+    mode = value.strip().lower()
+    if not mode:
+        return MATCH_ANY
+    if mode not in MATCH_MODES:
+        raise CollectionIntentError(f"{field_name}_invalid")
+    return mode
+
+
 def _date(value: Any, field_name: str) -> date | None:
     if value is None or value == "":
         return None
@@ -405,12 +451,36 @@ def _city(value: Any) -> CityIntent | None:
     return CityIntent(name=" ".join(name.split()), mode=mode)
 
 
+def _discovery_city(value: Any) -> DiscoveryCityIntent | None:
+    """The population-search city: a name plus the platform's city id, optional."""
+    if value is None:
+        return None
+    data = _mapping(value, "collection_discovery_city")
+    name = data.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise CollectionIntentError("collection_discovery_city_name_invalid")
+    raw_id = data.get("id")
+    if raw_id is None:
+        city_id: int | None = None
+    elif isinstance(raw_id, bool):
+        raise CollectionIntentError("collection_discovery_city_id_invalid")
+    elif isinstance(raw_id, int):
+        city_id = raw_id
+    elif isinstance(raw_id, str) and raw_id.strip().isdigit():
+        city_id = int(raw_id.strip())
+    else:
+        raise CollectionIntentError("collection_discovery_city_id_invalid")
+    return DiscoveryCityIntent(name=" ".join(name.split()), id=city_id)
+
+
 def _discovery(value: Any) -> DiscoveryIntent:
     data = _mapping(value, "collection_discovery")
     return DiscoveryIntent(
         people=_bool(data.get("people"), "collection_discovery_people"),
         communities=_bool(data.get("communities"), "collection_discovery_communities"),
         queries=_phrases(data.get("queries"), "collection_discovery_queries"),
+        queries_match=_match_mode(data.get("queries_match"), "collection_discovery_queries_match"),
+        city=_discovery_city(data.get("city")),
     )
 
 

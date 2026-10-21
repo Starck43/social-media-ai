@@ -397,9 +397,11 @@ THREAD_MATCHED = "thread_matched"
 THREAD_COMMENT_MATCHED = "thread_comment_matched"
 
 # A city is not a post attribute: it is declared by a profile, so it can be
-# absent, and absence is neither a pass nor a silent drop. `prefer`/`review`
-# keep a known mismatch as a ranked, selected row and send the unknown city to
-# an operator; `require` is the only mode that rejects a known mismatch.
+# absent, and absence is neither a pass nor a silent drop. `prefer` keeps a
+# known mismatch as a ranked, selected row and does NOT let an unknown city
+# block the item (a profile that declares no city is normal); `review` is the
+# mode that sends the unknown city to an operator; `require` is the only mode
+# that rejects a known mismatch.
 CITY_PREFER = "prefer"
 CITY_REQUIRE = "require"
 CITY_REVIEW = "review"
@@ -441,12 +443,17 @@ class CityScope:
 def city_decision(item: Any, city: CityScope) -> tuple[str, str]:
     """Collection status/reason for one item's author-declared city.
 
-    Unknown never means rejected: an unenriched author is the normal state of a
-    platform without profile support, and the operator, not a guess, decides.
+    Only `require` rejects a known mismatch. An unknown city never means
+    rejected either: `prefer` keeps the item selected (the reason says the city
+    is unknown, not that it was rejected — a community without a declared city
+    is normal and must not park every post outside analysis), while `review`
+    and `require` send the unknown city to an operator instead.
     """
     value = _author_city(item)
     if value is None:
-        return STATUS_NEEDS_REVIEW, CITY_UNKNOWN
+        if city.mode in (CITY_REQUIRE, CITY_REVIEW):
+            return STATUS_NEEDS_REVIEW, CITY_UNKNOWN
+        return STATUS_SELECTED, CITY_UNKNOWN
     if city.matches(value):
         return STATUS_SELECTED, CITY_MATCHED
     if city.mode == CITY_REQUIRE:
@@ -544,7 +551,11 @@ def select_for_collection(
                     kept_reason = (
                         CITY_MISMATCH
                         if city_reason == CITY_MISMATCH
-                        else (THREAD_COMMENT_MATCHED if _is_comment(item) and passed else THREAD_MATCHED)
+                        else (
+                            CITY_UNKNOWN
+                            if city_reason == CITY_UNKNOWN
+                            else (THREAD_COMMENT_MATCHED if _is_comment(item) and passed else THREAD_MATCHED)
+                        )
                     )
                     decisions.append(SelectionDecision(item=item, status=STATUS_SELECTED, reason=kept_reason))
                 else:
@@ -566,6 +577,10 @@ def select_for_collection(
                     status, kept_reason = STATUS_REJECTED, CITY_MISMATCH
                 elif city_reason == CITY_MISMATCH:
                     kept_reason = CITY_MISMATCH
+                elif city_reason == CITY_UNKNOWN:
+                    # `prefer`: kept, but the outcome says the city is unknown
+                    # instead of silently pretending the city matched.
+                    kept_reason = CITY_UNKNOWN
                 else:
                     city_matched += 1
             decisions.append(SelectionDecision(item=item, status=status, reason=kept_reason))

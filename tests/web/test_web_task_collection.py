@@ -130,15 +130,17 @@ async def client():
 def _collection_form(**overrides) -> dict:
     data = {
         "collection_configured": "1",
-        "collection_city": "Киров",
-        "collection_city_mode": "prefer",
-        "collection_people": "on",
-        "collection_communities": "on",
-        "collection_discovery_queries": "дизайн интерьера, ремонт",
         "collection_queries": "Древиз, Италия поездка",
+        "collection_queries_match": "any",
         "collection_content_types": ["posts", "comments"],
         "collection_engagement_types": ["likes"],
         "collection_limit": "500",
+        "collection_discovery_queries": "дизайн интерьера, ремонт",
+        "collection_discovery_queries_match": "all",
+        "collection_discovery_city": "Киров",
+        "collection_discovery_city_id": "45",
+        "collection_people": "on",
+        "collection_communities": "on",
         "collection_comments_max_per_post": "50",
         "collection_comments_total": "1500",
         "collection_candidates_limit": "20",
@@ -154,14 +156,16 @@ EXPECTED_COLLECTION = {
     "engagement_types": ["likes"],
     "limit": 500,
     "queries": ["Древиз", "Италия поездка"],
+    "queries_match": "any",
     "discovery": {
         "people": True,
         "communities": True,
         "queries": ["дизайн интерьера", "ремонт"],
+        "queries_match": "all",
+        "city": {"name": "Киров", "id": 45},
     },
     "comments": {"max_per_post": 50, "total": 1500},
     "candidates": {"limit": 20, "confirm": "auto"},
-    "city": {"name": "Киров", "mode": "prefer"},
     "date_window": {"start": "2026-09-01", "end": None},
 }
 
@@ -215,8 +219,21 @@ async def test_edit_page_round_trips_the_collection_block(client: AsyncClient) -
         page = await client.get(f"/app/tasks/{task.id}/edit")
         assert page.status_code == 200
         assert 'name="collection_configured" value="1"' in page.text
-        assert 'name="collection_city"' in page.text
+        # The author city is no longer part of the form: only the population
+        # («Город поиска») and the match modes are asked.
+        assert 'name="collection_city"' not in page.text
+        assert 'name="collection_city_mode"' not in page.text
+        assert 'name="collection_discovery_city" maxlength="120"' in page.text
         assert 'value="Киров"' in page.text
+        assert 'name="collection_discovery_city_id"' in page.text
+        assert 'value="45"' in page.text
+        # The two match selects round-trip the stored modes: discovery stored
+        # "all" (so an «все фразы» option is selected) and the mention-search
+        # select offers "any" (selected — the stored mode).
+        assert 'name="collection_discovery_queries_match"' in page.text
+        assert 'name="collection_queries_match"' in page.text
+        assert re.search(r'<option value="all" selected>все фразы</option>', page.text)
+        assert re.search(r'<option value="any" selected>любая фраза</option>', page.text)
         assert 'value="Древиз, Италия поездка"' in page.text
         assert 'value="500"' in page.text
         assert 'value="50"' in page.text
@@ -228,7 +245,8 @@ async def test_edit_page_round_trips_the_collection_block(client: AsyncClient) -
         assert re.search(r'name="collection_engagement_types" value="likes"[^>]*checked', page.text)
         assert not re.search(r'name="collection_engagement_types" value="reposts"[^>]*checked', page.text)
         # The section headings the split editor promises.
-        assert "Кого искать" in page.text
+        assert "Кто искать" in page.text
+        assert "Кого искать" not in page.text
         assert "Что искать" in page.text
         assert "Где читать" in page.text
         assert "Лимиты комментариев" in page.text
@@ -260,14 +278,17 @@ async def test_update_rewrites_and_clears_the_block(client: AsyncClient) -> None
                 "scenario_id": str(scenario.id),
                 "start_date": "2026-09-01",
                 "_csrf": csrf,
-                # A city cleared in the form must disappear from the block.
+                # A city or population cleared in the form must disappear from
+                # the block; the match modes come back as their defaults.
                 **_collection_form(
-                    collection_city="",
-                    collection_city_mode="prefer",
                     collection_queries="",
+                    collection_queries_match="",
                     collection_people="",
                     collection_communities="",
                     collection_discovery_queries="",
+                    collection_discovery_queries_match="",
+                    collection_discovery_city="",
+                    collection_discovery_city_id="",
                     collection_content_types=["comments"],
                     collection_engagement_types=[],
                 ),
@@ -280,8 +301,15 @@ async def test_update_rewrites_and_clears_the_block(client: AsyncClient) -> None
         assert block["content_types"] == ["comments"]
         assert block["engagement_types"] == []
         assert block["queries"] == []
-        assert block["discovery"] == {"people": False, "communities": False, "queries": []}
+        assert block["queries_match"] == "any"
+        assert block["discovery"] == {
+            "people": False,
+            "communities": False,
+            "queries": [],
+            "queries_match": "any",
+        }
         assert "city" not in block
+        assert "city" not in block["discovery"]
 
         # Switching away from analysis drops the block entirely.
         csrf = await _csrf(client, f"/app/tasks/{task.id}/edit")
@@ -353,6 +381,27 @@ async def test_malformed_collection_fails_the_save(client: AsyncClient) -> None:
         with tenant_scope(bypass=True):
             updated = await AgentTask.objects.get(id=task.id)
         assert updated.payload["collection"]["content_types"] == ["posts", "comments"]
+
+        # A non-integer population-city id is a parser code, shown to the
+        # operator instead of silently collecting the wrong population.
+        csrf = await _csrf(client, f"/app/tasks/{task.id}/edit")
+        resp = await client.post(
+            f"/app/tasks/{task.id}",
+            data={
+                "name": task.name,
+                "job_type": "analyze",
+                "cron_expr": "0 * * * *",
+                "scenario_id": str(scenario.id),
+                "start_date": "2026-09-01",
+                "_csrf": csrf,
+                **_collection_form(collection_discovery_city_id="abc"),
+            },
+        )
+        assert resp.status_code == 200
+        assert "collection_discovery_city_id_invalid" in resp.text
+        with tenant_scope(bypass=True):
+            updated = await AgentTask.objects.get(id=task.id)
+        assert updated.payload["collection"] == EXPECTED_COLLECTION
     finally:
         if task is not None and scenario is not None:
             await _cleanup(user, tenant_id, (AgentTask, task), (AgentScenario, scenario))

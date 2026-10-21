@@ -22,8 +22,14 @@ RAW = {
     "engagement_types": ["likes"],
     "limit": 250,
     "queries": ["доставка", " Доставка "],
+    "queries_match": "all",
     "city": {"name": " Киров ", "mode": "prefer"},
-    "discovery": {"people": True, "queries": ["дизайн"]},
+    "discovery": {
+        "people": True,
+        "queries": ["дизайн"],
+        "queries_match": "all",
+        "city": {"name": " Киров ", "id": 45},
+    },
     "comments": {"max_per_post": 5, "total": 40},
     "candidates": {"limit": 25, "confirm": "auto"},
     "date_window": {"start": "2026-10-01", "end": None},
@@ -38,11 +44,27 @@ def test_block_is_canonical_from_the_parser() -> None:
     assert block["engagement_types"] == ["likes"]
     assert block["limit"] == 250
     assert block["queries"] == ["доставка"], "phrases are de-duplicated case-insensitively"
+    assert block["queries_match"] == "all"
     assert block["city"] == {"name": "Киров", "mode": "prefer"}
-    assert block["discovery"] == {"people": True, "communities": False, "queries": ["дизайн"]}
+    assert block["discovery"] == {
+        "people": True,
+        "communities": False,
+        "queries": ["дизайн"],
+        "queries_match": "all",
+        "city": {"name": "Киров", "id": 45},
+    }
     assert block["comments"] == {"max_per_post": 5, "total": 40}
     assert block["candidates"] == {"limit": 25, "confirm": "auto"}
     assert block["date_window"] == {"start": "2026-10-01", "end": None}
+
+
+def test_defaults_are_always_emitted_for_match_modes() -> None:
+    """Every surface stores the same shape, so an absent mode still reads `any`."""
+    block = apply_collection({}, {"content_types": ["posts"]}, job_type="analyze")["collection"]
+
+    assert block["queries_match"] == "any"
+    assert block["discovery"]["queries_match"] == "any"
+    assert "city" not in block["discovery"]
 
 
 def test_writer_round_trips_its_own_output() -> None:
@@ -75,3 +97,17 @@ def test_writer_rejects_a_malformed_block_with_an_operator_message() -> None:
     message = collection_error_message(str(error.value))
     assert "лимит сбора" in message
     assert "collection_limit_out_of_range" in message
+
+
+def test_writer_rejects_an_unknown_match_mode() -> None:
+    with pytest.raises(CollectionIntentError) as error:
+        apply_collection({}, {"queries_match": "mostly"}, job_type="analyze")
+    message = collection_error_message(str(error.value))
+    assert "совпадения фраз" in message
+    assert "collection_queries_match_invalid" in message
+
+
+def test_writer_rejects_a_city_id_that_is_not_a_number() -> None:
+    with pytest.raises(CollectionIntentError) as error:
+        apply_collection({}, {"discovery": {"city": {"name": "Киров", "id": "восемь"}}}, job_type="analyze")
+    assert str(error.value) == "collection_discovery_city_id_invalid"

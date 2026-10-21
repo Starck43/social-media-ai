@@ -30,7 +30,7 @@ from app.services.collection.intent import (
 	CONFIRM_MODES,
 	CollectionIntent,
 	CollectionIntentError,
-	collection_block,
+	apply_collection,
 	collection_error_message,
 	parse_collection_intent,
 )
@@ -215,12 +215,14 @@ def _split_intent_phrases(raw: str) -> list[str]:
 def _collection_block(
 	job_type: str,
 	*,
-	city: str,
-	city_mode: str,
 	people: str,
 	communities: str,
 	discovery_queries: str,
+	discovery_queries_match: str,
+	discovery_city: str,
+	discovery_city_id: str,
 	queries: str,
+	queries_match: str,
 	content_types: list[str],
 	engagement_types: list[str],
 	limit: str,
@@ -235,7 +237,9 @@ def _collection_block(
 	Raises `ValueError` with a bounded message when the parser rejects a known
 	value: a bad save must not stage a population the operator did not ask for.
 	Returns an empty dict for every job type that does not collect, so the
-	caller can drop a stale block when the task type changes.
+	caller can drop a stale block when the task type changes. The block is
+	written through the shared writer (`apply_collection`), so the web form
+	stores exactly the shape the CLI, API and chat tools store.
 	"""
 	if job_type not in COLLECTION_JOB_TYPES:
 		return {}
@@ -251,14 +255,21 @@ def _collection_block(
 		raw["limit"] = limit.strip()
 	if queries.strip():
 		raw["queries"] = _split_intent_phrases(queries)
-	if city.strip():
-		raw["city"] = {"name": city.strip(), "mode": (city_mode or CITY_PREFER).strip()}
-	if people == "on" or communities == "on" or discovery_queries.strip():
-		raw["discovery"] = {
+	raw["queries_match"] = (queries_match or "").strip()
+	if people == "on" or communities == "on" or discovery_queries.strip() or discovery_city.strip():
+		discovery: dict[str, Any] = {
 			"people": people == "on",
 			"communities": communities == "on",
 			"queries": _split_intent_phrases(discovery_queries),
+			"queries_match": (discovery_queries_match or "").strip(),
 		}
+		if discovery_city.strip():
+			city_block: dict[str, Any] = {"name": discovery_city.strip()}
+			city_id = (discovery_city_id or "").strip()
+			if city_id:
+				city_block["id"] = city_id
+			discovery["city"] = city_block
+		raw["discovery"] = discovery
 	if comments_max_per_post.strip() or comments_total.strip():
 		raw["comments"] = {}
 		if comments_max_per_post.strip():
@@ -278,10 +289,10 @@ def _collection_block(
 		}
 
 	try:
-		intent = parse_collection_intent({"collection": raw})
+		written = apply_collection({}, raw, job_type=job_type)
 	except CollectionIntentError as exc:
 		raise ValueError(collection_error_message(str(exc))) from None
-	return collection_block(intent)
+	return written["collection"]
 
 
 def _collection_edit(payload: dict[str, Any] | None) -> dict[str, Any]:
@@ -301,6 +312,12 @@ def _collection_edit(payload: dict[str, Any] | None) -> dict[str, Any]:
 		"end_date": intent.end_date.isoformat() if intent.end_date else "",
 		"collection_city": intent.city.name if intent.city else "",
 		"collection_city_mode": intent.city.mode if intent.city else CITY_PREFER,
+		"collection_queries_match": intent.queries_match,
+		"collection_discovery_queries_match": intent.discovery.queries_match,
+		"collection_discovery_city": intent.discovery.city.name if intent.discovery.city else "",
+		"collection_discovery_city_id": (
+			intent.discovery.city.id if intent.discovery.city and intent.discovery.city.id is not None else ""
+		),
 		"collection_people": intent.discovery.people,
 		"collection_communities": intent.discovery.communities,
 		"collection_discovery_queries": ", ".join(intent.discovery.queries),
@@ -873,12 +890,14 @@ async def task_create(
 		dry_run: str = Form(""),
 		run_now: str = Form(""),
 		collection_configured: str = Form(""),
-		collection_city: str = Form(""),
-		collection_city_mode: str = Form("prefer"),
 		collection_people: str = Form(""),
 		collection_communities: str = Form(""),
 		collection_discovery_queries: str = Form(""),
+		collection_discovery_queries_match: str = Form("any"),
+		collection_discovery_city: str = Form(""),
+		collection_discovery_city_id: str = Form(""),
 		collection_queries: str = Form(""),
+		collection_queries_match: str = Form("any"),
 		collection_content_types: list[str] = Form([]),
 		collection_engagement_types: list[str] = Form([]),
 		collection_limit: str = Form(""),
@@ -981,12 +1000,14 @@ async def task_create(
 		try:
 			collection_block = _collection_block(
 				job_type,
-				city=collection_city,
-				city_mode=collection_city_mode,
 				people=collection_people,
 				communities=collection_communities,
 				discovery_queries=collection_discovery_queries,
+				discovery_queries_match=collection_discovery_queries_match,
+				discovery_city=collection_discovery_city,
+				discovery_city_id=collection_discovery_city_id,
 				queries=collection_queries,
+				queries_match=collection_queries_match,
 				content_types=collection_content_types,
 				engagement_types=collection_engagement_types,
 				limit=collection_limit,
@@ -1728,12 +1749,14 @@ async def task_update(
 		run_now: str = Form(""),
 		return_to_detail: str = Form(""),
 		collection_configured: str = Form(""),
-		collection_city: str = Form(""),
-		collection_city_mode: str = Form("prefer"),
 		collection_people: str = Form(""),
 		collection_communities: str = Form(""),
 		collection_discovery_queries: str = Form(""),
+		collection_discovery_queries_match: str = Form("any"),
+		collection_discovery_city: str = Form(""),
+		collection_discovery_city_id: str = Form(""),
 		collection_queries: str = Form(""),
+		collection_queries_match: str = Form("any"),
 		collection_content_types: list[str] = Form([]),
 		collection_engagement_types: list[str] = Form([]),
 		collection_limit: str = Form(""),
@@ -1868,12 +1891,14 @@ async def task_update(
 		try:
 			collection_block = _collection_block(
 				job_type,
-				city=collection_city,
-				city_mode=collection_city_mode,
 				people=collection_people,
 				communities=collection_communities,
 				discovery_queries=collection_discovery_queries,
+				discovery_queries_match=collection_discovery_queries_match,
+				discovery_city=collection_discovery_city,
+				discovery_city_id=collection_discovery_city_id,
 				queries=collection_queries,
+				queries_match=collection_queries_match,
 				content_types=collection_content_types,
 				engagement_types=collection_engagement_types,
 				limit=collection_limit,

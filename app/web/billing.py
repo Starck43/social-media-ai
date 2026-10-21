@@ -12,6 +12,7 @@ from app.services.billing import (
     configure_current_personal_account,
     consent_current_user_as_task_payer,
     current_personal_account,
+    current_personal_spend_summary,
 )
 
 from .deps import ensure_csrf
@@ -49,7 +50,15 @@ async def personal_billing_account(request: Request):
         account = await current_personal_account()
     except PersonalBillingError:
         return _error(403, "account_unavailable")
-    return JSONResponse(_account_payload(account), headers={"Cache-Control": "no-store"})
+    payload = _account_payload(account)
+    if account is not None:
+        try:
+            payload["spend_today"] = await current_personal_spend_summary()
+        except PersonalBillingError:
+            return _error(403, "account_unavailable")
+        except Exception:
+            return _error(503, "spend_summary_unavailable")
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/account/daily-limit")

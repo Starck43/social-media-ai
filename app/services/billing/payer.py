@@ -25,6 +25,13 @@ async def current_personal_account() -> "PersonalBillingAccount | None":
     return await PersonalBillingAccount.objects.self_account()
 
 
+async def current_personal_spend_summary(*, utc_day=None):
+    """Return the caller's own payer-bound daily spend split by workspace."""
+    from app.models.billing import PersonalBillingAccount
+
+    return await PersonalBillingAccount.objects.self_spend_summary(utc_day=utc_day)
+
+
 async def consent_current_user_as_task_payer(task_id: int) -> "TaskBillingPayer":
     """Bind the authenticated user as payer after current workspace authorization."""
     from app.models import PersonalBillingAccount

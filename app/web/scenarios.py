@@ -29,7 +29,7 @@ router = APIRouter(prefix="/scenarios")
 @router.get("/")
 async def scenarios_list(request: Request):
     """List methodologies; task metadata is queried only for permitted viewers."""
-    from app.types import AnalysisType, ContentType
+    from app.types import AnalysisType, ContentType, MediaType
 
     can_view_tasks = getattr(request.state, "web_perms", None) is not None and request.state.web_perms.can(
         "agenttask", "view"
@@ -58,7 +58,13 @@ async def scenarios_list(request: Request):
         query = query.group_by(AgentScenario.id)
     rows = await query.rows()
     analysis_labels = {item.db_value: item.display_name for item in AnalysisType}
-    content_labels = {item.db_value: item.display_name for item in ContentType}
+    # New rows store media values; rows saved before the collection intent
+    # became task-owned still carry content-type values, so label those with
+    # the medium they need instead of showing a stale medium-less name.
+    content_labels = {item.db_value: item.display_name for item in MediaType}
+    for legacy in ContentType:
+        media = MediaType.get_by_value(legacy.required_media_type)
+        content_labels.setdefault(legacy.db_value, media.display_name if media else legacy.display_name)
 
     scenarios = [
         {
@@ -356,16 +362,15 @@ def _draft_from_form(form) -> "ScenarioDraft":
     unknown enum values.
     """
     from app.services.ai.scenario_builder import ScenarioBuilder, ScenarioDraft
-    from app.types import AnalysisType, ContentType
+    from app.types import AnalysisType
 
     def _getlist(key: str) -> list[str]:
         return form.getlist(key) if hasattr(form, "getlist") else (form.get(key) or [])
 
-    content_types = [v for v in _getlist("content_types") if v]
+    content_types = ScenarioBuilder.normalize_media_types([v for v in _getlist("content_types") if v])
     analysis_types = [v for v in _getlist("analysis_types") if v]
 
     for raw, enum_cls, label in (
-        (content_types, ContentType, "тип контента"),
         (analysis_types, AnalysisType, "тип анализа"),
     ):
         unknown = [v for v in raw if _enum_by_value(enum_cls, v) is None]
@@ -504,7 +509,7 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     from app.core.analysis_constants import ANALYSIS_TYPE_DEFAULTS
     from app.models.llm_model import LLMModel
     from app.services.ai.scenario_builder import ScenarioBuilder
-    from app.types import AnalysisType, ContentType, LLMStrategyType
+    from app.types import AnalysisType, LLMStrategyType, MediaType
     from app.web.deps import human_datetime
 
     perms = getattr(request.state, "web_perms", None)
@@ -591,10 +596,11 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
         usage=usage,
         can_create_tasks=perms is not None and perms.can("agenttask", "create"),
         draft=draft,
-        content_types=list(ContentType),
+        content_types=list(MediaType),
         analysis_types=list(AnalysisType),
         llm_strategies=LLMStrategyType.choices(),
         llm_models=llm_models,
+        selected_media=ScenarioBuilder.media_types_for(draft.content_types),
         media_types=ScenarioBuilder.media_types_for(draft.content_types),
         available_variables=ScenarioBuilder.base_variables(),
         analysis_defaults=ANALYSIS_TYPE_DEFAULTS,

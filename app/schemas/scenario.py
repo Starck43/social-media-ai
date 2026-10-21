@@ -67,7 +67,7 @@ class ScenarioCreate(ScenarioBase):
 	)
 	content_types: list[str] = Field(
 		default_factory=list,
-		description="List of content type values (e.g. ['posts', 'comments', 'videos'])"
+		description="List of supported media type values (e.g. ['text', 'image']); legacy content types are folded into media"
 	)
 	scope: Optional[dict] = Field(
 		None,

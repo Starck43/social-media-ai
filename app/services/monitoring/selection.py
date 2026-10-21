@@ -9,7 +9,7 @@ not a scenario, owns the selection (see `docs/design/task-selection.md`):
    target and never an instruction to read someone's personal wall;
 3. text scope — whole phrases an item must contain.
 
-Content types are *not* handled here: the scenario's `content_types` already
+Content types are *not* handled here: the task's collection intent already
 decides what is collected and analysed, and selection must not widen or narrow
 it. Without tracked users the source's own items pass layer 2 unchanged.
 """

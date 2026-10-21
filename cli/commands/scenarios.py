@@ -106,12 +106,14 @@ def list_scenarios(
     from rich import print as rprint
     from rich.table import Table
 
+    from app.services.ai.scenario_builder import ScenarioBuilder
+
     async def _list():
         tid = await _resolve_tenant_id(tenant)
         scenarios = await AgentScenario.objects.filter(tenant_id=tid)
 
         table = Table(title=f"Agent scenarios — workspace {tid}")
-        for col in ("id", "name", "is_default", "is_active", "analysis_types", "content_types"):
+        for col in ("id", "name", "is_default", "is_active", "analysis_types", "media_types"):
             table.add_column(col)
         for s in scenarios:
             table.add_row(
@@ -120,7 +122,7 @@ def list_scenarios(
                 "yes" if s.is_default else "no",
                 "yes" if s.is_active else "no",
                 ",".join(s.analysis_types or []),
-                ",".join(s.content_types or []),
+                ",".join(ScenarioBuilder.media_types_for(s.content_types or [])),
             )
         rprint(table)
 

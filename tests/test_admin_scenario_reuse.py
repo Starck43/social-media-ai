@@ -70,3 +70,21 @@ async def test_view_prompts_shows_scope_variables_split() -> None:
     assert "brand_name" in page.text
     # The analysis-type config is shown in its own section.
     assert '"categories"' in html_unescape(page.text)
+
+
+def test_admin_scenario_form_offers_media_and_maps_legacy_rows() -> None:
+    """The admin form edits supported media, not the one-off collection types.
+
+    A row saved before the collection intent became task-owned still carries
+    `posts`/`videos`; the form has to map those to their medium so saving the
+    scenario does not drop its supported media.
+    """
+    from app.admin.views import AgentScenarioAdmin
+
+    template = (AgentScenarioAdmin.edit_template, AgentScenarioAdmin.create_template)
+    assert template == ("sqladmin/agent_scenario_edit.html", "sqladmin/agent_scenario_create.html")
+
+    source = open("app/templates/sqladmin/bot_scenario_form.html", encoding="utf-8").read()
+    assert "Поддерживаемые типы медиа" in source
+    assert "mediaByLegacyContent" in source
+    assert "posts: \"text\"" in source and "reels: \"video\"" in source

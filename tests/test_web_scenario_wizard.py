@@ -58,6 +58,8 @@ async def test_wizard_is_three_steps_below_the_admin_role() -> None:
             assert "Предпросмотр" not in page.text, "step 4 is not offered"
             assert 'x-show="step === 3"' in page.text, "«Сохранить» lands on the last visible step"
             assert 'name="content_types"' in page.text
+            assert "Поддерживаемые медиа" in page.text
+            assert 'value="text"' in page.text, "media checkboxes, not the legacy content types"
             assert 'name="analysis_types"' in page.text
             assert 'name="scope"' in page.text
             assert 'name="base_prompt"' in page.text
@@ -98,7 +100,7 @@ async def test_wizard_create_persists_scenario() -> None:
             form = {
                 "_csrf": CSRF_RE.search(page.text).group(1),
                 "name": _name("wizard-created"),
-                "content_types": ["posts", "comments"],
+                "content_types": ["text", "image"],
                 "analysis_types": ["sentiment", "keywords"],
                 "base_prompt": "Проанализируй {text} из {platform}",
             }
@@ -109,7 +111,7 @@ async def test_wizard_create_persists_scenario() -> None:
             with tenant_scope(tenant_id):
                 row = await AgentScenario.objects.filter(name=form["name"], tenant_id=tenant_id).first()
             assert row is not None
-            assert row.content_types == ["posts", "comments"]
+            assert row.content_types == ["text", "image"]
             assert row.analysis_types == ["sentiment", "keywords"]
             # The scope was generated server-side: each selected type got its defaults.
             assert "sentiment" in row.scope
@@ -177,6 +179,7 @@ async def test_edit_wizard_preserves_analysis_types_and_scope() -> None:
             with tenant_scope(tenant_id):
                 row = await AgentScenario.objects.get(id=scenario_id, tenant_id=tenant_id)
             assert row.analysis_types == ["sentiment"], "analysis types must survive an edit"
+            assert row.content_types == ["text"], "a legacy content value folds into its medium"
             assert "sentiment" in (row.scope or {}), "analysis config must survive an edit"
             assert (row.scope or {}).get("brand") == "Acme", "custom scope keys must survive an edit"
             assert row.is_active is True
@@ -235,6 +238,7 @@ async def test_wizard_create_persists_media_overrides() -> None:
             with tenant_scope(tenant_id):
                 row = await AgentScenario.objects.filter(name=form["name"], tenant_id=tenant_id).first()
             assert row is not None
+            assert row.content_types == ["text", "video"], "legacy values are folded into media"
             assert row.base_prompt == "Базовый {platform}"
             assert row.media_overrides == {"image": "Картинки {count}"}
             assert row.summary_prompt == "Резюме"

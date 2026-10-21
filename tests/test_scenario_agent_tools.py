@@ -73,13 +73,24 @@ def test_templates_cover_the_documented_presets() -> None:
 
 def test_every_template_validates_against_the_production_enums() -> None:
     """A preset with a stale enum value would expand into a row nothing can read."""
-    from app.types import AnalysisType, ContentType
+    from app.types import AnalysisType, MediaType
 
     for key in TEMPLATES:
         draft = expand_template(key)
-        assert all(ContentType.get_by_value(c) for c in draft.content_types), key
+        assert all(MediaType.get_by_value(c) for c in draft.content_types), key
         assert all(AnalysisType.get_by_value(a) for a in draft.analysis_types), key
         assert draft.base_prompt, key
+
+
+def test_preset_overrides_keep_the_prompt_and_normalize_media() -> None:
+    """Changing supported media must not touch the methodology or its prompts."""
+    draft = expand_template(
+        "brand_monitoring",
+        {"content_types": ["posts", "audio"], "base_prompt": "Свой {text}"},
+    )
+    assert draft.content_types == ["text", "audio"]
+    assert draft.base_prompt == "Свой {text}"
+    assert draft.media_overrides == {}
 
 
 def test_every_template_prompt_validates() -> None:

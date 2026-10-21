@@ -178,12 +178,16 @@ async def sources_list(request: Request):
         # Bypass the tenant guard (the middleware already set a tenant scope) so
         # the manager query isn't silently scoped to the active workspace.
         with tenant_scope(bypass=True):
-            query = Source.objects.select_related("platform", "tenant")
+            query = Source.objects.select_related("platform", "tenant").filter(
+                # A task-scoped query lane is not a workspace source: it is
+                # created and cleaned up by its owning task.
+                owner_task_id__isnull=True
+            )
             if filter_tenant_id is not None:
                 query = query.filter(tenant_id=filter_tenant_id)
             sources = await query.order_by(Source.created_at.desc())
     else:
-        query = Source.objects.filter(tenant_id=request.state.tenant_id)
+        query = Source.objects.filter(tenant_id=request.state.tenant_id, owner_task_id__isnull=True)
         sources = await query.select_related("platform").order_by(Source.created_at.desc())
     # The per-row badge and the banner are per-source (whose token is used), not
     # per-caller, so both are computed from the rows actually rendered above.
@@ -192,7 +196,11 @@ async def sources_list(request: Request):
     connection_banners = _connection_banners(sources, source_connections)
 
     user_sources = await (
-        Source.objects.filter(tenant_id=request.state.tenant_id, source_type=SourceType.USER)
+        Source.objects.filter(
+            tenant_id=request.state.tenant_id,
+            source_type=SourceType.USER,
+            owner_task_id__isnull=True,
+        )
         .select_related("platform")
         .order_by(Source.name, Source.id)
     )

@@ -155,9 +155,27 @@ async def _add_task(
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
     from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.services.collection.intent import (
+        CollectionIntentError,
+        apply_collection,
+        collection_error_message,
+    )
     from app.tasks.cron import next_run_at
 
     from ._tenant import resolve_tenant_id, tenant_label
+
+    if not isinstance(parsed_payload, dict):
+        rprint("[red]Payload must be a JSON object[/red]")
+        raise typer.Exit(1)
+    try:
+        parsed_payload = apply_collection(
+            parsed_payload,
+            parsed_payload.get("collection"),
+            job_type=job_type,
+        )
+    except CollectionIntentError as error:
+        rprint(f"[red]{collection_error_message(str(error))}[/red]")
+        raise typer.Exit(1) from error
 
     tenant_id = await resolve_tenant_id(tenant)
     with tenant_scope(tenant_id) if tenant_id else nullcontext():
@@ -271,7 +289,14 @@ def task_add(
         rprint(f"[red]job_type must be one of: {', '.join(HANDLERS.keys())}[/red]")
         raise typer.Exit(1)
 
-    parsed_payload = _json.loads(payload)
+    try:
+        parsed_payload = _json.loads(payload)
+    except _json.JSONDecodeError as error:
+        rprint(f"[red]Invalid payload JSON: {error}[/red]")
+        raise typer.Exit(1) from error
+    if not isinstance(parsed_payload, dict):
+        rprint("[red]Payload must be a JSON object[/red]")
+        raise typer.Exit(1)
     from app.services.monitoring.selection import SelectionError
 
     try:
@@ -391,6 +416,12 @@ def task_update(
     force_reanalyze: bool = typer.Option(
         None, "--force-reanalyze", help="New force_reanalyze value (analyze)"
     ),
+    payload: str = typer.Option(
+        None,
+        "--payload",
+        "-p",
+        help='JSON object merged into the task payload, e.g. \'{"collection": {"content_types": ["posts", "comments"]}}\'',
+    ),
     brands: str = typer.Option(None, "--brands", help="New comma/space separated brands"),
     competitors: str = typer.Option(
         None, "--competitors", help="New comma/space separated competitors"
@@ -404,14 +435,32 @@ def task_update(
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (for global lookup)"),
 ):
     """Update an existing task. Only provided fields are changed."""
+    import json as _json
+
     from rich import print as rprint
 
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.services.collection.intent import (
+        CollectionIntentError,
+        apply_collection,
+        collection_error_message,
+    )
     from app.tasks.cron import next_run_at, resolve_tz
 
     from ._tenant import resolve_tenant_id
+
+    parsed_patch: dict | None = None
+    if payload is not None:
+        try:
+            parsed_patch = _json.loads(payload)
+        except _json.JSONDecodeError as error:
+            rprint(f"[red]Invalid payload JSON: {error}[/red]")
+            raise typer.Exit(1) from error
+        if not isinstance(parsed_patch, dict):
+            rprint("[red]Payload must be a JSON object[/red]")
+            raise typer.Exit(1)
 
     async def _run():
         tenant_id = await resolve_tenant_id(tenant)
@@ -472,12 +521,25 @@ def task_update(
                     if force_reanalyze is not None:
                         updated_payload["force_reanalyze"] = force_reanalyze
 
+                if parsed_patch is not None:
+                    updated_payload.update(parsed_patch)
+                try:
+                    updated_payload = apply_collection(
+                        updated_payload,
+                        updated_payload.get("collection"),
+                        job_type=new_job_type,
+                    )
+                except CollectionIntentError as error:
+                    rprint(f"[red]{collection_error_message(str(error))}[/red]")
+                    raise typer.Exit(1) from error
+
                 new_cron = cron if cron is not None else task.cron_expr
                 updates: dict = {
                     "job_type": new_job_type,
                     "payload": updated_payload,
-                    "agent_scenario_id": scenario_id,
                 }
+                if scenario_id is not None:
+                    updates["agent_scenario_id"] = scenario_id
                 if cron is not None:
                     tenant_row = await Tenant.objects.get(id=task.tenant_id)
                     updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant_row))

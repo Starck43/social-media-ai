@@ -231,3 +231,71 @@ async def test_cli_helper_preserves_operator_authority_under_narrowing_and_resto
         assert current_tenant_id() == 31
         assert not is_bypass()
         assert not has_permission(None, "agenttask", "create")
+
+
+async def test_task_add_normalizes_the_collection_block():
+    """CLI saves the same canonical block the web editor and API write."""
+    name = _uniq("task-collection-")
+    await _cli(
+        _add_task,
+        name=name,
+        cron="@once",
+        job_type="analyze",
+        parsed_payload={
+            "collection": {
+                "content_types": ["posts", "comments"],
+                "engagement_types": ["likes"],
+                "limit": 250,
+                "queries": ["доставка"],
+                "city": {"name": "Киров", "mode": "prefer"},
+            }
+        },
+        parsed_source_ids=[],
+        scenario_id=None,
+        tenant=None,
+    )
+
+    task = await _all(AgentTask.objects.get(name=name))
+    block = (task.payload or {})["collection"]
+    assert block["version"] == 1
+    assert block["content_types"] == ["posts", "comments"]
+    assert block["engagement_types"] == ["likes"]
+    assert block["limit"] == 250
+    assert block["queries"] == ["доставка"]
+    assert block["city"] == {"name": "Киров", "mode": "prefer"}
+    assert block["comments"] == {"max_per_post": 100, "total": 2000}
+
+
+async def test_task_add_rejects_a_malformed_collection_without_creating():
+    name = _uniq("task-bad-collection-")
+    with pytest.raises(typer.Exit):
+        await _cli(
+            _add_task,
+            name=name,
+            cron="@once",
+            job_type="analyze",
+            parsed_payload={"collection": {"limit": 0}},
+            parsed_source_ids=[],
+            scenario_id=None,
+            tenant=None,
+        )
+
+    with tenant_scope(bypass=True):
+        assert await AgentTask.objects.filter(name=name) == []
+
+
+async def test_task_add_drops_a_collection_for_a_non_collecting_job():
+    name = _uniq("task-digest-collection-")
+    await _cli(
+        _add_task,
+        name=name,
+        cron="@once",
+        job_type="digest",
+        parsed_payload={"collection": {"content_types": ["posts"]}},
+        parsed_source_ids=[],
+        scenario_id=None,
+        tenant=None,
+    )
+
+    task = await _all(AgentTask.objects.get(name=name))
+    assert "collection" not in (task.payload or {})

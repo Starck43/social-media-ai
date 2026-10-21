@@ -112,6 +112,15 @@ def test_media_types_for_maps_content_to_media() -> None:
     assert ScenarioBuilder.media_types_for(["posts", "comments"]) == ["text"]
     assert ScenarioBuilder.media_types_for(["videos", "reels"]) == ["video"]
     assert ScenarioBuilder.media_types_for(["posts", "videos"]) == ["text", "video"]
+    assert ScenarioBuilder.media_types_for(["text", "image"]) == ["image", "text"]
+
+
+def test_media_values_and_legacy_content_values_normalize_the_same() -> None:
+    assert ScenarioBuilder.normalize_media_types(["text", "image"]) == ["text", "image"]
+    assert ScenarioBuilder.normalize_media_types(["posts", "stories", "reels"]) == ["text", "image", "video"]
+    assert ScenarioBuilder.normalize_media_types(["text", "posts"]) == ["text"], "no duplicates after folding"
+    assert ScenarioDraft(name="t", content_types=["video"]).media_type is MediaType.VIDEO
+    assert ScenarioDraft(name="t", content_types=["stories"]).media_type is MediaType.IMAGE
 
 
 def test_transient_scenario_has_no_id() -> None:

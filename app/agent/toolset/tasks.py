@@ -187,6 +187,15 @@ async def task_list() -> list[dict[str, Any]]:
                 "items": {"type": "string"},
                 "description": "Темы для анализа (для сценария с topics)",
             },
+            "collection": {
+                "type": "object",
+                "description": (
+                    "Что и где собирать (принадлежит задаче, не сценарию): content_types (posts|comments), "
+                    "engagement_types (likes|reposts), limit, queries, city {name, mode}, "
+                    "discovery {people, communities, queries}, comments {max_per_post, total}, "
+                    "candidates {limit, confirm}, date_window {start, end}"
+                ),
+            },
         },
         "required": ["name", "cron", "job_type"],
     },
@@ -211,6 +220,7 @@ async def task_add(
     hashtags: list[str] | None = None,
     influencer_names: list[str] | None = None,
     topic_list: list[str] | None = None,
+    collection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from zoneinfo import ZoneInfo
 
@@ -275,6 +285,17 @@ async def task_add(
         payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=bool(force_refresh)))
         if force_reanalyze:
             payload["force_reanalyze"] = True
+
+    from app.services.collection.intent import (
+        CollectionIntentError,
+        apply_collection,
+        collection_error_message,
+    )
+
+    try:
+        payload = apply_collection(payload, collection or None, job_type=job_type)
+    except CollectionIntentError as error:
+        return {"error": collection_error_message(str(error))}
 
     # The workspace zone, same rule as the web form and the runner: a task
     # created here in the global zone would shift by the offset on its first fire.
@@ -448,6 +469,13 @@ async def task_remove(name: str) -> dict[str, Any]:
                 "items": {"type": "string"},
                 "description": "Новый список тем",
             },
+            "collection": {
+                "type": "object",
+                "description": (
+                    "Новый сбор задачи (content_types, engagement_types, limit, queries, city, discovery, "
+                    "comments, candidates, date_window). Не передавайте, чтобы сохранить текущий; {} убирает сбор"
+                ),
+            },
         },
         "required": ["name"],
     },
@@ -472,6 +500,7 @@ async def task_update(
     influencer_names: list[str] | None = None,
     topic_list: list[str] | None = None,
     deactivate_after_success: bool | None = None,
+    collection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from app.core.tenant_context import current_tenant_id
     from app.models import AgentTask, Tenant
@@ -548,6 +577,21 @@ async def task_update(
             updated_payload["deactivate_after_success"] = True
         else:
             updated_payload.pop("deactivate_after_success", None)
+
+    from app.services.collection.intent import (
+        CollectionIntentError,
+        apply_collection,
+        collection_error_message,
+    )
+
+    if collection is not None:
+        collection_raw = collection or None
+    else:
+        collection_raw = updated_payload.get("collection") if "collection" in updated_payload else None
+    try:
+        updated_payload = apply_collection(updated_payload, collection_raw, job_type=new_job_type)
+    except CollectionIntentError as error:
+        return {"error": collection_error_message(str(error))}
 
     # Compute next_run_at if cron changed
     tenant = await Tenant.objects.get(id=current_tenant_id())

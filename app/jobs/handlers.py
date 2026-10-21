@@ -131,12 +131,16 @@ async def _resolve_sources(task, payload: dict[str, Any] | None = None) -> list:
         if task_sources:
             return task_sources
         logger.info("_resolve_sources: task has no sources, falling back to all active")
-        return list(await Source.objects.filter(is_active=True).select_related("platform"))
+        # A task-scoped query lane is owned by its task and must never leak into
+        # another task's "all active sources" shortcut (or a taskless run).
+        return list(
+            await Source.objects.filter(is_active=True, owner_task_id__isnull=True).select_related("platform")
+        )
 
     source_ids = (payload or {}).get("source_ids") or []
     if source_ids:
         return list(await Source.objects.filter(id__in=source_ids).select_related("platform"))
-    return list(await Source.objects.filter(is_active=True).select_related("platform"))
+    return list(await Source.objects.filter(is_active=True, owner_task_id__isnull=True).select_related("platform"))
 
 
 def _task_payload(task) -> dict[str, Any]:
@@ -454,8 +458,8 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
 
     # `docs/design/task-selection.md`: whose items are eligible is the task's
     # `tracked_users` filter applied over what each source returns. Selection is
-    # not a reason to read someone else's wall, and it cannot decide content
-    # types — the scenario's `content_types` already does.
+    # not a reason to read someone else's wall, and it cannot decide what is
+    # collected — the task's `payload["collection"]` owns that.
     try:
         selection_scope = selection.build_scope(task_payload)
     except selection.SelectionError as error:

@@ -184,3 +184,38 @@ async def test_missing_target_params_reach_the_admin_toast(monkeypatch):
 
     assert session["admin_message"]["type"] == "warning"
     assert "укажите в параметрах задачи" in session["admin_message"]["message"]
+
+
+def test_task_admin_documents_the_collection_block_and_dry_run() -> None:
+    from app.admin.views import AgentTaskAdmin
+
+    description = AgentTaskAdmin.form_args["payload"]["description"]
+    for key in ("collection", "content_types", "engagement_types", "city", "candidates", "date_window"):
+        assert key in description, key
+    assert "типы контента задаёт сценарий" not in description
+    assert AgentTaskAdmin.form_args["dry_run"]["label"] == "Тестовый прогон (dry-run)"
+    assert AgentTaskAdmin.form_widget_args["payload"]["rows"] >= 6
+    assert "dry_run" in AgentTaskAdmin.column_list
+    assert AgentTaskAdmin.column_formatters["dry_run"](SimpleNamespace(dry_run=True), None) == "Да"
+    assert AgentTaskAdmin.column_formatters["dry_run"](SimpleNamespace(dry_run=False), None) == "Нет"
+
+
+def test_source_admin_marks_the_task_owned_search_lane() -> None:
+    from app.admin.views import SourceAdmin
+
+    assert SourceAdmin.column_labels["owner_task_id"] == "Поиск задачи (lane)"
+    assert "owner_task_id" not in SourceAdmin.form_columns, "the task creates its own lane"
+    formatter = SourceAdmin.column_formatters_detail["owner_task_id"]
+    assert formatter(SimpleNamespace(owner_task_id=None), None) == "—"
+    assert formatter(SimpleNamespace(owner_task_id=17), None) == "17"
+    assert "SEARCH" in SourceAdmin.form_args["source_type"]["description"]
+
+
+def test_collected_item_admin_exposes_selection_and_lane_fields() -> None:
+    from app.admin.views import CollectedItemAdmin
+
+    assert {"content_type", "selection_status"} <= set(CollectedItemAdmin.column_list)
+    assert {"lane_id", "selection_status", "selection_reason"} <= set(CollectedItemAdmin.form_excluded_columns)
+    for field in ("content_type", "parent_external_id", "lane_id", "selection_status", "selection_reason"):
+        assert field in CollectedItemAdmin.column_labels, field
+    assert "Родительская запись" in CollectedItemAdmin.form_args["parent_external_id"]["label"]

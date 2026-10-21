@@ -186,3 +186,22 @@ class TestExcludedFlagsAreGone:
             if "--excluded" in line or "excluded_users" in line
         ]
         assert not locations, f"{path.name} ещё содержит настройку:\n" + "\n".join(locations)
+
+
+def test_task_update_accepts_payload_and_only_writes_a_provided_scenario(functions):
+    """`task update` can write a collection block and must not unbind a scenario.
+
+    A field the caller did not send keeps its current value: writing
+    `agent_scenario_id: None` on every update silently detached the task's
+    methodology.
+    """
+    flags = _option_flags(functions["task_update"])
+    assert "--payload" in flags and "-p" in flags
+    body = ast.unparse(functions["task_update"])
+    assert "apply_collection" in body
+    assert "agent_scenario_id" in body
+
+
+def test_task_add_validates_the_collection_block(functions):
+    body = ast.unparse(functions["_add_task"])
+    assert "apply_collection" in body

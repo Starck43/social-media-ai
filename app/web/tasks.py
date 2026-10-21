@@ -24,11 +24,14 @@ from app.web.task_progress import project_run, sidebar_sources
 from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR, OPERATOR_CANCELLED_ERROR, outcome_unconfirmed
 from app.types import AgentActionType, BotTriggerType, JobType
 from app.services.collection.intent import (
+	COLLECTION_JOB_TYPES,
 	CITY_MODES,
 	CITY_PREFER,
 	CONFIRM_MODES,
 	CollectionIntent,
 	CollectionIntentError,
+	collection_block,
+	collection_error_message,
 	parse_collection_intent,
 )
 from app.services.monitoring.selection import SelectionError
@@ -203,38 +206,10 @@ def _apply_targets(payload: dict, targets: dict[str, str]) -> None:
 # carried the block: a save from an older client (or an API caller posting only
 # the legacy fields) must not silently rewrite it.
 
-# Bounded, user-facing text for the parser's error codes. The code is appended
-# to the generic message so an operator report stays diagnosable.
-_COLLECTION_ERROR_TEXT = {
-	"collection_content_types_empty": "выберите хотя бы один тип контента",
-	"collection_content_types_unsupported": "неизвестный тип контента",
-	"collection_engagement_types_unsupported": "неизвестный тип вовлечённости",
-	"collection_limit_invalid": "лимит сбора должен быть целым числом",
-	"collection_limit_out_of_range": "лимит сбора вне допустимого диапазона",
-	"collection_queries_invalid": "проверьте список фраз для поиска упоминаний",
-	"collection_city_name_invalid": "укажите название города",
-	"collection_city_mode_invalid": "неизвестный режим города",
-	"collection_date_window_reversed": "дата начала позже даты окончания",
-	"collection_start_date_invalid": "некорректная дата начала",
-	"collection_end_date_invalid": "некорректная дата окончания",
-	"collection_discovery_queries_invalid": "проверьте фразы для поиска людей и сообществ",
-	"collection_comments_max_per_post_out_of_range": "лимит комментариев на запись вне допустимого диапазона",
-	"collection_comments_total_out_of_range": "общий лимит комментариев вне допустимого диапазона",
-	"collection_candidates_limit_out_of_range": "лимит кандидатов вне допустимого диапазона",
-	"collection_candidates_confirm_invalid": "неизвестный режим подтверждения кандидатов",
-}
-
 
 def _split_intent_phrases(raw: str) -> list[str]:
 	"""Split the collection phrase fields; one phrase per comma or line."""
 	return [" ".join(part.split()) for part in re.split(r"[,\n]", raw or "") if part.strip()]
-
-
-def _collection_error_message(code: str) -> str:
-	hint = _COLLECTION_ERROR_TEXT.get(code)
-	if hint:
-		return f"Проверьте параметры сбора: {hint} ({code})"
-	return f"Проверьте параметры сбора данных (код: {code})"
 
 
 def _collection_block(
@@ -262,7 +237,7 @@ def _collection_block(
 	Returns an empty dict for every job type that does not collect, so the
 	caller can drop a stale block when the task type changes.
 	"""
-	if job_type != "analyze":
+	if job_type not in COLLECTION_JOB_TYPES:
 		return {}
 	if not content_types:
 		raise ValueError("Что собирать: отметьте записи, комментарии или оба типа")
@@ -305,40 +280,8 @@ def _collection_block(
 	try:
 		intent = parse_collection_intent({"collection": raw})
 	except CollectionIntentError as exc:
-		raise ValueError(_collection_error_message(str(exc))) from None
-	return _collection_payload(intent)
-
-
-def _collection_payload(intent: CollectionIntent) -> dict[str, Any]:
-	"""The normalised block stored in the payload (parser output, not raw form)."""
-	block: dict[str, Any] = {
-		"version": intent.version,
-		"content_types": list(intent.content_types),
-		"engagement_types": list(intent.engagement_types),
-		"limit": intent.limit,
-		"queries": list(intent.queries),
-		"discovery": {
-			"people": intent.discovery.people,
-			"communities": intent.discovery.communities,
-			"queries": list(intent.discovery.queries),
-		},
-		"comments": {
-			"max_per_post": intent.comments.max_per_post,
-			"total": intent.comments.total,
-		},
-		"candidates": {
-			"limit": intent.candidates.limit,
-			"confirm": intent.candidates.confirm,
-		},
-	}
-	if intent.city is not None:
-		block["city"] = {"name": intent.city.name, "mode": intent.city.mode}
-	if intent.start_date is not None or intent.end_date is not None:
-		block["date_window"] = {
-			"start": intent.start_date.isoformat() if intent.start_date else None,
-			"end": intent.end_date.isoformat() if intent.end_date else None,
-		}
-	return block
+		raise ValueError(collection_error_message(str(exc))) from None
+	return collection_block(intent)
 
 
 def _collection_edit(payload: dict[str, Any] | None) -> dict[str, Any]:
@@ -1287,6 +1230,7 @@ async def task_detail(request: Request, task_id: int):
 		latest_run=latest_run,
 		sources=linked_sources,
 		scenario=scenario,
+		collection=_collection_edit(source.payload),
 		cron_to_human=cron_to_human,
 		JOB_TYPE_TITLES=JOB_TYPE_TITLES,
 		perms_can=perms_can,

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from app.types import AnalysisType, ContentType
+from app.types import AnalysisType
 
 # Fields a preset may carry. Anything outside this set is rejected, so a typo in
 # a preset fails loudly here instead of writing a column the wizard never reads.
@@ -38,7 +38,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "brand_monitoring": {
         "name": "Мониторинг бренда",
         "description": "Упоминания бренда, их тональность и ключевые слова вокруг них.",
-        "content_types": ["posts", "comments", "mentions"],
+        "content_types": ["text"],
         "analysis_types": ["brand_mentions", "sentiment", "keywords"],
         "scope": {"keywords": {"max_keywords": 10}, "relevance_filter": True, "min_confidence": 0.6},
         "base_prompt": (
@@ -50,7 +50,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "competitor_watch": {
         "name": "Мониторинг конкурентов",
         "description": "Активность конкурентов и реакция аудитории на неё, по дням.",
-        "content_types": ["posts", "comments"],
+        "content_types": ["text"],
         "analysis_types": ["competitor", "sentiment", "trends"],
         "scope": {},
         "base_prompt": (
@@ -63,7 +63,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "customer_support": {
         "name": "Контроль поддержки",
         "description": "Обращения и жалобы клиентов: тональность и темы проблем.",
-        "content_types": ["posts", "comments", "mentions"],
+        "content_types": ["text"],
         "analysis_types": ["sentiment", "keywords", "intent"],
         "scope": {"relevance_filter": True, "min_confidence": 0.6},
         "base_prompt": (
@@ -75,7 +75,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "trend_spotter": {
         "name": "Поиск трендов",
         "description": "Что обсуждают и какие темы набирают обороты, по дням.",
-        "content_types": ["posts", "comments"],
+        "content_types": ["text"],
         "analysis_types": ["trends", "keywords", "topics"],
         "scope": {},
         "base_prompt": (
@@ -87,7 +87,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "toxicity_guard": {
         "name": "Контроль токсичности",
         "description": "Резкий и оскорбительный контент в комментариях и постах.",
-        "content_types": ["posts", "comments"],
+        "content_types": ["text"],
         "analysis_types": ["toxicity", "sentiment"],
         "scope": {},
         "base_prompt": (
@@ -179,7 +179,11 @@ def expand_template(key: str, overrides: Optional[dict[str, Any]] = None) -> "Sc
     if unknown:
         raise ValueError(f"Неизвестные поля сценария: {', '.join(unknown)}")
 
-    content_types = _enum_values(overrides.get("content_types"), ContentType, "тип контента")
+    content_types = (
+        ScenarioBuilder.normalize_media_types(overrides["content_types"])
+        if overrides.get("content_types") is not None
+        else []
+    )
     analysis_types = _enum_values(overrides.get("analysis_types"), AnalysisType, "тип анализа")
 
     merged: dict[str, Any] = {
@@ -212,6 +216,8 @@ def expand_template(key: str, overrides: Optional[dict[str, Any]] = None) -> "Sc
         if field == "scope":
             for analysis_type, config in (value or {}).items():
                 scope[analysis_type] = {**scope.get(analysis_type, {}), **config}
+        elif field == "content_types":
+            merged["content_types"] = content_types or list(preset["content_types"])
         elif field == "media_overrides":
             merged["media_overrides"] = {**merged["media_overrides"], **(value or {})}
         elif value is not None:

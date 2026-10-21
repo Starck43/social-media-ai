@@ -233,14 +233,14 @@
         </div>
     </fieldset>
 
-    <!-- Секция 3: Типы контента -->
+    <!-- Секция 3: Поддерживаемые медиа -->
     <fieldset class="form-fieldset form-section">
         <div class="form-section-title">
             <i class="fa fa-list"></i>
-            Типы контента для мониторинга
+            Поддерживаемые типы медиа
         </div>
         <div class="form-section-desc">
-            Выберите какие типы контента будут анализироваться
+            Какие форматы сценарий умеет анализировать. Что и где собирать, задаётся в задаче.
         </div>
 
         <div class="choice-grid">
@@ -393,7 +393,7 @@
 
         function selectCommonContentTypes() {
             clearAllContentTypes();
-            ["posts", "comments"].forEach(type => {
+            ["text"].forEach(type => {
                 const checkbox = document.getElementById(`content_${type}`)
                 if (checkbox) checkbox.checked = true
             })
@@ -512,11 +512,19 @@
                 })
             }
 
-            // Load initial values from model (edit mode)
+            // Load initial values from model (edit mode). Rows saved before the
+            // collection intent became task-owned carry content-type values
+            // (`posts`, `videos`, …); map them to the medium they need so the
+            // Save does not silently drop the scenario's supported media.
+            const mediaByLegacyContent = {
+                posts: "text", comments: "text", mentions: "text", reactions: "text",
+                videos: "video", reels: "video", stories: "image"
+            };
             const initialContentTypes = {{ obj.content_types|tojson if obj and obj.content_types else '[]' }};
             if (initialContentTypes && initialContentTypes.length > 0) {
                 initialContentTypes.forEach(type => {
-                    const checkbox = document.getElementById(`content_${type}`)
+                    const media = mediaByLegacyContent[type] || type
+                    const checkbox = document.getElementById(`content_${media}`)
                     if (checkbox) checkbox.checked = true
                 })
             }

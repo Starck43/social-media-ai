@@ -161,3 +161,75 @@ async def test_the_sources_page_does_not_push_the_vk_login():
         assert "Войти через VK ID" not in page.text
     finally:
         await _drop(user, tenant_id)
+
+
+async def test_task_scoped_query_lane_is_hidden_from_the_global_source_list():
+    """A task's search lane is not a workspace source.
+
+    The row exists so staged items keep a stable `source_id`, but showing it in
+    `/app/sources` would offer the operator a source they cannot collect from
+    and cannot delete without breaking the task.
+    """
+    from app.models import AgentTask
+    from app.types import SourceType
+
+    client = await _client()
+    user, tenant_id = await _register(client, "lanefilter")
+    task = lane = visible = None
+    try:
+        await _login(client, user.username)
+        platform = await Platform.objects.filter(is_active=True).first()
+        assert platform is not None
+        with tenant_scope(bypass=True):
+            task = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("lane-task"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+            )
+            lane = await Source.objects.create(
+                tenant_id=tenant_id,
+                platform_id=platform.id,
+                name=_name("lane-query"),
+                external_id=secrets.token_hex(6),
+                source_type=SourceType.SEARCH,
+                owner_task_id=task.id,
+            )
+            visible = await Source.objects.create(
+                tenant_id=tenant_id,
+                platform_id=platform.id,
+                name=_name("known-wall"),
+                external_id=secrets.token_hex(6),
+                source_type=SourceType.GROUP,
+            )
+
+        page = await client.get("/app/sources")
+        assert page.status_code == 200
+        assert lane.name not in page.text, "a task-owned lane must not be offered as a workspace source"
+        assert visible.name in page.text
+
+        # The lane is also outside the "all active sources" fallback: it belongs
+        # to one task and must not become another task's collection target.
+        from types import SimpleNamespace
+
+        from app.jobs.handlers import _resolve_sources
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        with tenant_scope(tenant_id):
+            active = await AgentTaskManager().get_workspace_active_source_ids()
+            resolved = await _resolve_sources(
+                SimpleNamespace(id=task.id, tenant_id=tenant_id, sources=[])
+            )
+        assert visible.id in active
+        assert lane.id not in active
+        resolved_ids = {source.id for source in resolved}
+        assert visible.id in resolved_ids
+        assert lane.id not in resolved_ids
+    finally:
+        with tenant_scope(bypass=True):
+            if task is not None:
+                await AgentTask.objects.delete_by_id(task.id)
+            if visible is not None:
+                await Source.objects.delete(id=visible.id)
+        await _drop(user, tenant_id)

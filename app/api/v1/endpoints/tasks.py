@@ -40,6 +40,27 @@ def _selection_payload(request, existing: dict | None) -> dict:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+def _collection_payload(payload: dict | None, raw: dict | None, *, job_type: str) -> dict:
+    """Validate and canonicalise `payload["collection"]` through the shared writer.
+
+    `raw=None` clears the block. A malformed block is a 400 with the same
+    bounded message the web form and CLI show, never a stored half-valid value.
+    """
+    from app.services.collection.intent import CollectionIntentError, apply_collection, collection_error_message
+
+    try:
+        return apply_collection(payload, raw, job_type=job_type)
+    except CollectionIntentError as error:
+        raise HTTPException(status_code=400, detail=collection_error_message(str(error))) from None
+
+
+def _request_collection(request, payload: dict | None) -> dict | None:
+    """The block the request explicitly carries, falling back to its payload."""
+    if "collection" in getattr(request, "model_fields_set", set()):
+        return getattr(request, "collection", None)
+    return payload.get("collection") if isinstance(payload, dict) and "collection" in payload else None
+
+
 router = APIRouter(tags=["tasks"])
 
 
@@ -116,7 +137,11 @@ async def create_task(
         name=request.name.strip()[:100],
         cron_expr=request.cron_expr,
         job_type=request.job_type,
-        payload=_selection_payload(request, _web_api_payload(request.payload)),
+        payload=_collection_payload(
+            _selection_payload(request, _web_api_payload(request.payload)),
+            _request_collection(request, request.payload),
+            job_type=request.job_type,
+        ),
         agent_scenario_id=request.agent_scenario_id,
         is_active=request.is_active,
         next_run_at=next_run,
@@ -145,14 +170,27 @@ async def update_task(
     selection_fields = {
         key: updates.pop(key) for key in ("tracked_users", "keywords_list", "keywords_match") if key in updates
     }
-    if "payload" in updates or selection_fields:
-        updates["payload"] = _selection_payload(
-            SimpleNamespace(
-                tracked_users=selection_fields.get("tracked_users"),
-                keywords_list=selection_fields.get("keywords_list"),
-                keywords_match=selection_fields.get("keywords_match"),
+    collection_supplied = "collection" in updates
+    collection_raw = updates.pop("collection", None) if collection_supplied else None
+    if "payload" in updates or selection_fields or collection_supplied or "job_type" in updates:
+        base_payload = _web_api_payload(updates.get("payload", task.payload))
+        if not collection_supplied:
+            if "collection" in base_payload:
+                collection_raw = base_payload["collection"]
+            else:
+                stored = _web_api_payload(task.payload)
+                collection_raw = stored.get("collection") if "collection" in stored else None
+        updates["payload"] = _collection_payload(
+            _selection_payload(
+                SimpleNamespace(
+                    tracked_users=selection_fields.get("tracked_users"),
+                    keywords_list=selection_fields.get("keywords_list"),
+                    keywords_match=selection_fields.get("keywords_match"),
+                ),
+                base_payload,
             ),
-            _web_api_payload(updates.get("payload", task.payload)),
+            collection_raw,
+            job_type=updates.get("job_type", task.job_type),
         )
     if "name" in updates:
         updates["name"] = updates["name"].strip()[:100]
@@ -273,11 +311,17 @@ async def run_task_oneoff(
 
     # Create temporary task
     stamp = datetime.now(timezone.utc)
+    safe_payload = _web_api_payload(payload)
+    safe_payload = _collection_payload(
+        safe_payload,
+        safe_payload.get("collection") if "collection" in safe_payload else None,
+        job_type=job_type,
+    )
     task = await AgentTask.objects.create(
         name=f"one-off-{job_type}-{stamp:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}",
         cron_expr="@once",
         job_type=job_type,
-        payload=_web_api_payload(payload),
+        payload=safe_payload,
         agent_scenario_id=scenario_id,
         is_active=False,
         next_run_at=None,

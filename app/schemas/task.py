@@ -23,6 +23,13 @@ class TaskCreate(BaseModel):
     )
     keywords_list: Optional[list[str]] = Field(None, description="Phrases an item must contain to be analysed.")
     keywords_match: Optional[str] = Field(None, pattern="^(any|all)$")
+    collection: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Task-owned collection intent: content_types, engagement_types, limit, queries, city, "
+            "discovery, comments, candidates, date_window. Omit to keep the payload's block."
+        ),
+    )
     agent_scenario_id: Optional[int] = None
     source_ids: list[int] = Field(default_factory=list)
     is_active: bool = True
@@ -40,6 +47,13 @@ class TaskUpdate(BaseModel):
     )
     keywords_list: Optional[list[str]] = Field(None, description="Phrases an item must contain.")
     keywords_match: Optional[str] = Field(None, pattern="^(any|all)$")
+    collection: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Task-owned collection intent. Omit to keep the stored block; null clears it; "
+            "an object replaces it and is validated through the shared parser."
+        ),
+    )
     agent_scenario_id: Optional[int] = None
     source_ids: Optional[list[int]] = None
     is_active: Optional[bool] = None

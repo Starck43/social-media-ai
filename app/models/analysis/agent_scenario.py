@@ -20,7 +20,7 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
     name: Mapped[str] = Column(String(255), nullable=False)
     description: Mapped[str] = Column(Text, nullable=True)
 
-    # What content to collect
+    # Supported media for prompts; what to collect is task-owned (legacy column name)
     content_types: Mapped[list[str]] = Column(JSON, nullable=True, default=list)
     # Which analysis types to apply
     analysis_types: Mapped[list[str]] = Column(JSON, nullable=True, default=list)

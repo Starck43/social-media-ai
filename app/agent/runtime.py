@@ -251,10 +251,35 @@ def _human_cron(args: dict) -> str:
     return cron_to_human(cron)
 
 
+def _human_collection(raw) -> str:
+    """One short phrase for a task's collection intent in a confirmation."""
+    if not isinstance(raw, dict) or not raw:
+        return ""
+    parts: list[str] = []
+    content = [str(value) for value in raw.get("content_types") or []]
+    if content:
+        labels = {"posts": "записи", "comments": "комментарии"}
+        parts.append(" + ".join(labels.get(value, value) for value in content))
+    if raw.get("engagement_types"):
+        parts.append("вовлечённость: " + ", ".join(str(value) for value in raw["engagement_types"]))
+    if raw.get("limit"):
+        parts.append(f"лимит {raw['limit']}")
+    city = raw.get("city")
+    if isinstance(city, dict) and city.get("name"):
+        parts.append(f"город {city['name']}")
+    elif isinstance(city, str) and city:
+        parts.append(f"город {city}")
+    queries = [str(value) for value in raw.get("queries") or []]
+    if queries:
+        parts.append("фразы: " + ", ".join(queries))
+    return ("сбор: " + ", ".join(parts)) if parts else ""
+
+
 # Task-update arguments in the order an owner cares about them.
 _TASK_UPDATE_LABELS = (
     ("cron", "расписание"),
     ("job_type", "тип"),
+    ("collection", "сбор"),
     ("brands", "бренды"),
     ("influencer_names", "авторы"),
     ("keywords_list", "ключевые слова"),
@@ -306,6 +331,7 @@ def _human_confirmation(name: str, args: dict) -> str:
         "task_add": lambda a: (
             f"создать задачу «{a.get('name')}»: {_JOB_TYPE_LABELS.get(a.get('job_type'), a.get('job_type'))}, "
             f"{_human_cron(a)}" + (f", начиная с {a.get('start_date')}" if a.get("start_date") else "")
+            + (f"; {_human_collection(a.get('collection'))}" if _human_collection(a.get("collection")) else "")
         ),
         "task_update": lambda a: _human_task_update(a),
         "task_remove": lambda a: f"удалить задачу «{a.get('name')}»",

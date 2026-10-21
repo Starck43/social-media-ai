@@ -59,14 +59,17 @@ class ScenarioDraft:
 
     @property
     def media_type(self) -> MediaType:
-        """The primary media type, derived from content_types when set.
+        """The primary media type, derived from the supported media when set.
 
         The wizard's one base prompt is the text analysis prompt unless the
-        user narrows the scenario to a single visual medium.
+        user narrows the scenario to a single visual medium. Stored rows may
+        still carry the legacy `ContentType` vocabulary, so both spellings are
+        accepted here.
         """
-        if self.content_types and set(self.content_types) <= {"videos", "reels"}:
+        media = set(ScenarioBuilder.media_types_for(self.content_types))
+        if media and media <= {"video"}:
             return MediaType.VIDEO
-        if self.content_types and set(self.content_types) <= {"stories"}:
+        if media and media <= {"image"}:
             return MediaType.IMAGE
         return MediaType.TEXT
 
@@ -302,15 +305,46 @@ class ScenarioBuilder:
 
     @classmethod
     def media_types_for(cls, content_types: list[str]) -> list[str]:
-        """Distinct media types the given content types need (text/image/video)."""
+        """Distinct media types the given values need (text/image/video/audio).
+
+        Accepts both the current `MediaType` values and the legacy
+        `ContentType` vocabulary stored by older scenarios. Unknown values are
+        ignored; write paths validate with `normalize_media_types` instead.
+        """
         from app.types import ContentType
 
         media: set[str] = set()
-        for ct in content_types or []:
-            member = ContentType.get_by_value(ct)
+        for value in content_types or []:
+            member = MediaType.get_by_value(value)
             if member is not None:
-                media.add(member.required_media_type)
+                media.add(member.db_value)
+                continue
+            legacy = ContentType.get_by_value(value)
+            if legacy is not None:
+                media.add(legacy.required_media_type)
         return sorted(media)
+
+    @classmethod
+    def normalize_media_types(cls, values: list[str]) -> list[str]:
+        """Canonical `MediaType` values for a write path, or raise `ValueError`.
+
+        Legacy `ContentType` values (`posts`, `comments`, `videos`, …) are
+        folded into the media they need, so a row saved before the collection
+        intent became task-owned keeps opening and saving without loss.
+        """
+        from app.types import ContentType
+
+        normalized: list[str] = []
+        for value in values or []:
+            member = MediaType.get_by_value(value)
+            if member is None:
+                legacy = ContentType.get_by_value(value)
+                if legacy is None:
+                    raise ValueError(f"Неизвестный тип медиа: {value}")
+                member = MediaType.get_by_value(legacy.required_media_type)
+            if member is not None and member.db_value not in normalized:
+                normalized.append(member.db_value)
+        return normalized
 
 
 scenario_builder = ScenarioBuilder()

@@ -65,12 +65,14 @@ def _validate(changes: dict[str, Any]) -> dict[str, Any]:
     The model gets the error back and can correct itself, which is far cheaper
     than a scenario that fails silently at analysis time.
     """
+    from app.services.ai.scenario_builder import ScenarioBuilder
     from app.services.ai.scenario_templates import _enum_values
-    from app.types import AnalysisType, ContentType
+    from app.types import AnalysisType
 
     checked = dict(changes)
+    if "content_types" in checked:
+        checked["content_types"] = ScenarioBuilder.normalize_media_types(checked["content_types"])
     for field, enum_cls, label in (
-        ("content_types", ContentType, "тип контента"),
         ("analysis_types", AnalysisType, "тип анализа"),
     ):
         if field in checked:
@@ -297,7 +299,7 @@ async def scenario_validate_prompt(prompt: str) -> dict[str, Any]:
             "content_types": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Что собирать: posts, comments, mentions, videos, stories, reels, reactions",
+                "description": "Какие форматы умеет анализировать: text, image, video, audio (legacy posts/comments/videos тоже принимаются)",
             },
             "analysis_types": {
                 "type": "array",

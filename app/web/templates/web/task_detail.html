@@ -166,6 +166,7 @@
                     <dd class="mt-1 text-slate-700 dark:text-slate-300">{{ scenario.name }}</dd>
                 </div>
                 {% endif %}
+                {% include "web/_task_collection_summary.html" %}
                 <div id="task-run-sources">
                     {% with source_inventory=latest_run.source_inventory, can_view_sources=latest_run.can_view_sources %}{% include "web/_task_run_sources.html" %}{% endwith %}
                 </div>

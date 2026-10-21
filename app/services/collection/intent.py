@@ -45,6 +45,40 @@ class CollectionIntentError(ValueError):
     """Malformed collection configuration. Never silently ignored."""
 
 
+# Bounded, user-facing text for the parser's error codes. The code is appended
+# to the generic message so an operator report stays diagnosable. Every write
+# surface (web, CLI, API, chat) renders a rejected block through this map.
+COLLECTION_ERROR_TEXT = {
+    "collection_content_types_empty": "выберите хотя бы один тип контента",
+    "collection_content_types_unsupported": "неизвестный тип контента",
+    "collection_engagement_types_unsupported": "неизвестный тип вовлечённости",
+    "collection_limit_invalid": "лимит сбора должен быть целым числом",
+    "collection_limit_out_of_range": "лимит сбора вне допустимого диапазона",
+    "collection_queries_invalid": "проверьте список фраз для поиска упоминаний",
+    "collection_city_name_invalid": "укажите название города",
+    "collection_city_mode_invalid": "неизвестный режим города",
+    "collection_date_window_reversed": "дата начала позже даты окончания",
+    "collection_start_date_invalid": "некорректная дата начала",
+    "collection_end_date_invalid": "некорректная дата окончания",
+    "collection_discovery_queries_invalid": "проверьте фразы для поиска людей и сообществ",
+    "collection_comments_max_per_post_out_of_range": "лимит комментариев на запись вне допустимого диапазона",
+    "collection_comments_total_out_of_range": "общий лимит комментариев вне допустимого диапазона",
+    "collection_candidates_limit_out_of_range": "лимит кандидатов вне допустимого диапазона",
+    "collection_candidates_confirm_invalid": "неизвестный режим подтверждения кандидатов",
+}
+
+# Job types whose run reads the collection block. Everything else (digest,
+# prune, learn, reflect) has no collection lanes, so a block there would be
+# dead configuration and is dropped instead of stored.
+COLLECTION_JOB_TYPES = ("collect", "analyze")
+
+
+def collection_error_message(code: str) -> str:
+    """A bounded operator message for a parser code, with the code appended."""
+    hint = COLLECTION_ERROR_TEXT.get(code)
+    return f"Проверьте параметры сбора: {hint} ({code})" if hint else f"Проверьте параметры сбора ({code})"
+
+
 @dataclass(frozen=True)
 class CityIntent:
     """A city preference. VK post search cannot filter by it; ranking happens later."""
@@ -165,6 +199,69 @@ def parse_collection_intent(payload: Mapping[str, Any] | None) -> CollectionInte
         comments=comments,
         candidates=candidates,
     )
+
+
+def collection_block(intent: CollectionIntent) -> dict[str, Any]:
+    """The canonical block stored in `payload["collection"]`.
+
+    Every write surface serialises through this function, so a block created by
+    the web editor, the CLI, the API or a chat tool has exactly the same shape
+    (parser output, not the caller's raw input).
+    """
+    block: dict[str, Any] = {
+        "version": intent.version,
+        "content_types": list(intent.content_types),
+        "engagement_types": list(intent.engagement_types),
+        "limit": intent.limit,
+        "queries": list(intent.queries),
+        "discovery": {
+            "people": intent.discovery.people,
+            "communities": intent.discovery.communities,
+            "queries": list(intent.discovery.queries),
+        },
+        "comments": {
+            "max_per_post": intent.comments.max_per_post,
+            "total": intent.comments.total,
+        },
+        "candidates": {
+            "limit": intent.candidates.limit,
+            "confirm": intent.candidates.confirm,
+        },
+    }
+    if intent.city is not None:
+        block["city"] = {"name": intent.city.name, "mode": intent.city.mode}
+    if intent.start_date is not None or intent.end_date is not None:
+        block["date_window"] = {
+            "start": intent.start_date.isoformat() if intent.start_date else None,
+            "end": intent.end_date.isoformat() if intent.end_date else None,
+        }
+    return block
+
+
+def apply_collection(
+    payload: Mapping[str, Any] | None,
+    raw: Mapping[str, Any] | None,
+    *,
+    job_type: str | None = None,
+) -> dict[str, Any]:
+    """Return `payload` with a validated, canonical collection block.
+
+    `raw=None` clears the block (an explicit request to stop collecting through
+    this task). A job type outside :data:`COLLECTION_JOB_TYPES` drops any block,
+    because digest/prune/learn/reflect never read it. Raises
+    :class:`CollectionIntentError` for a malformed block, so every caller can
+    answer with the same bounded message instead of storing a half-valid value.
+    """
+    result = dict(payload or {})
+    if job_type is not None and job_type not in COLLECTION_JOB_TYPES:
+        result.pop("collection", None)
+        return result
+    if raw is None:
+        result.pop("collection", None)
+        return result
+    intent = parse_collection_intent({"collection": raw})
+    result["collection"] = collection_block(intent)
+    return result
 
 
 def _mapping(value: Any, field_name: str) -> Mapping[str, Any]:

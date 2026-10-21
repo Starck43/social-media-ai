@@ -102,15 +102,15 @@
                 </div>
 
                 <div>
-                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Что мониторим</h2>
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Поддерживаемые медиа</h2>
                     <fieldset class="ui-card {{ ro }}">
-                    <p class="mb-3 text-xs text-slate-600 dark:text-slate-400">Типы контента, которые будут собираться и попадать в анализ.</p>
+                    <p class="mb-3 text-xs text-slate-600 dark:text-slate-400">Какие форматы сценарий умеет анализировать. Что и где собирать — задаётся в задаче.</p>
                     <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {% for ct in content_types %}
                             {{ check_card(
                                 "sc-ct-" ~ ct.db_value, "content_types", ct.db_value,
                                 icon("source") ~ " " ~ ct.display_name,
-                                checked=(draft.content_types and ct.db_value in draft.content_types),
+                                checked=(selected_media and ct.db_value in selected_media),
                                 cls="content-cb"
                             ) }}
                         {% endfor %}

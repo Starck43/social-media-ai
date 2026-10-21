@@ -442,3 +442,45 @@ async def test_task_llm_diagnostics_are_loaded_only_for_admin_and_exact_task_job
     assert captured == [(21, 31)]
     assert panel["summary"]["diagnostics"]["model"] == "model-a"
     assert panel["summary"]["diagnostics"]["succeeded"] == 2
+
+
+def test_task_detail_collection_summary_renders_the_task_intent():
+    """The detail page answers "what does this task collect?" without the editor."""
+    env = Environment(
+        loader=FileSystemLoader(ROOT / "app/web/templates"),
+        autoescape=select_autoescape(("html",)),
+    )
+    template = env.get_template("web/_task_collection_summary.html")
+    payload = {
+        "collection": {
+            "content_types": ["posts", "comments"],
+            "engagement_types": ["likes"],
+            "limit": 250,
+            "queries": ["доставка"],
+            "city": {"name": "Киров", "mode": "prefer"},
+            "discovery": {"people": True, "communities": False, "queries": ["дизайн"]},
+            "comments": {"max_per_post": 5, "total": 40},
+            "candidates": {"limit": 25, "confirm": "auto"},
+            "date_window": {"start": "2026-10-01", "end": None},
+        }
+    }
+    output = template.render(
+        task=SimpleNamespace(job_type="analyze"),
+        collection=tasks._collection_edit(payload),
+    )
+
+    assert "Сбор" in output
+    assert "записи + комментарии" in output
+    assert "лимит 250" in output
+    assert "лайки" in output
+    assert "Киров" in output and "предпочитать" in output
+    assert "доставка" in output
+    assert "люди" in output and "дизайн" in output
+    assert "до 5 на запись, всего 40" in output
+    assert "Кандидаты: 25" in output and "автоматически" in output
+    assert "2026-10-01" in output
+
+    assert "Сбор" not in template.render(
+        task=SimpleNamespace(job_type="digest"),
+        collection=tasks._collection_edit(payload),
+    )

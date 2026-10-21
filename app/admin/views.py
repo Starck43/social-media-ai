@@ -36,9 +36,9 @@ from app.types import (
     ActionType,
     AnalysisType,
     BotActionStatus,
-    ContentType,
     JobType,
     LLMStrategyType,
+    MediaType,
     NotificationType,
     PeriodType,
     PlatformRoleType,
@@ -309,6 +309,7 @@ class SourceAdmin(BaseAdmin, model=Source):
             "platform_id": "ID платформы",
             "source_type": "Тип источника",
             "external_id": "Внешний ID источника",
+            "owner_task_id": "Поиск задачи (lane)",
             "params": "Параметры",
             "last_checked": "Последняя проверка",
             "date_from": "Дата начала сбора",
@@ -354,7 +355,10 @@ class SourceAdmin(BaseAdmin, model=Source):
         },
         "source_type": {
             "label": "Тип источника",
-            "description": "Личный профиль, сообщество, канал или чат — тип определяет доступные методы API",
+            "description": (
+                "Личный профиль, сообщество, канал или чат — тип определяет доступные методы API. "
+                "SEARCH — поисковый запрос ветки задачи (owner_task_id), технический источник"
+            ),
             "choices": SourceType.choices(),
             "coerce": str,
             "validators": [validators.AnyOf([value for value, _ in SourceType.choices()])],
@@ -383,6 +387,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 
     column_formatters_detail = {
         "source_type": lambda m, a: m.source_type.label if m.source_type is not None else "—",
+        "owner_task_id": lambda m, a: str(m.owner_task_id) if m.owner_task_id else "—",
     }
 
     # Use custom templates for create/edit/details to inject per-view JS
@@ -542,7 +547,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
             "media_overrides": "Переопределения по типам контента",
             "summary_prompt": "Промпт общего резюме",
             "analysis_types": "Типы анализа",
-            "content_types": "Типы контента",
+            "content_types": "Поддерживаемые медиа",
             "scope": "Дополнительные параметры",
             "sources": "Источники",
             "text_llm_model": "Модель для текста",
@@ -680,7 +685,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 
         form = await super().scaffold_form(rules)
 
-        form.content_types_enum = list(ContentType)
+        form.content_types_enum = list(MediaType)
         form.analysis_types_enum = list(AnalysisType)
         form.scope_hints = SCOPE_HINTS
 
@@ -1780,6 +1785,8 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
         "source_id",
         "platform",
         "external_id",
+        "content_type",
+        "selection_status",
         "text",
         "media_type",
         "published_at",
@@ -1796,6 +1803,11 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
             "run_id": "ID запуска",
             "source_id": "Источник",
             "external_id": "Внешний ID",
+            "content_type": "Тип контента",
+            "parent_external_id": "Родительская запись",
+            "lane_id": "Ветка сбора",
+            "selection_status": "Отбор",
+            "selection_reason": "Причина отбора",
             "content_hash": "Хэш контента",
             "platform": "Платформа",
             "published_at": "Дата публикации",
@@ -1808,13 +1820,27 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
         **BaseAdmin.column_labels,
     )
 
-    form_excluded_columns = BaseAdmin.form_excluded_columns + ["content_hash"]
+    form_excluded_columns = BaseAdmin.form_excluded_columns + [
+        "content_hash",
+        # Written by the collector/selector, never by an operator.
+        "lane_id",
+        "selection_status",
+        "selection_reason",
+    ]
     form_widget_args = {"text": {"rows": 8}, "metrics": {"rows": 4, "placeholder": '{"likes": 10, "comments": 3}'}}
 
     form_args = {
         "source_id": {"label": "Источник", "description": "ID источника из таблицы sources"},
         "external_id": {"label": "Внешний ID", "description": "Идентификатор на платформе"},
         "platform": {"label": "Платформа", "description": "vk, telegram и т.д."},
+        "content_type": {
+            "label": "Тип контента",
+            "description": "post — запись источника, comment — комментарий; входит в уникальный ключ",
+        },
+        "parent_external_id": {
+            "label": "Родительская запись",
+            "description": "Для комментария — внешний ID записи, под которой он оставлен",
+        },
         "published_at": {"label": "Дата публикации", "description": "Дата публикации поста на платформе"},
         "media_type": {"label": "Тип медиа", "description": "post, photo, video и т.д."},
         "text": {"label": "Текст", "description": "Текстовое содержимое"},
@@ -1932,6 +1958,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "job_type",
         "cron_expr",
         "is_active",
+        "dry_run",
         "next_run_at",
         "last_run_at",
         "last_status",
@@ -1991,7 +2018,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     form_widget_args = {
         "name": {"placeholder": "Например: hourly-collect"},
         "cron_expr": {"placeholder": "0 * * * *"},
-        "payload": {"rows": 4, "placeholder": '{"period": "day"}'},
+        "payload": {"rows": 8, "placeholder": '{"period": "day", "collection": {"content_types": ["posts"]}}'},
         "trigger_config": {
             "rows": 5,
             "placeholder": '{\n  "keywords": ["жалоба", "проблема"],\n  "mode": "any"\n}',
@@ -2028,11 +2055,19 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "payload": {
             "label": "Параметры",
             "description": (
-                'JSON задачи, например {"period": "day"}. Выборка (docs/design/task-selection.md): '
-                'tracked_users — авторы из источников задачи, чьи записи анализируются (пусто — записи '
-                'самих источников); keywords_list + keywords_match (any|all) — фразы, которые должны '
-                "быть в записи; типы контента задаёт сценарий"
+                'JSON задачи, например {"period": "day"}. Сбор (job_type=analyze): collection — '
+                "content_types (posts|comments), engagement_types (likes|reposts), limit, queries, "
+                "city {name, mode}, discovery {people, communities, queries}, comments "
+                "{max_per_post, total}, candidates {limit, confirm}, date_window {start, end}. "
+                "Выборка (docs/design/task-selection.md): tracked_users — авторы из источников задачи, "
+                "чьи записи анализируются (пусто — записи самих источников); keywords_list + "
+                "keywords_match (any|all) — фразы, которые должны быть в записи. Что и где собирать, "
+                "задаёт задача; сценарий отвечает за методику анализа"
             ),
+        },
+        "dry_run": {
+            "label": "Тестовый прогон (dry-run)",
+            "description": "Задача отрабатывает без записи собранных данных и без вызова модели",
         },
         "is_active": {
             "label": "Активна",
@@ -2047,6 +2082,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         # next_run_at / last_run_at inherit the shared DD.MM.YYYY HH:MM formatter
         "last_status": lambda m, a: m.last_status or "—",
         "cron_expr": lambda m, a: cron_to_human(m.cron_expr),
+        "dry_run": lambda m, a: "Да" if m.dry_run else "Нет",
         "sources": lambda m, a: ", ".join(s.name for s in m.sources) or "Все активные",
         "agent_scenario": lambda m, a: m.agent_scenario.name if m.agent_scenario is not None else "—",
         **BaseAdmin.column_formatters,

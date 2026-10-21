@@ -491,10 +491,20 @@ class AgentTaskManager(BaseManager):
         return bool(workspace_active_source_ids)
 
     async def get_workspace_active_source_ids(self) -> set[int]:
-        """Active source ids in the current (tenant-scoped) workspace."""
+        """Active non-lane source ids in the current (tenant-scoped) workspace.
+
+        A task-scoped query lane (`owner_task_id` set) is owned by the task that
+        created it. It never counts as a generic source: the "no linked sources
+        means all active" fallback must not let one task collect through
+        another task's search lane.
+        """
         from ..source import Source
 
-        rows = await Source.objects.filter(is_active=True).values(Source.id).rows()
+        rows = (
+            await Source.objects.filter(is_active=True, owner_task_id__isnull=True)
+            .values(Source.id)
+            .rows()
+        )
         return {r.id for r in rows}
 
     async def effective_active_map(

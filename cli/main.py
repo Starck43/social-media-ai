@@ -450,7 +450,7 @@ def task_update(
     )
     from app.tasks.cron import next_run_at, resolve_tz
 
-    from ._tenant import resolve_tenant_id
+    from ._tenant import resolve_tenant_id, tenant_label
 
     parsed_patch: dict | None = None
     if payload is not None:

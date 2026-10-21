@@ -26,6 +26,35 @@
         </details>
         {% endif %}
     {% endif %}
+    {% if summary.population %}
+    <div class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3">
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Кого искать</p>
+        {% if summary.population.note %}
+        <p class="mt-1 text-sm {% if summary.population.error_code %}text-amber-800 dark:text-amber-300{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ summary.population.note }}</p>
+        {% endif %}
+        {% if summary.population.queries %}
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Запрос: {{ summary.population.queries|join(', ') }}{% if summary.population.city %} · город: {{ summary.population.city }}{% endif %}</p>
+        {% endif %}
+        {% if summary.population.found %}
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Найдено: {{ summary.population.found }}{% if summary.population.created %} · создано источников: {{ summary.population.created }}{% endif %}{% if summary.population.reused %} · переиспользовано: {{ summary.population.reused }}{% endif %}</p>
+        {% endif %}
+        {% if summary.population.error_code and not summary.population.note %}
+        <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">Ошибка поиска: {{ summary.population.error_code }}{% if summary.population.error_hint %} — {{ summary.population.error_hint }}{% endif %}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if summary.lane_runs %}
+    <div class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3">
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Ветки сбора</p>
+        <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400">
+            {% for lane in summary.lane_runs %}
+            <li>
+                {{ lane.lane_type }}{% if lane.query %} · «{{ lane.query }}»{% endif %} · получено {{ lane.fetched }}{% if lane.selected %} · отобрано {{ lane.selected }}{% endif %}{% if lane.rejected %} · отброшено {{ lane.rejected }}{% endif %}{% if lane.needs_review %} · на проверку {{ lane.needs_review }}{% endif %}{% if lane.limit_reached %} · лимит достигнут{% endif %}{% if lane.error_code %} · ошибка {{ lane.error_code }}{% endif %}{% if lane.unsupported_reason %} · {{ lane.unsupported_reason }}{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
     {% if running_job_id %}<p class="mt-4 text-sm"><a href="/app/tasks?job_id={{ running_job_id }}" class="underline">Управление запуском →</a></p>{% endif %}
     {% if task.job_type == 'analyze' and can_retry_analysis and not running_job_id and (job or task.last_run_at) and not (run_progress and run_progress.dry_run) %}
     <form method="post" action="/app/tasks/{{ task.id }}/retry-analysis" class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3" data-task-mutation>

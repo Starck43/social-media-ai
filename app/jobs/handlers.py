@@ -360,6 +360,206 @@ async def _llm_failure_code(source_id: int, since: Any) -> str | None:
     return None
 
 
+def _population_platform(task) -> str:
+    """The platform the population search runs on.
+
+    The discovery block declares no platform of its own, so the task's linked
+    sources decide; VK is the only provider whose adapter can search people
+    and communities, so its presence wins and an unlinked task defaults to it.
+    """
+    from app.services.collection.context import platform_name
+
+    names: list[str] = []
+    for source in getattr(task, "sources", None) or []:
+        name = platform_name(source)
+        if name and name not in names:
+            names.append(name)
+    if "vk" in names:
+        return "vk"
+    return names[0] if names else "vk"
+
+
+def _population_note(summary: dict[str, Any]) -> str:
+    """One bounded operator sentence for the population step's evidence."""
+    code = summary.get("error_code") or summary.get("unsupported_reason")
+    if code:
+        hint = summary.get("error_hint") or "причина неизвестна"
+        return f"Поиск людей и сообществ не выполнен: {hint} ({code})"[:200]
+    found = int(summary.get("found") or 0)
+    if summary.get("dry_run"):
+        return f"Поиск нашёл {found} кандидатов; сухой прогон ничего не сохраняет"[:200]
+    return (
+        f"Поиск нашёл {found} кандидатов, источников создано "
+        f"{int(summary.get('created') or 0)}, переиспользовано "
+        f"{int(summary.get('reused') or 0)}"
+    )[:200]
+
+
+async def _run_population_step(
+    task,
+    *,
+    task_payload: dict[str, Any],
+    dry_run: bool,
+    job_id: int | None,
+) -> dict[str, Any] | None:
+    """Resolve the task's declared population into lanes before collection.
+
+    The task's own intent says which entities to look for (a phrase plus the
+    kinds and the city); every found entity becomes a task-owned wall lane, so
+    the source read that follows picks the lanes up in the same run. Returns a
+    bounded evidence summary, or None when the task declares no population.
+    Never raises: a blocked or failed search is a NAMED result — one
+    `collection_lane_runs` row with the code and a bounded note — and the rest
+    of the collect run continues with the sources that are already readable.
+    """
+    from datetime import datetime, timezone
+
+    from app.services.collection import lane_runs
+    from app.services.collection.intent import CollectionIntentError, parse_collection_intent
+    from app.services.collection.population import (
+        CANDIDATE_SEARCH_LANE_TYPE,
+        PopulationError,
+        resolve_population,
+    )
+
+    task_id = _log_id(getattr(task, "id", None))
+    try:
+        intent = parse_collection_intent(task_payload)
+    except CollectionIntentError as error:
+        # The per-source stages report the same malformed block; the population
+        # step just declines to guess a population from it.
+        logger.warning(
+            "collect_population_intent_invalid task_id=%s error_code=%s",
+            task_id,
+            str(error),
+        )
+        return None
+    discovery = intent.discovery
+    if not discovery.queries or not (discovery.communities or discovery.people):
+        return None
+
+    platform_key = _population_platform(task)
+    started_at = datetime.now(timezone.utc)
+    summary: dict[str, Any] = {
+        "ran": True,
+        "dry_run": dry_run,
+        "platform": platform_key,
+        "queries": list(discovery.queries)[:10],
+        "found": 0,
+        "created": 0,
+        "reused": 0,
+        "linked": 0,
+        "would_create": 0,
+        "refused": [],
+        "warnings": [],
+        "city": None,
+        "per_phrase": [],
+        "error_code": None,
+        "error_hint": None,
+        "unsupported_reason": None,
+        "note": "",
+    }
+
+    async def _record(**values: Any) -> int | None:
+        try:
+            return await lane_runs.record_lane_run(
+                tenant_id=int(task.tenant_id),
+                job_id=job_id,
+                task_id=task_id,
+                lane_id=f"population:{platform_key}"[:100],
+                lane_type=CANDIDATE_SEARCH_LANE_TYPE,
+                limit_count=intent.candidates.limit,
+                started_at=started_at,
+                finished_at=datetime.now(timezone.utc),
+                **values,
+            )
+        except Exception as record_error:  # noqa: BLE001 — evidence never fails the run
+            logger.warning(
+                "population_evidence_failed task_id=%s error_code=%s",
+                task_id,
+                _error_kind(record_error),
+            )
+            return None
+
+    try:
+        result = await resolve_population(
+            task=task,
+            intent=intent,
+            platform=platform_key,
+            dry_run=dry_run,
+            job_id=job_id,
+        )
+    except PopulationError as error:
+        code = error.code
+        is_unsupported = code == "population_search_unsupported"
+        row_id = await _record(
+            query=error.query or _bounded_query(discovery.queries),
+            fetched=0,
+            # An unsupported search is a capability answer, not an API failure.
+            error_code=None if is_unsupported else code,
+            unsupported_reason=code if is_unsupported else None,
+        )
+        summary.update(
+            error_code=None if is_unsupported else code,
+            error_hint=error.hint,
+            unsupported_reason=code if is_unsupported else None,
+            lane_run_id=row_id,
+            note=_population_note({"error_code": code, "error_hint": error.hint}),
+        )
+        return summary
+    except Exception as error:  # noqa: BLE001 — a population failure must not fail the run
+        code = _error_kind(error)
+        row_id = await _record(
+            query=_bounded_query(discovery.queries),
+            fetched=0,
+            error_code=code,
+        )
+        summary.update(
+            error_code=code,
+            lane_run_id=row_id,
+            note=_population_note({"error_code": code, "error_hint": None}),
+        )
+        return summary
+
+    summary.update(
+        city=(
+            {"name": result.city_name, "id": result.city_id}
+            if result.city_id is not None or result.city_name is not None
+            else None
+        ),
+        found=len(result.entities),
+        per_phrase=[
+            {"query": phrase.query, "communities": phrase.communities, "people": phrase.people}
+            for phrase in result.per_phrase[:10]
+        ],
+        created=len(result.created_source_ids),
+        reused=len(result.reused_source_ids),
+        linked=len(result.linked_source_ids),
+        would_create=len(result.would_create),
+        refused=list(result.refused[:5]),
+        warnings=list(result.warnings[:10]),
+    )
+    if result.dry_run:
+        # A rehearsal stores nothing; the note carries the find count so the
+        # evidence says what a real run would have created.
+        summary["note"] = _population_note({"dry_run": True, "found": len(result.entities)})
+    else:
+        summary["note"] = _population_note(summary)
+    row_id = await _record(query=_bounded_query(discovery.queries), fetched=summary["found"])
+    if row_id:
+        summary["lane_run_id"] = row_id
+    return summary
+
+
+def _bounded_query(queries: tuple[str, ...]) -> str | None:
+    """One bounded query value for the evidence row of a multi-phrase step."""
+    if not queries:
+        return None
+    if len(queries) == 1:
+        return queries[0]
+    return " | ".join(queries)[:500]
+
+
 async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -> dict[str, Any]:
     """
     Collect content from sources.
@@ -411,6 +611,24 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     if analyze_inline is None:
         analyze_inline = payload.get("analyze_inline", False)
 
+    # Population step: the task's own intent may declare a search (a phrase
+    # plus the kinds to find and the city) whose results become task-owned
+    # wall lanes. It runs BEFORE the sources are read, so the found walls join
+    # this same run; a blocked search is named evidence and never fails the
+    # rest of the collection.
+    population = None
+    if task is not None and _log_id(getattr(task, "id", None)) is not None:
+        population = await _run_population_step(
+            task,
+            task_payload=task_payload,
+            dry_run=dry_run,
+            job_id=run_id,
+        )
+        if population and (population.get("created") or population.get("reused")):
+            # The lanes exist now — read the task's sources again so this run
+            # picks them up.
+            task = await _load_task(payload.get("agent_task_id")) or task
+
     sources = await _resolve_sources(None if snapshot else task, payload)
 
     collector = ContentCollector()
@@ -452,6 +670,10 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         # run, which is what left "what did *this* source yield?" unanswerable.
         "per_source": [],
     }
+    if population is not None:
+        # Named evidence for the population step: what it found, what it
+        # linked, and — when the search is blocked — the bounded reason.
+        stats["population"] = population
     from app.jobs import progress as job_progress
     if stage_only:
         await job_progress.begin_phase("collection")

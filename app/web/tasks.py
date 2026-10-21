@@ -1236,6 +1236,7 @@ async def task_detail(request: Request, task_id: int):
 		latest_job = running_job if running_job_id is not None else (recent_jobs[0] if recent_jobs else None)
 	latest_run = _task_run_panel_data(request, source, latest_job, run_scope=run_scope)
 	await _attach_task_llm_diagnostics(request, source, latest_job, latest_run)
+	await _attach_task_lane_evidence(latest_run, latest_job)
 
 	return render(
 		request,
@@ -1306,6 +1307,48 @@ async def _task_run_scope(task: Any, *, include_raw: bool = False, include_sourc
 	return scope
 
 
+def _population_view(job: Any) -> dict[str, Any] | None:
+	"""The population step of the run: what it found, or why it could not search."""
+	result = job.result if isinstance(job.result, dict) else {}
+	collection = result.get("collection") if isinstance(result, dict) else None
+	population = collection.get("population") if isinstance(collection, dict) else None
+	if not isinstance(population, dict):
+		return None
+	return {
+		"note": population.get("note"),
+		"queries": [str(value) for value in (population.get("queries") or []) if value],
+		"found": population.get("found"),
+		"created": population.get("created"),
+		"reused": population.get("reused"),
+		"city": population.get("city"),
+		"error_code": population.get("error_code"),
+		"error_hint": population.get("error_hint"),
+		"unsupported_reason": population.get("unsupported_reason"),
+	}
+
+
+async def _lane_run_rows(job: Any) -> list[dict[str, Any]]:
+	"""Per-lane evidence of the run: counts and bounds, never the rejected text."""
+	from app.models import CollectionLaneRun
+
+	rows = await CollectionLaneRun.objects.filter(job_id=job.id).order_by(CollectionLaneRun.id)
+	evidence: list[dict[str, Any]] = []
+	for row in rows:
+		evidence.append({
+			"lane_id": row.lane_id,
+			"lane_type": row.lane_type,
+			"query": row.query,
+			"fetched": row.fetched,
+			"selected": row.selected,
+			"needs_review": row.needs_review,
+			"rejected": row.rejected,
+			"limit_reached": row.limit_reached,
+			"error_code": row.error_code,
+			"unsupported_reason": row.unsupported_reason,
+		})
+	return evidence
+
+
 def _legacy_task_status_label(task: Any) -> str:
 	"""Translate the task's coarse schedule receipt without exposing last_error."""
 	return {
@@ -1314,6 +1357,22 @@ def _legacy_task_status_label(task: Any) -> str:
 		"failed": "завершилась с ошибкой",
 		"skipped": "пропущена",
 	}.get(getattr(task, "last_status", None), "результат не подтверждён")
+
+
+async def _attach_task_lane_evidence(panel: dict[str, Any], job: Any | None) -> None:
+	"""Add the per-lane evidence of the run to the panel summary.
+
+	The panel builder is synchronous, so the lane rows (an async read) are
+	attached here by the async callers.
+	"""
+	if job is None:
+		return
+	summary = panel.get("summary")
+	if not isinstance(summary, dict):
+		return
+	lane_runs = await _lane_run_rows(job)
+	if lane_runs:
+		summary["lane_runs"] = lane_runs
 
 
 async def _attach_task_llm_diagnostics(request: Request, task: Any, job: Any | None, panel: dict[str, Any]) -> None:
@@ -1400,6 +1459,14 @@ def _task_run_panel_data(
 	else:
 		summary.pop("raw_coverage", None)
 		summary.pop("progress", None)
+	if job.job_type in ("collect", "analyze"):
+		# What the population step did: how many entities it found, or the
+		# named reason it could not search. The owner must see it on the task
+		# page — "nothing found" and "the platform refused the search" are
+		# different facts.
+		population = _population_view(job)
+		if population:
+			summary["population"] = population
 	if _diagnostics_admin(request):
 		summary["diagnostics"] = _diagnostics_view(job)
 		if not can_view_sources:
@@ -1438,6 +1505,7 @@ async def task_latest_progress(request: Request, task_id: int):
 	run_scope = await _task_run_scope(task, include_sources=perms_can(request, "source", "view"))
 	panel = _task_run_panel_data(request, task, job, run_scope=run_scope)
 	await _attach_task_llm_diagnostics(request, task, job, panel)
+	await _attach_task_lane_evidence(panel, job)
 	return render(request, "web/task_run_progress.html", task=task, sidebar_oob=True, **panel)
 
 

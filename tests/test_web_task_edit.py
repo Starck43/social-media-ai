@@ -123,10 +123,10 @@ async def test_edit_page_renders_targets_for_the_bound_scenario(client: AsyncCli
         assert page.status_code == 200
 
         assert f'"{scenario.id}": ["brand_mentions", "keywords"]' in page.text
-        # The inputs are rendered from TARGET_FIELDS, one entry per payload key.
-        assert 'key: "brands"' in page.text
-        assert 'key: "keywords_list"' in page.text
-        assert ':name="f.key"' in page.text
+        # Server-rendered inputs: one per payload key the scenario can ask for,
+        # so the values submit with or without Alpine.
+        assert 'name="brands"' in page.text
+        assert 'name="keywords_list"' in page.text
         assert "Бренды" in page.text
         # Values round-trip: the stored brand is bound to its input.
         assert "Coca Cola" in page.text
@@ -310,16 +310,17 @@ async def test_tasks_page_add_modal_offers_targets_and_digest_params(client: Asy
         assert 'x-data="addTaskForm()"' in page.text
         assert 'x-model="task.scenario_id"' in page.text
         assert f'"{scenario.id}": ["brand_mentions"]' in page.text
-        assert 'key: "brands"' in page.text
-        assert 'key: "topic_list"' in page.text
+        assert 'name="brands"' in page.text
+        assert 'name="topic_list"' in page.text
         # The target inputs follow the selected scenario's analysis types.
         assert 'x-show="targetFields.length > 0"' in page.text
         # Digest params exist in the modal — group_by was edit-page-only.
         assert 'name="digest_period"' in page.text
         assert 'name="digest_group_by"' in page.text
         assert "task.job_type === 'digest'" in page.text
-        # User lists post only for the types that read them.
-        assert 'x-if="task.job_type === \'analyze\'"' in page.text
+        # Trigger fields are server-rendered and visibility-gated, not absent
+        # from the POST: a save without JavaScript keeps their values.
+        assert 'x-show="task.job_type === \'analyze\'"' in page.text
         # Repeat-policy controls are absent from the add form.
         assert 'name="force_reanalyze"' not in page.text
         assert 'name="force_refresh"' not in page.text

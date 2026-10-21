@@ -1,4 +1,4 @@
-{% from "web/_macros.html" import control, task_dates, task_retention_fields, task_trigger_actions, bound_popover_select, switch_toggle, check_card, check_mark %}
+{% from "web/_macros.html" import control, task_dates, task_retention_fields, task_trigger_actions, task_collection_fields, task_targets, bound_popover_select, switch_toggle, check_card, check_mark %}
 {% extends "web/base.html" %}
 {% block title %}Задача — AI Monitor{% endblock %}
 {% block page_heading %}{{ task.name }}{% endblock %}
@@ -75,7 +75,7 @@
         </a></div></template>
     </div>
 
-    <noscript><div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">Редактор требует JavaScript: без него поля и сохранение отключены, чтобы случайно не перезаписать задачу пустыми значениями.</div></noscript>
+    <noscript><div class="mb-4 rounded-xl border border-slate-300 bg-slate-50 p-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">JavaScript выключен: поля показывают сохранённые значения и отправляются как есть. Виджеты расписания и выбора целей работают в упрощённом виде.</div></noscript>
     <form method="post" action="/app/tasks/{{ task.id }}" :action="'/app/tasks/' + editing.id"
           {% if embedded %}target="_top"{% endif %}
           class="space-y-4 {% if not embedded %}rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6{% endif %}"
@@ -87,10 +87,10 @@
         <input type="hidden" name="return_to_detail" value="1">
         {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                          value="{{ filter_tenant_id }}">{% endif %}
-        <fieldset id="task-editor-fields" disabled class="m-0 min-w-0 space-y-4 border-0 p-0">
+        <fieldset id="task-editor-fields" class="m-0 min-w-0 space-y-4 border-0 p-0">
         <div>
             <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
-            <input name="name" required maxlength="100" x-model="editing.name"
+            <input name="name" required maxlength="100" x-model="editing.name" value="{{ edit.name }}"
                    class="{{ control() }}">
         </div>
         <div>
@@ -186,9 +186,10 @@
                     </div>
                 </template>
 
-                <input type="hidden" name="cron_expr" :value="cron">
+                <input type="hidden" name="cron_expr" :value="cron" value="{{ edit.cron_expr }}">
             </div>
         </div>
+        {{ task_collection_fields(edit, "edit", "editing.job_type") }}
         {% if sources %}
         {# Compact inline source picker: selected sources are chips with a
            remove (×) control; adding goes through a same-style "+ Добавить"
@@ -198,7 +199,7 @@
            `editing.source_ids` and the hidden inputs below carry the values;
            without JS the fallback checkbox list below submits identically. #}
         <div x-show="editing.job_type !== 'prune'" x-cloak>
-            <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
+            <h3 class="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Где читать</h3>
             <div class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                 <div class="flex flex-wrap items-center gap-1.5">
                     <template x-for="src in selectedSources()" :key="src.id">
@@ -221,18 +222,25 @@
                             <input type="text" x-model="sourceQuery" x-ref="search" placeholder="Поиск по названию…"
                                    aria-label="Поиск источника по названию"
                                    class="{{ control() }} !py-1.5">
-                            <ul role="listbox" class="mt-1 max-h-48 overflow-y-auto">
-                                <template x-for="src in filteredSources()" :key="src.id">
-                                    <li>
-                                        <button type="button" role="option" :aria-selected="false" @click="addSource(src.id)"
-                                                class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
-                                            <span aria-hidden="true">+</span>
-                                            <span class="min-w-0 flex-1 truncate" x-text="src.name"></span>
-                                        </button>
-                                    </li>
+                            <div class="mt-1 max-h-48 overflow-y-auto" role="listbox">
+                                <template x-for="group in filteredSourceGroups()" :key="group.label">
+                                    <div>
+                                        <p class="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400" x-text="group.label"></p>
+                                        <ul>
+                                            <template x-for="src in group.sources" :key="src.id">
+                                                <li>
+                                                    <button type="button" role="option" :aria-selected="false" @click="addSource(src.id)"
+                                                            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                                                        <span aria-hidden="true">+</span>
+                                                        <span class="min-w-0 flex-1 truncate" x-text="src.name"></span>
+                                                    </button>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                    </div>
                                 </template>
-                                <li x-show="filteredSources().length === 0" class="px-2 py-1.5 text-sm text-slate-600 dark:text-slate-400">Ничего не найдено</li>
-                            </ul>
+                                <p x-show="filteredSourceGroups().length === 0" class="px-2 py-1.5 text-sm text-slate-600 dark:text-slate-400">Ничего не найдено</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -241,20 +249,46 @@
                 </template>
             </div>
             <noscript>
-                <ul class="mt-2 grid grid-cols-1 gap-2 max-h-40 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
-                    {% for source in sources %}
-                    {{ check_card(
-                        cid="task-src-" ~ source.id,
-                        name="source_ids",
-                        value=source.id,
-                        content=source.name,
-                        checked=source.id in edit.source_ids,
-                        cls="content-cb"
-                    ) }}
+                <div class="mt-2 space-y-2 max-h-56 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
+                    {% for group in source_groups %}
+                    <p class="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">{{ group.label }}</p>
+                    <ul class="grid grid-cols-1 gap-2">
+                        {% for source in group.sources %}
+                        {{ check_card(
+                            cid="task-src-" ~ source.id,
+                            name="source_ids",
+                            value=source.id,
+                            content=source.name,
+                            checked=source.id in edit.source_ids,
+                            cls="content-cb"
+                        ) }}
+                        {% endfor %}
+                    </ul>
                     {% endfor %}
-                </ul>
+                    {% if task_sources %}
+                    <p class="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Поисковые запросы задачи</p>
+                    <ul class="grid grid-cols-1 gap-2">
+                        {% for source in task_sources %}
+                        {{ check_card(
+                            cid="task-src-" ~ source.id,
+                            name="source_ids",
+                            value=source.id,
+                            content=source.name,
+                            checked=source.id in edit.source_ids,
+                            cls="content-cb"
+                        ) }}
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
             </noscript>
-            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Отметка деактивированного источника активирует его.</p>
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Отметка деактивированного источника активирует его. Поисковые запросы задачи создаются автоматически из «Что искать» и вручную не выбираются.</p>
+        </div>
+        {% else %}
+        <div x-show="editing.job_type !== 'prune'">
+            <h3 class="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Где читать</h3>
+            <p class="text-sm text-slate-600 dark:text-slate-400">В этом пространстве пока нет источников.
+                <a class="text-cyan-700 underline dark:text-cyan-300" href="/app/sources">Добавьте источник</a>, чтобы задаче было откуда читать.</p>
         </div>
         {% endif %}
         <div x-show="editing.job_type !== 'prune'" x-cloak>
@@ -271,25 +305,17 @@
         {# The analysis targets the selected scenario's analysis types need
            (param_registry.PAYLOAD_PARAMS): the scenario says which kinds of
            target matter, the task says the actual brands/hashtags. Every input
-           stays in the DOM — a hidden one still submits its value, so the
-           payload round-trips untouched when the scenario changes. #}
+           is server-rendered with its stored value, so a save without
+           JavaScript round-trips the payload; Alpine only toggles visibility
+           and the hidden inputs still submit for the types not shown. #}
         <div class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3"
              x-show="targetFields.length > 0" x-cloak>
             <p class="text-sm text-slate-700 dark:text-slate-300">Цели анализа
                 <span class="text-xs text-slate-600 dark:text-slate-400">— какие именно данные искать, требует выбранный сценарий</span>
             </p>
-            <div class="grid grid-cols-2 gap-3">
-                <template x-for="f in targetDefs" :key="f.key">
-                    <div x-show="isTargetVisible(f)">
-                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400" x-text="f.label"></label>
-                        <input type="text" :name="f.key" x-model="editing[f.key]" :placeholder="f.ph"
-                               class="{{ control() }}">
-                        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400" x-text="f.hint"></p>
-                    </div>
-                </template>
-            </div>
+            {{ task_targets(target_fields, edit) }}
         </div>
-        {{ task_dates("editing", "editing.job_type") }}
+        {{ task_dates("editing", "editing.job_type", edit.start_date, edit.end_date) }}
 
         <template x-if="editing.job_type === 'digest'">
             <div class="ui-card space-y-4">
@@ -299,59 +325,54 @@
                         <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Период</label>
                         <select name="digest_period" x-model="editing.digest_period"
                                 class="{{ control() }}">
-                            <option value="day">День</option>
-                            <option value="week">Неделя</option>
-                            <option value="month">Месяц</option>
+                            <option value="day" {% if edit.digest_period == 'day' %}selected{% endif %}>День</option>
+                            <option value="week" {% if edit.digest_period == 'week' %}selected{% endif %}>Неделя</option>
+                            <option value="month" {% if edit.digest_period == 'month' %}selected{% endif %}>Месяц</option>
                         </select>
                     </div>
                     <div>
                         <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Ось группировки</label>
                         <select name="digest_group_by" x-model="editing.digest_group_by"
                                 class="{{ control() }}">
-                            <option value="themes">По темам</option>
-                            <option value="sources">По источникам</option>
-                            <option value="entities">По упоминаниям</option>
-                            <option value="sentiment">По тональности</option>
-                            <option value="content_type">По типу контента</option>
-                            <option value="intent">По намерению</option>
-                            <option value="topic_chains">Тематические цепочки</option>
+                            <option value="themes" {% if edit.digest_group_by == 'themes' %}selected{% endif %}>По темам</option>
+                            <option value="sources" {% if edit.digest_group_by == 'sources' %}selected{% endif %}>По источникам</option>
+                            <option value="entities" {% if edit.digest_group_by == 'entities' %}selected{% endif %}>По упоминаниям</option>
+                            <option value="sentiment" {% if edit.digest_group_by == 'sentiment' %}selected{% endif %}>По тональности</option>
+                            <option value="content_type" {% if edit.digest_group_by == 'content_type' %}selected{% endif %}>По типу контента</option>
+                            <option value="intent" {% if edit.digest_group_by == 'intent' %}selected{% endif %}>По намерению</option>
+                            <option value="topic_chains" {% if edit.digest_group_by == 'topic_chains' %}selected{% endif %}>Тематические цепочки</option>
                         </select>
                     </div>
                 </div>
-                {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs={'x-model': 'editing.digest_time_breakdown'}) }}
+                {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=edit.digest_time_breakdown, attrs={'x-model': 'editing.digest_time_breakdown'}) }}
             </div>
         </template>
 
-        {# `x-if`, not `x-show`: these inputs belong to one job type and must
-           not reach the POST for the others. The force flags live in
-           `task_dates` alone — one checkbox per type, no second one bound to
-           the same name here. #}
+        {# `x-show`, not `x-if`: these inputs are server-rendered with their
+           stored values, so a no-JS save still carries them; the job type only
+           decides visibility, and the server ignores keys of another type. #}
         <div class="grid grid-cols-2 gap-3">
-            <template x-if="editing.job_type === 'collect' || editing.job_type === 'analyze'">
-                <div>
-                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживаемые авторы</label>
-                    <input name="tracked_users" x-model="editing.tracked_users"
-                           placeholder="vk:123456, telegram:@name"
-                           class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Только их материалы из выбранных
-                        источников, платформа:id. Пусто — материалы самих источников.</p>
-                </div>
-            </template>
-            <template x-if="editing.job_type === 'collect' || editing.job_type === 'analyze'">
-                <div>
-                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Ключевые слова: совпадение
-                        фраз</label>
-                    <select name="keywords_match" x-model="editing.keywords_match" class="{{ control() }}">
-                        <option value="any">Любая из фраз</option>
-                        <option value="all">Все фразы</option>
-                    </select>
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Применяется к «Ключевым словам» ниже;
-                        без фраз ничего не отсекает.</p>
-                </div>
-            </template>
+            <div x-show="editing.job_type === 'collect' || editing.job_type === 'analyze'">
+                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживаемые авторы</label>
+                <input name="tracked_users" x-model="editing.tracked_users" value="{{ edit.tracked_users }}"
+                       placeholder="vk:123456, telegram:@name"
+                       class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Только их материалы из выбранных
+                    источников, платформа:id. Пусто — материалы самих источников.</p>
+            </div>
+            <div x-show="editing.job_type === 'collect' || editing.job_type === 'analyze'">
+                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Ключевые слова: совпадение
+                    фраз</label>
+                <select name="keywords_match" x-model="editing.keywords_match" class="{{ control() }}">
+                    <option value="any" {% if edit.keywords_match == 'any' %}selected{% endif %}>Любая из фраз</option>
+                    <option value="all" {% if edit.keywords_match == 'all' %}selected{% endif %}>Все фразы</option>
+                </select>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Применяется к «Ключевым словам» ниже;
+                    без фраз ничего не отсекает.</p>
+            </div>
         </div>
 
-        {{ task_trigger_actions("editing", "editing.job_type", trigger_types, action_types, edit.trigger_type, edit.action_type) }}
+        {{ task_trigger_actions("editing", "editing.job_type", trigger_types, action_types, edit.trigger_type, edit.action_type, edit) }}
         {# One switch per row: the two labels are inline-flex, so without a
            column wrapper they shared a line and the long dry-run hint crowded
            the "Активна" toggle. #}
@@ -359,7 +380,7 @@
             {% if can_dry_run %}
             {{ switch_toggle("dry_run", "Тестовый прогон (dry-run)", checked=edit.dry_run, attrs={'x-model': 'editing.dry_run'}, hint="Собрать и показать выборку, ничего не сохранять и не звать модель") }}
             {% endif %}
-            {{ switch_toggle("is_active", "Активна", checked=False, attrs={'x-model': 'editing.is_active'}) }}
+            {{ switch_toggle("is_active", "Активна", checked=edit.is_active, attrs={'x-model': 'editing.is_active'}) }}
         </div>
         <p class="text-xs text-slate-600 dark:text-slate-400">Сохранение обновит параметры; второй вариант сохранит задачу и сразу поставит запуск в очередь.</p>
         <div class="flex flex-col gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
@@ -401,15 +422,16 @@
 <script>
     const TASK_EDIT = {{ edit|tojson }};
     const SCENARIO_ANALYSIS = {{ scenario_analysis|tojson }};
-    const SOURCES = [{% for s in sources %}{"id": {{ s.id }}, "name": {{ s.name|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}];
-    const TARGET_FIELDS = [
-        { key: "brands", type: "brand_mentions", label: "Бренды", ph: "Coca-Cola, Sprite", hint: "Какие бренды упоминать в контенте" },
-        { key: "competitors", type: "competitor", label: "Конкуренты", ph: "brand-a, brand-b", hint: "Чьи упоминания считать конкурентными" },
-        { key: "hashtags", type: "hashtag_analysis", label: "Хэштеги", ph: "#бренд, #акция", hint: "Хэштеги для отслеживания" },
-        { key: "influencer_names", type: "influencer", label: "Авторы", ph: "author1, author2", hint: "Авторы и инфлюенсеры для анализа" },
-        { key: "keywords_list", type: "keywords", label: "Ключевые слова", ph: "Киров, дизайн интерьера", hint: "Фразы, которые должны быть в записи, чтобы её анализировали; не влияют на сбор" },
-        { key: "topic_list", type: "topics", label: "Темы", ph: "доставка, цены", hint: "Темы, которые нужно выделить" },
+    {% set ns = namespace(first=true) %}
+    const SOURCES = [
+        {% for group in source_groups %}{% for s in group.sources %}
+        {{ "" if ns.first else "," }}{% set ns.first = false %}{"id": {{ s.id }}, "name": {{ s.name|tojson }}, "group": {{ group.label|tojson }}, "scoped": false}
+        {% endfor %}{% endfor %}
+        {% for s in task_sources %}
+        {{ "" if ns.first else "," }}{% set ns.first = false %}{"id": {{ s.id }}, "name": {{ s.name|tojson }}, "group": "Поисковые запросы задачи", "scoped": true}
+        {% endfor %}
     ];
+    const TARGET_FIELDS = {{ target_fields|tojson }};
 
     function scheduleBuilder() { return window.taskScheduleBuilder(); }
 
@@ -469,9 +491,23 @@
             filteredSources() {
                 const q = (this.sourceQuery || "").trim().toLowerCase();
                 return SOURCES.filter(
-                    (s) => !this.editing.source_ids.includes(s.id)
+                    (s) => !s.scoped
+                        && !this.editing.source_ids.includes(s.id)
                         && (!q || s.name.toLowerCase().includes(q)),
                 );
+            },
+            filteredSourceGroups() {
+                const groups = [];
+                const byLabel = new Map();
+                for (const source of this.filteredSources()) {
+                    if (!byLabel.has(source.group)) {
+                        const group = { label: source.group, sources: [] };
+                        byLabel.set(source.group, group);
+                        groups.push(group);
+                    }
+                    byLabel.get(source.group).sources.push(source);
+                }
+                return groups;
             },
             addSource(id) {
                 if (!this.editing.source_ids.includes(id) && id in this.sourceById) {
@@ -488,6 +524,10 @@
             },
             isTargetVisible(field) {
                 return this.activeTargetTypes().includes(field.type);
+            },
+            isTargetVisibleByKey(key) {
+                const field = TARGET_FIELDS.find((item) => item.key === key);
+                return field ? this.isTargetVisible(field) : true;
             },
             get targetFields() {
                 return TARGET_FIELDS.filter((f) => this.activeTargetTypes().includes(f.type));
@@ -523,7 +563,6 @@
                 // Drop linked ids missing from the tenant catalog (e.g. a
                 // source removed elsewhere) so chips never render nameless.
                 this.sourceById = Object.fromEntries(SOURCES.map((s) => [s.id, s]));
-                document.getElementById("task-editor-fields").disabled = false;
                 this.pickerOpen = false;
                 this.sourceQuery = "";
                 this.editing.source_ids = (this.editing.source_ids || []).filter((id) => id in this.sourceById);

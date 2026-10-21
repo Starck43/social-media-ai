@@ -9,6 +9,7 @@ Flow:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -22,6 +23,14 @@ from app.jobs.progress import read_snapshot
 from app.web.task_progress import project_run, sidebar_sources
 from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR, OPERATOR_CANCELLED_ERROR, outcome_unconfirmed
 from app.types import AgentActionType, BotTriggerType, JobType
+from app.services.collection.intent import (
+	CITY_MODES,
+	CITY_PREFER,
+	CONFIRM_MODES,
+	CollectionIntent,
+	CollectionIntentError,
+	parse_collection_intent,
+)
 from app.services.monitoring.selection import SelectionError
 
 from .deps import (
@@ -78,7 +87,56 @@ def _normalize_web_job_type(job_type: str) -> str:
 # The analysis targets a task payload carries (param_registry.PAYLOAD_PARAMS):
 # the scenario's analysis types say *what kind* of target matters, the task
 # says *which* brands/hashtags/… to aim at.
-TARGET_KEYS = ("brands", "competitors", "hashtags", "influencer_names")
+TARGET_KEYS = ("brands", "competitors", "hashtags", "influencer_names", "topic_list")
+
+# The target inputs the editor renders: `type` is the scenario analysis type
+# that asks for the key (param_registry.PAYLOAD_PARAMS). Shared by the edit
+# page, the add modal and their JS so the server-rendered fallback and the
+# Alpine-enhanced visibility never describe different fields.
+TARGET_FIELD_DEFS = (
+	{
+		"key": "brands",
+		"type": "brand_mentions",
+		"label": "Бренды",
+		"ph": "Coca-Cola, Sprite",
+		"hint": "Какие бренды упоминать в контенте",
+	},
+	{
+		"key": "competitors",
+		"type": "competitor",
+		"label": "Конкуренты",
+		"ph": "brand-a, brand-b",
+		"hint": "Чьи упоминания считать конкурентными",
+	},
+	{
+		"key": "hashtags",
+		"type": "hashtag_analysis",
+		"label": "Хэштеги",
+		"ph": "#бренд, #акция",
+		"hint": "Хэштеги для отслеживания",
+	},
+	{
+		"key": "influencer_names",
+		"type": "influencer",
+		"label": "Авторы",
+		"ph": "author1, author2",
+		"hint": "Авторы и инфлюенсеры для анализа",
+	},
+	{
+		"key": "keywords_list",
+		"type": "keywords",
+		"label": "Ключевые слова",
+		"ph": "Киров, дизайн интерьера",
+		"hint": "Фразы, которые должны быть в записи, чтобы её анализировали; не влияют на сбор",
+	},
+	{
+		"key": "topic_list",
+		"type": "topics",
+		"label": "Темы",
+		"ph": "доставка, цены",
+		"hint": "Темы, которые нужно выделить",
+	},
+)
 
 # The task's selection keys, written only through `apply_selection`.
 _SELECTION_KEYS = ("tracked_users", "keywords_list", "keywords_match")
@@ -136,6 +194,197 @@ def _apply_targets(payload: dict, targets: dict[str, str]) -> None:
 			payload[key] = values
 		else:
 			payload.pop(key, None)
+
+
+# The collection intent is a task-owned block (see
+# `app/services/collection/intent.py`); the form only splits strings and fills
+# the fields, the parser stays the single validator. A hidden
+# `collection_configured` marker field tells the handlers the form actually
+# carried the block: a save from an older client (or an API caller posting only
+# the legacy fields) must not silently rewrite it.
+
+# Bounded, user-facing text for the parser's error codes. The code is appended
+# to the generic message so an operator report stays diagnosable.
+_COLLECTION_ERROR_TEXT = {
+	"collection_content_types_empty": "выберите хотя бы один тип контента",
+	"collection_content_types_unsupported": "неизвестный тип контента",
+	"collection_engagement_types_unsupported": "неизвестный тип вовлечённости",
+	"collection_limit_invalid": "лимит сбора должен быть целым числом",
+	"collection_limit_out_of_range": "лимит сбора вне допустимого диапазона",
+	"collection_queries_invalid": "проверьте список фраз для поиска упоминаний",
+	"collection_city_name_invalid": "укажите название города",
+	"collection_city_mode_invalid": "неизвестный режим города",
+	"collection_date_window_reversed": "дата начала позже даты окончания",
+	"collection_start_date_invalid": "некорректная дата начала",
+	"collection_end_date_invalid": "некорректная дата окончания",
+	"collection_discovery_queries_invalid": "проверьте фразы для поиска людей и сообществ",
+	"collection_comments_max_per_post_out_of_range": "лимит комментариев на запись вне допустимого диапазона",
+	"collection_comments_total_out_of_range": "общий лимит комментариев вне допустимого диапазона",
+	"collection_candidates_limit_out_of_range": "лимит кандидатов вне допустимого диапазона",
+	"collection_candidates_confirm_invalid": "неизвестный режим подтверждения кандидатов",
+}
+
+
+def _split_intent_phrases(raw: str) -> list[str]:
+	"""Split the collection phrase fields; one phrase per comma or line."""
+	return [" ".join(part.split()) for part in re.split(r"[,\n]", raw or "") if part.strip()]
+
+
+def _collection_error_message(code: str) -> str:
+	hint = _COLLECTION_ERROR_TEXT.get(code)
+	if hint:
+		return f"Проверьте параметры сбора: {hint} ({code})"
+	return f"Проверьте параметры сбора данных (код: {code})"
+
+
+def _collection_block(
+	job_type: str,
+	*,
+	city: str,
+	city_mode: str,
+	people: str,
+	communities: str,
+	discovery_queries: str,
+	queries: str,
+	content_types: list[str],
+	engagement_types: list[str],
+	limit: str,
+	comments_max_per_post: str,
+	comments_total: str,
+	candidates_limit: str,
+	candidates_confirm: str,
+	date_window: dict[str, Any] | None,
+) -> dict[str, Any]:
+	"""Build and validate `payload["collection"]` from the form fields.
+
+	Raises `ValueError` with a bounded message when the parser rejects a known
+	value: a bad save must not stage a population the operator did not ask for.
+	Returns an empty dict for every job type that does not collect, so the
+	caller can drop a stale block when the task type changes.
+	"""
+	if job_type != "analyze":
+		return {}
+	if not content_types:
+		raise ValueError("Что собирать: отметьте записи, комментарии или оба типа")
+
+	raw: dict[str, Any] = {
+		"content_types": [value.strip().lower() for value in content_types if value.strip()],
+	}
+	if engagement_types:
+		raw["engagement_types"] = [value.strip().lower() for value in engagement_types if value.strip()]
+	if limit.strip():
+		raw["limit"] = limit.strip()
+	if queries.strip():
+		raw["queries"] = _split_intent_phrases(queries)
+	if city.strip():
+		raw["city"] = {"name": city.strip(), "mode": (city_mode or CITY_PREFER).strip()}
+	if people == "on" or communities == "on" or discovery_queries.strip():
+		raw["discovery"] = {
+			"people": people == "on",
+			"communities": communities == "on",
+			"queries": _split_intent_phrases(discovery_queries),
+		}
+	if comments_max_per_post.strip() or comments_total.strip():
+		raw["comments"] = {}
+		if comments_max_per_post.strip():
+			raw["comments"]["max_per_post"] = comments_max_per_post.strip()
+		if comments_total.strip():
+			raw["comments"]["total"] = comments_total.strip()
+	if candidates_limit.strip() or (candidates_confirm or "").strip():
+		raw["candidates"] = {}
+		if candidates_limit.strip():
+			raw["candidates"]["limit"] = candidates_limit.strip()
+		if (candidates_confirm or "").strip():
+			raw["candidates"]["confirm"] = candidates_confirm.strip()
+	if date_window:
+		raw["date_window"] = {
+			"start": date_window.get("start_date"),
+			"end": date_window.get("end_date"),
+		}
+
+	try:
+		intent = parse_collection_intent({"collection": raw})
+	except CollectionIntentError as exc:
+		raise ValueError(_collection_error_message(str(exc))) from None
+	return _collection_payload(intent)
+
+
+def _collection_payload(intent: CollectionIntent) -> dict[str, Any]:
+	"""The normalised block stored in the payload (parser output, not raw form)."""
+	block: dict[str, Any] = {
+		"version": intent.version,
+		"content_types": list(intent.content_types),
+		"engagement_types": list(intent.engagement_types),
+		"limit": intent.limit,
+		"queries": list(intent.queries),
+		"discovery": {
+			"people": intent.discovery.people,
+			"communities": intent.discovery.communities,
+			"queries": list(intent.discovery.queries),
+		},
+		"comments": {
+			"max_per_post": intent.comments.max_per_post,
+			"total": intent.comments.total,
+		},
+		"candidates": {
+			"limit": intent.candidates.limit,
+			"confirm": intent.candidates.confirm,
+		},
+	}
+	if intent.city is not None:
+		block["city"] = {"name": intent.city.name, "mode": intent.city.mode}
+	if intent.start_date is not None or intent.end_date is not None:
+		block["date_window"] = {
+			"start": intent.start_date.isoformat() if intent.start_date else None,
+			"end": intent.end_date.isoformat() if intent.end_date else None,
+		}
+	return block
+
+
+def _collection_edit(payload: dict[str, Any] | None) -> dict[str, Any]:
+	"""Flat form values for the collection block, with the parser's defaults.
+
+	A stored block the parser rejects (hand-edited payload) is shown as defaults
+	and logged: the editor must open, and the next save re-validates what it
+	writes instead of preserving an unreadable value.
+	"""
+	try:
+		intent = parse_collection_intent(payload)
+	except CollectionIntentError as exc:
+		logger.warning("task_collection_intent_unreadable error_code=%s", str(exc))
+		intent = CollectionIntent()
+	return {
+		"start_date": intent.start_date.isoformat() if intent.start_date else "",
+		"end_date": intent.end_date.isoformat() if intent.end_date else "",
+		"collection_city": intent.city.name if intent.city else "",
+		"collection_city_mode": intent.city.mode if intent.city else CITY_PREFER,
+		"collection_people": intent.discovery.people,
+		"collection_communities": intent.discovery.communities,
+		"collection_discovery_queries": ", ".join(intent.discovery.queries),
+		"collection_queries": ", ".join(intent.queries),
+		"collection_content_types": list(intent.content_types),
+		"collection_engagement_types": list(intent.engagement_types),
+		"collection_limit": intent.limit,
+		"collection_comments_max_per_post": intent.comments.max_per_post,
+		"collection_comments_total": intent.comments.total,
+		"collection_candidates_limit": intent.candidates.limit,
+		"collection_candidates_confirm": intent.candidates.confirm,
+		"collection_city_modes": list(CITY_MODES),
+		"collection_confirm_modes": list(CONFIRM_MODES),
+	}
+
+
+def _group_sources(sources: list[Any]) -> list[dict[str, Any]]:
+	"""Task-editor catalogue grouped by source type, stable order.
+
+	Task-scoped search sources (a query lane's own `Source`) are flags on the
+	row, not pickable here: they belong to exactly one task and are rendered
+	with that task only (see the callers' `owner_task_id` filter).
+	"""
+	groups: dict[str, list[Any]] = {}
+	for source in sorted(sources, key=lambda item: (item.source_type.label, item.name)):
+		groups.setdefault(source.source_type.label, []).append(source)
+	return [{"label": label, "sources": items} for label, items in groups.items()]
 
 
 def _build_trigger_config(
@@ -295,7 +544,7 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 	which has already resolved the lazy m2m on the detached row.
 	"""
 	payload = task.payload if isinstance(task.payload, dict) else {}
-	cli_dates = payload.get("cli_dates") or {}
+	collection_edit = _collection_edit(payload)
 	trigger_config = task.trigger_config if isinstance(task.trigger_config, dict) else {}
 	edit: dict[str, Any] = {
 		"id": task.id,
@@ -307,8 +556,8 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"scenario_id": task.agent_scenario_id,
 		"tracked_users": ", ".join(payload.get("tracked_users") or []),
 		"keywords_match": payload.get("keywords_match") or "any",
-		"start_date": cli_dates.get("start_date") or "",
-		"end_date": cli_dates.get("end_date") or "",
+		"start_date": collection_edit["start_date"],
+		"end_date": collection_edit["end_date"],
 		"digest_period": payload.get("period") or "day",
 		"digest_group_by": payload.get("group_by") or "themes",
 		"digest_time_breakdown": bool(payload.get("time_breakdown")),
@@ -334,14 +583,17 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 	edit["keywords_list"] = ", ".join(payload.get("keywords_list") or [])
 	for key in TARGET_KEYS:
 		edit[key] = ", ".join(payload.get(key) or [])
+	edit.update({key: value for key, value in collection_edit.items() if key not in ("start_date", "end_date")})
 	return edit
 
 
-async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
+async def _check_task_sources(source_ids: list[int], tenant_id: int, task_id: int | None = None) -> None:
 	"""Reject source ids that are missing or belong to another workspace.
 
 	The m2m link table has no tenant column, so a raw POST could otherwise
-	attach somebody else's source to this task and make the job read it.
+	attach somebody else's source to this task and make the job read it. A
+	task-scoped query lane (`owner_task_id`) may only be linked to the task that
+	owns it — it is not a pickable source for anyone else.
 	"""
 	from app.models import Source
 
@@ -351,13 +603,18 @@ async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
 	foreign = sorted(sid for sid, s in sources.items() if s.tenant_id != tenant_id)
 	if foreign:
 		raise ValueError(f"Источник(и) {', '.join(map(str, foreign))} принадлежат другому воркспейсу")
+	stolen = sorted(
+		sid for sid, s in sources.items() if s.owner_task_id is not None and s.owner_task_id != task_id
+	)
+	if stolen:
+		raise ValueError(f"Источник(и) {', '.join(map(str, stolen))} принадлежат поиску другой задачи")
 
 
 async def _replace_task_sources(task_id: int, source_ids: list[int], tenant_id: int) -> None:
 	"""Replace the task's m2m source links with the given set."""
 	from app.models.managers.agent_task_manager import AgentTaskManager
 
-	await _check_task_sources(source_ids, tenant_id)
+	await _check_task_sources(source_ids, tenant_id, task_id=task_id)
 	await AgentTaskManager().set_sources(task_id, source_ids)
 
 
@@ -544,7 +801,7 @@ async def tasks_list(request: Request):
 	if not _can_manage_job_retention(request):
 		tasks = [task for task in tasks if task.job_type != "prune"]
 
-	sources = await Source.objects.filter(tenant_id=tenant_id).order_by(Source.name)
+	sources = await Source.objects.filter(tenant_id=tenant_id, owner_task_id=None).order_by(Source.name)
 
 	scenarios = await AgentScenario.objects.filter(tenant_id=tenant_id, is_active=True).order_by(AgentScenario.name)
 	permitted_source_ids = {source.id for source in sources}
@@ -608,6 +865,9 @@ async def tasks_list(request: Request):
 		section="tasks",
 		tasks=tasks,
 		sources=sources,
+		source_groups=_group_sources(sources),
+		collection_defaults=_collection_edit({}),
+		target_fields=TARGET_FIELD_DEFS,
 		scenarios=scenarios,
 		scenario_analysis=scenario_analysis,
 		prefill_source_ids=prefill_source_ids,
@@ -647,6 +907,7 @@ async def task_create(
 		competitors: str = Form(""),
 		hashtags: str = Form(""),
 		influencer_names: str = Form(""),
+		topic_list: str = Form(""),
 		keywords_list: str = Form(""),
 		start_date: str = Form(""),
 		end_date: str = Form(""),
@@ -668,6 +929,20 @@ async def task_create(
 		cooldown_seconds: str = Form(""),
 		dry_run: str = Form(""),
 		run_now: str = Form(""),
+		collection_configured: str = Form(""),
+		collection_city: str = Form(""),
+		collection_city_mode: str = Form("prefer"),
+		collection_people: str = Form(""),
+		collection_communities: str = Form(""),
+		collection_discovery_queries: str = Form(""),
+		collection_queries: str = Form(""),
+		collection_content_types: list[str] = Form([]),
+		collection_engagement_types: list[str] = Form([]),
+		collection_limit: str = Form(""),
+		collection_comments_max_per_post: str = Form(""),
+		collection_comments_total: str = Form(""),
+		collection_candidates_limit: str = Form(""),
+		collection_candidates_confirm: str = Form("manual"),
 		token: str = Form("", alias="_csrf"),
 		tenant_id: int | None = Form(default=None),
 		# Where to land after creating — the onboarding wizard posts here too, and
@@ -752,8 +1027,40 @@ async def task_create(
 				"competitors": competitors,
 				"hashtags": hashtags,
 				"influencer_names": influencer_names,
+				"topic_list": topic_list,
 			},
 		)
+
+	# Collection intent is written only when the submitted form carried it: an
+	# older client that posts the legacy fields alone keeps the task's stored
+	# block instead of silently resetting it to posts.
+	if collection_configured == "1":
+		try:
+			collection_block = _collection_block(
+				job_type,
+				city=collection_city,
+				city_mode=collection_city_mode,
+				people=collection_people,
+				communities=collection_communities,
+				discovery_queries=collection_discovery_queries,
+				queries=collection_queries,
+				content_types=collection_content_types,
+				engagement_types=collection_engagement_types,
+				limit=collection_limit,
+				comments_max_per_post=collection_comments_max_per_post,
+				comments_total=collection_comments_total,
+				candidates_limit=collection_candidates_limit,
+				candidates_confirm=collection_candidates_confirm,
+				date_window=payload.get("cli_dates"),
+			)
+		except ValueError as e:
+			add_flash(request, "error", str(e))
+			return RedirectResponse(back, status_code=302)
+		if collection_block:
+			payload["collection"] = collection_block
+		else:
+			payload.pop("collection", None)
+
 	if job_type == "analyze":
 		# A deactivated scenario may be chosen on purpose (it is on the task's
 		# list and can be reactivated later), so the task is created and starts
@@ -999,7 +1306,9 @@ async def _task_run_scope(task: Any, *, include_raw: bool = False, include_sourc
 	if linked_ids:
 		scoped = [item for item in all_sources if item.id in linked_ids]
 	else:
-		scoped = [item for item in all_sources if item.is_active]
+		# A task-scoped query lane is a flag on one task, not part of the
+		# workspace's "all active sources" set.
+		scoped = [item for item in all_sources if item.is_active and item.owner_task_id is None]
 	scope: dict[str, Any] = {
 		"total": len(scoped),
 		"active": sum(1 for item in scoped if item.is_active),
@@ -1208,6 +1517,10 @@ async def task_edit_page(request: Request, task_id: int):
 			add_flash(request, "error", "Просматривать настройку хранения заданий могут только администратор и владелец пространства")
 			return RedirectResponse("/app/tasks", status_code=302)
 		sources = await Source.objects.filter(tenant_id=task.tenant_id).order_by(Source.name)
+		# A query lane owns a task-scoped Source (`owner_task_id`): the owning
+		# task may show it as a linked row, but it is never a pickable option
+		# and another task never sees it at all.
+		sources = [source for source in sources if source.owner_task_id in (None, task.id)]
 		scenarios = await AgentScenario.objects.filter(tenant_id=task.tenant_id, is_active=True).order_by(
 			AgentScenario.name
 		)
@@ -1248,6 +1561,9 @@ async def task_edit_page(request: Request, task_id: int):
 		task=task,
 		edit=edit,
 		sources=sources,
+		source_groups=_group_sources([source for source in sources if source.owner_task_id is None]),
+		task_sources=[source for source in sources if source.owner_task_id is not None],
+		target_fields=TARGET_FIELD_DEFS,
 		scenarios=scenarios,
 		scenario_analysis=scenario_analysis,
 		job_types=_web_job_type_choices(allow_retention=_can_manage_job_retention(request)),
@@ -1444,6 +1760,7 @@ async def task_update(
 		competitors: str = Form(""),
 		hashtags: str = Form(""),
 		influencer_names: str = Form(""),
+		topic_list: str = Form(""),
 		keywords_list: str = Form(""),
 		start_date: str = Form(""),
 		end_date: str = Form(""),
@@ -1466,6 +1783,20 @@ async def task_update(
 		dry_run: str = Form(""),
 		run_now: str = Form(""),
 		return_to_detail: str = Form(""),
+		collection_configured: str = Form(""),
+		collection_city: str = Form(""),
+		collection_city_mode: str = Form("prefer"),
+		collection_people: str = Form(""),
+		collection_communities: str = Form(""),
+		collection_discovery_queries: str = Form(""),
+		collection_queries: str = Form(""),
+		collection_content_types: list[str] = Form([]),
+		collection_engagement_types: list[str] = Form([]),
+		collection_limit: str = Form(""),
+		collection_comments_max_per_post: str = Form(""),
+		collection_comments_total: str = Form(""),
+		collection_candidates_limit: str = Form(""),
+		collection_candidates_confirm: str = Form("manual"),
 		token: str = Form("", alias="_csrf"),
 		tenant_id: int | None = Form(default=None),
 ):
@@ -1583,8 +1914,38 @@ async def task_update(
 				"competitors": competitors,
 				"hashtags": hashtags,
 				"influencer_names": influencer_names,
+				"topic_list": topic_list,
 			},
 		)
+
+	# Same contract as create: the form that carries the block is authoritative,
+	# a legacy submission leaves the stored block untouched.
+	if collection_configured == "1":
+		try:
+			collection_block = _collection_block(
+				job_type,
+				city=collection_city,
+				city_mode=collection_city_mode,
+				people=collection_people,
+				communities=collection_communities,
+				discovery_queries=collection_discovery_queries,
+				queries=collection_queries,
+				content_types=collection_content_types,
+				engagement_types=collection_engagement_types,
+				limit=collection_limit,
+				comments_max_per_post=collection_comments_max_per_post,
+				comments_total=collection_comments_total,
+				candidates_limit=collection_candidates_limit,
+				candidates_confirm=collection_candidates_confirm,
+				date_window=payload.get("cli_dates"),
+			)
+		except ValueError as e:
+			add_flash(request, "error", str(e))
+			return RedirectResponse(back, status_code=302)
+		if collection_block:
+			payload["collection"] = collection_block
+		else:
+			payload.pop("collection", None)
 
 	# Warn about missing target params for the scenario's analysis types —
 	# the scenario this save binds, not the one the row held before the edit.
@@ -1619,7 +1980,7 @@ async def task_update(
 		next_run = next_run_at(cron_expr, tz)
 
 	try:
-		await _check_task_sources(parsed_source_ids, tenant_id)
+		await _check_task_sources(parsed_source_ids, tenant_id, task_id=task_id)
 	except ValueError as e:
 		add_flash(request, "error", str(e))
 		return RedirectResponse(back, status_code=302)

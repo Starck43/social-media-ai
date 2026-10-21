@@ -130,32 +130,165 @@
    `required`, and a CSS-hidden required input still blocks the submit — a
    digest save would trip over a date field it never shows. `x-if` also keeps
    the flags out of the POST for the types that do not have them. #}
-{% macro task_dates(m, model) -%}
-    <template x-if="{{ model }} === 'collect' || {{ model }} === 'analyze'">
-        <div class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
-            <p class="text-sm text-slate-700 dark:text-slate-300">Период сбора контента</p>
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата начала *</label>
-                    <input type="date" name="start_date" required x-model="{{ m }}.start_date"
-                           class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
-                </div>
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата окончания</label>
-                    <input type="date" name="end_date" x-model="{{ m }}.end_date" class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Необязательно.</p>
-                </div>
+{% macro task_targets(fields, values={}) -%}
+    <div class="grid grid-cols-2 gap-3">
+        {% for f in fields %}
+        <div x-show="isTargetVisibleByKey('{{ f.key }}')">
+            <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">{{ f.label }}</label>
+            <input type="text" name="{{ f.key }}" value="{{ values.get(f.key, '') }}" placeholder="{{ f.ph }}"
+                   class="{{ control() }}">
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ f.hint }}</p>
+        </div>
+        {% endfor %}
+    </div>
+{%- endmacro %}
+
+
+{% macro task_dates(m, model, start='', end='') -%}
+    <div x-show="{{ model }} === 'collect' || {{ model }} === 'analyze'" class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <p class="text-sm text-slate-700 dark:text-slate-300">Период сбора контента</p>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата начала *</label>
+                <input type="date" name="start_date" x-model="{{ m }}.start_date" value="{{ start }}"
+                       class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата окончания</label>
+                <input type="date" name="end_date" x-model="{{ m }}.end_date" value="{{ end }}" class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Необязательно.</p>
             </div>
         </div>
-    </template>
+    </div>
+{%- endmacro %}
+
+
+{# Collection intent («Кого искать», «Что искать», «Лимиты»).
+
+   Plain server-rendered controls: the form still saves when JavaScript never
+   runs, so every value the POST must carry is an attribute here, not an Alpine
+   binding. The hidden `collection_configured` marker tells the handlers this
+   block was part of the submission. `v` is a flat mapping (edit context or
+   `_collection_edit({})` defaults); `model` is the job_type path. #}
+{% macro task_collection_fields(v, idp='collection', model='editing.job_type') -%}
+    {% set content_types = v.get('collection_content_types', ['posts']) %}
+    {% set engagement_types = v.get('collection_engagement_types', []) %}
+    <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
+              class="space-y-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Кого искать</legend>
+        <input type="hidden" name="collection_configured" value="1">
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label for="{{ idp }}-city" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Город</label>
+                <input id="{{ idp }}-city" name="collection_city" maxlength="120"
+                       value="{{ v.get('collection_city', '') }}" placeholder="Киров" class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Поиск по словам город не фильтрует: он ранжирует найденное и отправляет неизвестное на проверку.</p>
+            </div>
+            <div>
+                <label for="{{ idp }}-city-mode" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Режим города</label>
+                <select id="{{ idp }}-city-mode" name="collection_city_mode" class="{{ control() }}">
+                    <option value="prefer" {% if v.get('collection_city_mode', 'prefer') == 'prefer' %}selected{% endif %}>Предпочтительно</option>
+                    <option value="require" {% if v.get('collection_city_mode') == 'require' %}selected{% endif %}>Строго</option>
+                    <option value="review" {% if v.get('collection_city_mode') == 'review' %}selected{% endif %}>Неизвестное — на проверку</option>
+                </select>
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            {{ switch_toggle("collection_people", "Искать людей", checked=v.get('collection_people', false)) }}
+            {{ switch_toggle("collection_communities", "Искать сообщества", checked=v.get('collection_communities', false)) }}
+        </div>
+        <div>
+            <label for="{{ idp }}-discovery-queries" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Темы для поиска людей и сообществ</label>
+            <input id="{{ idp }}-discovery-queries" name="collection_discovery_queries"
+                   value="{{ v.get('collection_discovery_queries', '') }}" placeholder="дизайн интерьера, ремонт"
+                   class="{{ control() }}">
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Независимо от поиска упоминаний. Найденные кандидаты не становятся источниками без подтверждения.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label for="{{ idp }}-candidates-limit" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит кандидатов</label>
+                <input id="{{ idp }}-candidates-limit" name="collection_candidates_limit" type="number" min="1" max="1000"
+                       value="{{ v.get('collection_candidates_limit', 100) }}" class="{{ control() }}">
+            </div>
+            <div>
+                <label for="{{ idp }}-candidates-confirm" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Подтверждение кандидатов</label>
+                <select id="{{ idp }}-candidates-confirm" name="collection_candidates_confirm" class="{{ control() }}">
+                    <option value="manual" {% if v.get('collection_candidates_confirm', 'manual') == 'manual' %}selected{% endif %}>Вручную</option>
+                    <option value="auto" {% if v.get('collection_candidates_confirm') == 'auto' %}selected{% endif %}>Автоматически</option>
+                </select>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
+              class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Что искать</legend>
+        <div>
+            <p class="mb-1 text-xs text-slate-600 dark:text-slate-400">Что собирать</p>
+            <ul class="grid grid-cols-2 gap-2">
+                {{ check_card(
+                    idp ~ "-ct-posts", "collection_content_types", "posts", "Записи (посты)",
+                    checked=('posts' in content_types), cls="content-cb"
+                ) }}
+                {{ check_card(
+                    idp ~ "-ct-comments", "collection_content_types", "comments", "Комментарии",
+                    checked=('comments' in content_types), cls="content-cb"
+                ) }}
+            </ul>
+        </div>
+        <div>
+            <p class="mb-1 text-xs text-slate-600 dark:text-slate-400">Вовлечённость (кандидаты, а не тексты)</p>
+            <ul class="grid grid-cols-2 gap-2">
+                {{ check_card(
+                    idp ~ "-eng-likes", "collection_engagement_types", "likes", "Лайки",
+                    checked=('likes' in engagement_types), cls="content-cb"
+                ) }}
+                {{ check_card(
+                    idp ~ "-eng-reposts", "collection_engagement_types", "reposts", "Репосты",
+                    checked=('reposts' in engagement_types), cls="content-cb"
+                ) }}
+            </ul>
+        </div>
+        <div>
+            <label for="{{ idp }}-queries" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Поиск упоминаний по словам</label>
+            <input id="{{ idp }}-queries" name="collection_queries" value="{{ v.get('collection_queries', '') }}"
+                   placeholder="Древиз, Италия поездка" class="{{ control() }}">
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Фразы через запятую; каждая становится отдельным поисковым запросом задачи.</p>
+        </div>
+        <div>
+            <label for="{{ idp }}-limit" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит объектов за прогон</label>
+            <input id="{{ idp }}-limit" name="collection_limit" type="number" min="1"
+                   value="{{ v.get('collection_limit', 1000) }}" class="{{ control() }}">
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Достигнутый лимит показывается в результате прогона, а не скрывается.</p>
+        </div>
+    </fieldset>
+
+    <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
+              class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Лимиты комментариев</legend>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label for="{{ idp }}-comments-per-post" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">На одну запись</label>
+                <input id="{{ idp }}-comments-per-post" name="collection_comments_max_per_post" type="number" min="1" max="1000"
+                       value="{{ v.get('collection_comments_max_per_post', 100) }}" class="{{ control() }}">
+            </div>
+            <div>
+                <label for="{{ idp }}-comments-total" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Всего на прогон</label>
+                <input id="{{ idp }}-comments-total" name="collection_comments_total" type="number" min="1" max="10000"
+                       value="{{ v.get('collection_comments_total', 2000) }}" class="{{ control() }}">
+            </div>
+        </div>
+    </fieldset>
 {%- endmacro %}
 
 
 {# The trigger + action section, rendered only for `analyze` tasks. `m` and
-   `model` are the same paths as in `task_dates`. The per-trigger fields are
-   inside `x-if` templates so only the active type's config is submitted. #}
-{% macro task_trigger_actions(m, model, trigger_types, action_types, current_trigger='', current_action='') -%}
+   `model` are the same paths as in `task_dates`. Every per-trigger block stays
+   in the DOM (`x-show`, not `x-if`) and carries its server value: without
+   JavaScript the POST still submits what the task is configured with, while
+   `_build_trigger_config` reads only the active type's keys. #}
+{% macro task_trigger_actions(m, model, trigger_types, action_types, current_trigger='', current_action='', values={}) -%}
     <div x-show="{{ model }} === 'analyze'" x-cloak class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
         <p class="text-sm text-slate-700 dark:text-slate-300">Условие срабатывания</p>
         <div>
@@ -164,59 +297,51 @@
             <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Без триггера контент проходит без фильтрации.</p>
         </div>
 
-        <template x-if="{{ m }}.trigger_type === 'KEYWORD_MATCH'">
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Ключевые слова</label>
-                    <input name="trigger_keywords" placeholder="жалоба, срочно" :value="{{ m }}.trigger_keywords"
-                           class="{{ control() }}">
-                </div>
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Совпадение</label>
-                    <select name="trigger_match" :value="{{ m }}.trigger_match" class="{{ control() }}">
-                        <option value="any">любое из слов</option>
-                        <option value="all">все слова</option>
-                    </select>
-                </div>
-            </div>
-        </template>
-        <template x-if="{{ m }}.trigger_type === 'USER_MENTION'">
+        <div x-show="{{ m }}.trigger_type === 'KEYWORD_MATCH'" class="grid grid-cols-2 gap-3">
             <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Пользователи</label>
-                <input name="trigger_usernames" placeholder="user1, user2" :value="{{ m }}.trigger_usernames"
-                       class="{{ control() }}">
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Ключевые слова</label>
+                <input name="trigger_keywords" placeholder="жалоба, срочно" :value="{{ m }}.trigger_keywords"
+                       value="{{ values.get('trigger_keywords', '') }}" class="{{ control() }}">
             </div>
-        </template>
-        <template x-if="{{ m }}.trigger_type === 'SENTIMENT_THRESHOLD'">
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Порог</label>
-                    <input name="trigger_threshold" type="number" min="0" max="1" step="0.05"
-                           :value="{{ m }}.trigger_threshold" class="{{ control() }}">
-                </div>
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Направление</label>
-                    <select name="trigger_direction" :value="{{ m }}.trigger_direction" class="{{ control() }}">
-                        <option value="below">ниже порога</option>
-                        <option value="above">выше порога</option>
-                    </select>
-                </div>
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Совпадение</label>
+                <select name="trigger_match" class="{{ control() }}">
+                    <option value="any" {% if values.get('trigger_match', 'any') == 'any' %}selected{% endif %}>любое из слов</option>
+                    <option value="all" {% if values.get('trigger_match') == 'all' %}selected{% endif %}>все слова</option>
+                </select>
             </div>
-        </template>
-        <template x-if="{{ m }}.trigger_type === 'ACTIVITY_SPIKE'">
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Базовый период, ч</label>
-                    <input name="trigger_baseline_hours" type="number" min="1" :value="{{ m }}.trigger_baseline_hours"
-                           class="{{ control() }}">
-                </div>
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Коэффициент всплеска</label>
-                    <input name="trigger_spike_multiplier" type="number" step="0.5" min="1"
-                           :value="{{ m }}.trigger_spike_multiplier" class="{{ control() }}">
-                </div>
+        </div>
+        <div x-show="{{ m }}.trigger_type === 'USER_MENTION'">
+            <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Пользователи</label>
+            <input name="trigger_usernames" placeholder="user1, user2" :value="{{ m }}.trigger_usernames"
+                   value="{{ values.get('trigger_usernames', '') }}" class="{{ control() }}">
+        </div>
+        <div x-show="{{ m }}.trigger_type === 'SENTIMENT_THRESHOLD'" class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Порог</label>
+                <input name="trigger_threshold" type="number" min="0" max="1" step="0.05"
+                       :value="{{ m }}.trigger_threshold" value="{{ values.get('trigger_threshold', 0.5) }}" class="{{ control() }}">
             </div>
-        </template>
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Направление</label>
+                <select name="trigger_direction" class="{{ control() }}">
+                    <option value="below" {% if values.get('trigger_direction', 'below') == 'below' %}selected{% endif %}>ниже порога</option>
+                    <option value="above" {% if values.get('trigger_direction') == 'above' %}selected{% endif %}>выше порога</option>
+                </select>
+            </div>
+        </div>
+        <div x-show="{{ m }}.trigger_type === 'ACTIVITY_SPIKE'" class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Базовый период, ч</label>
+                <input name="trigger_baseline_hours" type="number" min="1" :value="{{ m }}.trigger_baseline_hours"
+                       value="{{ values.get('trigger_baseline_hours', 24) }}" class="{{ control() }}">
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Коэффициент всплеска</label>
+                <input name="trigger_spike_multiplier" type="number" step="0.5" min="1"
+                       :value="{{ m }}.trigger_spike_multiplier" value="{{ values.get('trigger_spike_multiplier', 3.0) }}" class="{{ control() }}">
+            </div>
+        </div>
 
         <p class="text-sm text-slate-700 dark:text-slate-300">Действие после анализа</p>
         <div>
@@ -228,12 +353,12 @@
             <div>
                 <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит действий в час</label>
                 <input name="rate_limit_per_hour" type="number" min="0" :value="{{ m }}.rate_limit_per_hour"
-                       class="{{ control() }}">
+                       value="{{ values.get('rate_limit_per_hour', '') }}" class="{{ control() }}">
             </div>
             <div>
                 <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Пауза между действиями, сек</label>
                 <input name="cooldown_seconds" type="number" min="0" :value="{{ m }}.cooldown_seconds"
-                       class="{{ control() }}">
+                       value="{{ values.get('cooldown_seconds', '') }}" class="{{ control() }}">
             </div>
         </div>
     </div>

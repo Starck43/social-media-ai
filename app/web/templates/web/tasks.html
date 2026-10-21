@@ -1,4 +1,4 @@
-{% from "web/_macros.html" import control, task_dates, task_fields, task_retention_fields, task_trigger_actions, tenant_field, switch_toggle, check_card, check_mark %}
+{% from "web/_macros.html" import control, task_dates, task_fields, task_retention_fields, task_trigger_actions, task_collection_fields, task_targets, tenant_field, switch_toggle, check_card, check_mark %}
 {% extends "web/base.html" %}
 {% block title %}Задачи — AI Monitor{% endblock %}
 {% block page_heading %}Задачи{% endblock %}
@@ -221,6 +221,7 @@
                 {{ tenant_field(is_superuser, filter_tenant_id) }}
                 {{ task_fields(job_types, "add", "task.job_type", "Хранение истории Jobs" if prefill_retention else "") }}
                 {{ task_retention_fields("add", "task.job_type") }}
+                {{ task_collection_fields(collection_defaults, "add", "task.job_type") }}
 
                 <div>
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Расписание</label>
@@ -318,21 +319,26 @@
                 {% if sources %}
                 <div x-show="task.job_type !== 'prune'" x-cloak>
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
-                    <ul class="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
-                        {% for source in sources %}
-                        {% set source_label %}<a href="/app/sources/{{ source.id }}"
-                            class="pointer-events-auto relative z-10 hover:text-cyan-500 hover:underline">{{ source.name|e }}</a>{% endset %}
-                        {{ check_card(
-                            cid="add-src-" ~ source.id,
-                            name="source_ids",
-                            value=source.id,
-                            content=source_label,
-                            checked=false,
-                            cls="content-cb",
-                            attrs={':checked': 'task.source_ids.includes(' ~ source.id ~ ')'}
-                        ) }}
+                    <div class="space-y-2 max-h-40 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
+                        {% for group in source_groups %}
+                        <p class="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">{{ group.label }}</p>
+                        <ul class="grid grid-cols-1 gap-2">
+                            {% for source in group.sources %}
+                            {% set source_label %}<a href="/app/sources/{{ source.id }}"
+                                class="pointer-events-auto relative z-10 hover:text-cyan-500 hover:underline">{{ source.name|e }}</a>{% endset %}
+                            {{ check_card(
+                                cid="add-src-" ~ source.id,
+                                name="source_ids",
+                                value=source.id,
+                                content=source_label,
+                                checked=false,
+                                cls="content-cb",
+                                attrs={':checked': 'task.source_ids.includes(' ~ source.id ~ ')'}
+                            ) }}
+                            {% endfor %}
+                        </ul>
                         {% endfor %}
-                    </ul>
+                    </div>
                     <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Оставьте пустым для всех источников. Отметка деактивированного источника активирует его.</p>
                 </div>
                 {% endif %}
@@ -360,14 +366,7 @@
                         <span class="text-xs text-slate-600 dark:text-slate-400">— какие именно данные искать, требует выбранный сценарий</span>
                     </p>
                     <div class="grid grid-cols-2 gap-3">
-                        <template x-for="f in targetDefs" :key="f.key">
-                            <div x-show="isTargetVisible(f)">
-                                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400" x-text="f.label"></label>
-                                <input type="text" :name="f.key" x-model="task[f.key]" :placeholder="f.ph"
-                                       class="{{ control() }}">
-                                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400" x-text="f.hint"></p>
-                            </div>
-                        </template>
+                        {{ task_targets(target_fields, {}) }}
                     </div>
                 </div>
 
@@ -807,14 +806,7 @@
     const RUN_CSRF = {{ csrf|tojson }};
     const RUN_TERMINAL = ["done", "failed", "cancelled", "not_found"];
     const SCENARIO_ANALYSIS = {{ scenario_analysis|tojson }};
-    const TARGET_FIELDS = [
-        { key: "brands", type: "brand_mentions", label: "Бренды", ph: "Coca-Cola, Sprite", hint: "Какие бренды упоминать в контенте" },
-        { key: "competitors", type: "competitor", label: "Конкуренты", ph: "brand-a, brand-b", hint: "Чьи упоминания считать конкурентными" },
-        { key: "hashtags", type: "hashtag_analysis", label: "Хэштеги", ph: "#бренд, #акция", hint: "Хэштеги для отслеживания" },
-        { key: "influencer_names", type: "influencer", label: "Авторы", ph: "author1, author2", hint: "Авторы и инфлюенсеры для анализа" },
-        { key: "keywords_list", type: "keywords", label: "Ключевые слова", ph: "жалоба, отзыв", hint: "Ключевые слова для поиска" },
-        { key: "topic_list", type: "topics", label: "Темы", ph: "доставка, цены", hint: "Темы, которые нужно выделить" },
-    ];
+    const TARGET_FIELDS = {{ target_fields|tojson }};
 
     function addTaskForm() {
         return {
@@ -855,6 +847,10 @@
             },
             isTargetVisible(field) {
                 return this.activeTargetTypes().includes(field.type);
+            },
+            isTargetVisibleByKey(key) {
+                const field = TARGET_FIELDS.find((item) => item.key === key);
+                return field ? this.isTargetVisible(field) : true;
             },
             get targetFields() {
                 return TARGET_FIELDS.filter((f) => this.activeTargetTypes().includes(f.type));

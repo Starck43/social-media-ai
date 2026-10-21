@@ -3,13 +3,15 @@
 Status: design accepted by the owner on 2026-10-21; implementation is tracked
 by [P5-T14](../phases/p5-ai-boundaries.md). Stage A delivered the payload
 parser, schema and migration 0108. Stage B delivered the `Page[T]` contract,
-planner, VK/Telegram adapters and no-DB tests. Stage C delivered collection-time
-selection/staging, `seen`/lane evidence and thread-level selection. Stage D1
-delivered `app/services/collection/context.py`: one parsed task intent per
-source plus provider capabilities and explicit unsupported warnings; runtime
-stays posts-only until the comments/engagement/profile steps land. Collection
-lanes are not wired to runtime yet; UI and task-owned content types remain
-future stages. Until P5-T14 is `READY`/`DONE`, runtime behavior in
+planner, VK/Telegram adapters and no-DB tests, committed as `c6bd826`. Stage C
+delivered collection-time selection/staging, lane-run/`seen` evidence and
+thread-level selection. Stage D1 delivered
+`app/services/collection/context.py`: one parsed task intent per source plus
+provider capabilities and explicit unsupported warnings. Runtime stays
+posts-only until the comments/engagement/profile steps land; collection lanes
+are not wired to runtime yet; UI and task-owned content types remain future
+stages. Stages C–D1 are committed on `opencode/p5-t14-stage-d` and are not
+merged into `dev` yet. Until P5-T14 is `READY`/`DONE`, runtime behavior in
 [COLLECTION](../COLLECTION.md), [task selection](task-selection.md) and
 [MODELS](../MODELS.md) still applies except for the stage-C selection path
 described there. Stage B implementation plan:

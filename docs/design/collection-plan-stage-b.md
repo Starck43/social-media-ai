@@ -1,10 +1,9 @@
 # Collection plan — stage B implementation handoff
 
-Status: stage B implementation is complete in the current working tree; 49
-no-DB tests passed through the primary OpenCode test-runner at HEAD `e8e8693`.
-Codex review and commit remain pending. Stage A is committed as `e8e8693`.
-Parent task: [P5-T14](../phases/p5-ai-boundaries.md). Target contract:
-[collection plan](collection-plan.md).
+Status: stage B implementation is complete and committed as `c6bd826`; 49
+no-DB tests passed through the primary OpenCode test-runner at that commit.
+Stage A is `e8e8693`. Parent task: [P5-T14](../phases/p5-ai-boundaries.md).
+Target contract: [collection plan](collection-plan.md).
 
 ## Current state (verify before work)
 
@@ -60,9 +59,9 @@ Reuse without changing behaviour:
 
 Do **not** edit in stage B:
 
-- `app/services/monitoring/selection.py` (stage C / P5-T08 ownership);
+- `app/services/monitoring/selection.py` (stage C runtime, P5-T08 semantics);
 - `app/jobs/handlers.py`, `app/services/monitoring/collector.py` (runtime
-  wiring is stage C/D; shared with P5-T05);
+  wiring is stage C/D; no P5-T05 ownership remains);
 - `app/services/ai/scenario*`, admin/web templates (stage E);
 - `AgentScenario.content_types` semantics;
 - migration files or the working `public` schema.

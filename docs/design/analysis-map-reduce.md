@@ -1,5 +1,12 @@
 # Map-reduce analysis pipeline (bounded output for any model)
 
+Status: **deferred / not in the current plan** (2026-10-21). P5-T05 was dropped
+under owner instruction: it existed as design only, the current pilot uses the
+bounded staged-batch path and P5-T07 completion fixes, and its handler/analyzer
+ownership blocked collection-time selection. Keep this document as historical
+guidance; re-open as a new task only if measured volume/truncation demand
+returns.
+
 Design for P5-T05 ([phase file](../phases/p5-ai-boundaries.md)). Problem,
 verified evidence and acceptance live in the phase task; this doc is the
 implementation guidance. It follows PRD-07 invariants: typed output cannot gain
@@ -125,9 +132,9 @@ model config, per-usage accounting preserved end to end.
 4. Reduce aggregation into the existing `_save_analysis` path with bounded
    schemas; disabled legacy path; modal/coverage nothing new to render.
 
-Ordering constraint: P5-T04 owns the receipt/dedup layer and P8-T22 owns
-handler/web work right now — implementation slices rebase on their landing;
-the design doc and journal slice have no file conflict.
+Ordering constraint (historical): P5-T04 owns the receipt/dedup layer; P8-T22
+was later dropped/absorbed by P5-T14 stage E. This design is deferred and is
+not part of the current implementation queue.
 
 ## Risks
 

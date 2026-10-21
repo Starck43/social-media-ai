@@ -24,8 +24,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] P8-T25 — settings information layout and compact member access → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — READY
 
-- [ ] P8-T22 — unified social analysis tasks and operator web journey → [p8](docs/phases/p8-first-value-ui.md) — owner: codex-social-analysis — BLOCKED (persisted acceptance: missing test-schema receipts)
-
 - [ ] P8-T20 — provider cost evidence and compact diagnostic controls → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
 
 - [ ] P8-T18 — allow model tests in single-owner accounting mode → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
@@ -71,27 +69,9 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T13 — LLM CLI provider listing and safe model-test contract → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — BLOCKED
 
 
-- [ ] P5-T05 — bounded-output map-reduce analysis pipeline (any model, any volume) → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — IN_PROGRESS
+- [ ] P5-T14 — universal collection plan: task-owned typed collection, lanes, limits, comments and candidates → [p5](docs/phases/p5-ai-boundaries.md) — owner (fork #2) — IN_PROGRESS
 
-- [ ] P5-T06 — theme-chain similarity SQL fixed for json main_topics (was silently failing since Oct 1) → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — READY
-
-- [ ] P5-T07 — text-only scenarios analyze to completion (media ignored per scenario models, text failover, daily-partial coverage merge) → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — READY
-
-- [ ] P5-T08 — task selection scope (sources → tracked users → text) before the model call; `monitored_users` removed end to end → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
-
-- [ ] P5-T12 — VK author snapshot for reposts (`copy_history`) so tracked users match the carrier → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
-
-- [ ] P5-T13 — VK search sources, inflection-aware text scope, dry-run and 1000-row collection ceiling → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — READY
-
-- [ ] P5-T14 — universal collection plan: task-owned typed collection, lanes, limits, comments and candidates → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — IN_PROGRESS
-
-- [ ] P5-T09 — VK discovery sources: platform search collected in the same run (usernames for `source_add`) → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
-
-- [ ] P5-T10 — VK wall reposts search: author snapshots, selection on author, every repost staged once → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
-
-- [ ] P5-T11 — stable chain hint from the task and cross-source chain aggregation in a workspace → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
-
-- [ ] P8-T25 — agent paraphrase/search/compose tools for abstract "find and analyse" requests → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
+- [ ] P8-T29 — agent paraphrase/search/compose tools for abstract "find and analyse" requests → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 
 ## Questions
 
@@ -104,15 +84,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
   those methods (or a different app is configured).
   Context: [VK search audit](docs/audits/2026-10-20-vk-search-and-task-2027.md);
   asked by: $local (opencode); status: OPEN
-
-- [x] Q-4 — one-off data decision for the `monitored_users` removal (P5-T08
-  step 4). Owner decision (2026-10-19): **drop the stored values outright**, no
-  conversion — the owner re-enters selections in new tasks. Implemented as
-  migration `0105` (`payload`/`params` with the key stripped; downgrade is a
-  documented no-op); a pre-migration snapshot of the two affected sources is in
-  `.agents/tmp/monitored_users_backup_0105.json`. Applied locally.
-  Asked by: $local (opencode); status: RESOLVED
-
 
 <!-- Q-<n> — question; context: <link/file>; asked by: <agent>; status: OPEN|RESOLVED(delete row) -->
 

@@ -233,6 +233,12 @@ list exposes `content_type`, `selection_status` and `media_type` while the
 collector-written lane/selection fields stay out of the edit form. See
 [collection plan](design/collection-plan.md).
 
+**Deleting a source.** The web sources page and the source page carry a
+delete action (`source`/`delete` permission, workspace-scoped, with the
+cascade named before it happens). A task-owned lane is refused with the owning
+task named — that lane exists for the task's collection and is removed there,
+not from the source list.
+
 ### LLM testing and prices
 
 [Action implementation](../app/admin/actions.py),

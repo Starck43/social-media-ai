@@ -523,6 +523,21 @@ safely.
       the trip post «Древиз вместе с дизайнерами посетили Италию!» is now
       **eligible** (was `needs_review`/`city_unknown`), 7 posts rejected by the
       text scope, 4 search lanes still `api_1051` (Q-9).
+    - Population step and lane evidence (code `5d0497f`): the runtime now
+      searches for the task's declared population, turns every found entity
+      into a task-owned wall lane and collects those walls in the same run —
+      no confirmation step, nothing stored before the filter. A blocked search
+      is a named result: one `collection_lane_runs` row with the code and a
+      bounded note on the task page, while the readable sources keep
+      collecting. Live dry-run of task 2027 with the population
+      «дизайнеры интерьера» + city 66: the lane row reads
+      `candidate_search / api_1051`, the note names the reason, the walls
+      still delivered 8 posts with 1 eligible.
+    - Source deletion (code `5ef02f3`): the sources list and the source page
+      carry a delete action (`source`/`delete`, workspace-scoped, cascade
+      named before it happens). A task-owned lane is refused with the owning
+      task named. The old test that kept the form away from the source page
+      is flipped.
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`

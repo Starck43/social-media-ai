@@ -58,6 +58,15 @@ deterministic filter drops the junk; what survives is stored in
 `collected_items`, and that count is the result. Nothing is stored before the
 filter and nothing waits for a confirmation step: a candidate is not a result.
 
+The runtime does the population step itself: it searches for the declared
+entities, turns every found entity into a task-owned wall lane (reusing an
+existing workspace source, refusing a lane of another task) and collects those
+walls in the same run. A blocked search is a **named** result — one
+`collection_lane_runs` row with the code (`api_1051` for the app profile that
+cannot search) and a bounded note on the task page — while the sources that
+are readable keep collecting. The per-lane rows are the answer to "what did
+the run actually do": counts and bounds, never the rejected text.
+
 The author-city filter (`city` + `mode`) stays in the model but is no longer
 offered in the form: in `prefer` an unknown city no longer parks a good post
 (a community declares no city), and the operator decides relevance by the

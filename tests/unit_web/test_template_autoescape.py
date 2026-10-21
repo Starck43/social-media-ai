@@ -59,7 +59,13 @@ def env(monkeypatch):
     )
     environment = eval(
         compile(ast.Expression(assignment.value), "web Jinja constructor", "eval"),
-        {"Environment": Environment, "FileSystemLoader": FileSystemLoader, "select_autoescape": select_autoescape},
+        {
+            "Environment": Environment,
+            "FileSystemLoader": FileSystemLoader,
+            "Path": Path,
+            "__file__": str(ROOT / "app/web/deps.py"),
+            "select_autoescape": select_autoescape,
+        },
     )
     environment.filters["ui_label"] = str
     environment.filters["human_dt"] = lambda value, **kwargs: str(value or "")

@@ -57,6 +57,13 @@ def module(monkeypatch, name, **values):
 # This module is stdlib-only: no application package initialization.
 policy = runpy.run_path(str(ROOT / "app/services/tenancy/web_access.py"))["owns_web_workspace"]
 nav = runpy.run_path(str(ROOT / "app/web/nav.py"))
+# Read the middleware allowlist itself so the isolated loader sees the same paths.
+PERSONAL_ACCOUNT_PATHS = next(
+    eval(compile(ast.Expression(node.value), "web middleware constant", "eval"), {})
+    for node in ast.parse((ROOT / "app/web/middleware.py").read_text()).body
+    if isinstance(node, ast.Assign)
+    and any(isinstance(target, ast.Name) and target.id == "PERSONAL_ACCOUNT_PATHS" for target in node.targets)
+)
 
 
 def user(**kw):
@@ -440,6 +447,7 @@ def test_shell_context_labels_admin_entry_and_member_disable_markup():
 
     for owner in [True, False]:
         data = context(manager=owner)
+        data["user"].role = None
         data["user"].has_admin_access = lambda: True
         data["workspaces"] = [
             dict(
@@ -496,7 +504,11 @@ def test_middleware_denies_direct_guest_chat_reads(method):
         "app/web/middleware.py",
         {"TenantUIMiddleware"},
         methods={"_denied_section"},
-        namespace={"section_of": nav["section_of"], "allows": nav["allows"]},
+        namespace={
+            "section_of": nav["section_of"],
+            "allows": nav["allows"],
+            "PERSONAL_ACCOUNT_PATHS": PERSONAL_ACCOUNT_PATHS,
+        },
     )["TenantUIMiddleware"]
     request = NS(method=method, state=NS(web_user=user(), web_perms=NS(can_open_chat=False)))
     assert cls._denied_section(request, "/app/chat").key == "chat"
@@ -567,7 +579,12 @@ async def test_owner_history_uses_own_user_session_without_starting_turn(monkeyp
     module(monkeypatch, "app.agent.runtime", web_session_id=session)
     module(monkeypatch, "app.models.managers.agent_message_manager", agent_messages=NS(recent=messages))
     ns = chat_namespace()
-    ns.update(TRANSCRIPT_LIMIT=40, _display_transcript=lambda items: items, _is_owner=lambda req: True)
+    ns.update(
+        TRANSCRIPT_LIMIT=40,
+        _display_transcript=lambda items: items,
+        _is_owner=lambda req: True,
+        _confirmation_pending=AsyncMock(return_value=False),
+    )
     response = await ns["chat_page"](
         NS(
             state=NS(web_perms=NS(can_open_chat=True), web_user=user(), tenant_id=7),

@@ -76,7 +76,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
 - [ ] P10-T05 (AUD-05, P2) — align legacy API DB probes with bounded redacted
   readiness; accept: bounded generic legacy probe failures; synthetic DB/DSN
   sentinels absent; root readiness unchanged; depends: none;
-  owns: app/api/v1/entry.py, tests/test_legacy_api_db_probes.py and scoped
+  owns: app/api/v1/entry.py, tests/api/test_legacy_api_db_probes.py and scoped
   docs/API.md health contract and docs/validation/legacy-api-db-probes.md;
   owner: remote Notion agent; status: READY.
   Synchronized base: `959a461410aa220cd1059c4e3ee59b55d5f79eaa`;
@@ -88,9 +88,21 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   cooperative ORM timeout, fixed legacy 500 detail, success/auth/cancellation
   preserved; root health source unchanged. Commands, environment, earlier failed
   test-harness run and limits: [validation](../validation/legacy-api-db-probes.md).
-  READY is implementation review only, not DONE or DB/ASGI acceptance. Keep PR
-  Draft pending coordinator review and required owner-local acceptance; no
-  migration, reset, provider, runtime start or deployment authorized.
+  READY is implementation review only, not DONE or DB/ASGI acceptance.
+  Coordinator refresh 2026-10-21: implementation `00f560e` is already an
+  ancestor of current dev; there is no open PR for this task to keep Draft.
+  Owner-local acceptance applies to the current integrated implementation;
+  no migration, reset, provider, runtime start or deployment is authorized.
+  Current-source refresh at `f55abad30adbba9b411b31207dfa155423d490c6`:
+  OpenCode `QwenPlan/deepseek-v4.1-flash-1017` collected and passed all
+  14 isolated legacy-probe checks with `PYTHONPATH=tests` and the required
+  quiet/no-conftest flags. This covers helper/route declarations and redacted
+  fault/timeout behavior, not real middleware/auth or driver cleanup.
+  READY remains review-only until the missing owner-local evidence is complete.
+  The refresh waited for the foreign pytest sequence to finish, but subsequent
+  OpenCode attempts failed certificate verification before schema preflight;
+  Kilo CLI/orchestrator was unavailable. Real ASGI/DB/driver acceptance was not
+  run and no current schema revision is claimed. [Refresh evidence](../audits/2026-10-21-ready-pr-audit.md).
 
 - [ ] P10-T06 (AUD-06, P1) — centralize safe provider-error envelopes without
   dropping accounting; accept: allowlisted failure envelopes/logs; no
@@ -190,6 +202,42 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Commands/limits: [CLI handoff](../CLI.md#llm-cli-validation-handoff).
   Integration: reconcile #216's historical expected-failure probes and CLI
   warnings before merging both packages; do not erase pinned audit evidence.
+
+- [ ] P10-T11 — audit post-migration CLI/API and embedded web-chat tools;
+  accept: source-pinned interface inventory, prioritized verified findings,
+  isolated no-DB reproductions and corrected interface documentation; no
+  runtime/security acceptance implied. Depends: none; owns:
+  docs/audits/2026-10-18-cli-api-chat.md on PR #216, scoped CLI/API/AGENT
+  documentation and interface audit probes (reconcile the branch's root test
+  into the current domain layout); owner: remote Notion agent;
+  status: IN_PROGRESS. Canonical row restored from Draft
+  [PR #216](https://github.com/Starck43/social-media-ai/pull/216), head
+  `b9faf8dc68aecf350f2b656c9356a90cd1bf26fd`, after live head/ID verification
+  on 2026-10-21. Original base `bd123b7` and 14 offline probes (4 passed,
+  10 expected failures) remain historical evidence. Coordinator review at
+  `f55abad30adbba9b411b31207dfa155423d490c6` supersedes the branch's READY
+  claim: CLI and chat-model findings already fixed in dev must be refreshed
+  before current-source acceptance; old expected failures are not current
+  executable evidence. [Current audit](../audits/2026-10-21-ready-pr-audit.md).
+
+- [ ] P10-T12 — preserve chat task configuration on partial updates and restore
+  task listing; accept: omitted scenario/dates/targets remain unchanged;
+  explicit scenario clearing; cron and next-run persistence agree;
+  unavailable source/scenario inputs refused before writes; explicit source
+  replacement; focused offline and sequential persistence/permission checks.
+  Depends: P10-T11 audit context only, no merge dependency; owns:
+  app/agent/toolset/tasks.py, chat task contract tests in the current domain
+  layout, scoped docs/AGENT_TASKS.md; owner: remote Notion agent;
+  status: BLOCKED. Canonical row restored from Draft
+  [PR #217](https://github.com/Starck43/social-media-ai/pull/217), head
+  `c4161b5e67919d505e707f70ef18e6081cf11c81`, verified live 2026-10-21.
+  Historical branch evidence: 27 new offline and 26 confirmation tests passed
+  at base `be07e51` plus implementation; not a new run on current dev.
+  Useful runtime fixes remain outside dev: missing task-list import, unsaved
+  cron expression, validation after persistence and additive source updates.
+  Reconcile against current code and test layout, then complete owner-local
+  persistence/permission/concurrency acceptance before integration. Preserve
+  current task-owned collection and omitted-field behavior while reconciling.
 
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.

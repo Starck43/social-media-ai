@@ -4,12 +4,14 @@ How a task decides *which collected items are analysed*. Selection is a
 property of the **task**; a scenario still answers only "how to analyse" and a
 source only "which wall/channel we may read".
 
-> **P5-T14 stage C implemented.** Deterministic selection now runs before
-> staging: `collected_items` stores only `selected`/`needs_review` rows with a
-> status/reason, rejected text is not stored, and the analyse path does not
-> re-filter new rows. A comment-enabled batch is filtered at thread level (post
-> + comments). Content types still come from the scenario until stage E, and
-> task-scoped query-source fallback remains planned. See
+> **P5-T14 stages C and E implemented.** Deterministic selection now runs
+> before staging: `collected_items` stores only `selected`/`needs_review` rows
+> with a status/reason, rejected text is not stored, and the analyse path does
+> not re-filter new rows. A comment-enabled batch is filtered at thread level
+> (post + comments). Collection types now come from the task's `collection`
+> block; scenario `content_types` is supported media only. Task-scoped query
+> lanes are hidden from the global source list and excluded from the
+> empty-set/"all active" fallback. See
 > [collection plan](collection-plan.md).
 
 ## Why the old model is replaced
@@ -28,7 +30,7 @@ legacy read path.
 
 | Layer | Where | Meaning |
 | --- | --- | --- |
-| **Sources** | `agent_task_sources` | Walls/channels the task may read. Empty set = every active workspace source (existing semantics; planned P5-T14 excludes task-scoped query sources from this fallback). |
+| **Sources** | `agent_task_sources` | Walls/channels the task may read. Empty set = every active workspace source except task-owned query lanes (`owner_task_id`); only an explicit link activates a lane. |
 | **Tracked users** | `AgentTask.payload["tracked_users"]` | Authors whose items are eligible for analysis. An item is eligible when its author is in the list. |
 | **Text scope** | `AgentTask.payload["keywords_list"]`, `payload["topics_list"]` | Phrases an eligible item must contain (see matching rules). |
 
@@ -63,7 +65,8 @@ Stored as a list of flat strings, `<platform>:<external_id>`:
   the numeric id through the platform client before it is stored; the stored
   value is the resolved one so a rename cannot silently retarget the filter.
 - An empty list means "no author filter": the task analyses the source's own
-  items under the scenario's `content_types`, not "nobody" (see below).
+  items in the types its task-owned `collection` block selects, not "nobody"
+  (see below).
 - Identity is platform-scoped; `vk:123` and `telegram:123` are different people.
 
 An item's author is read from the collected snapshot
@@ -72,16 +75,17 @@ An item's author is read from the collected snapshot
 reposts other people is filterable by the person it carries.
 
 **Without `tracked_users` the task analyses the source's own content, as the
-scenario says.** The scenario's `content_types` (`posts`, `comments`, `likes`,
-…) already decides what is collected and analysed; the selection layers never
-change it:
+task's collection block says.** The task's `collection.content_types` (`posts`,
+`comments`) decides what is collected and analysed; scenario `content_types` is
+only the supported media capability and never changes collection. The selection
+layers never change it:
 
 - no `tracked_users` → the items are those of the source itself
-  (`content_types` of the scenario applied to the wall/channel);
+  (`collection.content_types` applied to the wall/channel);
 - `tracked_users` given → **only** those authors' items of the same
-  `content_types` are analysed. The task does not widen the content types and
-  does not fall back to the source's own items when a tracked author has
-  nothing.
+  `collection.content_types` are analysed. The task does not widen the content
+  types and does not fall back to the source's own items when a tracked author
+  has nothing.
 
 A task whose `tracked_users` are all unknown to the collector reports an empty
 selection with a named reason (`unknown_tracked_user`), never a silent "nothing

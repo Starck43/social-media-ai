@@ -46,8 +46,9 @@ text is not staged; only `selected`/`needs_review` rows reach
 `collected_items`, with counts/reasons in `collection_lane_runs` and dedupe in
 `collection_seen`. A comment-enabled batch is filtered at thread level (post +
 comments). Analysis reads the stored decision for new rows and does not
-re-filter; legacy NULL-status rows keep the old analysis-time pass once. Content
-types still come from the scenario until stage E. See
+re-filter; legacy NULL-status rows keep the old analysis-time pass once.
+Collection types come from the task's `collection` block; scenario
+`content_types` is supported media only. See
 [collection plan](design/collection-plan.md).
 
 ## Subject scope (concept, not implemented)

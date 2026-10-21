@@ -433,8 +433,20 @@ safely.
     saves; admin form tests; existing scenario presets migrate without losing
     prompts; scenario `content_types` no longer changes collection; tenant and
     permission checks unchanged.
-    Status: IN_PROGRESS (E1–E2 implemented in the task editor and create
-    modal; E3–E5 open).
+    Status: READY (E1–E5 implemented; evidence below).
+    Evidence: E1–E2 are committed as `7388588` (editor/create-modal collection
+    intent, grouped picker, no-JS save) and `fbe9089` (phase progress); E3–E5
+    are committed as `e038f44`. The focused web/admin/API/chat/CLI suite passed
+    87 tests (task collection/edit/selection, admin task form, source lanes,
+    task-detail summary, shared writer, API collection semantics, chat tools,
+    CLI selection); the CLI collection tests passed 3 tests. The scenario
+    media/preset suite passed 61 tests with 6 pre-existing failures reproduced
+    on `fbe9089` (`test_platform_admin_does_not_gain_workspace_wizard_access`,
+    `test_wizard_starts_from_remembered_preferences`,
+    `test_a_read_only_member_cannot_save_the_scenario`, and three
+    `test_scenario_agent_tools.py::test_preferences_*`). No live VK/Telegram/LLM
+    calls were made (Q-5/`1051`); the work is payload/UI/admin/parity only and
+    adds no migration.
 
   - **F. Migrate task 2027 and remove source 3174.** Convert the task to
     task-scoped lanes (`Древиз`, `Вревиз`, `Кабанов`, `Италия поездка`),
@@ -451,8 +463,8 @@ safely.
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`
-  carry no competing ownership. Stages A–C and D1–D4 are implemented;
-  E–F remain. Owns:
+  carry no competing ownership. Stages A–D are DONE, stage E is READY for
+  review, and F remains. Owns:
   `docs/design/collection-plan.md`, `app/services/collection/`,
   `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
   `app/models/collection/`, `app/models/scheduling/`, `app/web/tasks.py`,
@@ -460,7 +472,7 @@ safely.
   `app/templates/`, `app/core/scenario_presets.py`, `app/admin/views.py`,
   `app/agent/toolset/`, `cli/`, `app/api/`, `app/services/ai/scenario*.py`,
   one Alembic revision, tests. Owner: owner (fork #2); status: IN_PROGRESS
-  (stages A–C and D1–D4 DONE; E–F open).
+  (stages A–D DONE, E READY, F open).
   Evidence: [collection plan](../design/collection-plan.md); append stage
   evidence at the exact tested SHA. Test routing: primary OpenCode
   test-runner subagent per stage (RULES.md R10), shared DB sequential (R8).

@@ -1196,7 +1196,7 @@ Authorization: Bearer <token>
     "id": 1,
     "name": "Daily Sentiment",
     "cron_expr": "0 9 * * *",
-    "job_type": "collect_and_analyze",
+    "job_type": "analyze",
     "payload": {},
     "is_active": true,
     "next_run_at": "2025-10-16T09:00:00",
@@ -1231,13 +1231,27 @@ Content-Type: application/json
 {
   "name": "Daily Sentiment",
   "cron_expr": "0 9 * * *",
-  "job_type": "collect_and_analyze",
-  "payload": {},
+  "job_type": "analyze",
+  "payload": {"period": "week"},
+  "collection": {
+    "content_types": ["posts", "comments"],
+    "engagement_types": ["likes"],
+    "limit": 250,
+    "queries": ["доставка"],
+    "city": {"name": "Киров", "mode": "prefer"},
+    "comments": {"max_per_post": 5, "total": 40},
+    "candidates": {"limit": 25, "confirm": "auto"}
+  },
   "agent_scenario_id": 1,
   "is_active": true,
   "source_ids": [1, 2]
 }
 ```
+
+`collection` is task-owned collection intent. It is validated by the same parser
+as the web editor and CLI, stored under `payload.collection` in canonical form,
+and kept only for `collect`/`analyze`; `digest`, `prune`, `learn` and `reflect`
+drop it. A task without the block keeps the posts-only default.
 
 **Response** `201 Created`.
 
@@ -1254,6 +1268,11 @@ Content-Type: application/json
   "is_active": false
 }
 ```
+
+The update is a partial patch. `collection` follows three explicit cases:
+omitted keeps the stored block, `null` clears it, an object replaces it and is
+validated (a malformed block returns `400`, the stored value is unchanged).
+A `job_type` change to a non-collecting type also drops the block.
 
 **Permissions:** `agenttask.update`
 

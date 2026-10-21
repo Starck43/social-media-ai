@@ -18,10 +18,14 @@ identity dedupe, confirmation status that a re-collection never resets, and no
 attached with `city_source` and confidence, candidates are enriched the same
 way, and the city layer is applied after author/text so an unknown city waits
 in `needs_review` while `require` rejects a known mismatch. Runtime collects
-posts, comments and engagement candidates; collection lanes are not wired to
-the runtime planner yet; UI and task-owned content types remain future stages.
-Stages C–D4 are merged into `dev` (integration merges `3e4da0d` and
-`fc7ff52`). Until P5-T14
+posts, comments and engagement candidates, and applies the parsed task intent for
+every source. Stage E delivers the task editor split
+(“Кого искать” / “Что искать” / “Где читать” with limits), the grouped source
+picker with hidden task-local query lanes, scenario `content_types` as supported
+media, admin help/columns for the collection payload, lanes and collected items,
+and one shared writer (`app/services/collection/intent.py::apply_collection`)
+for web, CLI, API and chat. Stages C–D4 are merged into `dev` (integration merges
+`3e4da0d` and `fc7ff52`). Until P5-T14
 is `READY`/`DONE`, runtime behavior in
 [COLLECTION](../COLLECTION.md), [task selection](task-selection.md) and
 [MODELS](../MODELS.md) still applies except for the stage-C selection path

@@ -177,7 +177,7 @@ python -m cli.main task add <name> <cron_expr> <job_type> [options]
 | `--hashtags` | — | Comma/space separated hashtags to track (hashtag_analysis scenario) |
 | `--influencers` | — | Comma/space separated authors/influencers (influencer scenario) |
 | `--topics` | — | Comma/space separated topics (topics scenario) |
-| `--payload`, `-p` | `{}` | Extra JSON payload, e.g. `'{"period": "week"}'` (flat keys; sources/scenario are set separately) |
+| `--payload`, `-p` | `{}` | Extra JSON payload, e.g. `'{"period": "week"}'` (flat keys; sources/scenario are set separately). `collection` is validated through the shared parser; a malformed block stops the command before a task is created. |
 
 **Examples:**
 ```bash
@@ -196,6 +196,10 @@ python -m cli.main task add hourly-collect "0 * * * *" collect \
 
 # Analyze with a scenario
 python -m cli.main task add daily-analyze "0 2 * * *" analyze --sources "1" --scenario 5
+
+# Collect posts and comments, with a page limit and a mention phrase
+python -m cli.main task add kirov-monitor "0 9 * * *" analyze --sources "3" \
+  -p '{"collection": {"content_types": ["posts", "comments"], "limit": 250, "queries": ["доставка"]}}'
 ```
 
 ### Remove Task
@@ -232,6 +236,7 @@ Only provided options are changed; all others keep their current values.
 | `--hashtags` | New comma/space separated hashtags (hashtag_analysis) |
 | `--influencers` | New comma/space separated authors/influencers (influencer scenario) |
 | `--topics` | New comma/space separated topics (topics scenario) |
+| `--payload`, `-p` | JSON object merged into the task payload. `collection` is validated by the shared parser; omit it to keep the stored block, `null` clears it, an object replaces it. |
 
 **Example:**
 
@@ -241,6 +246,9 @@ python -m cli.main task update nightly-analyze --cron "0 3 * * *" --brands "Coca
 
 # Switch scenario and add competitors
 python -m cli.main task update brand-watch --scenario 7 --competitors "Pepsi, Fanta"
+
+# Narrow collection to comments and drop the stored mention phrase
+python -m cli.main task update kirov-monitor -p '{"collection": {"content_types": ["comments"], "limit": 100}}'
 ```
 
 ### Run Task

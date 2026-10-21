@@ -182,10 +182,10 @@ evidence/budget tables have the separate timestamp and deletion rules below.
 
 Unique **(`tenant_id`, `platform_id`, `external_id`)**. There is **no `user_id` or scenario FK**. Token owner selection uses params/personal-vault resolution, not a nonexistent owner column. Relationships: platform, tenant, analytics; tasks through association table. Task selects scenario, with workspace default for taskless runs.
 
-`owner_task_id` was added by 0108 for task-scoped query lanes. The column is
-current schema; hiding such sources from the global list and excluding them from
-the all-active fallback are runtime changes still owned by P5-T14 stages B/E.
-See [collection plan](design/collection-plan.md).
+`owner_task_id` was added by 0108 for task-scoped query lanes. A lane is hidden
+from the global source list and excluded from the task's empty-set/"all active"
+fallback; only an explicit link activates it. See
+[collection plan](design/collection-plan.md).
 
 ### `collected_items`
 
@@ -246,7 +246,7 @@ operator answer to "what did the run actually do?"; rejected text is not stored.
 
 [Source](../app/models/analysis/agent_scenario.py). Fields: `id`, `name` String(255); nullable `description`, `base_prompt`, `summary_prompt` Text; nullable `content_types`, `analysis_types`, `scope`, `media_overrides`, `output_schema` JSON; nullable `max_tokens` Integer; `is_active` Boolean; non-null `is_default` Boolean default false; nullable `text_llm_model_id`, `image_llm_model_id`, `video_llm_model_id` FKs SET NULL; nullable native `llm_strategy` enum. `ai_prompt` is a compatibility property, not a column.
 
-Methodology belongs here; schedule, source selection, triggers and approval guards belong to tasks. `analyze_type` was removed in 0083; do not draw a direct Source→Scenario FK. Query grouping is not a stored scenario field.
+Methodology belongs here; schedule, source selection, triggers and approval guards belong to tasks. `analyze_type` was removed in 0083; do not draw a direct Source→Scenario FK. Query grouping is not a stored scenario field. `content_types` is the scenario's **supported media** list (text/video/image), not a collection scope: collection types, phrases and limits live in `agent_tasks.payload.collection`. Legacy `ContentType` values are read for compatibility (posts/comments/mentions/reactions → text, videos/reels → video, stories → image).
 
 ### `ai_analytics`
 

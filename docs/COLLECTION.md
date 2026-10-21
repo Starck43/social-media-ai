@@ -177,7 +177,7 @@ fill each item's author and name.
 VK only serves the first 1000 search results by `offset`; the collection limit
 below is the same number, so the two ceilings agree.
 
-### Collection plan (P5-T14; stage A schema, runtime pending)
+### Collection plan (P5-T14; stages A–E implemented)
 
 The current contract stores a search phrase as an ordinary `SEARCH` source.
 The accepted target moves collection scope into the task and keeps the source
@@ -188,11 +188,12 @@ and calls several platform methods. Selected rows land in `collected_items`;
 discovered people/communities land in `collection_candidates` and require
 confirmation; comments are a dependent lane on posts; likes/reposts yield
 candidates, not text rows. Every lane reports `limit_reached` instead of
-silently truncating. Stage A added the payload parser, schema and migration
-0108; stage B added the adapters and planner. The collection path still uses
-the behavior below until stages C–D wire the lanes and staging. The full
-contract is in
-[collection plan](design/collection-plan.md).
+silently truncating. Stages A–D delivered the parser/schema, adapters, staging,
+selection and comment/candidate/profile lanes; stage E delivered the task
+editor, scenario-media boundary, admin surfaces and one shared writer for web,
+CLI, API and chat. The runtime resolves each source through the parsed task
+intent. The source-level primitives below still apply inside that context. The
+full contract is in [collection plan](design/collection-plan.md).
 
 ### Walls and dates
 

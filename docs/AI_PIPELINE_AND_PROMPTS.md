@@ -177,11 +177,14 @@ also enforce the current actor, workspace, permissions and normalized arguments 
 execution time. Preferences saved in `scenario_prefs` may seed a later draft but
 must not silently execute or grant access.
 
-**Planned P5-T14:** a scenario will own methodology only — prompt,
-`analysis_types`, `output_schema`, model choices and supported media. Collection
-scope (`content_types`, comments/likes/reposts, queries, city, dates, limits)
-moves to the task. `AgentScenario.content_types` will stop driving collection;
-presets and the scenario wizard will be updated accordingly. See
+**P5-T14 boundary (implemented).** A scenario owns methodology only — prompt,
+`analysis_types`, `output_schema`, model choices and **supported media**. Its
+`content_types` column is a media capability (text/video/image), not a
+collection choice: legacy post/comment/mention/reaction values fold to text,
+videos/reels to video, stories to image, and presets declare text. Collection
+scope (posts/comments, likes/reposts, queries, city, dates, limits) lives in the
+task's `payload.collection` and is validated by
+`app/services/collection/intent.py`. See
 [collection plan](design/collection-plan.md).
 
 ## Usage and cost boundary

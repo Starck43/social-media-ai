@@ -222,11 +222,15 @@ Task create/edit exposes source multi-selection (`agent_task_sources`),
 methodology; task = execution. Empty source selection and payload semantics are
 runtime contracts, not permission grants or a new business-workflow model.
 
-**Planned P5-T14:** the task form gains a `collection` block (content types,
-mention queries, city/discovery, engagement types, limits); the source picker
-hides task-scoped query sources; scenario presets lose their collection-scope
-role. Admin forms/help for the new payload, `sources.owner_task_id` and the
-`collected_items` fields are part of the same task. See
+**P5-T14 task-owned collection.** The task is the collection owner; a scenario
+answers only how to analyse. `AgentTaskAdmin` shows and edits the `collection`
+block inside the payload (content types, engagement types, limits, phrases,
+city/discovery, comment/candidate caps) and explains the keys in the payload
+help; the `dry_run` column/form flag is visible as a rehearsal switch. A
+task-scoped query source is labelled as a task lane through
+`sources.owner_task_id` (details show the owner task), and the collected-item
+list exposes `content_type`, `selection_status` and `media_type` while the
+collector-written lane/selection fields stay out of the edit form. See
 [collection plan](design/collection-plan.md).
 
 ### LLM testing and prices

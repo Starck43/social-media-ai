@@ -361,6 +361,67 @@ python -m cli.main collection lanes 2027 --tenant owner \
   --date-from 2026-10-01 --retire-source 3174 --apply
 ```
 
+### Import Communities and People
+
+Feed a pasted list of VK communities and people into a task as **task-owned
+wall lanes**. VK's global search is unavailable for this deployment's app
+profile (it answers error 1051), so the operator finds the groups in the
+vk.ru web UI and hands the list to this command: every entry is resolved with
+the methods that still work (`groups.getById`, `users.get` — read-only) and
+turns into a wall the task collects without any search. The command performs
+**identity resolution only**: it never collects content and never writes
+to VK.
+
+```bash
+python -m cli.main collection import <task_id> [options]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|---|---|---|
+| `--community` | — | One community: a vk.com URL, `club113`/`public113`/`event123` id, negative id (`-113`) or screen name (repeatable) |
+| `--person` | — | One person: a vk.com URL, `id12345` or positive id (repeatable) |
+| `--file` | — | Path with entries, one per line; `#` comments and blank lines are ignored |
+| `--tenant` | — | Workspace slug or id; must match the task's workspace |
+| `--apply` | off | Write the plan. Without it the command only prints it |
+
+Accepted entry forms: `https://vk.com/club113075242`, `vk.com/dreviz2000`
+(with or without scheme, with query/fragment), `club113075242`,
+`public113075242`, `event123`, `id12345`, a negative id (`-113075242` is a
+community) and a bare screen name. A `club`/`public`/`event` prefix implies a
+community, `id` implies a person; a plain screen name resolves as a community
+first, then as a person. A negative id is always a community — forcing
+`--person` on one is refused.
+
+Without `--apply` nothing is written: the command prints a table per entry
+(requested → resolved kind, id and name → action), the lanes the task will be
+linked to, and a footer with the workspace. An entry VK does not know is
+reported as `skip: vk has no such …` and the rest of the batch goes on; a
+missing VK token or an API error stops the command instead of reading as
+"nothing found".
+
+The import is idempotent. A workspace source with the same screen name or
+numeric id (a `club113`-style legacy id counts) is **reused**: linked to the
+task as-is, its type, params and name are never changed. A source a task
+already owns is reused too. A source owned by **another task** is refused and
+reported — a lane is never taken from its task. Everything else is
+**created** as a task-owned lane (`source_type` `GROUP`/`USER`, negative
+`external_id` for communities, positive for people, `params`
+`{"mode": "auto"}`, active), linked through the same writer the web form and
+the API use. Nothing is ever deleted, so a second run creates nothing.
+
+**Examples:**
+```bash
+# See what would happen, without touching anything
+python -m cli.main collection import 2027 --tenant owner \
+  --community "https://vk.com/dreviz2000" --community public113075242 \
+  --person id19149862
+
+# Read the rest from a file and apply
+python -m cli.main collection import 2027 --tenant owner --file lanes.txt --apply
+```
+
 ---
 
 ## Digest

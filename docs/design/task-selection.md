@@ -108,8 +108,11 @@ the content types the scenario already selected:
 There is no region column and no platform filter for it: VK does not expose a
 post's city, and a profile city is self-declared. A city is expressed as
 ordinary text-scope phrases ("Киров", "Kirov") plus the sources whose audience
-is that city. The UI must label it that way rather than implying a geographic
-filter.
+is that city. Since P5-T14 stage D4 a task's `collection.city` additionally
+compares the author's profile-declared city, carrying `city_source` and a
+confidence; an unknown city goes to `needs_review` instead of being dropped.
+The UI must label it as a declared preference rather than implying a
+geographic filter.
 
 ## What is not selection
 

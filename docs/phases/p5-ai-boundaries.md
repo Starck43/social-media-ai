@@ -403,7 +403,18 @@ safely.
     `collected_items`), `manual` confirmation keeps `new` while `auto` stores
     `confirmed`, and a re-collection never resets an existing decision. 324
     tests passed through the primary OpenCode test-runner (209 no-DB + 4
-    staging contract + 111 DB, 51 subtests). D4 city/profile review remains.
+    staging contract + 111 DB, 51 subtests). D4 is implemented at `3efea8a`:
+    when `collection.city` is set, the batch's post authors are enriched
+    through the provider `fetch_profiles` in bounded identity batches, the
+    self-declared city is attached with `city_source`/`city_confidence` (the
+    same enrichment is stored on candidates), and the city layer runs after
+    author/text selection: `prefer`/`review` keep a known mismatch as
+    `city_mismatch`, `require` rejects it, and an unknown city becomes
+    `needs_review`/`city_unknown` without being analysed. A thread is decided
+    by its post, not a matching commenter; a platform without profile support
+    skips the gate with `profiles_unsupported` instead of reviewing the whole
+    batch. 341 tests passed through the primary OpenCode test-runner (221
+    no-DB + 4 staging contract + 116 DB, 51 subtests).
 
   - **E. Task UI, admin, templates, presets.** Split the task editor into
     "Кого искать" (city, discovery queries, people/communities, candidate
@@ -436,7 +447,7 @@ safely.
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`
-  carry no competing ownership. Stages A–C and D1–D3 are implemented; D4 and
+  carry no competing ownership. Stages A–C and D1–D4 are implemented;
   E–F remain. Owns:
   `docs/design/collection-plan.md`, `app/services/collection/`,
   `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
@@ -445,7 +456,7 @@ safely.
   `app/templates/`, `app/core/scenario_presets.py`, `app/admin/views.py`,
   `app/agent/toolset/`, `cli/`, `app/api/`, `app/services/ai/scenario*.py`,
   one Alembic revision, tests. Owner: owner (fork #2); status: IN_PROGRESS
-  (stages A–C and D1–D3 DONE; D4, E–F open).
+  (stages A–C and D1–D4 DONE; E–F open).
   Evidence: [collection plan](../design/collection-plan.md); append stage
   evidence at the exact tested SHA. Test routing: primary OpenCode
   test-runner subagent per stage (RULES.md R10), shared DB sequential (R8).

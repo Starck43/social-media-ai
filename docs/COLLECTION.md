@@ -512,7 +512,7 @@ counted in `errors`/`error_codes` and never fails the post batch. Comment rows
 carry `content_type="comment"` and `parent_external_id`, and the thread is
 selected as a unit, so a matching comment keeps its parent post. A platform
 without comment support keeps its `comments_unsupported` warning and fetches
-nothing. Profile/city enrichment remains future work.
+nothing. Profile/city enrichment is a separate lane (stage D4).
 
 ### Engagement candidates (P5-T14 stage D3)
 
@@ -528,8 +528,41 @@ A re-collection keeps the first evidence and never resets an existing
 decision. The per-source `candidates` block reports `fetched`, `by_lane`,
 `duplicates`, `invalid`, `stored`, `limit_reached`
 (`candidates_limit_reached`) and `errors`/`error_codes`; a rehearsal reports
-the same counts with `stored: 0` and `dry_run: true`. Profile/city enrichment
-remains future work.
+the same counts with `stored: 0` and `dry_run: true`.
+
+### Profile and city enrichment (P5-T14 stage D4)
+
+A city is not a post attribute: VK post search cannot filter by it, and wall
+items carry none. With `collection.city` configured, the collector reads the
+profiles of the batch's post authors through the provider adapter
+(`fetch_profiles`) before selection, in bounded identity batches, and attaches
+the self-declared city to the author together with `city_source: "profile"` and
+`city_confidence`. The same enrichment is applied to discovered candidates
+before they are stored, so a candidate's `city`/`city_source`/`city_confidence`
+columns carry a declared value rather than a guess. Comments are not enriched:
+a commenter's city says nothing about whether the thread belongs to the task, so
+a thread is decided by its post.
+
+The city layer runs after the author and text layers, and only for an item that
+those already admitted:
+
+- `prefer` (default) and `review`: a declared match selects the item; a known
+  mismatch stays selected with reason `city_mismatch`; an unknown city becomes
+  `needs_review` with reason `city_unknown`.
+- `require`: a known mismatch is rejected (`city_mismatch`), an unknown city is
+  still `needs_review` (`city_unknown`) — an unenriched author is never
+  silently dropped.
+- For a thread the decision uses the post's author, not a matching commenter.
+- `needs_review` rows are staged but never analysed until an operator decides:
+  the analysis path reads only `selected` rows.
+
+A platform without profile support (Telegram) skips the gate instead of sending
+the whole batch to review: the per-source `profiles` block reports
+`supported: false` and `error_code: "profiles_unsupported"`. The same block
+reports `requested`/`resolved`/`unknown` identities (not rows), `errors`/
+`error_codes` for a failed batch, and the city name and mode; the `selection`
+block reports the city counters `matched`/`unknown`/`mismatch`. A rehearsal
+reports the same preview without storing rows.
 
 ## Rehearsal (dry run)
 

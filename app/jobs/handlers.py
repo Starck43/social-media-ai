@@ -565,6 +565,13 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                         if (result or {}).get("comments") is not None
                         else {}
                     ),
+                    # Engagement evidence: candidates discovered per lane and how
+                    # many were stored. Candidates are never text rows.
+                    **(
+                        {"candidates": (result or {}).get("candidates")}
+                        if (result or {}).get("candidates") is not None
+                        else {}
+                    ),
                     # This run's "seen" ledger. Written on every collect, whether
                     # or not the analysis succeeded — that is what stops the next
                     # collection from re-reporting the same wall as new.

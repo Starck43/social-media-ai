@@ -120,6 +120,45 @@ async def test_the_collect_notification_admits_an_unmeasured_counter(platform, s
     assert "Новых нет" not in msg
 
 
+async def test_handle_collect_passes_lane_evidence_per_source(platform, sources, monkeypatch):
+    """Comment and candidate evidence reach the per-source report unchanged."""
+    from app.jobs.handlers import handle_collect
+
+    task = await AgentTask.objects.create(
+        name=f"t_{uuid.uuid4().hex[:6]}",
+        job_type="collect",
+        cron_expr="@once",
+        payload={},
+        is_active=True,
+    )
+    try:
+        from app.web.tasks import _replace_task_sources
+
+        await _replace_task_sources(task.id, [sources[0].id], task.tenant_id)
+
+        comments = {"posts": 1, "fetched": 3, "limit_reached": False, "warnings": [], "errors": 0, "error_codes": []}
+        candidates = {"fetched": 4, "stored": 2, "by_lane": {"likes": 4}, "confirm": "manual"}
+
+        async def fake_collect(self, source, **kwargs):  # noqa: ARG001 - handler call shape
+            return {
+                "content_count": 2,
+                "new_items": 2,
+                "staged": 3,
+                "comments": comments,
+                "candidates": candidates,
+            }
+
+        monkeypatch.setattr("app.services.monitoring.collector.ContentCollector.collect_from_source", fake_collect)
+
+        stats = await handle_collect({"agent_task_id": task.id})
+
+        row = stats["per_source"][0]
+        assert row["comments"] == comments
+        assert row["candidates"] == candidates
+    finally:
+        await AgentTask.objects.delete_by_id(task.id)
+
+
 async def test_handle_collect_records_a_per_source_breakdown(platform, sources, monkeypatch):
     """Each source's own yield must survive the run, not just the run total.
 

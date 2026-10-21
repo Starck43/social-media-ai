@@ -318,6 +318,23 @@ def author_matches(item: Any, scope: SelectionScope) -> bool:
     return bool(_author_keys(item) & tracked)
 
 
+def eligible_posts(items: Iterable[Any], scope: SelectionScope | None = None) -> list[Any]:
+    """Posts whose dependent lanes (comments, engagement) may be read.
+
+    Only the author layer applies. The text scope stays a decision about the
+    post *and* its thread, and an engagement lane only needs to know whether the
+    post belongs to the task's population at all.
+    """
+    resolved = scope or SelectionScope()
+    return [
+        item
+        for item in items
+        if isinstance(item, Mapping)
+        and str(item.get("content_type") or "post").lower() != "comment"
+        and author_matches(item, resolved)
+    ]
+
+
 def select_items(items: Iterable[Any], scope: SelectionScope) -> SelectionResult:
     """Apply the author filter and the text scope, in that order.
 

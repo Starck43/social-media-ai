@@ -18,7 +18,15 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.tenant_context import tenant_scope
-from app.models import AgentTask, CollectedItem, CollectionLaneRun, CollectionSeen, Platform, Source
+from app.models import (
+    AgentTask,
+    CollectedItem,
+    CollectionCandidate,
+    CollectionLaneRun,
+    CollectionSeen,
+    Platform,
+    Source,
+)
 from app.services.collection.pages import Page
 from app.services.monitoring.selection import SelectionScope
 from app.types import SourceType
@@ -49,6 +57,7 @@ async def source():
     )
     yield s
     await CollectedItem.objects.filter(source_id=s.id).delete()
+    await CollectionCandidate.objects.filter(source_id=s.id).delete()
     await CollectionLaneRun.objects.filter(lane_id=f"source:{s.id}").delete()
     await Source.objects.delete_by_id(s.id)
     await Platform.objects.delete_by_id(p.id)
@@ -357,6 +366,150 @@ async def test_comment_context_expands_comments_and_stages_the_thread(source):
     assert rows["3_1:9"].content_type == "comment"
     assert rows["3_1:9"].parent_external_id == "3_1"
     assert rows["3_1:9"].selection_reason == "thread_comment_matched"
+
+
+class _EngagementAdapter:
+    """Engagement primitives the collector calls for one parent post."""
+
+    def __init__(self, likes=None, reposts=None):
+        self.likes = likes or {}
+        self.reposts = reposts or {}
+
+    async def fetch_likes(self, post, limit, cursor):
+        return self._page(self.likes, post, limit, cursor)
+
+    async def fetch_reposts(self, post, limit, cursor):
+        return self._page(self.reposts, post, limit, cursor)
+
+    @staticmethod
+    def _page(by_post, post, limit, cursor):
+        rows = by_post.get(str(post.get("external_id")), [])
+        offset = int(cursor or 0)
+        return Page(items=tuple(rows[offset : offset + limit]))
+
+
+class _EngagementContext:
+    """A candidate-enabled per-source context backed by the adapter double."""
+
+    engagement_types = ("likes", "reposts")
+    capabilities = SimpleNamespace(
+        comments=False,
+        supports=lambda lane: lane in ("likes", "reposts"),
+    )
+
+    def __init__(self, adapter, *, limit=10, confirm="manual"):
+        self._adapter = adapter
+        self.intent = SimpleNamespace(
+            candidates=SimpleNamespace(limit=limit, confirm=confirm),
+            comments=SimpleNamespace(max_per_post=1, total=1),
+        )
+
+    def adapter(self, client):  # noqa: ARG002 - the context owns the client choice
+        return self._adapter
+
+    def summary(self):
+        return {"engagement_types": list(self.engagement_types)}
+
+
+def _person(external_id, name="Анна"):
+    return {
+        "platform": "vk",
+        "kind": "person",
+        "external_id": str(external_id),
+        "name": name,
+        "url": f"https://vk.com/id{external_id}",
+        "metrics": {"followers_count": 10},
+        "evidence": {},
+    }
+
+
+async def test_engagement_candidates_are_stored_outside_the_text_batch(source):
+    """Likes and reposts produce candidates, never `collected_items` rows."""
+    posts = [{"platform": "vk", "external_id": "3_2", "content_type": "post", "text": "пост"}]
+    adapter = _EngagementAdapter(likes={"3_2": [_person(5)]}, reposts={"3_2": [_person(6)]})
+    c = _collector(posts)
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9104,
+        collection_context=_EngagementContext(adapter),
+    )
+
+    assert result["content_count"] == 1
+    assert result["staged"] == 1
+    assert result["candidates"]["fetched"] == 2
+    assert result["candidates"]["stored"] == 2
+    assert result["candidates"]["confirm"] == "manual"
+    # Only the post is raw content; a candidate is not text.
+    rows = await CollectedItem.objects.filter(source_id=source.id)
+    assert [row.external_id for row in rows] == ["3_2"]
+    candidates = {
+        row.external_id: row for row in await CollectionCandidate.objects.filter(source_id=source.id)
+    }
+    assert set(candidates) == {"5", "6"}
+    assert {row.kind for row in candidates.values()} == {"person"}
+    assert {row.status for row in candidates.values()} == {"new"}
+    assert {row.source_id for row in candidates.values()} == {source.id}
+    assert candidates["5"].evidence["lane"] == "likes"
+    assert candidates["5"].evidence["post_external_id"] == "3_2"
+
+
+async def test_a_second_run_does_not_duplicate_or_reset_a_candidate_decision(source):
+    posts = [{"platform": "vk", "external_id": "3_3", "content_type": "post", "text": "пост"}]
+    adapter = _EngagementAdapter(likes={"3_3": [_person(5), _person(6)]})
+    c = _collector(posts)
+    context = _EngagementContext(adapter)
+
+    first = await c.collect_from_source(source, analyze=False, run_id=9105, collection_context=context)
+    assert first["candidates"]["stored"] == 2
+    confirmed = await CollectionCandidate.objects.get(source_id=source.id, external_id="5")
+    await CollectionCandidate.objects.filter(id=confirmed.id).update(status="confirmed")
+
+    second = await c.collect_from_source(source, analyze=False, run_id=9106, collection_context=context)
+
+    assert second["candidates"]["stored"] == 0
+    rows = {row.external_id: row for row in await CollectionCandidate.objects.filter(source_id=source.id)}
+    assert set(rows) == {"5", "6"}
+    # A re-collection is not a reason to reopen a decision an operator made.
+    assert rows["5"].status == "confirmed"
+    assert rows["6"].status == "new"
+
+
+async def test_auto_confirmation_marks_candidates_confirmed(source):
+    posts = [{"platform": "vk", "external_id": "3_4", "content_type": "post", "text": "пост"}]
+    adapter = _EngagementAdapter(likes={"3_4": [_person(7)]})
+    c = _collector(posts)
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9107,
+        collection_context=_EngagementContext(adapter, confirm="auto"),
+    )
+
+    assert result["candidates"]["confirm"] == "auto"
+    row = await CollectionCandidate.objects.get(source_id=source.id, external_id="7")
+    assert row.status == "confirmed"
+
+
+async def test_a_dry_run_previews_candidates_without_storing_them(source):
+    posts = [{"platform": "vk", "external_id": "3_5", "content_type": "post", "text": "пост"}]
+    adapter = _EngagementAdapter(likes={"3_5": [_person(8)]})
+    c = _collector(posts)
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9108,
+        dry_run=True,
+        collection_context=_EngagementContext(adapter),
+    )
+
+    assert result["candidates"]["fetched"] == 1
+    assert result["candidates"]["stored"] == 0
+    assert result["candidates"]["dry_run"] is True
+    assert await CollectionCandidate.objects.filter(source_id=source.id) == []
 
 
 async def test_inline_analysis_stages_first_then_retires_what_it_saved(source):

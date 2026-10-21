@@ -193,6 +193,81 @@ class ContentCollector:
 			scope=selection_scope,
 		)
 
+	async def _expand_candidates(
+		self,
+		content: list[dict],
+		client: Any,
+		context: Any,
+		selection_scope: Any,
+	) -> Any:
+		"""Read the engagement lanes the per-source context asked for.
+
+		Returns ``None`` when no requested lane is supported by the provider, so
+		a platform without likes/reposts keeps the context's unsupported warning
+		instead of an empty candidate batch.
+		"""
+		from app.services.collection.candidates import CandidateBudget, expand_candidates
+
+		engagements = tuple(getattr(context, "engagement_types", ()) or ())
+		capabilities = getattr(context, "capabilities", None)
+		build_adapter = getattr(context, "adapter", None)
+		if not engagements or capabilities is None or not callable(build_adapter):
+			return None
+		adapter = build_adapter(client)
+		if adapter is None:
+			return None
+		lanes = []
+		for engagement in engagements:
+			if not capabilities.supports(engagement):
+				continue
+			fetch = getattr(adapter, f"fetch_{engagement}", None)
+			if callable(fetch):
+				lanes.append((engagement, fetch))
+		if not lanes:
+			return None
+		return await expand_candidates(
+			content,
+			lanes,
+			budget=CandidateBudget(context.intent.candidates.limit),
+			scope=selection_scope,
+		)
+
+	async def _store_candidates(self, items: list, source: Source, task_id: int | None, context: Any) -> int:
+		"""Persist discovered identities outside the collected-content path.
+
+		A candidate is never a `collected_items` row: it is an identity awaiting
+		an operator. `status` starts as `new`, or `confirmed` when the task
+		allows automatic confirmation; the task-wide cap was already applied by
+		the expansion. The caller owns the failure policy.
+		"""
+		from app.core.database import new_session
+		from app.models import CollectionCandidate
+		from app.services.collection.intent import CONFIRM_AUTO
+
+		limit = getattr(context.intent, "candidates", None)
+		status = "confirmed" if getattr(limit, "confirm", None) == CONFIRM_AUTO else "new"
+		rows = []
+		for item in items:
+			evidence = dict(item.get("evidence") or {})
+			evidence["task_id"] = task_id
+			rows.append(
+				{
+					**item,
+					"evidence": evidence,
+					"status": status,
+					"source_id": getattr(source, "id", None),
+					"discovered_by": "collection",
+				}
+			)
+		session = new_session()
+		try:
+			async with session.begin():
+				stored = await CollectionCandidate.objects.store_candidates(session, rows)
+		finally:
+			await session.close()
+		logger.info(f"Stored {stored} collection candidate(s) for source {source.id}")
+		return stored
+
 	async def collect_from_source(
 			self,
 			source: Source,
@@ -275,6 +350,37 @@ class ContentCollector:
 						f"from source {source.id}"
 					)
 
+			# Engagement lanes answer "who reacted": they produce candidates, never
+			# text rows, and share one task-wide cap. A candidate is stored outside
+			# the collected-content path, so likes never inflate `content_count`.
+			candidates = None
+			candidates_stored = 0
+			if collection_context is not None and getattr(collection_context, "engagement_types", ()):
+				try:
+					candidates = await self._expand_candidates(
+						content, client, collection_context, selection_scope
+					)
+				except Exception:  # noqa: BLE001 — candidates never fail the post batch
+					logger.warning("collection_candidates_failed error_code=candidates_operation_failed")
+					candidates = None
+				if candidates is not None and candidates.items and not dry_run:
+					try:
+						candidates_stored = await self._store_candidates(
+							candidates.items, source, task_id, collection_context
+						)
+					except Exception:  # noqa: BLE001 — storage failure is reported, not raised
+						logger.warning("collection_candidates_storage_failed error_code=storage_operation_failed")
+			candidates_report = None
+			if candidates is not None and collection_context is not None:
+				confirm_mode = getattr(
+					getattr(collection_context.intent, "candidates", None), "confirm", None
+				)
+				candidates_report = candidates.summary(
+					stored=0 if dry_run else candidates_stored,
+					confirm=confirm_mode,
+					dry_run=dry_run,
+				)
+
 			# How many of these the platform handed us are actually new.
 			#
 			# `content_count` is the size of the API response, and the platform
@@ -353,6 +459,7 @@ class ContentCollector:
 					"preview": _dry_run_preview(content),
 					"selection": selection_preview,
 					"comments": comments.summary() if comments is not None else None,
+					"candidates": candidates_report,
 					"collection": _collection_summary(collection_context),
 				}
 
@@ -435,6 +542,9 @@ class ContentCollector:
 				# every cap the lane hit. `None` means the task did not ask for
 				# comments or the platform cannot provide them.
 				"comments": comments.summary() if comments is not None else None,
+				# Engagement evidence: identities discovered per lane and how many
+				# were actually stored. Candidates are never staged as text.
+				"candidates": candidates_report,
 				"collection": _collection_summary(collection_context),
 			}
 			if analysis_errors is not None:

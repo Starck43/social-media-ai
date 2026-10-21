@@ -20,10 +20,10 @@ every failure mode is provable with a double.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Iterable, Mapping
+from typing import Any, Awaitable, Callable, Iterable
 
 from app.services.collection.pages import Page
-from app.services.monitoring.selection import SelectionScope, author_matches
+from app.services.monitoring.selection import SelectionScope, eligible_posts
 
 COMMENT_CONTENT_TYPE = "comment"
 
@@ -78,8 +78,7 @@ def comment_parents(posts: Iterable[Any], scope: SelectionScope | None = None) -
     Only the author layer is applied; the text scope stays a thread decision
     made later, over the post *and* its comments together.
     """
-    resolved = scope or SelectionScope()
-    return [item for item in posts if isinstance(item, Mapping) and _is_post(item) and author_matches(item, resolved)]
+    return eligible_posts(posts, scope)
 
 
 async def expand_comments(
@@ -145,7 +144,3 @@ async def expand_comments(
     result.warnings = tuple(warnings)
     result.error_codes = tuple(dict.fromkeys(error_codes))
     return result
-
-
-def _is_post(item: Mapping[str, Any]) -> bool:
-    return str(item.get("content_type") or "post").lower() != COMMENT_CONTENT_TYPE

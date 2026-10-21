@@ -35,7 +35,9 @@ def bind_managers(models):
     models.CollectionSeen.objects = import_module(
         "app.models.managers.collection_seen_manager"
     ).CollectionSeenManager()
-    models.CollectionCandidate.objects = BaseManager(models.CollectionCandidate)
+    models.CollectionCandidate.objects = import_module(
+        "app.models.managers.collection_candidate_manager"
+    ).CollectionCandidateManager()
     models.CollectionLaneRun.objects = import_module(
         "app.models.managers.collection_lane_run_manager"
     ).CollectionLaneRunManager()

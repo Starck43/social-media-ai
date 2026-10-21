@@ -1,5 +1,5 @@
 name = "kilo-test-runner"
-description = "Secondary test delegation through Kilo when the primary OpenCode route is unavailable."
+description = "Secondary test delegation through Kilo when the primary OpenCode route is unavailable; both tester stages (test-orchestrator and its test-runner child) are pinned to Kilo's minimax-m3.1-flash."
 model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 

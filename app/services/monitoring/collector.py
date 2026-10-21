@@ -34,6 +34,48 @@ def _collection_summary(context: Any) -> dict | None:
 	return value if isinstance(value, dict) else None
 
 
+def _city_scope(context: Any) -> Any:
+	"""The task's city preference as a selection scope, if one is configured."""
+	city = getattr(getattr(context, "intent", None), "city", None)
+	if city is None:
+		return None
+	from app.services.monitoring.selection import CityScope
+
+	try:
+		return CityScope(name=city.name, mode=city.mode)
+	except Exception:  # noqa: BLE001 - a malformed city must not fail a collection
+		logger.warning("collection_city_invalid error_code=city_invalid")
+		return None
+
+
+def _profiles_report(city_scope: Any, profiles: Any, supported: bool) -> dict | None:
+	"""Enrichment evidence: what was asked and what the platform could answer."""
+	if city_scope is None:
+		return None
+	report = profiles.summary() if profiles is not None else {}
+	report["city"] = city_scope.name
+	report["mode"] = city_scope.mode
+	report["supported"] = supported
+	if profiles is None:
+		report["error_code"] = "profiles_operation_failed" if supported else "profiles_unsupported"
+	return report
+
+
+def _city_preview(selection_result: Any, city_scope: Any) -> dict | None:
+	"""How the city layer decided this batch; `None` when no city is configured."""
+	if city_scope is None:
+		return None
+	from app.services.monitoring.selection import CITY_MISMATCH, CITY_UNKNOWN
+
+	return {
+		"name": city_scope.name,
+		"mode": city_scope.mode,
+		"matched": getattr(selection_result, "city_matched", 0),
+		"unknown": selection_result.count(CITY_UNKNOWN),
+		"mismatch": selection_result.count(CITY_MISMATCH),
+	}
+
+
 def _dry_run_preview(content: list[dict], limit: int = 10, text_limit: int = 300) -> list[dict]:
 	"""A bounded, offline preview of a rehearsal batch.
 
@@ -232,6 +274,20 @@ class ContentCollector:
 			scope=selection_scope,
 		)
 
+	def _profile_fetch(self, context: Any, client: Any) -> Any:
+		"""The provider's profile fetch for a city-enabled context, if it has one.
+
+		`None` means the platform cannot enrich profiles at all (its capability
+		says so and the context already carries the warning), not that it failed.
+		"""
+		capabilities = getattr(context, "capabilities", None)
+		build_adapter = getattr(context, "adapter", None)
+		if capabilities is None or not getattr(capabilities, "profiles", False) or not callable(build_adapter):
+			return None
+		adapter = build_adapter(client)
+		fetch = getattr(adapter, "fetch_profiles", None)
+		return fetch if callable(fetch) else None
+
 	async def _store_candidates(self, items: list, source: Source, task_id: int | None, context: Any) -> int:
 		"""Persist discovered identities outside the collected-content path.
 
@@ -354,7 +410,6 @@ class ContentCollector:
 			# text rows, and share one task-wide cap. A candidate is stored outside
 			# the collected-content path, so likes never inflate `content_count`.
 			candidates = None
-			candidates_stored = 0
 			if collection_context is not None and getattr(collection_context, "engagement_types", ()):
 				try:
 					candidates = await self._expand_candidates(
@@ -363,13 +418,38 @@ class ContentCollector:
 				except Exception:  # noqa: BLE001 — candidates never fail the post batch
 					logger.warning("collection_candidates_failed error_code=candidates_operation_failed")
 					candidates = None
-				if candidates is not None and candidates.items and not dry_run:
+
+			# A city is not a post attribute: it is declared by the author's or
+			# community's profile, so it arrives through the enrichment lane and
+			# carries its source. Without the capability the gate is skipped with an
+			# explicit reason instead of sending a whole batch to review.
+			city_scope = _city_scope(collection_context)
+			profile_fetch = self._profile_fetch(collection_context, client) if city_scope is not None else None
+			profiles = None
+			if city_scope is not None and profile_fetch is not None:
+				try:
+					from app.services.collection.profiles import enrich_posts
+
+					profiles = await enrich_posts(content, profile_fetch)
+				except Exception:  # noqa: BLE001 — enrichment never fails the post batch
+					logger.warning("collection_profiles_failed error_code=profiles_operation_failed")
+					profiles = None
+				if candidates is not None and candidates.items:
 					try:
-						candidates_stored = await self._store_candidates(
-							candidates.items, source, task_id, collection_context
-						)
-					except Exception:  # noqa: BLE001 — storage failure is reported, not raised
-						logger.warning("collection_candidates_storage_failed error_code=storage_operation_failed")
+						from app.services.collection.profiles import enrich_candidates
+
+						await enrich_candidates(candidates.items, profile_fetch)
+					except Exception:  # noqa: BLE001 — a candidate keeps an unknown city
+						logger.warning("collection_candidate_profiles_failed error_code=profiles_operation_failed")
+
+			candidates_stored = 0
+			if candidates is not None and candidates.items and not dry_run:
+				try:
+					candidates_stored = await self._store_candidates(
+						candidates.items, source, task_id, collection_context
+					)
+				except Exception:  # noqa: BLE001 — storage failure is reported, not raised
+					logger.warning("collection_candidates_storage_failed error_code=storage_operation_failed")
 			candidates_report = None
 			if candidates is not None and collection_context is not None:
 				confirm_mode = getattr(
@@ -380,6 +460,8 @@ class ContentCollector:
 					confirm=confirm_mode,
 					dry_run=dry_run,
 				)
+			profiles_report = _profiles_report(city_scope, profiles, profile_fetch is not None)
+
 
 			# How many of these the platform handed us are actually new.
 			#
@@ -421,6 +503,8 @@ class ContentCollector:
 				content,
 				selection_scope if selection_scope is not None else SelectionScope(),
 				thread=any(str(item.get("content_type") or "").lower() == "comment" for item in content),
+				# The gate exists only when the provider could actually answer it.
+				city=city_scope if profiles is not None else None,
 			)
 			selection_by_hash = {
 				item_hash(decision.item): (decision.status, decision.reason)
@@ -445,6 +529,7 @@ class ContentCollector:
 					"rejected": len(selection_result.rejected),
 					"reasons": dict(selection_result.reasons),
 					"unknown_tracked_users": list(selection_result.unknown_tracked_users),
+					"city": _city_preview(selection_result, city_scope),
 					"sample": _dry_run_preview(selection_result.selected, limit=3, text_limit=240),
 				}
 				return {
@@ -460,6 +545,7 @@ class ContentCollector:
 					"selection": selection_preview,
 					"comments": comments.summary() if comments is not None else None,
 					"candidates": candidates_report,
+					"profiles": profiles_report,
 					"collection": _collection_summary(collection_context),
 				}
 
@@ -535,6 +621,7 @@ class ContentCollector:
 					"rejected": len(selection_result.rejected),
 					"reasons": dict(selection_result.reasons),
 					"unknown_tracked_users": list(selection_result.unknown_tracked_users),
+					"city": _city_preview(selection_result, city_scope),
 				},
 				# This run's "seen" ledger, carried in the job result.
 				"content_hashes": hashes,
@@ -545,6 +632,9 @@ class ContentCollector:
 				# Engagement evidence: identities discovered per lane and how many
 				# were actually stored. Candidates are never staged as text.
 				"candidates": candidates_report,
+				# Profile evidence: identities enriched, cities unknown, and the
+				# reason the city gate could not run at all.
+				"profiles": profiles_report,
 				"collection": _collection_summary(collection_context),
 			}
 			if analysis_errors is not None:

@@ -396,6 +396,77 @@ STATUS_REJECTED = "rejected"
 THREAD_MATCHED = "thread_matched"
 THREAD_COMMENT_MATCHED = "thread_comment_matched"
 
+# A city is not a post attribute: it is declared by a profile, so it can be
+# absent, and absence is neither a pass nor a silent drop. `prefer`/`review`
+# keep a known mismatch as a ranked, selected row and send the unknown city to
+# an operator; `require` is the only mode that rejects a known mismatch.
+CITY_PREFER = "prefer"
+CITY_REQUIRE = "require"
+CITY_REVIEW = "review"
+CITY_MODES = (CITY_PREFER, CITY_REQUIRE, CITY_REVIEW)
+
+CITY_MATCHED = "city_matched"
+CITY_MISMATCH = "city_mismatch"
+CITY_UNKNOWN = "city_unknown"
+
+
+def normalise_city(value: Any) -> str:
+    """Comparison key for a self-declared city: case, `ё` and spacing do not matter."""
+    if not isinstance(value, str):
+        return ""
+    return _normalise(value)
+
+
+@dataclass(frozen=True)
+class CityScope:
+    """The task's city preference, compared against a profile-declared city."""
+
+    name: str
+    mode: str = CITY_PREFER
+
+    def __post_init__(self) -> None:
+        if not normalise_city(self.name):
+            raise SelectionError("city_name_invalid")
+        if self.mode not in CITY_MODES:
+            raise SelectionError("city_mode_invalid")
+
+    @property
+    def key(self) -> str:
+        return normalise_city(self.name)
+
+    def matches(self, value: Any) -> bool:
+        return normalise_city(value) == self.key
+
+
+def city_decision(item: Any, city: CityScope) -> tuple[str, str]:
+    """Collection status/reason for one item's author-declared city.
+
+    Unknown never means rejected: an unenriched author is the normal state of a
+    platform without profile support, and the operator, not a guess, decides.
+    """
+    value = _author_city(item)
+    if value is None:
+        return STATUS_NEEDS_REVIEW, CITY_UNKNOWN
+    if city.matches(value):
+        return STATUS_SELECTED, CITY_MATCHED
+    if city.mode == CITY_REQUIRE:
+        return STATUS_REJECTED, CITY_MISMATCH
+    return STATUS_SELECTED, CITY_MISMATCH
+
+
+def _author_city(item: Any) -> str | None:
+    """The city an item or its author declares, if any."""
+    if not isinstance(item, Mapping):
+        return None
+    author = item.get("author")
+    if isinstance(author, Mapping):
+        for key in ("city", "city_name"):
+            value = author.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+    value = item.get("city")
+    return value if isinstance(value, str) and value.strip() else None
+
 
 @dataclass(frozen=True)
 class SelectionDecision:
@@ -416,6 +487,9 @@ class CollectionSelection:
     rejected: list[Any] = field(default_factory=list)
     reasons: dict[str, int] = field(default_factory=dict)
     unknown_tracked_users: list[str] = field(default_factory=list)
+    # Items whose declared city proved the task's city. Kept apart from
+    # `reasons`: a match does not replace the pass reason that admitted the item.
+    city_matched: int = 0
 
     def count(self, reason: str) -> int:
         return self.reasons.get(reason, 0)
@@ -426,6 +500,7 @@ def select_for_collection(
     scope: SelectionScope,
     *,
     thread: bool = False,
+    city: CityScope | None = None,
 ) -> CollectionSelection:
     """Apply task selection before staging and return per-item statuses.
 
@@ -434,10 +509,16 @@ def select_for_collection(
     a matching comment can therefore keep a non-matching parent post, which is
     the point of a comment-enabled task. Items whose parent is absent from the
     batch are evaluated as their own group.
+
+    ``city`` adds the author-city layer *after* the author and text layers: an
+    item that already failed those is reported by the layer that rejected it.
+    The city belongs to the post's author, so a thread is decided by its post,
+    not by whichever commenter happened to match.
     """
     materialised = list(items)
     tracked = {user.key() for user in scope.tracked_users}
     matched_tracked: set[str] = set()
+    city_matched = 0
     if thread:
         groups: dict[str, list[Any]] = {}
         for item in materialised:
@@ -446,31 +527,59 @@ def select_for_collection(
         for group in groups.values():
             evaluations = [_evaluate_item(item, scope, tracked) for item in group]
             matched = any(passed for passed, _reason, _keys in evaluations)
+            city_status, city_reason = _group_city(group, city)
+            if matched and city_status == STATUS_NEEDS_REVIEW:
+                decisions.extend(
+                    SelectionDecision(item=item, status=STATUS_NEEDS_REVIEW, reason=CITY_UNKNOWN) for item in group
+                )
+                continue
+            if matched and city_status == STATUS_REJECTED:
+                decisions.extend(
+                    SelectionDecision(item=item, status=STATUS_REJECTED, reason=CITY_MISMATCH) for item in group
+                )
+                continue
             for item, (passed, reason, keys) in zip(group, evaluations):
                 matched_tracked |= keys
                 if matched:
-                    decisions.append(
-                        SelectionDecision(
-                            item=item,
-                            status=STATUS_SELECTED,
-                            reason=THREAD_COMMENT_MATCHED if _is_comment(item) and passed else THREAD_MATCHED,
-                        )
+                    kept_reason = (
+                        CITY_MISMATCH
+                        if city_reason == CITY_MISMATCH
+                        else (THREAD_COMMENT_MATCHED if _is_comment(item) and passed else THREAD_MATCHED)
                     )
+                    decisions.append(SelectionDecision(item=item, status=STATUS_SELECTED, reason=kept_reason))
                 else:
                     decisions.append(SelectionDecision(item=item, status=STATUS_REJECTED, reason=reason))
+            if matched and city_reason == CITY_MATCHED:
+                city_matched += 1
     else:
         decisions = []
         for item in materialised:
             passed, reason, keys = _evaluate_item(item, scope, tracked)
             matched_tracked |= keys
-            decisions.append(
-                SelectionDecision(
-                    item=item,
-                    status=STATUS_SELECTED if passed else STATUS_REJECTED,
-                    reason=reason,
-                )
-            )
-    return _aggregate_decisions(decisions, tracked, matched_tracked)
+            status = STATUS_SELECTED if passed else STATUS_REJECTED
+            kept_reason = reason
+            if passed and city is not None:
+                city_status, city_reason = city_decision(item, city)
+                if city_status == STATUS_NEEDS_REVIEW:
+                    status, kept_reason = STATUS_NEEDS_REVIEW, CITY_UNKNOWN
+                elif city_status == STATUS_REJECTED:
+                    status, kept_reason = STATUS_REJECTED, CITY_MISMATCH
+                elif city_reason == CITY_MISMATCH:
+                    kept_reason = CITY_MISMATCH
+                else:
+                    city_matched += 1
+            decisions.append(SelectionDecision(item=item, status=status, reason=kept_reason))
+    result = _aggregate_decisions(decisions, tracked, matched_tracked)
+    result.city_matched = city_matched
+    return result
+
+
+def _group_city(group: Sequence[Any], city: CityScope | None) -> tuple[str, str]:
+    """City outcome for a whole thread, decided by its post when one is present."""
+    if city is None:
+        return STATUS_SELECTED, ""
+    subject = next((item for item in group if not _is_comment(item)), group[0])
+    return city_decision(subject, city)
 
 
 def _evaluate_item(item: Any, scope: SelectionScope, tracked: set[str]) -> tuple[bool, str, set[str]]:

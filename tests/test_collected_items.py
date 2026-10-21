@@ -368,18 +368,28 @@ async def test_comment_context_expands_comments_and_stages_the_thread(source):
     assert rows["3_1:9"].selection_reason == "thread_comment_matched"
 
 
-class _EngagementAdapter:
-    """Engagement primitives the collector calls for one parent post."""
+class _CollectionAdapter:
+    """The provider primitives the collector calls: engagement and profiles."""
 
-    def __init__(self, likes=None, reposts=None):
+    def __init__(self, likes=None, reposts=None, profiles=None):
         self.likes = likes or {}
         self.reposts = reposts or {}
+        self.profiles = profiles or {}
+        self.profile_calls: list[list[str]] = []
 
     async def fetch_likes(self, post, limit, cursor):
         return self._page(self.likes, post, limit, cursor)
 
     async def fetch_reposts(self, post, limit, cursor):
         return self._page(self.reposts, post, limit, cursor)
+
+    async def fetch_profiles(self, ids):
+        self.profile_calls.append([str(identifier) for identifier in ids])
+        return [
+            {"platform": "vk", "external_id": str(identifier), "city": self.profiles[str(identifier)]}
+            for identifier in ids
+            if str(identifier) in self.profiles
+        ]
 
     @staticmethod
     def _page(by_post, post, limit, cursor):
@@ -388,20 +398,30 @@ class _EngagementAdapter:
         return Page(items=tuple(rows[offset : offset + limit]))
 
 
-class _EngagementContext:
-    """A candidate-enabled per-source context backed by the adapter double."""
+class _CollectionContext:
+    """A per-source context double: lanes, city preference and capabilities."""
 
-    engagement_types = ("likes", "reposts")
-    capabilities = SimpleNamespace(
-        comments=False,
-        supports=lambda lane: lane in ("likes", "reposts"),
-    )
-
-    def __init__(self, adapter, *, limit=10, confirm="manual"):
+    def __init__(
+        self,
+        adapter,
+        *,
+        engagements=("likes", "reposts"),
+        city=None,
+        mode="prefer",
+        limit=10,
+        confirm="manual",
+    ):
         self._adapter = adapter
+        self.engagement_types = tuple(engagements)
+        self.capabilities = SimpleNamespace(
+            comments=False,
+            profiles=city is not None,
+            supports=lambda lane: lane in self.engagement_types,
+        )
         self.intent = SimpleNamespace(
             candidates=SimpleNamespace(limit=limit, confirm=confirm),
             comments=SimpleNamespace(max_per_post=1, total=1),
+            city=SimpleNamespace(name=city, mode=mode) if city is not None else None,
         )
 
     def adapter(self, client):  # noqa: ARG002 - the context owns the client choice
@@ -426,14 +446,14 @@ def _person(external_id, name="Анна"):
 async def test_engagement_candidates_are_stored_outside_the_text_batch(source):
     """Likes and reposts produce candidates, never `collected_items` rows."""
     posts = [{"platform": "vk", "external_id": "3_2", "content_type": "post", "text": "пост"}]
-    adapter = _EngagementAdapter(likes={"3_2": [_person(5)]}, reposts={"3_2": [_person(6)]})
+    adapter = _CollectionAdapter(likes={"3_2": [_person(5)]}, reposts={"3_2": [_person(6)]})
     c = _collector(posts)
 
     result = await c.collect_from_source(
         source,
         analyze=False,
         run_id=9104,
-        collection_context=_EngagementContext(adapter),
+        collection_context=_CollectionContext(adapter),
     )
 
     assert result["content_count"] == 1
@@ -457,9 +477,9 @@ async def test_engagement_candidates_are_stored_outside_the_text_batch(source):
 
 async def test_a_second_run_does_not_duplicate_or_reset_a_candidate_decision(source):
     posts = [{"platform": "vk", "external_id": "3_3", "content_type": "post", "text": "пост"}]
-    adapter = _EngagementAdapter(likes={"3_3": [_person(5), _person(6)]})
+    adapter = _CollectionAdapter(likes={"3_3": [_person(5), _person(6)]})
     c = _collector(posts)
-    context = _EngagementContext(adapter)
+    context = _CollectionContext(adapter)
 
     first = await c.collect_from_source(source, analyze=False, run_id=9105, collection_context=context)
     assert first["candidates"]["stored"] == 2
@@ -478,14 +498,14 @@ async def test_a_second_run_does_not_duplicate_or_reset_a_candidate_decision(sou
 
 async def test_auto_confirmation_marks_candidates_confirmed(source):
     posts = [{"platform": "vk", "external_id": "3_4", "content_type": "post", "text": "пост"}]
-    adapter = _EngagementAdapter(likes={"3_4": [_person(7)]})
+    adapter = _CollectionAdapter(likes={"3_4": [_person(7)]})
     c = _collector(posts)
 
     result = await c.collect_from_source(
         source,
         analyze=False,
         run_id=9107,
-        collection_context=_EngagementContext(adapter, confirm="auto"),
+        collection_context=_CollectionContext(adapter, confirm="auto"),
     )
 
     assert result["candidates"]["confirm"] == "auto"
@@ -495,7 +515,7 @@ async def test_auto_confirmation_marks_candidates_confirmed(source):
 
 async def test_a_dry_run_previews_candidates_without_storing_them(source):
     posts = [{"platform": "vk", "external_id": "3_5", "content_type": "post", "text": "пост"}]
-    adapter = _EngagementAdapter(likes={"3_5": [_person(8)]})
+    adapter = _CollectionAdapter(likes={"3_5": [_person(8)]})
     c = _collector(posts)
 
     result = await c.collect_from_source(
@@ -503,7 +523,7 @@ async def test_a_dry_run_previews_candidates_without_storing_them(source):
         analyze=False,
         run_id=9108,
         dry_run=True,
-        collection_context=_EngagementContext(adapter),
+        collection_context=_CollectionContext(adapter),
     )
 
     assert result["candidates"]["fetched"] == 1
@@ -1026,3 +1046,120 @@ async def test_prune_deletes_analyses_older_than_data_retention(monkeypatch):
                 await Platform.objects.delete_by_id(platform.id)
             for tenant in reversed(tenants):
                 await Tenant.objects.delete_by_id(tenant.id)
+
+
+def _authored_post(external_id, author_id="7", text="пост"):
+    return {
+        "platform": "vk",
+        "external_id": external_id,
+        "content_type": "post",
+        "text": text,
+        "author": {"platform": "vk", "external_id": author_id},
+    }
+
+
+async def test_an_unknown_city_lands_in_needs_review(source):
+    """An author without a declared city waits for an operator, not a guess."""
+    c = _collector([_authored_post("4_1")])
+    adapter = _CollectionAdapter(profiles={})
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9201,
+        collection_context=_CollectionContext(adapter, engagements=(), city="Киров"),
+    )
+
+    assert result["selected"] == 0
+    assert result["needs_review"] == 1
+    assert result["staged"] == 1
+    assert result["profiles"]["city"] == "Киров"
+    assert result["profiles"]["requested"] == 1
+    assert result["profiles"]["unknown"] == 1
+    assert result["selection"]["city"] == {
+        "name": "Киров",
+        "mode": "prefer",
+        "matched": 0,
+        "unknown": 1,
+        "mismatch": 0,
+    }
+    row = await CollectedItem.objects.get(source_id=source.id, external_id="4_1")
+    assert row.selection_status == "needs_review"
+    assert row.selection_reason == "city_unknown"
+
+
+async def test_a_declared_city_selects_the_post_and_enriches_candidates(source):
+    c = _collector([_authored_post("4_2")])
+    adapter = _CollectionAdapter(
+        likes={"4_2": [_person(5)]},
+        profiles={"7": "Киров", "5": "Киров"},
+    )
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9202,
+        collection_context=_CollectionContext(adapter, engagements=("likes",), city="Киров"),
+    )
+
+    assert result["selected"] == 1
+    assert result["needs_review"] == 0
+    assert result["selection"]["city"]["matched"] == 1
+    assert result["candidates"]["stored"] == 1
+    row = await CollectedItem.objects.get(source_id=source.id, external_id="4_2")
+    assert row.selection_status == "selected"
+    candidate = await CollectionCandidate.objects.get(source_id=source.id, external_id="5")
+    assert candidate.city == "Киров"
+    assert candidate.city_source == "profile"
+    assert candidate.city_confidence == 1.0
+
+
+async def test_city_require_rejects_a_post_from_another_city(source):
+    c = _collector([_authored_post("4_3")])
+    adapter = _CollectionAdapter(profiles={"7": "Москва"})
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9203,
+        collection_context=_CollectionContext(adapter, engagements=(), city="Киров", mode="require"),
+    )
+
+    assert result["rejected"] == 1
+    assert result["staged"] == 0
+    assert result["selection"]["city"]["mismatch"] == 1
+    assert await CollectedItem.objects.filter(source_id=source.id) == []
+
+
+async def test_a_city_gate_is_skipped_when_the_platform_cannot_enrich(source):
+    """No profile capability means an explicit reason, not a whole batch in review."""
+    c = _collector([_authored_post("4_4")])
+    adapter = _CollectionAdapter()
+    context = _CollectionContext(adapter, engagements=(), city="Киров")
+    context.capabilities = SimpleNamespace(comments=False, profiles=False, supports=lambda lane: False)
+
+    result = await c.collect_from_source(source, analyze=False, run_id=9204, collection_context=context)
+
+    assert result["profiles"]["supported"] is False
+    assert result["profiles"]["error_code"] == "profiles_unsupported"
+    assert result["selected"] == 1
+    assert result["needs_review"] == 0
+    assert adapter.profile_calls == []
+
+
+async def test_a_dry_run_previews_the_city_gate_without_storing(source):
+    c = _collector([_authored_post("4_5")])
+    adapter = _CollectionAdapter(profiles={})
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9205,
+        dry_run=True,
+        collection_context=_CollectionContext(adapter, engagements=(), city="Киров"),
+    )
+
+    assert result["profiles"]["unknown"] == 1
+    assert result["selection"]["city"]["unknown"] == 1
+    assert result["staged"] == 0
+    assert await CollectedItem.objects.filter(source_id=source.id) == []

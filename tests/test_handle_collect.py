@@ -138,6 +138,7 @@ async def test_handle_collect_passes_lane_evidence_per_source(platform, sources,
 
         comments = {"posts": 1, "fetched": 3, "limit_reached": False, "warnings": [], "errors": 0, "error_codes": []}
         candidates = {"fetched": 4, "stored": 2, "by_lane": {"likes": 4}, "confirm": "manual"}
+        profiles = {"city": "Киров", "mode": "prefer", "requested": 2, "resolved": 1, "unknown": 1}
 
         async def fake_collect(self, source, **kwargs):  # noqa: ARG001 - handler call shape
             return {
@@ -146,6 +147,7 @@ async def test_handle_collect_passes_lane_evidence_per_source(platform, sources,
                 "staged": 3,
                 "comments": comments,
                 "candidates": candidates,
+                "profiles": profiles,
             }
 
         monkeypatch.setattr("app.services.monitoring.collector.ContentCollector.collect_from_source", fake_collect)
@@ -155,6 +157,7 @@ async def test_handle_collect_passes_lane_evidence_per_source(platform, sources,
         row = stats["per_source"][0]
         assert row["comments"] == comments
         assert row["candidates"] == candidates
+        assert row["profiles"] == profiles
     finally:
         await AgentTask.objects.delete_by_id(task.id)
 

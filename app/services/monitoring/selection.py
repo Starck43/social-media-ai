@@ -302,6 +302,22 @@ def _author_keys(item: Mapping[str, Any]) -> set[str]:
     return keys
 
 
+def author_matches(item: Any, scope: SelectionScope) -> bool:
+    """True when the item's author passes the task's author filter.
+
+    The text scope is deliberately not applied: comment expansion decides which
+    parents to read *before* the thread is evaluated, and a post whose own text
+    does not match can still carry the matching comment that made the task
+    comment-enabled.
+    """
+    if not scope.has_author_filter:
+        return True
+    if not isinstance(item, Mapping):
+        return False
+    tracked = {user.key() for user in scope.tracked_users}
+    return bool(_author_keys(item) & tracked)
+
+
 def select_items(items: Iterable[Any], scope: SelectionScope) -> SelectionResult:
     """Apply the author filter and the text scope, in that order.
 

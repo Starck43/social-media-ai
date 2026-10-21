@@ -162,6 +162,37 @@ class ContentCollector:
 		logger.info(f"Retired {removed} analysed raw item(s) for source {source.id}")
 		return removed
 
+	async def _expand_comments(
+		self,
+		content: list[dict],
+		client: Any,
+		context: Any,
+		selection_scope: Any,
+	) -> Any:
+		"""Read comments for the posts a comment-enabled task may expand.
+
+		The adapter comes from the per-source context, so a platform without
+		comment support reports the warning the context already carries instead
+		of attempting a call. Fetch failures are counted per post inside the
+		expansion: the post batch is the deliverable, comments are an addition.
+		"""
+		from app.services.collection.comments import CommentBudget, expand_comments
+
+		capabilities = getattr(context, "capabilities", None)
+		build_adapter = getattr(context, "adapter", None)
+		if capabilities is None or not getattr(capabilities, "comments", False) or not callable(build_adapter):
+			return None
+		adapter = build_adapter(client)
+		if adapter is None or not hasattr(adapter, "fetch_comments"):
+			return None
+		intent = context.intent
+		return await expand_comments(
+			content,
+			adapter.fetch_comments,
+			budget=CommentBudget(intent.comments.max_per_post, intent.comments.total),
+			scope=selection_scope,
+		)
+
 	async def collect_from_source(
 			self,
 			source: Source,
@@ -223,6 +254,26 @@ class ContentCollector:
 				return None
 
 			logger.info(f"Collected {len(content)} items from source {source.id}")
+
+			# A comment-enabled task reads each eligible post's comments before
+			# selection, because the thread decides together: a matching comment
+			# keeps a post whose own text does not match. The expansion is capped
+			# per post and in total and reports every cap it hit.
+			comments = None
+			if collection_context is not None and getattr(collection_context, "includes_comments", False):
+				try:
+					comments = await self._expand_comments(
+						content, client, collection_context, selection_scope
+					)
+				except Exception:  # noqa: BLE001 — comments never fail the post batch
+					logger.warning("collection_comments_failed error_code=comments_operation_failed")
+					comments = None
+				if comments is not None and comments.items:
+					content = list(content) + list(comments.items)
+					logger.info(
+						f"Collected {len(comments.items)} comments for {comments.posts} post(s) "
+						f"from source {source.id}"
+					)
 
 			# How many of these the platform handed us are actually new.
 			#
@@ -301,6 +352,7 @@ class ContentCollector:
 					"dry_run": True,
 					"preview": _dry_run_preview(content),
 					"selection": selection_preview,
+					"comments": comments.summary() if comments is not None else None,
 					"collection": _collection_summary(collection_context),
 				}
 
@@ -379,6 +431,10 @@ class ContentCollector:
 				},
 				# This run's "seen" ledger, carried in the job result.
 				"content_hashes": hashes,
+				# Comment expansion evidence: parents read, comments fetched and
+				# every cap the lane hit. `None` means the task did not ask for
+				# comments or the platform cannot provide them.
+				"comments": comments.summary() if comments is not None else None,
 				"collection": _collection_summary(collection_context),
 			}
 			if analysis_errors is not None:

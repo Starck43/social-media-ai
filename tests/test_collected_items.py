@@ -13,11 +13,13 @@ Covers the three promises this feature makes:
 
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from app.core.tenant_context import tenant_scope
 from app.models import AgentTask, CollectedItem, CollectionLaneRun, CollectionSeen, Platform, Source
+from app.services.collection.pages import Page
 from app.services.monitoring.selection import SelectionScope
 from app.types import SourceType
 
@@ -268,6 +270,93 @@ async def test_thread_selection_keeps_a_comment_matching_a_post(source):
     assert set(rows) == {"2_1", "2_1:9"}
     assert rows["2_1:9"].parent_external_id == "2_1"
     assert rows["2_1:9"].selection_status == "selected"
+
+
+class _CommentAdapter:
+    """The provider primitive the collector calls for one parent post."""
+
+    def __init__(self, by_post):
+        self.by_post = by_post
+        self.calls = []
+
+    async def fetch_comments(self, post, limit, cursor):
+        rows = self.by_post.get(str(post.get("external_id")), [])
+        self.calls.append((str(post.get("external_id")), limit, cursor))
+        return Page(items=tuple(rows[:limit]))
+
+
+class _CommentContext:
+    """A comment-enabled per-source context backed by the adapter double."""
+
+    includes_comments = True
+    capabilities = SimpleNamespace(comments=True)
+    intent = SimpleNamespace(comments=SimpleNamespace(max_per_post=5, total=50))
+
+    def __init__(self, adapter):
+        self._adapter = adapter
+
+    def adapter(self, client):  # noqa: ARG002 - the context owns the client choice
+        return self._adapter
+
+    def summary(self):
+        return {"comments": {"enabled": True}}
+
+
+async def test_comment_context_expands_comments_and_stages_the_thread(source):
+    """A comment-enabled task fetches the lane the context asked for.
+
+    The parent post carries none of the phrase: the comment is what makes the
+    thread relevant, so both rows are staged and the comment keeps its parent.
+    """
+    posts = [
+        {
+            "platform": "vk",
+            "external_id": "3_1",
+            "content_type": "post",
+            "text": "пост без фразы",
+            "published_at": "2026-10-02T10:00:00Z",
+        }
+    ]
+    adapter = _CommentAdapter(
+        {
+            "3_1": [
+                {
+                    "platform": "vk",
+                    "external_id": "3_1:9",
+                    "content_type": "comment",
+                    "parent_external_id": "3_1",
+                    "text": "в комментарии Италия",
+                    "author": {"platform": "vk", "external_id": "5", "id": 5},
+                }
+            ]
+        }
+    )
+    c = _collector(posts)
+
+    result = await c.collect_from_source(
+        source,
+        analyze=False,
+        run_id=9103,
+        selection_scope=SelectionScope(keywords=("Италия",)),
+        collection_context=_CommentContext(adapter),
+    )
+
+    assert adapter.calls == [("3_1", 5, None)]
+    assert result["comments"] == {
+        "posts": 1,
+        "fetched": 1,
+        "limit_reached": False,
+        "warnings": [],
+        "errors": 0,
+        "error_codes": [],
+    }
+    assert result["staged"] == 2
+    rows = {row.external_id: row for row in await CollectedItem.objects.filter(source_id=source.id)}
+    assert set(rows) == {"3_1", "3_1:9"}
+    assert rows["3_1"].selection_reason == "thread_matched"
+    assert rows["3_1:9"].content_type == "comment"
+    assert rows["3_1:9"].parent_external_id == "3_1"
+    assert rows["3_1:9"].selection_reason == "thread_comment_matched"
 
 
 async def test_inline_analysis_stages_first_then_retires_what_it_saved(source):

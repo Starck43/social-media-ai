@@ -558,6 +558,13 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     # Parsed task intent and the provider's honest capabilities
                     # for this source. D2-D4 consume the same context.
                     "collection": (result or {}).get("collection") or collection_context.summary(),
+                    # Comment lane evidence: parents read, comments fetched and
+                    # every cap hit. Absent when the task collects posts only.
+                    **(
+                        {"comments": (result or {}).get("comments")}
+                        if (result or {}).get("comments") is not None
+                        else {}
+                    ),
                     # This run's "seen" ledger. Written on every collect, whether
                     # or not the analysis succeeded — that is what stops the next
                     # collection from re-reporting the same wall as new.

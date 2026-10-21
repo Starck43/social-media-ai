@@ -191,6 +191,18 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Integration: reconcile #216's historical expected-failure probes and CLI
   warnings before merging both packages; do not erase pinned audit evidence.
 
+- [ ] P10-T14 — audit current ROADMAP implementation/acceptance drift;
+  owner: remote Notion agent; status: READY. Accept: source-pinned
+  cross-check of open rows, preserved owners/status/evidence, explicit ID and
+  missing-phase discrepancies, isolated checks and dependency-aware priorities.
+  No runtime fixes, foreign task closure, DB/providers or deployment.
+  Evidence: [current-dev review](../audits/roadmap-current-dev-review.md), pinned
+  dev `ddc9b99164c326a01a81e266fc1f26a15dd822cc`. New isolated observations:
+  30 tests, 23 passed/7 expected failures (OPEN defects); existing green and
+  broken fixtures and real offline wheel defects are reported separately.
+  P10-T01/T02/T03 are implementation-present acceptance candidates, not closed.
+  Task identity contradictions are flagged without changing foreign records.
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

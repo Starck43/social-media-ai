@@ -19,10 +19,14 @@ production acceptance, real-DB pending-confirmation end-to-end run.
 ## Tasks
 
 - [ ] P3-T01 — finish PRD-02 digest send permission parity acceptance;
-  accept: delegated acceptance at pinned verification HEAD `0c18bab` completed
-  via R10, PR #176 moved per result; code already in dev (`6d16436`),
-  PR #176 Draft; depends: none; owns: PR #176 lane; owner: remote Notion
-  agent; status: TODO — no duplicate runs, no parallel shared-schema writers
+  accept: remaining real DB/ASGI acceptance on a reviewed current-dev tree
+  completed via the current local test route; code already in dev (`6d16436`).
+  Historical pin `0c18bab` and PR #176 Draft wording are superseded: #176 and
+  #202 are now closed without merge; #202 records that the acceptance modules
+  are already in dev, not that acceptance passed. Preserve earlier evidence.
+  Depends: none; owns: current digest acceptance lane; owner: remote Notion
+  agent; status: TODO — no duplicate runs, no parallel shared-schema writers.
+  [Current source/PR review](../audits/roadmap-current-dev-review.md).
 
 - [ ] P3-T02 — close one actor/workspace/tool/write gap including revocation,
   expiry or replay where applicable; accept: gap verified in current code,

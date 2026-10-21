@@ -45,7 +45,7 @@ class PartialCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.source = SimpleNamespace(id=1, tenant_id=1, name="source", source_type=None)
         self.scenario = SimpleNamespace(
             id=2, name="scenario", output_schema={"type": "object"}, max_tokens=None,
-            scope={}, analysis_types=[], content_types=[],
+            scope={}, analysis_types=[], content_types=[], is_active=True,
         )
         self.a = {"external_id": "A", "text": "Previous useful content"}
         self.b = {"external_id": "B", "text": "New useful content"}

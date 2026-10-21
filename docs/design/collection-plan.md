@@ -13,8 +13,8 @@ are expanded within per-post and total caps, and the post + comments thread is
 selected as a unit. Engagement candidates and profile/city enrichment are still
 future stages. Runtime stays posts+comments; collection lanes are not wired to
 the runtime planner yet; UI and task-owned content types remain future stages.
-Stages C–D2 are committed on `opencode/p5-t14-stage-d` and are not merged into
-`dev` yet. Until P5-T14 is `READY`/`DONE`, runtime behavior in
+Stages C–D2 are merged into `dev` (integration merge `3e4da0d`). Until P5-T14
+is `READY`/`DONE`, runtime behavior in
 [COLLECTION](../COLLECTION.md), [task selection](task-selection.md) and
 [MODELS](../MODELS.md) still applies except for the stage-C selection path
 described there. Stage B implementation plan:

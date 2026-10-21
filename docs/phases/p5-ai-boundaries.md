@@ -373,7 +373,7 @@ safely.
     contract + 103 DB, 51 subtests).** The collector applies selection before
     staging, `collection_seen`/`collection_lane_runs` record outcomes, and
     analysis only re-filters legacy NULL-status rows. No migration; `public`
-    remains untouched. The branch is not merged into `dev` yet.
+    remains untouched. Stages C–D2 are merged into `dev`.
 
   - **D. Comments and engagement.** Add the `comments` lane
     (`owner_id` + `post_id`, per-post and total caps), thread-level selection,
@@ -395,7 +395,8 @@ safely.
     counted without failing the batch, and comment rows are staged with
     `parent_external_id` while the thread is selected as a unit. 313 tests
     passed through the primary OpenCode test-runner (203 no-DB + 4 staging
-    contract + 106 DB, 51 subtests). D3 engagement candidates and D4
+    contract + 106 DB, 51 subtests); the same scope passed on `dev` after the
+    integration merge `3e4da0d`. D3 engagement candidates and D4
     city/profile review remain.
 
   - **E. Task UI, admin, templates, presets.** Split the task editor into

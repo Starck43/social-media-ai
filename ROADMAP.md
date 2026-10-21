@@ -104,17 +104,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
   Context: [p5 phase](docs/phases/p5-ai-boundaries.md); asked by: $local
   (opencode); status: OPEN
 
-- [ ] Q-8 — should `city.mode=prefer` keep an item whose author city is unknown?
-  Context: `city_decision` (`app/services/monitoring/selection.py:441`) sends an
-  unknown city to `needs_review` in every mode, so a community post (a group
-  declares no city in its VK profile) never reaches the analysis: the trip post
-  of «Древиз» was found by the text scope and parked as `city_unknown`. Either
-  `prefer` keeps the unknown city (only a known mismatch is noted), or the city
-  is taken from the community instead of the post author.
-  Context: [collection plan](docs/design/collection-plan.md),
-  [p5 phase](docs/phases/p5-ai-boundaries.md); asked by: $local (opencode);
-  status: OPEN
-
 - [ ] Q-9 — will the deployment move to a Standalone VK application so the
   global search family opens? Context: a read-only probe answered 1051 for
   `newsfeed.search`, `groups.search`, `users.search`, `database.getCities` and

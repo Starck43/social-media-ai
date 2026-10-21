@@ -511,8 +511,18 @@ safely.
       with the methods that still work (`groups.getById`, `users.get` — read
       only) and turns each entry into a task-owned wall lane: an existing
       workspace source is reused as-is, a lane of another task is refused,
-      nothing is deleted, and the command is idempotent. The city gate still
-      parks community posts in `needs_review` (Q-8).
+      nothing is deleted, and the command is idempotent. At that point the
+      city gate still parked community posts in `needs_review`; the owner
+      decision below removed that blocker.
+    - Owner decisions (code `8bd50b7`): the task form now asks three plain
+      questions (population / content / walls), the author-city filter left
+      the form and in `prefer` mode an unknown city no longer parks a good
+      post, the population search got its own city and an `any`/`all` mode,
+      and the mention phrases got an `any`/`all` mode. The live dry-run of
+      task 2027 after the change: the wall of «ГК Древиз» returned 8 posts,
+      the trip post «Древиз вместе с дизайнерами посетили Италию!» is now
+      **eligible** (was `needs_review`/`city_unknown`), 7 posts rejected by the
+      text scope, 4 search lanes still `api_1051` (Q-9).
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`

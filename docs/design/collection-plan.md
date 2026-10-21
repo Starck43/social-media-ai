@@ -35,6 +35,34 @@ is `READY`/`DONE`, runtime behavior in
 described there. Stage B implementation plan:
 [collection plan — stage B](collection-plan-stage-b.md).
 
+## How a task states a search
+
+Three questions, three different things — the form keeps them apart so an
+operator never has to guess which box a phrase belongs to:
+
+1. **Кто искать (population).** A query, a city and a kind — the same
+   parameters the VK community search offers: `discovery.queries` (what to
+   look for), `discovery.queries_match` (`any`/`all`), `discovery.people` /
+   `discovery.communities` (kind) and `discovery.city` (`{name, id}` — the
+   city the *search* is scoped to, not the city of a post's author).
+2. **Что искать (content).** What the collection brings in: the mention
+   phrases `queries` with `queries_match` (`any`/`all`), the content types
+   (`posts`, `comments`), the engagement types (`likes`, `reposts`), the limit
+   and the date window.
+3. **Где читать.** The walls the operator watches by hand — the source picker.
+
+The pipeline behind them: the population is searched, every wall of it is read
+with `wall.get` inside the date window, and the **post** is the final entity
+(media travel with it as a link in the request body to the model). The
+deterministic filter drops the junk; what survives is stored in
+`collected_items`, and that count is the result. Nothing is stored before the
+filter and nothing waits for a confirmation step: a candidate is not a result.
+
+The author-city filter (`city` + `mode`) stays in the model but is no longer
+offered in the form: in `prefer` an unknown city no longer parks a good post
+(a community declares no city), and the operator decides relevance by the
+content, not by a profile field.
+
 ## Problem
 
 Collection currently mixes three different decisions:

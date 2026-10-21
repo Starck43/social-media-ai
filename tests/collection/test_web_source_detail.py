@@ -440,8 +440,15 @@ async def test_source_name_is_text_in_list_detail_title_dialog_and_input(read_on
             assert detail_parser.values == [stored_name], "the quoted input must retain the entire original name"
         assert not list_parser.unsafe and not detail_parser.unsafe
         assert stored_name not in listing.text and stored_name not in detail.text
-        assert f'action="/app/sources/{source.id}/delete"' not in detail.text
-        assert not detail_parser.confirms
+        if read_only:
+            # A read-only viewer gets no delete action and no confirmation.
+            assert f'action="/app/sources/{source.id}/delete"' not in detail.text
+            assert not detail_parser.confirms
+        else:
+            # The delete action lives on the source page (owner decision): it
+            # shows for a user with the delete right, with its confirmation.
+            assert f'action="/app/sources/{source.id}/delete"' in detail.text
+            assert detail_parser.confirms
         with tenant_scope(tenant_id):
             unchanged = await Source.objects.get(id=source.id)
             assert unchanged.name == stored_name and unchanged.is_active

@@ -555,6 +555,7 @@ async def source_detail(request: Request, source_id: int):
         schedules=schedules,
         can_view_tasks=can_view_tasks,
         can_update=perms_can(request, "source", "update"),
+        can_delete=perms_can(request, "source", "delete"),
         is_superuser=is_superuser,
         is_ready=is_ready,
         readiness_hint=readiness_hint,
@@ -1156,6 +1157,18 @@ async def source_delete(
         if source is None:
             add_flash(request, "error", "Источник не найден")
             return RedirectResponse("/app/sources", status_code=302)
+
+        # A task-owned lane exists so the task's collection keeps a stable
+        # `source_id`; the task creates it and cleans it up itself. Deleting it
+        # here would break that collection without the task noticing, so the
+        # refusal names the owning task instead of pretending nothing happened.
+        if source.owner_task_id is not None:
+            add_flash(
+                request,
+                "error",
+                f"Источник принадлежит поиску задачи №{source.owner_task_id} — удалите его в задаче",
+            )
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
         # `sources.analytics` is delete-orphan, so the analysis rows go with it.
         # Say so before it happens rather than after.

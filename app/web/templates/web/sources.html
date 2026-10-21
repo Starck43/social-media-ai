@@ -83,6 +83,9 @@
                 {% if is_superuser %}
                 <th class="px-4 py-3">Пространство</th>
                 {% endif %}
+                {% if perms and perms.can('source', 'delete') %}
+                <th class="px-4 py-3"><span class="sr-only">Действия</span></th>
+                {% endif %}
             </tr>
             </thead>
             <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
@@ -126,6 +129,24 @@
                 <td class="px-4 py-3 text-slate-600 dark:text-slate-400">{{ source.created_at|human_dt(tz=_tz) }}</td>
                 {% if is_superuser %}
                 <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ source.tenant.name }}</td>
+                {% endif %}
+                {% if perms and perms.can('source', 'delete') %}
+                <td class="px-4 py-3">
+                    {# Task-owned lanes never render here (the query filters them out);
+                       this form is for workspace sources. Same confirm-dialog contract
+                       as on the detail page and the task page. #}
+                    <form method="post" action="/app/sources/{{ source.id }}/delete"
+                          data-confirm="«{{ source.name|e }}» будет удалён безвозвратно вместе с его аналитикой."
+                          data-confirm-title="Удалить источник?" data-confirm-label="Удалить навсегда">
+                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                        {{ tenant_field(is_superuser, filter_tenant_id) }}
+                        <button type="submit" title="Удалить источник"
+                                class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-3 py-1.5 text-xs
+                                       text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
+                            Удалить
+                        </button>
+                    </form>
+                </td>
                 {% endif %}
             </tr>
             {% endfor %}

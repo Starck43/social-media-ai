@@ -31,6 +31,25 @@
                                  {% else %}bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300{% endif %}">
                         {% if source.is_active %}Активен{% else %}Неактивен{% endif %}
                     </span>
+                    {% if can_delete and not source.owner_task_id %}
+                    {# Same shape as the task page's delete: one confirmation through
+                       the shared dialog, with the cascade said before it happens. #}
+                    <form method="post" action="/app/sources/{{ source.id }}/delete" class="ml-auto"
+                          data-confirm="«{{ source.name|e }}» будет удалён безвозвратно вместе с его аналитикой."
+                          data-confirm-title="Удалить источник?" data-confirm-label="Удалить навсегда">
+                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                        {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                        <button type="submit"
+                                class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm
+                                       text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
+                            Удалить
+                        </button>
+                    </form>
+                    {% elif source.owner_task_id %}
+                    <p class="ml-auto text-xs text-slate-500 dark:text-slate-400">
+                        Источник создан задачей для её поиска — удаляется в задаче.
+                    </p>
+                    {% endif %}
                 </div>
             </div>
 

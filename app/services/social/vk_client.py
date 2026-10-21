@@ -64,6 +64,13 @@ class VKClient(BaseClient):
 	# the automatic L1->L2 (service->user token) fallback in `auto` mode.
 	L1_UNAVAILABLE_CODES = {15, 5}
 
+	# VK error codes that mean "there is no such object" for the identity
+	# resolvers (`groups.getById`, `users.get`): 100 — unknown id, 770 —
+	# "cannot define the group by this id". Their answer reads as None
+	# ("not found"); every other error propagates so a broken token is never
+	# mistaken for a missing community.
+	RESOLVE_NOT_FOUND_CODES = frozenset({100, 770})
+
 	async def collect_data(self, source: Source, content_type: str = "posts") -> list[dict]:
 		"""
 		Resolve the tenant's VK token and the source's external_id, then
@@ -949,6 +956,81 @@ class VKClient(BaseClient):
 			for city in data.get("items") or []
 			if isinstance(city, dict) and city.get("id") is not None
 		]
+
+	async def _identity_response(self, method: str, params: dict[str, Any]) -> Any:
+		"""The `response` body of one identity read (users.get / groups.getById).
+
+		Both methods accept the service key and the personal token, so both
+		kinds are offered, and the request stays on the shared `_make_request`
+		path. A VK "no such object" answer (RESOLVE_NOT_FOUND_CODES) reads as
+		an empty dict — the caller decides "not found"; any other API error
+		goes through `_raise_api_error`, so an auth or transport error
+		propagates instead of reading as a missing entry.
+		"""
+		token = await resolve_token("vk", kinds=("service_token", "user_token"))
+		if not token:
+			raise AuthorizationRequired(
+				"Нужен токен ВКонтакте, чтобы распознать сообщество или человека",
+				platform="vk",
+				hint="Подключите ВКонтакте в настройках — импорт читает только профиль, ничего не публикует.",
+			)
+		platform_params = self.platform.params or {}
+		payload = {
+			**params,
+			"access_token": token,
+			"v": platform_params.get("api_version") or settings.VK_API_VERSION,
+		}
+		response = await self._make_request(method, payload)
+		if not isinstance(response, dict):
+			return {}
+		error = response.get("error")
+		if isinstance(error, dict):
+			if error.get("error_code") in VKClient.RESOLVE_NOT_FOUND_CODES:
+				return {}
+			self._raise_api_error(response)
+			return {}
+		return response.get("response")
+
+	async def resolve_group(self, identifier: str) -> dict | None:
+		"""The community behind a screen name or numeric id, None when absent.
+
+		`groups.getById` answers for both forms (unlike `groups.search`, which
+		is refused for this app profile type). Community walls are
+		`owner_id=-<id>` in our model, so the id comes back negative.
+		"""
+		data = await self._identity_response("groups.getById", {"group_id": identifier})
+		rows = data.get("groups") if isinstance(data, dict) else data
+		row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+		if row is None or not row.get("id"):
+			return None
+		is_closed = row.get("is_closed")
+		return {
+			"id": -int(row["id"]),
+			"screen_name": row.get("screen_name"),
+			"name": row.get("name"),
+			"is_closed": None if is_closed is None else bool(is_closed),
+		}
+
+	async def resolve_user(self, identifier: str) -> dict | None:
+		"""The person behind a screen name or numeric id, None when absent.
+
+		`users.get` answers "no such person" with an empty list (also for a
+		community nick), not with an error — that empty answer is the None case.
+		"""
+		# `screen_name` is asked for explicitly: without it the answer carries
+		# only the numeric id, and an existing source that stores the nick
+		# (a legacy row) can no longer be recognised as the same person.
+		data = await self._identity_response("users.get", {"user_ids": identifier, "fields": "screen_name"})
+		rows = data if isinstance(data, list) else []
+		row = rows[0] if rows and isinstance(rows[0], dict) else None
+		if row is None or not row.get("id"):
+			return None
+		name = " ".join(part for part in (row.get("first_name"), row.get("last_name")) if part)
+		return {
+			"id": int(row["id"]),
+			"screen_name": row.get("screen_name"),
+			"name": name or None,
+		}
 
 	async def post_comment(
 			self,

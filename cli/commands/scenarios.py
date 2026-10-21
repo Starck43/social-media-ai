@@ -127,3 +127,107 @@ def list_scenarios(
         rprint(table)
 
     _run(_list())
+
+
+@app.command("output-schema")
+def output_schema(
+    scenario_id: int = typer.Argument(..., help="Scenario id"),
+    add_field: list[str] = typer.Option([], "--add-field", help="Extra output field as 'name:type' (repeatable)"),
+    require_field: list[str] = typer.Option([], "--require", help="Field name to mark as required (repeatable)"),
+    base_prompt_file: str = typer.Option(None, "--base-prompt-file", help="UTF-8 file with the new base prompt"),
+    tenant: str = typer.Option("owner", "--tenant", help="Workspace slug or id"),
+    apply: bool = typer.Option(False, "--apply", help="Write changes (default: dry-run)"),
+):
+    """Set an explicit output_schema for a scenario (dry-run unless --apply).
+
+    The stored schema is extended with the requested fields; the derived
+    contract of the scenario stays intact. Without --apply nothing is written.
+    """
+    import difflib
+    import json
+    from pathlib import Path
+
+    from rich import print as rprint
+
+    from app.services.ai.scenario_output_fields import (
+        base_output_schema,
+        merge_extra_fields,
+        parse_field_spec,
+    )
+
+    def _diff(stored: dict, merged: dict) -> str:
+        before = json.dumps(stored or {}, ensure_ascii=False, indent=2, sort_keys=True).splitlines()
+        after = json.dumps(merged, ensure_ascii=False, indent=2, sort_keys=True).splitlines()
+        lines = list(difflib.unified_diff(before, after, "stored", "new", lineterm=""))
+        return "\n".join(lines) or "(no change)"
+
+    try:
+        # The field specs and the prompt file are checked before any database
+        # access, so a typo never reaches the scenario row.
+        extra_fields = {}
+        for spec in add_field or []:
+            name, prop = parse_field_spec(spec)
+            extra_fields[name] = prop
+
+        new_prompt = None
+        if base_prompt_file:
+            path = Path(base_prompt_file)
+            if not path.is_file():
+                raise ValueError(f"Prompt file not found: {path}")
+            new_prompt = path.read_text(encoding="utf-8").rstrip("\n")
+            if not new_prompt.strip():
+                raise ValueError(f"Prompt file is empty: {path}")
+    except Exception as e:
+        rprint(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    async def _run_output_schema():
+        from app.models import AgentScenario
+
+        tid = await _resolve_tenant_id(tenant)
+        scenario = await AgentScenario.objects.filter(tenant_id=tid, id=scenario_id).first()
+        if scenario is None:
+            raise ValueError(f"Scenario {scenario_id} not found in workspace {tid}")
+
+        stored = scenario.output_schema or {}
+        # A stored schema wins over the derived one: re-deriving would drop
+        # fields that were added earlier.
+        base, origin = base_output_schema(stored, scenario.analysis_types or [], scenario.scope or {})
+        merged, warnings = merge_extra_fields(base, extra_fields, list(require_field or []))
+
+        for warning in warnings:
+            rprint(f"[yellow]Warning: {warning}[/yellow]")
+
+        rprint(f"[dim]Scenario {scenario_id} (workspace {tid}), base schema: {origin}[/dim]")
+        rprint("[bold]output_schema that would be stored:[/bold]")
+        rprint(json.dumps(merged, ensure_ascii=False, indent=2))
+        rprint("[bold]Diff against the stored schema:[/bold]")
+        rprint(_diff(stored, merged))
+
+        if new_prompt is not None:
+            rprint("[bold]base_prompt — current:[/bold]")
+            rprint(scenario.base_prompt or "<empty>")
+            rprint("[bold]base_prompt — new:[/bold]")
+            rprint(new_prompt)
+
+        if not apply:
+            rprint("[yellow]Dry-run: nothing was written (pass --apply to store)[/yellow]")
+            return
+
+        updates = {"output_schema": merged}
+        if new_prompt is not None:
+            updates["base_prompt"] = new_prompt
+        # Per-row ORM write: the persistence guard validates the contract on flush.
+        await AgentScenario.objects.update_by_id(scenario_id, **updates)
+        saved = await AgentScenario.objects.get(id=scenario_id)
+        rprint("[green]Stored output_schema:[/green]")
+        rprint(json.dumps(saved.output_schema, ensure_ascii=False, indent=2))
+        if new_prompt is not None:
+            rprint("[green]Stored base_prompt:[/green]")
+            rprint(saved.base_prompt or "<empty>")
+
+    try:
+        _run(_run_output_schema())
+    except Exception as e:
+        rprint(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)

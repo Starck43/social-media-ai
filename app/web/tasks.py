@@ -95,7 +95,10 @@ TARGET_KEYS = ("brands", "competitors", "hashtags", "influencer_names", "topic_l
 # The target inputs the editor renders: `type` is the scenario analysis type
 # that asks for the key (param_registry.PAYLOAD_PARAMS). Shared by the edit
 # page, the add modal and their JS so the server-rendered fallback and the
-# Alpine-enhanced visibility never describe different fields.
+# Alpine-enhanced visibility never describe different fields. `keywords_list`
+# is deliberately absent: the payload key is written by `apply_selection`, and
+# the input lives in the selection block as «Фразы в тексте поста» — calling
+# it a target too gave the form two «Ключевые слова» boxes.
 TARGET_FIELD_DEFS = (
 	{
 		"key": "brands",
@@ -124,13 +127,6 @@ TARGET_FIELD_DEFS = (
 		"label": "Авторы",
 		"ph": "author1, author2",
 		"hint": "Авторы и инфлюенсеры для анализа",
-	},
-	{
-		"key": "keywords_list",
-		"type": "keywords",
-		"label": "Ключевые слова",
-		"ph": "Киров, дизайн интерьера",
-		"hint": "Фразы, которые должны быть в записи, чтобы её анализировали; не влияют на сбор",
 	},
 	{
 		"key": "topic_list",

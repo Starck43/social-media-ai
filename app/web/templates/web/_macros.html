@@ -123,13 +123,12 @@
     </template>
 {%- endmacro %}
 
-{# The content window a collect/analyze task operates on. `m` is the Alpine
-   object path that holds the field values ("task" in the add modal, "editing"
-   in the edit modal); `model` is the path to the bound job_type. The whole
-   block lives in an `x-if` template, not `x-show`: its start date is
-   `required`, and a CSS-hidden required input still blocks the submit — a
-   digest save would trip over a date field it never shows. `x-if` also keeps
-   the flags out of the POST for the types that do not have them. #}
+{# The scenario-driven analysis targets (param_registry.PAYLOAD_PARAMS): the
+   scenario's analysis types say *which kinds* of target matter and hide the
+   rest through `isTargetVisibleByKey`; the inputs stay in the DOM either way,
+   so a no-JS save still carries the stored values. The selection's own text
+   scope is not rendered here — it is a selection field («Фразы в тексте
+   поста» in the templates), not a scenario target. #}
 {% macro task_targets(fields, values={}) -%}
     <div class="grid grid-cols-2 gap-3">
         {% for f in fields %}
@@ -144,9 +143,32 @@
 {%- endmacro %}
 
 
-{% macro task_dates(m, model, start='', end='') -%}
-    <div x-show="{{ model }} === 'collect' || {{ model }} === 'analyze'" class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
-        <p class="text-sm text-slate-700 dark:text-slate-300">Период сбора контента</p>
+{# Collection intent («Период сбора», «Кто искать», «Что искать», «Лимиты»).
+
+   Plain server-rendered controls: the form still saves when JavaScript never
+   runs, so every value the POST must carry is an attribute here, not an Alpine
+   binding. The hidden `collection_configured` marker tells the handlers this
+   block was part of the submission. `v` is a flat mapping (edit context or
+   `_collection_edit({})` defaults); `model` is the job_type path.
+
+   The period dates open the block as its first fieldset: the window bounds
+   the *collect* stage, so it lives with the collection fields, not in the
+   general settings. `start`/`end` are the server values; the Alpine root is
+   derived from `model` ("editing" in the edit page, "task" in the add modal),
+   and the POST names stay `start_date`/`end_date` for both forms.
+
+   The split is by search, and every label/hint names its search: «Кто искать»
+   is the population search (сообщества и люди), «Что искать» is the mention
+   search over the found material and the task's sources. The author city is
+   deliberately not asked here: a stored block keeps its `city`, the form just
+   no longer offers it. #}
+{% macro task_collection_fields(v, idp='collection', model='editing.job_type', start='', end='') -%}
+    {% set m = model.rsplit('.', 1)[0] %}
+    {% set content_types = v.get('collection_content_types', ['posts']) %}
+    {% set engagement_types = v.get('collection_engagement_types', []) %}
+    <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
+              class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Период сбора</legend>
         <div class="grid grid-cols-2 gap-3">
             <div>
                 <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата начала *</label>
@@ -160,27 +182,8 @@
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Необязательно.</p>
             </div>
         </div>
-    </div>
-{%- endmacro %}
+    </fieldset>
 
-
-{# Collection intent («Кто искать», «Что искать», «Лимиты»).
-
-   Plain server-rendered controls: the form still saves when JavaScript never
-   runs, so every value the POST must carry is an attribute here, not an Alpine
-   binding. The hidden `collection_configured` marker tells the handlers this
-   block was part of the submission. `v` is a flat mapping (edit context or
-   `_collection_edit({})` defaults); `model` is the job_type path.
-
-   The split is by search, and every label/hint names its search: «Кто искать»
-   is the population search (сообщества и люди), «Что искать» is the mention
-   search over the found material and the task's sources, and the text scope
-   («Ключевые слова» in the selection block) stays where it was. The author
-   city is deliberately not asked here: a stored block keeps its `city`, the
-   form just no longer offers it. #}
-{% macro task_collection_fields(v, idp='collection', model='editing.job_type') -%}
-    {% set content_types = v.get('collection_content_types', ['posts']) %}
-    {% set engagement_types = v.get('collection_engagement_types', []) %}
     <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
               class="space-y-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
         <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Кто искать</legend>
@@ -309,7 +312,7 @@
 
 
 {# The trigger + action section, rendered only for `analyze` tasks. `m` and
-   `model` are the same paths as in `task_dates`. Every per-trigger block stays
+   `model` are the same paths as in `task_collection_fields`. Every per-trigger block stays
    in the DOM (`x-show`, not `x-if`) and carries its server value: without
    JavaScript the POST still submits what the task is configured with, while
    `_build_trigger_config` reads only the active type's keys. #}

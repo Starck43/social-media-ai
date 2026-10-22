@@ -538,6 +538,15 @@ safely.
       named before it happens). A task-owned lane is refused with the owning
       task named. The old test that kept the form away from the source page
       is flipped.
+    - Mention lanes and the relevance gate (owner decisions of 2026-10-22):
+      the runtime owns the task's mention lanes (one per phrase, or one joined
+      lane for `queries_match="all"`; reused, never taken from another task;
+      a dry run creates nothing), every collected source writes its own
+      `collection_lane_runs` row with the counts, the limit and the bounded
+      cause, and a model's own `is_relevant == False` now keeps a post out of
+      the analysis (only a real boolean counts). The VK search family stays
+      closed for this app profile — the owner action is in
+      [VK Standalone application](../VK_STANDALONE_APP.md) (Q-9).
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`

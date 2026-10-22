@@ -2,7 +2,11 @@
 
 ## Source and task allocation
 
-Base synchronized: `dev` `ccce2801a640efd7a90704f37874d0bae1ec388a`.
+Initial audit baseline: `dev` `ccce2801a640efd7a90704f37874d0bae1ec388a`.
+Latest synchronized dev: `92dcb948de24c55ab82dccdba81e792945b5ac48`.
+Final tested integrated source: `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4`
+(UI branch; backend `f6674b65977bed4e573b5ecc68aba55b501d7d94` plus UI `eeecde1`).
+Later documentation-only commits do not change the tested application/test bytes.
 Backend branch: `feat/personal-llm-ownership`, [Draft PR #229](https://github.com/Starck43/social-media-ai/pull/229).
 Initial implementation: `e14c3950b8846ea124e08ecbf57e703c8c6506d6`.
 Reviewed incoming dev: `92dcb948de24c55ab82dccdba81e792945b5ac48`; its task+links
@@ -90,25 +94,56 @@ Downgrade refuses colliding provider display names rather than deleting data.
   HTTPX 0.28.1, cryptography 50.0.2. No app bootstrap, engines, DB, .env or network
   in the suite. Fictitious example.invalid URL and fake-encrypted markers only.
 
-## Coordinated UI evidence (attributed, offline only)
+## Final integrated offline evidence (attributed)
 
 [Draft PR #230](https://github.com/Starck43/social-media-ai/pull/230) is stacked on
-#229's feature branch. UI session owns the 10 UI templates/assets/helper/test files;
-backend settings.py/router/middleware remain in #229. At integrated snapshot
-`9221352990988869657e847dbd3d0914fed79056` (UI source `6dedebe` plus backend `e14c395`),
-the UI owner reported exact published bytes and: 53 isolated handler/layout pytest
-PASS, 24 new catalog browser cases PASS, 104 existing settings browser cases PASS,
-and 14 catalog unittest PASS. Browser matrix: 320/390/768/1440, light/dark,
-catalog/empty/no-workspace, with individual screenshot inspection. These counts
-are separate reported suites, NOT 195 end-to-end/DB tests. No keys projected into
-JSON; only id/name/uid/base_url/has_api_key. Decimal tariff DTOs are not serialized
-wholesale. Follow-up UI HEAD `eeecde1156d81eb1d6518ccdf9e917078184b62a`
-changes only settings-llm.js and its browser test: cleared partial rows no longer
-retain sticky required validation. UI owner reported exact-byte rerun on eeecde1:
-53 isolated pytest PASS, 14 catalog unittest PASS, 24 catalog browser cases PASS
-(including positive submit/HTTPS/clear-required/payload). The 104 settings regression
-cases were run at 9221352, not rerun at eeecde1. Backend hardening after e14c395
-needs integrated revalidation; no earlier-SHA result certifies later commits.
+#229's feature branch. UI owns the 10 UI templates/assets/helper/test files;
+backend settings.py/router/middleware remain in #229. Final integrated HEAD
+`d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4` includes backend `f6674b6`, UI `eeecde1`
+and dev `92dcb94`. The coordinated UI owner reported the following completed
+rerun on that exact HEAD, with a clean worktree and all 10 UI/test files hash-verified:
+
+| Completed check | Result | What it does NOT prove |
+| --- | --- | --- |
+| Isolated web handler/layout pytest | 53 PASS | Real session middleware, HTTP/ASGI authorization or persisted writes |
+| Catalog unittest, actual mappings and fake storage/crypto | 14 PASS | PostgreSQL constraints, transaction isolation or rollback |
+| Scope/bindings unittest, source-loaded methods and doubles | 16 PASS | Real connection locking, trigger enforcement or DB atomicity |
+| Catalog offline browser fixtures | 24 PASS | Real authenticated page GET/POST or database effects |
+| Existing settings offline browser fixtures | 104 PASS | Runtime/DB acceptance or the entire project suite |
+
+Total: **83 isolated checks and 128 offline browser cases**. These are distinct
+suites, not 211 end-to-end/DB checks. The earlier 9221352/eeecde1 results are
+superseded for final offline evidence; integrated revalidation is no longer pending.
+Real PostgreSQL/ASGI acceptance is still NOT RUN.
+
+Reported exact-HEAD commands (the runner paths are sandbox-specific, not setup
+instructions or a replacement for repository R8/R10 test routing):
+
+```text
+python -m pytest tests/unit_web/test_settings_llm.py tests/unit_web/test_settings_layout.py --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+python tests/ai/test_personal_catalog_unit.py
+python tests/security/test_personal_scope_bindings_unit.py
+node tests/web_settings_llm.cjs /data/llm-ui-visual /data/settings-vendor
+node tests/web_settings_layout.cjs /data/llm-ui-regression /data/settings-vendor
+```
+
+Browser commands used the runner's preinstalled node modules and local Chromium.
+Browser matrix: 320/390/768/1440, light/dark, catalog/empty/no-workspace;
+positive synthetic submit, HTTPS/row validation, cleared partial-row required
+state, provider prefill/manual UID, numeric chat selection/probe, payload,
+unique IDs, overflow and page errors. Screenshots were individually inspected,
+including final dark desktop multirow and light mobile chat selection. No key
+is projected to JSON: only id/name/uid/base_url/has_api_key; Decimal tariff DTOs
+are not serialized wholesale.
+
+The UI owner also reported Black/isort/diff-check PASS and GitGuardian success
+for integrated HEAD (run `119913994817`). Reported runner: Python 3.13.14,
+FastAPI 0.143.2, Starlette 1.8.0, SQLAlchemy 2.1.4, Jinja2 3.1.6,
+pytest 9.1.1, pytest-asyncio 1.4.0, Chromium 153.0.8010.12. This is a separate
+environment from the backend unittest venv described above. Complete attributed
+commands/environment are retained in PR #230. Backend coordinator independently
+reconstructed published backend f6674b6 + UI eeecde1 and reran compileall plus
+14+16 unittest checks successfully, without app bootstrap or DB.
 
 Backend mounts the UI router, so #229 alone is not an independently releasable app.
 After **required real acceptance**, merge #230 into the feature branch first,
@@ -128,8 +163,9 @@ backend without the mandatory UI module. No merge is performed by this work.
    duplicate UID; task source replacement rejects all missing/foreign IDs atomically.
 5. Web/API/agent/worker dispatch: selected FK, same-owner fallbacks only, scheduled
    stored payer, no inherited actor guessing, CSRF, exact personal route allowlist.
-6. Integrated UI at backend+UI exact SHAs: default vs selected markers, sparse
-   edits, special characters, desktop/mobile light/dark and no secret HTML/JSON.
+6. Real authenticated UI at the jointly accepted source SHA: default vs selected
+   markers, sparse edits and persisted atomic bundle/default changes. Offline
+   fixture/browser coverage above is completed, not a substitute for this gate.
 
 ## Coordination and inherited work
 

@@ -11,6 +11,7 @@ import copy
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
@@ -71,6 +72,14 @@ class Task(Base):
     agent_scenario_id = Column(ForeignKey("fixture_scenarios.id"))
     agent_scenario = relationship(Scenario)
     sources = relationship(Source, secondary=links)
+    # Read by the admission-time effective snapshot; None/False defaults match
+    # a task row that never configured them.
+    trigger_type = Column(String)
+    trigger_config = Column(JSON)
+    action_type = Column(String)
+    rate_limit_per_hour = Column(Integer)
+    cooldown_seconds = Column(Integer)
+    dry_run = Column(Boolean)
 
 
 class Job(Base):
@@ -202,6 +211,42 @@ class Session:
     async def flush(self):
         pass
 
+    # Inert endpoints for the with_db_session double below; transactional
+    # commit/rollback semantics live in begin()/Transaction above.
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
+
+
+def with_db_session_double(session_factory):
+    """No-DB double of app.core.database.with_db_session (never imported here).
+
+    Mirrors the real decorator's contract: an explicit non-None ``session``
+    kwarg passes straight through; otherwise the call owns a session from the
+    fake factory, commits on success and rolls back + re-raises on failure.
+    """
+
+    def with_db_session(func):
+        @wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            if kwargs.get("session") is not None:
+                return await func(self, *args, **kwargs)
+            async with session_factory() as session:
+                kwargs["session"] = session
+                try:
+                    result = await func(self, *args, **kwargs)
+                    await session.commit()
+                    return result
+                except Exception:
+                    await session.rollback()
+                    raise
+
+        return wrapper
+
+    return with_db_session
+
 
 class Fixture:
     def __init__(self):
@@ -262,7 +307,10 @@ class Fixture:
         self.imports = {
             "app.core.config": config,
             "app.core.tenant_context": context,
-            "app.core.database": NS(async_session_maker=lambda: Session(self)),
+            "app.core.database": NS(
+                async_session_maker=lambda: Session(self),
+                with_db_session=with_db_session_double(lambda: Session(self)),
+            ),
             "app.models.managers.base_manager": NS(BaseManager=ManagerBase),
             "app.models.job": NS(Job=Job),
             "app.models.tenant": NS(Tenant=Tenant),
@@ -278,7 +326,7 @@ class Fixture:
             {
                 "app.models.managers.job_manager": self.module,
                 "croniter": NS(croniter=lambda *a: None),
-                "app.core.permissions": NS(require_permission=lambda *a: lambda f: f),
+                "app.core.permissions": NS(require_permission=lambda *a: lambda f: f, get_current_user=lambda: None),
                 "app.types": NS(ActionType=NS(CREATE="create", UPDATE="update", DELETE="delete")),
                 "app.tasks.cron": NS(
                     next_run_at=lambda *a, after, **kw: after + timedelta(hours=1), resolve_tz=lambda *a: "UTC"

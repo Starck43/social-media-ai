@@ -627,8 +627,10 @@ class AgentTaskManager(BaseManager):
     async def _linked_source_ids(self, task_ids: list[int]) -> dict[int, list[int]]:
         if not task_ids:
             return {}
-        visible = await self.filter(id__in=task_ids).values_list("id", flat=True)
-        task_ids = list(visible)
+        # Visibility goes through the manager query itself: `QuerySet` has no
+        # `values_list`, and the tenant/personal criteria must still apply.
+        visible = await self.filter(id__in=task_ids)
+        task_ids = [row.id for row in visible]
         if not task_ids:
             return {}
         from sqlalchemy import select

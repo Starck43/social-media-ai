@@ -270,3 +270,68 @@ async def test_a_concurrent_task_edit_serializes_on_the_task_row():
         assert row is not None and row.is_active is False
     finally:
         await Tenant.objects.delete_by_id(tenant.id)
+
+
+async def _wait_until_a_lock_request_is_queued(timeout: float = 8.0) -> bool:
+    """Wait until some session is blocked waiting for a lock; False on timeout."""
+    import asyncio
+
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        session = async_session_maker()
+        try:
+            waiting = (await session.execute(text("SELECT count(*) FROM pg_locks WHERE NOT granted"))).scalar_one()
+        finally:
+            await session.close()
+        if waiting:
+            return True
+        await asyncio.sleep(0.05)
+    return False
+
+
+async def test_a_competing_source_link_edit_waits_for_the_deletion():
+    """A real editor — not a raw probe — participates in the same lock order.
+
+    The deletion holds the workspace admission gate and the task row. A
+    competing `set_sources` from another session must wait for it, then land on
+    the already-paused task: the pause stays, the links become exactly what the
+    editor wrote. Nothing is half-saved and nothing widens to all-active.
+    """
+    import asyncio
+
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    tenant = await _tenant()
+    try:
+        task = await _task(tenant.id, "edited-while-deleting")
+        doomed = await _source(tenant.id, "doomed")
+        replacement = await _source(tenant.id, "replacement")
+        await _link(task, [doomed.id])
+
+        async def _edit_links() -> None:
+            with tenant_scope(tenant.id), service_permission_scope("agenttask", "update"):
+                await AgentTaskManager().set_sources(task.id, [replacement.id])
+
+        deleting = async_session_maker()
+        try:
+            with tenant_scope(tenant.id):
+                transaction = await deleting.begin()
+                removal = await delete_source(deleting, source_id=doomed.id, tenant_id=tenant.id)
+                assert removal is not None
+
+                editing = asyncio.create_task(_edit_links())
+                try:
+                    assert await _wait_until_a_lock_request_is_queued(), "the competing edit never waited"
+                    assert not editing.done(), "the edit committed while the deletion was still open"
+                finally:
+                    await transaction.commit()
+        finally:
+            await deleting.close()
+
+        await asyncio.wait_for(editing, timeout=10)
+        row = await _task_row(tenant.id, task.id)
+        assert row is not None
+        assert row.is_active is False, "the pause from the deletion must survive the later edit"
+        assert await _links(tenant.id, task.id) == [replacement.id]
+    finally:
+        await Tenant.objects.delete_by_id(tenant.id)

@@ -574,8 +574,12 @@ safely.
     operator removes it inside that task and the auto-pause branch is no longer
     reached through the service. `set_sources` takes the caller's session and
     turns the missing-source foreign key into the `ValueError` the web handler
-    already reports. Re-run at the merge: 106 passed in the focused scope, the
-    only failures are the pre-existing `test_task_run_now` set.
+    already reports. Re-run at the merge (`caf007f`): `tests/collection/
+    tests/jobs/ tests/ai/ tests/web/` gives 2082 passed, 210 failed, and the
+    failure set is identical to the pre-merge baseline — no test that passed
+    before fails now. The isolated admission doubles were updated to the
+    decorator and reads dev added (`caf007f`); their skip assertion still
+    requires every blocking query to skip.
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`

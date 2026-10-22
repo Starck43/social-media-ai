@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from croniter import croniter
 
@@ -168,6 +168,7 @@ class AgentTaskManager(BaseManager):
         from sqlalchemy import select
 
         from app.core.database import async_session_maker
+
         from ..agent_task import AgentTask
         from .job_manager import JobManager
 
@@ -319,7 +320,8 @@ class AgentTaskManager(BaseManager):
         session: "AsyncSession | None" = None,
     ) -> int:
         """Change source links under the same gate and task lock as admission."""
-        from sqlalchemy import delete as sa_delete, select
+        from sqlalchemy import delete as sa_delete
+        from sqlalchemy import select
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         from ..agent_task import agent_task_sources
@@ -638,9 +640,7 @@ class AgentTaskManager(BaseManager):
         task_ids = {int(row[0]) for row in rows}
         tasks = await self.filter(id__in=list(task_ids)).prefetch_related("agent_scenario")
         scenarios = {
-            task.agent_scenario
-            for task in tasks
-            if task.agent_scenario is not None and task.agent_scenario.is_active
+            task.agent_scenario for task in tasks if task.agent_scenario is not None and task.agent_scenario.is_active
         }
         if len(scenarios) == 1:
             return next(iter(scenarios))
@@ -686,6 +686,35 @@ class AgentTaskManager(BaseManager):
             .order_by(AgentTask.created_at.desc(), AgentTask.id.desc())
         )
 
+    async def active_for_sources(self, source_ids: Sequence[int], tenant_id: int) -> dict[int, list["AgentTask"]]:
+        """Active tasks that explicitly link each of the given sources.
+
+        The sources page asks one question per row — may this be deleted? — and
+        the answer is the active tasks that still read it. One query for the
+        whole page, keyed by source id. Only explicit links count: an empty
+        link set means "all active sources", which is not a link to this row.
+        """
+        from ..agent_task import AgentTask, agent_task_sources
+
+        ids = sorted({int(sid) for sid in source_ids if sid is not None})
+        if not ids:
+            return {}
+        rows = await (
+            self.get_queryset()
+            .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
+            .filter(
+                AgentTask.tenant_id == tenant_id,
+                AgentTask.is_active.is_(True),
+                agent_task_sources.c.source_id.in_(ids),
+            )
+            .values(agent_task_sources.c.source_id, AgentTask.id, AgentTask.name)
+            .rows()
+        )
+        linked: dict[int, list[AgentTask]] = {}
+        for source_id, task_id, name in rows:
+            linked.setdefault(int(source_id), []).append(AgentTask(id=int(task_id), name=str(name)))
+        return linked
+
     @staticmethod
     def _task_effectively_active(task, workspace_active_source_ids) -> bool:
         """Whether a task is effectively active — i.e. should be scheduled/shown as active.
@@ -727,11 +756,7 @@ class AgentTaskManager(BaseManager):
         """
         from ..source import Source
 
-        rows = (
-            await Source.objects.filter(is_active=True, owner_task_id__isnull=True)
-            .values(Source.id)
-            .rows()
-        )
+        rows = await Source.objects.filter(is_active=True, owner_task_id__isnull=True).values(Source.id).rows()
         return {r.id for r in rows}
 
     async def effective_active_map(

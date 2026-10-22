@@ -157,6 +157,72 @@ After **required real acceptance**, merge #230 into the feature branch first,
 then the complete #229 into dev. Both remain Draft; do not release an intermediate
 backend without the mandatory UI module. No merge is performed by this work.
 
+## Owner-local PostgreSQL/ASGI acceptance (2026-10-22)
+
+Run on the owner's machine against an **isolated clone** of the local 0108
+database (`social_manager` → `social_ai_llm_accept`), never the working schema
+and never `test_schema`. A `pg_dump -Fc` backup of the clone was taken before the
+first upgrade; the clone is dropped after the run. PostgreSQL 15.14. Head:
+backend `5f7aaa2`, with the #230 UI source (`d9f7c47`) merged locally for the
+web settings routes — the merge is not pushed.
+
+### Preflight (read-only, actual 0108 catalog)
+
+- Revision `0108`; 5 providers, 7 models, 4 active users, 73 workspaces.
+- Reviewed owner user 2 exists and is active; web memberships in workspaces 1 and 695.
+- Legacy `tenants.agent_model`: only workspace 695 carries
+  `'Gemini 3.1 Flash-Lite'`, which has no catalog row — it must stay unmapped.
+
+### Migration (22/22 checks)
+
+- Upgrade without `-x llm_legacy_owner_id=2` is refused before DDL; revision stays 0108.
+- An inactive owner 2 is refused before DDL.
+- A pre-existing cross-workspace task/source link is refused before DDL and no
+  owner column is added.
+- Upgrade with the reviewed owner reaches `0109`; providers get `legacy-<id>`,
+  every provider and model row is owned by user 2.
+- Provider/model rows, encrypted keys, tariffs and numeric IDs are identical to
+  0108; only `owner_user_id`, `uid` and `agent_model_id` are added.
+- An authorized unique legacy name maps to its row; a tenant without membership
+  and an ambiguous name stay NULL.
+- Downgrade refuses colliding provider display names; after cleanup it restores
+  the 0108 structure **exactly** (columns, constraints, indexes, triggers and
+  functions compared as a fingerprint), keeping rows, keys and rates.
+- A round trip re-applies 0109 with one owner and no unowned model.
+
+### Guards on the upgraded schema (12/12)
+
+Task/source/scenario bindings: cross-workspace link, source `owner_task_id`, task
+`tenant_id`, task→scenario and task-owned source links are refused; same-workspace
+writes succeed. Personal catalog: owner and model `provider_id` are immutable,
+`uid` and display name are editable, duplicate `uid` within one owner is refused,
+duplicate display names are allowed, a model cannot point at another owner's
+provider (composite FK), and deleting an owner with a catalog is RESTRICTed.
+
+### ASGI, permissions, CSRF and dispatch (27/27)
+
+Two registered users in separate workspaces over real ASGI: atomic provider+model
+bundle save; the key is stored encrypted and never echoed; a save without CSRF is
+403 and creates no row; one default per owner and capability; another owner's
+catalog is not rendered and a foreign provider edit is refused unchanged; chat
+`agent_model_id` accepts the owner's model and refuses a foreign id; the bearer
+API lists only the owner's providers and refuses a foreign id; two concurrent
+bundle writes leave exactly one default; dispatch accepts the owner's model in the
+owner's workspace and refuses a foreign owner, an inactive provider and a revoked
+membership; image resolution skips another owner's model; tariff lookup stays in
+the acting catalog by row identity, and a foreign row id cannot price the attempt.
+
+### Not executed here / remaining
+
+- The #230 browser suite was not run on this machine (`playwright` is not
+  installed here); the UI owner's sandbox evidence (24 catalog + 104 layout
+  cases) stands.
+- `alembic check` still reports the known repo-wide model/schema naming drift
+  (schema-qualified FKs, `ix_public_*` indexes, enum and comment differences) on
+  unrelated tables. It predates 0109 and is unchanged by it.
+- No production or staging target, no working-schema migration, no deploy, no
+  live provider call.
+
 ## Required owner-local acceptance (sequential, R8/R10)
 
 1. Read-only target/writer/backup inspection; review 0109 against actual 0108

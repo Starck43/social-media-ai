@@ -110,6 +110,35 @@ const vendor = path.resolve(process.argv[3]);
             await form.locator("[name=provider_uid]").inputValue(),
             "manual",
           );
+          await form
+            .locator("[name=base_url]")
+            .fill("http://fixture.invalid/v1");
+          assert.equal(
+            await form
+              .locator("[name=base_url]")
+              .evaluate((el) => el.checkValidity()),
+            false,
+          );
+          await form
+            .locator("[name=base_url]")
+            .fill("https://provider.fixture.invalid/v1");
+          const firstRow = form.locator("[data-llm-row]").first();
+          await firstRow.locator("[data-model-api]").fill("partial");
+          assert.equal(
+            await firstRow
+              .locator("[data-model-name]")
+              .evaluate((el) => el.required),
+            true,
+          );
+          assert.equal(await form.evaluate((el) => el.checkValidity()), false);
+          await firstRow.locator("[data-model-api]").fill("");
+          assert.equal(
+            await firstRow
+              .locator("[data-model-name]")
+              .evaluate((el) => el.required),
+            false,
+          );
+          assert.equal(await form.evaluate((el) => el.checkValidity()), true);
           await form.locator("[data-llm-add]").click();
           assert.equal(await form.locator("[data-llm-row]").count(), 2);
           await form
@@ -167,9 +196,26 @@ const vendor = path.resolve(process.argv[3]);
               "https://provider.fixture.invalid/v1",
             );
           }
-          const payload = await form.evaluate((el) => [
-            ...new FormData(el).entries(),
-          ]);
+          await form.evaluate((el) => {
+            window.syntheticCatalogPosts = [];
+            el.addEventListener("submit", (event) => {
+              if (!event.defaultPrevented)
+                window.syntheticCatalogPosts.push([
+                  ...new FormData(el).entries(),
+                ]);
+              event.preventDefault();
+            });
+          });
+          await form
+            .locator('button[type="submit"], .llm-actions button')
+            .click();
+          const posts = await page.evaluate(() => window.syntheticCatalogPosts);
+          assert.equal(
+            posts.length,
+            1,
+            "valid bundle must submit exactly once",
+          );
+          const payload = posts[0];
           assert.equal(
             payload.filter(([key]) => key === "model_name").length,
             2,

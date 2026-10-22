@@ -34,19 +34,22 @@
       button.closest("[data-llm-row]").remove();
       form.querySelector("[data-llm-add]").focus();
     });
+    const syncRow = (row) => {
+      const api = row.querySelector("[data-model-api]");
+      const name = row.querySelector("[data-model-name]");
+      const existing = row.querySelector("[name=model_db_id]").value;
+      api.required = name.required = Boolean(
+        existing || api.value.trim() || name.value.trim(),
+      );
+    };
+    rows.addEventListener("input", (event) => {
+      const row = event.target.closest("[data-llm-row]");
+      if (row) syncRow(row);
+    });
+    rows.querySelectorAll("[data-llm-row]").forEach(syncRow);
     form.addEventListener("submit", (event) => {
-      let valid = true;
-      rows.querySelectorAll("[data-llm-row]").forEach((row) => {
-        const api = row.querySelector("[data-model-api]");
-        const name = row.querySelector("[data-model-name]");
-        const existing = row.querySelector("[name=model_db_id]").value;
-        const required = Boolean(
-          existing || api.value.trim() || name.value.trim(),
-        );
-        api.required = name.required = required;
-        if (!api.checkValidity() || !name.checkValidity()) valid = false;
-      });
-      if (!valid) {
+      rows.querySelectorAll("[data-llm-row]").forEach(syncRow);
+      if (!form.checkValidity()) {
         event.preventDefault();
         form.reportValidity();
       }

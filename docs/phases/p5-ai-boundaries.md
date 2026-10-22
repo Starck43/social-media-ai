@@ -568,6 +568,14 @@ safely.
     admission hang is closed by porting `765c91b` (`9276083`). The live search
     half stays blocked on Q-5/Q-9 (VK standalone application), so stage F is
     accepted on code and tests, not on live search evidence.
+  - **Merge with dev (`189ff63`).** Dev's single delete path and this task's
+    refusal rule are one rule now: `delete_source` refuses while an active task
+    reads the source (`SourceDeleteBlocked`, web flash and API `409`), so the
+    operator removes it inside that task and the auto-pause branch is no longer
+    reached through the service. `set_sources` takes the caller's session and
+    turns the missing-source foreign key into the `ValueError` the web handler
+    already reports. Re-run at the merge: 106 passed in the focused scope, the
+    only failures are the pre-existing `test_task_run_now` set.
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`

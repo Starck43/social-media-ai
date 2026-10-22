@@ -1180,10 +1180,22 @@ Authorization: Bearer <token>
 
 **Permissions:** `source.delete`
 
-Deleting a source also deletes its analytics rows. A task that named that
-source, and named no other, is paused in the same transaction: an empty source
-set means "all active workspace sources", so leaving it empty would silently
-widen the task. A task that never named sources (all-active) is untouched.
+**Refused** `409 Conflict` while an active task still reads the source:
+
+```json
+{
+  "detail": {
+    "error": "source_in_active_task",
+    "task_ids": [2027]
+  }
+}
+```
+
+A source an active task uses is removed inside that task, where its scope is
+visible; the web page refuses the same way. A paused task does not block the
+delete, and a task that never named sources (all-active) is untouched.
+
+Deleting a source also deletes its analytics rows.
 
 ## Tasks
 

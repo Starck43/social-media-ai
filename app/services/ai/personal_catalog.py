@@ -3,6 +3,7 @@
 Only trusted actor IDs are accepted. Bundles and default changes lock the user
 row so concurrent writes cannot fork that user's capability defaults.
 """
+
 from __future__ import annotations
 
 import re
@@ -17,17 +18,28 @@ from app.models import LLMModel, LLMProvider, Tenant, User
 
 PROVIDER_FIELDS = {"id", "uid", "name", "description", "api_format", "base_url", "auth_header", "is_active", "api_key"}
 MODEL_FIELDS = {
-    "id", "name", "model_id", "model_type", "description", "custom_endpoint_path",
-    "max_tokens", "default_temperature", "is_active", "is_default", "pricing_token_unit",
-    "input_cost_per_1k", "output_cost_per_1k", "cache_read_cost_per_1m",
-    "cache_write_5m_cost_per_1m", "cache_write_1h_cost_per_1m",
+    "id",
+    "name",
+    "model_id",
+    "model_type",
+    "description",
+    "custom_endpoint_path",
+    "max_tokens",
+    "default_temperature",
+    "is_active",
+    "is_default",
+    "pricing_token_unit",
+    "input_cost_per_1k",
+    "output_cost_per_1k",
+    "cache_read_cost_per_1m",
+    "cache_write_5m_cost_per_1m",
+    "cache_write_1h_cost_per_1m",
 }
 
 
 def require_actor(user_id):
     actor = get_current_user()
-    if (type(user_id) is not int or user_id <= 0 or actor is None
-            or not actor.is_active or actor.id != user_id):
+    if type(user_id) is not int or user_id <= 0 or actor is None or not actor.is_active or actor.id != user_id:
         raise PermissionError("Personal catalog access denied")
     return actor
 
@@ -96,8 +108,14 @@ def validate_model_values(values, *, creating=False):
     for key in ("is_active", "is_default"):
         if key in result and type(result[key]) is not bool:
             raise ValueError("Model flags must be boolean")
-    for key in ("default_temperature", "input_cost_per_1k", "output_cost_per_1k",
-                "cache_read_cost_per_1m", "cache_write_5m_cost_per_1m", "cache_write_1h_cost_per_1m"):
+    for key in (
+        "default_temperature",
+        "input_cost_per_1k",
+        "output_cost_per_1k",
+        "cache_read_cost_per_1m",
+        "cache_write_5m_cost_per_1m",
+        "cache_write_1h_cost_per_1m",
+    ):
         if key not in result:
             continue
         if result[key] is None and key.startswith("cache_"):
@@ -148,19 +166,25 @@ def eligible_owned_model(model, *, user_id, capabilities, allowed_types=None):
 
 
 def eligible_chat_model(model, *, user_id, allowed_types=None):
-    return eligible_owned_model(
-        model, user_id=user_id, capabilities=CHAT_CAPABILITIES, allowed_types=allowed_types
-    )
+    return eligible_owned_model(model, user_id=user_id, capabilities=CHAT_CAPABILITIES, allowed_types=allowed_types)
 
 
 def model_metadata(model):
     provider = model.provider
     return {
-        "id": model.id, "owner_user_id": model.owner_user_id, "name": model.name, "model_id": model.model_id,
-        "provider_id": model.provider_id, "provider_uid": provider.uid, "provider_name": provider.name,
-        "model_type": model.model_type, "max_tokens": model.max_tokens,
-        "default_temperature": model.default_temperature, "is_active": model.is_active,
-        "is_default": model.is_default, "description": model.description,
+        "id": model.id,
+        "owner_user_id": model.owner_user_id,
+        "name": model.name,
+        "model_id": model.model_id,
+        "provider_id": model.provider_id,
+        "provider_uid": provider.uid,
+        "provider_name": provider.name,
+        "model_type": model.model_type,
+        "max_tokens": model.max_tokens,
+        "default_temperature": model.default_temperature,
+        "is_active": model.is_active,
+        "is_default": model.is_default,
+        "description": model.description,
         "custom_endpoint_path": model.custom_endpoint_path,
         "pricing_token_unit": model.pricing_token_unit,
         **{key: getattr(model, key) for key in MODEL_FIELDS if "cost_per_" in key},
@@ -169,16 +193,24 @@ def model_metadata(model):
 
 def provider_metadata(provider, models):
     return {
-        "id": provider.id, "owner_user_id": provider.owner_user_id, "name": provider.name, "uid": provider.uid,
-        "api_format": provider.api_format, "base_url": provider.base_url,
+        "id": provider.id,
+        "owner_user_id": provider.owner_user_id,
+        "name": provider.name,
+        "uid": provider.uid,
+        "api_format": provider.api_format,
+        "base_url": provider.base_url,
         "auth_header": None,  # May contain a literal token; never project credential material.
-        "description": provider.description, "is_active": provider.is_active,
-        "has_api_key": bool(provider.encrypted_api_key), "models": [model_metadata(m) for m in models],
+        "description": provider.description,
+        "is_active": provider.is_active,
+        "has_api_key": bool(provider.encrypted_api_key),
+        "models": [model_metadata(m) for m in models],
     }
 
 
 async def lock_owner(session, user_id):
-    row = (await session.execute(select(User).where(User.id == user_id, User.is_active.is_(True)).with_for_update())).scalar_one_or_none()
+    row = (
+        await session.execute(select(User).where(User.id == user_id, User.is_active.is_(True)).with_for_update())
+    ).scalar_one_or_none()
     if row is None:
         raise PermissionError("Personal catalog owner is inactive")
 
@@ -186,9 +218,17 @@ async def lock_owner(session, user_id):
 async def set_default_in_session(session, model):
     if not model.is_active or not model.provider.is_active:
         raise ValueError("Default model and provider must be active")
-    rows = (await session.execute(select(LLMModel).where(
-        LLMModel.owner_user_id == model.owner_user_id, LLMModel.is_default.is_(True)
-    ).with_for_update())).scalars().all()
+    rows = (
+        (
+            await session.execute(
+                select(LLMModel)
+                .where(LLMModel.owner_user_id == model.owner_user_id, LLMModel.is_default.is_(True))
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
     for other in rows:
         if other.id != model.id and set(other.capabilities) & set(model.capabilities):
             other.is_default = False
@@ -220,16 +260,22 @@ async def save_provider_bundle(*, user_id, provider, models):
     ids = [m["id"] for m in model_values if "id" in m]
     if len(ids) != len(set(ids)):
         raise ValueError("Duplicate model IDs in bundle")
-    from app.utils.crypto import encrypt_secret
     from sqlalchemy.exc import IntegrityError
+
+    from app.utils.crypto import encrypt_secret
+
     try:
         async with LLMProvider.objects._get_owned_session() as session:
             await lock_owner(session, user_id)
             provider_id = values.pop("id", None)
             if provider_id is not None:
-                row = (await session.execute(select(LLMProvider).where(
-                    LLMProvider.id == provider_id, LLMProvider.owner_user_id == user_id
-                ).with_for_update())).scalar_one_or_none()
+                row = (
+                    await session.execute(
+                        select(LLMProvider)
+                        .where(LLMProvider.id == provider_id, LLMProvider.owner_user_id == user_id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
                 if row is None:
                     raise PermissionError("Provider is unavailable")
             else:
@@ -246,9 +292,18 @@ async def save_provider_bundle(*, user_id, provider, models):
             for data in model_values:
                 identity = data.pop("id", None)
                 if identity is not None:
-                    model = (await session.execute(select(LLMModel).where(
-                        LLMModel.id == identity, LLMModel.owner_user_id == user_id, LLMModel.provider_id == row.id
-                    ).with_for_update())).scalar_one_or_none()
+                    model = (
+                        await session.execute(
+                            select(LLMModel)
+                            .where(
+                                LLMModel.id == identity,
+                                LLMModel.owner_user_id == user_id,
+                                LLMModel.provider_id == row.id,
+                            )
+                            .options(selectinload(LLMModel.provider))
+                            .with_for_update()
+                        )
+                    ).scalar_one_or_none()
                     if model is None:
                         raise PermissionError("Model is unavailable in this provider")
                 else:
@@ -266,9 +321,18 @@ async def save_provider_bundle(*, user_id, provider, models):
                     raise ValueError("Conflicting capability defaults in bundle")
                 seen_caps.update(model.capabilities)
                 await set_default_in_session(session, model)
-            rows = (await session.execute(select(LLMModel).where(
-                LLMModel.provider_id == row.id, LLMModel.owner_user_id == user_id
-            ).options(selectinload(LLMModel.provider)).order_by(LLMModel.id))).scalars().all()
+            rows = (
+                (
+                    await session.execute(
+                        select(LLMModel)
+                        .where(LLMModel.provider_id == row.id, LLMModel.owner_user_id == user_id)
+                        .options(selectinload(LLMModel.provider))
+                        .order_by(LLMModel.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             result = provider_metadata(row, rows)
             result["saved_model_ids"] = [model.id for model in saved_models]
         return result
@@ -281,9 +345,14 @@ async def set_default_model(*, user_id, model_id):
     _identifier(model_id)
     async with LLMModel.objects._get_owned_session() as session:
         await lock_owner(session, user_id)
-        model = (await session.execute(select(LLMModel).where(
-            LLMModel.id == model_id, LLMModel.owner_user_id == user_id
-        ).options(selectinload(LLMModel.provider)).with_for_update())).scalar_one_or_none()
+        model = (
+            await session.execute(
+                select(LLMModel)
+                .where(LLMModel.id == model_id, LLMModel.owner_user_id == user_id)
+                .options(selectinload(LLMModel.provider))
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
         if model is None:
             raise PermissionError("Model is unavailable")
         await set_default_in_session(session, model)
@@ -293,6 +362,7 @@ async def set_default_model(*, user_id, model_id):
 
 async def _workspace_types(user_id, tenant_id):
     from app.models.managers.tenant_manager import tenant_users
+
     memberships = await tenant_users.web_memberships(user_id)
     if not any(m.tenant_id == tenant_id for m in memberships):
         raise PermissionError("Workspace access denied")
@@ -309,8 +379,15 @@ async def chat_model_options(*, user_id, tenant_id):
     eligible = [m for m in rows if eligible_chat_model(m, user_id=user_id, allowed_types=allowed)]
     eligible.sort(key=lambda m: (not m.is_default, m.id))
     default_id = eligible[0].id if eligible else None
-    return [{"id": m.id, "label": f"{m.provider.name}/{m.model_id}" + (" — По умолчанию" if m.id == default_id else ""),
-             "is_default": m.is_default, "is_effective_default": m.id == default_id} for m in eligible]
+    return [
+        {
+            "id": m.id,
+            "label": f"{m.provider.name}/{m.model_id}" + (" — По умолчанию" if m.id == default_id else ""),
+            "is_default": m.is_default,
+            "is_effective_default": m.id == default_id,
+        }
+        for m in eligible
+    ]
 
 
 async def validate_chat_model(*, user_id, tenant_id, model_id):

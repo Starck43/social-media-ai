@@ -225,3 +225,70 @@ but has older queue-manager code: no wholesale manager replacement. Existing dev
 pending-occurrence invalidation and source-admission behavior are preserved.
 No deploy, merge, production/shared-test schema changes, live provider call, or
 full-suite acceptance is claimed.
+
+
+## Backend continuation: fresh-dev reconciliation and prepared PG acceptance
+
+Source reviewed: feature `5f7aaa23f419284f2e87e22c24e8b0d7ed83fc50`
+(includes the owner-local media/tariff review fixes) and dev
+`dea6e4d985f0d5962ad959e86d19429d85688d95` (`bbb16ba` queue implementation,
+plus a phase-document clarification). No owner-local review commit was reverted.
+
+- Task manager reconciliation retains dev's admission-gate-before-task-row-lock
+  order, stable multi-tenant mutation order, expanded occurrence fields, refresh
+  after waiting, and idempotent source updates that do not invalidate a queued
+  occurrence. It adds strict non-coerced IDs, source row locking/owner-task checks
+  before any link writes, same-transaction scenario validation and caller-session
+  forwarding. The checked-in `_mutate_task_sources` is the shared path; there is
+  no second independent replacement writer. The legacy TABS assertion now includes
+  `models` without weakening its unknown-tab behavior.
+- Existing-model bundle saves eager-load the provider before shared default
+  validation, avoiding an async lazy-load requirement during sparse default edits.
+  A real DB regression for that path is prepared below; no PostgreSQL proof yet.
+- Re-executed local standalone unittest scopes after the reconciliation:
+  routing 16 PASS, catalog 15 PASS, scope/bindings 19 PASS (50 total test methods).
+  These source-loaded/double-based checks are not the new real acceptance suite.
+  Black/isort changed files, compileall and diff whitespace checks passed.
+
+`tests/ai/test_personal_catalog_postgres_acceptance.py` now contains **9 prepared
+real PostgreSQL tests**: personal catalog without membership/per-user UID,
+foreign-Nth-model rollback, sparse existing-model default save, concurrent
+per-user defaults, duplicate-UID race, composite owner FK/owner reassignment guard,
+one catalog across two workspaces, foreign/task-owned source refusal and actual
+FK/trigger catalog inspection. It is NOT imported, collected or executed here.
+
+The suite requires the current root conftest and exact approved local
+`localhost|127.0.0.1:5432/social_manager`, schema `test_schema`, before app imports.
+It creates/cleans only its own uniquely named synthetic rows, reads existing role/
+platform reference rows, and never prepares, migrates, resets, stamps or seeds a
+schema. Missing reference rows or schema/constraint drift must STOP the run.
+No provider/network calls are included. Legacy owner2 migration/backfill and
+upgrade/downgrade acceptance remain separate, explicitly authorized operations.
+
+Coordinated web acceptance is prepared in UI PR #230, commit
+`562b526e3775c73398474236b06793df4147b4d4`, file
+`tests/web/test_personal_llm_settings_acceptance.py` (7 parameterized cases,
+NOT RUN). Both DB scopes must run sequentially through the primary R10 runner,
+with normal root conftest, on a complete backend+UI checkout. Also run existing
+`tests/jobs/test_task_pending_occurrence.py` and `tests/jobs/test_task_run_now.py`
+for the changed admission/invalidation risk; the old offline UI totals do not
+certify this newer backend.
+
+### Exact remaining execution/integration blockers
+
+This remote environment has no OpenCode/Kilo or PostgreSQL/docker tools and no
+owner-local PG/ASGI evidence was supplied. It must not impersonate the primary
+runner, use SQLite/fakes as PG proof, or infer migration authorization from
+"continue to ready/merge". Running tests against the existing approved target
+needs no reconfirmation; schema changes still need their separate authorization.
+
+GitHub `update_pull_request_branch` at feature `5f7aaa2` returned a real merge
+conflict with dev (task manager); terminal Git dry-run push has no credential.
+The resolved task-manager content is supplied for review, but is not a two-parent
+history merge. A writer with authenticated Git must finish the **reviewed normal
+merge of pinned dev**, preserving these manager checks and the dev admission/
+billing/source changes, then publish by ordinary fast-forward (never force).
+Recheck fresh refs first; do not blindly select ours for future dev changes.
+Do not publish a temporary regression to the dev-only manager merely to make
+GitHub auto-merge succeed. P3-T93–96 and both PRs remain BLOCKED/Draft until this
+integration and the required real PostgreSQL/ASGI gates are actually complete.

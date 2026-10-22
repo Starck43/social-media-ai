@@ -139,7 +139,22 @@ Coverage evidence vs PRD-08 (state/refs → task):
   depends: none; owns: delivery signal lane; owner: unassigned; status: TODO
 - [ ] P8-T12 — unknown-price/spend exposure signal; accept: operator view of provider models
   without known price plus spend totals via personal account managers (post P2-T06); depends: P2-T06;
-  owns: financial visibility lane; owner: opencode; status: IN_PROGRESS
+  owns: financial visibility lane; owner: opencode; status: READY.
+  Implementation `7c23602`: `GET /app/billing/exposure` (platform-operator
+  `guard_superuser`, active workspace pin, no writes) renders today's personal-ledger
+  aggregates for the workspace (settled/reserved/provider-reported/tariff-reconstructed,
+  open reservations, unknown-price attempts, `complete` false while either is non-zero),
+  provider/model pairs with `cost_certainty=undefined` dispatched attempts over 7 days
+  (distinct dispatch, reconciliations do not inflate), and active catalog models on the
+  ambiguous 0/0 ordinary tariff. Failed reads render unavailable, never zeros; no payer
+  identity, prompt, credential or provider payload is rendered. Evidence: no-DB route
+  suite 4 passed + 6 subtests (`tests/unit_web/test_billing_exposure.py`), PostgreSQL
+  manager suite 3 passed (`tests/billing/test_billing_exposure_db.py`) through the
+  primary OpenCode runner on the shared test schema; `git diff --check` clean; no
+  migration, live provider call, runtime start or deployment. READY is implementation
+  review only. Limits: the zero-price list is a review aid, explicit free and an
+  unconfigured default are indistinguishable; legacy unattributed attempts are outside
+  the ledger projection; real browser/ASGI role acceptance is not covered by these suites.
 - [ ] P8-T13 — named support/escalation + pilot measures; accept: escalation owner and agreed
   latency/freshness/usefulness measures for the managed pilot, written and owner-signed; depends:
   P8-T10, P8-T11; owns: support contract lane; owner: unassigned; status: TODO

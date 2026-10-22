@@ -1,4 +1,4 @@
-{% from "web/_macros.html" import control, task_dates, task_retention_fields, task_trigger_actions, task_collection_fields, task_targets, bound_popover_select, switch_toggle, check_card, check_mark %}
+{% from "web/_macros.html" import control, task_retention_fields, task_trigger_actions, task_collection_fields, task_targets, bound_popover_select, switch_toggle, check_card, check_mark %}
 {% extends "web/base.html" %}
 {% block title %}Задача — AI Monitor{% endblock %}
 {% block page_heading %}{{ task.name }}{% endblock %}
@@ -189,7 +189,7 @@
                 <input type="hidden" name="cron_expr" :value="cron" value="{{ edit.cron_expr }}">
             </div>
         </div>
-        {{ task_collection_fields(edit, "edit", "editing.job_type") }}
+        {{ task_collection_fields(edit, "edit", "editing.job_type", edit.start_date, edit.end_date) }}
         {% if sources %}
         {# Compact inline source picker: selected sources are chips with a
            remove (×) control; adding goes through a same-style "+ Добавить"
@@ -199,7 +199,7 @@
            `editing.source_ids` and the hidden inputs below carry the values;
            without JS the fallback checkbox list below submits identically. #}
         <div x-show="editing.job_type !== 'prune'" x-cloak>
-            <h3 class="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Где читать</h3>
+            <h3 class="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Источники</h3>
             <div class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                 <div class="flex flex-wrap items-center gap-1.5">
                     <template x-for="src in selectedSources()" :key="src.id">
@@ -286,7 +286,7 @@
         </div>
         {% else %}
         <div x-show="editing.job_type !== 'prune'">
-            <h3 class="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Где читать</h3>
+            <h3 class="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Источники</h3>
             <p class="text-sm text-slate-600 dark:text-slate-400">В этом пространстве пока нет источников.
                 <a class="text-cyan-700 underline dark:text-cyan-300" href="/app/sources">Добавьте источник</a>, чтобы задаче было откуда читать.</p>
         </div>
@@ -304,18 +304,20 @@
         </div>
         {# The analysis targets the selected scenario's analysis types need
            (param_registry.PAYLOAD_PARAMS): the scenario says which kinds of
-           target matter, the task says the actual brands/hashtags. Every input
-           is server-rendered with its stored value, so a save without
-           JavaScript round-trips the payload; Alpine only toggles visibility
-           and the hidden inputs still submit for the types not shown. #}
+           target matter, the task says the actual brands/hashtags. The one
+           hint line names the fields the current scenario actually uses, so
+           the hidden boxes are not a mystery. Every input is server-rendered
+           with its stored value, so a save without JavaScript round-trips
+           the payload; Alpine only toggles visibility and the hidden inputs
+           still submit for the types not shown. #}
         <div class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3"
              x-show="targetFields.length > 0" x-cloak>
             <p class="text-sm text-slate-700 dark:text-slate-300">Цели анализа
-                <span class="text-xs text-slate-600 dark:text-slate-400">— какие именно данные искать, требует выбранный сценарий</span>
+                <span class="text-xs text-slate-600 dark:text-slate-400"
+                      x-text="targetsHint()">— какие данные искать, определяет выбранный сценарий</span>
             </p>
             {{ task_targets(target_fields, edit) }}
         </div>
-        {{ task_dates("editing", "editing.job_type", edit.start_date, edit.end_date) }}
 
         <template x-if="editing.job_type === 'digest'">
             <div class="ui-card space-y-4">
@@ -360,14 +362,24 @@
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Только их материалы из выбранных
                     источников, платформа:id. Пусто — материалы самих источников.</p>
             </div>
+            {# The selection's own text scope — not «Ключевые слова»: that name
+               belongs to the analysis targets, and two same-named boxes in one
+               form read as one field twice. #}
             <div x-show="editing.job_type === 'collect' || editing.job_type === 'analyze'">
-                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Ключевые слова: совпадение
-                    фраз</label>
+                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Фразы в тексте поста</label>
+                <input name="keywords_list" x-model="editing.keywords_list" value="{{ edit.keywords_list }}"
+                       placeholder="отчёт, дизайн интерьера"
+                       class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Анализируются только записи, где есть
+                    эти фразы; на сбор не влияют.</p>
+            </div>
+            <div x-show="editing.job_type === 'collect' || editing.job_type === 'analyze'">
+                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Совпадение фраз</label>
                 <select name="keywords_match" x-model="editing.keywords_match" class="{{ control() }}">
                     <option value="any" {% if edit.keywords_match == 'any' %}selected{% endif %}>Любая из фраз</option>
                     <option value="all" {% if edit.keywords_match == 'all' %}selected{% endif %}>Все фразы</option>
                 </select>
-                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Применяется к «Ключевым словам» ниже;
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Применяется к «Фразам в тексте поста»;
                     без фраз ничего не отсекает.</p>
             </div>
         </div>
@@ -531,6 +543,10 @@
             },
             get targetFields() {
                 return TARGET_FIELDS.filter((f) => this.activeTargetTypes().includes(f.type));
+            },
+            targetsHint() {
+                if (!this.targetFields.length) return "— выбранный сценарий не требует целей анализа";
+                return "— для сценария активны: " + this.targetFields.map((f) => f.label.toLowerCase()).join(", ");
             },
             init() {
                 this.editing = {

@@ -6,12 +6,11 @@ active workspace sources". Deleting the last selected source therefore used to
 turn a deliberately narrow task into a run over every source of the workspace —
 the opposite of what the operator asked for.
 
-This module is the single delete path for a workspace source. In one
-transaction it removes the row (staged analytics follow through the database
-cascade) and pauses the tasks that linked *only* that source, so their explicit
-scope never degrades into the all-active fallback. Tasks that linked the source
-along with others keep running with the remaining links, and a task that never
-had links keeps its all-active contract untouched.
+This module is the single delete path for a workspace source, so the rule is
+the same for the web, the API and the CLI. A source an *active* task still
+reads is not deleted at all: the operator removes it inside that task, where
+the scope is visible, and the receipt names the tasks standing in the way. An
+inactive task never blocks a delete.
 
 The caller owns the transaction and the permission check.
 """
@@ -27,11 +26,20 @@ from app.core.permissions import service_permission_scope
 
 
 @dataclass(frozen=True)
-class PausedTask:
-    """A task the deletion stopped, and the reason it had to stop."""
+class TaskRef:
+    """A task one deletion touched, by id and by the name the operator knows."""
 
     task_id: int
     name: str
+
+
+@dataclass(frozen=True)
+class SourceDeleteBlocked:
+    """The delete did not happen: these active tasks still read the source."""
+
+    source_id: int
+    name: str
+    active_tasks: tuple[TaskRef, ...]
 
 
 @dataclass(frozen=True)
@@ -40,14 +48,16 @@ class SourceDeletion:
 
     source_id: int
     name: str
-    paused_tasks: tuple[PausedTask, ...] = ()
+    paused_tasks: tuple[TaskRef, ...] = ()
 
 
 async def delete_source(session: AsyncSession, *, source_id: int, tenant_id: int) -> SourceDeletion | None:
-    """Delete one workspace source; pause the tasks it was the last source of.
+    """Delete one workspace source, unless an active task still reads it.
 
     Returns `None` when the source is not in this workspace (nothing written —
-    the caller reports "not found" instead of inventing a delete). The task
+    the caller reports "not found" instead of inventing a delete) and
+    `SourceDeleteBlocked` when an active task links it (nothing written, the
+    caller names the tasks). The task
     decision is made under the same locks as the deletion: the source row is
     locked, then the linked task rows, so a concurrent task edit or a second
     delete cannot interleave between "count the remaining links" and "pause".
@@ -108,20 +118,26 @@ async def delete_source(session: AsyncSession, *, source_id: int, tenant_id: int
     else:
         counts = {}
 
+    active = tuple(TaskRef(task_id=int(task.id), name=str(task.name)) for task in tasks if task.is_active)
+    if active:
+        # An active task reads this source on purpose: deleting the row under it
+        # would drain a scope the operator chose. Nothing is written.
+        return SourceDeleteBlocked(source_id=source_id, name=str(source.name), active_tasks=active)
+
     name = source.name
     # The row goes; `sources.analytics` and the m2m rows are `passive_deletes`,
     # so PostgreSQL removes them by FK cascade rather than the ORM loading them.
     await session.delete(source)
     await session.flush()
 
-    paused: list[PausedTask] = []
+    paused: list[TaskRef] = []
     for task in tasks:
         if counts.get(task.id, 0) > 1 or not task.is_active:
             # Either another explicit source survives (scope stays explicit and
             # narrower), or the task was already paused: nothing to widen.
             continue
         await _pause_task(session, task, source_name=name)
-        paused.append(PausedTask(task_id=task.id, name=task.name))
+        paused.append(TaskRef(task_id=task.id, name=task.name))
 
     return SourceDeletion(source_id=source_id, name=name, paused_tasks=tuple(paused))
 

@@ -1212,10 +1212,22 @@ Authorization: Bearer <token>
 
 **Permissions:** `source.delete`
 
-Deleting a source also deletes its analytics rows. A task that named that
-source, and named no other, is paused in the same transaction: an empty source
-set means "all active workspace sources", so leaving it empty would silently
-widen the task. A task that never named sources (all-active) is untouched.
+**Refused** `409 Conflict` while an active task still reads the source:
+
+```json
+{
+  "detail": {
+    "error": "source_in_active_task",
+    "task_ids": [2027]
+  }
+}
+```
+
+A source an active task uses is removed inside that task, where its scope is
+visible; the web page refuses the same way. A paused task does not block the
+delete, and a task that never named sources (all-active) is untouched.
+
+Deleting a source also deletes its analytics rows.
 
 ## Tasks
 
@@ -1604,3 +1616,25 @@ using the current password and does not require a workspace.
 Workspace team AI access uses CSRF-protected
 `POST /app/settings/members/{id}/ai`, with `enabled=1` or `0`. It is limited to the
 current workspace and the same delegation restrictions as member-role changes.
+
+### Operator financial exposure
+
+`GET /app/billing/exposure` is a read-only platform-operator page (the same
+`guard_superuser` rule as the queue page) pinned to the active workspace. It
+renders three independent projections and shows an explicit unavailable state
+instead of a fabricated zero when a read fails:
+
+- today's payer-bound dispatches for the workspace from the personal billing
+  ledger: settled, reserved, provider-reported and receipt-tariff reconstructed
+  USD, open reservations and unknown-price attempts. `complete` is false while
+  any of the last two is non-zero;
+- provider/model pairs with `cost_certainty=undefined` dispatched attempts in the
+  last 7 days, counted once per dispatch so a reconciliation does not inflate
+  exposure;
+- active catalog models whose ordinary tariff is 0/0 — an explicit free tariff
+  and an unconfigured default are indistinguishable there, so this is a review
+  list, not a claim of unknown pricing.
+
+No payer identity, prompt, credential or provider payload is rendered. Legacy
+attempts without payer attribution stay outside the ledger projection. The page
+performs no writes and creates no billing account or reservation.

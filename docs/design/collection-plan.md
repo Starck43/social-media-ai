@@ -67,6 +67,15 @@ cannot search) and a bounded note on the task page — while the sources that
 are readable keep collecting. The per-lane rows are the answer to "what did
 the run actually do": counts and bounds, never the rejected text.
 
+The mention phrases work the same way: the runtime owns those lanes too. Every
+phrase of `collection.queries` becomes a task-owned search lane outside a dry
+run (reused, never duplicated, never taken from another task), and
+`queries_match` decides the shape: `any` gives one lane per phrase, `all` gives
+one lane with the phrases joined — the platform's own conjunction, while the
+exact conjunction over the post text stays the text scope's job
+(`keywords_list` + `keywords_match`). A dry run creates nothing and reports
+the phrases that have no lane yet.
+
 The author-city filter (`city` + `mode`) stays in the model but is no longer
 offered in the form: in `prefer` an unknown city no longer parks a good post
 (a community declares no city), and the operator decides relevance by the

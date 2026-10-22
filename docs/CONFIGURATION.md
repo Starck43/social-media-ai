@@ -131,6 +131,9 @@ JOB_RETRY_BACKOFF_SECONDS=300
 # ─── Data retention ───────────────────────────────────────────
 DATA_RETENTION_MONTHS=1        # calendar months; minimum 1; deletion is irreversible
 
+# ─── Collection freshness ─────────────────────────────────────
+SOURCE_STALE_HOURS=24          # hours; an active source unchecked longer is reported stale
+
 # ─── LLM ──────────────────────────────────────────────────────
 LLM_REQUEST_DELAY=3000         # ms between requests (rate limit)
 LLM_DEFAULT_TEMPERATURE=0.3    # for analysis tasks
@@ -274,6 +277,12 @@ failure tracking and cookie-independent limits as a separate implementation task
 | Variable | Default | Description |
 |---|---|---|
 | `DATA_RETENTION_MONTHS` | `1` | Calendar months to keep analysis results (`ai_analytics`) and unanalysed raw content (`collected_items`). The daily `prune` task deletes older rows in each workspace, measured by last write, not publication date. Minimum `1`; startup fails on `0` or a non-integer. |
+
+### Collection freshness
+
+| Variable | Default | Description |
+|---|---|---|
+| `SOURCE_STALE_HOURS` | `24` | Hours after which an **active** source whose `last_checked` is older (or absent) is reported as stale on `/app/sources`: a banner counts them and each row is marked «устарел» or «не проверялся». Read-only — it never triggers a collection or changes a source. The same window is used by `SourceManager.get_sources_for_monitoring`. Minimum `1`; startup fails on a non-positive value. A source that was never checked is counted separately, so "older than N hours" is never claimed for it. |
 
 Kept regardless of age: analyses referenced by a bot action, the LLM attempt
 journal (`llm_attempts`, accounting evidence), and job rows with an operational

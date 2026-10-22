@@ -1,4 +1,4 @@
-{% from "web/_macros.html" import control, task_dates, task_fields, task_retention_fields, task_trigger_actions, task_collection_fields, task_targets, tenant_field, switch_toggle, check_card, check_mark %}
+{% from "web/_macros.html" import control, task_fields, task_retention_fields, task_trigger_actions, task_collection_fields, task_targets, tenant_field, switch_toggle, check_card, check_mark %}
 {% extends "web/base.html" %}
 {% block title %}Задачи — AI Monitor{% endblock %}
 {% block page_heading %}Задачи{% endblock %}
@@ -221,7 +221,7 @@
                 {{ tenant_field(is_superuser, filter_tenant_id) }}
                 {{ task_fields(job_types, "add", "task.job_type", "Хранение истории Jobs" if prefill_retention else "") }}
                 {{ task_retention_fields("add", "task.job_type") }}
-                {{ task_collection_fields(collection_defaults, "add", "task.job_type") }}
+                {{ task_collection_fields(collection_defaults, "add", "task.job_type", collection_defaults.start_date, collection_defaults.end_date) }}
 
                 <div>
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Расписание</label>
@@ -358,19 +358,19 @@
 
                 {# The same conditional targets as on the edit page: the
                    scenario's analysis types pick which payload keys the form
-                   asks for (param_registry.PAYLOAD_PARAMS); the inputs stay in
-                   the DOM so switching the scenario keeps what was typed. #}
+                   asks for (param_registry.PAYLOAD_PARAMS); the one hint line
+                   names the fields the current scenario uses. The inputs stay
+                   in the DOM so switching the scenario keeps what was typed. #}
                 <div class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3"
                      x-show="targetFields.length > 0" x-cloak>
                     <p class="text-sm text-slate-700 dark:text-slate-300">Цели анализа
-                        <span class="text-xs text-slate-600 dark:text-slate-400">— какие именно данные искать, требует выбранный сценарий</span>
+                        <span class="text-xs text-slate-600 dark:text-slate-400"
+                              x-text="targetsHint()">— какие данные искать, определяет выбранный сценарий</span>
                     </p>
                     <div class="grid grid-cols-2 gap-3">
                         {{ task_targets(target_fields, {}) }}
                     </div>
                 </div>
-
-                {{ task_dates("task", "task.job_type") }}
 
                 <template x-if="task.job_type === 'digest'">
                     <div class="ui-card space-y-4">
@@ -405,20 +405,42 @@
 
                 {# `x-if`, not `x-show`: these inputs belong to one job type and
                    must not reach the POST for the others — `_payload_from_form`
-                   does not gate them by type. #}
-                <div class="grid grid-cols-2 gap-3">
-                    <template x-if="task.job_type === 'analyze'">
+                   does not gate them by type. The selection part is the same
+                   trio as on the edit page: tracked users, the post-text
+                   phrases and their match mode. #}
+                <template x-if="task.job_type === 'analyze'">
+                    <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label for="add-tracked" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживать
-                                авторов</label>
+                            <label for="add-tracked" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживаемые
+                                авторы</label>
                             <input id="add-tracked" name="tracked_users" x-model="task.tracked_users"
                                    placeholder="vk:123456, vk:7890"
                                    class="{{ control() }}">
                             <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Только их материалы из выбранных
                                 источников: платформа:id. Пусто — материалы самих источников.</p>
                         </div>
-                    </template>
-                </div>
+                        <div>
+                            <label for="add-keywords" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Фразы
+                                в тексте поста</label>
+                            <input id="add-keywords" name="keywords_list" x-model="task.keywords_list"
+                                   placeholder="отчёт, дизайн интерьера"
+                                   class="{{ control() }}">
+                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Анализируются только записи, где есть
+                                эти фразы; на сбор не влияют.</p>
+                        </div>
+                        <div>
+                            <label for="add-keywords-match" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Совпадение
+                                фраз</label>
+                            <select id="add-keywords-match" name="keywords_match" x-model="task.keywords_match"
+                                    class="{{ control() }}">
+                                <option value="any">Любая из фраз</option>
+                                <option value="all">Все фразы</option>
+                            </select>
+                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Применяется к «Фразам в тексте поста»;
+                                без фраз ничего не отсекает.</p>
+                        </div>
+                    </div>
+                </template>
 
                 {% if perms and (perms.is_owner or perms.workspace_role in ['owner', 'admin']) %}
                 <template x-if="task.job_type === 'analyze'">
@@ -827,6 +849,7 @@
                 hashtags: "",
                 influencer_names: "",
                 keywords_list: "",
+                keywords_match: "any",
                 topic_list: "",
                 trigger_type: "",
                 trigger_keywords: "",
@@ -854,6 +877,10 @@
             },
             get targetFields() {
                 return TARGET_FIELDS.filter((f) => this.activeTargetTypes().includes(f.type));
+            },
+            targetsHint() {
+                if (!this.targetFields.length) return "— выбранный сценарий не требует целей анализа";
+                return "— для сценария активны: " + this.targetFields.map((f) => f.label.toLowerCase()).join(", ");
             },
         }
     }

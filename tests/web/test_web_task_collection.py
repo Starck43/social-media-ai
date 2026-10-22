@@ -28,6 +28,19 @@ from app.types import SourceType
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 
 
+def _input_with(page_text: str, *, name: str, value: str) -> re.Match[str] | None:
+    """A server-rendered input tag carrying the name and the value, in any order.
+
+    Alpine bindings (`x-model`) sit between `name` and `value` in the current
+    templates, so a fixed attribute-order literal breaks on every template
+    edit; the contract is the pair of attributes on one tag, not their order.
+    """
+    return re.search(
+        rf'<input(?=[^>]*\bname="{re.escape(name)}")(?=[^>]*\bvalue="{re.escape(value)}")[^>]*>',
+        page_text,
+    )
+
+
 def _name(prefix: str) -> str:
     return f"{prefix}{secrets.token_hex(4)}"
 
@@ -244,12 +257,28 @@ async def test_edit_page_round_trips_the_collection_block(client: AsyncClient) -
         assert re.search(r'name="collection_content_types" value="comments"[^>]*checked', page.text)
         assert re.search(r'name="collection_engagement_types" value="likes"[^>]*checked', page.text)
         assert not re.search(r'name="collection_engagement_types" value="reposts"[^>]*checked', page.text)
-        # The section headings the split editor promises.
-        assert "Кто искать" in page.text
+        # The section headings the split editor promises. The sources block is
+        # «Источники», and the section order is collect → sources → scenario →
+        # targets → selection; every heading is rendered exactly once before
+        # the next one.
+        headings = [
+            "Период сбора",
+            "Кто искать",
+            "Что искать",
+            "Лимиты комментариев",
+            # The shell nav labels a link «Источники» too; the section heading
+            # is the h3, so anchor on the closing tag.
+            "Источники</h3>",
+            "Сценарий для агента",
+            "Цели анализа",
+            "Отслеживаемые авторы",
+            "Фразы в тексте поста",
+        ]
+        positions = [page.text.find(heading) for heading in headings]
+        assert all(pos >= 0 for pos in positions), f"a promised heading is missing: {headings[positions.index(-1)]}"
+        assert positions == sorted(positions), "the sections must render in the split editor's order"
         assert "Кого искать" not in page.text
-        assert "Что искать" in page.text
-        assert "Где читать" in page.text
-        assert "Лимиты комментариев" in page.text
+        assert "Где читать" not in page.text
     finally:
         if task is not None and scenario is not None:
             await _cleanup(user, tenant_id, (AgentTask, task), (AgentScenario, scenario))
@@ -430,9 +459,10 @@ async def test_no_js_save_keeps_targets_dates_and_collection(client: AsyncClient
         )
         page = await client.get(f"/app/tasks/{task.id}/edit")
         assert page.status_code == 200
-        # Server-rendered values are what a no-JS submission carries.
-        assert 'name="brands" value="Coca Cola"' in page.text
-        assert 'name="keywords_list" value="жалоба"' in page.text
+        # Server-rendered values are what a no-JS submission carries; the
+        # attribute order inside the tag is not part of that contract.
+        assert _input_with(page.text, name="brands", value="Coca Cola")
+        assert _input_with(page.text, name="keywords_list", value="жалоба")
         assert 'name="start_date"' in page.text
         assert 'value="2026-09-01"' in page.text
         assert "Редактор требует JavaScript" not in page.text

@@ -274,10 +274,11 @@ class LinkTests(unittest.IsolatedAsyncioTestCase):
             await self.write(1, [5], replace=False)
         self.assertEqual(self.writes, [])
 
-    async def test_foreign_task_rejected(self):
+    async def test_foreign_task_is_a_no_op(self):
+        # A task the caller cannot see is not a partial write: dev admits this
+        # as a zero-row no-op, and the source set is never touched.
         self.task = None
-        with self.assertRaises(ValueError):
-            await self.write(999, [5], replace=True)
+        self.assertEqual(await self.write(999, [5], replace=True), 0)
         self.assertEqual(self.writes, [])
 
     async def test_valid_replacement_commits_once_and_invalidates_pending_snapshot(self):

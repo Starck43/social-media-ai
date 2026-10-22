@@ -163,12 +163,13 @@ async def test_the_sources_page_does_not_push_the_vk_login():
         await _drop(user, tenant_id)
 
 
-async def test_task_scoped_query_lane_is_hidden_from_the_global_source_list():
-    """A task's search lane is not a workspace source.
+async def test_task_scoped_query_lane_is_listed_with_its_owning_task_named():
+    """A task's search lane is on the list, marked as its task's own search.
 
-    The row exists so staged items keep a stable `source_id`, but showing it in
-    `/app/sources` would offer the operator a source they cannot collect from
-    and cannot delete without breaking the task.
+    The row is real (staged items keep a stable `source_id`), so hiding it
+    made the page show fewer sources than a task actually reads. It stays
+    distinct from a workspace source: the badge names the owning task, and
+    the list offers no delete for it — the lane is removed in its task.
     """
     from app.models import AgentTask
     from app.types import SourceType
@@ -206,8 +207,15 @@ async def test_task_scoped_query_lane_is_hidden_from_the_global_source_list():
 
         page = await client.get("/app/sources")
         assert page.status_code == 200
-        assert lane.name not in page.text, "a task-owned lane must not be offered as a workspace source"
+        assert lane.name in page.text, "a task-owned lane is listed with the workspace sources"
+        assert "Поиск задачи" in page.text, "the lane row is badged as a task's own search"
+        assert task.name in page.text, "the badge names the owning task"
+        assert f'href="/app/tasks/{task.id}"' in page.text, "the badge links to the owning task"
         assert visible.name in page.text
+        # The lane is never deletable from the list — it lives with its task;
+        # a workspace source next to it still gets the delete action.
+        assert f'action="/app/sources/{lane.id}/delete"' not in page.text
+        assert f'action="/app/sources/{visible.id}/delete"' in page.text
 
         # The lane is also outside the "all active sources" fallback: it belongs
         # to one task and must not become another task's collection target.
@@ -218,9 +226,7 @@ async def test_task_scoped_query_lane_is_hidden_from_the_global_source_list():
 
         with tenant_scope(tenant_id):
             active = await AgentTaskManager().get_workspace_active_source_ids()
-            resolved = await _resolve_sources(
-                SimpleNamespace(id=task.id, tenant_id=tenant_id, sources=[])
-            )
+            resolved = await _resolve_sources(SimpleNamespace(id=task.id, tenant_id=tenant_id, sources=[]))
         assert visible.id in active
         assert lane.id not in active
         resolved_ids = {source.id for source in resolved}
@@ -285,6 +291,18 @@ async def test_delete_removes_a_workspace_source_and_lands_on_the_list():
         assert 'data-confirm-title="Удалить источник?"' in detail.text
         listing = await client.get("/app/sources")
         assert f'action="/app/sources/{source.id}/delete"' in listing.text
+        # The list's delete action is an icon (a trash SVG with title and
+        # aria-label), not a text button: the shared confirm dialog carries
+        # the wording, so the bare icon stays safe.
+        delete_form = re.search(
+            rf'<form[^>]*action="/app/sources/{source.id}/delete".*?</form>',
+            listing.text,
+            re.DOTALL,
+        )
+        assert delete_form, "the list still offers the delete for a workspace source"
+        assert "<svg" in delete_form.group(0), "the delete control is the trash icon"
+        assert f'aria-label="Удалить источник {name}"' in delete_form.group(0)
+        assert ">Удалить</button>" not in re.sub(r"\s+", "", delete_form.group(0))
 
         token = await _csrf(client, f"/app/sources/{source.id}")
         resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
@@ -302,13 +320,14 @@ async def test_delete_removes_a_workspace_source_and_lands_on_the_list():
 
 
 @pytest.mark.tenancy
-async def test_delete_pauses_the_task_that_lost_its_last_source():
-    """The delete says *what else* it stopped, and the task really stops.
+async def test_delete_refuses_the_last_source_of_a_running_task():
+    """The last named source of a running task is not deleted under it.
 
-    An empty link set means "all active sources", so the last named source
-    cannot simply disappear: the task is paused in the same transaction and the
-    flash names it. Without that, the operator next sees a task they never
-    paused, pointed at every source in the workspace.
+    An empty link set means "all active sources", so letting the last explicit
+    source disappear would silently repoint a running task at the whole
+    workspace. The POST is refused with a flash naming the task and the way
+    out — remove the source inside the task; the row, the link and the running
+    task are all untouched.
     """
     from app.core.permissions import service_permission_scope
     from app.models import AgentTask
@@ -335,19 +354,144 @@ async def test_delete_pauses_the_task_that_lost_its_last_source():
         resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
 
         assert resp.status_code == 200
-        assert "удалён вместе с его аналитикой" in resp.text
-        assert f"«{task.name}»" in resp.text
-        assert "приостановлена: у неё не осталось выбранных источников" in resp.text
+        assert str(resp.url).endswith(f"/app/sources/{source.id}")
+        assert "используется активной задачей" in resp.text
+        assert f"№{task.id}" in resp.text
+        assert "удалите его в задаче" in resp.text
+        with tenant_scope(bypass=True):
+            assert await Source.objects.get(id=source.id) is not None
+        # The task was neither paused nor widened: still running, still on
+        # exactly the source the operator chose, with no pause note written.
         with tenant_scope(tenant_id):
             row = await AgentTask.objects.get(id=task.id)
         assert row is not None
-        assert row.is_active is False
+        assert row.is_active is True
+        assert row.last_error is None
+        with tenant_scope(tenant_id):
+            assert await AgentTaskManager().get_sources(task.id) == [source.id]
     finally:
         if source is not None:
             await _drop_source(source.id)
         if task is not None:
             with tenant_scope(tenant_id), service_permission_scope("agenttask", "delete"):
                 await AgentTask.objects.delete_by_id(task.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_delete_over_a_paused_task_removes_the_source_and_keeps_it_paused():
+    """A paused task does not block the delete — and stays paused after it.
+
+    The refusal exists for running tasks; a stopped task's schedule is off, so
+    the source may be retired. The delete must not resurrect the task either:
+    it stays paused, the link went with the row, and the flash reports only
+    the removal — no pause note the delete did not cause.
+    """
+    from app.core.permissions import service_permission_scope
+    from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcDelPaused")
+    task = source = None
+    try:
+        await _login(client, user.username)
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("paused-reader"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+            )
+        source = await _row_source(tenant_id, _name("paused-source"))
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTaskManager().set_sources(task.id, [source.id])
+            await AgentTaskManager().update_by_id(task.id, is_active=False)
+
+        token = await _csrf(client, f"/app/sources/{source.id}")
+        resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
+
+        assert resp.status_code == 200
+        assert str(resp.url).endswith("/app/sources")
+        assert "удалён вместе с его аналитикой" in resp.text
+        assert "приостановлена" not in resp.text
+        with tenant_scope(bypass=True):
+            assert await Source.objects.get(id=source.id) is None
+        source = None
+        with tenant_scope(tenant_id):
+            row = await AgentTask.objects.get(id=task.id)
+        assert row is not None
+        assert row.is_active is False, "the delete must not resurrect the paused task"
+        with tenant_scope(tenant_id):
+            assert await AgentTaskManager().get_sources(task.id) == []
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        if task is not None:
+            with tenant_scope(tenant_id), service_permission_scope("agenttask", "delete"):
+                await AgentTask.objects.delete_by_id(task.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_delete_refusal_names_every_active_task_in_the_plural():
+    """Two running tasks read the source: the flash names both, in plural.
+
+    Every task standing in the way has to give the source up inside itself,
+    so the operator must see all of them at once — the refusal lists every
+    active reader, not just the first.
+    """
+    from app.core.permissions import service_permission_scope
+    from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcDelPlural")
+    first = second = None
+    source = None
+    try:
+        await _login(client, user.username)
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            first = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("plural-reader-one"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+            )
+            second = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("plural-reader-two"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+            )
+        source = await _row_source(tenant_id, _name("shared-source"))
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTaskManager().set_sources(first.id, [source.id])
+            await AgentTaskManager().set_sources(second.id, [source.id])
+
+        token = await _csrf(client, f"/app/sources/{source.id}")
+        resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
+
+        assert resp.status_code == 200
+        assert str(resp.url).endswith(f"/app/sources/{source.id}")
+        assert "используется активными задачами" in resp.text
+        assert f"№{first.id}, №{second.id}" in resp.text
+        assert "удалите их в задачах" in resp.text
+        with tenant_scope(bypass=True):
+            assert await Source.objects.get(id=source.id) is not None
+        with tenant_scope(tenant_id):
+            rows = {task_id: await AgentTask.objects.get(id=task_id) for task_id in (first.id, second.id)}
+        assert all(row is not None and row.is_active is True for row in rows.values())
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        for task in (first, second):
+            if task is not None:
+                with tenant_scope(tenant_id), service_permission_scope("agenttask", "delete"):
+                    await AgentTask.objects.delete_by_id(task.id)
         await _drop(user, tenant_id)
 
 
@@ -442,6 +586,74 @@ async def test_delete_refuses_a_task_owned_query_lane():
 
 
 @pytest.mark.tenancy
+async def test_delete_refuses_a_source_an_active_task_reads():
+    """An active task's source is not deletable from the source pages.
+
+    The delete would silently drain the running task's scope, so the POST is
+    refused with a flash naming the task, and the detail page states the
+    reason instead of offering a button that can only fail later. A paused
+    task no longer blocks: its schedule is off, the source may be retired.
+    """
+    from app.core.permissions import service_permission_scope
+    from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcDelActive")
+    task = None
+    source = None
+    try:
+        await _login(client, user.username)
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("reader-task"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+                is_active=True,
+            )
+        source = await _row_source(tenant_id, _name("in-use"))
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTaskManager().set_sources(task.id, [source.id])
+
+        # The page says so up front: no delete action, the task named instead.
+        detail = await client.get(f"/app/sources/{source.id}")
+        assert detail.status_code == 200
+        assert f'action="/app/sources/{source.id}/delete"' not in detail.text
+        assert "Источник используется активной задачей" in detail.text
+        assert f"№{task.id}" in detail.text
+        assert "удалите его в задаче" in detail.text
+
+        # The POST is refused with a flash naming the task; the row survives.
+        token = await _csrf(client, f"/app/sources/{source.id}")
+        resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
+        assert resp.status_code == 200
+        assert "используется активной задачей" in resp.text
+        assert f"№{task.id}" in resp.text
+        with tenant_scope(bypass=True):
+            assert await Source.objects.get(id=source.id) is not None
+
+        # A paused task does not block the same delete.
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTaskManager().update_by_id(task.id, is_active=False)
+        token = await _csrf(client, f"/app/sources/{source.id}")
+        resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
+        assert resp.status_code == 200
+        assert "удалён вместе с его аналитикой" in resp.text
+        with tenant_scope(bypass=True):
+            assert await Source.objects.get(id=source.id) is None
+        source = None
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        if task is not None:
+            with tenant_scope(tenant_id), service_permission_scope("agenttask", "delete"):
+                await AgentTask.objects.delete_by_id(task.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
 async def test_delete_requires_the_source_delete_permission():
     """Without `source.delete` the button is gone and the POST is refused.
 
@@ -478,3 +690,135 @@ async def test_delete_requires_the_source_delete_permission():
         if member is not None:
             await User.objects.delete_user(member.id)
         await _drop(owner, tenant_id)
+
+
+# ── freshness ───────────────────────────────────────────────────────────────
+
+
+async def _checked_at(source: Source, when) -> None:
+    """Set a source's last check without going through the collector."""
+    with tenant_scope(bypass=True):
+        await Source.objects.update_by_id(source.id, last_checked=when)
+
+
+@pytest.mark.tenancy
+async def test_sources_page_reports_stale_and_never_checked_sources():
+    """A quiet source is the operator's real question: which one, and since when.
+
+    The window is `SOURCE_STALE_HOURS`; a source that was never checked is
+    counted separately, because "older than N hours" would claim a check that
+    never happened. An inactive source is not stale — nothing is expected of it.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcFresh")
+    created = []
+    try:
+        await _login(client, user.username)
+        now = datetime.now(timezone.utc)
+        fresh = await _row_source(tenant_id, _name("fresh"))
+        created.append(fresh.id)
+        await _checked_at(fresh, now - timedelta(hours=1))
+        stale = await _row_source(tenant_id, _name("stale"))
+        created.append(stale.id)
+        await _checked_at(stale, now - timedelta(hours=30))
+        never = await _row_source(tenant_id, _name("never"))
+        created.append(never.id)
+        paused = await _row_source(tenant_id, _name("paused"))
+        created.append(paused.id)
+        with tenant_scope(bypass=True):
+            await Source.objects.update_by_id(paused.id, is_active=False, last_checked=now - timedelta(hours=100))
+
+        page = await client.get("/app/sources")
+        assert page.status_code == 200
+        assert "2 из 3 активных источников не проверялись дольше 24 ч" in page.text
+        assert "из них 1 — ни разу" in page.text
+        # Per-row state: the stale one and the never-checked one are marked, the
+        # fresh one is not.
+        assert "устарел" in page.text
+        assert "не проверялся" in page.text
+        assert f'<a href="/app/sources/{fresh.id}"' in page.text
+        fresh_row = page.text.split(f'<a href="/app/sources/{fresh.id}"', 1)[1].split("</tr>", 1)[0]
+        assert "устарел" not in fresh_row and "не проверялся" not in fresh_row
+    finally:
+        for source_id in created:
+            await _drop_source(source_id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_sources_page_hides_the_freshness_banner_when_everything_is_checked():
+    from datetime import datetime, timezone
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcFreshOk")
+    source = None
+    try:
+        await _login(client, user.username)
+        source = await _row_source(tenant_id, _name("checked"))
+        await _checked_at(source, datetime.now(timezone.utc))
+
+        page = await client.get("/app/sources")
+        assert page.status_code == 200
+        assert "не проверялись дольше" not in page.text
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_the_freshness_window_comes_from_the_setting(monkeypatch):
+    """The hours are configured, not hard-coded in the page or the template."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SOURCE_STALE_HOURS", 2)
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcFreshWin")
+    source = None
+    try:
+        await _login(client, user.username)
+        source = await _row_source(tenant_id, _name("three-hours"))
+        await _checked_at(source, datetime.now(timezone.utc) - timedelta(hours=3))
+
+        page = await client.get("/app/sources")
+        assert "не проверялись дольше 2 ч" in page.text
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_the_freshness_signal_is_hidden_without_source_view(monkeypatch):
+    """`source.view` gates the signal, not just the page's navigation entry."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.web import sources as sources_web
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcFreshAcl")
+    source = None
+    try:
+        await _login(client, user.username)
+        source = await _row_source(tenant_id, _name("stale-hidden"))
+        await _checked_at(source, datetime.now(timezone.utc) - timedelta(hours=48))
+
+        original = sources_web.perms_can
+        monkeypatch.setattr(
+            sources_web,
+            "perms_can",
+            lambda request, model, action: False if model == "source" else original(request, model, action),
+        )
+
+        page = await client.get("/app/sources")
+        assert page.status_code == 200
+        assert "не проверялись дольше" not in page.text
+        assert "устарел" not in page.text
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        await _drop(user, tenant_id)

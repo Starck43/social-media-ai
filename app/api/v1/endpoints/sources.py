@@ -146,10 +146,13 @@ async def delete_source(
     source_id: int,
     _user = Depends(require_model_perm("source", ActionType.DELETE)),
 ):
-    """Delete a source; a task left without sources is paused, not widened."""
+    """Delete a source; refused while an active task still reads it."""
     from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
-    from app.services.collection.source_deletion import delete_source as delete_workspace_source
+    from app.services.collection.source_deletion import (
+        SourceDeleteBlocked,
+        delete_source as delete_workspace_source,
+    )
 
     source = await Source.objects.get(id=source_id)
     if source is None:
@@ -166,5 +169,15 @@ async def delete_source(
                 removal = await delete_workspace_source(session, source_id=source_id, tenant_id=source.tenant_id)
     finally:
         await session.close()
+    if isinstance(removal, SourceDeleteBlocked):
+        # The source is still an active task's scope: the same rule the web
+        # enforces, so a client cannot delete what the operator's page refuses.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "source_in_active_task",
+                "task_ids": [task.task_id for task in removal.active_tasks],
+            },
+        )
     if removal is None:
         raise HTTPException(status_code=404, detail="Source not found")

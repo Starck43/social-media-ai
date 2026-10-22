@@ -4,6 +4,7 @@ import asyncio
 import copy
 import unittest
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -26,6 +27,7 @@ class Column:
     def __ge__(self, value): return self.name, 'ge', value
     def __gt__(self, value): return self.name, 'gt', value
     def is_(self, value): return self.name, 'is', value
+    def in_(self, values): return self.name, 'in', values
     def startswith(self, value): return self.name, 'prefix', value
 
 
@@ -41,7 +43,7 @@ class Source:
 class Job:
     id=Column('id');tenant_id=Column('tenant_id');status=Column('status');locked_at=Column('locked_at')
     run_at=Column('run_at');attempts=Column('attempts');max_attempts=Column('max_attempts');error=Column('error')
-    created_at=Column('created_at');initiated_by_user_id=Column('initiated_by_user_id')
+    created_at=Column('created_at');initiated_by_user_id=Column('initiated_by_user_id');agent_task_id=Column('agent_task_id')
 
 
 class Query:
@@ -49,6 +51,8 @@ class Query:
     def where(self,*criteria): self.criteria.extend(criteria);return self
     def options(self,*options): return self
     def with_for_update(self,*,skip_locked): self.skip=skip_locked;return self
+    def order_by(self,*criteria): return self
+    def limit(self,count): return self
 
 
 class Transaction:
@@ -81,6 +85,14 @@ class Session:
             return SimpleNamespace(scalars=lambda:SimpleNamespace(all=lambda:rows))
         if query.target is Source.id:
             return SimpleNamespace(scalars=lambda:SimpleNamespace(all=lambda:list(self.fixture.active_sources)))
+        if query.target is Job:
+            # Plain (non-locking) read of the task's queued/running occurrence:
+            # must not take the fixture lock the admission already holds.
+            own=[job for job in self.fixture.jobs if all(
+                (getattr(job,name,None) in value if op=='in' else getattr(job,name,None)==value)
+                for name,op,value in query.criteria)]
+            own=sorted(own,key=lambda job:job.id)[:1]
+            return SimpleNamespace(scalars=lambda:SimpleNamespace(first=lambda:own[0] if own else None))
         if query.skip is True and self.fixture.lock.locked():
             return SimpleNamespace(scalar_one_or_none=lambda:None)
         await self.fixture.lock.acquire();self.locked=True
@@ -95,6 +107,30 @@ class Session:
             self.fixture.insert_entered.set();await self.fixture.insert_release.wait()
         if self.fixture.flush_error: raise self.fixture.flush_error
     async def refresh(self,row): pass
+    # Inert endpoints for the with_db_session double; commit/rollback semantics
+    # live in begin()/Transaction above.
+    async def commit(self): pass
+    async def rollback(self): pass
+
+
+def with_db_session_double(factory):
+    # Double of app.core.database.with_db_session (the real one is never
+    # imported here): explicit non-None session passes through; otherwise the
+    # call owns a fake session, commits on success and rolls back + re-raises.
+    def with_db_session(func):
+        @wraps(func)
+        async def wrapper(self,*args,**kwargs):
+            if kwargs.get('session') is not None:
+                return await func(self,*args,**kwargs)
+            async with factory() as session:
+                kwargs['session']=session
+                try:
+                    result=await func(self,*args,**kwargs)
+                    await session.commit();return result
+                except Exception:
+                    await session.rollback();raise
+        return wrapper
+    return with_db_session
 
 
 class Base:
@@ -135,7 +171,7 @@ class Fixture:
             job_type='learn',payload={'original':1},sources=[],agent_scenario=None,
             last_run_at=None,last_status='failed',last_error='old',trigger_type=None,trigger_config={},
             action_type=None,agent_scenario_id=None,blacklist=[],whitelist=[],rate_limit_per_hour=None,
-            cooldown_seconds=None)
+            cooldown_seconds=None,dry_run=False)
         context=SimpleNamespace(current_tenant_id=lambda:self.tenant,is_bypass=lambda:self.bypass,TenantContextError=ContextError)
         config=SimpleNamespace(settings=SimpleNamespace(JOB_MAX_ATTEMPTS=3,SCHEDULER_TIMEZONE='UTC'))
         class LocalBase(Base):pass
@@ -162,7 +198,8 @@ class Fixture:
             'app.models.source':SimpleNamespace(Source=Source),
             'app.jobs.source_activity':SimpleNamespace(SOURCE_JOB_TYPES={'collect','analyze'},SourceJobBusy=SourceJobBusy),
             'app.models.managers.job_manager':SimpleNamespace(JobManager=self.job_module.JobManager),
-            'app.core.database':SimpleNamespace(async_session_maker=lambda:Session(self)),
+            'app.core.database':SimpleNamespace(async_session_maker=lambda:Session(self),
+                with_db_session=with_db_session_double(lambda:Session(self))),
             'sqlalchemy.orm':SimpleNamespace(selectinload=lambda value:value),
             'app.tasks.cron':SimpleNamespace(next_run_at=cron)}
         self.module=load('app.models.managers._closure_tasks','app/models/managers/agent_task_manager.py',imports)
@@ -193,7 +230,9 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
             if not first.done():first.cancel()
             await asyncio.gather(first,return_exceptions=True)
         self.assertEqual(len(f.jobs),1)
-        self.assertTrue(all(query.skip is True for query in f.queries))
+        # Every row-locking query must still skip instead of blocking; the
+        # scheduled occurrence pre-check is a plain non-locking read.
+        self.assertTrue(all(query.skip is True for query in f.queries if query.skip is not None))
     async def test_insert_error_rolls_back_schedule_and_job(self):
         f=self.fixture;before=copy.deepcopy(vars(f.row));f.flush_error=RuntimeError('insert failure')
         with self.assertRaises(RuntimeError):await f.admit()

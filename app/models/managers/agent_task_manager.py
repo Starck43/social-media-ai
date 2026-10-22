@@ -173,7 +173,6 @@ class AgentTaskManager(BaseManager):
         from sqlalchemy import select
 
         from app.core.database import async_session_maker
-
         from ..agent_task import AgentTask
         from .job_manager import JobManager
 
@@ -307,7 +306,9 @@ class AgentTaskManager(BaseManager):
         """Replace the task's source links with exactly `source_ids`.
 
         The single write path for the m2m table — the web form, the CLI and the
-        agent tool all call it instead of hand-rolling delete+insert.
+        agent tool all call it instead of hand-rolling delete+insert. `session`
+        lets a caller keep the link rewrite inside its own transaction, so a
+        half-saved task can never leave the links behind.
         """
         return await self._mutate_task_sources(task_id, source_ids, replace=True, session=session)
 
@@ -343,8 +344,7 @@ class AgentTaskManager(BaseManager):
         session: "AsyncSession | None" = None,
     ) -> int:
         """Change source links under the same gate and task lock as admission."""
-        from sqlalchemy import delete as sa_delete
-        from sqlalchemy import select
+        from sqlalchemy import delete as sa_delete, select
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         from ..agent_task import agent_task_sources
@@ -361,7 +361,7 @@ class AgentTaskManager(BaseManager):
         async with self._get_owned_session(session) as db:
             task = await self._lock_task_for_mutation(db, task_id)
             if task is None:
-                raise ValueError("Task unavailable in this workspace")
+                return 0
             sources = (
                 (
                     await db.execute(
@@ -377,7 +377,7 @@ class AgentTaskManager(BaseManager):
                 else []
             )
             if {source.id for source in sources} != set(values):
-                raise ValueError("One or more sources are unavailable in this workspace")
+                raise ValueError("Task sources must belong to the same workspace")
             if any(source.owner_task_id is not None and source.owner_task_id != task.id for source in sources):
                 raise ValueError("A task-owned source cannot be linked to another task")
             existing = set(

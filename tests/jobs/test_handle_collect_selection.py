@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.jobs import handlers as module
+from app.types import SourceType
 
 ROOT = Path(__file__).resolve().parents[2]
 COLLECTOR_PATH = "app.services.monitoring.collector.ContentCollector"
@@ -58,6 +59,9 @@ def env(monkeypatch):
         external_id="wall",
         params={},
         tenant_id=1,
+        # The fields the run's evidence step reads to classify the lane a
+        # source reports under: a group wall reports the wall lane.
+        source_type=SourceType.GROUP,
         platform=SimpleNamespace(platform_type="vk"),
     )
     task = SimpleNamespace(id=5, payload={}, tenant_id=1, agent_scenario=None, trigger_config=None)
@@ -66,12 +70,16 @@ def env(monkeypatch):
     monkeypatch.setattr(module, "_resolve_sources", AsyncMock(return_value=[source]))
     # `ContentCollector()` внутри обработчика — тот же двойник.
     monkeypatch.setattr(COLLECTOR_PATH, lambda: collector)
+    # The lane-evidence write goes through the ORM; it is doubled here so the
+    # panic guards below stay meaningful for everything else the run touches.
+    record_lane = AsyncMock(return_value=None)
+    monkeypatch.setattr("app.services.collection.lane_runs.record_lane_run", record_lane)
     # Прогресс пишет в строку Job через БД — здесь это чистые заглушки.
     progress = SimpleNamespace(step=AsyncMock(), update_current=AsyncMock(), begin_phase=AsyncMock())
     monkeypatch.setattr("app.jobs.progress.step", progress.step)
     monkeypatch.setattr("app.jobs.progress.update_current", progress.update_current)
     monkeypatch.setattr("app.jobs.progress.begin_phase", progress.begin_phase)
-    return SimpleNamespace(collector=collector, source=source, task=task, progress=progress)
+    return SimpleNamespace(collector=collector, source=source, task=task, progress=progress, record_lane=record_lane)
 
 
 @pytest.fixture(autouse=True)
@@ -171,3 +179,44 @@ class TestMonitoredUsersIsGone:
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and "monitored" in node.value
         }
         assert literals == set(), f"в обработчике остался ключ monitored: {sorted(literals)}"
+
+
+class TestLaneEvidenceClassifiesTheSource:
+    """The per-source evidence step reads the source's own type and platform.
+
+    One row per collected source is written beside the per-source counters;
+    which lane it names is decided from the source, so the double carries the
+    fields the handler reads (`source_type`, `platform`).
+    """
+
+    def test_a_wall_source_reports_the_wall_lane(self, env):
+        """A group wall reports `wall_posts` under its platform and id."""
+        stats = _collect(env)
+
+        env.record_lane.assert_awaited_once()
+        kwargs = env.record_lane.await_args.kwargs
+        assert kwargs["lane_id"] == "wall:vk:11"
+        assert kwargs["lane_type"] == "wall_posts"
+        assert kwargs["query"] is None
+        assert kwargs["tenant_id"] == 1
+        assert kwargs["task_id"] == 5
+        assert kwargs["fetched"] == 3, "the evidence row mirrors the per-source counter"
+        assert stats["per_source"][0]["items"] == 3, "the counters stay beside the evidence"
+
+    @pytest.mark.parametrize("source_type", [None, "album"], ids=["unreadable", "unmodelled"])
+    def test_a_source_with_no_readable_type_does_not_fail_the_run(self, env, source_type):
+        """Evidence classifies defensively: no lane, and the run is unaffected.
+
+        The type is untrusted row data — `None` or a collector special the
+        planner does not model means the source simply reports no lane, and
+        the collection itself must not notice.
+        """
+        env.source.source_type = source_type
+
+        stats = _collect(env)
+
+        env.record_lane.assert_not_awaited()
+        assert stats["sources"] == 1
+        assert stats["items"] == 3
+        assert stats["per_source"][0]["source_id"] == env.source.id
+        assert stats["per_source"][0]["outcome"] == "collected"

@@ -191,6 +191,14 @@ the source. All are fixed here; none is claimed as PostgreSQL acceptance.
   any owner and skipped provider activity; it now passes the same
   ownership/activity gate and only bypasses the workspace tier. A foreign or
   unknown name falls back to auto-resolution inside the acting catalog.
+- **Tariff identity.** `AIAnalyzer._price_usage` priced a provider-reported model
+  name with `filter(model_id=..., is_active=True).first()` — across every owner,
+  so with personal catalogs a workspace could inherit another user's rates. It
+  now resolves the exact row the attempt used (`request.llm_model_id`, written
+  before the HTTP call); a legacy name-only envelope is scoped to the acting
+  catalog and stays unknown when the name is ambiguous. `attempt_journal`'s
+  unique provider/model rule is unchanged and already refuses to price an
+  ambiguous identity.
 - **Documentation.** Remaining global-catalog statements were corrected in
   `MODELS.md`, `TENANCY.md`, `API.md`, `ADMIN.md`, `CONFIGURATION.md`,
   `AGENT.md`, `DIGEST.md` and `.env.example`. The digest table had claimed

@@ -68,6 +68,37 @@ def _analysis_error_kind(error: Exception) -> str:
     return "unexpected_error"
 
 
+async def _resolve_usage_tariff(entry: dict[str, Any]):
+    """The tariff row for one usage entry, or None when it is not knowable.
+
+    `request.llm_model_id` is written before the HTTP attempt, so it names
+    exactly the row whose rates priced that call. A legacy envelope without it
+    falls back to the provider-reported model string: names are no longer unique
+    across personal catalogs, so the lookup is scoped to the acting owner and an
+    ambiguous name stays unknown instead of borrowing another owner's rates.
+    """
+    row_id = entry.get("llm_model_row_id")
+    if isinstance(row_id, int) and not isinstance(row_id, bool) and row_id > 0:
+        return await LLMModel.objects.select_related("provider").get(id=row_id)
+
+    model_id = entry.get("model_id")
+    if not model_id:
+        return None
+    try:
+        from app.core.personal_catalog_context import current_catalog_owner_id
+
+        owner_id = current_catalog_owner_id()
+    except Exception:
+        # Cost accounting can run outside a worker/actor scope. An unbound
+        # catalog keeps the legacy unique-name rule; it never guesses a row.
+        owner_id = None
+    query = LLMModel.objects.filter(model_id=model_id, is_active=True)
+    if owner_id is not None:
+        query = query.filter(owner_user_id=owner_id)
+    rows = await query
+    return rows[0] if len(rows) == 1 else None
+
+
 class AIAnalyzer:
     """
     AI Analyzer with multi-LLM support.
@@ -1214,6 +1245,12 @@ class AIAnalyzer:
     async def _price_usage(self, usage_by_result: list[dict[str, Any]]) -> Decimal | None:
         """Use provider totals or known tariffs; unresolved included spend stays NULL.
 
+        The tariff row is resolved by identity (`request.llm_model_id`), never by
+        "first row with this name": model rows are user-owned, so a name match
+        across catalogs would price this workspace with someone else's rates. A
+        legacy envelope without the row id stays owner-scoped, and an ambiguous
+        name is unknown cost rather than a guess.
+
         Tariff fallback does not account for cache categories or other pricing
         modifiers. Returns USD cents, quantised to the scale of the
         `estimated_cost` column. Decimal throughout: tariffs are USD per 1K with
@@ -1234,7 +1271,7 @@ class AIAnalyzer:
             if not model_id or (req_tokens <= 0 and resp_tokens <= 0):
                 continue
             try:
-                model = await LLMModel.objects.filter(model_id=model_id, is_active=True).first()
+                model = await _resolve_usage_tariff(entry)
             except Exception as e:
                 logger.warning(f"Cost lookup failed for model {model_id}: {e}")
                 return None
@@ -1680,6 +1717,9 @@ class AIAnalyzer:
                 total_response_tokens += resp_tokens
                 usage_entry = {
                     "model_id": result.get("request", {}).get("model"),
+                    # Allocated before the HTTP attempt; identifies the exact row
+                    # whose rates priced this call, unlike a name shared by owners.
+                    "llm_model_row_id": result.get("request", {}).get("llm_model_id"),
                     "request_tokens": req_tokens,
                     "response_tokens": resp_tokens,
                 }

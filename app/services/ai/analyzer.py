@@ -1594,6 +1594,18 @@ class AIAnalyzer:
                     self.filtered_skipped += 1
                     return None
 
+            # A model's own `is_relevant: false` keeps the post out exactly
+            # like `is_meaningful == false` (owner decision 2026-10-21). No
+            # relevance_filter gate: the field only exists where a scenario
+            # declared it. Only a real boolean False filters — a missing
+            # field, None, a string or a number (untrusted model output)
+            # never does.
+            is_relevant = ((analysis_results.get("text_analysis") or {}).get("parsed", {}) or {}).get("is_relevant")
+            if type(is_relevant) is bool and not is_relevant:
+                logger.info(f"Relevance filter skipped source {source.id}: is_relevant={is_relevant}")
+                self.filtered_skipped += 1
+                return None
+
         existing_analysis = None
         if reported_partial is True or media_coverage_limited is True:
             existing_analysis = await AIAnalytics.objects.filter(

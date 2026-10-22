@@ -301,6 +301,146 @@ def _schema_error(error: Exception) -> LaneMigrationError | None:
     return None
 
 
+def _brief(text: Any, limit: int = 120) -> str:
+    """One bounded, single-line operator fragment."""
+    return " ".join(str(text or "").split())[:limit]
+
+
+@dataclass(frozen=True)
+class QueryLaneOutcome:
+    """One query lane's fate in an ensure pass. `missing` writes nothing."""
+
+    external_id: str
+    query: str
+    action: str  # created | reused | refused | missing
+    source_id: int | None = None
+    reason: str | None = None  # bounded refusal reason
+
+
+@dataclass(frozen=True)
+class QueryLanesResult:
+    """What an ensure pass did — or would do, in a dry run."""
+
+    outcomes: tuple[QueryLaneOutcome, ...] = ()
+    created_source_ids: tuple[int, ...] = ()
+    reused_source_ids: tuple[int, ...] = ()
+    # m2m links written this pass; a re-run with everything linked writes none.
+    linked_source_ids: tuple[int, ...] = ()
+    # Bounded reports: `refused` names another task's lane, `missing` the
+    # phrases still without a lane (a dry run's answer).
+    refused: tuple[str, ...] = ()
+    missing: tuple[str, ...] = ()
+
+
+async def ensure_query_lanes(
+    task: Any,
+    specs: Sequence[QuerySourceSpec],
+    *,
+    platform: str,
+    dry_run: bool = False,
+) -> QueryLanesResult:
+    """Make sure the task's query lanes exist and are linked. Idempotent.
+
+    The runtime counterpart of `apply_lane_migration`'s lane half — one rule
+    set for both: an existing workspace row with the spec's external id is
+    reused, never duplicated; a lane owned by another task is refused, never
+    taken; nothing is ever deleted; a dry run writes nothing and reports the
+    phrases still without a lane. Link state is checked against the task's
+    loaded sources, so a steady-state re-run performs no writes at all.
+    """
+    task_id = int(task.id)
+    platform_key = " ".join(str(platform or "").split()).lower()
+    if not platform_key:
+        raise LaneMigrationError("no platform given: a query lane needs one")
+
+    from app.models import Platform, Source
+    from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.types import SourceType
+
+    try:
+        platform_row = await Platform.objects.filter(platform_type=platform_key).first()
+        if platform_row is None:
+            raise LaneMigrationError(f"platform '{platform_key}' is not configured")
+
+        external_ids = [spec.external_id for spec in specs]
+        by_external: dict[str, Any] = {}
+        if external_ids:
+            rows = await Source.objects.filter(
+                tenant_id=int(task.tenant_id),
+                platform_id=platform_row.id,
+                external_id__in=external_ids,
+            )
+            by_external = {row.external_id: row for row in rows}
+        # `add_sources` keeps the links that already exist; only lanes new to
+        # the task need a write, which is what keeps a steady-state run
+        # read-only.
+        linked = {int(source.id) for source in getattr(task, "sources", None) or []}
+
+        outcomes: list[QueryLaneOutcome] = []
+        created: list[int] = []
+        reused: list[int] = []
+        refused: list[str] = []
+        missing: list[str] = []
+        to_link: list[int] = []
+        for spec in specs:
+            common = {"external_id": spec.external_id, "query": spec.query}
+            row = by_external.get(spec.external_id)
+            if row is not None:
+                owner = getattr(row, "owner_task_id", None)
+                if owner is not None and int(owner) != task_id:
+                    # Another task's lane is never taken: it would be searched
+                    # twice and both tasks' evidence would be wrong.
+                    reason = f"{_brief(spec.query)}: source {row.id} belongs to task {int(owner)}"
+                    refused.append(reason)
+                    outcomes.append(QueryLaneOutcome(**common, action="refused", source_id=int(row.id), reason=reason))
+                    continue
+                reused.append(int(row.id))
+                if not dry_run and int(row.id) not in linked:
+                    to_link.append(int(row.id))
+                outcomes.append(QueryLaneOutcome(**common, action="reused", source_id=int(row.id)))
+                continue
+            if dry_run:
+                # The stage-B contract: a query source is created only outside
+                # a dry run; the note reports the phrases with no lane yet.
+                missing.append(spec.query)
+                outcomes.append(QueryLaneOutcome(**common, action="missing"))
+                continue
+            if int(spec.owner_task_id) != task_id:
+                reason = f"{_brief(spec.query)}: spec names task {int(spec.owner_task_id)}, not this task"
+                refused.append(reason)
+                outcomes.append(QueryLaneOutcome(**common, action="refused", reason=reason))
+                continue
+            lane = await Source.objects.create(
+                platform_id=platform_row.id,
+                name=spec.name,
+                source_type=SourceType.SEARCH,
+                external_id=spec.external_id,
+                params=dict(spec.params),
+                owner_task_id=task_id,
+                is_active=True,
+            )
+            created.append(int(lane.id))
+            to_link.append(int(lane.id))
+            outcomes.append(QueryLaneOutcome(**common, action="created", source_id=int(lane.id)))
+
+        if to_link:
+            await AgentTaskManager().add_sources(task_id, to_link)
+
+        return QueryLanesResult(
+            outcomes=tuple(outcomes),
+            created_source_ids=tuple(created),
+            reused_source_ids=tuple(reused),
+            linked_source_ids=tuple(to_link),
+            refused=tuple(refused),
+            missing=tuple(missing),
+        )
+    except (ProgrammingError, DBAPIError) as error:
+        guarded = _schema_error(error)
+        if guarded is not None:
+            raise guarded from error
+        raise
+
+
 def _dedupe_phrases(queries: Sequence[str]) -> list[str]:
     """Phrases as the parser normalises them: one space, case-insensitive key."""
     result: list[str] = []

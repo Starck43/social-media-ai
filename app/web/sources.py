@@ -195,6 +195,7 @@ async def sources_list(request: Request):
     # One pass, one set of queries: `_connection_banners` reads the same mapping.
     source_connections = await source_connection_statuses(sources)
     connection_banners = _connection_banners(sources, source_connections)
+    stale_sources = await _stale_sources_summary(request, sources)
 
     # A lane row (`owner_task_id`) names its owning task: the marker on the row
     # explains why a source nobody added is on the page and why it is deleted
@@ -237,6 +238,7 @@ async def sources_list(request: Request):
         source_connections=source_connections,
         connection_banners=connection_banners,
         lane_tasks=lane_tasks,
+        stale_sources=stale_sources,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
@@ -774,6 +776,47 @@ async def _resolve_source_window(source) -> dict:
 
 def _last_checked_label(last_checked) -> str:
     return human_datetime(last_checked, empty="не проверялся")
+
+
+def _stale_window_hours() -> int:
+    """Configured freshness window for an active source, in hours."""
+    from app.core.config import settings
+
+    return int(getattr(settings, "SOURCE_STALE_HOURS", 24))
+
+
+async def _stale_sources_summary(request: Request, sources: list) -> dict | None:
+    """Stale subset of the rows this page renders, or None without `source.view`.
+
+    `SourceManager.get_sources_for_monitoring` is the one staleness predicate —
+    active, and never checked or checked before `SOURCE_STALE_HOURS` — so the
+    page cannot drift from what the rest of the system calls "needs
+    monitoring". It answers for the whole visible tenant, so its ids are
+    intersected with the rendered rows: a superuser page counts the sources it
+    actually lists, not every workspace's.
+
+    A source that was never checked is counted and named separately. Filing it
+    under "stale" would claim a check that never happened; calling it "fresh"
+    because there is no timestamp to compare is the opposite lie.
+    """
+    if not perms_can(request, "source", "view"):
+        return None
+
+    from app.models.managers.source_manager import SourceManager
+
+    hours = _stale_window_hours()
+    stale_ids = {row.id for row in await SourceManager().get_sources_for_monitoring(hours_since_check=hours)}
+    rows = [row for row in sources if row.id in stale_ids]
+    active_total = sum(1 for row in sources if row.is_active)
+    never_ids = frozenset(row.id for row in rows if row.last_checked is None)
+    return {
+        "hours": hours,
+        "count": len(rows),
+        "active_total": active_total,
+        "never": len(never_ids),
+        "ids": frozenset(row.id for row in rows),
+        "never_ids": never_ids,
+    }
 
 
 def _window_kwargs(bounds: tuple) -> dict:

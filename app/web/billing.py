@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.models.managers.personal_billing_manager import PersonalBillingError, PersonalBillingUnavailable
 from app.services.billing import (
@@ -13,9 +14,14 @@ from app.services.billing import (
     consent_current_user_as_task_payer,
     current_personal_account,
     current_personal_spend_summary,
+    unpriced_attempt_models,
+    workspace_spend_summary,
+    zero_price_active_models,
 )
 
-from .deps import ensure_csrf
+from .deps import add_flash, ensure_csrf, guard_superuser, render
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/billing")
 
@@ -39,6 +45,47 @@ def _account_payload(account) -> dict:
 
 def _error(status_code: int, code: str) -> JSONResponse:
     return JSONResponse({"ok": False, "error": code}, status_code=status_code, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/exposure")
+async def billing_exposure(request: Request):
+    """Operator view of unpriced model evidence and workspace spend.
+
+    Platform-operator surface only: the same `guard_superuser` rule as the queue
+    page. The workspace pin keeps the ledger read inside the selected tenant;
+    the model catalog is global and read-only. A failed read is shown as
+    unavailable instead of a fabricated zero.
+    """
+    denied = guard_superuser(request, back="/app/jobs")
+    if denied is not None:
+        return denied
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if type(tenant_id) is not int or tenant_id <= 0:
+        add_flash(request, "error", "Выберите пространство для просмотра финансовой экспозиции")
+        return RedirectResponse("/app/jobs", status_code=302)
+
+    spend = None
+    unpriced = None
+    zero_price = None
+    unavailable = False
+    try:
+        spend = await workspace_spend_summary(tenant_id)
+        unpriced = await unpriced_attempt_models(tenant_id)
+        zero_price = await zero_price_active_models()
+    except Exception:  # noqa: BLE001 - a read failure must not fabricate zeros
+        logger.exception("billing_exposure_read_failed")
+        unavailable = True
+
+    return render(
+        request,
+        "web/billing_exposure.html",
+        section="jobs",
+        spend=spend,
+        unpriced=unpriced,
+        zero_price=zero_price,
+        exposure_unavailable=unavailable,
+        exposure_days=7,
+    )
 
 
 @router.get("/account")

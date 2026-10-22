@@ -54,6 +54,17 @@
                 {% endfor %}
             </div>
             {% endif %}
+            {# Freshness belongs next to the sources: a quiet source is usually a
+               stale one, and "which of them?" is the question this table answers.
+               The window comes from SOURCE_STALE_HOURS, never from the template. #}
+            {% if stale_sources and stale_sources.count %}
+            <div class="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
+                <span class="text-sm text-amber-900 dark:text-amber-200">
+                    {{ stale_sources.count }} из {{ stale_sources.active_total }} активных источников не проверялись дольше {{ stale_sources.hours }} ч{% if stale_sources.never %}, из них {{ stale_sources.never }} — ни разу{% endif %}.
+                    Устаревший источник помечен в таблице.
+                </span>
+            </div>
+            {% endif %}
             {% if perms and perms.can('source', 'create') %}
             <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><button @click="openAdd = true"
                     class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
@@ -142,6 +153,15 @@
                     <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">активен</span>
                     {% else %}
                     <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">неактивен</span>
+                    {% endif %}
+                    {% if stale_sources and source.id in stale_sources.ids %}
+                    {# "Ни разу" is its own state: the row has no timestamp to be
+                       old, and claiming a check that never happened would be the
+                       same mistake as calling it fresh. #}
+                    <span class="ml-1 rounded-full bg-amber-100 dark:bg-amber-950 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300"
+                          title="Последняя проверка: {{ source.last_checked|human_dt(tz=_tz) if source.last_checked else 'ни разу' }}">
+                        {{ "не проверялся" if source.id in stale_sources.never_ids else "устарел" }}
+                    </span>
                     {% endif %}
                 </td>
                 <td class="px-4 py-3 text-slate-600 dark:text-slate-400">{{ source.created_at|human_dt(tz=_tz) }}</td>

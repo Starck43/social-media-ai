@@ -202,6 +202,14 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Commands/limits: [CLI handoff](../CLI.md#llm-cli-validation-handoff).
   Integration: reconcile #216's historical expected-failure probes and CLI
   warnings before merging both packages; do not erase pinned audit evidence.
+  Personal-catalog boundary (Draft #229/P3-T93 — not merged): providers and
+  models are user-owned, so `provider-list`/`model-list`/`model-test` read the
+  acting user's catalog and need an explicit authenticated actor; without one
+  they fail closed instead of listing a global fleet, and `--mock` resolves the
+  same owner-scoped row rather than probing catalogue-wide IDs. `docs/CLI.md`
+  §«LLM catalog and local model tests» and the name-based `AGENT_MODEL` lookup
+  in `docs/CONFIGURATION.md` still describe the global behavior and must be
+  updated with this contract when #229 lands.
 
 - [ ] P10-T11 — audit post-migration CLI/API and embedded web-chat tools;
   accept: source-pinned interface inventory, prioritized verified findings,
@@ -219,6 +227,10 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   claim: CLI and chat-model findings already fixed in dev must be refreshed
   before current-source acceptance; old expected failures are not current
   executable evidence. [Current audit](../audits/2026-10-21-ready-pr-audit.md).
+  Chat-model findings must be refreshed against P3-T95 (Draft #229): selection
+  becomes a numeric `agent_model_id` FK with no name fallback, so name-based
+  selection expectations in the audit are historical, not current-source
+  evidence.
 
 - [ ] P10-T12 — preserve chat task configuration on partial updates and restore
   task listing; accept: omitted scenario/dates/targets remain unchanged;
@@ -238,6 +250,11 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Reconcile against current code and test layout, then complete owner-local
   persistence/permission/concurrency acceptance before integration. Preserve
   current task-owned collection and omitted-field behavior while reconciling.
+  Binding validation is manager-owned in P3-T94 (Draft #229): the parent row and
+  every source/scenario row are locked and validated before writes, and a
+  caller-supplied session is forwarded without a second commit. Reconcile with
+  that implementation instead of adding a second validator, and keep PR #217's
+  additive source update from bypassing atomic replacement.
 
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.

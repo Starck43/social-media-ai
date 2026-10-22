@@ -10,6 +10,12 @@
         </p>
     </div>
     <div class="flex items-center gap-2">
+        {% if perms and perms.is_superuser_role %}
+            <a href="/app/billing/exposure"
+               class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
+                Финансовая экспозиция
+            </a>
+        {% endif %}
         {% if is_superuser and tenants %}
             <form method="get" class="flex items-center gap-2">
                 <label for="f-tenant" class="text-xs text-slate-600 dark:text-slate-400">Пространство</label>

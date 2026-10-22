@@ -31,12 +31,16 @@ changes that leave a queued snapshot stale.
   evidence. No broader execution-mutex or production-kill claim is made. The
   resolved registry row was removed.
 
-- [ ] P1-T02 — select and close the next bounded recovery or admission gap;
-  accept: chosen gap verified against current code, fix keeps claim-loss,
-  duplicate-effect and truthful-outcome invariants, focused tests via R10;
+- [x] P1-T02 — invalidate queued task occurrences on definition changes, pause
+  or deletion; accept: execution-field and explicit source-membership changes
+  invalidate replaceable pending Jobs atomically and serialize with admission;
+  unchanged edits preserve queued work, running/terminal/unconfirmed rows retain
+  their recovery policy; fix keeps claim-loss, duplicate-effect and
+  truthful-outcome invariants, focused PostgreSQL tests via R10;
   depends: none; owns: `app/models/managers/agent_task_manager.py`,
   `app/models/managers/job_manager.py`, `docs/AGENT_TASKS.md`,
-  `tests/jobs/test_task_pending_occurrence.py`; owner: opencode; status: IN_PROGRESS.
+  `tests/jobs/test_task_pending_occurrence.py`,
+  `tests/jobs/test_task_run_now.py`; owner: codex; status: DONE.
   Selected gap: a queued occurrence snapshots the task definition at admission,
   but editing `job_type`/`cron_expr`/`payload`/`agent_scenario_id`/`next_run_at`,
   deactivating or deleting the task left that row pending, so it later ran the
@@ -54,7 +58,7 @@ changes that leave a queued snapshot stale.
   `tests/web/test_web_task_edit.py` 8 passed (14 together, 0 failed/skipped);
   `tests/cli/test_cli_selection_flags.py` 20 passed (isolated, no DB).
   Semantics recorded in `docs/AGENT_TASKS.md`. Re-audit at dev
-  `dab3b5c7d5018dd21d7334e2f1b13528c6221964` does not accept the task: pending
+  `dab3b5c7d5018dd21d7334e2f1b13528c6221964` rejected that implementation: pending
   invalidation only compares `job_type`, `cron_expr`, `payload`,
   `agent_scenario_id` and `next_run_at` (plus deactivation). The admitted job
   snapshot also captures `trigger_type`, `trigger_config`, `action_type`,
@@ -65,6 +69,42 @@ changes that leave a queued snapshot stale.
   cover these edits. Return to implementation; add invalidation and focused
   coverage before READY. Recorded passing tests remain evidence for the
   implemented cases only, not these uncovered paths.
+  Follow-up implementation closes all snapshot-field and actual source-membership
+  changes, including bulk mutation paths. Mutation and admission take the same
+  workspace gate before task row locks; source writes and pending cleanup share
+  the caller's transaction, including rollback. Same-value/source-set edits keep
+  queued work; running, terminal and unconfirmed outcomes retain their policy.
+  No migration. Independent implementation and test review found no blocker.
+  Validation used isolated base `92dcb948de24c55ab82dccdba81e792945b5ac48`
+  plus frozen manager blob `de3059c42d21a03ba37c3486e155ff2d46134d0a`
+  and pending-occurrence test blob `0d86150edb32b57877d425c351f0df236c2b16ce`.
+  Primary OpenCode route, real PostgreSQL `test_schema`, sequential, no schema
+  changes: 33 pending-occurrence, 17 task-activity and 8 web-edit tests passed.
+  The initial regression batch exposed stale run-now fixtures/assertions;
+  corrected cleanup, explicit background-launch stub, current permission/link
+  and progress/metric contracts were reviewed independently. Final run-now blob
+  `54eb5ea6b565f8debaa176ebf9b368a46c288e71`: 20 collected, 20 passed,
+  0 failed/skipped. CLI selection flags: 20 passed in its isolated no-DB run.
+  These are combined focused results (98 distinct tests), not a single green
+  full-suite run. The separately tracked historical queue-label defect is P1-T03.
+  Accepted by Codex on 2026-10-22 at dev
+  `c9ccf9d4a2328ec2c707b71f45cd7541375daa97`: committed file blobs match the
+  reviewed and tested snapshots; the later integration changes were checked
+  for relevant overlap. The resolved registry row was removed. P1-T01 remains
+  accepted; P1-T03 stays open and the phase is not closed.
+
+- [ ] P1-T03 — distinguish a live queued Job from the task's historical queued
+  receipt; accept: task list and detail show no live-queue claim when the last
+  pending Job was invalidated, while real pending/running Jobs still have their
+  current state and historical trigger metadata is retained; tenant and
+  permission boundaries stay intact, focused projection tests via R10;
+  depends: P1-T02; owns: task status projections in `app/web/tasks.py`, task
+  templates and focused web tests; owner: unassigned; status: TODO.
+  Confirmed during the P1-T02 review: admission records `last_status="queued"`,
+  invalidation removes the Job without changing that historical receipt, and
+  `templates/web/tasks.html` plus the no-Job panel's
+  `_legacy_task_status_label` still render it as a live queue status. The
+  execution-invalidation contract is separate from this display correction.
 
 ## Phase approval
 

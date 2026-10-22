@@ -18,9 +18,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
-- [ ] P2-T12 — preserve cache usage and version complete cache tariffs → [p2](docs/phases/p2-usage-spend.md) — codex-cache-pricing — READY
-
-- [ ] P8-T25 — settings information layout and compact member access → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — READY
+- [ ] P2-T12 — preserve cache usage and version complete cache tariffs → [p2](docs/phases/p2-usage-spend.md) — codex-cache-pricing — IN_PROGRESS
 
 - [ ] P8-T20 — provider cost evidence and compact diagnostic controls → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
 
@@ -36,7 +34,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P1-T02 — next bounded recovery/admission gap → [p1](docs/phases/p1-queue-execution.md) — unassigned — TODO
 - [ ] P2-T08 — corporate/shared accounts (owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — owner — TODO
 - [ ] P2-T09 — production billing verification (post-activation, owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
-- [ ] P3-T01 — digest send permission parity acceptance (PR #176 Draft) → [p3](docs/phases/p3-identity-access.md) — remote Notion agent — TODO
+- [ ] P3-T01 — digest send permission parity acceptance on integrated code (#176 closed) → [p3](docs/phases/p3-identity-access.md) — remote Notion agent — TODO
 - [ ] P3-T02 — close one actor/workspace/tool/write gap → [p3](docs/phases/p3-identity-access.md) — unassigned — TODO
 - [ ] P4-T01 — staging operator-recovery evidence → [p4](docs/phases/p4-delivery.md) — unassigned — TODO
 - [ ] P5-T01 — close one typed-output/hostile-input/coverage gap → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
@@ -65,6 +63,10 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T09 — truthful pipeline counts/labels (AUD-09) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 
 - [ ] P10-T13 — LLM CLI provider listing and safe model-test contract → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — BLOCKED
+
+- [ ] P10-T11 — refresh source-pinned CLI/API/chat audit and reproductions (#216) → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — IN_PROGRESS
+- [ ] P10-T12 — preserve partial chat task updates and restore task listing (#217) → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — BLOCKED
+- [ ] P8-T27 — Platforms settings, admin controls and deletion-rule audit (#224) → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
 
 
 - [ ] P5-T14 — universal collection plan: task-owned typed collection, lanes, limits, comments and candidates → [p5](docs/phases/p5-ai-boundaries.md) — owner (fork #2) — IN_PROGRESS

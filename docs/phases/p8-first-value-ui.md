@@ -527,7 +527,7 @@ P8-T06 and does not alter its task record.
   Accepted this bounded no-DB contract and removed its open registry row;
   persisted worker/billing acceptance and phase approval are not implied.
 
-- [ ] P8-T25 — settings information layout and compact member access; accept:
+- [x] P8-T25 — settings information layout and compact member access; accept:
   replace the two segment rows with one settings navigation, describe each
   section, align forms/buttons and put the model test beside its selector.
   Owner review: hide owner/self access controls; deny self-role changes in the
@@ -538,8 +538,12 @@ P8-T06 and does not alter its task record.
   Depends: none; owns: settings/invite templates and CSS, shared selector
   macro/initialization, bounded self-role guards, tenancy docs and focused
   regression expectations; owner: remote Notion agent;
-  status: READY in PR #222 for owner-authorized merge, not self-accepted DONE.
-  Follow-up: READY — admin-only Platforms navigation entry to the existing
+  status: DONE; PR #222 and follow-up #223 are merged.
+  Coordinator refresh 2026-10-21: live GitHub confirms #222 and its small
+  follow-up #223 are merged; heads `75012fb` and `76d44a6` are historical
+  integrated source, not open merge requests. Review current code and the
+  owner-local role/access acceptance rather than reapplying old snapshots.
+  Historical follow-up: submitted READY — admin-only Platforms navigation entry to the existing
   `/admin/platform/list` catalog using the active `is_platform_admin` predicate.
   Based on dev `6a040b0dd980c5c8a899e8b43a11b8f3cc94789c`; template/source diff
   reviewed only. No tests run at explicit owner request; no backend/schema
@@ -569,6 +573,19 @@ P8-T06 and does not alter its task record.
   Black/isort, JS syntax and diff checks passed. Runtime/test bytes published
   through GitHub match the tested sandbox. No new production dependency.
   Environment: isolated venv, Python 3.13.14, pytest 9.1.1,
+  Coordinator acceptance 2026-10-21 at tested source `f55abad` (current dev
+  policy-only successor `421d369`): OpenCode sequential R8/R10 PostgreSQL
+  acceptance passed `tests/web/test_settings_membership_acceptance.py` 4/4
+  and `tests/web/test_settings_admin_entry_acceptance.py` 4/4. Focused current
+  no-DB scopes passed `test_settings_review.py` 14/14, `test_settings_layout.py`
+  23/23, `test_settings_scopes.py` 37/37, `test_workspace_access.py` 66/66,
+  `test_template_autoescape.py` 49/49 and
+  `tests/security/test_user_self_role_guard.py` 10/10. Two isolated test
+  fixtures were corrected without changing application behavior or weakening
+  assertions. Earlier browser/layout, shared-picker, tariff-visibility and
+  responsive evidence above remains applicable. The coordinator reviewed
+  implementation and exact-scope evidence; accepted DONE. Root health checks
+  are unrelated to this task.
   pytest-asyncio 1.4.0, Jinja2 3.1.6, SQLAlchemy 2.1.5 (offline query checks),
   Playwright 1.63.0 and Chromium 153.0.8010.12.
   Three real-DB acceptance files had their self-demotion expectations updated
@@ -578,6 +595,31 @@ P8-T06 and does not alter its task record.
   app/runtime startup, provider call, migration, reset or deployment occurred.
   The owner explicitly authorized PR closure by merge after these changes;
   coordinator task/phase acceptance remains separate from this merge authority.
+  Historical source-refresh notes above were superseded by coordinator
+  acceptance at `f55abad` (current `421d369` is policy-only): current role and
+  revocation PostgreSQL/ASGI scopes passed 8/8; all six focused settings and
+  self-role unit files passed 199/199. The two fixture-only corrections are
+  recorded in the acceptance note above; no application code changed. Current
+  aggregate evidence and remaining unrelated checks:
+  [refresh audit](../audits/2026-10-21-ready-pr-audit.md).
+
+- [ ] P8-T27 — implement the Platforms settings tab for active platform admins,
+  correct admin button contrast and bulk-delete confirmation wrapping, and
+  audit app/models FK/ORM deletion rules; accept: active platform-admin and
+  CSRF checks, catalog operation without workspace membership, preserved
+  selection/delete semantics, bounded style regressions and accurate deletion
+  inventory with owner-local PostgreSQL/ASGI acceptance. Depends: none; owns:
+  bounded settings/admin styles, focused tests and deletion documentation;
+  owner: remote Notion agent; status: BLOCKED. Canonical row restored from
+  Draft [PR #224](https://github.com/Starck43/social-media-ai/pull/224), head
+  `6fd66d163a11ae5a86ac6a9756e1d97214d53716`, verified live 2026-10-21;
+  implementation `39fa3fc`, original synchronized base `213980a`.
+  Historical isolated/source evidence remains in that PR; no new PG/ASGI or
+  deletion acceptance is claimed. Reconcile onto current dev, preserving
+  integrated settings controls, model pricing-unit labels and active-admin
+  predicates. The old branch's `/1K` formatter is not a change in its three-dot
+  diff; preserve current 1K/1M behavior rather than copying its whole file.
+  No cascade/model/schema/migration changes are authorized by this review.
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —
 

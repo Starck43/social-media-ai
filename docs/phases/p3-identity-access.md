@@ -19,9 +19,12 @@ production acceptance, real-DB pending-confirmation end-to-end run.
 ## Tasks
 
 - [ ] P3-T01 — finish PRD-02 digest send permission parity acceptance;
-  accept: delegated acceptance at pinned verification HEAD `0c18bab` completed
-  via R10, PR #176 moved per result; code already in dev (`6d16436`),
-  PR #176 Draft; depends: none; owns: PR #176 lane; owner: remote Notion
+  accept: delegated acceptance via R10 at the exact current integrated source
+  revision; preserve the digest permission parity contract already in dev
+  (`6d16436`). PR #176 is closed and unmerged (live GitHub verification,
+  2026-10-21); its historical verification pin `0c18bab` is not a requirement
+  to test obsolete code. Depends: none; owns: digest parity acceptance lane;
+  owner: remote Notion
   agent; status: TODO — no duplicate runs, no parallel shared-schema writers
 
 - [ ] P3-T02 — close one actor/workspace/tool/write gap including revocation,

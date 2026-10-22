@@ -14,6 +14,7 @@ The main thread keeps plan, decisions, acceptance and integration; noisy work go
    - self — triage, architecture, planning, review, acceptance and integration;
    - routine and test routes follow AGENTS.md and docs/RULES.md R10;
    - subagent — independent nonroutine read-heavy exploration or an independent task with exclusive files: one task per agent, smallest useful number (often 2–3); reply contract: verdict + file/line refs + changed paths, ≤150 tokens, no logs or file dumps;
+   - test subagents (create/edit/validate suites) — delegate the whole unit under `tests/AGENTS.md`: give file ownership list + goal + constraints, get back a `TEST EDIT`/`TEST RUN` block ≤120 tokens; evidence stays in `.agents/tmp/`;
    - OpenCode executes and commits; coordinating Codex never runs pytest. Keep no-DB parallelism, R8 serialization and acceptance safeguards in AGENTS.md/docs/RULES.md.
    Keep nonroutine decisions and acceptance in the main thread. A sequential delegated task may use current `dev` with exclusive file ownership; independent implementation lanes require separate worktrees.
 3. **Accept:** completed work is reported READY; only the coordinating thread reviews the exact-SHA diff/evidence, sets DONE and deletes the ROADMAP row — subagents may update evidence but never mark DONE or remove ROADMAP rows. Integrate one finished task at a time, never on a bare completion report.

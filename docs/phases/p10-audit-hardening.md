@@ -73,12 +73,13 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   valid dummy verifier and generic errors; depends: none; owner: unassigned;
   status: TODO
 
-- [ ] P10-T05 (AUD-05, P2) — align legacy API DB probes with bounded redacted
+- [x] P10-T05 (AUD-05, P2) — align legacy API DB probes with bounded redacted
   readiness; accept: bounded generic legacy probe failures; synthetic DB/DSN
   sentinels absent; root readiness unchanged; depends: none;
   owns: app/api/v1/entry.py, tests/api/test_legacy_api_db_probes.py and scoped
   docs/API.md health contract and docs/validation/legacy-api-db-probes.md;
-  owner: remote Notion agent; status: READY.
+  owner: remote Notion agent; status: DONE — accepted: codex, 2026-10-22,
+  runtime SHA `ab532db952ab6137508a1fc2671b3a17bcacfdbf`.
   Synchronized base: `959a461410aa220cd1059c4e3ee59b55d5f79eaa`;
   active PRs #216/#217/#220 heads rechecked unchanged: no runtime/probe overlap;
   shared registry/phase edits remain task-scoped, foreign evidence preserved.
@@ -103,6 +104,29 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   OpenCode attempts failed certificate verification before schema preflight;
   Kilo CLI/orchestrator was unavailable. Real ASGI/DB/driver acceptance was not
   run and no current schema revision is claimed. [Refresh evidence](../audits/2026-10-21-ready-pr-audit.md).
+  Acceptance completed by Codex on 2026-10-22 at
+  `ab532db952ab6137508a1fc2671b3a17bcacfdbf`: source review confirms the real
+  `/api/v1` registration, public legacy health and bearer/workspace guards on
+  the hidden probes. Primary OpenCode `qwenplan/deepseek-v4.1-flash-1017`
+  completed collection and execution through root conftest against the existing
+  compatible `test_schema`, Alembic revision `0108`: **14 passed, 0 failed,
+  0 skipped** across `tests/api/test_legacy_api_db_probes_acceptance.py` and
+  `tests/api/test_api_health.py`. The new six-case acceptance suite covers real
+  public health/ORM success, unauthenticated refusal before the probe, bearer
+  authentication and identity with an existing active workspace membership,
+  fixed redacted exception/timeout responses, and cancellation of an actual
+  Permission-manager request delayed through asyncpg followed by a successful
+  ORM probe. The root readiness/liveness regressions passed unchanged.
+  Limitation: conftest uses NullPool, so this proves request/session cancellation
+  and a subsequent driver checkout, not reuse of a pooled connection. Runtime
+  files were verified unchanged from the recorded SHA; the acceptance file's
+  SHA-256 is
+  `a224e300abe73dd0348ec67f97db551b26486b7f8a8ff60dab33db247e3ae7c8`.
+  Installed OpenCode rejected `--dir`; the identical attached task ran from the
+  verified worktree instead. Shared-DB execution waited for the foreign test
+  lane to finish. No schema changes, provider calls, runtime startup or deploy;
+  `git diff --check` passed. Earlier pending-evidence notes above are historical
+  and superseded by this local acceptance; no worker-health claim is made.
 
 - [ ] P10-T06 (AUD-06, P1) — centralize safe provider-error envelopes without
   dropping accounting; accept: allowlisted failure envelopes/logs; no
@@ -183,8 +207,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   application startup, full regression, real DB, migration/reset, provider or
   deployment was run; those behaviors remain outside this task's acceptance.
 
-- [ ] P10-T13 — repair post-migration LLM CLI contracts; owner: remote Notion
-  agent; status: BLOCKED. Accept: provider listing without removed default
+- [ ] P10-T13 — repair post-migration LLM CLI contracts; owner: codex; status: IN_PROGRESS. Accept: provider listing without removed default
   flag; shared local mock probe, no client/key/network setup; positive model ID
   and bounded prompt validation; explicit nonzero failures with no exception
   disclosure; real CLI dispatch fails closed without an authenticated payer.
@@ -200,6 +223,13 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Deferred: existing-catalog ORM/CLI and zero-write/no-dispatch acceptance in
   the approved owner environment at the published PR SHA; coordinator review.
   Commands/limits: [CLI handoff](../CLI.md#llm-cli-validation-handoff).
+  Coordinator source review on current dev `dea6e4d985f0d5962ad959e86d19429d85688d95`
+  confirms the provider-list schema, shared mock probe, validation and
+  fail-closed real-probe path are present, with focused CLI contract and parser
+  tests in `tests/ai/`. No tests were run for this review; owner-environment
+  catalog/zero-write checks and exact-current-SHA acceptance remain open.
+  Owner-authorized coordinator closeout resumed on 2026-10-22; reconcile the
+  surviving CLI contract with the active personal-catalog integration.
   Integration: reconcile #216's historical expected-failure probes and CLI
   warnings before merging both packages; do not erase pinned audit evidence.
   Personal-catalog boundary (Draft #229/P3-T93 — not merged): providers and
@@ -239,17 +269,23 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   replacement; focused offline and sequential persistence/permission checks.
   Depends: P10-T11 audit context only, no merge dependency; owns:
   app/agent/toolset/tasks.py, chat task contract tests in the current domain
-  layout, scoped docs/AGENT_TASKS.md; owner: remote Notion agent;
-  status: BLOCKED. Canonical row restored from Draft
+  layout, scoped docs/AGENT_TASKS.md; owner: codex;
+  status: IN_PROGRESS. Canonical row restored from Draft
   [PR #217](https://github.com/Starck43/social-media-ai/pull/217), head
   `c4161b5e67919d505e707f70ef18e6081cf11c81`, verified live 2026-10-21.
   Historical branch evidence: 27 new offline and 26 confirmation tests passed
   at base `be07e51` plus implementation; not a new run on current dev.
-  Useful runtime fixes remain outside dev: missing task-list import, unsaved
-  cron expression, validation after persistence and additive source updates.
-  Reconcile against current code and test layout, then complete owner-local
-  persistence/permission/concurrency acceptance before integration. Preserve
-  current task-owned collection and omitted-field behavior while reconciling.
+  Coordinator source review on current dev `dea6e4d985f0d5962ad959e86d19429d85688d95`
+  confirms the task-list tool and omitted-field preservation are integrated,
+  and cron changes update `next_run_at`. Remaining contract gaps are explicit
+  scenario clearing (the `int | None` input cannot distinguish omission from
+  clearing), source replacement (updates use additive `add_sources`), and
+  validation/atomicity (source validation and link changes occur after the
+  task row update). The PR-specific chat contract test file is absent from the
+  current tree. Coordinator implementation/acceptance resumed on 2026-10-22:
+  finish these contracts and focused offline plus sequential persistence/
+  permission checks on integrated code. Preserve current task-owned collection
+  and omitted-field behavior.
   Binding validation is manager-owned in P3-T94 (Draft #229): the parent row and
   every source/scenario row are locked and validated before writes, and a
   caller-supplied session is forwarded without a second commit. Reconcile with

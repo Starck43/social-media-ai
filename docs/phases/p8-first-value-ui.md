@@ -222,7 +222,7 @@ P8-T06 and does not alter its task record.
   the supplied prompt or a short default, with bounded output, existing consent,
   payer admission and no retry; mode-specific useful diagnostics; no migrations;
   owns: admin model action/endpoint/template/JS, probe helpers, focused tests/docs;
-  owner: remote Notion agent (`fix/admin-model-real-request`); status: BLOCKED
+  owner: codex (`fix/admin-model-real-request`); status: IN_PROGRESS
   (implementation ready; required local ASGI/PostgreSQL acceptance unavailable).
   Remote evidence: 107 isolated no-DB tests passed; 56 offline Chromium
   viewport/theme/state cases plus form/consent/no-JS checks passed;
@@ -234,8 +234,8 @@ P8-T06 and does not alter its task record.
 
 - [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
   platform role, and expose platform-admin-only role-grant/permission-label
-  editing without mutable catalog identities or role escalation; owner: remote
-  Notion agent (`fix/admin-role-picker-controls`); status: BLOCKED
+  editing without mutable catalog identities or role escalation; owner: codex
+  (`fix/admin-role-picker-controls`); status: IN_PROGRESS
   (owner-requested self-role protection and responsive permission transfer picker;
   base dev `58a90c1` (includes PR #212 and fresh documentation); owner-local real PostgreSQL acceptance remains pending).
   Owns: shared admin shell/CSS/authorization, role and permission views, focused
@@ -311,8 +311,8 @@ P8-T06 and does not alter its task record.
   readable answer plus sanitized provider JSON and transport/accounting statuses;
   visible pre-dispatch blockers with no bypass of CONFIGURE/CSRF/payer admission;
   owns: model-test action/endpoint/template/JS/CSS, opt-in client diagnostics,
-  focused regression tests/docs; owner: remote Notion agent
-  (`fix/admin-model-diagnostics`); status: BLOCKED (implementation ready; real
+  focused regression tests/docs; owner: codex
+  (`fix/admin-model-diagnostics`); status: IN_PROGRESS (implementation ready; real
   PostgreSQL/owner-environment acceptance deferred under the owner's explicit
   implementation-and-dev instruction following their merge exception).
   Evidence: 167 isolated tests passed (actual client source over MockTransport,
@@ -329,8 +329,8 @@ P8-T06 and does not alter its task record.
   payer, workspace and account/budget admission; remove disabled-billing warning;
   preserve answer/JSON/statuses and normal model usage; no activation/migrations;
   owns: model-test endpoint/actions/probe/client diagnostic label/template/JS,
-  focused tests/docs; owner: remote Notion agent (`fix/admin-model-owner-mode`);
-  status: BLOCKED only for deferred owner-local acceptance, not implementation.
+  focused tests/docs; owner: codex (`fix/admin-model-owner-mode`);
+  status: IN_PROGRESS only for deferred owner-local acceptance, not implementation.
   Owner explicitly clarified that disabled personal billing is normal single-owner
   operation and must not block real tests. Evidence: 178 isolated tests passed;
   80 offline Chromium viewport/theme/state cases plus owner blank/custom submit
@@ -365,7 +365,7 @@ P8-T06 and does not alter its task record.
   model-test persistence and response-only truncation; replace JSON copy text
   control with accessible corner SVG feedback and semantic status text colors.
   Scope: model-test UI, focused cost extraction if needed, regression tests/docs.
-  Owner: remote Notion agent (`fix/admin-model-cost-feedback`); status: BLOCKED (implementation ready;
+  Owner: codex (`fix/admin-model-cost-feedback`); status: IN_PROGRESS (implementation ready;
   owner-local PostgreSQL/ASGI acceptance remains deferred under the explicit
   in-session dev delivery/merge exception).
   Acceptance: supplied 470/8/478, zero-cost response has faithful cost evidence;
@@ -648,7 +648,7 @@ P8-T06 and does not alter its task record.
   selection/delete semantics, bounded style regressions and accurate deletion
   inventory with owner-local PostgreSQL/ASGI acceptance. Depends: none; owns:
   bounded settings/admin styles, focused tests and deletion documentation;
-  owner: remote Notion agent; status: BLOCKED. Canonical row restored from
+  owner: codex; status: IN_PROGRESS. Canonical row restored from
   Draft [PR #224](https://github.com/Starck43/social-media-ai/pull/224), head
   `6fd66d163a11ae5a86ac6a9756e1d97214d53716`, verified live 2026-10-21;
   implementation `39fa3fc`, original synchronized base `213980a`.

@@ -231,6 +231,15 @@ P8-T06 and does not alter its task record.
   acceptance covers metadata vs offline web checks and blank/custom prompt
   settlement. PR #207 was merged at owner-authorized exception; its local
   R8/R10 acceptance remains deferred, not passed.
+  Personal-catalog boundary (Draft #229, P3-T93/T95 — not merged): providers and
+  models become user-owned, `can_create`/`can_edit` are off in SQLAdmin, and
+  platform inspection never authorises another user's key. The admin check must
+  resolve the acting admin's own catalog row through its owner; a foreign model
+  is a refusal, not a probe target, and a real check never decrypts someone
+  else's key. `docs/ADMIN.md`'s "Global provider/key configuration" and "Global
+  model configuration" wording must move to that owner-scoped behavior with
+  #229. Delete on the two LLM admin views is still enabled there — not this
+  task's scope (Q-10).
 
 - [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
   platform role, and expose platform-admin-only role-grant/permission-label
@@ -323,6 +332,9 @@ P8-T06 and does not alter its task record.
   Local acceptance was updated but not run: real payer/ledger/settlement, CSRF,
   revocation and workspace guards remain required R8/R10 follow-up. No migration,
   schema/config/runtime activation, real provider or owner-local app run.
+  Diagnostics inherit P8-T15's personal-catalog boundary: the JSON, statuses and
+  sanitized errors describe the acting admin's own model only — no foreign
+  provider identity, key state or error text.
 
 - [ ] P8-T18 — real model test runs in existing single-owner mode without
   personal billing/workspace setup; enabled personal mode retains trusted actor
@@ -343,6 +355,9 @@ P8-T06 and does not alter its task record.
   remotely. Existing personal payer/admission/settlement tests remain. Owner's
   in-session dev delivery/local-validation deferral remains in force. No setting
   activation, schema change, runtime, live provider call or deployment.
+  Single-owner mode is not a shared credential: the real check still needs the
+  acting owner's own provider key (Draft #229/P3-T93), and a disabled
+  personal-billing flag must never fall back to another user's catalog.
 
 - [x] P8-T19 — audit collect force-refresh semantics and task-run feedback; accept:
   correlate both Safari launch actions with persisted Jobs and source outcomes,
@@ -386,6 +401,9 @@ P8-T06 and does not alter its task record.
   added for unscoped owner mode. No schema/config/runtime/live provider/deploy.
   Remote tests are self-executed per the owner's explicit exception, now recorded
   in the remote skill; shared-doc sync follows the existing all-agent procedure.
+  Cost/token evidence is read for the acting owner's own model; zero stays an
+  explicit zero, and no global catalogue or foreign model lookup may be assumed
+  (Draft #229/P3-T93).
 
 - [x] P8-T21 — add/edit related FK/m2m records without losing the parent form.
   Accept: permission-aware controls on existing editable relationships; normal

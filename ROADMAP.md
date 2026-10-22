@@ -44,7 +44,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P6-T04 — preserve explicit task source scope when deleting its last source → [p6](docs/phases/p6-lifecycle-privacy.md) — owner: opencode — IN_PROGRESS
 - [ ] P7-T01 — loopback-only DB binding (pre-production) → [p7](docs/phases/p7-operations.md) — owner — TODO
 - [ ] P7-T02 — one staging-backed operation proof → [p7](docs/phases/p7-operations.md) — unassigned — TODO
-- [ ] P8-T07 — operator-visible stale-source observable → [p8](docs/phases/p8-first-value-ui.md) — owner: opencode — IN_PROGRESS
+- [ ] P8-T07 — operator-visible stale-source observable → [p8](docs/phases/p8-first-value-ui.md) — owner: opencode — READY
 - [ ] P8-T08 — credential expiry/near-expiry signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P8-T09 — queue backlog/age/quarantine operator signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P8-T10 — scheduler/worker/listener freshness identity → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
@@ -119,3 +119,13 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] Q-1 — compress `docs/validation/llm-budget-pg-runner.md` (807-line evidence ledger) to a short summary after P2-T01 activation completes; keep the example JSONs (pinned by `tests/test_budget_isolated_fixture_coherence.py`); context: docs/validation/; asked by: opencode; status: OPEN
 - [ ] Q-2 — verify source 2939 VK post origin and missing media references against the original API response, if obtainable; context: [VK raw content audit](docs/audits/2026-10-18-vk-raw-content.md); owner: codex-vk-raw-audit; status: OPEN
+
+- [ ] Q-10 — who may spend whose LLM key from the SQLAdmin console once providers
+  and models are user-owned (Draft #229 / P3-T93)? Context: P8-T15/T17/T18/T20
+  exercise model/provider checks from the admin console, while the candidate makes
+  the catalog personal, disables `can_create`/`can_edit` there and states that
+  platform inspection never authorises another user's key; DELETE on the two LLM
+  admin views is still enabled. Decide between restricting the check to the acting
+  admin's own catalog, keeping only a mock path, or dropping the action — and
+  whether the admin delete path must be closed too. Context: P8-T15,
+  docs/ADMIN.md; asked by: $local (opencode); status: OPEN

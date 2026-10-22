@@ -117,7 +117,7 @@ SCHEDULER_POLL_SECONDS=30
 SCHEDULER_TIMEZONE=Europe/Moscow
 
 # ─── Agent ────────────────────────────────────────────────────
-AGENT_MODEL=              # explicit LLMModel name; empty = auto-resolve first active text model
+AGENT_MODEL=              # explicit LLMModel name inside the acting personal catalog; empty = auto-resolve
 AGENT_HISTORY_LIMIT=20    # messages kept in agent context per session
 AGENT_MAX_ITERATIONS=6    # max tool-call rounds per user message
 AGENT_DAILY_COST_LIMIT=5.0  # USD cap (agent + digests combined) per UTC day
@@ -255,7 +255,7 @@ failure tracking and cookie-independent limits as a separate implementation task
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENT_MODEL` | `None` | Explicit LLMModel name. Empty = auto-resolve first active text-capable model. |
+| `AGENT_MODEL` | `None` | Explicit LLMModel name, resolved inside the acting user's personal catalog: the row must be text-capable, active, on an active provider and owned by that user. A foreign or unknown name falls back to auto-resolution in the same catalog, never to another owner's model. Empty = auto-resolve. |
 | `AGENT_HISTORY_LIMIT` | `20` | Number of messages kept in agent context per session |
 | `AGENT_MAX_ITERATIONS` | `6` | Max tool-call rounds per user message |
 | `AGENT_DAILY_COST_LIMIT` | `5.0` | USD cap for agent + digests combined per UTC day |

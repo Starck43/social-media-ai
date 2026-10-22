@@ -49,7 +49,14 @@ isolated target and sequential owner-local validation. Offline UI evidence follo
 - Defaults are per-user/per-overlapping-capability. Owner row locking serializes
   bundle/default writes. UI distinguishes explicit `is_default`, effective default,
   and workspace-selected `agent_model_id`.
-- Model selection and fallbacks stay inside one personal catalog; active provider,
+- Model selection and fallbacks stay inside one personal catalog **for every
+  capability** (text, image, video, audio): `resolve_default_model`,
+  `capability_candidates` (the analyzer failover queue) and
+  `get_model_for_capability` share one ownership predicate, so a fallback cannot
+  decrypt another owner's key. A scenario that pins a model id — the analyzer's
+  first priority — passes the same gate, so a pin left over from the legacy
+  catalog falls back instead of reaching a foreign key. `AGENT_MODEL` is a name
+  lookup through the same gate — an ownership bypass it is not. Active provider,
   model, owner membership and current configuration are checked before HTTP.
 - Task source replacement validates/locks the parent and every source before
   deleting links. Missing/foreign/task-owned IDs reject the whole replacement.
@@ -126,10 +133,45 @@ backend without the mandatory UI module. No merge is performed by this work.
    foreign IDs, inactive owner/provider/model and membership revocation.
 4. Real two-connection bundle/default races, rollback on foreign Nth model,
    duplicate UID; task source replacement rejects all missing/foreign IDs atomically.
-5. Web/API/agent/worker dispatch: selected FK, same-owner fallbacks only, scheduled
-   stored payer, no inherited actor guessing, CSRF, exact personal route allowlist.
+5. Web/API/agent/worker dispatch: selected FK, same-owner fallbacks only for text,
+   image, video and audio, scheduled stored payer, no inherited actor guessing,
+   CSRF, exact personal route allowlist.
 6. Integrated UI at backend+UI exact SHAs: default vs selected markers, sparse
    edits, special characters, desktop/mobile light/dark and no secret HTML/JSON.
+
+## Review fixes (2026-10-22, on `f6674b6`)
+
+A requested review of the draft found three gaps between the stated contract and
+the source. All are fixed here; none is claimed as PostgreSQL acceptance.
+
+- **Media parity.** `resolve_default_model` owner-filtered `text` only, while the
+  analyzer resolves image/video through `get_model_for_capability` and failover
+  through `capability_candidates` — both built a fleet-wide candidate list, so a
+  media stage or a fallback could select a model owned by another user and
+  decrypt that provider's key. One predicate
+  (`personal_catalog.eligible_owned_model`) now gates all three paths for every
+  capability, with the tier filter applied per capability.
+- **`AGENT_MODEL`.** The env lookup returned the first row with that name from
+  any owner and skipped provider activity; it now passes the same
+  ownership/activity gate and only bypasses the workspace tier. A foreign or
+  unknown name falls back to auto-resolution inside the acting catalog.
+- **Documentation.** Remaining global-catalog statements were corrected in
+  `MODELS.md`, `TENANCY.md`, `API.md`, `ADMIN.md`, `CONFIGURATION.md`,
+  `AGENT.md`, `DIGEST.md` and `.env.example`. The digest table had claimed
+  `AGENT_MODEL` was consulted although that path never reads it.
+- **Offline suites.** `tests/ai/test_llm_text_eligibility.py` was already red on
+  this branch (its AST scope predates the catalog gate and the cache-price
+  helper); the doubles now cover those imports and the suite passes again. New
+  coverage: `eligible_owned_model` for image/video/audio ownership, tier and
+  activity in `tests/ai/test_personal_catalog_unit.py`, plus a source-level guard
+  for the three resolution entry points and the env gate in
+  `tests/security/test_personal_scope_bindings_unit.py`.
+
+Evidence: `pytest tests/ai/test_llm_text_eligibility.py
+tests/ai/test_personal_catalog_unit.py
+tests/security/test_personal_scope_bindings_unit.py --noconftest -q` —
+**48 passed, 38 subtests passed**, no database, engine, `.env`, network or
+provider call. This does not replace the required real acceptance below.
 
 ## Coordination and inherited work
 

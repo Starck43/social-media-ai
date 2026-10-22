@@ -324,7 +324,8 @@ active caller and are shared across that caller's workspaces. UI lives at
 Settings → Models; social Platform remains a separate global directory.
 `Tenant.agent_model_id` is a numeric FK, not a model-name lookup. An explicit
 unavailable chat model fails closed; automatic fallback cannot use another
-user's keys. Scheduled execution uses the stored task payer's personal catalog;
+user's keys for any capability — text, image, video and audio resolution and
+the analyzer's failover queue all stay inside one personal catalog. Scheduled execution uses the stored task payer's personal catalog;
 missing consent never guesses a workspace owner. Platform inspection permission
 does not grant another user's key use.
 

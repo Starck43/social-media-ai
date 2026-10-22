@@ -90,6 +90,27 @@ class ScopeTests(unittest.TestCase):
         with self.assertRaises(ValueError):scope['_personal_values'](manager,{'is_default':True})
 
 
+    def test_media_resolution_reuses_the_owner_predicate(self):
+        """No capability may resolve or fail over into another owner's catalog."""
+        path = ROOT / 'app/models/managers/llm_model_manager.py'
+        source = path.read_text()
+        tree = ast.parse(source)
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'LLMModelManager')
+        methods = {n.name: ast.get_source_segment(source, n) for n in cls.body
+                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for name in ('resolve_default_model', 'capability_candidates', 'get_model_for_capability'):
+            with self.subTest(method=name):
+                self.assertIn('eligible_owned_model', methods[name])
+                self.assertIn('current_catalog_owner_id', methods[name])
+        client = (ROOT / 'app/services/ai/llm_client.py').read_text()
+        fn = next(n for n in ast.parse(client).body
+                  if isinstance(n, ast.AsyncFunctionDef) and n.name == 'resolve_model')
+        self.assertIn('_eligible_text_model(m, None)', ast.get_source_segment(client, fn))
+        analyzer = (ROOT / 'app/services/ai/analyzer.py').read_text()
+        self.assertIn('eligible_owned_model', analyzer)
+        self.assertIn('current_catalog_owner_id', analyzer)
+
+
 class WorkerScopeTests(unittest.IsolatedAsyncioTestCase):
     async def test_pure_collect_cannot_inherit_ambient_actor_or_worker_catalog(self):
         context = load("isolated.worker_context", ROOT / "app/core/personal_catalog_context.py", {

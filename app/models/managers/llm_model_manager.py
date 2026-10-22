@@ -40,9 +40,14 @@ class LLMModelManager(BaseManager):
         fallback cannot burn another run on a known-dead pick (the same
         suitability discipline the auto-resolve path already applies).
         """
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.services.ai.llm_client import _allowed_model_types
         from app.services.ai.model_suitability import analysis_capable
+        from app.services.ai.personal_catalog import eligible_owned_model
 
         default = await self.resolve_default_model(capability)
+        owner_id = current_catalog_owner_id()
+        allowed_types = await _allowed_model_types()
         candidates: list["LLMModel"] = []
         for model in await self._get_by_capability(capability):
             if exclude_id is not None and model.id == exclude_id:
@@ -50,6 +55,12 @@ class LLMModelManager(BaseManager):
             if any(model.id == kept.id for kept in candidates):
                 continue
             if not model.is_active or not model.provider or not model.provider.is_active:
+                continue
+            # The failover queue is a routing decision too: it must not offer a
+            # model whose key belongs to another owner.
+            if not eligible_owned_model(
+                model, user_id=owner_id, capabilities={capability}, allowed_types=allowed_types
+            ):
                 continue
             if not analysis_capable(model):
                 continue
@@ -98,10 +109,17 @@ class LLMModelManager(BaseManager):
         if provider_id:
             models = await self.select_related("provider").filter(provider_id=provider_id, is_active=True)
 
+            from app.core.personal_catalog_context import current_catalog_owner_id
+            from app.services.ai.personal_catalog import eligible_owned_model
+
+            owner_id = current_catalog_owner_id()
             for model in models:
-                if model.can_handle(capability) and model.provider and model.provider.is_active:
-                    logger.info(f"Using model for {capability}: {model.name}")
-                    return model
+                if not model.can_handle(capability):
+                    continue
+                if not eligible_owned_model(model, user_id=owner_id, capabilities={capability}):
+                    continue
+                logger.info(f"Using model for {capability}: {model.name}")
+                return model
         else:
             return await self._get_default_for_capability(capability)
 
@@ -316,27 +334,35 @@ class LLMModelManager(BaseManager):
     async def resolve_default_model(self, model_type: str, strategy: str | None = None) -> Optional["LLMModel"]:
         """Resolve a capability to a model on an active provider.
 
-        Without a strategy and for quality, the model flagged as default
-        leads. Cost-efficient routing minimizes the combined per-1K tariff,
-        using defaults only to break tariff ties. Multimodal prefers
-        capabilities within equal default ranks. Price is not a proxy for
-        quality.
+        Candidates are restricted to the acting personal catalog for every
+        capability, not only chat: a media stage decrypts the same provider key.
+        Without a strategy and for quality, the model flagged as default leads.
+        Cost-efficient routing minimizes the combined per-1K tariff, using
+        defaults only to break tariff ties. Multimodal prefers capabilities
+        within equal default ranks. Price is not a proxy for quality.
         """
-        from app.services.ai.llm_client import default_model_sort_key
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.services.ai.llm_client import _allowed_model_types, default_model_sort_key
+        from app.services.ai.personal_catalog import CHAT_CAPABILITIES, eligible_owned_model
         from app.utils.enum_helpers import get_enum_value
 
         strategy_value = get_enum_value(strategy)
         if strategy_value not in ("", "cost_efficient", "quality", "multimodal"):
             raise ValueError(f"Unknown LLM strategy: {strategy_value}")
         models = await self.select_related("provider").filter(is_active=True)
-        if model_type == "text":
-            from app.core.personal_catalog_context import current_catalog_owner_id
-            from app.services.ai.personal_catalog import eligible_chat_model
-            from app.services.ai.llm_client import _allowed_model_types
-            allowed = await _allowed_model_types()
-            models = [m for m in models if eligible_chat_model(m, user_id=current_catalog_owner_id(), allowed_types=allowed)]
-        else:
-            models = [m for m in models if m.provider and m.provider.is_active and m.can_handle(model_type)]
+        # Every capability resolves inside the acting personal catalog. Text,
+        # image, video and audio stages all decrypt the provider key on the
+        # attempt, so an owner-agnostic candidate list would be a cross-user key
+        # use, not a routing preference. The tier gate is per capability:
+        # `starter` buys text, not vision.
+        needed = CHAT_CAPABILITIES if model_type == "text" else frozenset({model_type})
+        owner_id = current_catalog_owner_id()
+        allowed_types = await _allowed_model_types()
+        models = [
+            model
+            for model in models
+            if eligible_owned_model(model, user_id=owner_id, capabilities=needed, allowed_types=allowed_types)
+        ]
         if not models:
             return None
 

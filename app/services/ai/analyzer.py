@@ -992,13 +992,23 @@ class AIAnalyzer:
             if model_id:
                 try:
                     # Load model with provider relationship to avoid session issues
+                    from app.core.personal_catalog_context import current_catalog_owner_id
+                    from app.services.ai.personal_catalog import eligible_owned_model
+
                     model = await LLMModel.objects.select_related("provider").get(id=model_id)
+                    capability = get_enum_value(media_type)
                     if (
                         model
                         and model.is_active
                         and model.provider
                         and model.provider.is_active
-                        and model.can_handle(get_enum_value(media_type))
+                        and model.can_handle(capability)
+                        # A pin survives a migration or a hand-edited scenario: it
+                        # must still own its provider key, exactly like the
+                        # fallback paths below.
+                        and eligible_owned_model(
+                            model, user_id=current_catalog_owner_id(), capabilities={capability}
+                        )
                     ):
                         logger.info(f"✅ Select model {model.name} (provider: {model.provider.name}) for {media_type}")
                         return model

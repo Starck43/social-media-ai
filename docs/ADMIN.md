@@ -171,8 +171,8 @@ business-workflow execution.
 | `AIAnalyticsAdmin` | `AIAnalytics` | `/admin/ai-analytics/list` | Create disabled; stored analysis view |
 | `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection: create/edit/delete/export disabled |
 | `NotificationAdmin` | `Notification` | `/admin/notification/list` | Shared workspace read state; guarded hidden send action |
-| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Global provider/key configuration and connection test |
-| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Global model configuration and short/mock/real checks |
+| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Personal provider/key listing and connection test; create/edit disabled, configuration goes through Settings → Models |
+| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Personal model listing and short/mock/real checks; create/edit disabled |
 | `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Global workspace settings; platform-admin-only visibility |
 | `UserCredentialAdmin` | `UserCredential` | `/admin/user-credential/list` | Personal credential vault rows, not workspace-owned credentials |
 

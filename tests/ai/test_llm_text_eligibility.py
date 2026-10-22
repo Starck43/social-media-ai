@@ -7,6 +7,7 @@ import ast
 import asyncio
 import builtins
 import logging
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace as NS
 from typing import Any, Optional
@@ -40,7 +41,8 @@ class LLMTextEligibilityTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.scope = {'Any':Any,'Optional':Optional,'LLMModel':NS(id=0), 'logger':Mock(spec=logging.Logger),
             'httpx':NS(HTTPStatusError=HTTPStatusError,TimeoutException=TimeoutException,TransportError=TransportError),
-            'settings':NS(AGENT_MODEL=''), '_is_tools_not_supported_error':lambda error:False}
+            'settings':NS(AGENT_MODEL=''), 'Decimal':Decimal,
+            '_is_tools_not_supported_error':lambda error:False}
         names={
             '_cap_text',
             '_eligible_text_model',
@@ -54,8 +56,53 @@ class LLMTextEligibilityTests(unittest.IsolatedAsyncioTestCase):
             '_chat_response_usable',
             '_empty_reply_reason',
             '_record_failure',
+            '_model_price_floor',
         }
         source_functions('app/services/ai/llm_client.py',names,self.scope)
+        # `_eligible_text_model` imports the personal-catalog gate inside the
+        # function body. This suite loads source without importing the
+        # application, so that gate is doubled here; the real ownership
+        # predicate is covered by `tests/ai/test_personal_catalog_unit.py`.
+        # Import statements resolve through the interpreter's builtins, so the
+        # hook is process-wide and restored in tearDown.
+        self._real_import = builtins.__import__
+
+        def catalog_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "app.core.personal_catalog_context":
+                return NS(current_catalog_owner_id=lambda: 2)
+            if name == "app.services.ai.personal_catalog":
+                def eligible_chat_model(model, *, user_id, allowed_types=None):
+                    provider = model.provider
+                    capabilities = set(model.capabilities)
+                    return bool(
+                        model.owner_user_id == user_id
+                        and provider is not None
+                        and provider.owner_user_id == user_id
+                        and model.is_active and provider.is_active
+                        and {"text", "image"}.intersection(capabilities)
+                        and (allowed_types is None or capabilities <= set(allowed_types))
+                    )
+                return NS(eligible_chat_model=eligible_chat_model)
+            if name == "app.services.ai.cache_pricing":
+                def canonical_decimal(value):
+                    if value is None:
+                        return None
+                    try:
+                        return Decimal(str(value))
+                    except Exception:
+                        return None
+                return NS(canonical_decimal=canonical_decimal,
+                          model_pricing_token_unit=lambda model: 1000,
+                          CACHE_RATE_FIELDS=())
+            if name == "app.services.billing.errors":
+                # A billing refusal is re-raised by the real helper; this suite
+                # exercises transport routing, not admission.
+                return NS(raise_personal_billing_block=lambda error: None)
+            return self._real_import(name, globals, locals, fromlist, level)
+
+        builtins.__import__ = catalog_import
+        self.addCleanup(setattr, builtins, "__import__", self._real_import)
+
         model_scope={}
         # The analysis path is a façade since the model grouping refactor; the
         # class itself lives under `app/models/llm/`.
@@ -78,7 +125,8 @@ class LLMTextEligibilityTests(unittest.IsolatedAsyncioTestCase):
 
     def model(self, identity, model_type='text', *, default=False, provider_active=True, missing_provider=False, cost=0.1):
         row=NS(id=identity,model_type=model_type,is_default=default,input_cost_per_1k=cost,
-            output_cost_per_1k=cost,provider=None if missing_provider else NS(is_active=provider_active,name='local-double'),model_id='local')
+            output_cost_per_1k=cost,owner_user_id=2,is_active=True,
+            provider=None if missing_provider else NS(is_active=provider_active,owner_user_id=2,name='local-double'),model_id='local')
         row.capabilities=self.real_capabilities(row)
         return row
 
@@ -183,11 +231,22 @@ class LLMTextEligibilityTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):await task
         self.assertEqual(self.called,[11])
 
-    async def test_explicit_env_override_semantics_unchanged(self):
-        explicit=self.model(11,'video',provider_active=False);self.models=[explicit];self.allowed=set()
+    async def test_explicit_env_override_keeps_tier_bypass_but_not_ownership(self):
         self.scope['settings'].AGENT_MODEL='explicit'
-        self.assertIs(await self.resolve(),explicit)
-        self.assertEqual(self.filters,[{'name':'explicit'}]);self.scope['_allowed_model_types'].assert_not_awaited()
+        self.allowed=set()
+        own=self.model(11,'text')
+        self.models=[own]
+        self.assertIs(await self.resolve(),own)
+        self.assertEqual(self.filters,[{'name':'explicit'}])
+
+    async def test_explicit_env_name_from_another_owner_falls_back(self):
+        """The env name is not a licence to reach a model owned by someone else."""
+        self.scope['settings'].AGENT_MODEL='foreign'
+        foreign=self.model(11,'text');foreign.owner_user_id=3
+        fallback=self.model(8);self.allowed=None
+        self.models=[foreign,fallback]
+        self.assertIs(await self.resolve(),fallback)
+        self.assertEqual(self.filters,[{'name':'foreign'},{'is_active':True}])
 
 
 if __name__ == '__main__':

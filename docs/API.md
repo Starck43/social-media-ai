@@ -975,6 +975,8 @@ provider+N models bundle (provider-only save supported), and
 Sparse edits preserve unspecified fields/models. Defaults are per-user and
 capability, not global. Chat settings persist integer `agent_model_id`, with the
 same owner/provider/activity/tier eligibility for options, save, probe and runtime;
+image, video and audio resolution use the same gate, and the analyzer's failover
+queue never offers another owner's model;
 a chosen foreign/ineligible FK is rejected rather than resolved by name.
 
 See [evidence and outstanding real acceptance](validation/personal-llm-ownership.md).

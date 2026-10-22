@@ -118,13 +118,38 @@ def validate_model_values(values, *, creating=False):
     return result
 
 
-def eligible_chat_model(model, *, user_id, allowed_types=None):
+CHAT_CAPABILITIES = frozenset({"text", "image"})
+"""Capabilities a chat turn may need: text, plus vision for an attached image."""
+
+
+def eligible_owned_model(model, *, user_id, capabilities, allowed_types=None):
+    """A model the given owner may route to, for one capability or a small set.
+
+    Ownership is the security boundary, not a routing preference: the provider's
+    key is decrypted for every attempt, so a row owned by someone else is never a
+    candidate — not for text, not for image/video/audio, and not as a fallback.
+    `capabilities` is what the caller needs and the model must handle at least
+    one of them; the tier filter stays all-or-nothing so a model with an extra
+    billed capability never slips through on its default flag.
+    """
     provider = getattr(model, "provider", None)
-    capabilities = set(model.capabilities)
-    return bool(
-        model.owner_user_id == user_id and provider and provider.owner_user_id == user_id
-        and model.is_active and provider.is_active and {"text", "image"}.intersection(capabilities)
-        and (allowed_types is None or capabilities <= set(allowed_types))
+    model_capabilities = set(model.capabilities or ())
+    if not (
+        model.owner_user_id == user_id
+        and provider is not None
+        and provider.owner_user_id == user_id
+        and model.is_active
+        and provider.is_active
+    ):
+        return False
+    if not model_capabilities.intersection(capabilities):
+        return False
+    return allowed_types is None or model_capabilities <= set(allowed_types)
+
+
+def eligible_chat_model(model, *, user_id, allowed_types=None):
+    return eligible_owned_model(
+        model, user_id=user_id, capabilities=CHAT_CAPABILITIES, allowed_types=allowed_types
     )
 
 

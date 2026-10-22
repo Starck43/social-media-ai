@@ -459,3 +459,167 @@ async def test_create_digest_task_stores_grouping_params(client: AsyncClient) ->
                 await AgentScenario.objects.delete(id=scenario.id)
         await User.objects.delete_user(user.id)
         await tenants.delete_by_id(tenant_id)
+
+
+async def _make_source(tenant_id: int, name: str):
+    from app.models import Platform, Source
+    from app.types import SourceType
+
+    with tenant_scope(bypass=True):
+        platform = await Platform.objects.filter(is_active=True).first()
+        assert platform is not None, "the test database seeds platforms"
+        return await Source.objects.create(
+            name=name,
+            platform_id=platform.id,
+            external_id=_name("ext"),
+            source_type=SourceType.GROUP,
+            tenant_id=tenant_id,
+        )
+
+
+async def _delete_workspace_source(tenant_id: int, source_id: int):
+    from app.core.database import async_session_maker
+    from app.services.collection.source_deletion import delete_source
+
+    session = async_session_maker()
+    try:
+        with tenant_scope(tenant_id):
+            async with session.begin():
+                return await delete_source(session, source_id=source_id, tenant_id=tenant_id)
+    finally:
+        await session.close()
+
+
+async def test_a_stale_edit_form_cannot_activate_a_task_whose_source_is_gone(client: AsyncClient) -> None:
+    """The old form names a source another tab deleted: refuse the whole save.
+
+    Before the fix the task row was written first (`is_active=True` committed on
+    its own), and only the link write failed — leaving an active task with no
+    links, which the runtime reads as "all active sources". The save is now one
+    transaction, both halves or neither, and the refusal is named.
+    """
+    from app.models import Source
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    user, tenant_id = await _register(client, "EditStaleSrc")
+    scenario = task = source = None
+    try:
+        scenario = await _make_scenario(tenant_id, ["keywords"])
+        task = await _make_task(tenant_id, job_type="collect", scenario_id=scenario.id)
+        source = await _make_source(tenant_id, _name("gone"))
+        with tenant_scope(tenant_id):
+            await AgentTaskManager().set_sources(task.id, [source.id])
+
+        # The page the operator still has open: it carries the source id.
+        csrf = await _csrf(client, f"/app/tasks/{task.id}/edit")
+
+        # Another tab (or the sources page) deletes that source meanwhile.
+        await _delete_workspace_source(tenant_id, source.id)
+        with tenant_scope(bypass=True):
+            assert await Source.objects.get(id=source.id) is None
+
+        resp = await client.post(
+            f"/app/tasks/{task.id}",
+            data={
+                "name": _name("renamed"),
+                "job_type": "collect",
+                "cron_expr": "0 * * * *",
+                "scenario_id": str(scenario.id),
+                "source_ids": [str(source.id)],
+                "start_date": "2026-09-01",
+                "is_active": "on",
+                "_csrf": csrf,
+            },
+        )
+
+        assert resp.status_code == 200
+        assert "больше не существует" in resp.text
+        assert "обновите страницу" in resp.text
+
+        with tenant_scope(bypass=True):
+            after = await AgentTask.objects.get(id=task.id)
+        assert after is not None
+        # Neither half of the save landed: the name did not change and the task
+        # did not become active without sources.
+        assert after.name == task.name
+        assert after.is_active is False
+        with tenant_scope(tenant_id):
+            assert await AgentTaskManager().get_sources(task.id) == []
+    finally:
+        if task is not None:
+            with tenant_scope(bypass=True):
+                await AgentTask.objects.delete(id=task.id)
+        if scenario is not None:
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario.id)
+        await User.objects.delete_user(user.id)
+        await tenants.delete_by_id(tenant_id)
+
+
+async def test_the_task_row_rolls_back_when_only_the_link_write_fails(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The race the pre-save check cannot close: the task row must roll back.
+
+    The check runs outside the write, so a source can disappear between them.
+    The save is one transaction, so the link refusal (the manager sees an id
+    that is not in the workspace) must undo the task update that was already
+    flushed inside it — otherwise the committed half leaves the task active
+    with no links, i.e. pointed at every active source.
+    """
+    from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.web import tasks as tasks_web
+
+    user, tenant_id = await _register(client, "EditRollback")
+    scenario = task = source = None
+    try:
+        scenario = await _make_scenario(tenant_id, ["keywords"])
+        task = await _make_task(tenant_id, job_type="collect", scenario_id=scenario.id)
+        source = await _make_source(tenant_id, _name("vanishing"))
+        with tenant_scope(tenant_id):
+            await AgentTaskManager().set_sources(task.id, [source.id])
+        csrf = await _csrf(client, f"/app/tasks/{task.id}/edit")
+
+        await _delete_workspace_source(tenant_id, source.id)
+
+        # Pretend the pre-save check still saw the source: only the write
+        # inside the transaction can notice it is gone.
+        async def _stale_check(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(tasks_web, "_check_task_sources", _stale_check)
+
+        renamed = _name("renamed")
+        resp = await client.post(
+            f"/app/tasks/{task.id}",
+            data={
+                "name": renamed,
+                "job_type": "collect",
+                "cron_expr": "0 * * * *",
+                "scenario_id": str(scenario.id),
+                "source_ids": [str(source.id)],
+                "start_date": "2026-09-01",
+                "is_active": "on",
+                "_csrf": csrf,
+            },
+        )
+
+        assert resp.status_code == 200
+        assert "Источники задачи изменились во время сохранения" in resp.text
+
+        with tenant_scope(bypass=True):
+            after = await AgentTask.objects.get(id=task.id)
+        assert after is not None
+        assert after.name == task.name, "the flushed task update must not survive a failed link write"
+        assert after.is_active is False
+        with tenant_scope(tenant_id):
+            assert await AgentTaskManager().get_sources(task.id) == []
+    finally:
+        if task is not None:
+            with tenant_scope(bypass=True):
+                await AgentTask.objects.delete(id=task.id)
+        if scenario is not None:
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario.id)
+        await User.objects.delete_user(user.id)
+        await tenants.delete_by_id(tenant_id)

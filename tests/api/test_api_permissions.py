@@ -317,8 +317,63 @@ async def test_sources_crud() -> None:
         await _drop(owner, tenant_id)
 
 
-# ── Tasks CRUD tests ────────────────────────────────────────────────────────
+async def test_sources_api_names_a_client_error_for_an_unknown_source_type() -> None:
+    """A typo in `source_type` is the caller's mistake, not a server fault.
 
+    The enum column passes an unknown name straight through to PostgreSQL, so
+    without the check the first symptom was a 500 on flush.
+    """
+    async with await _client() as c:
+        owner, tenant_id = await _register_owner(c, "SrcBadType")
+        headers = await _auth_headers(c, owner.username)
+
+        resp = await c.post(
+            "/api/v1/sources",
+            json={
+                "name": "Bad Type",
+                "platform_id": await _platform_value(),
+                "source_type": "NOT_A_TYPE",
+                "external_id": secrets.token_hex(6),
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 422, resp.text
+
+        await _drop(owner, tenant_id)
+
+
+async def test_sources_api_refuses_a_null_update_field() -> None:
+    """Every updatable column is non-nullable: `null` is refused by name."""
+    async with await _client() as c:
+        owner, tenant_id = await _register_owner(c, "SrcNullPatch")
+        headers = await _auth_headers(c, owner.username)
+
+        created = await c.post(
+            "/api/v1/sources",
+            json={
+                "name": "Null Patch",
+                "platform_id": await _platform_value(),
+                "source_type": "USER",
+                "external_id": secrets.token_hex(6),
+            },
+            headers=headers,
+        )
+        assert created.status_code == 201
+        source_id = created.json()["id"]
+
+        resp = await c.patch(f"/api/v1/sources/{source_id}", json={"name": None}, headers=headers)
+        assert resp.status_code == 422, resp.text
+        assert "name" in resp.json()["detail"]
+
+        kept = await c.get(f"/api/v1/sources/{source_id}", headers=headers)
+        assert kept.status_code == 200
+        assert kept.json()["name"] == "Null Patch"
+
+        await c.delete(f"/api/v1/sources/{source_id}", headers=headers)
+        await _drop(owner, tenant_id)
+
+
+# ── Tasks CRUD tests ────────────────────────────────────────────────────────
 
 async def test_tasks_crud() -> None:
     """Full CRUD cycle for tasks."""

@@ -1,5 +1,20 @@
 # Personal LLM ownership implementation evidence
 
+## Current handoff status (supersedes earlier remote-only blockers)
+
+Owner-local evidence recorded below confirms migration 22/22, guards 12/12,
+ASGI/dispatch 27/27 and the prepared PostgreSQL 9 + web ASGI 7 suites passed on
+the specified earlier local backend+UI trees. This is attributed real acceptance,
+not a remote rerun and not proof for a later fresh-dev merge. The working schema
+was not upgraded; the coordinated test_schema window was restored to0108.
+
+Current blockers are final normal-dev ancestry/source freeze and the complete
+current queue/acceptance rerun. The observed queue failures are fixture teardown
+FKs; their test-only correction is described at the end. Both PRs remain Draft.
+Historical NOT RUN/prepared statements below describe their earlier remote
+checkpoints, not a denial of the later owner-local results.
+
+
 ## Source and task allocation
 
 Initial audit baseline: `dev` `ccce2801a640efd7a90704f37874d0bae1ec388a`.
@@ -73,7 +88,9 @@ isolated target and sequential owner-local validation. Offline UI evidence follo
 
 ## Ownership migration / operational boundary
 
-Migration definition 0109 is NOT applied. Existing providers/models are assigned
+Migration definition 0109 was NOT applied by the remote implementation session.
+Later owner-local isolated-clone/test-window execution is recorded below; this
+is not a working-schema rollout. Existing providers/models are assigned
 only with explicit `-x llm_legacy_owner_id=2`, reflecting the owner's instruction
 relayed by the coordinated settings session. User 2 must exist and be active.
 No secret duplication, guessed owner or silent cross-tenant data repair.
@@ -382,3 +399,39 @@ Recheck fresh refs first; do not blindly select ours for future dev changes.
 Do not publish a temporary regression to the dev-only manager merely to make
 GitHub auto-merge succeed. P3-T93–96 and both PRs remain BLOCKED/Draft until this
 integration and the required real PostgreSQL/ASGI gates are actually complete.
+
+
+## Queue teardown follow-up to owner-local acceptance
+
+Reviewed backend `435d5bdbfa6d6b7f2754bb5708ef4af716b35143` and fresh dev
+`8f2d8a21f6ca2ca0a3b5cfe215b4b11962bbd6b3`. The reported
+`fk_jobs_initiated_by_user_id_users` failure matches the test helper
+`tests/jobs/test_task_run_now.py::_drop`: it deleted User before its generated
+workspace, so tenant-owned Jobs retaining their actor blocked the first delete.
+
+The narrowly scoped test correction deletes only the fixture's tenant first
+(its dependent Jobs follow the declared tenant cascade), then its user. If the
+tenant delete fails, user deletion is not attempted. No production user deletion,
+FK, migration, actor value or unrelated workspace is changed. The web enqueue
+assertion now explicitly preserves `job.initiated_by_user_id == user.id`; clearing
+attribution to make teardown green is not an acceptable fix.
+
+New `tests/jobs/test_task_run_now_cleanup_unit.py`: **5 standalone unittest
+checks PASS**, actual `_drop` AST with stdlib doubles, no app/engine/DB imports.
+Covers ordering, fail-stop on tenant deletion, each partial fixture and no-op.
+New unit-file Black/isort, syntax compilation and targeted whitespace checks PASS.
+The real queue suites have NOT been re-executed remotely after this fix.
+
+Feature435d5bd's queue test files still predate the accepted dev snapshot/
+idempotence/admission-race cases: its 10 failed/16 passed run is not a rerun of
+dev's 53-case suite. A normal fresh-dev merge must preserve those cases; do not
+silently replace them with older branch copies. a107c34 merges the feature's
+remote continuation, not fresh dev ancestry. Remaining acceptance is tied to the
+final backend+UI SHA after the normal merge, not to an unpushed local combination.
+
+Coordination and requested owner-local reply (SHA/source freeze, exact commands/
+R10 runner, complete queue results, 9 PG +7 UI results, coordinated target/window
+and post-failure cleanup/schema revision):
+[PR #229 backend reply](https://github.com/Starck43/social-media-ai/pull/229#issuecomment-6347497180).
+No new DB/migration/reset/seed/live-provider operation was performed or authorized
+by this remote follow-up. Do not mark Ready from the five mocked cleanup checks.

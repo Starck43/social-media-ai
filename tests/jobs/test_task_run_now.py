@@ -122,10 +122,13 @@ async def _create(client: AsyncClient, task_name: str, source_id: int, run_now: 
 
 
 async def _drop(user: User | None, tenant_id: int | None) -> None:
-    if user is not None:
-        await User.objects.delete_user(user.id)
+    # Only fixture-owned data: tenant cascade removes its attributed jobs before
+    # the user RESTRICT FK is checked. Never clear actor IDs or delete by actor
+    # across unrelated workspaces just to make teardown pass.
     if tenant_id is not None:
         await tenants.delete_by_id(tenant_id)
+    if user is not None:
+        await User.objects.delete_user(user.id)
 
 
 @pytest.fixture
@@ -162,6 +165,7 @@ async def test_saving_and_running_queues_the_job_instead_of_blocking(client):
         assert job is not None, "a job row is written so the modal can follow it"
         # Left for the worker: this is the behaviour that changed.
         assert job.status == "pending", f"expected a queued job, got {job.status}"
+        assert job.initiated_by_user_id == user.id, "manual enqueue must retain its authenticated actor"
     finally:
         await _drop(user, tenant_id)
 

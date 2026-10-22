@@ -212,6 +212,30 @@ owner's workspace and refuses a foreign owner, an inactive provider and a revoke
 membership; image resolution skips another owner's model; tariff lookup stays in
 the acting catalog by row identity, and a foreign row id cannot price the attempt.
 
+### Cross-check on the integrated stack (backend + #230 UI)
+
+After the backend continuation `1a680e5` and UI `7bd1a8d`, the locally merged
+integrated tree (backend + UI, not pushed as a merge) was checked again:
+
+- the owner-local ASGI script: **27/27** again on the integrated tree.
+- prepared `tests/ai/test_personal_catalog_postgres_acceptance.py`: **9 passed**
+  on real PostgreSQL (`social_manager`/`test_schema` at 0109 in a coordinated
+  window, restored to 0108 afterwards).
+- prepared `tests/web/test_personal_llm_settings_acceptance.py`: **7 passed** in
+  the same window.
+- `tests/jobs/test_task_pending_occurrence.py` + `tests/jobs/test_task_run_now.py`:
+  **10 failed / 16 passed** on the branch, while `dev` at 0108 passes **53/53**.
+  All failures share one teardown signature: deleting the registered test user
+  raises `fk_jobs_initiated_by_user_id_users` because the rerun job now carries
+  `initiated_by_user_id` and outlives the test. Attribution itself looks
+  intended; the test cleanup (or the delete-user path) must remove those jobs
+  first. Open for the backend continuation — it is not catalog acceptance and
+  does not change the migration evidence.
+
+`test_schema` was restored to `0108` (76 providers/models, no owner columns,
+guards removed) after the window. The isolated clone was dropped and its dumps
+deleted.
+
 ### Not executed here / remaining
 
 - The #230 browser suite was not run on this machine (`playwright` is not

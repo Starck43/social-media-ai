@@ -190,8 +190,6 @@ async def test_source_admission_serializes_real_postgres_sessions_and_rolls_back
             first_locked.set()
             await release_first.wait()
 
-    monkeypatch.setattr(JobManager, "lock_source_admission", staticmethod(held_lock))
-
     async def admit():
         with tenant_scope(tenant_id):
             session = new_session()
@@ -218,12 +216,17 @@ async def test_source_admission_serializes_real_postgres_sessions_and_rolls_back
         with tenant_scope(tenant_id):
             assert await Job.objects.filter(job_type="analyze").count() == 0
 
+        # Installed only after the rollback pre-check: that admission must take
+        # the real lock and must not consume call #1, or it parks on
+        # release_first before its RuntimeError can surface.
+        monkeypatch.setattr(JobManager, "lock_source_admission", staticmethod(held_lock))
+
         first = asyncio.create_task(admit())
         await asyncio.wait_for(first_locked.wait(), timeout=5)
         second = asyncio.create_task(admit())
         await asyncio.wait_for(second_entered.wait(), timeout=5)
         release_first.set()
-        results = await asyncio.gather(first, second, return_exceptions=True)
+        results = await asyncio.wait_for(asyncio.gather(first, second, return_exceptions=True), timeout=10)
         assert sum(isinstance(value, SourceJobBusy) for value in results) == 1
         assert sum(isinstance(value, Job) for value in results) == 1
         with tenant_scope(tenant_id):

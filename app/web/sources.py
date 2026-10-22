@@ -1171,47 +1171,60 @@ async def source_delete(
     if denied is not None:
         return denied
 
+    from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
+    from app.services.collection.source_deletion import SourceDeleteBlocked, delete_source
 
-    with tenant_scope(tenant_id):
-        source = await Source.objects.get(id=source_id, tenant_id=tenant_id)
-        if source is None:
-            add_flash(request, "error", "Источник не найден")
-            return RedirectResponse("/app/sources", status_code=302)
+    session = new_session()
+    try:
+        with tenant_scope(tenant_id):
+            async with session.begin():
+                source = await Source.objects.get(id=source_id, tenant_id=tenant_id, session=session)
+                if source is None:
+                    add_flash(request, "error", "Источник не найден")
+                    return RedirectResponse("/app/sources", status_code=302)
 
-        # A task-owned lane exists so the task's collection keeps a stable
-        # `source_id`; the task creates it and cleans it up itself. Deleting it
-        # here would break that collection without the task noticing, so the
-        # refusal names the owning task instead of pretending nothing happened.
-        if source.owner_task_id is not None:
-            add_flash(
-                request,
-                "error",
-                f"Источник принадлежит поиску задачи №{source.owner_task_id} — удалите его в задаче",
-            )
-            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+                # A task-owned lane exists so the task's collection keeps a
+                # stable `source_id`; the task creates it and cleans it up
+                # itself. Deleting it here would break that collection without
+                # the task noticing, so the refusal names the owning task
+                # instead of pretending nothing happened.
+                if source.owner_task_id is not None:
+                    add_flash(
+                        request,
+                        "error",
+                        f"Источник принадлежит поиску задачи №{source.owner_task_id} — удалите его в задаче",
+                    )
+                    return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
-        # An active task reads this source on purpose: deleting it would
-        # silently drain the task's scope. The explicitly linked tasks include
-        # paused ones — only an active flag blocks the delete here.
-        from app.models.managers.agent_task_manager import AgentTaskManager
+                # `sources.analytics` is delete-orphan, so the analysis rows go
+                # with it. The service refuses while an active task still reads
+                # the source, so the scope is removed inside that task instead.
+                removal = await delete_source(session, source_id=source_id, tenant_id=tenant_id)
+    finally:
+        await session.close()
 
-        linked_tasks = await AgentTaskManager().for_source(
-            source.id, tenant_id, source_is_active=False, include_all_active=False
+    if isinstance(removal, SourceDeleteBlocked):
+        ids = ", ".join(f"№{task.task_id}" for task in removal.active_tasks)
+        if len(removal.active_tasks) == 1:
+            add_flash(request, "error", f"Источник используется активной задачей {ids} — удалите его в задаче")
+        else:
+            add_flash(request, "error", f"Источник используется активными задачами {ids} — удалите их в задачах")
+        return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
+    if removal is None:
+        add_flash(request, "error", "Источник не найден")
+        return RedirectResponse("/app/sources", status_code=302)
+
+    add_flash(request, "success", f"Источник '{removal.name}' удалён вместе с его аналитикой")
+    if removal.paused_tasks:
+        # An empty link set means "all active sources", so a task whose last
+        # explicit source just went away would silently widen. It was paused
+        # instead — name it, or the operator finds a stopped task unexplained.
+        names = ", ".join(f"«{task.name}»" for task in removal.paused_tasks)
+        add_flash(
+            request,
+            "info",
+            f"Задача {names} приостановлена: у неё не осталось выбранных источников",
         )
-        active_tasks = [task for task in linked_tasks if task.is_active]
-        if active_tasks:
-            ids = ", ".join(f"№{task.id}" for task in active_tasks)
-            if len(active_tasks) == 1:
-                add_flash(request, "error", f"Источник используется активной задачей {ids} — удалите его в задаче")
-            else:
-                add_flash(request, "error", f"Источник используется активными задачами {ids} — удалите их в задачах")
-            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
-
-        # `sources.analytics` is delete-orphan, so the analysis rows go with it.
-        # Say so before it happens rather than after.
-        name = source.name
-        await Source.objects.delete(id=source_id)
-
-    add_flash(request, "success", f"Источник '{name}' удалён вместе с его аналитикой")
     return RedirectResponse("/app/sources", status_code=302)

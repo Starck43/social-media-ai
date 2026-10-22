@@ -1180,6 +1180,11 @@ Authorization: Bearer <token>
 
 **Permissions:** `source.delete`
 
+Deleting a source also deletes its analytics rows. A task that named that
+source, and named no other, is paused in the same transaction: an empty source
+set means "all active workspace sources", so leaving it empty would silently
+widen the task. A task that never named sources (all-active) is untouched.
+
 ## Tasks
 
 ### List Tasks

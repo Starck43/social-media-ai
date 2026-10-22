@@ -226,9 +226,7 @@ async def test_task_scoped_query_lane_is_listed_with_its_owning_task_named():
 
         with tenant_scope(tenant_id):
             active = await AgentTaskManager().get_workspace_active_source_ids()
-            resolved = await _resolve_sources(
-                SimpleNamespace(id=task.id, tenant_id=tenant_id, sources=[])
-            )
+            resolved = await _resolve_sources(SimpleNamespace(id=task.id, tenant_id=tenant_id, sources=[]))
         assert visible.id in active
         assert lane.id not in active
         resolved_ids = {source.id for source in resolved}
@@ -318,6 +316,182 @@ async def test_delete_removes_a_workspace_source_and_lands_on_the_list():
     finally:
         if source is not None:
             await _drop_source(source.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_delete_refuses_the_last_source_of_a_running_task():
+    """The last named source of a running task is not deleted under it.
+
+    An empty link set means "all active sources", so letting the last explicit
+    source disappear would silently repoint a running task at the whole
+    workspace. The POST is refused with a flash naming the task and the way
+    out — remove the source inside the task; the row, the link and the running
+    task are all untouched.
+    """
+    from app.core.permissions import service_permission_scope
+    from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcDelScope")
+    task = source = None
+    try:
+        await _login(client, user.username)
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("only-source-task"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+            )
+        source = await _row_source(tenant_id, _name("last-source"))
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTaskManager().set_sources(task.id, [source.id])
+
+        token = await _csrf(client, f"/app/sources/{source.id}")
+        resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
+
+        assert resp.status_code == 200
+        assert str(resp.url).endswith(f"/app/sources/{source.id}")
+        assert "используется активной задачей" in resp.text
+        assert f"№{task.id}" in resp.text
+        assert "удалите его в задаче" in resp.text
+        with tenant_scope(bypass=True):
+            assert await Source.objects.get(id=source.id) is not None
+        # The task was neither paused nor widened: still running, still on
+        # exactly the source the operator chose, with no pause note written.
+        with tenant_scope(tenant_id):
+            row = await AgentTask.objects.get(id=task.id)
+        assert row is not None
+        assert row.is_active is True
+        assert row.last_error is None
+        with tenant_scope(tenant_id):
+            assert await AgentTaskManager().get_sources(task.id) == [source.id]
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        if task is not None:
+            with tenant_scope(tenant_id), service_permission_scope("agenttask", "delete"):
+                await AgentTask.objects.delete_by_id(task.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_delete_over_a_paused_task_removes_the_source_and_keeps_it_paused():
+    """A paused task does not block the delete — and stays paused after it.
+
+    The refusal exists for running tasks; a stopped task's schedule is off, so
+    the source may be retired. The delete must not resurrect the task either:
+    it stays paused, the link went with the row, and the flash reports only
+    the removal — no pause note the delete did not cause.
+    """
+    from app.core.permissions import service_permission_scope
+    from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcDelPaused")
+    task = source = None
+    try:
+        await _login(client, user.username)
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("paused-reader"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+            )
+        source = await _row_source(tenant_id, _name("paused-source"))
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTaskManager().set_sources(task.id, [source.id])
+            await AgentTaskManager().update_by_id(task.id, is_active=False)
+
+        token = await _csrf(client, f"/app/sources/{source.id}")
+        resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
+
+        assert resp.status_code == 200
+        assert str(resp.url).endswith("/app/sources")
+        assert "удалён вместе с его аналитикой" in resp.text
+        assert "приостановлена" not in resp.text
+        with tenant_scope(bypass=True):
+            assert await Source.objects.get(id=source.id) is None
+        source = None
+        with tenant_scope(tenant_id):
+            row = await AgentTask.objects.get(id=task.id)
+        assert row is not None
+        assert row.is_active is False, "the delete must not resurrect the paused task"
+        with tenant_scope(tenant_id):
+            assert await AgentTaskManager().get_sources(task.id) == []
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        if task is not None:
+            with tenant_scope(tenant_id), service_permission_scope("agenttask", "delete"):
+                await AgentTask.objects.delete_by_id(task.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_delete_refusal_names_every_active_task_in_the_plural():
+    """Two running tasks read the source: the flash names both, in plural.
+
+    Every task standing in the way has to give the source up inside itself,
+    so the operator must see all of them at once — the refusal lists every
+    active reader, not just the first.
+    """
+    from app.core.permissions import service_permission_scope
+    from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcDelPlural")
+    first = second = None
+    source = None
+    try:
+        await _login(client, user.username)
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            first = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("plural-reader-one"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+            )
+            second = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("plural-reader-two"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+            )
+        source = await _row_source(tenant_id, _name("shared-source"))
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTaskManager().set_sources(first.id, [source.id])
+            await AgentTaskManager().set_sources(second.id, [source.id])
+
+        token = await _csrf(client, f"/app/sources/{source.id}")
+        resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
+
+        assert resp.status_code == 200
+        assert str(resp.url).endswith(f"/app/sources/{source.id}")
+        assert "используется активными задачами" in resp.text
+        assert f"№{first.id}, №{second.id}" in resp.text
+        assert "удалите их в задачах" in resp.text
+        with tenant_scope(bypass=True):
+            assert await Source.objects.get(id=source.id) is not None
+        with tenant_scope(tenant_id):
+            rows = {task_id: await AgentTask.objects.get(id=task_id) for task_id in (first.id, second.id)}
+        assert all(row is not None and row.is_active is True for row in rows.values())
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        for task in (first, second):
+            if task is not None:
+                with tenant_scope(tenant_id), service_permission_scope("agenttask", "delete"):
+                    await AgentTask.objects.delete_by_id(task.id)
         await _drop(user, tenant_id)
 
 

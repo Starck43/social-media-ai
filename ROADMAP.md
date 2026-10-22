@@ -30,8 +30,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] P8-T15 — distinct admin API connectivity/mock/real request checks → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
 
-- [ ] P1-T01 — prove source admission on PostgreSQL (race/rollback/ASGI scope) → [p1](docs/phases/p1-queue-execution.md) — owner: codex — BLOCKED
-- [ ] P1-T02 — next bounded recovery/admission gap → [p1](docs/phases/p1-queue-execution.md) — unassigned — TODO
+- [ ] P1-T02 — invalidate a task's queued occurrence on definition change, pause or delete → [p1](docs/phases/p1-queue-execution.md) — owner: opencode — IN_PROGRESS
 - [ ] P2-T08 — corporate/shared accounts (owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — owner — TODO
 - [ ] P2-T09 — production billing verification (post-activation, owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
 - [ ] P3-T01 — digest send permission parity acceptance on integrated code (#176 closed) → [p3](docs/phases/p3-identity-access.md) — remote Notion agent — TODO
@@ -42,7 +41,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P6-T01 — data-retention rollout (deploy gated) → [p6](docs/phases/p6-lifecycle-privacy.md) — owner — BLOCKED
 - [ ] P6-T02 — one bounded retention/export/offboarding contract → [p6](docs/phases/p6-lifecycle-privacy.md) — unassigned — TODO
 - [ ] P6-T03 — admin removal of unprocessed source content → [p6](docs/phases/p6-lifecycle-privacy.md) — owner: codex — IN_PROGRESS
-- [ ] P6-T04 — preserve explicit task source scope when deleting its last source → [p6](docs/phases/p6-lifecycle-privacy.md) — unassigned — TODO
+- [ ] P6-T04 — preserve explicit task source scope when deleting its last source → [p6](docs/phases/p6-lifecycle-privacy.md) — owner: opencode — IN_PROGRESS
 - [ ] P7-T01 — loopback-only DB binding (pre-production) → [p7](docs/phases/p7-operations.md) — owner — TODO
 - [ ] P7-T02 — one staging-backed operation proof → [p7](docs/phases/p7-operations.md) — unassigned — TODO
 - [ ] P8-T07 — operator-visible stale-source observable → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO

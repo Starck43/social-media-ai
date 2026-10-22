@@ -66,14 +66,30 @@ do not claim or execute another task's job. A busy task does not change
 keeps its occurrence due and does not count a collision as an enqueue, so a
 different scenario/task is not silently discarded or marked executed.
 
+A task keeps at most one queued or claimed occurrence. Workspace-level job types
+(`digest`, `prune`, `learn`, `reflect`) answer a scheduled tick that arrives while
+their own earlier occurrence is still pending/running with the same busy receipt:
+no duplicate row is inserted and `next_run_at` is not advanced. Source job types
+already enforce this through the source conflict check.
+
+A queued occurrence is a snapshot of the definition that existed at admission, so
+it stops being valid when that definition changes. Saving changes to `job_type`,
+`cron_expr`, `payload`, `agent_scenario_id` or `next_run_at`, deactivating a task,
+or deleting it removes its `pending` rows in the same transaction as the task
+write; the task's `running` and terminal rows stay as history. Deleting a task
+must clean them explicitly because the Job FK is `ON DELETE SET NULL` — otherwise
+the occurrence would execute the removed task's payload. A pending row whose
+previous attempt left an unconfirmed external outcome
+(`outcome_unconfirmed`) is retained for review rather than dropped.
+
 This is explicit-run deduplication, not a universal execution lock or a content
 idempotency ledger. Low-level `JobManager.enqueue` remains available for durable
 new-input wakeups (e.g. Telegram staging): coalescing new content into a running
 batch that already selected its inputs could strand it. Already committed wakeup
 jobs block an explicit repeat, but autonomous new-input admission is not serialized
-by this explicit-run gate. No historical duplicate is cancelled/removed, no claim,
-recovery/cancellation policy is weakened, and source/task configuration edits while
-a job is running are not frozen. Existing ordinary result/hash dedup still applies.
+by this explicit-run gate. No terminal history is cancelled/removed, no claim,
+recovery/cancellation policy is weakened, and a running job is not stopped by a
+source/task configuration edit. Existing ordinary result/hash dedup still applies.
 Use the guarded method for new explicit source-run surfaces; never use a raw
 insert or a page-level busy check as their only protection.
 

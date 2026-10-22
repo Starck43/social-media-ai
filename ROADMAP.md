@@ -118,13 +118,3 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] Q-1 — compress `docs/validation/llm-budget-pg-runner.md` (807-line evidence ledger) to a short summary after P2-T01 activation completes; keep the example JSONs (pinned by `tests/test_budget_isolated_fixture_coherence.py`); context: docs/validation/; asked by: opencode; status: OPEN
 - [ ] Q-2 — verify source 2939 VK post origin and missing media references against the original API response, if obtainable; context: [VK raw content audit](docs/audits/2026-10-18-vk-raw-content.md); owner: codex-vk-raw-audit; status: OPEN
-
-- [ ] Q-10 — who may spend whose LLM key from the SQLAdmin console once providers
-  and models are user-owned (Draft #229 / P3-T93)? Context: P8-T15/T17/T18/T20
-  exercise model/provider checks from the admin console, while the candidate makes
-  the catalog personal, disables `can_create`/`can_edit` there and states that
-  platform inspection never authorises another user's key; DELETE on the two LLM
-  admin views is still enabled. Decide between restricting the check to the acting
-  admin's own catalog, keeping only a mock path, or dropping the action — and
-  whether the admin delete path must be closed too. Context: P8-T15,
-  docs/ADMIN.md; asked by: $local (opencode); status: OPEN

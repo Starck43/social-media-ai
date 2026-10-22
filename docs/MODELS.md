@@ -17,7 +17,9 @@ database inspection or migration was run for this update. Schema comes from
 PR #229 is based on dev `ccce2801a640efd7a90704f37874d0bae1ec388a`
 and adds the ownership/FK changes described below. The historical reference and
 inventory above are not fresh DB inspection. Migration 0109 has not been applied;
-real PostgreSQL/ASGI acceptance is pending. See
+real PostgreSQL/ASGI acceptance is pending. Final integrated offline evidence
+is at `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4` (83 isolated checks and
+128 offline browser cases, not DB acceptance). See
 [implementation evidence](validation/personal-llm-ownership.md).
 
 The public facade is [app.models](../app/models/__init__.py); canonical definitions
@@ -82,8 +84,10 @@ acknowledgement, recipient permission or messenger delivery.
 - Normal BaseManager querysets apply tenant criteria and fail without context for marked models; create rejects mismatched tenants. Explicit bypass, caller-built/raw SQL and association helpers require separate authorization. This is not automatic PostgreSQL row-level security or a guarantee that every direct SQL path is safe.
 - `Tenant`, `TenantUser`, `TenantInvite`, `TenantChannel` do not inherit the marker, even though the latter three contain workspace FKs. Their managers/callers must enforce ownership explicitly. The tenant row itself has no `tenant_id`.
 
-## Global catalog and identity tables
+## Catalog and identity tables
 
+These tables do not all share one authorization boundary: social Platform is
+global; providers/models are personal in the 0109 candidate.
 Timestamp fields apply to the catalog/identity models below except `platforms`.
 Association tables have no timestamps. LLM evidence/budget timestamp exceptions
 are stated in their own section.

@@ -22,6 +22,28 @@ provider call or messenger send was performed remotely. Other legacy page
 mismatches remain listed below. See [MODELS](MODELS.md) for ORM definitions and
 [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) for attributed prior acceptance.
 
+## Personal catalog candidate override (0109; PR #229 + #230)
+
+The baseline sections below retain historical console/action descriptions. In the
+0109 candidate, providers/models are **personally owned**, shared across one
+user's workspaces, not a global editable fleet. `LLMProviderAdmin.can_create`,
+`can_edit` and `LLMModelAdmin.can_create`, `can_edit` are false: raw SQLAdmin forms
+are not the configuration write path. Use Settings → Models with the active
+owner's catalog service for atomic provider+models saves and per-user defaults.
+This does not assert that every existing inspection/delete/test action is disabled.
+
+Platform operator entry/model-action grants are still required for the admin
+console, but never grant another user's key use. Existing connection/model test
+actions cannot rely on CONFIGURE alone: personal owner/active provider/model and
+fresh dispatch checks still apply. No foreign-catalog probe is authorized by a
+platform override. Actual SQLAdmin/ASGI behavior and real PostgreSQL constraints
+remain unverified in this candidate; offline fixtures are not that acceptance.
+
+Final offline integrated source is `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4`.
+See [ownership evidence and release gate](validation/personal-llm-ownership.md).
+Migration 0109 and owner2 backfill are prepared, not applied. Both PRs remain Draft;
+never release backend #229 without its stacked UI router from #230.
+
 ## Authentication and platform authority
 
 [Auth backend](../app/admin/auth.py),
@@ -171,8 +193,8 @@ business-workflow execution.
 | `AIAnalyticsAdmin` | `AIAnalytics` | `/admin/ai-analytics/list` | Create disabled; stored analysis view |
 | `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection: create/edit/delete/export disabled |
 | `NotificationAdmin` | `Notification` | `/admin/notification/list` | Shared workspace read state; guarded hidden send action |
-| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Personal provider/key listing and connection test; create/edit disabled, configuration goes through Settings → Models |
-| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Personal model listing and short/mock/real checks; create/edit disabled |
+| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Personal catalog inspection and connection test; raw create/edit disabled in 0109, owner-only credential use, configuration goes through Settings → Models |
+| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Personal model inspection and short/mock/real checks; raw create/edit disabled in 0109 |
 | `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Global workspace settings; platform-admin-only visibility |
 | `UserCredentialAdmin` | `UserCredential` | `/admin/user-credential/list` | Personal credential vault rows, not workspace-owned credentials |
 

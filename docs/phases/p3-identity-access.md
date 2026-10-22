@@ -59,6 +59,16 @@ production acceptance, real-DB pending-confirmation end-to-end run.
   owner: remote UI session (`ui/llm-provider-settings`); status: BLOCKED (required real PostgreSQL/ASGI acceptance).
   Evidence: [ownership implementation](../validation/personal-llm-ownership.md).
 
+### P3-T93–P3-T96 offline handoff (not acceptance)
+
+Backend [PR #229](https://github.com/Starck43/social-media-ai/pull/229) and stacked
+UI [PR #230](https://github.com/Starck43/social-media-ai/pull/230) remain Draft.
+Final integrated tested source: `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4`;
+83 isolated checks + 128 offline browser cases PASS. The offline rerun is complete;
+BLOCKED refers to real PostgreSQL/ASGI/migration/concurrency acceptance only.
+No task is accepted DONE, no migration/backfill/merge was performed.
+[Evidence and sequential acceptance](../validation/personal-llm-ownership.md).
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

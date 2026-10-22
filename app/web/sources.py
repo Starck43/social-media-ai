@@ -177,23 +177,40 @@ async def sources_list(request: Request):
         # Superuser sees all tenants' sources, optionally narrowed to one.
         # Bypass the tenant guard (the middleware already set a tenant scope) so
         # the manager query isn't silently scoped to the active workspace.
+        # Task-owned lanes are listed too: hiding them made the page show fewer
+        # sources than a task actually reads.
         with tenant_scope(bypass=True):
-            query = Source.objects.select_related("platform", "tenant").filter(
-                # A task-scoped query lane is not a workspace source: it is
-                # created and cleaned up by its owning task.
-                owner_task_id__isnull=True
-            )
+            query = Source.objects.select_related("platform", "tenant")
             if filter_tenant_id is not None:
                 query = query.filter(tenant_id=filter_tenant_id)
             sources = await query.order_by(Source.created_at.desc())
     else:
-        query = Source.objects.filter(tenant_id=request.state.tenant_id, owner_task_id__isnull=True)
-        sources = await query.select_related("platform").order_by(Source.created_at.desc())
+        sources = await (
+            Source.objects.filter(tenant_id=request.state.tenant_id)
+            .select_related("platform")
+            .order_by(Source.created_at.desc())
+        )
     # The per-row badge and the banner are per-source (whose token is used), not
     # per-caller, so both are computed from the rows actually rendered above.
     # One pass, one set of queries: `_connection_banners` reads the same mapping.
     source_connections = await source_connection_statuses(sources)
     connection_banners = _connection_banners(sources, source_connections)
+    stale_sources = await _stale_sources_summary(request, sources)
+
+    # A lane row (`owner_task_id`) names its owning task: the marker on the row
+    # explains why a source nobody added is on the page and why it is deleted
+    # in its task rather than here.
+    lane_tasks: dict[int, Any] = {}
+    lane_task_ids = sorted({source.owner_task_id for source in sources if source.owner_task_id})
+    if lane_task_ids:
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        if is_superuser:
+            with tenant_scope(bypass=True):
+                owners = await AgentTaskManager().filter(id__in=lane_task_ids)
+        else:
+            owners = await AgentTaskManager().filter(id__in=lane_task_ids, tenant_id=request.state.tenant_id)
+        lane_tasks = {task.id: task for task in owners}
 
     user_sources = await (
         Source.objects.filter(
@@ -220,6 +237,8 @@ async def sources_list(request: Request):
         user_sources_json=user_sources_data,
         source_connections=source_connections,
         connection_banners=connection_banners,
+        lane_tasks=lane_tasks,
+        stale_sources=stale_sources,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
@@ -488,24 +507,27 @@ async def source_detail(request: Request, source_id: int):
             .scalar(0)
         )
 
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
     can_view_tasks = perms_can(request, "agenttask", "view")
     schedules = []
     task_models = []
     effective_schedules = {}
     if can_view_tasks:
-        from app.models.managers.agent_task_manager import AgentTaskManager
-
         task_manager = AgentTaskManager()
         with tenant_scope(source.tenant_id):
-            task_models = await task_manager.for_source(
-                source.id, source.tenant_id, source_is_active=source.is_active
-            )
+            task_models = await task_manager.for_source(source.id, source.tenant_id, source_is_active=source.is_active)
             workspace_active_source_ids = await task_manager.get_workspace_active_source_ids()
             effective_schedules = await task_manager.effective_active_map(task_models, workspace_active_source_ids)
-        schedules = [
-            _schedule_view(task, effective_schedules.get(task.id, False))
-            for task in task_models
-        ]
+        schedules = [_schedule_view(task, effective_schedules.get(task.id, False)) for task in task_models]
+    # Delete guard on the page mirrors `source_delete`: an explicitly linked
+    # task whose own flag is still on keeps the source undeletable, so the
+    # page must say so instead of offering a button that only fails later.
+    with tenant_scope(source.tenant_id):
+        linked_tasks = await AgentTaskManager().for_source(
+            source.id, source.tenant_id, source_is_active=False, include_all_active=False
+        )
+        active_linked_tasks = [task for task in linked_tasks if task.is_active]
     is_ready, readiness_hint = await _readiness(
         source,
         task_models if can_view_tasks else None,
@@ -554,6 +576,7 @@ async def source_detail(request: Request, source_id: int):
         owner_connection=owner_connection,
         schedules=schedules,
         can_view_tasks=can_view_tasks,
+        active_linked_tasks=active_linked_tasks,
         can_update=perms_can(request, "source", "update"),
         can_delete=perms_can(request, "source", "delete"),
         is_superuser=is_superuser,
@@ -753,6 +776,47 @@ async def _resolve_source_window(source) -> dict:
 
 def _last_checked_label(last_checked) -> str:
     return human_datetime(last_checked, empty="не проверялся")
+
+
+def _stale_window_hours() -> int:
+    """Configured freshness window for an active source, in hours."""
+    from app.core.config import settings
+
+    return int(getattr(settings, "SOURCE_STALE_HOURS", 24))
+
+
+async def _stale_sources_summary(request: Request, sources: list) -> dict | None:
+    """Stale subset of the rows this page renders, or None without `source.view`.
+
+    `SourceManager.get_sources_for_monitoring` is the one staleness predicate —
+    active, and never checked or checked before `SOURCE_STALE_HOURS` — so the
+    page cannot drift from what the rest of the system calls "needs
+    monitoring". It answers for the whole visible tenant, so its ids are
+    intersected with the rendered rows: a superuser page counts the sources it
+    actually lists, not every workspace's.
+
+    A source that was never checked is counted and named separately. Filing it
+    under "stale" would claim a check that never happened; calling it "fresh"
+    because there is no timestamp to compare is the opposite lie.
+    """
+    if not perms_can(request, "source", "view"):
+        return None
+
+    from app.models.managers.source_manager import SourceManager
+
+    hours = _stale_window_hours()
+    stale_ids = {row.id for row in await SourceManager().get_sources_for_monitoring(hours_since_check=hours)}
+    rows = [row for row in sources if row.id in stale_ids]
+    active_total = sum(1 for row in sources if row.is_active)
+    never_ids = frozenset(row.id for row in rows if row.last_checked is None)
+    return {
+        "hours": hours,
+        "count": len(rows),
+        "active_total": active_total,
+        "never": len(never_ids),
+        "ids": frozenset(row.id for row in rows),
+        "never_ids": never_ids,
+    }
 
 
 def _window_kwargs(bounds: tuple) -> dict:
@@ -1152,7 +1216,7 @@ async def source_delete(
 
     from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
-    from app.services.collection.source_deletion import delete_source
+    from app.services.collection.source_deletion import SourceDeleteBlocked, delete_source
 
     session = new_session()
     try:
@@ -1177,10 +1241,19 @@ async def source_delete(
                     return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
                 # `sources.analytics` is delete-orphan, so the analysis rows go
-                # with it. Say so before it happens rather than after.
+                # with it. The service refuses while an active task still reads
+                # the source, so the scope is removed inside that task instead.
                 removal = await delete_source(session, source_id=source_id, tenant_id=tenant_id)
     finally:
         await session.close()
+
+    if isinstance(removal, SourceDeleteBlocked):
+        ids = ", ".join(f"№{task.task_id}" for task in removal.active_tasks)
+        if len(removal.active_tasks) == 1:
+            add_flash(request, "error", f"Источник используется активной задачей {ids} — удалите его в задаче")
+        else:
+            add_flash(request, "error", f"Источник используется активными задачами {ids} — удалите их в задачах")
+        return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
     if removal is None:
         add_flash(request, "error", "Источник не найден")

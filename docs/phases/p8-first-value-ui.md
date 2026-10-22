@@ -101,7 +101,30 @@ Coverage evidence vs PRD-08 (state/refs → task):
 
 - [ ] P8-T07 — stale-source observable; accept: active sources not checked within
   configured hours via `get_sources_for_monitoring`/`last_checked`, honest "never checked",
-  gated `source.view`; depends: none; owns: source freshness lane; owner: unassigned; status: TODO
+  gated `source.view`; depends: none; owns: source freshness lane; owner: opencode; status: READY.
+  Evidence: the window is configured, not invented in a template —
+  `SOURCE_STALE_HOURS` (`app/core/config.py`, default 24, `ge=1`; documented in
+  `docs/CONFIGURATION.md` and `.env.example`). `/app/sources` computes one
+  summary through `SourceManager.get_sources_for_monitoring` (the existing
+  staleness predicate: active, and never checked or older than the window),
+  intersected with the rows the page actually renders so a superuser's
+  cross-workspace page counts its own filter, not every workspace. The banner
+  names the count of the active total and the window, and counts sources that
+  were **never** checked separately — "older than N hours" is never claimed for
+  a source that has no check at all; each stale row is marked «устарел» or
+  «не проверялся» with its last check in the title. Read-only: no write, no
+  collection trigger, no provider call. Inactive sources are excluded (nothing
+  is expected of them) and task-owned lanes never appear because the page does
+  not render them — a lane's freshness is its owning task's signal. Gated by
+  `perms_can(request, "source", "view")`; without it the summary is `None` and
+  neither the banner nor the marks render. Tests: `tests/collection/test_web_sources.py`
+  11 passed, 4 new — stale/never/inactive counting with per-row marks, a
+  fully fresh workspace hides the banner, the window follows
+  `SOURCE_STALE_HOURS` (2 h makes a 3-hour-old check stale), and the signal is
+  absent without `source.view`. Known unrelated failures in that run
+  (`tests/web/test_web_ui.py`, `tests/web/test_web_list_layout.py`: settings and
+  source-detail markup) are outside this lane and untouched here. Migration
+  implications: none.
 - [ ] P8-T08 — credential expiry/near-expiry signal; accept: reauth/missing plus near-expiry from
   vault `expires_at` metadata — reads only, never decrypts; `renewable` auto-renewal is not reauth/error;
   personal vs operator split honest; depends: none; owns: credential signal lane; owner: unassigned; status: TODO
@@ -116,7 +139,22 @@ Coverage evidence vs PRD-08 (state/refs → task):
   depends: none; owns: delivery signal lane; owner: unassigned; status: TODO
 - [ ] P8-T12 — unknown-price/spend exposure signal; accept: operator view of provider models
   without known price plus spend totals via personal account managers (post P2-T06); depends: P2-T06;
-  owns: financial visibility lane; owner: unassigned; status: TODO
+  owns: financial visibility lane; owner: opencode; status: READY.
+  Implementation `7c23602`: `GET /app/billing/exposure` (platform-operator
+  `guard_superuser`, active workspace pin, no writes) renders today's personal-ledger
+  aggregates for the workspace (settled/reserved/provider-reported/tariff-reconstructed,
+  open reservations, unknown-price attempts, `complete` false while either is non-zero),
+  provider/model pairs with `cost_certainty=undefined` dispatched attempts over 7 days
+  (distinct dispatch, reconciliations do not inflate), and active catalog models on the
+  ambiguous 0/0 ordinary tariff. Failed reads render unavailable, never zeros; no payer
+  identity, prompt, credential or provider payload is rendered. Evidence: no-DB route
+  suite 4 passed + 6 subtests (`tests/unit_web/test_billing_exposure.py`), PostgreSQL
+  manager suite 3 passed (`tests/billing/test_billing_exposure_db.py`) through the
+  primary OpenCode runner on the shared test schema; `git diff --check` clean; no
+  migration, live provider call, runtime start or deployment. READY is implementation
+  review only. Limits: the zero-price list is a review aid, explicit free and an
+  unconfigured default are indistinguishable; legacy unattributed attempts are outside
+  the ledger projection; real browser/ASGI role acceptance is not covered by these suites.
 - [ ] P8-T13 — named support/escalation + pilot measures; accept: escalation owner and agreed
   latency/freshness/usefulness measures for the managed pilot, written and owner-signed; depends:
   P8-T10, P8-T11; owns: support contract lane; owner: unassigned; status: TODO
@@ -184,7 +222,7 @@ P8-T06 and does not alter its task record.
   the supplied prompt or a short default, with bounded output, existing consent,
   payer admission and no retry; mode-specific useful diagnostics; no migrations;
   owns: admin model action/endpoint/template/JS, probe helpers, focused tests/docs;
-  owner: remote Notion agent (`fix/admin-model-real-request`); status: BLOCKED
+  owner: codex (`fix/admin-model-real-request`); status: IN_PROGRESS
   (implementation ready; required local ASGI/PostgreSQL acceptance unavailable).
   Remote evidence: 107 isolated no-DB tests passed; 56 offline Chromium
   viewport/theme/state cases plus form/consent/no-JS checks passed;
@@ -196,8 +234,8 @@ P8-T06 and does not alter its task record.
 
 - [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
   platform role, and expose platform-admin-only role-grant/permission-label
-  editing without mutable catalog identities or role escalation; owner: remote
-  Notion agent (`fix/admin-role-picker-controls`); status: BLOCKED
+  editing without mutable catalog identities or role escalation; owner: codex
+  (`fix/admin-role-picker-controls`); status: IN_PROGRESS
   (owner-requested self-role protection and responsive permission transfer picker;
   base dev `58a90c1` (includes PR #212 and fresh documentation); owner-local real PostgreSQL acceptance remains pending).
   Owns: shared admin shell/CSS/authorization, role and permission views, focused
@@ -273,8 +311,8 @@ P8-T06 and does not alter its task record.
   readable answer plus sanitized provider JSON and transport/accounting statuses;
   visible pre-dispatch blockers with no bypass of CONFIGURE/CSRF/payer admission;
   owns: model-test action/endpoint/template/JS/CSS, opt-in client diagnostics,
-  focused regression tests/docs; owner: remote Notion agent
-  (`fix/admin-model-diagnostics`); status: BLOCKED (implementation ready; real
+  focused regression tests/docs; owner: codex
+  (`fix/admin-model-diagnostics`); status: IN_PROGRESS (implementation ready; real
   PostgreSQL/owner-environment acceptance deferred under the owner's explicit
   implementation-and-dev instruction following their merge exception).
   Evidence: 167 isolated tests passed (actual client source over MockTransport,
@@ -291,8 +329,8 @@ P8-T06 and does not alter its task record.
   payer, workspace and account/budget admission; remove disabled-billing warning;
   preserve answer/JSON/statuses and normal model usage; no activation/migrations;
   owns: model-test endpoint/actions/probe/client diagnostic label/template/JS,
-  focused tests/docs; owner: remote Notion agent (`fix/admin-model-owner-mode`);
-  status: BLOCKED only for deferred owner-local acceptance, not implementation.
+  focused tests/docs; owner: codex (`fix/admin-model-owner-mode`);
+  status: IN_PROGRESS only for deferred owner-local acceptance, not implementation.
   Owner explicitly clarified that disabled personal billing is normal single-owner
   operation and must not block real tests. Evidence: 178 isolated tests passed;
   80 offline Chromium viewport/theme/state cases plus owner blank/custom submit
@@ -327,7 +365,7 @@ P8-T06 and does not alter its task record.
   model-test persistence and response-only truncation; replace JSON copy text
   control with accessible corner SVG feedback and semantic status text colors.
   Scope: model-test UI, focused cost extraction if needed, regression tests/docs.
-  Owner: remote Notion agent (`fix/admin-model-cost-feedback`); status: BLOCKED (implementation ready;
+  Owner: codex (`fix/admin-model-cost-feedback`); status: IN_PROGRESS (implementation ready;
   owner-local PostgreSQL/ASGI acceptance remains deferred under the explicit
   in-session dev delivery/merge exception).
   Acceptance: supplied 470/8/478, zero-cost response has faithful cost evidence;
@@ -610,7 +648,7 @@ P8-T06 and does not alter its task record.
   selection/delete semantics, bounded style regressions and accurate deletion
   inventory with owner-local PostgreSQL/ASGI acceptance. Depends: none; owns:
   bounded settings/admin styles, focused tests and deletion documentation;
-  owner: remote Notion agent; status: BLOCKED. Canonical row restored from
+  owner: codex; status: IN_PROGRESS. Canonical row restored from
   Draft [PR #224](https://github.com/Starck43/social-media-ai/pull/224), head
   `6fd66d163a11ae5a86ac6a9756e1d97214d53716`, verified live 2026-10-21;
   implementation `39fa3fc`, original synchronized base `213980a`.

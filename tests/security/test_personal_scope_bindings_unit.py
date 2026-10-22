@@ -274,10 +274,11 @@ class LinkTests(unittest.IsolatedAsyncioTestCase):
             await self.write(1, [5], replace=False)
         self.assertEqual(self.writes, [])
 
-    async def test_foreign_task_rejected(self):
+    async def test_foreign_task_is_a_no_op(self):
+        # A task the caller cannot see is not a partial write: dev admits this
+        # as a zero-row no-op, and the source set is never touched.
         self.task = None
-        with self.assertRaises(ValueError):
-            await self.write(999, [5], replace=True)
+        self.assertEqual(await self.write(999, [5], replace=True), 0)
         self.assertEqual(self.writes, [])
 
     async def test_valid_replacement_commits_once_and_invalidates_pending_snapshot(self):
@@ -310,6 +311,79 @@ class LinkTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(identity=identity), self.assertRaises(ValueError):
                 await self.write(1, [identity], replace=True)
         self.assertEqual(self.commits, 0)
+
+
+class LinkedSourceReadTests(unittest.IsolatedAsyncioTestCase):
+    """Execute the actual read helper with a supported-API-only query double."""
+
+    def setUp(self):
+        self.task_table = sa.table("agent_tasks", sa.column("id"), sa.column("tenant_id"))
+        self.links = sa.table("agent_task_sources", sa.column("agent_task_id"), sa.column("source_id"))
+        self.visible_ids = {1, 3}
+        self.link_rows = [(1, 8), (1, 5), (2, 99)]
+        self.filters = []
+        self.queries = []
+        manager = NS(model=self.task_table.c, filter=self.filter, aggregate_rows=self.aggregate_rows)
+        tree = ast.parse((ROOT / "app/models/managers/agent_task_manager.py").read_text())
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "AgentTaskManager")
+        nodes = [
+            n for n in cls.body if getattr(n, "name", None) in {"_linked_source_ids", "get_sources", "get_sources_map"}
+        ]
+        normal_import = builtins.__import__
+
+        def imports(name, globals=None, locals=None, fromlist=(), level=0):
+            if (name, level) == ("agent_task", 2):
+                return NS(agent_task_sources=self.links)
+            return normal_import(name, globals, locals, fromlist, level)
+
+        scope = {"__builtins__": dict(vars(builtins), __import__=imports)}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), "<actual-linked-source-read>", "exec"), scope)
+        for node in nodes:
+            setattr(manager, node.name, types.MethodType(scope[node.name], manager))
+        self.manager = manager
+
+    def filter(self, **kwargs):
+        self.filters.append(kwargs)
+        ids = sorted(self.visible_ids.intersection(kwargs["id__in"]))
+
+        class ScopedQuery:
+            # Deliberately no values_list: production QuerySet does not implement it.
+            def __await__(self):
+                async def rows():
+                    return [NS(id=identity) for identity in ids]
+
+                return rows().__await__()
+
+        return ScopedQuery()
+
+    async def aggregate_rows(self, statement):
+        self.queries.append(statement)
+        ids = statement._where_criteria[0].right.value
+        return [row for row in self.link_rows if row[0] in ids]
+
+    async def test_empty_batch_does_not_query(self):
+        self.assertEqual(await self.manager.get_sources_map([]), {})
+        self.assertEqual(self.filters, [])
+        self.assertEqual(self.queries, [])
+
+    async def test_foreign_task_is_empty_without_association_read(self):
+        self.assertEqual(await self.manager.get_sources(2), [])
+        self.assertEqual(self.filters, [{"id__in": [2]}])
+        self.assertEqual(self.queries, [])
+
+    async def test_mixed_batch_only_queries_visible_task_ids(self):
+        self.assertEqual(await self.manager.get_sources_map([1, 2, 3, 999]), {1: [5, 8], 3: []})
+        self.assertEqual(len(self.queries), 1)
+        self.assertEqual(list(self.queries[0]._where_criteria[0].right.value), [1, 3])
+
+    async def test_single_task_read_preserves_sorted_sources(self):
+        self.assertEqual(await self.manager.get_sources(1), [5, 8])
+
+    async def test_await_protocol_exists_on_actual_queryset(self):
+        tree = ast.parse((ROOT / "app/models/managers/base_manager.py").read_text())
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "QuerySet")
+        methods = {n.name for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        self.assertIn("__await__", methods)
 
 
 if __name__ == "__main__":

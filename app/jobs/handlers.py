@@ -560,6 +560,167 @@ def _bounded_query(queries: tuple[str, ...]) -> str | None:
     return " | ".join(queries)[:500]
 
 
+async def _run_mention_lanes_step(
+    task,
+    *,
+    task_payload: dict[str, Any],
+    dry_run: bool,
+) -> dict[str, Any] | None:
+    """Ensure the task's own mention phrases exist as task-owned search lanes.
+
+    The task's «Что искать» phrases (`payload["collection"].queries`) become
+    SEARCH lanes linked to the task — the same rows `cli collection lanes`
+    makes by hand — so the run that follows reads them without a manual step.
+    The rules stay with the reviewed `ensure_query_lanes`: an existing lane is
+    reused, another task's lane is skipped with a bounded note, nothing is
+    ever deleted, and a dry run creates nothing and only reports the phrases
+    without a lane. Never raises: a blocked ensure is a bounded note and the
+    collection continues with the sources already linked.
+    """
+    from app.services.collection.intent import CollectionIntentError, parse_collection_intent
+    from app.services.collection.lane_migration import LaneMigrationError, ensure_query_lanes
+    from app.services.collection.mention_lanes import mention_lane_queries, mention_note
+    from app.services.collection.planner import query_source_spec
+
+    task_id = _log_id(getattr(task, "id", None))
+    if task_id is None:
+        return None
+    try:
+        intent = parse_collection_intent(task_payload)
+    except CollectionIntentError as error:
+        # The per-source stages report the same malformed block; the lane step
+        # declines to guess lanes from it.
+        logger.warning(
+            "collect_mention_intent_invalid task_id=%s error_code=%s",
+            task_id,
+            str(error),
+        )
+        return None
+    phrases = mention_lane_queries(intent)
+    if not phrases:
+        return None
+    platform_key = _population_platform(task)
+    summary: dict[str, Any] = {
+        "ran": True,
+        "dry_run": dry_run,
+        "platform": platform_key,
+        "match": intent.queries_match,
+        "queries": list(phrases)[:10],
+        "total": len(phrases),
+        "created": 0,
+        "reused": 0,
+        "linked": 0,
+        "refused": [],
+        "missing": [],
+        "error_code": None,
+        "error_hint": None,
+        "note": "",
+    }
+    try:
+        specs = [query_source_spec(task_id=int(task.id), platform=platform_key, query=phrase) for phrase in phrases]
+        result = await ensure_query_lanes(task, specs, platform=platform_key, dry_run=dry_run)
+    except LaneMigrationError as error:
+        summary.update(error_code="lane_migration_error", error_hint=" ".join(str(error).split())[:160])
+        summary["note"] = mention_note(summary)
+        return summary
+    except Exception as error:  # noqa: BLE001 — lane provisioning must not fail the run
+        summary.update(error_code=_error_kind(error))
+        summary["note"] = mention_note(summary)
+        return summary
+    summary.update(
+        created=len(result.created_source_ids),
+        reused=len(result.reused_source_ids),
+        linked=len(result.linked_source_ids),
+        refused=list(result.refused[:5]),
+        missing=list(result.missing[:10]),
+    )
+    summary["note"] = mention_note(summary)
+    return summary
+
+
+def _lane_identity(source: Any) -> tuple[str, str, str | None] | None:
+    """The planner lane a source reports its per-run evidence under.
+
+    One classification, the planner's own: wall types (group/channel/page/
+    user/chat) report `wall_posts`, a SEARCH source reports `post_search`
+    with its phrase; the collector's special non-post types (album, market,
+    broadcast, ...) model no post lane and report none.
+    """
+    from app.services.collection.planner import (
+        SEARCH_SOURCE_TYPE,
+        WALL_SOURCE_TYPES,
+        _enum_value,
+        _query_value,
+    )
+
+    # The classification reads the source defensively: evidence must never
+    # fail a run, and a source without a readable type simply has no lane.
+    source_type = _enum_value(getattr(source, "source_type", None)) or ""
+    source_type = str(source_type).lower()
+    platform = getattr(source, "platform", None)
+    platform = str(_enum_value(getattr(platform, "platform_type", platform)) or "").lower()
+    source_id = int(getattr(source, "id", 0) or 0)
+    external_id = str(getattr(source, "external_id", "") or "")
+    params = dict(getattr(source, "params", None) or {})
+    if source_type == SEARCH_SOURCE_TYPE:
+        query = _query_value(params.get("query") or external_id) or None
+        return f"search:{platform}:source:{source_id}", "post_search", query
+    if source_type in WALL_SOURCE_TYPES:
+        return f"wall:{platform}:{source_id}", "wall_posts", None
+    return None
+
+
+async def _record_lane_evidence(
+    *,
+    source: Any,
+    per: dict[str, Any],
+    task_id: int | None,
+    job_id: int | None,
+    limit_count: int | None,
+) -> None:
+    """One `collection_lane_runs` row for one collected source, ADDED beside
+    the per-source counters (never instead of them). The counts mirror the
+    per-source row exactly, the bound is the task's collection limit, and a
+    failure carries the same bounded code/hint mapping the run already
+    reports — never raw provider text. Evidence never fails the run and
+    writes no content.
+    """
+    from app.services.collection import lane_runs
+    from app.services.monitoring.selection_store import limit_reached
+
+    tenant_id = getattr(source, "tenant_id", None)
+    identity = _lane_identity(source)
+    if identity is None or tenant_id is None:
+        return
+    lane_id, lane_type, query = identity
+    fetched = int(per.get("items") or 0)
+    try:
+        await lane_runs.record_lane_run(
+            tenant_id=int(tenant_id),
+            job_id=job_id,
+            task_id=task_id,
+            lane_id=lane_id,
+            lane_type=lane_type,
+            query=query,
+            fetched=fetched,
+            selected=int(per.get("selected") or 0),
+            needs_review=int(per.get("needs_review") or 0),
+            rejected=int(per.get("rejected") or 0),
+            limit_count=limit_count,
+            # The same predicate the staged-selection ledger applies.
+            limit_reached=limit_reached(range(fetched), limit_count or 0),
+            error_code=per.get("error_code") or None,
+            unsupported_reason=per.get("error_hint") or per.get("hint") or None,
+        )
+    except Exception as e:  # noqa: BLE001 — evidence never fails the run
+        logger.warning(
+            "lane_evidence_failed source_id=%s task_id=%s error_code=%s",
+            _log_id(getattr(source, "id", None)),
+            task_id,
+            _error_kind(e),
+        )
+
+
 async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -> dict[str, Any]:
     """
     Collect content from sources.
@@ -569,9 +730,16 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         tracked_users:  list[str] — provider:external_id authors whose items are
                         eligible; a filter over each source's own content, never
                         a collection target (docs/design/task-selection.md)
+
+    Before the sources are resolved the runtime provisions the task's own
+    collection intent: the population search (see `_run_population_step`) and
+    the mention phrases of `payload["collection"]`, each of which becomes a
+    task-owned SEARCH lane of the task (see `_run_mention_lanes_step`). Every
+    collected source then writes one `collection_lane_runs` evidence row
+    beside its per-source counters (`_record_lane_evidence`).
     """
     from app.services.collection.context import build_collection_context, platform_name
-    from app.services.collection.intent import CollectionIntentError
+    from app.services.collection.intent import CollectionIntentError, parse_collection_intent
     from app.services.monitoring.collector import ContentCollector
     from app.services.social.rate_limit import SourceRateLimited
 
@@ -629,6 +797,18 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
             # picks them up.
             task = await _load_task(payload.get("agent_task_id")) or task
 
+    # Mention lanes: the task's own «Что искать» phrases become task-owned
+    # SEARCH lanes before the sources are resolved, so they join this same
+    # run — no hand-made search source needed (`cli collection lanes`). A dry
+    # run creates nothing and only reports the phrases without a lane.
+    mention = None
+    if task is not None and _log_id(getattr(task, "id", None)) is not None:
+        mention = await _run_mention_lanes_step(task, task_payload=task_payload, dry_run=dry_run)
+        if mention and (mention.get("created") or mention.get("linked")):
+            # The lanes exist now — read the task's sources again so this run
+            # picks them up.
+            task = await _load_task(payload.get("agent_task_id")) or task
+
     sources = await _resolve_sources(None if snapshot else task, payload)
 
     collector = ContentCollector()
@@ -674,6 +854,10 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         # Named evidence for the population step: what it found, what it
         # linked, and — when the search is blocked — the bounded reason.
         stats["population"] = population
+    if mention is not None:
+        # Named evidence for the mention-lane step: created/reused lanes and,
+        # in a dry run, how many phrases still have no lane.
+        stats["mention_lanes"] = mention
     from app.jobs import progress as job_progress
     if stage_only:
         await job_progress.begin_phase("collection")
@@ -694,6 +878,26 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
             str(error),
         )
         selection_scope = selection.SelectionScope()
+
+    # The task's collection limit, as every per-source evidence row reports
+    # it. A malformed block is already reported per source; the rows keep
+    # their counts and stay without a limit.
+    run_limit: int | None = None
+    if task is not None or snapshot is not None:
+        try:
+            run_limit = int(parse_collection_intent(task_payload).limit)
+        except CollectionIntentError:
+            run_limit = None
+    evidence_task_id = _log_id(getattr(task, "id", None))
+
+    async def _evidence(source: Any, per: dict[str, Any]) -> None:
+        await _record_lane_evidence(
+            source=source,
+            per=per,
+            task_id=evidence_task_id,
+            job_id=run_id,
+            limit_count=run_limit,
+        )
 
     for source in sources:
         await job_progress.step(sources, stats["per_source"])
@@ -727,6 +931,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "error_hint": str(error),
                 }
             )
+            await _evidence(source, stats["per_source"][-1])
             continue
         # A tracked author is a filter on what a source returns, not a
         # collection target: the source's own wall is always read.
@@ -868,6 +1073,9 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "error_hint": error_hint,
                 }
             )
+        # One lane-run row per collected source, over the outcome recorded
+        # above — added evidence; the per-source stats stay exactly as they are.
+        await _evidence(source, stats["per_source"][-1])
     return stats
 
 

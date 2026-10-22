@@ -10,7 +10,8 @@ required for unresolved effects and accounting.
   matters, `DATA_RETENTION_MONTHS` confirmed (default 1 — first daily prune
   irreversibly deletes analyses older than cutoff), post-deploy verification
   recorded, then this row is removed; depends: owner deployment approval;
-  owner: owner; status: BLOCKED — owner decision (2026-10-12): do not deploy yet
+  owner: owner; status: BLOCKED — owner decision (2026-10-12): do not deploy yet;
+  reiterated 2026-10-22: rollout is deferred to the final deployment stage.
 
 - [ ] P6-T02 — decide and implement one bounded retention, export, offboarding,
   credential-revocation or logging contract; accept: contract documented and
@@ -30,14 +31,15 @@ required for unresolved effects and accounting.
 
 ## Phase approval
 
-- [ ] P6-T04 — prevent source deletion from widening an explicitly scoped task
+- [x] P6-T04 — prevent source deletion from widening an explicitly scoped task
   to all active workspace sources; accept: deleting the final selected source
   atomically pauses or otherwise preserves the explicit task scope; genuinely
   all-active tasks retain their contract; tenant/permission checks and concurrent
   task edits are covered by focused PostgreSQL acceptance; depends: none;
   owns: source deletion manager/service, affected delete callers and focused
-  tests; owner: opencode; status: READY (Codex review rejected `510f213` on
-  2026-10-22; the blocker is addressed below). Confirmed at `a11f1f9`:
+  tests; owner: opencode; status: DONE — accepted: codex, 2026-10-22,
+  dev SHA `bbb16ba5eb9a48a14c744ad22bebe6db40a07330`. Codex review rejected
+  `510f213` on 2026-10-22; the blocker is addressed below. Confirmed at `a11f1f9`:
   source deletion removes m2m links but leaves the task active, while an empty
   link set means all active sources. See
   [social analysis audit](../audits/2026-10-18-social-analysis-web.md).
@@ -101,5 +103,28 @@ required for unresolved effects and accounting.
   `test_web_task_edit.py` (29 with the selection/collection form suites), 8
   passed for `test_source_deletion_scope_db.py`, 7 passed for
   `test_web_sources.py`.
+  Codex re-review (2026-10-22), exact SHA
+  `92dcb948de24c55ab82dccdba81e792945b5ac48`: the missing-source check and
+  transaction boundary address the stale-save finding in the working tree.
+  Acceptance is still pending: committed `AgentTaskManager.set_sources`
+  does not accept `session`, while the committed web caller now passes it,
+  causing `TypeError` on that path in a clean checkout. The session-aware
+  mutation, rollback and shared-lock implementation exists only in the dirty
+  P1-T02 manager changes. Commit that dependency and attach focused test
+  evidence to the resulting exact SHA before DONE. Existing passing counts
+  above are executor-reported working-tree evidence, not validation of the
+  standalone commit. No pytest rerun during this static re-review.
+  Final acceptance: P1-T02 dependency landed in parent `ae18376` commit
+  `c9ccf9d4a2328ec2c707b71f45cd7541375daa97`. At integrated dev
+  `bbb16ba5eb9a48a14c744ad22bebe6db40a07330`, the app and P6 tests are
+  unchanged from that dependency and the P6 implementation. The primary
+  OpenCode runner passed the focused root-conftest PostgreSQL/ASGI scope:
+  8 `test_source_deletion_scope_db.py` cases and the stale-form and
+  link-write-rollback `test_web_task_edit.py` regressions; 10 passed,
+  0 failed, 0 skipped. The concurrency case calls real `set_sources` from
+  another session and confirms the deletion pause and replacement links both
+  survive in the serialized order. `git diff --check` passed. No migration;
+  no schema reset, seed or migration. Historical review notes above record the
+  earlier blocker and are superseded by this exact-SHA acceptance.
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

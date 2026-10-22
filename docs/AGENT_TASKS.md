@@ -73,14 +73,24 @@ no duplicate row is inserted and `next_run_at` is not advanced. Source job types
 already enforce this through the source conflict check.
 
 A queued occurrence is a snapshot of the definition that existed at admission, so
-it stops being valid when that definition changes. Saving changes to `job_type`,
-`cron_expr`, `payload`, `agent_scenario_id` or `next_run_at`, deactivating a task,
-or deleting it removes its `pending` rows in the same transaction as the task
-write; the task's `running` and terminal rows stay as history. Deleting a task
-must clean them explicitly because the Job FK is `ON DELETE SET NULL` — otherwise
-the occurrence would execute the removed task's payload. A pending row whose
-previous attempt left an unconfirmed external outcome
-(`outcome_unconfirmed`) is retained for review rather than dropped.
+it stops being valid when that definition changes. Saving a changed value for
+`job_type`, `cron_expr`, `payload`, `agent_scenario_id`, `next_run_at`,
+`trigger_type`, `trigger_config`, `action_type`, `rate_limit_per_hour`,
+`cooldown_seconds` or `dry_run` removes its `pending` rows in the same transaction.
+Replacing or adding linked sources does the same when the membership actually
+changes. Saving the same value or the same source set preserves queued work; a
+task is deactivated only when it transitions from active to inactive. Deleting a
+task also removes its replaceable pending rows because the Job FK is
+`ON DELETE SET NULL` — otherwise the occurrence would execute the removed task's
+payload. The task's `running` and terminal rows stay as history. A pending row
+whose previous attempt left an unconfirmed external outcome (`outcome_unconfirmed`)
+is retained for review rather than dropped.
+
+Task definition and source-link mutations take the workspace admission gate
+before locking task rows, in stable task order for multi-task operations. This
+keeps a concurrent admission on one side of the edit and commits the task/source
+change with stale-pending cleanup as one unit. Caller-owned sessions retain
+commit and rollback ownership.
 
 This is explicit-run deduplication, not a universal execution lock or a content
 idempotency ledger. Low-level `JobManager.enqueue` remains available for durable

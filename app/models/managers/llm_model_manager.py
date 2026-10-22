@@ -28,6 +28,38 @@ class LLMModelManager(BaseManager):
         """Get all active LLM models."""
         return await self.filter(is_active=True)
 
+    async def zero_price_active_models(self, limit: int = 10) -> dict:
+        """Active models whose ordinary tariff is 0/0.
+
+        The catalog treats an explicit zero as FREE, but the admin form also
+        starts new models at 0.0 — so this is the operator's review list, not a
+        claim that every row is unpriced. No cache rates or provider secrets
+        are returned, only the provider name and model identity.
+        """
+        from sqlalchemy import func
+
+        if type(limit) is not int or not 0 < limit <= 50:
+            raise ValueError("Zero-price model limit must be between 1 and 50")
+        zero = self.filter(
+            is_active=True,
+            input_cost_per_1k=0,
+            output_cost_per_1k=0,
+        )
+        total = await zero.count()
+        rows = await zero.prefetch_related("provider").order_by(self.model.name).limit(limit)
+        return {
+            "total": int(total),
+            "models": [
+                {
+                    "provider": getattr(getattr(model, "provider", None), "name", "—"),
+                    "model_id": model.model_id,
+                    "name": model.name,
+                    "is_default": bool(model.is_default),
+                }
+                for model in rows
+            ],
+        }
+
     async def capability_candidates(
         self, capability: str, *, exclude_id: int | None = None, limit: int = 3
     ) -> list["LLMModel"]:

@@ -1,5 +1,20 @@
 # Personal LLM ownership implementation evidence
 
+## Current handoff status (supersedes earlier remote-only blockers)
+
+Owner-local evidence recorded below confirms migration 22/22, guards 12/12,
+ASGI/dispatch 27/27 and the prepared PostgreSQL 9 + web ASGI 7 suites passed on
+the specified earlier local backend+UI trees. This is attributed real acceptance,
+not a remote rerun and not proof for a later fresh-dev merge. The working schema
+was not upgraded; the coordinated test_schema window was restored to0108.
+
+Current blockers are final normal-dev ancestry/source freeze and the complete
+current queue/acceptance rerun. The observed queue failures are fixture teardown
+FKs; their test-only correction is described at the end. Both PRs remain Draft.
+Historical NOT RUN/prepared statements below describe their earlier remote
+checkpoints, not a denial of the later owner-local results.
+
+
 ## Source and task allocation
 
 Initial audit baseline: `dev` `ccce2801a640efd7a90704f37874d0bae1ec388a`.
@@ -73,7 +88,9 @@ isolated target and sequential owner-local validation. Offline UI evidence follo
 
 ## Ownership migration / operational boundary
 
-Migration definition 0109 is NOT applied. Existing providers/models are assigned
+Migration definition 0109 was NOT applied by the remote implementation session.
+Later owner-local isolated-clone/test-window execution is recorded below; this
+is not a working-schema rollout. Existing providers/models are assigned
 only with explicit `-x llm_legacy_owner_id=2`, reflecting the owner's instruction
 relayed by the coordinated settings session. User 2 must exist and be active.
 No secret duplication, guessed owner or silent cross-tenant data repair.
@@ -156,6 +173,96 @@ Backend mounts the UI router, so #229 alone is not an independently releasable a
 After **required real acceptance**, merge #230 into the feature branch first,
 then the complete #229 into dev. Both remain Draft; do not release an intermediate
 backend without the mandatory UI module. No merge is performed by this work.
+
+## Owner-local PostgreSQL/ASGI acceptance (2026-10-22)
+
+Run on the owner's machine against an **isolated clone** of the local 0108
+database (`social_manager` → `social_ai_llm_accept`), never the working schema
+and never `test_schema`. A `pg_dump -Fc` backup of the clone was taken before the
+first upgrade; the clone is dropped after the run. PostgreSQL 15.14. Head:
+backend `5f7aaa2`, with the #230 UI source (`d9f7c47`) merged locally for the
+web settings routes — the merge is not pushed.
+
+### Preflight (read-only, actual 0108 catalog)
+
+- Revision `0108`; 5 providers, 7 models, 4 active users, 73 workspaces.
+- Reviewed owner user 2 exists and is active; web memberships in workspaces 1 and 695.
+- Legacy `tenants.agent_model`: only workspace 695 carries
+  `'Gemini 3.1 Flash-Lite'`, which has no catalog row — it must stay unmapped.
+
+### Migration (22/22 checks)
+
+- Upgrade without `-x llm_legacy_owner_id=2` is refused before DDL; revision stays 0108.
+- An inactive owner 2 is refused before DDL.
+- A pre-existing cross-workspace task/source link is refused before DDL and no
+  owner column is added.
+- Upgrade with the reviewed owner reaches `0109`; providers get `legacy-<id>`,
+  every provider and model row is owned by user 2.
+- Provider/model rows, encrypted keys, tariffs and numeric IDs are identical to
+  0108; only `owner_user_id`, `uid` and `agent_model_id` are added.
+- An authorized unique legacy name maps to its row; a tenant without membership
+  and an ambiguous name stay NULL.
+- Downgrade refuses colliding provider display names; after cleanup it restores
+  the 0108 structure **exactly** (columns, constraints, indexes, triggers and
+  functions compared as a fingerprint), keeping rows, keys and rates.
+- A round trip re-applies 0109 with one owner and no unowned model.
+
+### Guards on the upgraded schema (12/12)
+
+Task/source/scenario bindings: cross-workspace link, source `owner_task_id`, task
+`tenant_id`, task→scenario and task-owned source links are refused; same-workspace
+writes succeed. Personal catalog: owner and model `provider_id` are immutable,
+`uid` and display name are editable, duplicate `uid` within one owner is refused,
+duplicate display names are allowed, a model cannot point at another owner's
+provider (composite FK), and deleting an owner with a catalog is RESTRICTed.
+
+### ASGI, permissions, CSRF and dispatch (27/27)
+
+Two registered users in separate workspaces over real ASGI: atomic provider+model
+bundle save; the key is stored encrypted and never echoed; a save without CSRF is
+403 and creates no row; one default per owner and capability; another owner's
+catalog is not rendered and a foreign provider edit is refused unchanged; chat
+`agent_model_id` accepts the owner's model and refuses a foreign id; the bearer
+API lists only the owner's providers and refuses a foreign id; two concurrent
+bundle writes leave exactly one default; dispatch accepts the owner's model in the
+owner's workspace and refuses a foreign owner, an inactive provider and a revoked
+membership; image resolution skips another owner's model; tariff lookup stays in
+the acting catalog by row identity, and a foreign row id cannot price the attempt.
+
+### Cross-check on the integrated stack (backend + #230 UI)
+
+After the backend continuation `1a680e5` and UI `7bd1a8d`, the locally merged
+integrated tree (backend + UI, not pushed as a merge) was checked again:
+
+- the owner-local ASGI script: **27/27** again on the integrated tree.
+- prepared `tests/ai/test_personal_catalog_postgres_acceptance.py`: **9 passed**
+  on real PostgreSQL (`social_manager`/`test_schema` at 0109 in a coordinated
+  window, restored to 0108 afterwards).
+- prepared `tests/web/test_personal_llm_settings_acceptance.py`: **7 passed** in
+  the same window.
+- `tests/jobs/test_task_pending_occurrence.py` + `tests/jobs/test_task_run_now.py`:
+  **10 failed / 16 passed** on the branch, while `dev` at 0108 passes **53/53**.
+  All failures share one teardown signature: deleting the registered test user
+  raises `fk_jobs_initiated_by_user_id_users` because the rerun job now carries
+  `initiated_by_user_id` and outlives the test. Attribution itself looks
+  intended; the test cleanup (or the delete-user path) must remove those jobs
+  first. Open for the backend continuation — it is not catalog acceptance and
+  does not change the migration evidence.
+
+`test_schema` was restored to `0108` (76 providers/models, no owner columns,
+guards removed) after the window. The isolated clone was dropped and its dumps
+deleted.
+
+### Not executed here / remaining
+
+- The #230 browser suite was not run on this machine (`playwright` is not
+  installed here); the UI owner's sandbox evidence (24 catalog + 104 layout
+  cases) stands.
+- `alembic check` still reports the known repo-wide model/schema naming drift
+  (schema-qualified FKs, `ix_public_*` indexes, enum and comment differences) on
+  unrelated tables. It predates 0109 and is unchanged by it.
+- No production or staging target, no working-schema migration, no deploy, no
+  live provider call.
 
 ## Required owner-local acceptance (sequential, R8/R10)
 
@@ -292,3 +399,39 @@ Recheck fresh refs first; do not blindly select ours for future dev changes.
 Do not publish a temporary regression to the dev-only manager merely to make
 GitHub auto-merge succeed. P3-T93–96 and both PRs remain BLOCKED/Draft until this
 integration and the required real PostgreSQL/ASGI gates are actually complete.
+
+
+## Queue teardown follow-up to owner-local acceptance
+
+Reviewed backend `435d5bdbfa6d6b7f2754bb5708ef4af716b35143` and fresh dev
+`8f2d8a21f6ca2ca0a3b5cfe215b4b11962bbd6b3`. The reported
+`fk_jobs_initiated_by_user_id_users` failure matches the test helper
+`tests/jobs/test_task_run_now.py::_drop`: it deleted User before its generated
+workspace, so tenant-owned Jobs retaining their actor blocked the first delete.
+
+The narrowly scoped test correction deletes only the fixture's tenant first
+(its dependent Jobs follow the declared tenant cascade), then its user. If the
+tenant delete fails, user deletion is not attempted. No production user deletion,
+FK, migration, actor value or unrelated workspace is changed. The web enqueue
+assertion now explicitly preserves `job.initiated_by_user_id == user.id`; clearing
+attribution to make teardown green is not an acceptable fix.
+
+New `tests/jobs/test_task_run_now_cleanup_unit.py`: **5 standalone unittest
+checks PASS**, actual `_drop` AST with stdlib doubles, no app/engine/DB imports.
+Covers ordering, fail-stop on tenant deletion, each partial fixture and no-op.
+New unit-file Black/isort, syntax compilation and targeted whitespace checks PASS.
+The real queue suites have NOT been re-executed remotely after this fix.
+
+Feature435d5bd's queue test files still predate the accepted dev snapshot/
+idempotence/admission-race cases: its 10 failed/16 passed run is not a rerun of
+dev's 53-case suite. A normal fresh-dev merge must preserve those cases; do not
+silently replace them with older branch copies. a107c34 merges the feature's
+remote continuation, not fresh dev ancestry. Remaining acceptance is tied to the
+final backend+UI SHA after the normal merge, not to an unpushed local combination.
+
+Coordination and requested owner-local reply (SHA/source freeze, exact commands/
+R10 runner, complete queue results, 9 PG +7 UI results, coordinated target/window
+and post-failure cleanup/schema revision):
+[PR #229 backend reply](https://github.com/Starck43/social-media-ai/pull/229#issuecomment-6347497180).
+No new DB/migration/reset/seed/live-provider operation was performed or authorized
+by this remote follow-up. Do not mark Ready from the five mocked cleanup checks.

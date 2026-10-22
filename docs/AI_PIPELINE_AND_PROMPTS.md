@@ -94,8 +94,15 @@ actor permissions and manager rules still apply at the operation boundary.
 ## Relevance and coverage
 
 When `scope.relevance_filter` is enabled, the analyzer applies the configured
-minimum confidence before saving the result. Submitted text sampling and media
-availability are tracked separately from output validity:
+minimum confidence before saving the result. A model's own relevance answer
+counts on its own: when the parsed text answer carries a real boolean
+`is_relevant` and it is `False`, the post is filtered exactly like
+`is_meaningful == False` — nothing is written for it. Only a real boolean
+counts: a missing field, `None`, a string or a number never filters anything,
+because the value is model output, not trusted input.
+
+Submitted text sampling and media availability are tracked separately from
+output validity:
 
 - omitted eligible text remains available for later analysis;
 - recognized but unavailable image/video attachments keep the parent incomplete;

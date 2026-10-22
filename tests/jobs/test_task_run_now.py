@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import re
 import secrets
+from html.parser import HTMLParser
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -29,6 +30,110 @@ from app.models.managers.tenant_manager import TenantUserManager, tenants
 from app.types import SourceType
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
+
+
+class RunPanelParser(HTMLParser):
+    """Read `#task-run-progress`: its status attributes, headline and run link."""
+
+    def __init__(self):
+        super().__init__()
+        self.panel_attrs: dict[str, str] | None = None
+        self.status_text = ""
+        self.link_href = ""
+        self.link_text = ""
+        self._panel_depth = 0
+        self._in_panel = False
+        self._in_status = False
+        self._status_parts: list[str] = []
+        self._in_link = False
+        self._link_parts: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "div" and attributes.get("id") == "task-run-progress":
+            self._in_panel = True
+            self._panel_depth = 1
+            self.panel_attrs = attributes
+            return
+        if not self._in_panel:
+            return
+        if tag == "div":
+            self._panel_depth += 1
+        elif tag == "p" and "font-medium" in attributes.get("class", "").split() and not self.status_text:
+            self._in_status = True
+            self._status_parts = []
+        elif tag == "a" and attributes.get("href", "").startswith("/app/tasks?job_id="):
+            self._in_link = True
+            self.link_href = attributes["href"]
+            self._link_parts = []
+
+    def handle_endtag(self, tag):
+        if not self._in_panel:
+            return
+        if tag == "a" and self._in_link:
+            self._in_link = False
+            self.link_text = " ".join("".join(self._link_parts).split())
+        elif tag == "p" and self._in_status:
+            self._in_status = False
+            self.status_text = " ".join("".join(self._status_parts).split())
+        elif tag == "div":
+            self._panel_depth -= 1
+            if self._panel_depth == 0:
+                self._in_panel = False
+
+    def handle_data(self, data):
+        if self._in_status:
+            self._status_parts.append(data)
+        if self._in_link:
+            self._link_parts.append(data)
+
+
+class SourceStatsParser(HTMLParser):
+    """Pair each big statistic value with the semantic label that follows it."""
+
+    def __init__(self):
+        super().__init__()
+        self.in_stats = False
+        self._in_heading = False
+        self._heading_parts: list[str] = []
+        self._in_value = False
+        self._paragraph_class = ""
+        self._paragraph_parts: list[str] = []
+        self.paragraphs: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "h2":
+            self._in_heading = True
+            self._heading_parts = []
+        elif tag == "p" and self.in_stats:
+            self._in_value = True
+            self._paragraph_class = attributes.get("class", "")
+            self._paragraph_parts = []
+
+    def handle_endtag(self, tag):
+        if tag == "h2" and self._in_heading:
+            self._in_heading = False
+            self.in_stats = "Статистика источника" in " ".join(self._heading_parts)
+        elif tag == "p" and self._in_value:
+            self._in_value = False
+            self.paragraphs.append((self._paragraph_class, " ".join("".join(self._paragraph_parts).split())))
+
+    def handle_data(self, data):
+        if self._in_heading:
+            self._heading_parts.append(data)
+        elif self._in_value:
+            self._paragraph_parts.append(data)
+
+    @property
+    def metrics(self) -> dict[str, str]:
+        values: dict[str, str] = {}
+        for index, (classes, text) in enumerate(self.paragraphs):
+            if "text-2xl" not in classes.split() or index + 1 >= len(self.paragraphs):
+                continue
+            values[self.paragraphs[index + 1][1]] = text
+        return values
+
 
 # Real tenancy, no platform-owner bypass: these tests create a task through the
 # web form as a normal member, and where the task lands *is* what they check.
@@ -122,10 +227,13 @@ async def _create(client: AsyncClient, task_name: str, source_id: int, run_now: 
 
 
 async def _drop(user: User | None, tenant_id: int | None) -> None:
-    if user is not None:
-        await User.objects.delete_user(user.id)
+    # Only fixture-owned data: the tenant cascade removes its attributed jobs
+    # before the user RESTRICT FK is checked. Never clear actor IDs or delete by
+    # actor across unrelated workspaces just to make teardown pass.
     if tenant_id is not None:
         await tenants.delete_by_id(tenant_id)
+    if user is not None:
+        await User.objects.delete_user(user.id)
 
 
 @pytest.fixture
@@ -136,14 +244,25 @@ async def client():
 
 
 @pytest.mark.asyncio
-async def test_saving_and_running_queues_the_job_instead_of_blocking(client):
-    """ "Сохранить и выполнить" must return immediately, not run the job inline.
+async def test_saving_and_running_queues_the_job_instead_of_blocking(client, monkeypatch):
+    """ "Сохранить и выполнить" enqueues the job and hands it to a background task.
 
     The handler used to execute inside the POST, so a long job froze the page for
     minutes and the operator's second click hit the unique-name constraint. The
-    response now comes back as soon as the job row exists, and the job is left
-    `pending` for the worker rather than stamped `running` in-request.
+    response now comes back as soon as the job row exists: the job is left
+    `pending` and the request hands it to `launch_job_background` without running
+    the handler synchronously. The handoff runs on the request's own event loop,
+    so a manual run works without the `app.runtime` worker.
     """
+    from app.jobs import dispatcher
+
+    launches: list[tuple[int, bool]] = []
+
+    def record_launch(job_id: int, *, allow_retry: bool = False) -> None:
+        launches.append((job_id, allow_retry))
+
+    monkeypatch.setattr(dispatcher, "launch_job_background", record_launch)
+
     user, tenant_id = await _register(client, "queue")
     source = await _make_source(tenant_id)
     task_name = _name("queued")
@@ -160,8 +279,10 @@ async def test_saving_and_running_queues_the_job_instead_of_blocking(client):
             assert task.tenant_id == tenant_id, f"landed in tenant {task.tenant_id}, expected {tenant_id}"
             job = await Job.objects.filter(agent_task_id=task.id).order_by(Job.id.desc()).first()
         assert job is not None, "a job row is written so the modal can follow it"
-        # Left for the worker: this is the behaviour that changed.
+        # Nothing ran synchronously: the row is still queued for the background handoff.
         assert job.status == "pending", f"expected a queued job, got {job.status}"
+        assert job.initiated_by_user_id == user.id, "manual enqueue must retain its authenticated actor"
+        assert launches == [(job.id, False)], "the request must hand exactly this job to the background runner"
     finally:
         await _drop(user, tenant_id)
 
@@ -195,9 +316,7 @@ async def test_source_admission_serializes_real_postgres_sessions_and_rolls_back
             session = new_session()
             try:
                 async with session.begin():
-                    return await Job.objects.admit_source_job(
-                        "analyze", {"source_ids": [source.id]}, session=session
-                    )
+                    return await Job.objects.admit_source_job("analyze", {"source_ids": [source.id]}, session=session)
             finally:
                 await session.close()
 
@@ -207,9 +326,7 @@ async def test_source_admission_serializes_real_postgres_sessions_and_rolls_back
             try:
                 with pytest.raises(RuntimeError, match="abort after insert"):
                     async with session.begin():
-                        await Job.objects.admit_source_job(
-                            "analyze", {"source_ids": [source.id]}, session=session
-                        )
+                        await Job.objects.admit_source_job("analyze", {"source_ids": [source.id]}, session=session)
                         raise RuntimeError("abort after insert")
             finally:
                 await session.close()
@@ -250,8 +367,12 @@ async def test_web_run_now_cannot_cross_workspace_scope(client):
         source = await _make_source(owner_tenant_id)
         with tenant_scope(owner_tenant_id), service_permission_scope("agenttask", "create"):
             task = await AgentTask.objects.create(
-                name=_name("private-task"), job_type="analyze", cron_expr="@once", payload={},
-                is_active=False, tenant_id=owner_tenant_id,
+                name=_name("private-task"),
+                job_type="analyze",
+                cron_expr="@once",
+                payload={},
+                is_active=False,
+                tenant_id=owner_tenant_id,
             )
         with tenant_scope(owner_tenant_id), service_permission_scope("agenttask", "update"):
             from app.models.managers.agent_task_manager import AgentTaskManager
@@ -406,7 +527,8 @@ async def test_the_source_page_says_how_much_content_the_model_could_not_analyse
 
     The retry ceiling stops handing the same unanalysable row to the model, which
     is the point — but a day that silently disappears from the source reads as
-    "nothing was ever collected here". The page states the count instead.
+    "nothing was ever collected here". The page states the numeric
+    exhausted-attempt count instead (`попытки приостановлены`).
     """
     user, tenant_id = await _register(client, "givenup")
     source = await _make_source(tenant_id)
@@ -420,8 +542,11 @@ async def test_the_source_page_says_how_much_content_the_model_could_not_analyse
 
         page = await client.get(f"/app/sources/{source.id}")
         assert page.status_code == 200
-        assert "не удалось проанализировать" in page.text
-        assert "1 запись" in page.text, "the count must read as a person writes it"
+        parser = SourceStatsParser()
+        parser.feed(page.text)
+        metrics = parser.metrics
+        assert metrics.get("попытки приостановлены") == "1", "the stopped-attempt count must be visible"
+        assert metrics.get("сырых записей ждут анализа") == "0", "the stopped row is not waiting for analysis"
     finally:
         with tenant_scope(bypass=True):
             await CollectedItem.objects.delete_by_id(row.id)
@@ -430,15 +555,24 @@ async def test_the_source_page_says_how_much_content_the_model_could_not_analyse
 
 @pytest.mark.asyncio
 async def test_a_healthy_source_shows_no_such_warning(client):
-    """The notice is for an exception, not a permanent fixture on the page."""
+    """The stopped-attempt figure is a numeric metric, not an optional notice.
+
+    The page always renders `попытки приостановлены` as a number, so a healthy
+    source must show `0` — a missing value would mean the metric itself is
+    broken, and the operator could not tell "nothing gave up" from "not
+    reported here".
+    """
     user, tenant_id = await _register(client, "healthy")
     source = await _make_source(tenant_id)
     try:
         page = await client.get(f"/app/sources/{source.id}")
         assert page.status_code == 200
-        assert "не удалось проанализировать" not in page.text
+        parser = SourceStatsParser()
+        parser.feed(page.text)
+        metrics = parser.metrics
+        stopped = metrics.get("попытки приостановлены")
+        assert stopped == "0", f"a healthy source must report a zero stopped-attempt count, got {stopped!r}"
     finally:
-        await _drop(user, tenant_id)
         await _drop(user, tenant_id)
 
 
@@ -483,9 +617,9 @@ async def test_task_source_link_escapes_names_and_keeps_checkbox_hit_area(client
         parser = SourceLinkParser()
         parser.feed(page.text)
         link = next(link for link in parser.links if link.get("href") == f"/app/sources/{source.id}")
-        assert {"pointer-events-auto", "relative", "z-10"} <= set(link["class"].split()), (
-            "the source link must be clickable above the card's checkbox label"
-        )
+        assert {"pointer-events-auto", "relative", "z-10"} <= set(
+            link["class"].split()
+        ), "the source link must be clickable above the card's checkbox label"
         assert hostile_name not in page.text
         assert escape(hostile_name) in page.text
         assert f'id="add-src-{source.id}" name="source_ids" value="{source.id}"' in page.text
@@ -547,8 +681,16 @@ async def test_toggling_a_task_with_only_deactivated_sources_names_them(client):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("read_only", [False, True], ids=["owner-link", "member-text"])
-async def test_task_list_escapes_stored_names_for_owner_and_read_only_member(client, read_only):
+@pytest.mark.parametrize("branch", ["owner-detail-link", "viewer-denied"])
+async def test_task_list_escapes_stored_names_for_owner_and_denies_viewer(client, branch):
+    """A stored hostile name is escaped for the owner and never reaches a denied viewer.
+
+    The owner may open the task, so the name cell carries an escaped detail link
+    (`/app/tasks/{id}`) — never the editor link, which the list does not offer.
+    A viewer holds no `scheduling.task` rights, so `/app/tasks` answers 403 and
+    the hostile name appears neither raw nor escaped.
+    """
+    from html import escape
     from html.parser import HTMLParser
 
     from app.core.permissions import service_permission_scope
@@ -584,7 +726,7 @@ async def test_task_list_escapes_stored_names_for_owner_and_read_only_member(cli
             if self.in_name:
                 self.parts.append(data)
 
-    owner = member = None
+    owner = viewer = None
     tenant_id = None
     hostile_name = 'Task <img src=x onerror=alert(1)> & "quoted"'
     try:
@@ -592,52 +734,57 @@ async def test_task_list_escapes_stored_names_for_owner_and_read_only_member(cli
         with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
             task = await AgentTask.objects.create(
                 name=hostile_name,
-                job_type="prune",
+                job_type="digest",
                 cron_expr="@once",
                 payload={},
                 is_active=False,
                 tenant_id=tenant_id,
             )
-        if read_only:
+        if branch == "viewer-denied":
             role = await Role.objects.filter(codename=PlatformRoleType.USER.value).first()
             assert role is not None, "USER reference role must be seeded"
             username = _name("nameviewer")
-            member = await User.objects.create_user(
+            viewer = await User.objects.create_user(
                 username=username,
                 email=f"{username}@example.com",
                 password="secret-password-1",
                 role_id=role.id,
             )
-            await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=member.id, role="member")
+            await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=viewer.id, role="viewer")
             async with AsyncClient(
-                transport=ASGITransport(app=create_application()), base_url="http://testserver", follow_redirects=True,
+                transport=ASGITransport(app=create_application()),
+                base_url="http://testserver",
+                follow_redirects=True,
             ) as viewer_client:
                 token = await _csrf(viewer_client, "/app/login")
                 login = await viewer_client.post(
-                    "/app/login", data={"username": username, "password": "secret-password-1", "_csrf": token},
+                    "/app/login",
+                    data={"username": username, "password": "secret-password-1", "_csrf": token},
                 )
                 assert login.status_code == 200
                 page = await viewer_client.get("/app/tasks")
+            assert page.status_code == 403, "a viewer without scheduling.task must not open the task list"
+            assert hostile_name not in page.text
+            assert escape(hostile_name) not in page.text
         else:
             page = await client.get("/app/tasks")
-        assert page.status_code == 200
-        parser = TaskCellParser()
-        parser.feed(page.text)
-        assert parser.names == [hostile_name], "escaping must preserve the exact stored name as readable text"
-        assert not parser.unsafe, "stored task names must not produce executable tags or event attributes"
-        assert hostile_name not in page.text
-        assert "&lt;img" in page.text and "&amp;" in page.text
-        if read_only:
-            assert f"/app/tasks/{task.id}/edit" not in parser.links
-        else:
-            assert f"/app/tasks/{task.id}/edit" in parser.links
+            assert page.status_code == 200
+            parser = TaskCellParser()
+            parser.feed(page.text)
+            assert parser.names == [hostile_name], "escaping must preserve the exact stored name as readable text"
+            assert not parser.unsafe, "stored task names must not produce executable tags or event attributes"
+            assert hostile_name not in page.text
+            assert "&lt;img" in page.text and "&amp;" in page.text
+            assert f"/app/tasks/{task.id}" in parser.links, "the owner's name must link to the task detail page"
+            assert f"/app/tasks/{task.id}/edit" not in parser.links, "the list is not the editor"
+
         with tenant_scope(tenant_id):
             stored = await AgentTask.objects.get(id=task.id)
             assert stored.name == hostile_name and not stored.is_active
             assert not await Job.objects.filter(agent_task_id=task.id), "rendering must not run the inert task"
     finally:
-        if member is not None:
-            await User.objects.delete_user(member.id)
+        if viewer is not None:
+            await User.objects.delete_user(viewer.id)
         await _drop(owner, tenant_id)
 
 
@@ -657,27 +804,44 @@ async def test_task_detail_renders_active_job_and_sources_inside_authorized_scop
         assert platform is not None
         with tenant_scope(tenant_id), service_permission_scope("source", "create"):
             source = await Source.objects.create(
-                name=_name("detail-source"), platform_id=platform.id, external_id=_name("detail-ext"),
-                source_type=SourceType.USER, is_active=True, params={}, tenant_id=tenant_id,
+                name=_name("detail-source"),
+                platform_id=platform.id,
+                external_id=_name("detail-ext"),
+                source_type=SourceType.USER,
+                is_active=True,
+                params={},
+                tenant_id=tenant_id,
             )
         with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
             task = await AgentTask.objects.create(
-                name=_name("detail-task"), job_type="collect", cron_expr="@once", payload={},
-                is_active=False, tenant_id=tenant_id,
+                name=_name("detail-task"),
+                job_type="collect",
+                cron_expr="@once",
+                payload={},
+                is_active=False,
+                tenant_id=tenant_id,
             )
         with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
             await AgentTask.objects.set_sources(task.id, [source.id])
         now = datetime.now(timezone.utc)
         with tenant_scope(tenant_id):
             active_job = await Job.objects.create(
-                agent_task_id=task.id, job_type=task.job_type, payload={}, status=status,
-                run_at=now - timedelta(minutes=10), created_at=now - timedelta(minutes=10),
+                agent_task_id=task.id,
+                job_type=task.job_type,
+                payload={},
+                status=status,
+                run_at=now - timedelta(minutes=10),
+                created_at=now - timedelta(minutes=10),
                 started_at=now - timedelta(minutes=10) if status == "running" else None,
+                locked_at=now if status == "running" else None,
             )
             if fallback:
                 for offset in range(10):
                     await Job.objects.create(
-                        agent_task_id=task.id, job_type=task.job_type, payload={}, status="done",
+                        agent_task_id=task.id,
+                        job_type=task.job_type,
+                        payload={},
+                        status="done",
                         run_at=now - timedelta(minutes=9),
                         created_at=now - timedelta(minutes=9) + timedelta(seconds=offset),
                     )
@@ -687,17 +851,27 @@ async def test_task_detail_renders_active_job_and_sources_inside_authorized_scop
         assert page.status_code == 200
         assert task.name in page.text
         assert f'href="/app/sources/{source.id}"' in page.text and source.name in page.text
-        match = re.search(
-            rf'<a href="/app/tasks\?job_id={active_job.id}"[^>]*>(.*?)</a>', page.text, re.S,
-        )
-        assert match is not None, "recent and fallback paths must identify the same active job"
-        expected = "в очереди" if status == "pending" else "выполняется"
-        assert expected in match.group(1)
-        opposite = "выполняется" if status == "pending" else "в очереди"
-        assert opposite not in match.group(1)
+
+        panel = RunPanelParser()
+        panel.feed(page.text)
+        assert panel.panel_attrs is not None, "the detail page must render #task-run-progress"
+        assert panel.panel_attrs.get("data-task-busy") == "true"
+        assert (
+            panel.link_href == f"/app/tasks?job_id={active_job.id}"
+        ), "recent and fallback paths must link the same active job"
+        assert panel.link_text.replace("→", "").strip() == "Управление запуском"
+        if status == "pending":
+            assert panel.panel_attrs.get("data-task-status") == "pending"
+            assert panel.status_text.startswith("Запуск в очереди")
+        else:
+            # A fresh worker heartbeat confirms execution, so the panel reports
+            # the running state rather than the unconfirmed fallback.
+            assert panel.panel_attrs.get("data-task-status") == "running"
+            assert panel.status_text.startswith("Задача выполняется")
         with tenant_scope(tenant_id):
             unchanged = await Job.objects.get(id=active_job.id)
             assert unchanged.status == status and unchanged.started_at == active_job.started_at
+            assert unchanged.locked_at == active_job.locked_at
             assert await Job.objects.filter(agent_task_id=task.id).count() == (11 if fallback else 1)
     finally:
         await _drop(owner, tenant_id)

@@ -52,6 +52,13 @@ production acceptance, real-DB pending-confirmation end-to-end run.
   owner: personal-catalog agent; status: IN_PROGRESS.
   Evidence: [ownership implementation](../validation/personal-llm-ownership.md).
 
+- [ ] P3-T96 — personal provider/model settings UI with explicit default and chat-selection markers;
+  accept: owner-only sparse atomic bundle save, separate shared default action, integer
+  chat model IDs, desktop/mobile light/dark validation; depends: P3-T93, P3-T95;
+  owns: settings_llm.py, settings.html/LLM partials/assets and UI tests;
+  owner: remote UI session (`ui/llm-provider-settings`); status: IN_PROGRESS.
+  Evidence: [ownership implementation](../validation/personal-llm-ownership.md).
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

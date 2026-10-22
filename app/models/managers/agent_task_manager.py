@@ -86,12 +86,15 @@ class AgentTaskManager(BaseManager):
     # --- permission-gated writes (user surfaces: web, agent tools, CLI) ----
 
     @require_permission("agenttask", ActionType.CREATE)
-    async def create(self, **kwargs: Any) -> "AgentTask":
+    @with_db_session
+    async def create(self, session: "AsyncSession", **kwargs: Any) -> "AgentTask":
         self._require_job_retention_permission(kwargs.get("job_type"))
         self._validate_job_retention_schedule(
             kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr")
         )
-        return await super().create(**kwargs)
+        task = await super().create(session=session, **kwargs)
+        await self._validate_scenario_binding(session, task)
+        return task
 
     # Fields that define what the next occurrence will do. A change to any of
     # them makes an already queued occurrence a stale plan: it carries the
@@ -122,6 +125,8 @@ class AgentTaskManager(BaseManager):
             )
         replaces_pending = current is not None and self._replaces_pending_occurrence(current, kwargs)
         updated = await super().update_by_id(instance_id, session=session, **kwargs)
+        if updated is not None:
+            await self._validate_scenario_binding(session, updated)
         if replaces_pending and updated is not None:
             from .job_manager import JobManager
 
@@ -130,6 +135,8 @@ class AgentTaskManager(BaseManager):
 
     @require_permission("agenttask", ActionType.UPDATE)
     async def update(self, **values: Any) -> int:
+        if "agent_scenario_id" in values:
+            raise ValueError("Use update_by_id for scenario binding changes")
         for task in await self.filter():
             if task.job_type == "prune":
                 self._require_job_retention_permission(task.job_type)
@@ -190,16 +197,55 @@ class AgentTaskManager(BaseManager):
         The single write path for the m2m table — the web form, the CLI and the
         agent tool all call it instead of hand-rolling delete+insert.
         """
-        from ..agent_task import agent_task_sources
-
-        return await self._replace_secondary(agent_task_sources, "agent_task_id", task_id, "source_id", source_ids)
+        return await self._write_source_bindings(task_id, source_ids, replace=True)
 
     @require_permission("agenttask", ActionType.UPDATE)
     async def add_sources(self, task_id: int, source_ids: list[int]) -> int:
-        """Link sources to the task, keeping the links that already exist."""
-        from ..agent_task import agent_task_sources
+        return await self._write_source_bindings(task_id, source_ids, replace=False)
 
-        return await self._add_secondary(agent_task_sources, "agent_task_id", task_id, "source_id", source_ids)
+    @staticmethod
+    async def _validate_scenario_binding(session, task):
+        if task.agent_scenario_id is None:
+            return
+        from sqlalchemy import select
+        from ..agent_scenario import AgentScenario
+        identity = (await session.execute(select(AgentScenario.id).where(
+            AgentScenario.id == task.agent_scenario_id, AgentScenario.tenant_id == task.tenant_id
+        ).with_for_update())).scalar_one_or_none()
+        if identity is None:
+            raise ValueError("Scenario is unavailable in this workspace")
+
+    async def _write_source_bindings(self, task_id, source_ids, *, replace):
+        from sqlalchemy import delete, select
+        from sqlalchemy.dialects.postgresql import insert
+        from ..source import Source
+        from ..agent_task import agent_task_sources
+        if type(task_id) is not int or task_id <= 0:
+            raise ValueError("Invalid task ID")
+        if any(type(value) is not int or value <= 0 for value in source_ids):
+            raise ValueError("Invalid source IDs")
+        ids = sorted(set(source_ids))
+        async with self._get_owned_session() as session:
+            task = (await session.execute(self.filter(id=task_id).to_select().with_for_update())).scalar_one_or_none()
+            if task is None:
+                raise ValueError("Task unavailable in this workspace")
+            sources = (await session.execute(select(Source).where(
+                Source.id.in_(ids), Source.tenant_id == task.tenant_id
+            ).order_by(Source.id).with_for_update())).scalars().all() if ids else []
+            if {source.id for source in sources} != set(ids):
+                raise ValueError("One or more sources are unavailable in this workspace")
+            if any(source.owner_task_id is not None and source.owner_task_id != task.id for source in sources):
+                raise ValueError("A task-owned source cannot be linked to another task")
+            if replace:
+                await session.execute(delete(agent_task_sources).where(agent_task_sources.c.agent_task_id == task.id))
+            if ids:
+                await session.execute(insert(agent_task_sources).values([
+                    {"agent_task_id": task.id, "source_id": identity} for identity in ids
+                ]).on_conflict_do_nothing())
+            # A source change invalidates a pending snapshot just like a task definition change.
+            from .job_manager import JobManager
+            await JobManager().delete_pending_for_task(session, tenant_id=task.tenant_id, task_id=task.id)
+        return len(ids)
 
     @staticmethod
     def requires_sources(job_type: str) -> bool:
@@ -417,6 +463,10 @@ class AgentTaskManager(BaseManager):
         return await self._linked_source_ids(task_ids)
 
     async def _linked_source_ids(self, task_ids: list[int]) -> dict[int, list[int]]:
+        if not task_ids:
+            return {}
+        visible = await self.filter(id__in=task_ids).values_list("id", flat=True)
+        task_ids = list(visible)
         if not task_ids:
             return {}
         from sqlalchemy import select

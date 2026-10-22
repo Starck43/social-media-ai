@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, Column, Float, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, CheckConstraint, Column, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped
 
 from ...core.config import settings
@@ -127,6 +127,9 @@ class Tenant(Base, TimestampMixin):
         JSON,
         nullable=True,
         comment="Owner's reply style contract: {tone, length, language, quiet_hours}; rendered into the system prompt",
+    )
+    agent_model_id: Mapped[int | None] = Column(
+        ForeignKey(f"{settings.DB_SCHEMA}.llm_models.id", ondelete="SET NULL"), nullable=True
     )
     agent_model: Mapped[str | None] = Column(
         String(100),

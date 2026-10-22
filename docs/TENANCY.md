@@ -315,3 +315,18 @@ role/revocation/tenant acceptance remain environment-dependent verification.
 Admin entry requires an active platform operator/admin account, independently of
 workspace membership. Model/action grants remain authoritative in the global
 console. See [ADMIN](ADMIN.md).
+
+## Personal LLM catalog (0109 source contract; deployment pending)
+
+Providers/models are user-owned, not global. `owner_user_id` and a composite
+model/provider owner FK constrain ownership. Personal CRUD/defaults require an
+active caller and are shared across that caller's workspaces. UI lives at
+Settings → Models; social Platform remains a separate global directory.
+`Tenant.agent_model_id` is a numeric FK, not a model-name lookup. An explicit
+unavailable chat model fails closed; automatic fallback cannot use another
+user's keys. Scheduled execution uses the stored task payer's personal catalog;
+missing consent never guesses a workspace owner. Platform inspection permission
+does not grant another user's key use.
+
+Historical global-fleet descriptions above describe pre-0109 behavior. Migration
+definition and required cutover checks: [personal ownership evidence](validation/personal-llm-ownership.md).

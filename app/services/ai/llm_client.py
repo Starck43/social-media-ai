@@ -51,6 +51,8 @@ async def _personal_admission(
     uses_tools: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Reserve one trusted provider envelope before HTTP when personal billing is active."""
+    from app.services.ai.personal_dispatch import validate_personal_dispatch
+    await validate_personal_dispatch(client)
     if not settings.PERSONAL_BILLING_ENABLED:
         return None, None
     api_format = getattr(client.provider, "api_format", None)
@@ -223,11 +225,10 @@ def _eligible_text_model(m: LLMModel, allowed_types: Optional[set[str]]) -> bool
     extra billed capabilities never bypasses the tier through its default or
     preferred flag. Explicit AGENT_MODEL lookup keeps its separate contract.
     """
-    return (
-        _cap_text(m)
-        and (allowed_types is None or set(m.capabilities) <= allowed_types)
-        and bool(m.provider and m.provider.is_active)
-    )
+    from app.core.personal_catalog_context import current_catalog_owner_id
+    from app.services.ai.personal_catalog import eligible_chat_model
+    return eligible_chat_model(m, user_id=current_catalog_owner_id(), allowed_types=allowed_types)
+
 
 
 def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
@@ -271,6 +272,8 @@ async def _allowed_model_types() -> Optional[set[str]]:
 
 class LLMClient(ABC):
     def __init__(self, model: LLMModel):
+        from app.core.personal_catalog_context import assert_catalog_model
+        assert_catalog_model(model)
         self.provider = model.provider
         self.model = model
         self.api_key = model.provider.get_api_key()
@@ -454,7 +457,7 @@ class LLMClient(ABC):
     ) -> dict[str, Any]: ...
 
     async def _rate_limit(self):
-        key = self.provider.name.lower()
+        key = f"{self.provider.owner_user_id}:{self.provider.id}"
         now = asyncio.get_event_loop().time()
         delay = float(getattr(settings, "LLM_REQUEST_DELAY", 2000)) / 1000.0
         if key in _last_request_time:

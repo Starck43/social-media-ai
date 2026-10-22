@@ -560,6 +560,8 @@ async def _check_task_sources(source_ids: list[int], tenant_id: int, task_id: in
 	if not source_ids:
 		return
 	sources = {s.id: s for s in await Source.objects.filter(id__in=source_ids)}
+	if set(sources) != set(source_ids):
+		raise ValueError("Один или несколько источников недоступны в этом пространстве")
 	foreign = sorted(sid for sid, s in sources.items() if s.tenant_id != tenant_id)
 	if foreign:
 		raise ValueError(f"Источник(и) {', '.join(map(str, foreign))} принадлежат другому воркспейсу")

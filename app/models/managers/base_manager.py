@@ -365,6 +365,10 @@ class QuerySet(Generic[M]):
         """
         from sqlalchemy import update as sa_update
 
+        if "tenant_id" in values and getattr(self._manager.model, "__tenant_scoped__", False):
+            raise ValueError("Workspace ownership is immutable")
+        if getattr(self._manager.model, "__personal_scoped__", False) and set(values) & {"owner_user_id", "provider_id", "is_default"}:
+            raise ValueError("Use the validated personal catalog service")
         conditions: list[ColumnElement[bool]] = list(self._criterion)
         if self._kw_filters:
             conditions.extend(LookupCompiler.compile_filters(self._manager.model, self._kw_filters))
@@ -697,7 +701,30 @@ class BaseManager(Generic[M]):
 
     def get_queryset(self, session: AsyncSession | None = None) -> QuerySet[M]:
         """Create a new QuerySet instance, tenant-guarded for scoped models."""
-        return QuerySet(manager=self, session=session, criterion=self._tenant_criterion())
+        return QuerySet(manager=self, session=session, criterion=self._tenant_criterion() + self._personal_criterion())
+
+    def _personal_criterion(self):
+        if not getattr(self.model, "__personal_scoped__", False) or is_bypass():
+            return []
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        return [self.model.owner_user_id == current_catalog_owner_id()]
+
+    def _personal_values(self, values):
+        if not getattr(self.model, "__personal_scoped__", False):
+            return values
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        if values.get("is_default"):
+            raise ValueError("Use the atomic personal default service")
+        explicit = values.get("owner_user_id")
+        if is_bypass():
+            if type(explicit) is not int or explicit <= 0:
+                raise PermissionError("Operator writes require an explicit catalog owner")
+        else:
+            owner = current_catalog_owner_id()
+            if explicit is not None and explicit != owner:
+                raise PermissionError("Foreign personal catalog owner")
+            values["owner_user_id"] = owner
+        return values
 
     def _tenant_scoped(self) -> bool:
         """True if the model is owned by a tenant (see `TenantScopedMixin`)."""
@@ -925,7 +952,7 @@ class BaseManager(Generic[M]):
                                         is_active=True
                         )
         """
-        kwargs = await self._apply_tenant(session, kwargs)
+        kwargs = self._personal_values(await self._apply_tenant(session, kwargs))
         instance = self.model(**kwargs)
         session.add(instance)
         await session.flush()
@@ -953,7 +980,7 @@ class BaseManager(Generic[M]):
         if not objects:
             return [] if return_instances else 0
 
-        stamped = [await self._apply_tenant(session, dict(obj)) for obj in objects]
+        stamped = [self._personal_values(await self._apply_tenant(session, dict(obj))) for obj in objects]
         instances = [self.model(**obj) for obj in stamped]
         session.add_all(instances)
         await session.flush()
@@ -993,6 +1020,14 @@ class BaseManager(Generic[M]):
         if not instance:
             return None
 
+        if getattr(self.model, "__personal_scoped__", False):
+            if "is_default" in kwargs:
+                raise ValueError("Use the atomic personal default service")
+            for key in ("owner_user_id", "provider_id"):
+                if key in kwargs and kwargs[key] != getattr(instance, key, None):
+                    raise ValueError("Catalog ownership and provider are immutable")
+        if self._tenant_scoped() and "tenant_id" in kwargs and kwargs["tenant_id"] != instance.tenant_id:
+            raise ValueError("Workspace ownership is immutable")
         for key, value in kwargs.items():
             if hasattr(instance, key) and not key.startswith("_"):
                 setattr(instance, key, value)

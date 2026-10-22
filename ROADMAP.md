@@ -18,6 +18,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
+- [ ] P3-T96 — personal LLM web settings and default markers → [p3](docs/phases/p3-identity-access.md) — remote UI session (ui/llm-provider-settings) — IN_PROGRESS
+
 - [ ] P3-T93 — personal ownership of LLM providers/models → [p3](docs/phases/p3-identity-access.md) — personal-catalog agent — IN_PROGRESS
 - [ ] P3-T94 — atomic workspace-safe task/source/scenario bindings → [p3](docs/phases/p3-identity-access.md) — personal-catalog agent — IN_PROGRESS
 - [ ] P3-T95 — chat model FK and shared eligibility → [p3](docs/phases/p3-identity-access.md) — personal-catalog agent — IN_PROGRESS

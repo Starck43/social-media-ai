@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, relationship
 
 from ...core.config import settings
@@ -21,7 +21,13 @@ def _model_type_to_capabilities(model_type: str) -> list[str]:
 @app_label("llm")
 class LLMModel(Base, TimestampMixin):
     __tablename__ = "llm_models"
+    __personal_scoped__ = True
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["provider_id", "owner_user_id"],
+            [f"{settings.DB_SCHEMA}.llm_providers.id", f"{settings.DB_SCHEMA}.llm_providers.owner_user_id"],
+            name="fk_llm_model_provider_owner", ondelete="CASCADE",
+        ),
         CheckConstraint(
             "(cache_read_cost_per_1m IS NULL OR cache_read_cost_per_1m >= 0) "
             "AND (cache_write_5m_cost_per_1m IS NULL OR cache_write_5m_cost_per_1m >= 0) "
@@ -35,11 +41,13 @@ class LLMModel(Base, TimestampMixin):
     id: Mapped[int] = Column(Integer, primary_key=True)
     provider_id: Mapped[int] = Column(
         Integer,
-        ForeignKey(f"{settings.DB_SCHEMA}.llm_providers.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
+    owner_user_id: Mapped[int] = Column(
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     name: Mapped[str] = Column(String(100), nullable=False)
     model_id: Mapped[str] = Column(String(100), nullable=False)
     description: Mapped[str | None] = Column(Text, nullable=True)
@@ -84,7 +92,7 @@ class LLMModel(Base, TimestampMixin):
     provider = relationship(
         "LLMProvider",
         back_populates="models",
-        foreign_keys="LLMModel.provider_id",
+        foreign_keys="[LLMModel.provider_id, LLMModel.owner_user_id]",
     )
 
     text_scenarios = relationship(

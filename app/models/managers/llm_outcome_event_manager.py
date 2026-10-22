@@ -111,3 +111,64 @@ class LLMOutcomeEventManager(BaseManager):
                 if existing is None or any(existing[field] != value[field] for field in EVENT_FIELDS):
                     raise OutcomeEvidenceConflict("Event identity conflicts with stored evidence")
         return created
+
+    async def unpriced_models(self, tenant_id: int, *, since, limit: int = 10) -> list[dict[str, Any]]:
+        """Provider/model pairs whose dispatched attempts have no known price.
+
+        Reads immutable outcome evidence for one tenant only: attempts whose
+        `cost_certainty` is `undefined` (and that actually reached dispatch).
+        Counts distinct dispatches, not observations, so a reconciliation does
+        not inflate exposure. No prompts, payers or provider payloads leave
+        this projection.
+        """
+        from sqlalchemy import func
+
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+
+        from ..llm.llm_dispatch_receipt import LLMDispatchReceipt
+
+        if type(tenant_id) is not int or tenant_id <= 0:
+            raise ValueError("A workspace ID is required")
+        if not is_bypass() and current_tenant_id() != tenant_id:
+            raise TenantContextError("Unpriced model evidence requires the active tenant scope")
+        if type(limit) is not int or not 0 < limit <= 50:
+            raise ValueError("Unpriced model limit must be between 1 and 50")
+        if since is None or getattr(since, "tzinfo", None) is None:
+            raise ValueError("Unpriced model evidence requires an aware lower bound")
+
+        async with self._get_owned_session() as session:
+            attempts = func.count(func.distinct(self.model.dispatch_id))
+            rows = (
+                await session.execute(
+                    select(
+                        LLMDispatchReceipt.provider_name,
+                        LLMDispatchReceipt.model_id,
+                        attempts,
+                        func.max(self.model.observed_at),
+                    )
+                    .select_from(self.model)
+                    .join(
+                        LLMDispatchReceipt,
+                        LLMDispatchReceipt.dispatch_id == self.model.dispatch_id,
+                    )
+                    .where(
+                        self.model.tenant_id == tenant_id,
+                        LLMDispatchReceipt.tenant_id == tenant_id,
+                        self.model.cost_certainty == "undefined",
+                        self.model.dispatch_state != "not_dispatched",
+                        self.model.observed_at >= since,
+                    )
+                    .group_by(LLMDispatchReceipt.provider_name, LLMDispatchReceipt.model_id)
+                    .order_by(attempts.desc(), LLMDispatchReceipt.provider_name, LLMDispatchReceipt.model_id)
+                    .limit(limit)
+                )
+            ).all()
+        return [
+            {
+                "provider": str(row[0]),
+                "model_id": str(row[1]),
+                "attempts": int(row[2] or 0),
+                "last_observed_at": row[3],
+            }
+            for row in rows
+        ]

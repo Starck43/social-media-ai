@@ -340,6 +340,8 @@ class PersonalLLMBillingManager(BaseManager):
                 payer_id = actor_id
                 initiated_by_user_id = actor_id
 
+            if fresh_model.owner_user_id != payer_id or fresh_model.provider.owner_user_id != payer_id:
+                raise PersonalBillingUnavailable("Selected model is not owned by the dispatch payer")
             owner = (
                 await session.execute(
                     select(User).where(User.id == payer_id, User.is_active.is_(True)).with_for_update()

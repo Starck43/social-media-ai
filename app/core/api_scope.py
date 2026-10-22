@@ -74,9 +74,14 @@ class ApiScopeMiddleware:
                 await self.app(scope, receive, send)
             return
 
+        if path.startswith(("/api/v1/llm-models", "/api/v1/llm-providers")):
+            request.state.api_user = user
+            with tenant_scope(), permission_scope(user):
+                await self.app(scope, receive, send)
+            return
+
         operator_path = (
-            path.startswith("/api/v1/llm")
-            or path.startswith("/api/v1/users/roles")
+            path.startswith("/api/v1/users/roles")
             or (path.startswith("/api/v1/users") and path.rstrip("/") != "/api/v1/users/me")
         )
         if operator_path:

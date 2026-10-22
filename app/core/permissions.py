@@ -113,6 +113,9 @@ def has_permission(user, model_name, action) -> bool:
         return True
     if user is None or not getattr(user, "is_active", False):
         return False
+    current = get_current_user()
+    if resource.model_name in {"llmmodel", "llmprovider"}:
+        return bool(current is not None and current.id == user.id and current.is_active)
     decision = member_decision(user, resource.model_name, resolved)
     if decision is not None:
         return decision

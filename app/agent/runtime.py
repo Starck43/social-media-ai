@@ -1107,7 +1107,7 @@ async def _chat(messages: list[dict], specs: list[dict], *, budget: Optional[flo
             temperature = tenant.agent_temperature
 
     # The workspace may name the model for this chat; otherwise the ★ default
-    # (`is_default`) starts. Either way the call walks this workspace's own
+    # (`is_default`) starts. Either way the call walks this user's own
     # models on failure, most-proven first — see `chat_with_fallback`.
     narrative_model = await _preferred_agent_model(tenant)
     if budget is not None and budget <= 0:
@@ -1131,18 +1131,20 @@ async def _chat(messages: list[dict], specs: list[dict], *, budget: Optional[flo
 async def _preferred_agent_model(tenant: Any):
     """The model this workspace names for the agent chat, else the ★ default.
 
-    `tenants.agent_model` holds an `llm_models.name` (what the settings select
-    posts). A name that no longer resolves to an active text model must not
-    leave the chat without a model: fall back to the ★ default and say so.
+    `tenants.agent_model_id` is a numeric FK. An unavailable explicit selection
+    fails closed; automatic selection never crosses personal catalogs.
     """
     from app.models import LLMModel
 
-    name = (getattr(tenant, "agent_model", None) or "").strip()
-    if name:
-        model = await LLMModel.objects.select_related("provider").filter(name=name, is_active=True).first()
-        if model is not None:
+    identity = getattr(tenant, "agent_model_id", None)
+    if identity is not None:
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.services.ai.personal_catalog import eligible_chat_model
+        model = await LLMModel.objects.select_related("provider").get(id=identity, is_active=True)
+        allowed = tenant.plan_limits().get("model_types") if tenant else None
+        if model is not None and eligible_chat_model(model, user_id=current_catalog_owner_id(), allowed_types=allowed):
             return model
-        logger.warning("agent_model_not_found falling back to the default model")
+        raise ValueError("Configured chat model is unavailable; reselect a personal model")
     return await LLMModel.objects.resolve_default_model("text")
 
 

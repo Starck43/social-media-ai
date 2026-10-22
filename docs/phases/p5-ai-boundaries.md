@@ -579,7 +579,13 @@ safely.
     failure set is identical to the pre-merge baseline — no test that passed
     before fails now. The isolated admission doubles were updated to the
     decorator and reads dev added (`caf007f`); their skip assertion still
-    requires every blocking query to skip.
+    requires every blocking query to skip. A second merge (`1f52cdf`) took dev
+    to `dea6e4d`, where the link write owns the admission gate and the task
+    lock; this task's foreign-key translation became redundant and was dropped
+    in favour of that check. DB-backed re-verification of `1f52cdf` is blocked
+    by shared-schema drift: `test_schema` now carries `llm_providers` uniques
+    from another branch, so the bootstrap guard refuses every DB suite until
+    the schema owner reconciles it (the no-DB admission suites pass, 71/71).
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`

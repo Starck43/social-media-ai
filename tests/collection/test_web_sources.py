@@ -478,3 +478,135 @@ async def test_delete_requires_the_source_delete_permission():
         if member is not None:
             await User.objects.delete_user(member.id)
         await _drop(owner, tenant_id)
+
+
+# ── freshness ───────────────────────────────────────────────────────────────
+
+
+async def _checked_at(source: Source, when) -> None:
+    """Set a source's last check without going through the collector."""
+    with tenant_scope(bypass=True):
+        await Source.objects.update_by_id(source.id, last_checked=when)
+
+
+@pytest.mark.tenancy
+async def test_sources_page_reports_stale_and_never_checked_sources():
+    """A quiet source is the operator's real question: which one, and since when.
+
+    The window is `SOURCE_STALE_HOURS`; a source that was never checked is
+    counted separately, because "older than N hours" would claim a check that
+    never happened. An inactive source is not stale — nothing is expected of it.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcFresh")
+    created = []
+    try:
+        await _login(client, user.username)
+        now = datetime.now(timezone.utc)
+        fresh = await _row_source(tenant_id, _name("fresh"))
+        created.append(fresh.id)
+        await _checked_at(fresh, now - timedelta(hours=1))
+        stale = await _row_source(tenant_id, _name("stale"))
+        created.append(stale.id)
+        await _checked_at(stale, now - timedelta(hours=30))
+        never = await _row_source(tenant_id, _name("never"))
+        created.append(never.id)
+        paused = await _row_source(tenant_id, _name("paused"))
+        created.append(paused.id)
+        with tenant_scope(bypass=True):
+            await Source.objects.update_by_id(paused.id, is_active=False, last_checked=now - timedelta(hours=100))
+
+        page = await client.get("/app/sources")
+        assert page.status_code == 200
+        assert "2 из 3 активных источников не проверялись дольше 24 ч" in page.text
+        assert "из них 1 — ни разу" in page.text
+        # Per-row state: the stale one and the never-checked one are marked, the
+        # fresh one is not.
+        assert "устарел" in page.text
+        assert "не проверялся" in page.text
+        assert f'<a href="/app/sources/{fresh.id}"' in page.text
+        fresh_row = page.text.split(f'<a href="/app/sources/{fresh.id}"', 1)[1].split("</tr>", 1)[0]
+        assert "устарел" not in fresh_row and "не проверялся" not in fresh_row
+    finally:
+        for source_id in created:
+            await _drop_source(source_id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_sources_page_hides_the_freshness_banner_when_everything_is_checked():
+    from datetime import datetime, timezone
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcFreshOk")
+    source = None
+    try:
+        await _login(client, user.username)
+        source = await _row_source(tenant_id, _name("checked"))
+        await _checked_at(source, datetime.now(timezone.utc))
+
+        page = await client.get("/app/sources")
+        assert page.status_code == 200
+        assert "не проверялись дольше" not in page.text
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_the_freshness_window_comes_from_the_setting(monkeypatch):
+    """The hours are configured, not hard-coded in the page or the template."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SOURCE_STALE_HOURS", 2)
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcFreshWin")
+    source = None
+    try:
+        await _login(client, user.username)
+        source = await _row_source(tenant_id, _name("three-hours"))
+        await _checked_at(source, datetime.now(timezone.utc) - timedelta(hours=3))
+
+        page = await client.get("/app/sources")
+        assert "не проверялись дольше 2 ч" in page.text
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_the_freshness_signal_is_hidden_without_source_view(monkeypatch):
+    """`source.view` gates the signal, not just the page's navigation entry."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.web import sources as sources_web
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcFreshAcl")
+    source = None
+    try:
+        await _login(client, user.username)
+        source = await _row_source(tenant_id, _name("stale-hidden"))
+        await _checked_at(source, datetime.now(timezone.utc) - timedelta(hours=48))
+
+        original = sources_web.perms_can
+        monkeypatch.setattr(
+            sources_web,
+            "perms_can",
+            lambda request, model, action: False if model == "source" else original(request, model, action),
+        )
+
+        page = await client.get("/app/sources")
+        assert page.status_code == 200
+        assert "не проверялись дольше" not in page.text
+        assert "устарел" not in page.text
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        await _drop(user, tenant_id)

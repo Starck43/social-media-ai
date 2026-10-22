@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     LOGIN_TIMEOUT_MINUTES: int = 15  # Lockout duration after max attempts
     MAX_LOGIN_ATTEMPTS: int = 5
 
+    # Collection freshness. An active source that has not been checked for
+    # longer than this is reported on the sources page. Collection runs on the
+    # workspace's own schedule, so the window is a deployment decision, not a
+    # constant buried in a template.
+    SOURCE_STALE_HOURS: int = Field(default=24, ge=1)
+
     # Password settings
     PASSWORD_MIN_LENGTH: int = 6 if ENVIRONMENT == "development" else 8
     PASSWORD_REQUIRE_UPPERCASE: bool = True

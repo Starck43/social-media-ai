@@ -101,7 +101,30 @@ Coverage evidence vs PRD-08 (state/refs → task):
 
 - [ ] P8-T07 — stale-source observable; accept: active sources not checked within
   configured hours via `get_sources_for_monitoring`/`last_checked`, honest "never checked",
-  gated `source.view`; depends: none; owns: source freshness lane; owner: unassigned; status: TODO
+  gated `source.view`; depends: none; owns: source freshness lane; owner: opencode; status: READY.
+  Evidence: the window is configured, not invented in a template —
+  `SOURCE_STALE_HOURS` (`app/core/config.py`, default 24, `ge=1`; documented in
+  `docs/CONFIGURATION.md` and `.env.example`). `/app/sources` computes one
+  summary through `SourceManager.get_sources_for_monitoring` (the existing
+  staleness predicate: active, and never checked or older than the window),
+  intersected with the rows the page actually renders so a superuser's
+  cross-workspace page counts its own filter, not every workspace. The banner
+  names the count of the active total and the window, and counts sources that
+  were **never** checked separately — "older than N hours" is never claimed for
+  a source that has no check at all; each stale row is marked «устарел» or
+  «не проверялся» with its last check in the title. Read-only: no write, no
+  collection trigger, no provider call. Inactive sources are excluded (nothing
+  is expected of them) and task-owned lanes never appear because the page does
+  not render them — a lane's freshness is its owning task's signal. Gated by
+  `perms_can(request, "source", "view")`; without it the summary is `None` and
+  neither the banner nor the marks render. Tests: `tests/collection/test_web_sources.py`
+  11 passed, 4 new — stale/never/inactive counting with per-row marks, a
+  fully fresh workspace hides the banner, the window follows
+  `SOURCE_STALE_HOURS` (2 h makes a 3-hour-old check stale), and the signal is
+  absent without `source.view`. Known unrelated failures in that run
+  (`tests/web/test_web_ui.py`, `tests/web/test_web_list_layout.py`: settings and
+  source-detail markup) are outside this lane and untouched here. Migration
+  implications: none.
 - [ ] P8-T08 — credential expiry/near-expiry signal; accept: reauth/missing plus near-expiry from
   vault `expires_at` metadata — reads only, never decrypts; `renewable` auto-renewal is not reauth/error;
   personal vs operator split honest; depends: none; owns: credential signal lane; owner: unassigned; status: TODO
@@ -116,7 +139,7 @@ Coverage evidence vs PRD-08 (state/refs → task):
   depends: none; owns: delivery signal lane; owner: unassigned; status: TODO
 - [ ] P8-T12 — unknown-price/spend exposure signal; accept: operator view of provider models
   without known price plus spend totals via personal account managers (post P2-T06); depends: P2-T06;
-  owns: financial visibility lane; owner: unassigned; status: TODO
+  owns: financial visibility lane; owner: opencode; status: IN_PROGRESS
 - [ ] P8-T13 — named support/escalation + pilot measures; accept: escalation owner and agreed
   latency/freshness/usefulness measures for the managed pilot, written and owner-signed; depends:
   P8-T10, P8-T11; owns: support contract lane; owner: unassigned; status: TODO

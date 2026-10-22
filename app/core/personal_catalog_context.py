@@ -2,16 +2,19 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 
+_DENIED_CATALOG = object()
 _catalog_owner = ContextVar("personal_catalog_owner", default=None)
 
 
 def current_catalog_owner_id():
     bound = _catalog_owner.get()
+    if bound is _DENIED_CATALOG:
+        raise PermissionError("Job has no authorized personal catalog owner")
     if bound is not None:
         return bound
     from app.core.permissions import get_current_user
     actor = get_current_user()
-    if actor is not None and actor.is_active and type(actor.id) is int:
+    if actor is not None and actor.is_active and type(actor.id) is int and actor.id > 0:
         return actor.id
     raise PermissionError("An active personal catalog owner is required")
 
@@ -34,3 +37,13 @@ def assert_catalog_model(model):
     if (getattr(model, "owner_user_id", None) != owner or provider is None
             or getattr(provider, "owner_user_id", None) != owner):
         raise PermissionError("Model is unavailable in this personal catalog")
+
+
+@contextmanager
+def without_catalog_access():
+    """Pure collection must not inherit an HTTP actor or parent worker catalog."""
+    token = _catalog_owner.set(_DENIED_CATALOG)
+    try:
+        yield
+    finally:
+        _catalog_owner.reset(token)

@@ -302,6 +302,56 @@ async def test_delete_removes_a_workspace_source_and_lands_on_the_list():
 
 
 @pytest.mark.tenancy
+async def test_delete_pauses_the_task_that_lost_its_last_source():
+    """The delete says *what else* it stopped, and the task really stops.
+
+    An empty link set means "all active sources", so the last named source
+    cannot simply disappear: the task is paused in the same transaction and the
+    flash names it. Without that, the operator next sees a task they never
+    paused, pointed at every source in the workspace.
+    """
+    from app.core.permissions import service_permission_scope
+    from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    client = await _client()
+    user, tenant_id = await _register(client, "SrcDelScope")
+    task = source = None
+    try:
+        await _login(client, user.username)
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                tenant_id=tenant_id,
+                name=_name("only-source-task"),
+                job_type="collect",
+                cron_expr="0 9 * * *",
+                payload={},
+            )
+        source = await _row_source(tenant_id, _name("last-source"))
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTaskManager().set_sources(task.id, [source.id])
+
+        token = await _csrf(client, f"/app/sources/{source.id}")
+        resp = await client.post(f"/app/sources/{source.id}/delete", data={"_csrf": token})
+
+        assert resp.status_code == 200
+        assert "удалён вместе с его аналитикой" in resp.text
+        assert f"«{task.name}»" in resp.text
+        assert "приостановлена: у неё не осталось выбранных источников" in resp.text
+        with tenant_scope(tenant_id):
+            row = await AgentTask.objects.get(id=task.id)
+        assert row is not None
+        assert row.is_active is False
+    finally:
+        if source is not None:
+            await _drop_source(source.id)
+        if task is not None:
+            with tenant_scope(tenant_id), service_permission_scope("agenttask", "delete"):
+                await AgentTask.objects.delete_by_id(task.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
 async def test_delete_refuses_another_workspaces_source():
     """The workspace boundary holds on delete: not-found abroad, row survives.
 

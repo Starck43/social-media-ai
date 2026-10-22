@@ -1150,30 +1150,51 @@ async def source_delete(
     if denied is not None:
         return denied
 
+    from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
+    from app.services.collection.source_deletion import delete_source
 
-    with tenant_scope(tenant_id):
-        source = await Source.objects.get(id=source_id, tenant_id=tenant_id)
-        if source is None:
-            add_flash(request, "error", "Источник не найден")
-            return RedirectResponse("/app/sources", status_code=302)
+    session = new_session()
+    try:
+        with tenant_scope(tenant_id):
+            async with session.begin():
+                source = await Source.objects.get(id=source_id, tenant_id=tenant_id, session=session)
+                if source is None:
+                    add_flash(request, "error", "Источник не найден")
+                    return RedirectResponse("/app/sources", status_code=302)
 
-        # A task-owned lane exists so the task's collection keeps a stable
-        # `source_id`; the task creates it and cleans it up itself. Deleting it
-        # here would break that collection without the task noticing, so the
-        # refusal names the owning task instead of pretending nothing happened.
-        if source.owner_task_id is not None:
-            add_flash(
-                request,
-                "error",
-                f"Источник принадлежит поиску задачи №{source.owner_task_id} — удалите его в задаче",
-            )
-            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+                # A task-owned lane exists so the task's collection keeps a
+                # stable `source_id`; the task creates it and cleans it up
+                # itself. Deleting it here would break that collection without
+                # the task noticing, so the refusal names the owning task
+                # instead of pretending nothing happened.
+                if source.owner_task_id is not None:
+                    add_flash(
+                        request,
+                        "error",
+                        f"Источник принадлежит поиску задачи №{source.owner_task_id} — удалите его в задаче",
+                    )
+                    return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
-        # `sources.analytics` is delete-orphan, so the analysis rows go with it.
-        # Say so before it happens rather than after.
-        name = source.name
-        await Source.objects.delete(id=source_id)
+                # `sources.analytics` is delete-orphan, so the analysis rows go
+                # with it. Say so before it happens rather than after.
+                removal = await delete_source(session, source_id=source_id, tenant_id=tenant_id)
+    finally:
+        await session.close()
 
-    add_flash(request, "success", f"Источник '{name}' удалён вместе с его аналитикой")
+    if removal is None:
+        add_flash(request, "error", "Источник не найден")
+        return RedirectResponse("/app/sources", status_code=302)
+
+    add_flash(request, "success", f"Источник '{removal.name}' удалён вместе с его аналитикой")
+    if removal.paused_tasks:
+        # An empty link set means "all active sources", so a task whose last
+        # explicit source just went away would silently widen. It was paused
+        # instead — name it, or the operator finds a stopped task unexplained.
+        names = ", ".join(f"«{task.name}»" for task in removal.paused_tasks)
+        add_flash(
+            request,
+            "info",
+            f"Задача {names} приостановлена: у неё не осталось выбранных источников",
+        )
     return RedirectResponse("/app/sources", status_code=302)

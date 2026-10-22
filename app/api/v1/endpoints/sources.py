@@ -133,9 +133,25 @@ async def delete_source(
     source_id: int,
     _user = Depends(require_model_perm("source", ActionType.DELETE)),
 ):
-    """Delete a source."""
+    """Delete a source; a task left without sources is paused, not widened."""
+    from app.core.database import new_session
+    from app.core.tenant_context import tenant_scope
+    from app.services.collection.source_deletion import delete_source as delete_workspace_source
+
     source = await Source.objects.get(id=source_id)
-    if not source:
+    if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    await Source.objects.delete(id=source_id)
+    session = new_session()
+    try:
+        # The row is read through the tenant-guarded queryset, so its workspace
+        # *is* the caller's. Re-entering that workspace keeps the deletion
+        # repair path (source-admission lock, task pause) on the owning tenant
+        # instead of relying on an ambient scope the caller may not have.
+        with tenant_scope(source.tenant_id):
+            async with session.begin():
+                removal = await delete_workspace_source(session, source_id=source_id, tenant_id=source.tenant_id)
+    finally:
+        await session.close()
+    if removal is None:
+        raise HTTPException(status_code=404, detail="Source not found")

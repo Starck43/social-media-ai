@@ -36,9 +36,31 @@ required for unresolved effects and accounting.
   all-active tasks retain their contract; tenant/permission checks and concurrent
   task edits are covered by focused PostgreSQL acceptance; depends: none;
   owns: source deletion manager/service, affected delete callers and focused
-  tests; owner: unassigned; status: TODO. Confirmed at `a11f1f9`:
+  tests; owner: opencode; status: READY. Confirmed at `a11f1f9`:
   source deletion removes m2m links but leaves the task active, while an empty
   link set means all active sources. See
   [social analysis audit](../audits/2026-10-18-social-analysis-web.md).
+  Evidence: one delete path `app/services/collection/source_deletion.py`
+  (`delete_source(session, source_id, tenant_id)`) — holds the source-admission
+  lock, locks the source row and the linked task rows, deletes the row
+  (analytics/m2m by FK cascade), and pauses the tasks whose *only* named source
+  it was, in the same transaction, through `AgentTaskManager.update_by_id`
+  (so a queued occurrence of the old plan is dropped) with a note naming the
+  deleted source; tasks with other links and tasks with no links are untouched.
+  Callers: `POST /app/sources/{id}/delete` (names the paused tasks in a second
+  flash; lane refusal unchanged) and `DELETE /api/v1/sources/{id}` (resolves the
+  row's workspace, then deletes inside that scope). Contract documented in
+  `docs/API.md`. Tests: `tests/collection/test_source_deletion_scope_db.py`
+  (7 passed — last-source pause, remaining-link survival, all-active untouched,
+  already-paused untouched, queued occurrence dropped, foreign workspace
+  reported missing, concurrent editor blocked by the task-row lock via
+  `FOR UPDATE NOWAIT`), plus the new web test in
+  `tests/collection/test_web_sources.py` (flash names the paused task, task
+  really inactive) and `tests/api/test_api_permissions.py::test_sources_crud`.
+  Verified: 15 passed in one sequential run against exactly the content of
+  this commit; `git diff --check`, black/isort on the new files and
+  `compileall` passed. Known unrelated failure in the same API suite
+  (`test_tasks_crud`: `TenantContextError` from the in-flight P1-T02 admission
+  lock) is not part of this change. Migration implications: none.
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

@@ -538,20 +538,41 @@ safely.
       named before it happens). A task-owned lane is refused with the owning
       task named. The old test that kept the form away from the source page
       is flipped.
-    - Mention lanes and the relevance gate (owner decisions of 2026-10-22):
-      the runtime owns the task's mention lanes (one per phrase, or one joined
-      lane for `queries_match="all"`; reused, never taken from another task;
-      a dry run creates nothing), every collected source writes its own
-      `collection_lane_runs` row with the counts, the limit and the bounded
-      cause, and a model's own `is_relevant == False` now keeps a post out of
-      the analysis (only a real boolean counts). The VK search family stays
-      closed for this app profile — the owner action is in
+    - Mention lanes and the relevance gate (code `4275d12`, owner decisions of
+      2026-10-22): the runtime owns the task's mention lanes (one per phrase,
+      or one joined lane for `queries_match="all"`; reused, never taken from
+      another task; a dry run creates nothing), every collected source writes
+      its own `collection_lane_runs` row with the counts, the limit and the
+      bounded cause, and a model's own `is_relevant == False` now keeps a post
+      out of the analysis (only a real boolean counts). The lane
+      classification reads the source defensively, so an unreadable type costs
+      one evidence row instead of the run. The VK search family stays closed
+      for this app profile — the owner action is in
       [VK Standalone application](../VK_STANDALONE_APP.md) (Q-9).
+    - Three-question form and visible lanes (code `17acb3f`, owner feedback of
+      2026-10-22): the collection period is the first fieldset of the
+      collection block, the source block is named «Источники», the selection's
+      text scope is «Фразы в тексте поста», and the sections follow the work
+      (collection, sources, scenario, analysis targets, selection). Stored
+      values, POST names and the no-JS save path are unchanged. The sources
+      list now lists task-owned lanes with a badge naming their task, uses the
+      jobs list's trash icon for delete, and refuses to delete a source that
+      an active task still reads (paused tasks do not block).
+  - **Stage F status: READY for review at `9276083`.** Focused scope (task
+    form, sources list and page, mention lanes, relevance gate, collect
+    selection): 79 passed, 0 failed. Full `tests/collection/ tests/jobs/
+    tests/ai/` at `9276083`: 1845 passed, 209 failed, no hang — every
+    remaining failure is in the pre-existing set (collection 55 of a
+    pre-change 64, jobs 62 of 86, ai 43 of 62), and comparison against the
+    recorded baseline shows no new failing test. The known real-session
+    admission hang is closed by porting `765c91b` (`9276083`). The live search
+    half stays blocked on Q-5/Q-9 (VK standalone application), so stage F is
+    accepted on code and tests, not on live search evidence.
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`
-  carry no competing ownership. Stages A–D are DONE, stage E is READY for
-  review, and F is applied but blocked on the live dry-run (Q-5). Owns:
+  carry no competing ownership. Stages A–D are DONE, and stages E and F are READY
+  for review; F's live search half stays blocked on Q-5/Q-9. Owns:
   `docs/design/collection-plan.md`, `app/services/collection/`,
   `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
   `app/models/collection/`, `app/models/scheduling/`, `app/web/tasks.py`,
@@ -559,7 +580,7 @@ safely.
   `app/templates/`, `app/core/scenario_presets.py`, `app/admin/views.py`,
   `app/agent/toolset/`, `cli/`, `app/api/`, `app/services/ai/scenario*.py`,
   one Alembic revision, tests. Owner: owner (fork #2); status: IN_PROGRESS
-  (stages A–D DONE, E READY, F applied but blocked on Q-5).
+  (stages A–D DONE, E and F READY; live search blocked on Q-5/Q-9).
   Evidence: [collection plan](../design/collection-plan.md); append stage
   evidence at the exact tested SHA. Test routing: primary OpenCode
   test-runner subagent per stage (RULES.md R10), shared DB sequential (R8).

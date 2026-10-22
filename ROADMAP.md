@@ -69,7 +69,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P8-T27 — Platforms settings, admin controls and deletion-rule audit (#224) → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
 
 
-- [ ] P5-T14 — universal collection plan: task-owned typed collection, lanes, limits, comments and candidates → [p5](docs/phases/p5-ai-boundaries.md) — owner (fork #2) — IN_PROGRESS
+- [ ] P5-T14 — universal collection plan: task-owned typed collection, lanes, limits, comments and candidates → [p5](docs/phases/p5-ai-boundaries.md) — owner (fork #2) — READY for review (stages E, F)
 
 - [ ] P8-T29 — agent paraphrase/search/compose tools for abstract "find and analyse" requests → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 

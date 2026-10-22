@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from croniter import croniter
 
+from app.core.database import with_db_session
 from app.core.permissions import require_permission
 from app.types import ActionType
 
@@ -92,9 +93,25 @@ class AgentTaskManager(BaseManager):
         )
         return await super().create(**kwargs)
 
+    # Fields that define what the next occurrence will do. A change to any of
+    # them makes an already queued occurrence a stale plan: it carries the
+    # payload/schedule snapshot taken at admission time.
+    PENDING_OCCURRENCE_FIELDS = ("job_type", "cron_expr", "payload", "agent_scenario_id", "next_run_at")
+
+    @classmethod
+    def _replaces_pending_occurrence(cls, current: "AgentTask", values: dict[str, Any]) -> bool:
+        """Whether this update invalidates the task's queued occurrence."""
+        if values.get("is_active") is False:
+            return True
+        return any(
+            field in values and values[field] != getattr(current, field, None)
+            for field in cls.PENDING_OCCURRENCE_FIELDS
+        )
+
     @require_permission("agenttask", ActionType.UPDATE)
-    async def update_by_id(self, instance_id: int, **kwargs: Any) -> Optional["AgentTask"]:
-        current = await self.get(id=instance_id)
+    @with_db_session
+    async def update_by_id(self, instance_id: int, session: "AsyncSession", **kwargs: Any) -> Optional["AgentTask"]:
+        current = await self.get(id=instance_id, session=session)
         self._require_job_retention_permission(getattr(current, "job_type", None))
         self._require_job_retention_permission(kwargs.get("job_type"))
         if current is not None:
@@ -103,7 +120,13 @@ class AgentTaskManager(BaseManager):
                 kwargs.get("payload", current.payload),
                 kwargs.get("cron_expr", current.cron_expr),
             )
-        return await super().update_by_id(instance_id, **kwargs)
+        replaces_pending = current is not None and self._replaces_pending_occurrence(current, kwargs)
+        updated = await super().update_by_id(instance_id, session=session, **kwargs)
+        if replaces_pending and updated is not None:
+            from .job_manager import JobManager
+
+            await JobManager().delete_pending_for_task(session, tenant_id=updated.tenant_id, task_id=updated.id)
+        return updated
 
     @require_permission("agenttask", ActionType.UPDATE)
     async def update(self, **values: Any) -> int:
@@ -119,18 +142,46 @@ class AgentTaskManager(BaseManager):
         return await super().update(**values)
 
     @require_permission("agenttask", ActionType.DELETE)
-    async def delete_by_id(self, instance_id: int) -> bool:
-        current = await self.get(id=instance_id)
+    @with_db_session
+    async def delete_by_id(self, instance_id: int, session: "AsyncSession") -> bool:
+        current = await self.get(id=instance_id, session=session)
+        if current is None:
+            return False
         self._require_job_retention_permission(getattr(current, "job_type", None))
-        return await super().delete_by_id(instance_id)
+        from .job_manager import JobManager
+
+        # A deleted task must not leave a queued run behind: the job FK is
+        # SET NULL, so without this the occurrence would still execute with the
+        # removed task's payload. Claimed rows keep their own recovery policy.
+        await JobManager().delete_pending_for_task(session, tenant_id=current.tenant_id, task_id=current.id)
+        return await super().delete_by_id(instance_id, session=session)
 
     @require_permission("agenttask", ActionType.DELETE)
-    async def delete(self, session: AsyncSession | None = None, **filters: Any) -> Callable[[], int] | int:
+    async def delete(self, session: AsyncSession | None = None, **filters: Any) -> int:
         """Gate filtered deletion just like delete_by_id; preserve base semantics."""
-        matching = await self.filter(**filters)
+        from app.core.database import async_session_maker
+
+        if session is not None:
+            return await self._delete_with_queued_cleanup(session, filters)
+        async with async_session_maker() as owned:
+            try:
+                count = await self._delete_with_queued_cleanup(owned, filters)
+                await owned.commit()
+            except Exception:
+                await owned.rollback()
+                raise
+        return count
+
+    async def _delete_with_queued_cleanup(self, session: "AsyncSession", filters: dict[str, Any]) -> int:
+        matching = list(await self.filter(session=session, **filters))
         for task in matching:
             self._require_job_retention_permission(task.job_type)
-        return await super().delete(session=session, **filters)
+        from .job_manager import JobManager
+
+        job_manager = JobManager()
+        for task in matching:
+            await job_manager.delete_pending_for_task(session, tenant_id=task.tenant_id, task_id=task.id)
+        return await self.get_queryset(session).filter(**filters).delete()
 
     @require_permission("agenttask", ActionType.UPDATE)
     async def set_sources(self, task_id: int, source_ids: list[int]) -> int:
@@ -732,6 +783,34 @@ class AgentTaskManager(BaseManager):
                             "cooldown_seconds": row.cooldown_seconds,
                             "dry_run": bool(row.dry_run),
                         }
+
+                    if scheduled and row.job_type not in SOURCE_JOB_TYPES:
+                        # Source job types already answer a scheduled overlap
+                        # through `source_conflict`; workspace-level types
+                        # (digest/prune/learn/reflect) had no equivalent, so a
+                        # stopped worker let one pending copy accumulate per
+                        # schedule tick. A task keeps at most one queued or
+                        # running occurrence; the current one is retained.
+                        from ..job import Job as JobModel
+
+                        active_own = (
+                            (
+                                await session.execute(
+                                    select(JobModel)
+                                    .where(
+                                        JobModel.tenant_id == tenant_id,
+                                        JobModel.agent_task_id == row.id,
+                                        JobModel.status.in_(("pending", "running")),
+                                    )
+                                    .order_by(JobModel.id)
+                                    .limit(1)
+                                )
+                            )
+                            .scalars()
+                            .first()
+                        )
+                        if active_own is not None:
+                            return _busy_admission_receipt(row.id, active_own)
 
                     jobs = JobManager()
                     # A manual re-run replaces this task's unfinished jobs. The

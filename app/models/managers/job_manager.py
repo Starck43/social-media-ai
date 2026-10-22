@@ -771,6 +771,48 @@ class JobManager(BaseManager["Job"]):
             await session.delete(row)
         return len(rows)
 
+    async def delete_pending_for_task(self, session: "AsyncSession", *, tenant_id: int, task_id: int) -> int:
+        """Remove this task's queued occurrences that never started.
+
+        A scheduled task has one queued occurrence at a time; its payload was
+        snapshotted from the schedule and definition that existed when it was
+        admitted. When that definition changes, or the task is paused/deleted,
+        the queued row must not run the old plan. Rows whose previous attempt
+        left an unconfirmed external outcome are retained for review. Claimed
+        (`running`) and terminal rows are history and are left alone.
+
+        The caller owns the transaction: scheduling the new definition and
+        dropping the stale occurrence commit or roll back together.
+        """
+        from sqlalchemy import select
+
+        from app.jobs.recovery_policy import outcome_unconfirmed
+
+        from ..job import Job as JobModel
+
+        rows = (
+            (
+                await session.execute(
+                    select(JobModel)
+                    .where(
+                        JobModel.tenant_id == tenant_id,
+                        JobModel.agent_task_id == task_id,
+                        JobModel.status == "pending",
+                    )
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        removed = 0
+        for row in rows:
+            if outcome_unconfirmed(row.error):
+                continue
+            await session.delete(row)
+            removed += 1
+        return removed
+
     async def cancel_pending(self, job_id: int) -> bool:
         """Cancel a queued row that no worker has claimed yet (it never ran).
 

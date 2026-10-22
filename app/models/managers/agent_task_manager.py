@@ -191,17 +191,17 @@ class AgentTaskManager(BaseManager):
         return await self.get_queryset(session).filter(**filters).delete()
 
     @require_permission("agenttask", ActionType.UPDATE)
-    async def set_sources(self, task_id: int, source_ids: list[int]) -> int:
+    async def set_sources(self, task_id: int, source_ids: list[int], *, session: "AsyncSession | None" = None) -> int:
         """Replace the task's source links with exactly `source_ids`.
 
         The single write path for the m2m table — the web form, the CLI and the
         agent tool all call it instead of hand-rolling delete+insert.
         """
-        return await self._write_source_bindings(task_id, source_ids, replace=True)
+        return await self._write_source_bindings(task_id, source_ids, replace=True, session=session)
 
     @require_permission("agenttask", ActionType.UPDATE)
-    async def add_sources(self, task_id: int, source_ids: list[int]) -> int:
-        return await self._write_source_bindings(task_id, source_ids, replace=False)
+    async def add_sources(self, task_id: int, source_ids: list[int], *, session: "AsyncSession | None" = None) -> int:
+        return await self._write_source_bindings(task_id, source_ids, replace=False, session=session)
 
     @staticmethod
     async def _validate_scenario_binding(session, task):
@@ -215,7 +215,7 @@ class AgentTaskManager(BaseManager):
         if identity is None:
             raise ValueError("Scenario is unavailable in this workspace")
 
-    async def _write_source_bindings(self, task_id, source_ids, *, replace):
+    async def _write_source_bindings(self, task_id, source_ids, *, replace, session=None):
         from sqlalchemy import delete, select
         from sqlalchemy.dialects.postgresql import insert
         from ..source import Source
@@ -225,7 +225,7 @@ class AgentTaskManager(BaseManager):
         if any(type(value) is not int or value <= 0 for value in source_ids):
             raise ValueError("Invalid source IDs")
         ids = sorted(set(source_ids))
-        async with self._get_owned_session() as session:
+        async with self._get_owned_session(session) as session:
             task = (await session.execute(self.filter(id=task_id).to_select().with_for_update())).scalar_one_or_none()
             if task is None:
                 raise ValueError("Task unavailable in this workspace")

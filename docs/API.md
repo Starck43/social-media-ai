@@ -954,6 +954,31 @@ Authorization: Bearer <token>
 
 ## LLM Providers
 
+### Personal catalog candidate (PR #229 / migration 0109)
+
+Both `/api/v1/llm/llm-providers` and `/api/v1/llm/llm-models` use the
+active authenticated user's personal catalog, without workspace membership or
+an operator/admin gate. `require_model_perm` remains the endpoint guard and
+recognizes active-user self-service for these resources. IDs are owner-filtered;
+foreign IDs are not editable. `owner_user_id` is not client-assignable. This is
+candidate source behavior, not deployed/ASGI-accepted evidence.
+
+Provider `uid` is required at creation, mutable and unique per owner; `name` is
+a display label and numeric ID is immutable. HTTPS base URLs and bounded field
+values are validated. `api_key` is write-only: an absent/empty key preserves
+existing encrypted storage. Read responses never contain encrypted/plaintext keys;
+`auth_header` is redacted to null because historical values may contain credentials.
+
+The web UI uses CSRF-checked `POST /app/settings/models/save` for one atomic
+provider+N models bundle (provider-only save supported), and
+`POST /app/settings/models/default` for the same owner-locked default service.
+Sparse edits preserve unspecified fields/models. Defaults are per-user and
+capability, not global. Chat settings persist integer `agent_model_id`, with the
+same owner/provider/activity/tier eligibility for options, save, probe and runtime;
+a chosen foreign/ineligible FK is rejected rather than resolved by name.
+
+See [evidence and outstanding real acceptance](validation/personal-llm-ownership.md).
+
 ### Create Provider
 
 ```
@@ -963,6 +988,7 @@ Content-Type: application/json
 
 {
   "name": "OpenAI",
+  "uid": "openai",
   "description": "OpenAI GPT models",
   "api_format": "openai",
   "base_url": "https://api.openai.com/v1",
@@ -1537,11 +1563,13 @@ GET /dashboard/topic-chains
 ```json
 {
   "id": 1,
+  "owner_user_id": 2,
+  "uid": "openai",
   "name": "OpenAI",
   "description": "string",
   "api_format": "openai",
   "base_url": "https://api.openai.com/v1",
-  "auth_header": "Bearer",
+  "auth_header": null,
   "is_active": true,
   "created_at": "ISO datetime",
   "updated_at": "ISO datetime"

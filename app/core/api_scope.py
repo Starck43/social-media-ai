@@ -49,6 +49,13 @@ def _is_public(path: str) -> bool:
     return path.rstrip("/") in PUBLIC_API_PATHS
 
 
+def _is_personal_catalog_path(path: str) -> bool:
+    normalized = path.rstrip("/")
+    return any(normalized == root or normalized.startswith(root + "/") for root in (
+        "/api/v1/llm/llm-models", "/api/v1/llm/llm-providers",
+    ))
+
+
 class ApiScopeMiddleware:
     """Authenticate `/api/*` and run it inside the caller's workspace scope."""
 
@@ -74,7 +81,7 @@ class ApiScopeMiddleware:
                 await self.app(scope, receive, send)
             return
 
-        if path.startswith(("/api/v1/llm-models", "/api/v1/llm-providers")):
+        if _is_personal_catalog_path(path):
             request.state.api_user = user
             with tenant_scope(), permission_scope(user):
                 await self.app(scope, receive, send)

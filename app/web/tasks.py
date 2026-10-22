@@ -554,14 +554,23 @@ async def _check_task_sources(source_ids: list[int], tenant_id: int, task_id: in
 	attach somebody else's source to this task and make the job read it. A
 	task-scoped query lane (`owner_task_id`) may only be linked to the task that
 	owns it — it is not a pickable source for anyone else.
+
+	A *missing* id is the stale-form case: the page was rendered before another
+	tab (or another member) deleted that source. Refusing it by name is what
+	keeps the save honest — without it the task update commits `is_active=True`
+	and only the link write fails, leaving an active task with no links, which
+	the runtime reads as "all active sources".
 	"""
 	from app.models import Source
 
 	if not source_ids:
 		return
 	sources = {s.id: s for s in await Source.objects.filter(id__in=source_ids)}
-	if set(sources) != set(source_ids):
-		raise ValueError("Один или несколько источников недоступны в этом пространстве")
+	missing = sorted(set(source_ids) - set(sources))
+	if missing:
+		raise ValueError(
+			f"Источник(и) {', '.join(map(str, missing))} больше не существует — обновите страницу и выберите источники заново"
+		)
 	foreign = sorted(sid for sid, s in sources.items() if s.tenant_id != tenant_id)
 	if foreign:
 		raise ValueError(f"Источник(и) {', '.join(map(str, foreign))} принадлежат другому воркспейсу")
@@ -572,12 +581,23 @@ async def _check_task_sources(source_ids: list[int], tenant_id: int, task_id: in
 		raise ValueError(f"Источник(и) {', '.join(map(str, stolen))} принадлежат поиску другой задачи")
 
 
-async def _replace_task_sources(task_id: int, source_ids: list[int], tenant_id: int) -> None:
-	"""Replace the task's m2m source links with the given set."""
+async def _replace_task_sources(
+	task_id: int,
+	source_ids: list[int],
+	tenant_id: int,
+	*,
+	session: Any = None,
+) -> None:
+	"""Replace the task's m2m source links with the given set.
+
+	Pass `session` from a caller that also writes the task row: the links then
+	commit or roll back with it, so a refused link write cannot leave a
+	half-saved task behind.
+	"""
 	from app.models.managers.agent_task_manager import AgentTaskManager
 
 	await _check_task_sources(source_ids, tenant_id, task_id=task_id)
-	await AgentTaskManager().set_sources(task_id, source_ids)
+	await AgentTaskManager().set_sources(task_id, source_ids, session=session)
 
 
 async def _activate_selected_sources(tenant_id: int, source_ids: list[int]) -> None:
@@ -1110,20 +1130,37 @@ async def task_create(
 		)
 	is_active = activation_blocked is None
 
-	with tenant_scope(tenant_id):
-		task = await AgentTask.objects.create(
-			name=name.strip()[:100],
-			job_type=job_type,
-			cron_expr=cron_expr,
-			payload=payload,
-			agent_scenario_id=None if job_type == "prune" else scenario_id,
-			is_active=is_active,
-			next_run_at=next_run,
-			dry_run=dry_run_flag,
-			**trigger_action_fields,
+	from app.core.database import new_session
+
+	session = new_session()
+	try:
+		with tenant_scope(tenant_id):
+			async with session.begin():
+				task = await AgentTask.objects.create(
+					name=name.strip()[:100],
+					job_type=job_type,
+					cron_expr=cron_expr,
+					payload=payload,
+					agent_scenario_id=None if job_type == "prune" else scenario_id,
+					is_active=is_active,
+					next_run_at=next_run,
+					dry_run=dry_run_flag,
+					session=session,
+					**trigger_action_fields,
+				)
+				if parsed_source_ids:
+					await _replace_task_sources(task.id, parsed_source_ids, tenant_id, session=session)
+	except ValueError:
+		# A source that vanished between the check and this write must not leave
+		# an active task whose empty link set means "all active sources".
+		add_flash(
+			request,
+			"error",
+			"Источники задачи изменились во время сохранения — обновите страницу и повторите",
 		)
-		if parsed_source_ids:
-			await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
+		return RedirectResponse(back, status_code=302)
+	finally:
+		await session.close()
 
 	# "Создать и выполнить" only queues the job. It used to run the handler
 	# inside this request, which for a long job (an `analyze` task draining a
@@ -2041,20 +2078,38 @@ async def task_update(
 				f"Задача «{name}» не активирована: {activation_blocked}",
 			)
 
-	with tenant_scope(tenant_id):
-		await AgentTask.objects.update_by_id(
-			task.id,
-			name=name.strip()[:100],
-			job_type=job_type,
-			cron_expr=cron_expr,
-			payload=payload,
-			agent_scenario_id=None if job_type == "prune" else scenario_id,
-			is_active=requested_active and activation_blocked is None,
-			next_run_at=next_run,
-			dry_run=dry_run_flag,
-			**trigger_action_fields,
+	# The row and its links are one unit: a source that vanished between the
+	# check above and this write must abort the whole save, not leave the task
+	# active and link-less (which the runtime reads as "all active sources").
+	from app.core.database import new_session
+
+	session = new_session()
+	try:
+		with tenant_scope(tenant_id):
+			async with session.begin():
+				await AgentTask.objects.update_by_id(
+					task.id,
+					name=name.strip()[:100],
+					job_type=job_type,
+					cron_expr=cron_expr,
+					payload=payload,
+					agent_scenario_id=None if job_type == "prune" else scenario_id,
+					is_active=requested_active and activation_blocked is None,
+					next_run_at=next_run,
+					dry_run=dry_run_flag,
+					**trigger_action_fields,
+					session=session,
+				)
+				await _replace_task_sources(task.id, parsed_source_ids, tenant_id, session=session)
+	except ValueError:
+		add_flash(
+			request,
+			"error",
+			"Источники задачи изменились во время сохранения — обновите страницу и повторите",
 		)
-		await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
+		return RedirectResponse(back, status_code=302)
+	finally:
+		await session.close()
 
 	# Queued, not run in-request, for the same reason as the create branch: a long
 	# job froze the page and invited the second click that hit the unique name.

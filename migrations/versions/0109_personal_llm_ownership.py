@@ -47,6 +47,10 @@ def upgrade():
         SELECT count(*) FROM {schema}.agent_tasks t JOIN {schema}.agent_scenarios s ON s.id=t.agent_scenario_id
         WHERE t.tenant_id<>s.tenant_id
     """)).scalar_one()
+    invalid += bind.execute(sa.text(f"""
+        SELECT count(*) FROM {schema}.sources s JOIN {schema}.agent_tasks t ON t.id=s.owner_task_id
+        WHERE s.tenant_id<>t.tenant_id
+    """)).scalar_one()
     if invalid:
         raise RuntimeError("Existing cross-workspace/task-owned bindings require reviewed repair before upgrade")
     for table in ("llm_providers", "llm_models"):
@@ -109,7 +113,7 @@ def upgrade():
         BEGIN
           IF TG_TABLE_NAME='agent_task_sources' THEN
             SELECT tenant_id INTO task_tenant FROM {schema}.agent_tasks WHERE id=NEW.agent_task_id FOR KEY SHARE;
-            SELECT tenant_id, owner_task_id INTO source_tenant, source_owner FROM {schema}.sources WHERE id=NEW.source_id FOR KEY SHARE;
+            SELECT tenant_id, owner_task_id INTO source_tenant, source_owner FROM {schema}.sources WHERE id=NEW.source_id FOR SHARE;
             IF task_tenant IS NULL OR source_tenant IS NULL OR task_tenant<>source_tenant
                OR (source_owner IS NOT NULL AND source_owner<>NEW.agent_task_id) THEN
               RAISE EXCEPTION 'Invalid workspace task source binding' USING ERRCODE='23514';
@@ -125,15 +129,17 @@ def upgrade():
           ELSE
             IF TG_TABLE_NAME='sources' THEN
               IF NEW.owner_task_id IS NOT NULL THEN
-              PERFORM 1 FROM {schema}.agent_tasks WHERE id=NEW.owner_task_id AND tenant_id=NEW.tenant_id FOR KEY SHARE;
-              IF NOT FOUND THEN RAISE EXCEPTION 'Invalid source owning task' USING ERRCODE='23514'; END IF;
-              IF EXISTS (SELECT 1 FROM {schema}.agent_task_sources WHERE source_id=NEW.id AND agent_task_id<>NEW.owner_task_id) THEN
-                RAISE EXCEPTION 'Task-owned source has foreign links' USING ERRCODE='23514';
+                PERFORM 1 FROM {schema}.agent_tasks WHERE id=NEW.owner_task_id AND tenant_id=NEW.tenant_id FOR KEY SHARE;
+                IF NOT FOUND THEN RAISE EXCEPTION 'Invalid source owning task' USING ERRCODE='23514'; END IF;
+                IF EXISTS (SELECT 1 FROM {schema}.agent_task_sources WHERE source_id=NEW.id AND agent_task_id<>NEW.owner_task_id) THEN
+                  RAISE EXCEPTION 'Task-owned source has foreign links' USING ERRCODE='23514';
+                END IF;
               END IF;
             END IF;
-            END IF;
-            IF NEW.tenant_id<>OLD.tenant_id THEN
-              RAISE EXCEPTION 'Workspace ownership is immutable' USING ERRCODE='23514';
+            IF TG_OP='UPDATE' THEN
+              IF NEW.tenant_id<>OLD.tenant_id THEN
+                RAISE EXCEPTION 'Workspace ownership is immutable' USING ERRCODE='23514';
+              END IF;
             END IF;
           END IF;
           RETURN NEW;
@@ -141,7 +147,7 @@ def upgrade():
     """))
     op.execute(sa.text(f"CREATE TRIGGER guard_task_source_binding BEFORE INSERT OR UPDATE ON {schema}.agent_task_sources FOR EACH ROW EXECUTE FUNCTION {schema}.guard_task_binding()"))
     op.execute(sa.text(f"CREATE TRIGGER guard_task_scenario_binding BEFORE INSERT OR UPDATE ON {schema}.agent_tasks FOR EACH ROW EXECUTE FUNCTION {schema}.guard_task_binding()"))
-    op.execute(sa.text(f"CREATE TRIGGER guard_workspace_ownership BEFORE UPDATE OF tenant_id, owner_task_id ON {schema}.sources FOR EACH ROW EXECUTE FUNCTION {schema}.guard_task_binding()"))
+    op.execute(sa.text(f"CREATE TRIGGER guard_workspace_ownership BEFORE INSERT OR UPDATE OF tenant_id, owner_task_id ON {schema}.sources FOR EACH ROW EXECUTE FUNCTION {schema}.guard_task_binding()"))
     op.execute(sa.text(f"CREATE TRIGGER guard_workspace_ownership BEFORE UPDATE OF tenant_id ON {schema}.agent_scenarios FOR EACH ROW EXECUTE FUNCTION {schema}.guard_task_binding()"))
 
 

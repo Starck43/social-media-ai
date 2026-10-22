@@ -79,8 +79,6 @@ async def create_llm_model(
         model = await LLMModel.objects.create_model(**data, **prices, pricing_token_unit=unit)
         logger.info(f"LLM model created: {model.name} (ID: {model.id})")
         return _model_response(model)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid personal catalog data")
     except PermissionError:
         raise HTTPException(status_code=403, detail="Personal catalog access denied")
     except ValueError:
@@ -167,8 +165,6 @@ async def update_llm_model(
         return _model_response(model)
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid personal catalog data")
     except PermissionError:
         raise HTTPException(status_code=403, detail="Personal catalog access denied")
     except ValueError:

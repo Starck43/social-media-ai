@@ -1,5 +1,5 @@
 """Resolve personal credentials from durable job identity, not untrusted payload."""
-from app.core.personal_catalog_context import catalog_execution_scope
+from app.core.personal_catalog_context import catalog_execution_scope, without_catalog_access
 
 
 async def run_with_job_catalog(job, handler, payload):
@@ -13,7 +13,8 @@ async def run_with_job_catalog(job, handler, payload):
             agent_task_id=job.agent_task_id, tenant_id=job.tenant_id
         ).first() if job.agent_task_id is not None else None
         if consent is None and job.initiated_by_user_id is None:
-            return await handler(payload)
+            with without_catalog_access():
+                return await handler(payload)
     if job.agent_task_id is not None:
         from app.services.billing.payer import resolve_scheduled_task_payer
         account = await resolve_scheduled_task_payer(task_id=job.agent_task_id, tenant_id=job.tenant_id)

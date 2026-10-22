@@ -70,7 +70,7 @@ def context(mode):
         slug="monitor",
         plan="free",
         max_sources=3,
-        agent_model="model-a",
+        agent_model_id=31,
         agent_max_tokens=1024,
         agent_temperature=0.3,
         agent_system_prompt="Отвечай кратко и по делу.",
@@ -139,8 +139,8 @@ def context(mode):
         plan_rows=[dict(key="max_sources", label="Источники", free=3, pro=30)],
         plan_usage={"max_sources": 2},
         agent_model_options=[
-            dict(id="model-a", label="Provider / Chat model ($0.0010/$0.0020/1K) ★"),
-            dict(id="model-b", label="ДлинноеНазваниеМодели" * 5),
+            dict(id=31, label="Provider / Chat model ($0.0010/$0.0020/1K)", is_default=True, is_effective_default=True),
+            dict(id=32, label="ДлинноеНазваниеМодели" * 5, is_default=False, is_effective_default=False),
         ],
         probe_result=dict(
             ok=mode != "agent-error",

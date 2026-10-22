@@ -89,9 +89,7 @@ class AgentTaskManager(BaseManager):
     @with_db_session
     async def create(self, session: "AsyncSession", **kwargs: Any) -> "AgentTask":
         self._require_job_retention_permission(kwargs.get("job_type"))
-        self._validate_job_retention_schedule(
-            kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr")
-        )
+        self._validate_job_retention_schedule(kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr"))
         task = await super().create(session=session, **kwargs)
         await self._validate_scenario_binding(session, task)
         return task
@@ -99,31 +97,67 @@ class AgentTaskManager(BaseManager):
     # Fields that define what the next occurrence will do. A change to any of
     # them makes an already queued occurrence a stale plan: it carries the
     # payload/schedule snapshot taken at admission time.
-    PENDING_OCCURRENCE_FIELDS = ("job_type", "cron_expr", "payload", "agent_scenario_id", "next_run_at")
+    PENDING_OCCURRENCE_FIELDS = (
+        "job_type",
+        "cron_expr",
+        "payload",
+        "agent_scenario_id",
+        "next_run_at",
+        "trigger_type",
+        "trigger_config",
+        "action_type",
+        "rate_limit_per_hour",
+        "cooldown_seconds",
+        "dry_run",
+    )
 
     @classmethod
     def _replaces_pending_occurrence(cls, current: "AgentTask", values: dict[str, Any]) -> bool:
         """Whether this update invalidates the task's queued occurrence."""
-        if values.get("is_active") is False:
+        if values.get("is_active") is False and current.is_active is not False:
             return True
         return any(
             field in values and values[field] != getattr(current, field, None)
             for field in cls.PENDING_OCCURRENCE_FIELDS
         )
 
+    async def _lock_task_for_mutation(self, session: "AsyncSession", task_id: int):
+        """Take the admission gate before a task row lock and refresh identity state."""
+        from sqlalchemy import select
+
+        from ..agent_task import AgentTask
+        from .job_manager import JobManager
+
+        current = await self.get(id=task_id, session=session)
+        if current is None:
+            return None
+        tenant_id = current.tenant_id
+        await JobManager.lock_source_admission(session, tenant_id)
+        return (
+            await session.execute(
+                select(AgentTask)
+                .where(AgentTask.id == task_id, AgentTask.tenant_id == tenant_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+
     @require_permission("agenttask", ActionType.UPDATE)
     @with_db_session
     async def update_by_id(self, instance_id: int, session: "AsyncSession", **kwargs: Any) -> Optional["AgentTask"]:
-        current = await self.get(id=instance_id, session=session)
+        if {"id", "tenant_id"}.intersection(kwargs):
+            raise ValueError("AgentTask identity fields cannot be updated")
+        current = await self._lock_task_for_mutation(session, instance_id)
+        if current is None:
+            return None
         self._require_job_retention_permission(getattr(current, "job_type", None))
         self._require_job_retention_permission(kwargs.get("job_type"))
-        if current is not None:
-            self._validate_job_retention_schedule(
-                kwargs.get("job_type", current.job_type),
-                kwargs.get("payload", current.payload),
-                kwargs.get("cron_expr", current.cron_expr),
-            )
-        replaces_pending = current is not None and self._replaces_pending_occurrence(current, kwargs)
+        self._validate_job_retention_schedule(
+            kwargs.get("job_type", current.job_type),
+            kwargs.get("payload", current.payload),
+            kwargs.get("cron_expr", current.cron_expr),
+        )
+        replaces_pending = self._replaces_pending_occurrence(current, kwargs)
         updated = await super().update_by_id(instance_id, session=session, **kwargs)
         if updated is not None:
             await self._validate_scenario_binding(session, updated)
@@ -135,23 +169,77 @@ class AgentTaskManager(BaseManager):
 
     @require_permission("agenttask", ActionType.UPDATE)
     async def update(self, **values: Any) -> int:
+        """Update every visible task atomically with pending-occurrence invalidation."""
+        from sqlalchemy import select
+
+        from app.core.database import async_session_maker
+
+        from ..agent_task import AgentTask
+        from .job_manager import JobManager
+
         if "agent_scenario_id" in values:
             raise ValueError("Use update_by_id for scenario binding changes")
-        for task in await self.filter():
-            if task.job_type == "prune":
-                self._require_job_retention_permission(task.job_type)
-            self._require_job_retention_permission(values.get("job_type"))
-            self._validate_job_retention_schedule(
-                values.get("job_type", task.job_type),
-                values.get("payload", task.payload),
-                values.get("cron_expr", task.cron_expr),
-            )
-        return await super().update(**values)
+        unknown = set(values) - set(AgentTask.__mapper__.column_attrs.keys())
+        immutable = {"id", "tenant_id"}.intersection(values)
+        if unknown:
+            raise ValueError(f"Unknown AgentTask fields: {', '.join(sorted(unknown))}")
+        if immutable:
+            raise ValueError(f"AgentTask identity fields cannot be updated: {', '.join(sorted(immutable))}")
+
+        async with async_session_maker() as session:
+            try:
+                # Discover the workspaces in a stable order, acquire every gate,
+                # then lock task rows in the same order used by admission.
+                visible = list(await self.get_queryset(session).all())
+                tenant_ids = sorted({task.tenant_id for task in visible})
+                for tenant_id in tenant_ids:
+                    await JobManager.lock_source_admission(session, tenant_id)
+                if visible:
+                    rows = list(
+                        (
+                            await session.execute(
+                                select(AgentTask)
+                                .where(
+                                    AgentTask.id.in_([task.id for task in visible]),
+                                    AgentTask.tenant_id.in_(tenant_ids),
+                                )
+                                .order_by(AgentTask.tenant_id, AgentTask.id)
+                                .with_for_update()
+                                .execution_options(populate_existing=True)
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
+                else:
+                    rows = []
+
+                jobs = JobManager()
+                for task in rows:
+                    if task.job_type == "prune":
+                        self._require_job_retention_permission(task.job_type)
+                    self._require_job_retention_permission(values.get("job_type"))
+                    self._validate_job_retention_schedule(
+                        values.get("job_type", task.job_type),
+                        values.get("payload", task.payload),
+                        values.get("cron_expr", task.cron_expr),
+                    )
+                    if self._replaces_pending_occurrence(task, values):
+                        await jobs.delete_pending_for_task(session, tenant_id=task.tenant_id, task_id=task.id)
+                    for key, value in values.items():
+                        if hasattr(task, key) and not key.startswith("_"):
+                            setattr(task, key, value)
+                await session.flush()
+                await session.commit()
+                return len(rows)
+            except Exception:
+                await session.rollback()
+                raise
 
     @require_permission("agenttask", ActionType.DELETE)
     @with_db_session
     async def delete_by_id(self, instance_id: int, session: "AsyncSession") -> bool:
-        current = await self.get(id=instance_id, session=session)
+        current = await self._lock_task_for_mutation(session, instance_id)
         if current is None:
             return False
         self._require_job_retention_permission(getattr(current, "job_type", None))
@@ -180,7 +268,29 @@ class AgentTaskManager(BaseManager):
         return count
 
     async def _delete_with_queued_cleanup(self, session: "AsyncSession", filters: dict[str, Any]) -> int:
-        matching = list(await self.filter(session=session, **filters))
+        from ..agent_task import AgentTask
+        from .job_manager import JobManager
+
+        matching = list(await self.get_queryset(session).filter(**filters).all())
+        tenant_ids = sorted({task.tenant_id for task in matching})
+        for tenant_id in tenant_ids:
+            await JobManager.lock_source_admission(session, tenant_id)
+        if matching:
+            matching = list(
+                (
+                    await session.execute(
+                        self.get_queryset(session)
+                        .filter(**filters)
+                        .filter(AgentTask.id.in_([task.id for task in matching]))
+                        .to_select()
+                        .order_by(AgentTask.tenant_id, AgentTask.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                )
+                .scalars()
+                .all()
+            )
         for task in matching:
             self._require_job_retention_permission(task.job_type)
         from .job_manager import JobManager
@@ -188,64 +298,116 @@ class AgentTaskManager(BaseManager):
         job_manager = JobManager()
         for task in matching:
             await job_manager.delete_pending_for_task(session, tenant_id=task.tenant_id, task_id=task.id)
-        return await self.get_queryset(session).filter(**filters).delete()
+            await session.delete(task)
+        await session.flush()
+        return len(matching)
 
     @require_permission("agenttask", ActionType.UPDATE)
-    async def set_sources(self, task_id: int, source_ids: list[int], *, session: "AsyncSession | None" = None) -> int:
+    async def set_sources(self, task_id: int, source_ids: list[int], session: "AsyncSession | None" = None) -> int:
         """Replace the task's source links with exactly `source_ids`.
 
         The single write path for the m2m table — the web form, the CLI and the
         agent tool all call it instead of hand-rolling delete+insert.
         """
-        return await self._write_source_bindings(task_id, source_ids, replace=True, session=session)
+        return await self._mutate_task_sources(task_id, source_ids, replace=True, session=session)
 
     @require_permission("agenttask", ActionType.UPDATE)
-    async def add_sources(self, task_id: int, source_ids: list[int], *, session: "AsyncSession | None" = None) -> int:
-        return await self._write_source_bindings(task_id, source_ids, replace=False, session=session)
+    async def add_sources(self, task_id: int, source_ids: list[int], session: "AsyncSession | None" = None) -> int:
+        """Link sources to the task, keeping the links that already exist."""
+        return await self._mutate_task_sources(task_id, source_ids, replace=False, session=session)
 
     @staticmethod
     async def _validate_scenario_binding(session, task):
         if task.agent_scenario_id is None:
             return
         from sqlalchemy import select
+
         from ..agent_scenario import AgentScenario
-        identity = (await session.execute(select(AgentScenario.id).where(
-            AgentScenario.id == task.agent_scenario_id, AgentScenario.tenant_id == task.tenant_id
-        ).with_for_update())).scalar_one_or_none()
+
+        identity = (
+            await session.execute(
+                select(AgentScenario.id)
+                .where(AgentScenario.id == task.agent_scenario_id, AgentScenario.tenant_id == task.tenant_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
         if identity is None:
             raise ValueError("Scenario is unavailable in this workspace")
 
-    async def _write_source_bindings(self, task_id, source_ids, *, replace, session=None):
-        from sqlalchemy import delete, select
-        from sqlalchemy.dialects.postgresql import insert
-        from ..source import Source
+    async def _mutate_task_sources(
+        self,
+        task_id: int,
+        source_ids: list[int],
+        *,
+        replace: bool,
+        session: "AsyncSession | None" = None,
+    ) -> int:
+        """Change source links under the same gate and task lock as admission."""
+        from sqlalchemy import delete as sa_delete
+        from sqlalchemy import select
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         from ..agent_task import agent_task_sources
+        from ..source import Source
+        from .job_manager import JobManager
+
         if type(task_id) is not int or task_id <= 0:
             raise ValueError("Invalid task ID")
         if any(type(value) is not int or value <= 0 for value in source_ids):
             raise ValueError("Invalid source IDs")
-        ids = sorted(set(source_ids))
-        async with self._get_owned_session(session) as session:
-            task = (await session.execute(self.filter(id=task_id).to_select().with_for_update())).scalar_one_or_none()
+        values = sorted(set(source_ids))
+        if not replace and not values:
+            return 0
+        async with self._get_owned_session(session) as db:
+            task = await self._lock_task_for_mutation(db, task_id)
             if task is None:
                 raise ValueError("Task unavailable in this workspace")
-            sources = (await session.execute(select(Source).where(
-                Source.id.in_(ids), Source.tenant_id == task.tenant_id
-            ).order_by(Source.id).with_for_update())).scalars().all() if ids else []
-            if {source.id for source in sources} != set(ids):
+            sources = (
+                (
+                    await db.execute(
+                        select(Source)
+                        .where(Source.tenant_id == task.tenant_id, Source.id.in_(values))
+                        .order_by(Source.id)
+                        .with_for_update()
+                    )
+                )
+                .scalars()
+                .all()
+                if values
+                else []
+            )
+            if {source.id for source in sources} != set(values):
                 raise ValueError("One or more sources are unavailable in this workspace")
             if any(source.owner_task_id is not None and source.owner_task_id != task.id for source in sources):
                 raise ValueError("A task-owned source cannot be linked to another task")
-            if replace:
-                await session.execute(delete(agent_task_sources).where(agent_task_sources.c.agent_task_id == task.id))
-            if ids:
-                await session.execute(insert(agent_task_sources).values([
-                    {"agent_task_id": task.id, "source_id": identity} for identity in ids
-                ]).on_conflict_do_nothing())
-            # A source change invalidates a pending snapshot just like a task definition change.
-            from .job_manager import JobManager
-            await JobManager().delete_pending_for_task(session, tenant_id=task.tenant_id, task_id=task.id)
-        return len(ids)
+            existing = set(
+                (
+                    await db.execute(
+                        select(agent_task_sources.c.source_id).where(agent_task_sources.c.agent_task_id == task_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            added = set(values) - existing
+            changed = existing != set(values) if replace else bool(added)
+            if changed:
+                await JobManager().delete_pending_for_task(db, tenant_id=task.tenant_id, task_id=task_id)
+                if replace:
+                    await db.execute(sa_delete(agent_task_sources).where(agent_task_sources.c.agent_task_id == task_id))
+                    if values:
+                        await db.execute(
+                            pg_insert(agent_task_sources).values(
+                                [{"agent_task_id": task_id, "source_id": source_id} for source_id in values]
+                            )
+                        )
+                else:
+                    await db.execute(
+                        pg_insert(agent_task_sources)
+                        .values([{"agent_task_id": task_id, "source_id": source_id} for source_id in sorted(added)])
+                        .on_conflict_do_nothing()
+                    )
+            return len(values)
 
     @staticmethod
     def requires_sources(job_type: str) -> bool:
@@ -512,9 +674,7 @@ class AgentTaskManager(BaseManager):
         task_ids = {int(row[0]) for row in rows}
         tasks = await self.filter(id__in=list(task_ids)).prefetch_related("agent_scenario")
         scenarios = {
-            task.agent_scenario
-            for task in tasks
-            if task.agent_scenario is not None and task.agent_scenario.is_active
+            task.agent_scenario for task in tasks if task.agent_scenario is not None and task.agent_scenario.is_active
         }
         if len(scenarios) == 1:
             return next(iter(scenarios))
@@ -601,11 +761,7 @@ class AgentTaskManager(BaseManager):
         """
         from ..source import Source
 
-        rows = (
-            await Source.objects.filter(is_active=True, owner_task_id__isnull=True)
-            .values(Source.id)
-            .rows()
-        )
+        rows = await Source.objects.filter(is_active=True, owner_task_id__isnull=True).values(Source.id).rows()
         return {r.id for r in rows}
 
     async def effective_active_map(

@@ -2,7 +2,11 @@
 
 ## Source and task allocation
 
-Base synchronized: `dev` `ccce2801a640efd7a90704f37874d0bae1ec388a`.
+Initial audit baseline: `dev` `ccce2801a640efd7a90704f37874d0bae1ec388a`.
+Latest synchronized dev: `92dcb948de24c55ab82dccdba81e792945b5ac48`.
+Final tested integrated source: `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4`
+(UI branch; backend `f6674b65977bed4e573b5ecc68aba55b501d7d94` plus UI `eeecde1`).
+Later documentation-only commits do not change the tested application/test bytes.
 Backend branch: `feat/personal-llm-ownership`, [Draft PR #229](https://github.com/Starck43/social-media-ai/pull/229).
 Initial implementation: `e14c3950b8846ea124e08ecbf57e703c8c6506d6`.
 Reviewed incoming dev: `92dcb948de24c55ab82dccdba81e792945b5ac48`; its task+links
@@ -49,7 +53,14 @@ isolated target and sequential owner-local validation. Offline UI evidence follo
 - Defaults are per-user/per-overlapping-capability. Owner row locking serializes
   bundle/default writes. UI distinguishes explicit `is_default`, effective default,
   and workspace-selected `agent_model_id`.
-- Model selection and fallbacks stay inside one personal catalog; active provider,
+- Model selection and fallbacks stay inside one personal catalog **for every
+  capability** (text, image, video, audio): `resolve_default_model`,
+  `capability_candidates` (the analyzer failover queue) and
+  `get_model_for_capability` share one ownership predicate, so a fallback cannot
+  decrypt another owner's key. A scenario that pins a model id — the analyzer's
+  first priority — passes the same gate, so a pin left over from the legacy
+  catalog falls back instead of reaching a foreign key. `AGENT_MODEL` is a name
+  lookup through the same gate — an ownership bypass it is not. Active provider,
   model, owner membership and current configuration are checked before HTTP.
 - Task source replacement validates/locks the parent and every source before
   deleting links. Missing/foreign/task-owned IDs reject the whole replacement.
@@ -90,25 +101,56 @@ Downgrade refuses colliding provider display names rather than deleting data.
   HTTPX 0.28.1, cryptography 50.0.2. No app bootstrap, engines, DB, .env or network
   in the suite. Fictitious example.invalid URL and fake-encrypted markers only.
 
-## Coordinated UI evidence (attributed, offline only)
+## Final integrated offline evidence (attributed)
 
 [Draft PR #230](https://github.com/Starck43/social-media-ai/pull/230) is stacked on
-#229's feature branch. UI session owns the 10 UI templates/assets/helper/test files;
-backend settings.py/router/middleware remain in #229. At integrated snapshot
-`9221352990988869657e847dbd3d0914fed79056` (UI source `6dedebe` plus backend `e14c395`),
-the UI owner reported exact published bytes and: 53 isolated handler/layout pytest
-PASS, 24 new catalog browser cases PASS, 104 existing settings browser cases PASS,
-and 14 catalog unittest PASS. Browser matrix: 320/390/768/1440, light/dark,
-catalog/empty/no-workspace, with individual screenshot inspection. These counts
-are separate reported suites, NOT 195 end-to-end/DB tests. No keys projected into
-JSON; only id/name/uid/base_url/has_api_key. Decimal tariff DTOs are not serialized
-wholesale. Follow-up UI HEAD `eeecde1156d81eb1d6518ccdf9e917078184b62a`
-changes only settings-llm.js and its browser test: cleared partial rows no longer
-retain sticky required validation. UI owner reported exact-byte rerun on eeecde1:
-53 isolated pytest PASS, 14 catalog unittest PASS, 24 catalog browser cases PASS
-(including positive submit/HTTPS/clear-required/payload). The 104 settings regression
-cases were run at 9221352, not rerun at eeecde1. Backend hardening after e14c395
-needs integrated revalidation; no earlier-SHA result certifies later commits.
+#229's feature branch. UI owns the 10 UI templates/assets/helper/test files;
+backend settings.py/router/middleware remain in #229. Final integrated HEAD
+`d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4` includes backend `f6674b6`, UI `eeecde1`
+and dev `92dcb94`. The coordinated UI owner reported the following completed
+rerun on that exact HEAD, with a clean worktree and all 10 UI/test files hash-verified:
+
+| Completed check | Result | What it does NOT prove |
+| --- | --- | --- |
+| Isolated web handler/layout pytest | 53 PASS | Real session middleware, HTTP/ASGI authorization or persisted writes |
+| Catalog unittest, actual mappings and fake storage/crypto | 14 PASS | PostgreSQL constraints, transaction isolation or rollback |
+| Scope/bindings unittest, source-loaded methods and doubles | 16 PASS | Real connection locking, trigger enforcement or DB atomicity |
+| Catalog offline browser fixtures | 24 PASS | Real authenticated page GET/POST or database effects |
+| Existing settings offline browser fixtures | 104 PASS | Runtime/DB acceptance or the entire project suite |
+
+Total: **83 isolated checks and 128 offline browser cases**. These are distinct
+suites, not 211 end-to-end/DB checks. The earlier 9221352/eeecde1 results are
+superseded for final offline evidence; integrated revalidation is no longer pending.
+Real PostgreSQL/ASGI acceptance is still NOT RUN.
+
+Reported exact-HEAD commands (the runner paths are sandbox-specific, not setup
+instructions or a replacement for repository R8/R10 test routing):
+
+```text
+python -m pytest tests/unit_web/test_settings_llm.py tests/unit_web/test_settings_layout.py --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+python tests/ai/test_personal_catalog_unit.py
+python tests/security/test_personal_scope_bindings_unit.py
+node tests/web_settings_llm.cjs /data/llm-ui-visual /data/settings-vendor
+node tests/web_settings_layout.cjs /data/llm-ui-regression /data/settings-vendor
+```
+
+Browser commands used the runner's preinstalled node modules and local Chromium.
+Browser matrix: 320/390/768/1440, light/dark, catalog/empty/no-workspace;
+positive synthetic submit, HTTPS/row validation, cleared partial-row required
+state, provider prefill/manual UID, numeric chat selection/probe, payload,
+unique IDs, overflow and page errors. Screenshots were individually inspected,
+including final dark desktop multirow and light mobile chat selection. No key
+is projected to JSON: only id/name/uid/base_url/has_api_key; Decimal tariff DTOs
+are not serialized wholesale.
+
+The UI owner also reported Black/isort/diff-check PASS and GitGuardian success
+for integrated HEAD (run `119913994817`). Reported runner: Python 3.13.14,
+FastAPI 0.143.2, Starlette 1.8.0, SQLAlchemy 2.1.4, Jinja2 3.1.6,
+pytest 9.1.1, pytest-asyncio 1.4.0, Chromium 153.0.8010.12. This is a separate
+environment from the backend unittest venv described above. Complete attributed
+commands/environment are retained in PR #230. Backend coordinator independently
+reconstructed published backend f6674b6 + UI eeecde1 and reran compileall plus
+14+16 unittest checks successfully, without app bootstrap or DB.
 
 Backend mounts the UI router, so #229 alone is not an independently releasable app.
 After **required real acceptance**, merge #230 into the feature branch first,
@@ -126,10 +168,54 @@ backend without the mandatory UI module. No merge is performed by this work.
    foreign IDs, inactive owner/provider/model and membership revocation.
 4. Real two-connection bundle/default races, rollback on foreign Nth model,
    duplicate UID; task source replacement rejects all missing/foreign IDs atomically.
-5. Web/API/agent/worker dispatch: selected FK, same-owner fallbacks only, scheduled
-   stored payer, no inherited actor guessing, CSRF, exact personal route allowlist.
-6. Integrated UI at backend+UI exact SHAs: default vs selected markers, sparse
-   edits, special characters, desktop/mobile light/dark and no secret HTML/JSON.
+5. Web/API/agent/worker dispatch: selected FK, same-owner fallbacks only for text,
+   image, video and audio, scheduled stored payer, no inherited actor guessing,
+   CSRF, exact personal route allowlist.
+6. Real authenticated UI at the jointly accepted source SHA: default vs selected
+   markers, sparse edits and persisted atomic bundle/default changes. Offline
+   fixture/browser coverage above is completed, not a substitute for this gate.
+
+## Review fixes (2026-10-22, on `f6674b6`)
+
+A requested review of the draft found three gaps between the stated contract and
+the source. All are fixed here; none is claimed as PostgreSQL acceptance.
+
+- **Media parity.** `resolve_default_model` owner-filtered `text` only, while the
+  analyzer resolves image/video through `get_model_for_capability` and failover
+  through `capability_candidates` — both built a fleet-wide candidate list, so a
+  media stage or a fallback could select a model owned by another user and
+  decrypt that provider's key. One predicate
+  (`personal_catalog.eligible_owned_model`) now gates all three paths for every
+  capability, with the tier filter applied per capability.
+- **`AGENT_MODEL`.** The env lookup returned the first row with that name from
+  any owner and skipped provider activity; it now passes the same
+  ownership/activity gate and only bypasses the workspace tier. A foreign or
+  unknown name falls back to auto-resolution inside the acting catalog.
+- **Tariff identity.** `AIAnalyzer._price_usage` priced a provider-reported model
+  name with `filter(model_id=..., is_active=True).first()` — across every owner,
+  so with personal catalogs a workspace could inherit another user's rates. It
+  now resolves the exact row the attempt used (`request.llm_model_id`, written
+  before the HTTP call); a legacy name-only envelope is scoped to the acting
+  catalog and stays unknown when the name is ambiguous. `attempt_journal`'s
+  unique provider/model rule is unchanged and already refuses to price an
+  ambiguous identity.
+- **Documentation.** Remaining global-catalog statements were corrected in
+  `MODELS.md`, `TENANCY.md`, `API.md`, `ADMIN.md`, `CONFIGURATION.md`,
+  `AGENT.md`, `DIGEST.md` and `.env.example`. The digest table had claimed
+  `AGENT_MODEL` was consulted although that path never reads it.
+- **Offline suites.** `tests/ai/test_llm_text_eligibility.py` was already red on
+  this branch (its AST scope predates the catalog gate and the cache-price
+  helper); the doubles now cover those imports and the suite passes again. New
+  coverage: `eligible_owned_model` for image/video/audio ownership, tier and
+  activity in `tests/ai/test_personal_catalog_unit.py`, plus a source-level guard
+  for the three resolution entry points and the env gate in
+  `tests/security/test_personal_scope_bindings_unit.py`.
+
+Evidence: `pytest tests/ai/test_llm_text_eligibility.py
+tests/ai/test_personal_catalog_unit.py
+tests/security/test_personal_scope_bindings_unit.py --noconftest -q` —
+**48 passed, 38 subtests passed**, no database, engine, `.env`, network or
+provider call. This does not replace the required real acceptance below.
 
 ## Coordination and inherited work
 
@@ -139,3 +225,70 @@ but has older queue-manager code: no wholesale manager replacement. Existing dev
 pending-occurrence invalidation and source-admission behavior are preserved.
 No deploy, merge, production/shared-test schema changes, live provider call, or
 full-suite acceptance is claimed.
+
+
+## Backend continuation: fresh-dev reconciliation and prepared PG acceptance
+
+Source reviewed: feature `5f7aaa23f419284f2e87e22c24e8b0d7ed83fc50`
+(includes the owner-local media/tariff review fixes) and dev
+`dea6e4d985f0d5962ad959e86d19429d85688d95` (`bbb16ba` queue implementation,
+plus a phase-document clarification). No owner-local review commit was reverted.
+
+- Task manager reconciliation retains dev's admission-gate-before-task-row-lock
+  order, stable multi-tenant mutation order, expanded occurrence fields, refresh
+  after waiting, and idempotent source updates that do not invalidate a queued
+  occurrence. It adds strict non-coerced IDs, source row locking/owner-task checks
+  before any link writes, same-transaction scenario validation and caller-session
+  forwarding. The checked-in `_mutate_task_sources` is the shared path; there is
+  no second independent replacement writer. The legacy TABS assertion now includes
+  `models` without weakening its unknown-tab behavior.
+- Existing-model bundle saves eager-load the provider before shared default
+  validation, avoiding an async lazy-load requirement during sparse default edits.
+  A real DB regression for that path is prepared below; no PostgreSQL proof yet.
+- Re-executed local standalone unittest scopes after the reconciliation:
+  routing 16 PASS, catalog 15 PASS, scope/bindings 19 PASS (50 total test methods).
+  These source-loaded/double-based checks are not the new real acceptance suite.
+  Black/isort changed files, compileall and diff whitespace checks passed.
+
+`tests/ai/test_personal_catalog_postgres_acceptance.py` now contains **9 prepared
+real PostgreSQL tests**: personal catalog without membership/per-user UID,
+foreign-Nth-model rollback, sparse existing-model default save, concurrent
+per-user defaults, duplicate-UID race, composite owner FK/owner reassignment guard,
+one catalog across two workspaces, foreign/task-owned source refusal and actual
+FK/trigger catalog inspection. It is NOT imported, collected or executed here.
+
+The suite requires the current root conftest and exact approved local
+`localhost|127.0.0.1:5432/social_manager`, schema `test_schema`, before app imports.
+It creates/cleans only its own uniquely named synthetic rows, reads existing role/
+platform reference rows, and never prepares, migrates, resets, stamps or seeds a
+schema. Missing reference rows or schema/constraint drift must STOP the run.
+No provider/network calls are included. Legacy owner2 migration/backfill and
+upgrade/downgrade acceptance remain separate, explicitly authorized operations.
+
+Coordinated web acceptance is prepared in UI PR #230, commit
+`562b526e3775c73398474236b06793df4147b4d4`, file
+`tests/web/test_personal_llm_settings_acceptance.py` (7 parameterized cases,
+NOT RUN). Both DB scopes must run sequentially through the primary R10 runner,
+with normal root conftest, on a complete backend+UI checkout. Also run existing
+`tests/jobs/test_task_pending_occurrence.py` and `tests/jobs/test_task_run_now.py`
+for the changed admission/invalidation risk; the old offline UI totals do not
+certify this newer backend.
+
+### Exact remaining execution/integration blockers
+
+This remote environment has no OpenCode/Kilo or PostgreSQL/docker tools and no
+owner-local PG/ASGI evidence was supplied. It must not impersonate the primary
+runner, use SQLite/fakes as PG proof, or infer migration authorization from
+"continue to ready/merge". Running tests against the existing approved target
+needs no reconfirmation; schema changes still need their separate authorization.
+
+GitHub `update_pull_request_branch` at feature `5f7aaa2` returned a real merge
+conflict with dev (task manager); terminal Git dry-run push has no credential.
+The resolved task-manager content is supplied for review, but is not a two-parent
+history merge. A writer with authenticated Git must finish the **reviewed normal
+merge of pinned dev**, preserving these manager checks and the dev admission/
+billing/source changes, then publish by ordinary fast-forward (never force).
+Recheck fresh refs first; do not blindly select ours for future dev changes.
+Do not publish a temporary regression to the dev-only manager merely to make
+GitHub auto-merge succeed. P3-T93–96 and both PRs remain BLOCKED/Draft until this
+integration and the required real PostgreSQL/ASGI gates are actually complete.

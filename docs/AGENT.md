@@ -244,7 +244,7 @@ for the fresh RuntimeIdentity (PR #22 and later tenancy follow-ups).
 | `AGENT_MAX_ITERATIONS` | Макс. раундов tool-calls на одно сообщение |
 | `AGENT_HISTORY_LIMIT` | Сколько сообщений истории уходит в LLM |
 | `AGENT_MAX_TOKENS` / `AGENT_TEMPERATURE` | Параметры `chat()` |
-| `AGENT_MODEL` | Явная модель; пусто = авто-выбор первой активной |
+| `AGENT_MODEL` | Явная модель внутри личного каталога действующего пользователя; чужая/неизвестная — авто-выбор в том же каталоге |
 
 Метрика расхода — `tenancy.resolver.daily_cost_today()`: сумма
 `AgentMessage.cost` (чат, пишется из `usage["cost"]`), `DigestRun.llm_cost`

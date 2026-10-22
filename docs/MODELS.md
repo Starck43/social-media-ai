@@ -17,7 +17,9 @@ database inspection or migration was run for this update. Schema comes from
 PR #229 is based on dev `ccce2801a640efd7a90704f37874d0bae1ec388a`
 and adds the ownership/FK changes described below. The historical reference and
 inventory above are not fresh DB inspection. Migration 0109 has not been applied;
-real PostgreSQL/ASGI acceptance is pending. See
+real PostgreSQL/ASGI acceptance is pending. Final integrated offline evidence
+is at `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4` (83 isolated checks and
+128 offline browser cases, not DB acceptance). See
 [implementation evidence](validation/personal-llm-ownership.md).
 
 The public facade is [app.models](../app/models/__init__.py); canonical definitions
@@ -82,8 +84,10 @@ acknowledgement, recipient permission or messenger delivery.
 - Normal BaseManager querysets apply tenant criteria and fail without context for marked models; create rejects mismatched tenants. Explicit bypass, caller-built/raw SQL and association helpers require separate authorization. This is not automatic PostgreSQL row-level security or a guarantee that every direct SQL path is safe.
 - `Tenant`, `TenantUser`, `TenantInvite`, `TenantChannel` do not inherit the marker, even though the latter three contain workspace FKs. Their managers/callers must enforce ownership explicitly. The tenant row itself has no `tenant_id`.
 
-## Global catalog and identity tables
+## Catalog and identity tables
 
+These tables do not all share one authorization boundary: social Platform is
+global; providers/models are personal in the 0109 candidate.
 Timestamp fields apply to the catalog/identity models below except `platforms`.
 Association tables have no timestamps. LLM evidence/budget timestamp exceptions
 are stated in their own section.
@@ -139,7 +143,7 @@ are stated in their own section.
 | `max_tokens`, `default_temperature` | Non-null Integer default 4096; Float default 0.3 |
 | `is_active`, `is_default` | Boolean defaults true/false |
 
-Relationships: provider and text/image/video scenario model references. Only models carry the default flag; migration 0091 removed the provider-level flag. `LLMModelManager.set_default()` clears overlapping defaults per capability **within the same user**, under an owner row lock. The public personal catalog service performs bundle/default writes atomically; raw manager default/owner reassignment is prohibited. Standard/quality resolution prefers that flag, cost-efficient resolution sorts by combined tariff first, and multimodal resolution prefers broader capabilities within the default rank; all exclude inactive providers. These are application invariants, not database unique constraints. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
+Relationships: provider and text/image/video scenario model references. Only models carry the default flag; migration 0091 removed the provider-level flag. `LLMModelManager.set_default()` clears overlapping defaults per capability **within the same user**, under an owner row lock. The public personal catalog service performs bundle/default writes atomically; raw manager default/owner reassignment is prohibited. Standard/quality resolution prefers that flag, cost-efficient resolution sorts by combined tariff first, and multimodal resolution prefers broader capabilities within the default rank; all exclude inactive providers. Every capability — text, image, video and audio — resolves inside the acting owner's personal catalog: `resolve_default_model`, the analyzer's bounded failover queue and `get_model_for_capability` share one ownership predicate and drop another owner's model or provider before ranking, so a fallback never decrypts a key it does not own. `AGENT_MODEL` is a name lookup through that same gate, not an ownership bypass. Cost evidence resolves its tariff row by the attempt's `llm_model_id` (allocated before the HTTP call), not by name; a legacy name-only envelope is matched inside the acting catalog and stays unknown when the name is ambiguous, so no workspace is ever priced with another user's rates. These are application invariants, not database unique constraints. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
 
 SQLAdmin LLM create/edit is disabled in the 0109 candidate; configuration goes
 through owner-checked personal services/UI. `pricing_token_unit` does not convert

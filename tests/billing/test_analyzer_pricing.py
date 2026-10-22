@@ -9,35 +9,15 @@ lookup is stubbed.
 
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from app.services.ai import analyzer as analyzer_module
 from app.services.ai.analyzer import AIAnalyzer
 
 
-class _StubQuery:
-    """Mimics `LLMModel.objects.filter(...).first()` without opening a session."""
-
-    def __init__(self, model):
-        self._model = model
-
-    def filter(self, *args, **kwargs):
-        return self
-
-    async def first(self):
-        return self._model
-
-
-class _StubManager:
-    def __init__(self, model):
-        self._model = model
-
-    def filter(self, *args, **kwargs):
-        return _StubQuery(self._model)
-
-
 def _stub_tariff(monkeypatch, model):
-    """Replace the module-level LLMModel used for the tariff lookup."""
-    monkeypatch.setattr(analyzer_module, "LLMModel", SimpleNamespace(objects=_StubManager(model)))
+    """Replace the tariff resolver: these tests pin Decimal math, not lookup."""
+    monkeypatch.setattr(analyzer_module, "_resolve_usage_tariff", AsyncMock(return_value=model))
 
 
 def _model(input_cost_per_1k, output_cost_per_1k):
@@ -97,3 +77,69 @@ class TestPriceUsage:
 
         assert await AIAnalyzer()._price_usage([]) == Decimal(0)
         assert await AIAnalyzer()._price_usage(empty_usage) == Decimal(0)
+
+
+class TestUsageTariffIdentity:
+    """Cost evidence resolves a row, never "the first model with this name"."""
+
+    async def test_prefers_the_row_that_priced_the_attempt(self, monkeypatch):
+        row = _model(Decimal("0.01"), Decimal("0.02"))
+        objects = SimpleNamespace(
+            filter=lambda **kwargs: (_ for _ in ()).throw(AssertionError("name lookup must not run")),
+            select_related=lambda *args, **kwargs: SimpleNamespace(get=AsyncMock(return_value=row)),
+        )
+        monkeypatch.setattr(analyzer_module, "LLMModel", SimpleNamespace(objects=objects))
+
+        resolved = await analyzer_module._resolve_usage_tariff({"llm_model_row_id": 7, "model_id": "shared"})
+
+        assert resolved is row
+
+    async def test_legacy_name_lookup_stays_inside_the_acting_catalog(self, monkeypatch):
+        from app.core import personal_catalog_context
+
+        monkeypatch.setattr(personal_catalog_context, "current_catalog_owner_id", lambda: 2)
+        row = _model(Decimal("0.01"), Decimal("0.02"))
+        calls = []
+
+        class _Query:
+            def filter(self, **kwargs):
+                calls.append(kwargs)
+                return self
+
+            def __await__(self):
+                async def rows():
+                    return [row]
+
+                return rows().__await__()
+
+        monkeypatch.setattr(
+            analyzer_module,
+            "LLMModel",
+            SimpleNamespace(objects=SimpleNamespace(filter=lambda **kwargs: (calls.append(kwargs), _Query())[1])),
+        )
+
+        resolved = await analyzer_module._resolve_usage_tariff({"model_id": "shared"})
+
+        assert resolved is row
+        assert {"model_id": "shared", "is_active": True} in calls
+        assert {"owner_user_id": 2} in calls
+
+    async def test_ambiguous_name_is_unknown_cost(self, monkeypatch):
+        from app.core import personal_catalog_context
+
+        monkeypatch.setattr(personal_catalog_context, "current_catalog_owner_id", lambda: 2)
+        rows = [_model(Decimal("0.01"), Decimal("0.02")), _model(Decimal("0"), Decimal("0"))]
+
+        class _Query:
+            def filter(self, **kwargs):
+                return self
+
+            def __await__(self):
+                async def result():
+                    return rows
+
+                return result().__await__()
+
+        monkeypatch.setattr(analyzer_module, "LLMModel", SimpleNamespace(objects=SimpleNamespace(filter=lambda **kwargs: _Query())))
+
+        assert await analyzer_module._resolve_usage_tariff({"model_id": "shared"}) is None

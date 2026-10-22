@@ -16,6 +16,26 @@ PR #176 remains Draft/open despite the cherry-picked implementation. This
 audit preserves prior owner evidence and adds only static/offline contract
 checks; no application/DB/pytest/release acceptance is claimed.
 
+## Unmerged personal catalog candidate — not delivered/released
+
+PR [#229](https://github.com/Starck43/social-media-ai/pull/229) (backend) and stacked
+PR [#230](https://github.com/Starck43/social-media-ai/pull/230) (UI) remain Draft.
+P3-T93–P3-T96 are BLOCKED only on required real PostgreSQL/ASGI acceptance, not DONE.
+Dev synchronized at `92dcb948de24c55ab82dccdba81e792945b5ac48`; final offline
+integrated source `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4` passed 83 isolated
+checks and 128 offline browser cases. Neither count is real integration or whole-
+suite acceptance. No migration, owner2 backfill, deployment or merge was performed.
+
+Candidate behavior: user-owned LLM providers/models shared across that user's
+workspaces; numeric workspace chat model FK and common eligibility; atomic
+provider+models/default service; validated task/source/scenario links. Social
+Platform remains global and UserCredential personal. After required joint real
+acceptance, integrate #230 into the feature branch, then the complete #229 into
+dev; backend alone imports a missing UI router and is not independently releasable.
+See [canonical evidence/checklist](validation/personal-llm-ownership.md),
+[API](API.md), [models](MODELS.md), [tenancy](TENANCY.md) and [admin](ADMIN.md).
+The historical delivered rows below are not a claim that this candidate is merged.
+
 ## Delivered foundations
 
 | Area | Delivered behavior | Integration references | Remaining boundary |

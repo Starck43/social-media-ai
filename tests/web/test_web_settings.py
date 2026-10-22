@@ -55,7 +55,7 @@ def test_unknown_tab_falls_back_to_workspace() -> None:
     assert _tab_of(_R("credentials")) == "connections"
     # A hand-typed tab must not reach a template branch that does not exist.
     assert _tab_of(_R("../../admin")) == "workspace"
-    assert set(TABS) == {"account", "workspace", "team", "connections", "agent", "channels"}
+    assert set(TABS) == {"account", "workspace", "team", "connections", "models", "agent", "channels"}
     assert _tab_of(_R("account")) == "account"
 
 

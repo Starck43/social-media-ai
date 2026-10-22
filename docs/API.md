@@ -99,8 +99,9 @@ do*. They are separate layers, and every surface uses the same two:
 
 ### Workspace selection
 
-Every `/api/*` request runs inside one workspace, resolved from the caller's
-`tenant_users` membership and never from the request body:
+Workspace-data `/api/*` requests run inside one workspace, resolved from the
+caller's `tenant_users` membership and never from the request body. Personal
+account and the 0109 personal LLM catalog routes below are explicit exceptions:
 
 - unauthenticated → `401`;
 - `X-Tenant-Id` / `X-Tenant-Slug` *select* among the caller's own workspaces, so
@@ -123,9 +124,12 @@ means "this role may create sources", checked against
 `permissions.model_type_id` + `action_type`; a permission's three-part codename
 is derived from its stable resource key. Workspace calls use explicit membership
 presets without platform fallback. Operator APIs (`/users` except `/users/me`,
-`/users/roles`, `/llm`) require active platform operator/admin entry plus their
-route-specific action checks. Personal `/users/me` and `/auth/change-password`
-require authentication without requiring workspace membership.
+`/users/roles`) require active platform operator/admin entry plus their
+route-specific action checks. Personal `/users/me`, `/auth/change-password`,
+`/llm/llm-providers` and `/llm/llm-models` (including numeric-ID subpaths) require
+active authentication without workspace membership. In the 0109 candidate,
+LLM self-service is owner-scoped, not gated by operator/admin entry. The namespace
+is `/api/v1/llm/llm-*`, not `/api/v1/llm-*`; unrelated prefixes are not exempt.
 
 `member_decision()` selects the workspace-role answer when applicable; otherwise
 `User.has_perm_for()` supplies platform model/action rights. SQLAdmin is a global
@@ -146,8 +150,8 @@ platform console, not the active dashboard workspace. See
 | `GET/POST/PATCH/DELETE /sources` | `source` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
 | `GET/POST/PATCH/DELETE /tasks`, `PATCH /tasks/{id}/pause`, `POST /tasks/{id,run,run}` | `agenttask` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` / `UPDATE` / `UPDATE` / `UPDATE` |
 | `GET/PATCH/POST/POST/GET /credentials`, `POST /credentials/login`, `POST /credentials/oauth` | `credential` | `VIEW` / `UPDATE` / `CONFIGURE` / `CONFIGURE` / `VIEW` |
-| `GET list/detail, POST, PATCH, DELETE /llm/llm-providers` | `llmprovider` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
-| `GET list/detail, POST, PATCH, DELETE /llm/llm-models` | `llmmodel` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
+| `GET list/detail, POST, PATCH, DELETE /llm/llm-providers` | `llmprovider` | Active-user personal self-service for these actions, owner-filtered (0109 candidate) |
+| `GET list/detail, POST, PATCH, DELETE /llm/llm-models` | `llmmodel` | Active-user personal self-service for these actions, owner-filtered (0109 candidate) |
 | Dashboard endpoints | `source` / `aianalytics` / `notification` | per-endpoint |
 
 ---
@@ -975,6 +979,8 @@ provider+N models bundle (provider-only save supported), and
 Sparse edits preserve unspecified fields/models. Defaults are per-user and
 capability, not global. Chat settings persist integer `agent_model_id`, with the
 same owner/provider/activity/tier eligibility for options, save, probe and runtime;
+image, video and audio resolution use the same gate, and the analyzer's failover
+queue never offers another owner's model;
 a chosen foreign/ineligible FK is rejected rather than resolved by name.
 
 See [evidence and outstanding real acceptance](validation/personal-llm-ownership.md).

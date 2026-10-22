@@ -255,6 +255,26 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         model.provider.is_active=False
         self.assertFalse(predicate(model,user_id=2))
 
+    async def test_media_eligibility_uses_the_same_owner_gate(self):
+        """Image, video and audio resolve through the chat ownership predicate.
+
+        A media stage decrypts the same provider key, so an owner-agnostic
+        image/video/audio candidate is a cross-user key use, not a fallback.
+        """
+        await self.create(models=[{"name":"Vision","model_id":"vision","model_type":"image"},
+                                  {"name":"Clip","model_id":"clip","model_type":"video"}])
+        predicate = self.catalog.eligible_owned_model
+        vision, clip = self.store.rows[Model]
+        self.assertTrue(predicate(vision, user_id=2, capabilities={"image"}))
+        self.assertTrue(predicate(clip, user_id=2, capabilities={"video"}))
+        self.assertFalse(predicate(vision, user_id=2, capabilities={"audio"}))
+        self.assertFalse(predicate(vision, user_id=2, capabilities={"text"}))
+        self.assertFalse(predicate(vision, user_id=3, capabilities={"image"}))
+        self.assertFalse(predicate(clip, user_id=2, capabilities={"video"}, allowed_types={"text","image"}))
+        self.assertTrue(predicate(clip, user_id=2, capabilities={"video"}, allowed_types={"text","video"}))
+        vision.provider.is_active = False
+        self.assertFalse(predicate(vision, user_id=2, capabilities={"image"}))
+
     def test_real_model_mapping_enforces_owner_provider_composite(self):
         fks = [fk for fk in Model.__table__.foreign_key_constraints if fk.name=="fk_llm_model_provider_owner"]
         self.assertEqual(len(fks), 1)

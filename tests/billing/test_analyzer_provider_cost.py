@@ -53,7 +53,10 @@ class AnalyzerProviderCostTests(unittest.IsolatedAsyncioTestCase):
         # The storage fixture replaces this method for its unrelated coverage tests.
         del self.analyzer._price_usage
         self.module.LLMModel.objects = SimpleNamespace(
-            filter=Mock(return_value=SimpleNamespace(first=AsyncMock(return_value=None)))
+            # Awaited filter returns no candidate rows; select_related().get() is
+            # the exact-row-id path.
+            filter=AsyncMock(return_value=[]),
+            select_related=lambda *args, **kwargs: SimpleNamespace(get=AsyncMock(return_value=None)),
         )
         self.module.__isolated_imports__["app.core.database"] = SimpleNamespace(new_session=_Session)
 
@@ -128,7 +131,6 @@ class AnalyzerProviderCostTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.fixture.create.await_args.kwargs["estimated_cost"])
 
     async def test_zero_report_with_unknown_sibling_does_not_claim_known_zero(self):
-        self.module.LLMModel.objects.filter.return_value.first.return_value = None
         await self.analyzer._save_analysis(
             {
                 "text_analysis": self.result(amount="0", reported=True),

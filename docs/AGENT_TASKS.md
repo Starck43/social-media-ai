@@ -270,6 +270,26 @@ no migration is needed. Note that the CLI and the agent's task tool
 currently expose a narrower allowlist than the registry, so not every handler
 is reachable through them yet.
 
+### Chat task tools
+
+`task_list`, `task_add` and `task_update` (`app/agent/toolset/tasks.py`) follow
+the same task-owned selection and collection rules as the web form and CLI.
+A task row and its source links are written in one caller-owned transaction:
+a refused link write rolls the task fields back too, so no partial task or
+partial source set persists.
+
+`task_update` changes only the fields passed. An omitted `scenario_id`, date
+bound, target, flag or `collection` keeps its current value; each date bound is
+resolved independently, so passing only `start_date` keeps `end_date`.
+`clear_scenario=true` unbinds the scenario and cannot be combined with a
+non-null `scenario_id`. An explicit `source_ids` list replaces the links
+exactly (`[]` means no explicit links, i.e. all active sources); every id must
+be a positive PostgreSQL INTEGER id from the task's workspace and must not
+belong to another task's query lanes. Changing `cron` stores the new
+expression together with the recomputed `next_run_at`. Scenario-membership
+validation for the bound `scenario_id` is a manager responsibility; the tool
+relies on the shared manager validation rather than duplicating it.
+
 In the web UI (`/app/tasks`) a task is edited on `/app/tasks/{id}/edit`.
 The `/app/tasks?task_id=<id>` compatibility link redirects there only when the
 caller has edit permission. `_edit_payload()` (`app/web/tasks.py`) loads the

@@ -23,6 +23,10 @@ def _get_job_types() -> tuple[str, ...]:
 # a half-configured task.
 _REQUIRED_START_DATE = ("start_date", "с какой даты собирать контент")
 
+# Source ids are bound into a PostgreSQL INTEGER comparison; an id above this
+# would fail at the driver instead of being refused by the tool.
+_MAX_PG_INTEGER = 2147483647
+
 
 def _missing_task_fields(
     *,
@@ -58,6 +62,7 @@ async def task_list() -> list[dict[str, Any]]:
     from zoneinfo import ZoneInfo
 
     from app.core.config import settings
+    from app.models import AgentTask
 
     rows = await AgentTask.objects.order_by(AgentTask.id)
     tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
@@ -301,24 +306,34 @@ async def task_add(
     # created here in the global zone would shift by the offset on its first fire.
     tenant = await Tenant.objects.get(id=current_tenant_id())
     tz = resolve_tz(tenant)
-    task = await AgentTask.objects.create(
-        name=name,
-        cron_expr=cron,
-        job_type=job_type,
-        payload=payload,
-        agent_scenario_id=scenario_id,
-        is_active=True,
-        next_run_at=next_run_at(cron, tz),
-    )
 
-    if source_ids:
-        from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.core.database import new_session
+    from app.core.tenant_context import tenant_scope
 
-        # The m2m table has no tenant column, so a link written here is the
-        # only thing keeping a task out of another workspace's sources. Verify
-        # them against the task's own workspace, like the CLI and web do.
-        await _check_task_sources(source_ids, task.tenant_id)
-        await AgentTaskManager().add_sources(task.id, source_ids)
+    # The row and its links are one unit: a source refused between the preflight
+    # and the write must abort the whole save, not leave a task whose empty link
+    # set the runtime reads as "all active sources".
+    session = new_session()
+    try:
+        with tenant_scope(tenant.id):
+            await _check_task_sources(source_ids or [], tenant.id)
+            async with session.begin():
+                task = await AgentTask.objects.create(
+                    name=name,
+                    cron_expr=cron,
+                    job_type=job_type,
+                    payload=payload,
+                    agent_scenario_id=scenario_id,
+                    is_active=True,
+                    next_run_at=next_run_at(cron, tz),
+                    session=session,
+                )
+                if source_ids is not None:
+                    await AgentTaskManager().set_sources(task.id, source_ids, session=session)
+    except ValueError as error:
+        return {"error": str(error)}
+    finally:
+        await session.close()
 
     result: dict[str, Any] = {
         "status": "created",
@@ -347,16 +362,26 @@ async def task_add(
     return result
 
 
-async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
-    """Reject source ids that are missing or belong to another workspace."""
+async def _check_task_sources(source_ids: list[int], tenant_id: int, task_id: int | None = None) -> None:
+    """Reject source ids that do not exist, are foreign, or belong to another task."""
     from app.models import Source
 
     if not source_ids:
         return
+    if any(type(source_id) is not int or not 0 < source_id <= _MAX_PG_INTEGER for source_id in source_ids):
+        raise ValueError("Source ids must be positive PostgreSQL INTEGER values")
     sources = {s.id: s for s in await Source.objects.filter(id__in=source_ids)}
+    missing = sorted(set(source_ids) - set(sources))
+    if missing:
+        raise ValueError(
+            f"Источник(и) {', '.join(map(str, missing))} не найдены в этом воркспейсе — обновите список источников"
+        )
     foreign = sorted(sid for sid, s in sources.items() if s.tenant_id != tenant_id)
     if foreign:
-        raise ValueError(f"Source(s) {', '.join(map(str, foreign))} belong to another workspace")
+        raise ValueError(f"Источник(и) {', '.join(map(str, foreign))} принадлежат другому воркспейсу")
+    stolen = sorted(sid for sid, s in sources.items() if s.owner_task_id is not None and s.owner_task_id != task_id)
+    if stolen:
+        raise ValueError(f"Источник(и) {', '.join(map(str, stolen))} принадлежат поиску другой задачи")
 
 
 @tool(
@@ -407,7 +432,8 @@ async def task_remove(name: str) -> dict[str, Any]:
             "source_ids": {
                 "type": "array",
                 "items": {"type": "integer"},
-                "description": "Новый список source IDs (пусто = все активные)",
+                "description": "Новый точный список source IDs: заменяет текущие связи; [] = без явных связей "
+                "(все активные)",
             },
             "tracked_users": {
                 "type": "array",
@@ -424,7 +450,14 @@ async def task_remove(name: str) -> dict[str, Any]:
                 "enum": ["any", "all"],
                 "description": "any — любая из фраз, all — все",
             },
-            "scenario_id": {"type": "integer", "description": "Новый ID сценария агента"},
+            "scenario_id": {
+                "type": "integer",
+                "description": "Новый ID сценария агента; не передавайте, чтобы сохранить текущий",
+            },
+            "clear_scenario": {
+                "type": "boolean",
+                "description": "true — отвязать сценарий; нельзя одновременно с scenario_id",
+            },
             "period": {"type": "string", "description": "Период для digest: day | week"},
             "start_date": {
                 "type": "string",
@@ -489,6 +522,7 @@ async def task_update(
     keywords_list: list[str] | None = None,
     keywords_match: str | None = None,
     scenario_id: int | None = None,
+    clear_scenario: bool = False,
     period: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -516,6 +550,11 @@ async def task_update(
         return {"error": f"Unknown job_type: {job_type!r}. Use one of: {', '.join(job_types)}"}
     if cron is not None and not AgentTaskManager.validate_cron(cron):
         return {"error": f"Invalid cron expression: {cron!r}"}
+    if clear_scenario and scenario_id is not None:
+        # Unbinding and binding in one call is ambiguous; refuse before a write.
+        return {"error": "Нельзя одновременно передать scenario_id и clear_scenario=true"}
+
+    new_job_type = job_type if job_type is not None else task.job_type
 
     from app.services.monitoring.selection import SelectionError
 
@@ -543,31 +582,35 @@ async def task_update(
         if value is not None:
             updated_payload[key] = list(value)
 
-    # Handle date fields for collect/analyze
-    _existing_cli_dates = (task.payload or {}).get("cli_dates", {})
-    if job_type is not None and AgentTaskManager.requires_content_dates(job_type):
-        start = AgentTaskManager.parse_date(start_date)
-        if start is None:
-            start = AgentTaskManager.parse_date(_existing_cli_dates.get("start_date"))
-        end = AgentTaskManager.parse_date(end_date)
-        if end is None:
-            end = AgentTaskManager.parse_date(_existing_cli_dates.get("end_date"))
-        fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
-        updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
+    # Each bound is resolved independently: passing only start_date must not
+    # drop the stored end_date (and vice versa).
+    for field, value in (("start_date", start_date), ("end_date", end_date)):
+        if value is not None and AgentTaskManager.parse_date(value) is None:
+            return {"error": f"Некорректная {field}: {value!r} (ожидается YYYY-MM-DD)"}
+    if AgentTaskManager.requires_content_dates(new_job_type):
+        existing_dates = (task.payload or {}).get("cli_dates") or {}
+        start = (
+            AgentTaskManager.parse_date(start_date)
+            if start_date is not None
+            else AgentTaskManager.parse_date(existing_dates.get("start_date"))
+        )
+        end = (
+            AgentTaskManager.parse_date(end_date)
+            if end_date is not None
+            else AgentTaskManager.parse_date(existing_dates.get("end_date"))
+        )
+        type_changed = job_type is not None and new_job_type != task.job_type
+        window_supplied = start_date is not None or end_date is not None or force_refresh is not None
+        if start is None and (window_supplied or type_changed):
+            return {"error": "Для задачи этого типа укажите start_date (с какой даты собирать контент, YYYY-MM-DD)"}
+        if start is not None and end is not None and start > end:
+            return {"error": "start_date не может быть позже end_date"}
+        if window_supplied and start is not None:
+            fr = force_refresh if force_refresh is not None else bool((task.payload or {}).get("force_refresh", False))
+            updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
         if force_reanalyze is not None:
             updated_payload["force_reanalyze"] = force_reanalyze
-    elif job_type is None and AgentTaskManager.requires_content_dates(task.job_type):
-        # job_type unchanged but dates provided
-        if start_date or end_date or force_refresh is not None:
-            start = AgentTaskManager.parse_date(start_date) if start_date else None
-            end = AgentTaskManager.parse_date(end_date) if end_date else None
-            fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
-            updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
-            if force_reanalyze is not None:
-                updated_payload["force_reanalyze"] = force_reanalyze
 
-    # Determine new job_type
-    new_job_type = job_type if job_type is not None else task.job_type
     new_cron = cron if cron is not None else task.cron_expr
 
     if deactivate_after_success is not None:
@@ -585,15 +628,20 @@ async def task_update(
     )
 
     if collection is not None:
-        collection_raw = collection or None
-    else:
-        collection_raw = updated_payload.get("collection") if "collection" in updated_payload else None
-    try:
-        updated_payload = apply_collection(updated_payload, collection_raw, job_type=new_job_type)
-    except CollectionIntentError as error:
-        return {"error": collection_error_message(str(error))}
+        try:
+            updated_payload = apply_collection(updated_payload, collection or None, job_type=new_job_type)
+        except CollectionIntentError as error:
+            return {"error": collection_error_message(str(error))}
+    elif job_type is not None and new_job_type != task.job_type:
+        # A job-type change re-evaluates the stored block: non-collecting types
+        # drop it, while an omitted block on collecting types is untouched.
+        try:
+            updated_payload = apply_collection(
+                updated_payload, updated_payload.get("collection"), job_type=new_job_type
+            )
+        except CollectionIntentError as error:
+            return {"error": collection_error_message(str(error))}
 
-    # Compute next_run_at if cron changed
     tenant = await Tenant.objects.get(id=current_tenant_id())
     updates: dict[str, Any] = {
         "job_type": new_job_type,
@@ -604,23 +652,45 @@ async def task_update(
     # scenario — the analysis then ran without its methodology. The same
     # happened to the trial flag, which was set after the payload was written
     # and therefore never saved at all.
-    if scenario_id is not None:
+    if clear_scenario:
+        updates["agent_scenario_id"] = None
+    elif scenario_id is not None:
         updates["agent_scenario_id"] = scenario_id
-    if cron is not None:
+    if cron is not None and cron != task.cron_expr:
+        # The expression and the occurrence it plans are one change: writing
+        # only next_run_at left the old schedule stored for the next tick.
+        updates["cron_expr"] = cron
         updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
     if deactivate_after_success is not None:
         # A trial task gets a live schedule back: it had been switched off
         # after its success, so re-arming means the next run must be planned.
         updates["is_active"] = True
-        if cron is None:
+        if cron is None or cron == task.cron_expr:
             updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
 
-    await AgentTask.objects.update_by_id(task.id, **updates)
-
-    # Update sources if provided
+    # The row and its links are one unit: a source refused between the preflight
+    # and the write must abort the whole save, not leave the task updated with a
+    # partial source set.
     if source_ids is not None:
-        await _check_task_sources(source_ids, task.tenant_id)
-        await AgentTaskManager().add_sources(task.id, source_ids)
+        try:
+            await _check_task_sources(source_ids, task.tenant_id, task_id=task.id)
+        except ValueError as error:
+            return {"error": str(error)}
+
+    from app.core.database import new_session
+    from app.core.tenant_context import tenant_scope
+
+    session = new_session()
+    try:
+        with tenant_scope(task.tenant_id):
+            async with session.begin():
+                await AgentTask.objects.update_by_id(task.id, session=session, **updates)
+                if source_ids is not None:
+                    await AgentTaskManager().set_sources(task.id, source_ids, session=session)
+    except ValueError as error:
+        return {"error": str(error)}
+    finally:
+        await session.close()
 
     changes: dict[str, Any] = {"status": "updated", "name": task.name}
     if job_type:

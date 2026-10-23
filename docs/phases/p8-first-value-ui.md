@@ -641,23 +641,45 @@ P8-T06 and does not alter its task record.
   aggregate evidence and remaining unrelated checks:
   [refresh audit](../audits/2026-10-21-ready-pr-audit.md).
 
-- [ ] P8-T27 — implement the Platforms settings tab for active platform admins,
+- [x] P8-T27 — implement the Platforms settings tab for active platform admins,
   correct admin button contrast and bulk-delete confirmation wrapping, and
   audit app/models FK/ORM deletion rules; accept: active platform-admin and
   CSRF checks, catalog operation without workspace membership, preserved
   selection/delete semantics, bounded style regressions and accurate deletion
   inventory with owner-local PostgreSQL/ASGI acceptance. Depends: none; owns:
   bounded settings/admin styles, focused tests and deletion documentation;
-  owner: codex; status: IN_PROGRESS. Canonical row restored from
+  owner: codex; status: DONE. Canonical row restored from
   Draft [PR #224](https://github.com/Starck43/social-media-ai/pull/224), head
   `6fd66d163a11ae5a86ac6a9756e1d97214d53716`, verified live 2026-10-21;
   implementation `39fa3fc`, original synchronized base `213980a`.
-  Historical isolated/source evidence remains in that PR; no new PG/ASGI or
-  deletion acceptance is claimed. Reconcile onto current dev, preserving
+  Historical isolated/source evidence remains in that PR; its handoff did not
+  claim new PG/ASGI or deletion acceptance. Integration must preserve
   integrated settings controls, model pricing-unit labels and active-admin
   predicates. The old branch's `/1K` formatter is not a change in its three-dot
   diff; preserve current 1K/1M behavior rather than copying its whole file.
   No cascade/model/schema/migration changes are authorized by this review.
+  Coordinator acceptance (2026-10-23): scoped implementation reconciled in an
+  isolated tree at `dea6e4d985f0d5962ad959e86d19429d85688d95`; committed in
+  `3226b405fec7988432175f608c9c79f8ab211ef9` on base `499962c5`. Every
+  committed application and test blob matches the accepted candidate exactly.
+  `git diff HEAD^ HEAD --check` passed. Active platform admins can
+  create/edit/disable catalog rows without
+  workspace membership; CSRF, immutable existing type/params/links and no-delete
+  controls are preserved. Primary OpenCode: 94 isolated settings tests passed;
+  real PostgreSQL/ASGI platform acceptance 15 passed, 0 failed. Final offline
+  browser matrix passed 32/32, 0 failed, with default production animations,
+  real SQLAdmin assets, exact 200-ID selection/order/URL and bounded scrolling.
+  Before/after CSS SHA-256 was identical:
+  `a642f2bfe34f231e36efd6dd5b040042d2992c959719d6348d046b4f8344d6f6`.
+  Modern CSS colors and settled states are measured by the corrected harness:
+  42 controls / 168 readings, no enabled contrast failures; disabled controls
+  are exempt. There were no external browser requests. The candidate's recorded
+  test evidence applies to the exact committed application/test blobs: 94
+  isolated settings tests, 15 PostgreSQL/ASGI acceptance tests and 32 offline
+  browser checks passed. Tests were not rerun after commit. No schema or
+  migration change was included. Deletion inventory records the
+  administrator/platform hard-delete bypass as separate P6-T05; this audit
+  does not certify those destructive paths or deployment.
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —
 

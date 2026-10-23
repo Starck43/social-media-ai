@@ -7,14 +7,15 @@
 {% block page_heading %}Настройки{% endblock %}
 {% block extra_head %}
 {{ super() }}
+{% if tab == 'models' %}<link rel="stylesheet" href="{{ static_v('css/settings-llm.css') }}"><script defer src="{{ static_v('js/settings-llm.js') }}"></script>{% endif %}
 <link rel="stylesheet" href="{{ static_v('css/settings.css') }}">
 <script defer src="{{ static_v('js/settings.js') }}"></script>
 {% endblock %}
 {% block content %}
 <div class="settings-page">
     <p class="text-sm ui-muted">Личные настройки принадлежат вам. Настройки пространства действуют для команды.</p>
-    {% set section_labels = {'account': 'Мой аккаунт', 'connections': 'Мои подключения', 'workspace': 'Пространство', 'team': 'Команда', 'agent': 'Агент для чата', 'channels': 'Каналы доставки'} %}
-    {% set section_hints = {'account': 'Профиль и показ уведомлений.', 'connections': 'Ваши аккаунты и ключи для сбора данных. Они не принадлежат команде.', 'workspace': 'Название, часовой пояс расписаний и лимиты команды.', 'team': 'Роли участников действуют только в этом пространстве и не меняют роль аккаунта.', 'agent': 'Модель и параметры ответов для всех чатов этого пространства.', 'channels': 'Куда отправлять дайджесты пространства.'} %}
+    {% set section_labels = {'account': 'Мой аккаунт', 'connections': 'Мои подключения', 'workspace': 'Пространство', 'team': 'Команда', 'agent': 'Агент для чата', 'channels': 'Каналы доставки', 'models': 'Модели ИИ'} %}
+    {% set section_hints = {'account': 'Профиль и показ уведомлений.', 'connections': 'Ваши аккаунты и ключи для сбора данных. Они не принадлежат команде.', 'workspace': 'Название, часовой пояс расписаний и лимиты команды.', 'team': 'Роли участников действуют только в этом пространстве и не меняют роль аккаунта.', 'agent': 'Модель и параметры ответов для всех чатов этого пространства.', 'channels': 'Куда отправлять дайджесты пространства.', 'models': 'Ваши провайдеры и модели, общие для всех ваших пространств.'} %}
     <div class="settings-layout">
         <aside class="settings-sidebar">
             <details class="settings-menu" open>
@@ -40,7 +41,9 @@
                 <h2>{{ section_labels[tab] }}</h2>
                 <p class="ui-muted">{{ section_hints[tab] }}</p>
             </header>
-            {% if tab == 'account' %}
+            {% if tab == 'models' %}
+                {% include 'web/_settings_llm.html' %}
+            {% elif tab == 'account' %}
                 <section class="mt-6 ui-card" aria-label="Мой аккаунт">
                     <h3 class="text-sm font-semibold">Профиль</h3>
                     <dl class="mt-3 space-y-2 break-words"><div><dt class="text-xs ui-muted">Имя</dt><dd>{{ user.username }}</dd></div><div><dt class="text-xs ui-muted">Email</dt><dd>{{ user.email|default('—') }}</dd></div></dl>
@@ -149,18 +152,18 @@
                         <label id="ag-model-label" class="mb-1 block text-sm">Модель для чата</label>
                         {% set chat_options = [] %}
                         {% for opt in agent_model_options %}
-                            {%- set _ = chat_options.append((opt.id, opt.label, '')) %}
+                            {%- set _ = chat_options.append((opt.id, opt.label, 'Автовыбор' if opt.is_effective_default|default(false) else '')) %}
                         {% endfor %}
                         <div class="settings-model-row" data-model-controls aria-labelledby="ag-model-label">
                             <div class="settings-model-select">
-                                {{ popover_select('agent_model', 'ag-model', chat_options, current=tenant.agent_model if tenant else '', placeholder='Автовыбор (первая активная)') }}
+                                {{ popover_select('agent_model_id', 'ag-model', chat_options, current=tenant.agent_model_id if tenant else '', placeholder='Автовыбор (по умолчанию)') }}
                             </div>
                             <button type="submit" formaction="/app/settings/agent/model-probe" formmethod="post"
                                     class="ui-control" aria-describedby="ag-model-help">
                                 Тестировать модель
                             </button>
                         </div>
-                        <p id="ag-model-help" class="mt-2 text-sm ui-muted">Автовыбор — первая активная; ★ — модель по умолчанию. Локальный тест проверяет статус и mock без запроса к провайдеру. Реальный ответ — в консоли администратора.</p>
+                        <p id="ag-model-help" class="mt-2 text-sm ui-muted">Автовыбор учитывает модель по умолчанию и доступность для этого пространства. Локальный тест проверяет статус и mock без запроса к провайдеру. Реальный ответ — в консоли администратора.</p>
                         {% if probe_result %}
                         <p role="status" class="mt-2 text-sm {{ 'text-emerald-700 dark:text-emerald-400' if probe_result.ok else 'text-rose-700 dark:text-rose-400' }}">{{ probe_result.text }}</p>
                         {% endif %}

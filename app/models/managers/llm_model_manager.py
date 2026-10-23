@@ -72,9 +72,14 @@ class LLMModelManager(BaseManager):
         fallback cannot burn another run on a known-dead pick (the same
         suitability discipline the auto-resolve path already applies).
         """
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.services.ai.llm_client import _allowed_model_types
         from app.services.ai.model_suitability import analysis_capable
+        from app.services.ai.personal_catalog import eligible_owned_model
 
         default = await self.resolve_default_model(capability)
+        owner_id = current_catalog_owner_id()
+        allowed_types = await _allowed_model_types()
         candidates: list["LLMModel"] = []
         for model in await self._get_by_capability(capability):
             if exclude_id is not None and model.id == exclude_id:
@@ -82,6 +87,12 @@ class LLMModelManager(BaseManager):
             if any(model.id == kept.id for kept in candidates):
                 continue
             if not model.is_active or not model.provider or not model.provider.is_active:
+                continue
+            # The failover queue is a routing decision too: it must not offer a
+            # model whose key belongs to another owner.
+            if not eligible_owned_model(
+                model, user_id=owner_id, capabilities={capability}, allowed_types=allowed_types
+            ):
                 continue
             if not analysis_capable(model):
                 continue
@@ -130,10 +141,17 @@ class LLMModelManager(BaseManager):
         if provider_id:
             models = await self.select_related("provider").filter(provider_id=provider_id, is_active=True)
 
+            from app.core.personal_catalog_context import current_catalog_owner_id
+            from app.services.ai.personal_catalog import eligible_owned_model
+
+            owner_id = current_catalog_owner_id()
             for model in models:
-                if model.can_handle(capability) and model.provider and model.provider.is_active:
-                    logger.info(f"Using model for {capability}: {model.name}")
-                    return model
+                if not model.can_handle(capability):
+                    continue
+                if not eligible_owned_model(model, user_id=owner_id, capabilities={capability}):
+                    continue
+                logger.info(f"Using model for {capability}: {model.name}")
+                return model
         else:
             return await self._get_default_for_capability(capability)
 
@@ -183,25 +201,10 @@ class LLMModelManager(BaseManager):
         default reassignment on delete and the sqladmin save hook all call it.
         Returns the model, or None when it does not exist. Idempotent.
         """
-        model = await self.get(id=model_id)
-        if not model:
-            return None
-
-        capabilities = set(model.capabilities)
-        if capabilities:
-            overlapping = [
-                other
-                for other in await self.filter(is_default=True).exclude(id=model_id).all()
-                if capabilities & set(other.capabilities)
-            ]
-            for other in overlapping:
-                await self.update_by_id(other.id, is_default=False)
-                logger.info(f"Cleared default on model {other.id} ({other.name}) — overlaps {model_id}")
-
-        if not model.is_default:
-            await self.update_by_id(model_id, is_default=True)
-            model = await self.get(id=model_id)
-        return model
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.services.ai.personal_catalog import set_default_model
+        await set_default_model(user_id=current_catalog_owner_id(), model_id=model_id)
+        return await self.select_related("provider").get(id=model_id)
 
     async def create_model(
         self,
@@ -229,38 +232,22 @@ class LLMModelManager(BaseManager):
         If is_default=True, the new model becomes the only default among the
         models it overlaps (see `set_default`).
         """
-        from ..llm_provider import LLMProvider
-
-        provider = await LLMProvider.objects.get(id=provider_id)
-        if not provider:
-            raise ValueError(f"Provider {provider_id} not found")
-        if not provider.is_active:
-            raise ValueError(f"Provider {provider_id} is not active")
-
-        model = await self.create(
-            provider_id=provider_id,
-            name=name,
-            model_id=model_id,
-            model_type=model_type,
-            description=description,
-            custom_endpoint_path=custom_endpoint_path,
-            input_cost_per_1k=input_cost_per_1k,
-            output_cost_per_1k=output_cost_per_1k,
-            pricing_token_unit=pricing_token_unit,
-            cache_read_cost_per_1m=cache_read_cost_per_1m,
-            cache_write_5m_cost_per_1m=cache_write_5m_cost_per_1m,
-            cache_write_1h_cost_per_1m=cache_write_1h_cost_per_1m,
-            max_tokens=max_tokens,
-            default_temperature=default_temperature,
-            is_active=is_active,
-            is_default=is_default,
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.services.ai.personal_catalog import save_provider_bundle
+        fields = dict(
+            name=name, model_id=model_id, model_type=model_type, description=description,
+            custom_endpoint_path=custom_endpoint_path, input_cost_per_1k=input_cost_per_1k,
+            output_cost_per_1k=output_cost_per_1k, pricing_token_unit=pricing_token_unit,
+            cache_read_cost_per_1m=cache_read_cost_per_1m, cache_write_5m_cost_per_1m=cache_write_5m_cost_per_1m,
+            cache_write_1h_cost_per_1m=cache_write_1h_cost_per_1m, max_tokens=max_tokens,
+            default_temperature=default_temperature, is_active=is_active, is_default=is_default,
         )
-        if is_default:
-            # After the insert, so a create that arrives while duplicates
-            # already exist still ends with exactly one default per capability.
-            await self.set_default(model.id)
-        logger.info(f"Created LLM model {model.name} (ID: {model.id}, default={model.is_default})")
-        return model
+        result = await save_provider_bundle(
+            user_id=current_catalog_owner_id(), provider={"id": provider_id}, models=[fields]
+        )
+        # New IDs are in insertion order; never resolve a personal model by name.
+        identity = result["saved_model_ids"][0]
+        return await self.select_related("provider").get(id=identity)
 
     async def update_model(self, model_id: int, **fields) -> Optional["LLMModel"]:
         """
@@ -270,16 +257,15 @@ class LLMModelManager(BaseManager):
         capability — see `set_default`, which also self-heals rows written
         before the rule existed.
         """
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.services.ai.personal_catalog import save_provider_bundle
         model = await self.get(id=model_id)
-        if not model:
+        if model is None:
             return None
-
-        await self.update_by_id(model_id, **fields)
-        updated = await self.get(id=model_id)
-        if updated.is_default:
-            await self.set_default(model_id)
-        logger.info(f"Updated LLM model {updated.name} (ID: {updated.id}, default={updated.is_default})")
-        return updated
+        await save_provider_bundle(
+            user_id=current_catalog_owner_id(), provider={"id": model.provider_id}, models=[{"id": model_id, **fields}]
+        )
+        return await self.select_related("provider").get(id=model_id)
 
     async def delete_with_default_reassignment(self, model_id: int) -> dict:
         """
@@ -302,54 +288,31 @@ class LLMModelManager(BaseManager):
                 "warnings": list[str]
             }
         """
-        from ..agent_scenario import AgentScenario
-        from ..ai_analytics import AIAnalytics
+        from sqlalchemy import select
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.services.ai.personal_catalog import lock_owner, require_actor, set_default_in_session
         from ..llm_model import LLMModel
-
-        model = await self.get(id=model_id)
-        if not model:
-            raise ValueError(f"Model {model_id} not found")
-
-        was_default = model.is_default
-        model_type = model.model_type
-        warnings: list[str] = []
-
-        # Count scenarios that reference this model
-        scenarios_reset = 0
-        for field_name in ("text_llm_model_id", "image_llm_model_id", "video_llm_model_id"):
-            count = await AgentScenario.objects.filter(**{field_name: model_id}).count()
-            if count:
-                scenarios_reset += count
-
-        # Delete the model (FK SET NULL on scenarios is handled by DB)
-        await self.delete(id=model_id)
-
-        new_default_id = None
-        new_default_name = None
-
-        if was_default:
-            # Find candidate for new default
-            candidate = await self._find_default_candidate(model_type, exclude_id=model_id)
-            if candidate:
-                # Through set_default, not a bare flag write: the candidate may
-                # overlap a default of another model_type string, and the
-                # reassignment must not resurrect the duplicate it replaces.
-                await self.set_default(candidate.id)
-                new_default_id = candidate.id
-                new_default_name = candidate.name
-                logger.info(f"Reassigned default for type {model_type} to {candidate.name} (ID: {candidate.id})")
-            else:
-                warning = f"no model left for type {model_type}"
-                warnings.append(warning)
-                logger.warning(warning)
-
-        return {
-            "deleted": model_id,
-            "new_default_id": new_default_id,
-            "new_default_name": new_default_name,
-            "scenarios_reset": scenarios_reset,
-            "warnings": warnings,
-        }
+        from sqlalchemy.orm import selectinload
+        owner_id = current_catalog_owner_id()
+        require_actor(owner_id)
+        async with self._get_owned_session() as session:
+            await lock_owner(session, owner_id)
+            model = await self.get(id=model_id, owner_user_id=owner_id, session=session)
+            if model is None:
+                raise ValueError("Model unavailable")
+            was_default, caps = model.is_default, set(model.capabilities)
+            await session.delete(model)
+            await session.flush()
+            candidates = (await session.execute(select(LLMModel).where(
+                LLMModel.owner_user_id == owner_id, LLMModel.is_active.is_(True)
+            ).options(selectinload(LLMModel.provider)).order_by(LLMModel.id))).scalars().all()
+            replacement = next((m for m in candidates if m.provider.is_active and caps <= set(m.capabilities)), None)
+            if was_default and replacement is not None:
+                await set_default_in_session(session, replacement)
+            result = {"deleted": model_id, "new_default_id": replacement.id if was_default and replacement else None,
+                      "new_default_name": replacement.name if was_default and replacement else None,
+                      "scenarios_reset": None, "warnings": []}
+        return result
 
     async def _find_default_candidate(self, model_type: str, exclude_id: int | None = None) -> Optional["LLMModel"]:
         """
@@ -403,20 +366,35 @@ class LLMModelManager(BaseManager):
     async def resolve_default_model(self, model_type: str, strategy: str | None = None) -> Optional["LLMModel"]:
         """Resolve a capability to a model on an active provider.
 
-        Without a strategy and for quality, the model flagged as default
-        leads. Cost-efficient routing minimizes the combined per-1K tariff,
-        using defaults only to break tariff ties. Multimodal prefers
-        capabilities within equal default ranks. Price is not a proxy for
-        quality.
+        Candidates are restricted to the acting personal catalog for every
+        capability, not only chat: a media stage decrypts the same provider key.
+        Without a strategy and for quality, the model flagged as default leads.
+        Cost-efficient routing minimizes the combined per-1K tariff, using
+        defaults only to break tariff ties. Multimodal prefers capabilities
+        within equal default ranks. Price is not a proxy for quality.
         """
-        from app.services.ai.llm_client import default_model_sort_key
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.services.ai.llm_client import _allowed_model_types, default_model_sort_key
+        from app.services.ai.personal_catalog import CHAT_CAPABILITIES, eligible_owned_model
         from app.utils.enum_helpers import get_enum_value
 
         strategy_value = get_enum_value(strategy)
         if strategy_value not in ("", "cost_efficient", "quality", "multimodal"):
             raise ValueError(f"Unknown LLM strategy: {strategy_value}")
         models = await self.select_related("provider").filter(is_active=True)
-        models = [m for m in models if m.provider and m.provider.is_active and m.can_handle(model_type)]
+        # Every capability resolves inside the acting personal catalog. Text,
+        # image, video and audio stages all decrypt the provider key on the
+        # attempt, so an owner-agnostic candidate list would be a cross-user key
+        # use, not a routing preference. The tier gate is per capability:
+        # `starter` buys text, not vision.
+        needed = CHAT_CAPABILITIES if model_type == "text" else frozenset({model_type})
+        owner_id = current_catalog_owner_id()
+        allowed_types = await _allowed_model_types()
+        models = [
+            model
+            for model in models
+            if eligible_owned_model(model, user_id=owner_id, capabilities=needed, allowed_types=allowed_types)
+        ]
         if not models:
             return None
 

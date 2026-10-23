@@ -51,6 +51,8 @@ async def _personal_admission(
     uses_tools: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Reserve one trusted provider envelope before HTTP when personal billing is active."""
+    from app.services.ai.personal_dispatch import validate_personal_dispatch
+    await validate_personal_dispatch(client)
     if not settings.PERSONAL_BILLING_ENABLED:
         return None, None
     api_format = getattr(client.provider, "api_format", None)
@@ -217,17 +219,17 @@ def _cap_text(m: LLMModel) -> bool:
 
 
 def _eligible_text_model(m: LLMModel, allowed_types: Optional[set[str]]) -> bool:
-    """One automatic routing gate for capabilities, tier and active provider.
+    """One automatic routing gate for capabilities, owner, tier and provider.
 
     None is unfiltered; an empty allowed set permits nothing. A model with
     extra billed capabilities never bypasses the tier through its default or
-    preferred flag. Explicit AGENT_MODEL lookup keeps its separate contract.
+    preferred flag. The explicit AGENT_MODEL lookup passes this same ownership
+    and activity gate and only bypasses the tier.
     """
-    return (
-        _cap_text(m)
-        and (allowed_types is None or set(m.capabilities) <= allowed_types)
-        and bool(m.provider and m.provider.is_active)
-    )
+    from app.core.personal_catalog_context import current_catalog_owner_id
+    from app.services.ai.personal_catalog import eligible_chat_model
+    return eligible_chat_model(m, user_id=current_catalog_owner_id(), allowed_types=allowed_types)
+
 
 
 def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
@@ -246,7 +248,7 @@ def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
 async def _allowed_model_types() -> Optional[set[str]]:
     """Model types the ambient workspace's tier may use, or None when unfiltered.
 
-    `starter` buys text, so an image model in the global fleet must not be chosen
+    `starter` buys text, so an image model in the catalog must not be chosen
     for it — the tier is a promise about what is billed, and routing a `starter`
     workspace to a vision model breaks it. Returns None (allow everything) when
     no workspace is in scope, so operator-level calls and seeding still work.
@@ -271,6 +273,8 @@ async def _allowed_model_types() -> Optional[set[str]]:
 
 class LLMClient(ABC):
     def __init__(self, model: LLMModel):
+        from app.core.personal_catalog_context import assert_catalog_model
+        assert_catalog_model(model)
         self.provider = model.provider
         self.model = model
         self.api_key = model.provider.get_api_key()
@@ -454,7 +458,7 @@ class LLMClient(ABC):
     ) -> dict[str, Any]: ...
 
     async def _rate_limit(self):
-        key = self.provider.name.lower()
+        key = f"{self.provider.owner_user_id}:{self.provider.id}"
         now = asyncio.get_event_loop().time()
         delay = float(getattr(settings, "LLM_REQUEST_DELAY", 2000)) / 1000.0
         if key in _last_request_time:
@@ -1425,15 +1429,21 @@ async def resolve_model() -> Optional[LLMModel]:
     if settings.AGENT_MODEL:
         m = await _llm_models(LLMModel.objects.filter(name=settings.AGENT_MODEL))
         m = m[0] if m else None
-        if m:
+        # The env name overrides the automatic choice, never ownership: it must
+        # still be a text-capable row in the acting catalog on an active
+        # provider. A foreign or unknown name falls back inside that catalog
+        # instead of reaching another user's key.
+        if m is not None and _eligible_text_model(m, None):
             return m
-        logger.warning(f"AGENT_MODEL '{settings.AGENT_MODEL}' not found, falling back")
+        logger.warning(
+            f"AGENT_MODEL '{settings.AGENT_MODEL}' is not available in the acting personal catalog, falling back"
+        )
 
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
-    # An explicit AGENT_MODEL is honoured even on a tier that does not include
-    # its type: it is an operator's deliberate override of the runtime, and a
-    # blank env var must not turn into "no model at all". The automatic choice
-    # below is filtered.
+    # An eligible explicit AGENT_MODEL is honoured even on a tier that does not
+    # include its type: it is an operator's deliberate override of the runtime,
+    # and a blank env var must not turn into "no model at all". The automatic
+    # choice below is filtered like every other routing decision.
     allowed_types = await _allowed_model_types()
     models.sort(key=default_model_sort_key)
     for m in models:

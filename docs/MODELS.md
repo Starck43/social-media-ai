@@ -11,6 +11,17 @@ the revision or integrity of a running database. No application import,
 database inspection or migration was run for this update. Schema comes from
 `settings.DB_SCHEMA`; never hardcode it in application code.
 
+
+### Personal catalog candidate (0109; not deployed)
+
+PR #229 is based on dev `ccce2801a640efd7a90704f37874d0bae1ec388a`
+and adds the ownership/FK changes described below. The historical reference and
+inventory above are not fresh DB inspection. Migration 0109 has not been applied;
+real PostgreSQL/ASGI acceptance is pending. Final integrated offline evidence
+is at `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4` (83 isolated checks and
+128 offline browser cases, not DB acceptance). See
+[implementation evidence](validation/personal-llm-ownership.md).
+
 The public facade is [app.models](../app/models/__init__.py); canonical definitions
 live in domain packages. [bootstrap](../app/models/bootstrap.py) binds managers
 once after class registration. Root-level modules and the older `analysis.llm_*`
@@ -73,8 +84,10 @@ acknowledgement, recipient permission or messenger delivery.
 - Normal BaseManager querysets apply tenant criteria and fail without context for marked models; create rejects mismatched tenants. Explicit bypass, caller-built/raw SQL and association helpers require separate authorization. This is not automatic PostgreSQL row-level security or a guarantee that every direct SQL path is safe.
 - `Tenant`, `TenantUser`, `TenantInvite`, `TenantChannel` do not inherit the marker, even though the latter three contain workspace FKs. Their managers/callers must enforce ownership explicitly. The tenant row itself has no `tenant_id`.
 
-## Global catalog and identity tables
+## Catalog and identity tables
 
+These tables do not all share one authorization boundary: social Platform is
+global; providers/models are personal in the 0109 candidate.
 Timestamp fields apply to the catalog/identity models below except `platforms`.
 Association tables have no timestamps. LLM evidence/budget timestamp exceptions
 are stated in their own section.
@@ -109,7 +122,7 @@ are stated in their own section.
 
 ### `llm_providers`
 
-[Source](../app/models/llm/llm_provider.py). Fields: `id` PK; `name` String(255), unique/non-null; `description` nullable Text; `api_format` String(20), non-null/default `openai`; `base_url` String(500), non-null; `auth_header` nullable String(200); `encrypted_api_key` nullable Text; `is_active` Boolean. Relationship: models. No `is_default` column. Secret accessor is **`get_api_key()`**, masked display `decrypted_key_masked()`; never log plaintext. Global fleet; no tenant override or private-device route in this table.
+[Source](../app/models/llm/llm_provider.py). Fields: `id` PK; `owner_user_id` non-null indexed FK → users RESTRICT; `uid` String(100), non-null/unique per owner; `name` String(255), non-null (display label, not globally unique); `description` nullable Text; `api_format` String(20), non-null/default `openai`; `base_url` String(500), non-null; `auth_header` nullable String(200); `encrypted_api_key` nullable Text; `is_active` Boolean. Relationship: models. No `is_default` column. Secret accessor is **`get_api_key()`**, masked display `decrypted_key_masked()`; never log plaintext. Personal catalog shared across one user's workspaces. Numeric ID/owner are immutable; display name and UID are editable. Credential decryption requires the personal owner, not an operator override. Composite unique (`id`, `owner_user_id`) supports model ownership FK.
 
 ### `llm_models`
 
@@ -117,7 +130,7 @@ are stated in their own section.
 
 | Column group | Declaration / meaning |
 | --- | --- |
-| `id`, `provider_id` | Integer PK; non-null indexed provider FK, CASCADE |
+| `id`, `provider_id`, `owner_user_id` | Integer PK; indexed provider/owner IDs; owner FK → users RESTRICT, composite (`provider_id`, `owner_user_id`) FK → provider (`id`, `owner_user_id`) CASCADE |
 | `name`, `model_id`, `description` | String(100), String(100), nullable Text |
 | `model_type` | String(20), default text; `capabilities` is computed by splitting commas, not a column/native capability enum |
 | `custom_endpoint_path` | Nullable **String(200)**, added by 0086 |
@@ -130,11 +143,11 @@ are stated in their own section.
 | `max_tokens`, `default_temperature` | Non-null Integer default 4096; Float default 0.3 |
 | `is_active`, `is_default` | Boolean defaults true/false |
 
-Relationships: provider and text/image/video scenario model references. Only models carry the default flag; migration 0091 removed the provider-level flag. `LLMModelManager.set_default()` clears overlapping defaults per capability. Standard/quality resolution prefers that flag, cost-efficient resolution sorts by combined tariff first, and multimodal resolution prefers broader capabilities within the default rank; all exclude inactive providers. These are application invariants, not database unique constraints. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
+Relationships: provider and text/image/video scenario model references. Only models carry the default flag; migration 0091 removed the provider-level flag. `LLMModelManager.set_default()` clears overlapping defaults per capability **within the same user**, under an owner row lock. The public personal catalog service performs bundle/default writes atomically; raw manager default/owner reassignment is prohibited. Standard/quality resolution prefers that flag, cost-efficient resolution sorts by combined tariff first, and multimodal resolution prefers broader capabilities within the default rank; all exclude inactive providers. Every capability — text, image, video and audio — resolves inside the acting owner's personal catalog: `resolve_default_model`, the analyzer's bounded failover queue and `get_model_for_capability` share one ownership predicate and drop another owner's model or provider before ranking, so a fallback never decrypts a key it does not own. `AGENT_MODEL` is a name lookup through that same gate, not an ownership bypass. Cost evidence resolves its tariff row by the attempt's `llm_model_id` (allocated before the HTTP call), not by name; a legacy name-only envelope is matched inside the acting catalog and stays unknown when the name is ambiguous, so no workspace is ever priced with another user's rates. These are application invariants, not database unique constraints. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
 
-The SQLAdmin editor displays the ordinary input/output raw amounts beside an
-explicit `pricing_token_unit` selector. Changing the selector does not convert
-either amount. New models default to USD per 1M; existing models retain the
+SQLAdmin LLM create/edit is disabled in the 0109 candidate; configuration goes
+through owner-checked personal services/UI. `pricing_token_unit` does not convert
+raw amounts by itself. New models default to USD per 1M; existing models retain the
 legacy 1K unit until explicitly classified. Cache fields are always USD per
 1M; blank cache rates remain NULL while zero is explicit. The API/tool boundary
 also exposes canonical per-1M prices and true per-1K compatibility fields.
@@ -151,7 +164,7 @@ All tables in this section have TimestampMixin. The tables are not marked with T
 
 ### `tenants`
 
-[Source](../app/models/tenancy/tenant.py). Fields: `id`, `name` String(100), unique `slug` String(50), `plan` **String(20), default `pro`**, `timezone` String(50), `is_active`, `daily_cost_limit` Float(default 5), `max_sources` Integer(default 20), nullable `agent_style` JSON, `agent_model` String(100), `agent_max_tokens` Integer(default 1024), `agent_temperature` Float(default 0.3), `agent_system_prompt` Text.
+[Source](../app/models/tenancy/tenant.py). Fields: `id`, `name` String(100), unique `slug` String(50), `plan` **String(20), default `pro`**, `timezone` String(50), `is_active`, `daily_cost_limit` Float(default 5), `max_sources` Integer(default 20), nullable `agent_style` JSON, `agent_model` String(100) (legacy, not runtime authority), nullable `agent_model_id` FK → llm_models SET NULL (0109), `agent_max_tokens` Integer(default 1024), `agent_temperature` Float(default 0.3), `agent_system_prompt` Text.
 
 Declared CHECK allows **starter/pro/business**; `personal` is historical, migrated in 0071. `PLAN_LIMITS` is a class-level policy, not a table. `effective_limits()` takes min(column override, finite tier ceiling); unlimited business ceilings ignore those column overrides. Source budgets/features/retention policy declarations do not demonstrate complete spend accounting or cleanup.
 

@@ -40,6 +40,8 @@ PUBLIC_PATHS = frozenset({"/app/login", "/app/register"})
 NO_WORKSPACE_PATHS = frozenset({"/app/invite", "/app/workspaces/new", "/app/logout"})
 PERSONAL_ACCOUNT_PATHS = frozenset(
     {
+        "/app/settings/models/save",
+        "/app/settings/models/default",
         "/app/notifications/preferences",
         "/app/notifications/preferences/reset",
         "/app/billing/account",

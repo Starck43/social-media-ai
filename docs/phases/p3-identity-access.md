@@ -32,6 +32,43 @@ production acceptance, real-DB pending-confirmation end-to-end run.
   fail-closed behavior proven with focused tests; depends: none;
   owns: per selection; owner: unassigned; status: TODO
 
+- [ ] P3-T93 — personal LLM provider/model ownership across a user's workspaces;
+  accept: explicit reviewed legacy ownership map, owner-scoped CRUD/defaults/fallback,
+  atomic provider+models bundle, no secret DTOs, fresh pre-dispatch owner checks;
+  depends: none; owns: LLM schema/managers, personal catalog service, migration 0109,
+  API/backend contracts; owner: personal-catalog agent; status: BLOCKED (required real PostgreSQL/ASGI acceptance).
+  Evidence: [ownership implementation](../validation/personal-llm-ownership.md).
+- [ ] P3-T94 — atomically reject foreign/missing task source/scenario IDs;
+  accept: owner row and all linked rows locked/validated before writes, no partial
+  replacement, normal manager and web boundaries covered; depends: none;
+  owns: task/source binding manager and web validation (coordinate PR #217);
+  owner: personal-catalog agent; status: BLOCKED (required real PostgreSQL/ASGI acceptance).
+  Evidence: [ownership implementation](../validation/personal-llm-ownership.md).
+- [ ] P3-T95 — numeric chat model FK and shared owner/tier/provider eligibility;
+  accept: no name fallback, consistent settings options/save/probe/runtime,
+  explicit default vs selected model indicators, no cross-user fallback;
+  depends: P3-T93; owns: tenant chat model FK, runtime, Agent settings adapter;
+  UI provider management is owned by ui/llm-provider-settings;
+  owner: personal-catalog agent; status: BLOCKED (required real PostgreSQL/ASGI acceptance).
+  Evidence: [ownership implementation](../validation/personal-llm-ownership.md).
+
+- [ ] P3-T96 — personal provider/model settings UI with explicit default and chat-selection markers;
+  accept: owner-only sparse atomic bundle save, separate shared default action, integer
+  chat model IDs, desktop/mobile light/dark validation; depends: P3-T93, P3-T95;
+  owns: settings_llm.py, settings.html/LLM partials/assets and UI tests;
+  owner: remote UI session (`ui/llm-provider-settings`); status: BLOCKED (required real PostgreSQL/ASGI acceptance).
+  Evidence: [ownership implementation](../validation/personal-llm-ownership.md).
+
+### P3-T93–P3-T96 offline handoff (not acceptance)
+
+Backend [PR #229](https://github.com/Starck43/social-media-ai/pull/229) and stacked
+UI [PR #230](https://github.com/Starck43/social-media-ai/pull/230) remain Draft.
+Final integrated tested source: `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4`;
+83 isolated checks + 128 offline browser cases PASS. The offline rerun is complete;
+BLOCKED refers to real PostgreSQL/ASGI/migration/concurrency acceptance only.
+No task is accepted DONE, no migration/backfill/merge was performed.
+[Evidence and sequential acceptance](../validation/personal-llm-ownership.md).
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

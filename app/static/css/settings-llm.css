@@ -1,0 +1,140 @@
+.llm-catalog {
+  display: grid;
+  gap: 24px;
+  margin-top: 24px;
+}
+.llm-catalog :is(h3, strong, legend) {
+  font-weight: 600;
+}
+.llm-catalog p {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.llm-toolbar,
+.llm-card-heading,
+.llm-model-entry,
+.llm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.llm-toolbar {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.llm-toolbar > p {
+  flex: 1 1 260px;
+}
+.llm-catalog :is(input, button, a, summary) {
+  min-height: 44px;
+}
+.llm-catalog :is(h3, strong, p, label, span) {
+  overflow-wrap: anywhere;
+}
+.llm-catalog
+  :is(form, fieldset, .llm-card-heading > div, .llm-model-entry > div) {
+  min-width: 0;
+}
+.llm-card-heading {
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.llm-card-heading h3 {
+  font-size: 16px;
+}
+.llm-model-entry {
+  padding-block: 16px;
+  border-top: 1px solid var(--color-border);
+}
+.llm-model-entry > form {
+  flex-shrink: 0;
+}
+.llm-api-name {
+  font-family: ui-monospace, monospace;
+  margin-top: 4px;
+}
+.llm-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.llm-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  background: var(--color-surface-secondary);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.llm-default {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+}
+.llm-provider-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.llm-bundle label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.llm-bundle input {
+  min-width: 0;
+}
+.llm-bundle p {
+  margin-top: 6px;
+}
+.llm-model-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 16px 0;
+}
+.llm-editor > summary {
+  color: var(--ui-accent);
+}
+.llm-editor[open] > summary {
+  margin-bottom: 16px;
+}
+.llm-bundle fieldset {
+  border-top: 1px solid var(--color-border);
+}
+.llm-bundle legend {
+  padding-right: 12px;
+  font-size: 14px;
+}
+.llm-bundle fieldset > button {
+  margin-top: 8px;
+}
+.llm-actions {
+  justify-content: flex-start;
+}
+.llm-catalog .shell-popover {
+  min-width: 0;
+}
+.llm-catalog [data-popover-trigger] {
+  color: var(--color-text);
+}
+@media (max-width: 640px) {
+  .llm-provider-fields,
+  .llm-model-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .llm-model-fields {
+    border-bottom: 1px solid var(--color-border);
+  }
+  .llm-model-fields > button {
+    justify-self: start;
+  }
+  .llm-model-entry {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .llm-actions > button {
+    width: 100%;
+  }
+}

@@ -361,8 +361,12 @@ async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, pa
         if claim.job_type == "digest":
             from app.services.digest.job_delivery import execute_digest_job
 
-            return await execute_digest_job(job, payload, handler)
-        return await handler(payload)
+            from app.services.ai.catalog_execution import run_with_job_catalog
+            async def scoped_digest(digest_payload):
+                return await run_with_job_catalog(job, handler, digest_payload)
+            return await execute_digest_job(job, payload, scoped_digest)
+        from app.services.ai.catalog_execution import run_with_job_catalog
+        return await run_with_job_catalog(job, handler, payload)
 
     # The handler task copies the bound context; per-source progress uses this claim.
     progress = job_progress.ProgressSession(claim)
@@ -496,7 +500,10 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
         try:
             from app.services.digest.job_delivery import execute_digest_job, finalize_digest_job
 
-            result = await execute_digest_job(job, payload, handler)
+            from app.services.ai.catalog_execution import run_with_job_catalog
+            async def scoped_digest(digest_payload):
+                return await run_with_job_catalog(job, handler, digest_payload)
+            result = await execute_digest_job(job, payload, scoped_digest)
             if await finalize_digest_job(job, result=result) is None:
                 _log_job(logging.WARNING, "job_completion_claim_lost", job, error_code="claim_lost")
                 return None

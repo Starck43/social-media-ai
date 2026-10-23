@@ -345,10 +345,10 @@ async function main() {
                 0,
                 "opening selector must not submit",
               );
-              await group.locator('[data-popover-option="model-b"]').click();
+              await group.locator('[data-popover-option="32"]').click();
               assert.equal(
-                await content.locator('input[name="agent_model"]').inputValue(),
-                "model-b",
+                await content.locator('input[name="agent_model_id"]').inputValue(),
+                "32",
               );
               assert.ok(
                 (await trigger.boundingBox()).height <= 64,
@@ -357,7 +357,7 @@ async function main() {
               await probe.click();
               let posts = await page.evaluate(() => syntheticSubmissions);
               assert.equal(posts[0].action, "/app/settings/agent/model-probe");
-              assert.equal(posts[0].fields.agent_model, "model-b");
+              assert.equal(posts[0].fields.agent_model_id, "32");
               await content.locator("#ag-max-tokens").fill("2048");
               await content.locator("#ag-max-tokens").press("Enter");
               posts = await page.evaluate(() => syntheticSubmissions);

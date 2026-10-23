@@ -321,7 +321,7 @@ Admin entry requires an active platform operator/admin account, independently of
 workspace membership. Model/action grants remain authoritative in the global
 console. See [ADMIN](ADMIN.md).
 
-## Personal LLM catalog (0109 source contract; deployment pending)
+## Personal LLM catalog (0109 source contract; code integrated, rollout pending)
 
 Providers/models are user-owned, not global. `owner_user_id` and a composite
 model/provider owner FK constrain ownership. Personal CRUD/defaults require an
@@ -335,6 +335,7 @@ execution uses the stored task payer's personal catalog; missing consent never
 guesses a workspace owner. Platform inspection permission
 does not grant another user's key use.
 
-Pre-0109 dev used a global LLM fleet; the personal catalog is a prepared,
-unmerged source contract, not proof of a migrated running database. Migration
-definition, exact offline evidence and required cutover checks: [personal ownership evidence](validation/personal-llm-ownership.md).
+Pre-0109 dev used a global LLM fleet; current source integration is recorded in
+dev `b34353645fe37de53c97c4d022c05af0044dc8ba`. This does not prove that a
+running database has been migrated. Migration definition, source-pinned
+acceptance evidence and rollout boundary: [personal ownership evidence](validation/personal-llm-ownership.md).

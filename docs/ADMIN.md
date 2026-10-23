@@ -22,7 +22,7 @@ provider call or messenger send was performed remotely. Other legacy page
 mismatches remain listed below. See [MODELS](MODELS.md) for ORM definitions and
 [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) for attributed prior acceptance.
 
-## Personal catalog candidate override (0109; PR #229 + #230)
+## Personal catalog source contract (0109; PR #229 + #230 integrated)
 
 The baseline sections below retain historical console/action descriptions. In the
 0109 candidate, providers/models are **personally owned**, shared across one
@@ -36,13 +36,16 @@ Platform operator entry/model-action grants are still required for the admin
 console, but never grant another user's key use. Existing connection/model test
 actions cannot rely on CONFIGURE alone: personal owner/active provider/model and
 fresh dispatch checks still apply. No foreign-catalog probe is authorized by a
-platform override. Actual SQLAdmin/ASGI behavior and real PostgreSQL constraints
-remain unverified in this candidate; offline fixtures are not that acceptance.
+platform override. Owner-local ASGI and PostgreSQL evidence is recorded
+at its original source SHAs in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md)
+and the [ownership evidence ledger](validation/personal-llm-ownership.md). It was
+not rerun on final dev `b343536`; full SQLAdmin acceptance is not inferred.
 
-Final offline integrated source is `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4`.
-See [ownership evidence and release gate](validation/personal-llm-ownership.md).
-Migration 0109 and owner2 backfill are prepared, not applied. Both PRs remain Draft;
-never release backend #229 without its stacked UI router from #230.
+Code is integrated in dev `b34353645fe37de53c97c4d022c05af0044dc8ba` with the
+stacked UI router. This integration did not upgrade a working/deployment
+schema; prior isolated migration/backfill acceptance remains in the evidence
+ledger. No deployment is claimed. See
+[ownership evidence and rollout boundary](validation/personal-llm-ownership.md).
 
 ## Authentication and platform authority
 

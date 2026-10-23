@@ -17,7 +17,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.config import settings
-from app.core.permissions import permission_scope
+from app.core.permissions import operator_permission_scope, permission_scope
 from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.tenant_context import tenant_scope
 from app.models import (
@@ -35,6 +35,15 @@ from app.models import (
 from app.services.ai.dispatch_receipts import build_dispatch_receipt
 from app.services.ai.outcome_events import build_outcome_event
 from app.services.billing.personal_ledger import observe_personal_outcome, reserve_personal_dispatch
+
+pytestmark = pytest.mark.tenancy
+
+
+@pytest.fixture(autouse=True)
+def _trusted_fixture_permission_scope():
+    """Allow trusted DB fixture setup without enabling BaseManager bypass."""
+    with operator_permission_scope():
+        yield
 
 
 async def _billing_environment(monkeypatch, marker: str) -> dict:
@@ -93,6 +102,8 @@ async def _billing_environment(monkeypatch, marker: str) -> dict:
             default_temperature=0.0,
             is_active=True,
         )
+        assert provider.owner_user_id == user.id
+        assert model.owner_user_id == user.id
     await PersonalLLMBoundPolicy.objects.create(
         provider_row_id=provider.id,
         model_row_id=model.id,
@@ -305,6 +316,8 @@ async def test_unpriced_models_counts_undefined_dispatch_attempts_per_tenant_and
             default_temperature=0.0,
             is_active=True,
         )
+        assert provider.owner_user_id == catalog_user.id
+        assert model.owner_user_id == catalog_user.id
         loaded = await LLMModel.objects.select_related("provider").get(id=model.id)
     now = datetime.now(timezone.utc)
 
@@ -429,6 +442,7 @@ async def test_zero_price_active_models_lists_only_active_zero_tariff_rows():
                 )
                 for index in range(3)
             ]
+            assert all(model.owner_user_id == catalog_user.id for model in zero_models)
             inactive = await LLMModel.objects.create(
                 provider_id=provider.id,
                 name=f"PBEX Inactive {marker}",

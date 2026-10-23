@@ -48,7 +48,9 @@ class SQL:
 
 SA = NS(select=SQL, cast=lambda column, kind: column)
 SRC = type('Source', (), {name: Col(name) for name in ('id','tenant_id','external_id','is_active')})
-RAW = type('Collected', (), {name: Col(name) for name in ('id','tenant_id','source_id','content_type','external_id','content_hash')})
+RAW = type('Collected', (), {name: Col(name) for name in (
+    'id','tenant_id','source_id','content_type','external_id','content_hash','selection_status','selection_reason'
+)})
 AI = type('Analytics', (), {name: Col(name) for name in ('id','tenant_id','source_id','summary_data')})
 
 

@@ -39,6 +39,7 @@ foundations and their PRs. Verify current behavior in code, migrations and tests
 ## Interfaces and operation
 
 - [Models](MODELS.md) — ORM and migration-backed schema reference.
+- [Deletion rules](MODEL_DELETION.md) — source FK/ORM inventory and destructive-operation limits.
 - [API](API.md), [CLI](CLI.md) and [Admin](ADMIN.md) — supported interfaces.
 - [Configuration](CONFIGURATION.md) and [Deployment](DEPLOYMENT.md) — setup and operation.
 - [Collaboration](COLLABORATION.md) — local and remote development handoff.

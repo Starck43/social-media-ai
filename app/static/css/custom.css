@@ -283,7 +283,7 @@ label {
     background-color: var(--tblr-bg-forms) !important;
 }
 
-.input-group .btn {
+main[data-ui-theme-surface] .input-group .btn:not(.btn-primary, .btn-secondary, .btn-success, .btn-danger, .btn-warning, .btn-info, .btn-light, .btn-dark, .btn-link, .btn-outline-primary, .btn-outline-secondary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning, .btn-outline-info, .btn-outline-light, .btn-outline-dark, .btn-outline-link) {
     --tblr-btn-bg: var(--tblr-bg-surface-tertiary);
 }
 
@@ -363,6 +363,136 @@ label {
 /* Card footer buttons */
 .card-footer .btn {
     min-width: auto;
+}
+
+/* SQLAdmin sets white text on every .btn by default; neutral buttons use the
+   theme's body text on their neutral surface in both light and dark modes.
+   Exclude every semantic variant so their own foreground and state colors win. */
+main[data-ui-theme-surface] .btn:not(.btn-primary, .btn-secondary, .btn-success, .btn-danger, .btn-warning, .btn-info, .btn-light, .btn-dark, .btn-link, .btn-outline-primary, .btn-outline-secondary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning, .btn-outline-info, .btn-outline-light, .btn-outline-dark, .btn-outline-link),
+main[data-ui-theme-surface] .btn-light {
+    --tblr-btn-color: var(--tblr-body-color);
+    --tblr-btn-hover-color: var(--tblr-body-color);
+    --tblr-btn-active-color: var(--tblr-body-color);
+    --tblr-btn-disabled-color: var(--tblr-body-color);
+}
+
+main[data-ui-theme-surface] .btn-primary,
+main[data-ui-theme-surface] .btn-success,
+main[data-ui-theme-surface] .btn-info {
+    --tblr-btn-color: var(--color-slate-950);
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+/* Light primary hover/active fill is cyan-700; slate-950 text there is 3.77:1. */
+main[data-ui-theme-surface]:not([data-theme="dark"]) .btn-primary {
+    --tblr-btn-hover-color: var(--tblr-btn-fg, #ffffff);
+    --tblr-btn-active-color: var(--tblr-btn-fg, #ffffff);
+}
+
+main[data-ui-theme-surface] .btn-outline-primary {
+    --tblr-btn-color: var(--tblr-body-color);
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+/* Keep semantic button states readable on the Tabler hover/active mixes. */
+main[data-ui-theme-surface]:not([data-theme="dark"]) .btn-secondary {
+    --tblr-secondary-darken: var(--color-slate-700);
+}
+
+main[data-ui-theme-surface][data-theme="dark"] .btn-secondary,
+main[data-ui-theme-surface][data-theme="dark"] .btn-danger,
+main[data-ui-theme-surface][data-theme="dark"] .btn-outline-secondary,
+main[data-ui-theme-surface][data-theme="dark"] .btn-light {
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+main[data-ui-theme-surface] .btn-warning {
+    --tblr-btn-color: var(--color-slate-950);
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+main[data-ui-theme-surface] .btn-danger {
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+/* Preserve each button's own token when it is the footer's first child. */
+main[data-ui-theme-surface] .card-footer > .btn:first-child {
+    color: var(--tblr-btn-color) !important;
+}
+
+main[data-ui-theme-surface] .card-footer > .btn:first-child:hover {
+    color: var(--tblr-btn-hover-color) !important;
+}
+
+main[data-ui-theme-surface] .card-footer > .btn:first-child:active,
+main[data-ui-theme-surface] .card-footer > .btn:first-child.active {
+    color: var(--tblr-btn-active-color) !important;
+}
+
+/* Form styling also matches <input type="submit" class="btn">. Restore the
+   Tabler variant's state backgrounds for those admin controls. */
+main[data-ui-theme-surface] .form-group input.btn:not(:focus) {
+    background-color: var(--tblr-btn-bg);
+}
+
+main[data-ui-theme-surface] .form-group input.btn:hover:not(:focus) {
+    background-color: var(--tblr-btn-hover-bg);
+}
+
+main[data-ui-theme-surface] .form-group input.btn:active:not(:focus) {
+    background-color: var(--tblr-btn-active-bg);
+}
+
+/* The light action menu uses a pale cyan active fill; keep its label dark. */
+main[data-ui-theme-surface]:not([data-theme="dark"]) .dropdown-menu .dropdown-item:active {
+    color: var(--color-slate-950);
+}
+
+/* The dark input rule is !important; submit buttons still need their variant
+   fill in the form's normal, hover and active states. */
+main[data-ui-theme-surface][data-theme="dark"] .form-group input.btn:not(:focus) {
+    background-color: var(--tblr-btn-bg) !important;
+}
+
+main[data-ui-theme-surface][data-theme="dark"] .form-group input.btn:hover:not(:focus) {
+    background-color: var(--tblr-btn-hover-bg) !important;
+}
+
+main[data-ui-theme-surface][data-theme="dark"] .form-group input.btn:active:not(:focus) {
+    background-color: var(--tblr-btn-active-bg) !important;
+}
+
+/* SQLAdmin bulk-delete confirmation: keep the full selection readable and
+   scrollable; the selected values and DELETE request are never rewritten. */
+#modal-delete .modal-content,
+[id^="modal-confirmation-"] .modal-content {
+    min-width: 0;
+    max-width: 100%;
+    background-color: var(--tblr-bg-surface);
+    color: var(--tblr-body-color);
+}
+
+#modal-delete .modal-body,
+#modal-delete .modal-footer,
+#modal-delete .modal-footer .row > .col,
+[id^="modal-confirmation-"] .modal-body {
+    min-width: 0;
+}
+
+#modal-delete-text, [id^="modal-confirmation-"] .modal-body {
+    overflow-wrap: anywhere;
+    white-space: normal;
+    max-height: min(40vh, 18rem);
+    overflow-y: auto;
+}
+
+#modal-delete .text-muted, [id^="modal-confirmation-"] .text-muted {
+    color: var(--color-text-secondary) !important;
 }
 
 /* ── Password input ───────────────────────────────────────────────────────── */

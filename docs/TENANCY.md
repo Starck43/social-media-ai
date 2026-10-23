@@ -164,8 +164,11 @@ one release; wildcards and guessed domains are rejected. A model does not
 implicitly receive every action when registered.
 
 The shared core policy checks active workspace grants with a user/tenant-bound
-context. Web and client API never inherit platform privileges, including for a
-platform admin. Admin and explicit operator API paths require active operator
+context. Workspace web and client API operations never inherit platform
+privileges, including for a platform admin. The explicit global Platforms
+settings section is a narrow exception: active platform admins may read/create/
+update the global platform catalog; this grants no workspace bypass or provider/
+model administration. Admin and explicit operator API paths require active operator
 entry and platform action grants; a global data scope alone grants no action.
 Personal credential endpoints additionally constrain `user_id` to their caller.
 The web queue is scoped to the current membership and requires job permissions;
@@ -261,11 +264,12 @@ unknown or forbidden bookmarks fall back to a permitted tab. GET is no-store.
 
 | Tab/scope | Current read/action boundary |
 | --- | --- |
-| My account | Active authenticated caller's read-only profile and browser notification display preferences; theme remains in the shell. The exact GET/HEAD Settings page remains reachable without membership, showing this tab only. |
+| My account | Active authenticated caller's read-only profile and browser notification display preferences; theme remains in the shell. The exact GET/HEAD Settings page remains reachable without membership, showing the account tab (and the explicit global Platforms tab for platform admins). |
 | My connections | Caller-only credential metadata/status, with existing guarded connect/OAuth writes unchanged. No other member's credentials or secrets; existing connection routes still require onboarding. |
 | Workspace | Current active membership may read name/timezone only. Full configuration, budget and quota projections require `can_manage_workspace(concrete target)`; individual counts also retain model VIEW gates. |
 | Team | Same concrete-target management capability; only selected-tab member queries. Roles and disable controls retain server checks. Invitations use the shared guarded lazy dialog, not eager team-page queries. |
 | Agent / delivery channels | Concrete-target management capability before queries/mutations. Existing platform model catalogue is read only for the permitted Agent tab; this grants no global provider/model edit privilege. |
+| Platforms | Explicit global section for active `is_platform_admin` callers only, independent of workspace membership. Read/create/update platform name, base URL and active flag; fixed type on update, no params/secrets projection or delete action. POST rechecks role and CSRF. Operators and workspace-only owners/admins are refused. |
 | Admin | Global platform model/action rights, separate from all workspace tabs. |
 
 Notification display preferences remain browser-local (see

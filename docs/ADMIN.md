@@ -597,3 +597,21 @@ The coordinator reviewed the exact implementation and reused the completed
 81-test/228-assertion evidence; no runtime source changed for closeout. P8-T21
 is accepted as a bounded feature; no whole-phase, security-gate, schema or
 deployment acceptance is implied. Detailed original test limitations remain above.
+
+### Bulk-delete confirmation readability
+
+Project overrides live in `app/static/css/custom.css`, loaded after SQLAdmin's
+Tabler CSS through `app/templates/sqladmin/layout.html`; never edit site-packages.
+Admin-scoped rules use theme text for neutral/light controls and readable
+per-variant foregrounds in normal, hover and active states. Footer-first controls
+and submit-input variants retain their button-state tokens under the existing
+cascade. Focus styles and theme tokens are preserved. The delete and
+custom-confirmation modals retain the theme
+surface/text tokens for readable contrast, including muted text.
+SQLAdmin inserts the full comma-separated selected IDs via `.text()` into
+`#modal-delete-text`. The project sets `overflow-wrap: anywhere`, `white-space:
+normal`, a viewport-bounded height and vertical scrolling there; selection and
+DELETE URL are not truncated or rewritten. Buttons remain outside that scrolling
+region. Custom confirmation bodies use the same wrapping boundary.
+See [deletion audit](MODEL_DELETION.md) before changing cascade policies or treating
+multi-select deletion as one atomic transaction.

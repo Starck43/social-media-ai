@@ -279,10 +279,12 @@ html.dark .settings-page .settings-danger {
   display: grid;
   gap: 16px;
 }
-.settings-form input:not([type="hidden"]) {
+.settings-form input:not([type="hidden"]):not([type="checkbox"]) {
   min-height: 44px;
 }
 .settings-inline-form > [data-popover-select] {
   flex: 1 1 160px;
   min-width: 0;
 }
+
+.settings-platform-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }

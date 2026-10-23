@@ -264,6 +264,28 @@ deleted.
 - No production or staging target, no working-schema migration, no deploy, no
   live provider call.
 
+## Final combined acceptance and schema restoration (2026-10-23)
+
+Combined tree `87d87281ec4d8b6959e947e32cb5487ac2a14564` = feature `7e081ac`
+(includes `fb8a9e6` media/tariff fixes and the normal dev `8f2d8a2` merge) + UI
+`7bd1a8d`. Sequential window on `social_manager`/`test_schema` at 0109:
+
+- `tests/jobs/test_task_pending_occurrence.py` + `test_task_run_now.py`: **53 passed, 0 failed**.
+- `tests/ai/test_personal_catalog_postgres_acceptance.py`: **9 passed**.
+- `tests/web/test_personal_llm_settings_acceptance.py`: **7 passed**.
+- Offline browser suites (fixtures only, no DB/app/network): Chromium — 24 + 104
+  passed; WebKit 18.2 (Safari engine) — 24 catalog passed, layout 88/104. The 16
+  WebKit failures are all the `agent` mode matrix opened by keyboard
+  (`focus()` + Enter), where the shared popover's `focusout` →
+  `setTimeout(closePopover, 0)` in `app/static/js/shell.js` closes the panel
+  before the option click; the same suite with a mouse-opened panel is 104/104.
+  Reported in #230 as a shared-shell keyboard-path bug.
+
+`test_schema` was restored to **0108** from the pre-window dump (126 providers /
+127 models as at handoff, no `owner_user_id`/`uid`, no 0109 guards). The working
+schema, production targets and live providers were untouched. The tested runtime
+SHA remains `87d8728`; this evidence entry is docs-only.
+
 ## Required owner-local acceptance (sequential, R8/R10)
 
 1. Read-only target/writer/backup inspection; review 0109 against actual 0108

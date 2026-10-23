@@ -65,9 +65,20 @@
                 popover.addEventListener('keydown', event => {
                     if (event.key === 'Escape' && !panel.hidden) { event.preventDefault(); event.stopPropagation(); closePopover(popover, true); }
                 });
-                popover.addEventListener('focusout', () => setTimeout(() => {
-                    if (!popover.contains(document.activeElement)) closePopover(popover);
-                }, 0));
+                popover.addEventListener('focusout', event => {
+                    if (event.relatedTarget && popover.contains(event.relatedTarget)) return;
+                    setTimeout(() => {
+                        // WebKit does not focus a <button> on click: the trigger
+                        // blurs with relatedTarget=null while the pointer is still
+                        // over the panel about to click an option. Closing on the
+                        // next tick would hide the panel before that click lands
+                        // (the keyboard-opened model picker then kept its old
+                        // value). A hovering pointer means the click is pending.
+                        if (!popover.contains(document.activeElement) && !popover.matches(':hover')) {
+                            closePopover(popover);
+                        }
+                    }, 0);
+                });
                 if (popover.hasAttribute('data-hover-popover')) {
                     popover.addEventListener('pointerenter', event => {
                         if (popover.closest('.shell-sidebar') && event.pointerType === 'mouse' && matchMedia('(hover: hover)').matches) open(true);

@@ -264,6 +264,58 @@ deleted.
 - No production or staging target, no working-schema migration, no deploy, no
   live provider call.
 
+## Final combined acceptance and schema restoration (2026-10-23)
+
+Combined tree `87d87281ec4d8b6959e947e32cb5487ac2a14564` = feature `7e081ac`
+(includes `fb8a9e6` media/tariff fixes and the normal dev `8f2d8a2` merge) + UI
+`7bd1a8d`. Sequential window on `social_manager`/`test_schema` at 0109:
+
+- `tests/jobs/test_task_pending_occurrence.py` + `test_task_run_now.py`: **53 passed, 0 failed**.
+- `tests/ai/test_personal_catalog_postgres_acceptance.py`: **9 passed**.
+- `tests/web/test_personal_llm_settings_acceptance.py`: **7 passed**.
+- Offline browser suites (fixtures only, no DB/app/network): Chromium — 24 + 104
+  passed; WebKit 18.2 (Safari engine) — 24 catalog passed, layout 88/104. The 16
+  WebKit failures are all the `agent` mode matrix opened by keyboard
+  (`focus()` + Enter), where the shared popover's `focusout` →
+  `setTimeout(closePopover, 0)` in `app/static/js/shell.js` closes the panel
+  before the option click; the same suite with a mouse-opened panel is 104/104.
+  Reported in #230 as a shared-shell keyboard-path bug.
+
+`test_schema` was restored to **0108** from the pre-window dump (126 providers /
+127 models as at handoff, no `owner_user_id`/`uid`, no 0109 guards). The working
+schema, production targets and live providers were untouched. The tested runtime
+SHA remains `87d8728`; this evidence entry is docs-only.
+
+## Post-#231 integration into feature (2026-10-23, owner-local)
+
+PR #231 (`fix/shell-popover-keyboard-close`, `6556aaf`) was merged into `dev`
+normally (merge commit `30e5d9b`), and that dev state — no other dev commits —
+was merged into the feature in an isolated worktree: feature head **`a6bf620`**
+(tree `70cc80e5…`), ordinary merge, no force. Compared with the accepted
+combined feature runtime (`7e081ac`, total tree `87d8728`) this adds exactly:
+
+- `app/static/js/shell.js`: the keyboard-path close fix (14/3 lines) — keeps the
+  panel open while the pointer is over it, so a mouse click after `focus()` +
+  Enter commits; Tab-out and outside clicks still close.
+- `tests/web_shell_popover_keyboard.cjs`: offline fixture regression (light/dark,
+  Chromium and WebKit; verified failing on WebKit without the fix and passing
+  after).
+- `docs/validation/open-pr-review-2026-10-23.md`: docs only.
+
+No file under `app/`, `migrations/` or `cli/` other than `shell.js` changed, so
+the PostgreSQL/ASGI acceptance recorded at `87d8728` (queue 53/53, catalog 9/9,
+UI ASGI 7/7) carries verbatim for unchanged backend content; no schema or DB
+target was touched in this window and `test_schema` remains at 0108.
+
+Owner-local browser reruns on tree `a6bf620` (offline fixtures only): Chromium
+keyboard 2/2 + layout **104/104**; WebKit 18.2 keyboard 2/2 + layout **104/104**
+(the previously reported 88/104 agent-mode WebKit failures are resolved by this
+fix). The shared-shell root cause and engine evidence are in PR #231; #230 must
+take **one** normal refresh onto this feature head, keep its 11 UI files unchanged,
+and not weaken the keyboard assertions, then re-run 24 + 104 and publish head +
+`^{tree}`. Final acceptant SHA for the UI gate is the refreshed #230 head on
+that base.
+
 ## Required owner-local acceptance (sequential, R8/R10)
 
 1. Read-only target/writer/backup inspection; review 0109 against actual 0108

@@ -22,7 +22,7 @@ Latest synchronized dev: `92dcb948de24c55ab82dccdba81e792945b5ac48`.
 Final tested integrated source: `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4`
 (UI branch; backend `f6674b65977bed4e573b5ecc68aba55b501d7d94` plus UI `eeecde1`).
 Later documentation-only commits do not change the tested application/test bytes.
-Backend branch: `feat/personal-llm-ownership`, [Draft PR #229](https://github.com/Starck43/social-media-ai/pull/229).
+Backend branch: `feat/personal-llm-ownership`, [PR #229](https://github.com/Starck43/social-media-ai/pull/229) — merged into `dev` 2026-10-23 (`b343536`); historically Draft during the work below.
 Initial implementation: `e14c3950b8846ea124e08ecbf57e703c8c6506d6`.
 Reviewed incoming dev: `92dcb948de24c55ab82dccdba81e792945b5ac48`; its task+links
 transaction is preserved, with caller-session support in the task manager.
@@ -30,8 +30,14 @@ P3-T93: personal provider/model ownership and atomic bundle/default service.
 P3-T94: transactional manager source/scenario bindings and DB definition guards.
 P3-T95: chat model numeric FK and shared owner/provider/tier eligibility.
 P3-T96: coordinated remote UI session, `ui/llm-provider-settings`.
-No task is DONE; required PostgreSQL/ASGI acceptance is BLOCKED pending an approved
-isolated target and sequential owner-local validation. Offline UI evidence follows.
+
+Historical status note (2026-10-23): the top of this file predates the final
+merges; sections below describe the earlier Draft/BLOCKED stages as they
+happened. The final integrated state is: PRs #229/#230 merged (dev `b343536`),
+acceptance-complete evidence on this page and in
+`docs/phases/p3-identity-access.md` ("P3-T93–P3-T96 acceptance handoff");
+production migration/backfill/deployment remain owner-gated operations,
+explicitly outside the acceptance.
 
 ## Audit of the four requested boundaries
 

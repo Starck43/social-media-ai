@@ -1,6 +1,36 @@
 # Personal LLM ownership implementation evidence
 
-## Current handoff status (supersedes earlier remote-only blockers)
+## Current integration and acceptance status (2026-10-23)
+
+PR #230 merged into `feat/personal-llm-ownership` at
+`447c755b963462d1f8dc3e25f50b496699796f1c`; PR #229 then merged normally into
+`dev` at `b34353645fe37de53c97c4d022c05af0044dc8ba` (parents `30e5d9b` and
+`447c755`). Final tree `c5a72aeae0e6d86adf5a951e7463c8e4c104f3c3` is exactly
+the approved #230 head `56fb209704e2ada7510f26d77b2d3006135e8462`. The merge
+introduced no additional content or regression surface. Conflict-resolution
+review of feature merge `9171ab4` found the task/source/scenario guards, caller
+session, queue actor and launch assertions preserved.
+
+Acceptance remains source-pinned below. Combined backend/database evidence at
+`87d87281ec4d8b6959e947e32cb5487ac2a14564` retains its original attribution;
+it was not rerun on `b343536`. UI browser and isolated evidence is attributed to
+exact #230 head `56fb209`; owner-local WebKit 18.2 layout was 104/104 at that
+same head (PR #230 comment 6371842004). The committed standalone keyboard
+fixture timed out against the numeric 31/32 fixture and is not counted as a
+pass; the layout suite at `56fb209` covers focus+Enter and mouse selection of
+option 32. See the
+[#229 review](https://github.com/Starck43/social-media-ai/pull/229#pullrequestreview-5633698836)
+and [#230 review](https://github.com/Starck43/social-media-ai/pull/230#pullrequestreview-5633525828).
+
+P3-T93–P3-T96 are DONE: Codex accepted the source at dev
+`b34353645fe37de53c97c4d022c05af0044dc8ba` on 2026-10-23 after reviewing the
+exact tree and the evidence attributed to its original SHAs. The code merge did not
+upgrade a working/deployment schema or deploy the code.
+The recorded `test_schema` restoration to 0108 is historical owner evidence,
+not a fresh inspection. Migration/backfill and deployment remain separate
+explicitly authorized steps.
+
+## Historical implementation handoff
 
 Owner-local evidence recorded below confirms migration 22/22, guards 12/12,
 ASGI/dispatch 27/27 and the prepared PostgreSQL 9 + web ASGI 7 suites passed on
@@ -8,11 +38,8 @@ the specified earlier local backend+UI trees. This is attributed real acceptance
 not a remote rerun and not proof for a later fresh-dev merge. The working schema
 was not upgraded; the coordinated test_schema window was restored to0108.
 
-Current blockers are final normal-dev ancestry/source freeze and the complete
-current queue/acceptance rerun. The observed queue failures are fixture teardown
-FKs; their test-only correction is described at the end. Both PRs remain Draft.
-Historical NOT RUN/prepared statements below describe their earlier remote
-checkpoints, not a denial of the later owner-local results.
+The notes below retain the original handoffs, blockers, and execution context
+for provenance. Their present-tense statuses describe those historical checkpoints.
 
 
 ## Source and task allocation

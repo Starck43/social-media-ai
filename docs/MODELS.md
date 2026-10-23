@@ -12,14 +12,15 @@ database inspection or migration was run for this update. Schema comes from
 `settings.DB_SCHEMA`; never hardcode it in application code.
 
 
-### Personal catalog candidate (0109; not deployed)
+### Personal catalog (0109 defined; operational rollout separate)
 
-PR #229 is based on dev `ccce2801a640efd7a90704f37874d0bae1ec388a`
-and adds the ownership/FK changes described below. The historical reference and
-inventory above are not fresh DB inspection. Migration 0109 has not been applied;
-real PostgreSQL/ASGI acceptance is pending. Final integrated offline evidence
-is at `d9f7c473605c3bf14d6495288abcc1cdb8ddb9a4` (83 isolated checks and
-128 offline browser cases, not DB acceptance). See
+PR #229 and UI dependency #230 are integrated in dev
+`b34353645fe37de53c97c4d022c05af0044dc8ba`. This model reference and inventory
+describe source definitions, not a fresh database inspection. This integration
+did not upgrade a working/deployment schema; prior isolated migration
+acceptance remains in the evidence ledger. PostgreSQL/ASGI and browser evidence
+remains pinned to the original execution SHAs; none is attributed as a rerun on
+final dev. See
 [implementation evidence](validation/personal-llm-ownership.md).
 
 The public facade is [app.models](../app/models/__init__.py); canonical definitions

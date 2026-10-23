@@ -18,12 +18,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
-- [ ] P3-T96 — personal LLM web settings and default markers → [p3](docs/phases/p3-identity-access.md) — remote UI session (ui/llm-provider-settings) — BLOCKED — real PostgreSQL/ASGI acceptance pending
-
-- [ ] P3-T93 — personal ownership of LLM providers/models → [p3](docs/phases/p3-identity-access.md) — personal-catalog agent — BLOCKED — real PostgreSQL/ASGI acceptance pending
-- [ ] P3-T94 — atomic workspace-safe task/source/scenario bindings → [p3](docs/phases/p3-identity-access.md) — personal-catalog agent — BLOCKED — real PostgreSQL/ASGI acceptance pending
-- [ ] P3-T95 — chat model FK and shared eligibility → [p3](docs/phases/p3-identity-access.md) — personal-catalog agent — BLOCKED — real PostgreSQL/ASGI acceptance pending
-
 - [ ] P2-T12 — preserve cache usage and version complete cache tariffs → [p2](docs/phases/p2-usage-spend.md) — codex-cache-pricing — IN_PROGRESS
 
 - [ ] P8-T20 — provider cost evidence and compact diagnostic controls → [p8](docs/phases/p8-first-value-ui.md) — codex — IN_PROGRESS

@@ -958,14 +958,16 @@ Authorization: Bearer <token>
 
 ## LLM Providers
 
-### Personal catalog candidate (PR #229 / migration 0109)
+### Personal catalog (PR #229 integrated; migration 0109 defined)
 
 Both `/api/v1/llm/llm-providers` and `/api/v1/llm/llm-models` use the
 active authenticated user's personal catalog, without workspace membership or
 an operator/admin gate. `require_model_perm` remains the endpoint guard and
 recognizes active-user self-service for these resources. IDs are owner-filtered;
-foreign IDs are not editable. `owner_user_id` is not client-assignable. This is
-candidate source behavior, not deployed/ASGI-accepted evidence.
+foreign IDs are not editable. `owner_user_id` is not client-assignable. These
+routes are integrated in dev. Owner-local ASGI evidence is recorded at its
+original source SHA; it is not a test rerun on final dev and does not imply a
+database migration or deployment.
 
 Provider `uid` is required at creation, mutable and unique per owner; `name` is
 a display label and numeric ID is immutable. HTTPS base URLs and bounded field

@@ -367,7 +367,7 @@
                form read as one field twice. #}
             <div x-show="editing.job_type === 'collect' || editing.job_type === 'analyze'">
                 <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Фразы в тексте поста</label>
-                <input name="keywords_list" x-model="editing.keywords_list" value="{{ edit.keywords_list }}"
+                <input name="keywords_list" value="{{ edit.keywords_list }}" x-model="editing.keywords_list"
                        placeholder="отчёт, дизайн интерьера"
                        class="{{ control() }}">
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Анализируются только записи, где есть

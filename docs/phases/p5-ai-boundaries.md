@@ -535,9 +535,12 @@ safely.
       still delivered 8 posts with 1 eligible.
     - Source deletion (code `5ef02f3`): the sources list and the source page
       carry a delete action (`source`/`delete`, workspace-scoped, cascade
-      named before it happens). A task-owned lane is refused with the owning
-      task named. The old test that kept the form away from the source page
-      is flipped.
+      named before it happens). The old test that kept the form away from the
+      source page is flipped. A later owner decision (2026-10-22) narrowed the
+      refusal to an **active** reader and made the control visible-but-disabled
+      with the reason in its title: a lane whose owning task is paused or gone
+      is an orphan and can be removed, while an active task still blocks the
+      delete and is named in the refusal.
     - Mention lanes and the relevance gate (code `4275d12`, owner decisions of
       2026-10-22): the runtime owns the task's mention lanes (one per phrase,
       or one joined lane for `queries_match="all"`; reused, never taken from

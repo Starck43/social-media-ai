@@ -76,6 +76,14 @@ exact conjunction over the post text stays the text scope's job
 (`keywords_list` + `keywords_match`). A dry run creates nothing and reports
 the phrases that have no lane yet.
 
+A lane's life is the task's, but not blindly so: the sources list shows every
+lane with the owning task named, and a lane whose task is paused or gone is an
+orphan nothing reads — the operator may delete it there. What blocks a delete
+is an **active** reader, and the control is rendered disabled with the reason
+in its title (never hidden): an absent control reads as a missing feature.
+The owning task recreates its lane on the next run, so removing a dead one
+costs nothing.
+
 The author-city filter (`city` + `mode`) stays in the model but is no longer
 offered in the form: in `prefer` an unknown city no longer parks a good post
 (a community declares no city), and the operator decides relevance by the

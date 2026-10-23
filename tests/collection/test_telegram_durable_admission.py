@@ -204,7 +204,8 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
         self.row={'source_id':7,'external_id':'-10077_20','content_hash':'a'*64,'attachments':[{'type':'document','url':'PRIVATE'}]}
     def session(self,results):return NS(execute=AsyncMock(side_effect=results))
     async def test_strict_insert_returning_and_exact_receipt_scope(self):
-        session=self.session([Result(rows=[]),Result(),Result(rows=['-10077_20']),Result(rows=[('-10077_20','a'*64)])])
+        session=self.session([Result(rows=[]),Result(),Result(rows=['-10077_20']),
+                              Result(rows=[('-10077_20','a'*64,'selected')])])
         self.assertEqual(await self.manager.admit_items(session,[self.row]),1)
         insert=session.execute.call_args_list[2].args[0]
         self.assertEqual(insert.conflict['index_elements'],[RAW.source_id,RAW.content_type,RAW.external_id])
@@ -214,7 +215,7 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             stmt=session.execute.call_args_list[index].args[0]
             self.assertTrue(stmt.locked);self.assertIn(('eq','tenant_id',4),stmt.criteria);self.assertIn(('eq','source_id',7),stmt.criteria)
     async def test_duplicate_staged_does_not_reset_or_write(self):
-        session=self.session([Result(rows=[('-10077_20','a'*64)])])
+        session=self.session([Result(rows=[('-10077_20','a'*64,'selected')])])
         self.assertEqual(await self.manager.admit_items(session,[self.row]),0);self.assertEqual(session.execute.await_count,1)
     async def test_retired_parent_hash_receipt_avoids_restage(self):
         session=self.session([Result(rows=[]),Result(rows=[{'content_hashes':['a'*64]}])])
@@ -223,20 +224,21 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(('eq','tenant_id',4),stmt.criteria)
         self.assertIn(('has_any','summary_data.content_hashes',['a'*64]),stmt.criteria)
     async def test_missing_and_conflicting_receipts_refuse_admission(self):
-        session=self.session([Result(rows=[('-10077_20','b'*64)])])
+        session=self.session([Result(rows=[('-10077_20','b'*64,'selected')])])
         with self.assertRaisesRegex(ValueError,'content_identity_conflict'):await self.manager.admit_items(session,[self.row])
         session=self.session([Result(rows=[]),Result(),Result(rows=[]),Result(rows=[])])
         with self.assertRaisesRegex(ValueError,'content_receipt_missing'):await self.manager.admit_items(session,[self.row])
     async def test_batch_coverage_lookup_is_one_query_not_n_plus_one(self):
         second={**self.row,'external_id':'-10077_21','content_hash':'b'*64}
         session=self.session([Result(rows=[]),Result(rows=[]),Result(rows=['-10077_20','-10077_21']),
-                              Result(rows=[('-10077_20','a'*64),('-10077_21','b'*64)])])
+                              Result(rows=[('-10077_20','a'*64,'selected'),
+                                           ('-10077_21','b'*64,'selected')])])
         self.assertEqual(await self.manager.admit_items(session,[self.row,second]),2)
         self.assertEqual(session.execute.await_count,4)
         self.assertIn(('has_any','summary_data.content_hashes',['a'*64,'b'*64]),session.execute.call_args_list[1].args[0].criteria)
     async def test_malformed_saved_hash_ledger_cannot_certify_a_post(self):
         session=self.session([Result(rows=[]),Result(rows=[{'content_hashes':{'a'*64:'not-an-array'}}]),
-                              Result(rows=['-10077_20']),Result(rows=[('-10077_20','a'*64)])])
+                              Result(rows=['-10077_20']),Result(rows=[('-10077_20','a'*64,'selected')])])
         self.assertEqual(await self.manager.admit_items(session,[self.row]),1)
     async def test_manager_refuses_bypass_before_SQL(self):
         self.context.is_bypass=lambda:True;session=self.session([])

@@ -46,7 +46,7 @@ async def record_collection_selection(
             }
         )
 
-    limit = _source_limit(source)
+    limit = source_limit(source)
     session = new_session()
     try:
         async with session.begin():
@@ -64,7 +64,10 @@ async def record_collection_selection(
                 lane_id=f"source:{source.id}",
                 lane_type="source_stage",
                 query=_source_query(source),
-                fetched=len(content),
+                fetched=sum(
+                    1 for item in content
+                    if str(item.get("content_type") or "post").lower() != "comment"
+                ),
                 selected=len(selection.selected),
                 needs_review=len(selection.needs_review),
                 rejected=len(selection.rejected),
@@ -80,26 +83,40 @@ async def record_collection_selection(
         await session.close()
 
 
-def source_limit(source: Any) -> int:
-    """The effective per-source run ceiling used by the legacy collector."""
-    return _source_limit(source)
+def source_limit(source: Any, task_limit: int | None = None) -> int:
+    """Return the parent-post cap, with a source override only able to lower it.
+
+    Task collection intent supplies the run cap. Source settings may narrow
+    that request. Without task context, an explicit source cap replaces the
+    deployment default, preserving legacy collector behavior. The deployment
+    ceiling applies in either case.
+    """
+    hard_limit = max(1, int(settings.SOCIAL_COLLECT_HARD_LIMIT))
+    default_limit = min(max(1, int(settings.SOCIAL_COLLECT_LIMIT)), hard_limit)
+    try:
+        requested = int(task_limit) if task_limit is not None else default_limit
+        if requested < 1:
+            requested = default_limit
+    except (TypeError, ValueError):
+        requested = default_limit
+
+    params = getattr(source, "params", None) or {}
+    collection = params.get("collection") if isinstance(params, dict) else None
+    source_request = collection.get("limit") if isinstance(collection, dict) else None
+    if source_request is None and isinstance(params, dict):
+        source_request = params.get("limit")
+    if source_request is not None:
+        try:
+            source_cap = int(source_request)
+            if source_cap > 0:
+                requested = min(requested, source_cap) if task_limit is not None else source_cap
+        except (TypeError, ValueError):
+            pass
+    return max(1, min(requested, hard_limit))
 
 
 def limit_reached(content: list[dict], limit: int) -> bool:
     return bool(limit) and len(content) >= limit
-
-
-def _source_limit(source: Any) -> int:
-    params = getattr(source, "params", None) or {}
-    collection = params.get("collection") if isinstance(params, dict) else None
-    requested = (collection or {}).get("limit") if isinstance(collection, dict) else None
-    if requested is None and isinstance(params, dict):
-        requested = params.get("limit")
-    try:
-        value = int(requested) if requested else settings.SOCIAL_COLLECT_LIMIT
-    except (TypeError, ValueError):
-        value = settings.SOCIAL_COLLECT_LIMIT
-    return max(1, min(value, settings.SOCIAL_COLLECT_HARD_LIMIT))
 
 
 def _source_query(source: Any) -> str | None:

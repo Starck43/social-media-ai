@@ -101,21 +101,24 @@ Coverage evidence vs PRD-08 (state/refs → task):
 
 - [ ] P8-T07 — stale-source observable; accept: active sources not checked within
   configured hours via `get_sources_for_monitoring`/`last_checked`, honest "never checked",
-  gated `source.view`; depends: none; owns: source freshness lane; owner: opencode; status: READY.
+  gated `source.view`; depends: none; owns: source freshness lane; owner: opencode;
+  acceptance: codex; status: IN_PROGRESS — final audit resumed at `4eafb34` on 2026-10-23.
   Evidence: the window is configured, not invented in a template —
   `SOURCE_STALE_HOURS` (`app/core/config.py`, default 24, `ge=1`; documented in
   `docs/CONFIGURATION.md` and `.env.example`). `/app/sources` computes one
   summary through `SourceManager.get_sources_for_monitoring` (the existing
   staleness predicate: active, and never checked or older than the window),
-  intersected with the rows the page actually renders so a superuser's
-  cross-workspace page counts its own filter, not every workspace. The banner
+  intersected with the ordinary source rows the workspace page renders.
+  Task-owned query lanes follow their task schedule and are excluded from this
+  fixed-window source signal; their rows remain visible. The current `/app`
+  route is workspace-pinned and makes no cross-workspace visibility claim. The banner
   names the count of the active total and the window, and counts sources that
   were **never** checked separately — "older than N hours" is never claimed for
   a source that has no check at all; each stale row is marked «устарел» or
   «не проверялся» with its last check in the title. Read-only: no write, no
   collection trigger, no provider call. Inactive sources are excluded (nothing
-  is expected of them) and task-owned lanes never appear because the page does
-  not render them — a lane's freshness is its owning task's signal. Gated by
+  is expected of them). Task-owned lanes remain visible but are excluded from
+  this summary — a lane's freshness is its owning task's signal. Gated by
   `perms_can(request, "source", "view")`; without it the summary is `None` and
   neither the banner nor the marks render. Tests: `tests/collection/test_web_sources.py`
   11 passed, 4 new — stale/never/inactive counting with per-row marks, a
@@ -124,7 +127,9 @@ Coverage evidence vs PRD-08 (state/refs → task):
   absent without `source.view`. Known unrelated failures in that run
   (`tests/web/test_web_ui.py`, `tests/web/test_web_list_layout.py`: settings and
   source-detail markup) are outside this lane and untouched here. Migration
-  implications: none.
+  implications: none. Final source review also corrects the banner: never-checked
+  sources require a check but have no elapsed check age. The banner states the
+  configured freshness threshold separately from their count.
 - [ ] P8-T08 — credential expiry/near-expiry signal; accept: reauth/missing plus near-expiry from
   vault `expires_at` metadata — reads only, never decrypts; `renewable` auto-renewal is not reauth/error;
   personal vs operator split honest; depends: none; owns: credential signal lane; owner: unassigned; status: TODO
@@ -139,7 +144,12 @@ Coverage evidence vs PRD-08 (state/refs → task):
   depends: none; owns: delivery signal lane; owner: unassigned; status: TODO
 - [ ] P8-T12 — unknown-price/spend exposure signal; accept: operator view of provider models
   without known price plus spend totals via personal account managers (post P2-T06); depends: P2-T06;
-  owns: financial visibility lane; owner: opencode; status: READY.
+  owns: financial visibility lane; owner: opencode; acceptance: codex;
+  status: IN_PROGRESS — final audit resumed at `4eafb34` on 2026-10-23.
+  The audit found the platform-role flag had been hardcoded false, denying
+  every operator. Restore its identity check while retaining the workspace pin
+  and disabled global workspace mode. The model review list already uses the
+  manager's trusted personal-catalog scope; it is not a global catalog read.
   Implementation `7c23602`: `GET /app/billing/exposure` (platform-operator
   `guard_superuser`, active workspace pin, no writes) renders today's personal-ledger
   aggregates for the workspace (settled/reserved/provider-reported/tariff-reconstructed,

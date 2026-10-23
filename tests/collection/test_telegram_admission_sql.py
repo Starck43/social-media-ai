@@ -48,7 +48,8 @@ class SQLCompilationTests(unittest.IsolatedAsyncioTestCase):
             'app.utils.content_attachments':utility,'app.models':NS(AIAnalytics=Analytics)})
         self.manager=module.CollectedItemManager();self.manager.model=Raw
         self.row={'source_id':7,'external_id':'-10077_20','content_hash':'a'*64,'attachments':[{'type':'video','url':None}]}
-        self.session=NS(execute=AsyncMock(side_effect=[Result(rows=[]),Result(),Result(rows=['-10077_20']),Result(rows=[('-10077_20','a'*64)])]))
+        self.session=NS(execute=AsyncMock(side_effect=[Result(rows=[]),Result(),Result(rows=['-10077_20']),
+                                                       Result(rows=[('-10077_20','a'*64,'selected')])]))
     async def statements(self):
         self.assertEqual(await self.manager.admit_items(self.session,[self.row]),1)
         return [call.args[0] for call in self.session.execute.call_args_list]

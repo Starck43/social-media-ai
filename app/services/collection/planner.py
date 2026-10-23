@@ -315,11 +315,8 @@ def dedupe_items(items: Iterable[Mapping[str, Any]]) -> tuple[list[Mapping[str, 
     result: list[Mapping[str, Any]] = []
     removed = 0
     for item in items:
-        platform = str(item.get("platform") or "")
-        content_type = str(item.get("content_type") or "post")
-        identity = item.get("external_id") or item.get("content_hash") or item.get("id")
-        key = (platform, content_type, str(identity or ""))
-        if not key[2]:
+        key = item_identity(item)
+        if key is None:
             result.append(item)
             continue
         if key in seen:
@@ -328,6 +325,22 @@ def dedupe_items(items: Iterable[Mapping[str, Any]]) -> tuple[list[Mapping[str, 
         seen.add(key)
         result.append(item)
     return result, removed
+
+
+def item_identity(item: Mapping[str, Any]) -> tuple[str, str, str] | None:
+    """Stable post/comment identity shared by planner and runtime deduplication.
+
+    Items without a provider id or content hash cannot be safely compared and
+    therefore never suppress another item.
+    """
+    identity = item.get("external_id") or item.get("content_hash") or item.get("id")
+    if not identity:
+        return None
+    return (
+        str(item.get("platform") or ""),
+        str(item.get("content_type") or "post"),
+        str(identity),
+    )
 
 
 def dedupe_candidates(candidates: Iterable[Mapping[str, Any]]) -> tuple[list[Mapping[str, Any]], int]:

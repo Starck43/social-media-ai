@@ -8,10 +8,11 @@ now refused outright while any linked task is active, and the source is
 removed inside that task, where the scope is visible. These checks pin the
 contract of the single delete path
 (`app/services/collection/source_deletion.py`): a refusal writes nothing and
-names the tasks standing in the way, an inactive task never blocks, and the
-delete's locks (source row, then task rows) keep a concurrent edit or
-activation from interleaving with the decision — an activation either lands
-first and blocks the delete, or waits it out; it never slips inside.
+names the tasks standing in the way — an active reader, or a paused task that
+would lose its last explicit source — and the delete's locks (source row, then
+task rows) keep a concurrent edit or activation from interleaving with the
+decision — an activation either lands first and blocks the delete, or waits it
+out; it never slips inside.
 
 Real workspace scope (no bypass) because the decision goes through the task
 rows and the source-admission lock, both of which require the owning tenant.
@@ -57,7 +58,7 @@ async def _platform_id() -> int:
     return platform.id
 
 
-async def _source(tenant_id: int, name: str) -> Source:
+async def _source(tenant_id: int, name: str, **extra) -> Source:
     from app.types import SourceType
 
     platform_id = await _platform_id()
@@ -67,6 +68,7 @@ async def _source(tenant_id: int, name: str) -> Source:
             name=name,
             external_id=f"del-{secrets.token_hex(6)}",
             source_type=SourceType.GROUP,
+            **extra,
         )
 
 
@@ -219,8 +221,69 @@ async def test_all_active_task_is_untouched():
         await Tenant.objects.delete_by_id(tenant.id)
 
 
-async def test_already_paused_task_is_not_rewritten():
-    """A paused task is not a widening risk, so the delete leaves its receipt alone."""
+async def test_an_active_owner_task_blocks_even_without_an_explicit_link():
+    """A task-owned lane is read by its owner before a link is persisted."""
+    tenant = await _tenant()
+    try:
+        task = await _task(tenant.id, "lane-owner")
+        source = await _source(tenant.id, "owned-lane", owner_task_id=task.id)
+
+        removal = await _delete(tenant.id, source.id)
+
+        assert isinstance(removal, SourceDeleteBlocked)
+        assert removal.blocking_tasks == (TaskRef(task_id=task.id, name=task.name),)
+        assert removal.reason == "source_in_active_task"
+        assert await _links(tenant.id, task.id) == []
+        with tenant_scope(tenant.id):
+            assert await Source.objects.get(id=source.id) is not None
+    finally:
+        await Tenant.objects.delete_by_id(tenant.id)
+
+
+async def test_a_paused_owner_task_does_not_block_without_an_explicit_link():
+    """An unlinked owner reference alone does not pin a paused task's scope."""
+    tenant = await _tenant()
+    try:
+        task = await _task(tenant.id, "paused-lane-owner", is_active=False)
+        source = await _source(tenant.id, "owned-lane", owner_task_id=task.id)
+
+        removal = await _delete(tenant.id, source.id)
+
+        assert removal == SourceDeletion(source_id=source.id, name="owned-lane", paused_tasks=())
+        assert await _links(tenant.id, task.id) == []
+        with tenant_scope(tenant.id):
+            assert await Source.objects.get(id=source.id) is None
+    finally:
+        await Tenant.objects.delete_by_id(tenant.id)
+
+
+async def test_a_foreign_owner_reference_fails_closed_without_exposing_its_task():
+    """A malformed lane owner cannot turn a cross-tenant task into a delete."""
+    tenant = await _tenant()
+    other = await _tenant()
+    try:
+        foreign_task = await _task(other.id, "private-owner")
+        source = await _source(tenant.id, "malformed-owner", owner_task_id=foreign_task.id)
+
+        with pytest.raises(ValueError, match="^source_task_scope_invalid$"):
+            await _delete(tenant.id, source.id)
+
+        with tenant_scope(tenant.id):
+            assert await Source.objects.get(id=source.id) is not None
+        with tenant_scope(other.id):
+            assert await AgentTask.objects.get(id=foreign_task.id) is not None
+    finally:
+        await Tenant.objects.delete_by_id(tenant.id)
+        await Tenant.objects.delete_by_id(other.id)
+
+
+async def test_a_paused_tasks_last_explicit_source_is_refused_and_resume_keeps_it():
+    """A paused task is a widening risk too: resuming would read the whole workspace.
+
+    An empty link set means "all active sources", so the last named source of a
+    paused task is refused exactly like a running reader's. Nothing is written,
+    and resuming afterwards still resolves to the same explicit source.
+    """
     tenant = await _tenant()
     try:
         task = await _task(tenant.id, "paused", is_active=False)
@@ -229,12 +292,50 @@ async def test_already_paused_task_is_not_rewritten():
 
         removal = await _delete(tenant.id, source.id)
 
-        assert removal is not None
-        assert removal.paused_tasks == ()
+        assert removal == SourceDeleteBlocked(
+            source_id=source.id,
+            name="paused-source",
+            active_tasks=(),
+            last_source_tasks=(TaskRef(task_id=task.id, name=task.name),),
+        )
         row = await _task_row(tenant.id, task.id)
         assert row is not None
         assert row.is_active is False
         assert row.last_error is None
+        assert await _links(tenant.id, task.id) == [source.id]
+        with tenant_scope(tenant.id):
+            assert await Source.objects.get(id=source.id) is not None
+
+        # Resuming after the refusal keeps the explicit scope: the link set was
+        # never emptied, so the task reads exactly the source the operator chose.
+        await _activate(tenant.id, task.id)
+        row = await _task_row(tenant.id, task.id)
+        assert row is not None and row.is_active is True
+        assert await _links(tenant.id, task.id) == [source.id]
+    finally:
+        await Tenant.objects.delete_by_id(tenant.id)
+
+
+async def test_a_paused_task_may_lose_one_source_while_another_stays():
+    """A paused task with a surviving explicit link is narrowed, not widened."""
+    tenant = await _tenant()
+    try:
+        task = await _task(tenant.id, "paused-two", is_active=False)
+        kept = await _source(tenant.id, "kept")
+        doomed = await _source(tenant.id, "doomed")
+        await _link(task, [kept.id, doomed.id])
+
+        removal = await _delete(tenant.id, doomed.id)
+
+        assert removal == SourceDeletion(source_id=doomed.id, name="doomed", paused_tasks=())
+        row = await _task_row(tenant.id, task.id)
+        assert row is not None
+        assert row.is_active is False
+        assert row.last_error is None
+        assert await _links(tenant.id, task.id) == [kept.id]
+        with tenant_scope(tenant.id):
+            assert await Source.objects.get(id=doomed.id) is None
+            assert await Source.objects.get(id=kept.id) is not None
     finally:
         await Tenant.objects.delete_by_id(tenant.id)
 
@@ -435,19 +536,21 @@ async def test_a_competing_source_link_edit_waits_out_the_refusal():
 async def test_a_concurrent_activation_waits_out_the_deleting_transaction():
     """An activation cannot slip inside the delete's decision window.
 
-    The task starts paused, so this delete may go through. A concurrent
-    activation must wait for the deleting transaction: it lands only after the
-    source — and, by cascade, the link — is gone, so the running task never
-    reads a deleted source. Had the activation committed first, the delete
-    would have refused instead: one side or the other, never in between.
+    The task starts paused but keeps another explicit source, so this delete may
+    go through. A concurrent activation must wait for the deleting transaction:
+    it lands only after the source — and, by cascade, the link — is gone, so the
+    running task never reads a deleted source and keeps reading the survivor.
+    Had the activation committed first, the delete would have refused instead:
+    one side or the other, never in between.
     """
     import asyncio
 
     tenant = await _tenant()
     try:
         task = await _task(tenant.id, "activating", is_active=False)
+        kept = await _source(tenant.id, "kept")
         source = await _source(tenant.id, "activating-source")
-        await _link(task, [source.id])
+        await _link(task, [kept.id, source.id])
 
         deleting = async_session_maker()
         try:
@@ -469,7 +572,7 @@ async def test_a_concurrent_activation_waits_out_the_deleting_transaction():
         await asyncio.wait_for(activating, timeout=10)
         row = await _task_row(tenant.id, task.id)
         assert row is not None and row.is_active is True
-        assert await _links(tenant.id, task.id) == [], "the link went with the row, not into a deleted source"
+        assert await _links(tenant.id, task.id) == [kept.id], "the link went with the row, not into a deleted source"
         with tenant_scope(tenant.id):
             assert await Source.objects.get(id=source.id) is None
     finally:
@@ -480,8 +583,10 @@ def test_both_receipts_name_tasks_as_task_ref():
     """`TaskRef` is the single task reference both receipts carry.
 
     The pause-era `PausedTask` class is gone from the service: a blocked delete
-    names its active readers, a completed one reports what it paused — always
-    nothing now that the refusal comes first — and both fields are tuples of
+    names its active readers and the paused tasks that would lose their last
+    explicit source; `blocking_tasks` concatenates both and `reason` says which
+    rule fired. A completed deletion reports what it paused — always nothing now
+    that both refusals come first — and both representations carry tuples of
     `TaskRef(task_id, name)`.
     """
     import app.services.collection.source_deletion as service_module
@@ -489,8 +594,34 @@ def test_both_receipts_name_tasks_as_task_ref():
     assert not hasattr(service_module, "PausedTask"), "the pause-era receipt class must stay gone"
     blocked_hints = typing.get_type_hints(service_module.SourceDeleteBlocked)
     assert blocked_hints["active_tasks"] == tuple[service_module.TaskRef, ...]
+    assert blocked_hints["last_source_tasks"] == tuple[service_module.TaskRef, ...]
     deletion_hints = typing.get_type_hints(service_module.SourceDeletion)
     assert deletion_hints["paused_tasks"] == tuple[service_module.TaskRef, ...]
+
+    reader = service_module.SourceDeleteBlocked(
+        source_id=1, name="s", active_tasks=(service_module.TaskRef(task_id=7, name="reader"),)
+    )
+    last_source = service_module.SourceDeleteBlocked(
+        source_id=1,
+        name="s",
+        active_tasks=(),
+        last_source_tasks=(service_module.TaskRef(task_id=8, name="paused"),),
+    )
+    assert reader.blocking_tasks == reader.active_tasks
+    assert last_source.blocking_tasks == last_source.last_source_tasks
+    assert reader.reason != last_source.reason, "the two refusals must stay distinguishable"
+    assert all(isinstance(item.reason, str) and item.reason for item in (reader, last_source))
+    both = service_module.SourceDeleteBlocked(
+        source_id=1,
+        name="s",
+        active_tasks=reader.active_tasks,
+        last_source_tasks=last_source.last_source_tasks,
+    )
+    assert both.blocking_tasks == (
+        service_module.TaskRef(task_id=7, name="reader"),
+        service_module.TaskRef(task_id=8, name="paused"),
+    )
+
     # The completed receipt defaults to "nothing was paused": through the
-    # service no active task can reach the pause fallback.
+    # service no task can reach the pause fallback.
     assert service_module.SourceDeletion(source_id=1, name="s").paused_tasks == ()

@@ -678,22 +678,28 @@ async def _record_lane_evidence(
     job_id: int | None,
     limit_count: int | None,
 ) -> None:
-    """One `collection_lane_runs` row for one collected source, ADDED beside
-    the per-source counters (never instead of them). The counts mirror the
-    per-source row exactly, the bound is the task's collection limit, and a
-    failure carries the same bounded code/hint mapping the run already
+    """One `collection_lane_runs` row for one collected source, beside
+    the per-source counters. Fetched and bound count parent posts; selection
+    outcomes count selected records, including comments. A failure carries
+    the same bounded code/hint mapping the run already
     reports — never raw provider text. Evidence never fails the run and
     writes no content.
     """
     from app.services.collection import lane_runs
-    from app.services.monitoring.selection_store import limit_reached
+    from app.services.monitoring.selection_store import source_limit
 
     tenant_id = getattr(source, "tenant_id", None)
     identity = _lane_identity(source)
     if identity is None or tenant_id is None:
         return
     lane_id, lane_type, query = identity
-    fetched = int(per.get("items") or 0)
+    parent_count = per.get("parent_count")
+    fetched = int(parent_count if type(parent_count) is int else per.get("items") or 0)
+    applied_limit = per.get("limit_count")
+    has_applied_limit = type(applied_limit) is int and applied_limit > 0
+    if not has_applied_limit:
+        applied_limit = source_limit(source, limit_count)
+    applied_limit_reached = per.get("limit_reached") is True if has_applied_limit else False
     try:
         await lane_runs.record_lane_run(
             tenant_id=int(tenant_id),
@@ -706,9 +712,10 @@ async def _record_lane_evidence(
             selected=int(per.get("selected") or 0),
             needs_review=int(per.get("needs_review") or 0),
             rejected=int(per.get("rejected") or 0),
-            limit_count=limit_count,
-            # The same predicate the staged-selection ledger applies.
-            limit_reached=limit_reached(range(fetched), limit_count or 0),
+            limit_count=applied_limit,
+            # This is measured against parent posts before comment expansion.
+            # Legacy collectors and empty/error rows have no measured hit.
+            limit_reached=applied_limit_reached,
             error_code=per.get("error_code") or None,
             unsupported_reason=per.get("error_hint") or per.get("hint") or None,
         )
@@ -746,6 +753,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     snapshot = _effective_replay_snapshot(payload)
     task = None if snapshot else await _load_task(payload.get("agent_task_id"))
     task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
+    has_task_context = task is not None or snapshot is not None
     # A rehearsal writes no raw rows, calls no model and leaves the collection
     # cursor where it was. A task carries the flag (an admin's toggle); a
     # taskless CLI run may pass it in the payload.
@@ -845,6 +853,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         # `items` repeats itself on every re-run — `new_items` is the number that
         # answers "did this run find anything".
         "new_items": 0,
+        "duplicate_count": 0,
         # Per-source outcome, keyed by id so the UI can show it on that source's
         # own page. The aggregate `items` above is a single number for the whole
         # run, which is what left "what did *this* source yield?" unanswerable.
@@ -883,12 +892,28 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     # it. A malformed block is already reported per source; the rows keep
     # their counts and stay without a limit.
     run_limit: int | None = None
-    if task is not None or snapshot is not None:
+    if has_task_context:
         try:
             run_limit = int(parse_collection_intent(task_payload).limit)
         except CollectionIntentError:
             run_limit = None
     evidence_task_id = _log_id(getattr(task, "id", None))
+
+    from app.services.monitoring.selection_store import source_limit
+
+    def _limit_metadata(source: Any, result: Any = None) -> dict[str, Any]:
+        result = result if isinstance(result, dict) else {}
+        applied_limit = result.get("limit_count")
+        if type(applied_limit) is int and applied_limit > 0:
+            reached = result.get("limit_reached") is True
+        else:
+            applied_limit = source_limit(source, run_limit)
+            reached = False
+        return {"limit_count": applied_limit, "limit_reached": reached}
+
+    # One handle invocation is one deduplication scope. Separate jobs start
+    # empty, preserving independent-run and source-scoped history behavior.
+    seen_items: set[tuple[str, str, str]] | None = set() if has_task_context else None
 
     async def _evidence(source: Any, per: dict[str, Any]) -> None:
         await _record_lane_evidence(
@@ -927,6 +952,8 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "new_items": 0,
                     "outcome": "error",
                     "analyzed": 0,
+                    "duplicate_count": 0,
+                    **_limit_metadata(source),
                     "error_code": "collection_intent_invalid",
                     "error_hint": str(error),
                 }
@@ -945,10 +972,17 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                 dry_run=dry_run,
                 selection_scope=selection_scope,
                 task_id=getattr(task, "id", None),
-                collection_context=collection_context,
+                # A taskless CLI run keeps the standalone legacy source cap;
+                # the local context below is only for the run summary.
+                collection_context=collection_context if has_task_context else None,
+                seen_items=seen_items,
             )
             items = (result or {}).get("content_count", 0)
             new_items = (result or {}).get("new_items", 0)
+            duplicate_count = (result or {}).get("duplicate_count", 0)
+            if type(duplicate_count) is not int or duplicate_count < 0:
+                duplicate_count = 0
+            stats["duplicate_count"] += duplicate_count
             if result and result.get("content_count", 0) > 0:
                 stats["collected"] += 1
                 stats["items"] += result["content_count"]
@@ -977,6 +1011,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "name": source.name,
                     "items": int(items or 0),
                     "new_items": int(new_items or 0),
+                    "duplicate_count": duplicate_count,
                     "outcome": outcome,
                     "analyzed": int((result or {}).get("analytics_count", 0) or 0),
                     # Raw rows parked for a later analysis (0 when analysed inline).
@@ -986,6 +1021,12 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "selected": int((result or {}).get("selected", 0) or 0),
                     "needs_review": int((result or {}).get("needs_review", 0) or 0),
                     "rejected": int((result or {}).get("rejected", 0) or 0),
+                    **_limit_metadata(source, result),
+                    **(
+                        {"parent_count": (result or {}).get("parent_count")}
+                        if type((result or {}).get("parent_count")) is int
+                        else {}
+                    ),
                     # Parsed task intent and the provider's honest capabilities
                     # for this source. D2-D4 consume the same context.
                     "collection": (result or {}).get("collection") or collection_context.summary(),
@@ -1043,6 +1084,8 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "new_items": 0,
                     "outcome": "rate_limited",
                     "analyzed": 0,
+                    "duplicate_count": 0,
+                    **_limit_metadata(source),
                     "retry_after": math.ceil(e.retry_after) if e.retry_after else None,
                     "hint": e.hint,
                     "error_code": "rate_limited",
@@ -1066,6 +1109,8 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     # what made this invisible for so long.
                     "outcome": "auth_required" if isinstance(e, AuthorizationRequired) else "error",
                     "analyzed": 0,
+                    "duplicate_count": 0,
+                    **_limit_metadata(source),
                     "auth_hint": getattr(e, "hint", "") if isinstance(e, AuthorizationRequired) else "",
                     # Bounded cause for the admin diagnostics: the numeric
                     # platform code and an allowlisted hint, never raw text.

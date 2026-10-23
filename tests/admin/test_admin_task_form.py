@@ -211,6 +211,131 @@ def test_source_admin_marks_the_task_owned_search_lane() -> None:
     assert "SEARCH" in SourceAdmin.form_args["source_type"]["description"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [["limit", 10], "day", 7], ids=["list", "string", "number"])
+async def test_a_non_object_payload_is_rejected_before_any_source_query(monkeypatch, payload):
+    """The JSON column can hand back a list/string/number; none may be stored.
+
+    The admin save used to accept any JSON value, so a malformed payload
+    reached the runner. The rejection has to come before the source guard:
+    otherwise an invalid save still performs a workspace query and the operator
+    learns nothing about the payload.
+    """
+    admin = AgentTaskAdmin()
+    captured = _capture_filter(monkeypatch, [(1,)])
+    model = SimpleNamespace(is_active=True, job_type="collect", cron_expr="", next_run_at=None)
+
+    with pytest.raises(ValueError, match="JSON-объект"):
+        await admin.on_model_change(
+            {"tenant": "1", "is_active": True, "job_type": "collect", "payload": payload},
+            model,
+            is_created=False,
+        )
+
+    assert captured == {}, "the payload is validated before the source guard runs"
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_collection_limit_is_rejected_before_any_source_query(monkeypatch):
+    """A bad `collection.limit` fails the save with the shared bounded message."""
+    admin = AgentTaskAdmin()
+    captured = _capture_filter(monkeypatch, [(1,)])
+    model = SimpleNamespace(is_active=True, job_type="analyze", cron_expr="", next_run_at=None)
+
+    with pytest.raises(ValueError) as caught:
+        await admin.on_model_change(
+            {
+                "tenant": "1",
+                "is_active": True,
+                "job_type": "analyze",
+                "payload": {"collection": {"limit": 0}},
+            },
+            model,
+            is_created=False,
+        )
+
+    message = str(caught.value)
+    assert "collection_limit_out_of_range" in message
+    assert "лимит сбора" in message
+    assert captured == {}, "an invalid collection block never reaches the source guard"
+
+
+@pytest.mark.asyncio
+async def test_a_missing_form_payload_is_canonicalised_from_the_stored_one():
+    """When the form omits the field, the stored payload is validated, not trusted."""
+    admin = AgentTaskAdmin()
+    model = SimpleNamespace(
+        is_active=False,
+        job_type="collect",
+        cron_expr="",
+        next_run_at=None,
+        payload={
+            "period": "day",
+            "collection": {"limit": 10, "content_types": ["posts"], "queries": ["доставка"]},
+        },
+    )
+    data = {"is_active": False, "job_type": "collect"}
+
+    await admin.on_model_change(data, model, is_created=False)
+
+    payload = data["payload"]
+    assert payload["period"] == "day"
+    collection = payload["collection"]
+    assert collection["version"] == 1
+    assert collection["content_types"] == ["posts"]
+    assert collection["limit"] == 10
+    assert collection["queries"] == ["доставка"]
+    assert collection["engagement_types"] == []
+    assert set(collection) >= {"version", "content_types", "limit", "queries", "discovery", "comments", "candidates"}
+
+
+@pytest.mark.asyncio
+async def test_canonicalisation_preserves_unrelated_top_level_keys():
+    """Only the collection block is rewritten; the rest of the task payload stays."""
+    admin = AgentTaskAdmin()
+    model = SimpleNamespace(is_active=False, job_type="collect", cron_expr="", next_run_at=None, payload={})
+    data = {
+        "is_active": False,
+        "job_type": "collect",
+        "payload": {
+            "period": "day",
+            "tracked_users": ["vk:1"],
+            "cli_dates": {"start_date": "2026-10-01"},
+            "collection": {"limit": 10, "content_types": ["posts"]},
+        },
+    }
+
+    await admin.on_model_change(data, model, is_created=False)
+
+    payload = data["payload"]
+    assert payload["period"] == "day"
+    assert payload["tracked_users"] == ["vk:1"]
+    assert payload["cli_dates"] == {"start_date": "2026-10-01"}
+    assert payload["collection"]["limit"] == 10
+
+
+@pytest.mark.asyncio
+async def test_a_non_collect_job_drops_the_collection_block_without_parsing_it():
+    """Digest/prune/learn/reflect never read the block, so a dead block is dropped.
+
+    The malformed `limit` is deliberately invalid: a job type outside the
+    collection set must drop the block instead of rejecting the save over
+    configuration it will never read.
+    """
+    admin = AgentTaskAdmin()
+    model = SimpleNamespace(is_active=False, job_type="digest", cron_expr="", next_run_at=None)
+    data = {
+        "is_active": False,
+        "job_type": "digest",
+        "payload": {"period": "day", "collection": {"limit": 0}},
+    }
+
+    await admin.on_model_change(data, model, is_created=False)
+
+    assert "collection" not in data["payload"]
+    assert data["payload"]["period"] == "day"
+
+
 def test_collected_item_admin_exposes_selection_and_lane_fields() -> None:
     from app.admin.views import CollectedItemAdmin
 

@@ -587,6 +587,18 @@ safely.
     from another branch, so the bootstrap guard refuses every DB suite until
     the schema owner reconciles it (the no-DB admission suites pass, 71/71).
 
+  Final Codex audit resumed from integrated base `4eafb34` on 2026-10-23.
+  Corrections bind the task post cap at provider admission, retain standalone
+  CLI limits, separate parent cap evidence from expanded comment counts, and
+  deduplicate eligible post/comment identities across lanes only after durable
+  staging. Comments retain bounded parent context in existing JSON for deferred
+  analysis; no schema change is needed. Source deletion preserves the last
+  explicit scope of a paused task and blocks an active owning task even before
+  its lane is relinked. List/detail dependency hints share one batched manager
+  query; invalid ownership returns a bounded conflict. SQLAdmin uses the shared
+  collection-intent validator. These changes await final code review and the
+  focused OpenCode checks; historical READY results do not certify this diff.
+
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`
   carry no competing ownership. Stages A–D are DONE, and stages E and F are READY
@@ -597,7 +609,8 @@ safely.
   `app/web/sources.py`, `app/web/scenarios.py`, `app/web/templates/`,
   `app/templates/`, `app/core/scenario_presets.py`, `app/admin/views.py`,
   `app/agent/toolset/`, `cli/`, `app/api/`, `app/services/ai/scenario*.py`,
-  one Alembic revision, tests. Owner: owner (fork #2); status: IN_PROGRESS
+  one Alembic revision, tests. Owner: owner (fork #2); acceptance: codex;
+  status: IN_PROGRESS — final audit resumed at `4eafb34` on 2026-10-23
   (stages A–D DONE, E and F READY; live search blocked on Q-5/Q-9).
   Evidence: [collection plan](../design/collection-plan.md); append stage
   evidence at the exact tested SHA. Test routing: primary OpenCode

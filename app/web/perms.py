@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterable
 
-from app.types import ActionType
+from app.types import ActionType, PlatformRoleType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models import TenantUser, User
@@ -57,7 +57,20 @@ class WebPerms:
 
     @property
     def is_superuser_role(self) -> bool:
-        return False
+        """Whether the caller holds a platform operator or admin platform role.
+
+        Whole-section gates (`guard_superuser`) ask *who* the caller is, not
+        what the active workspace grants: owning a workspace is never an
+        operator role. Reads the platform role the request carries
+        (`User.objects.prefetch_related("role.permissions")`); callers whose
+        platform role is absent fail closed.
+        """
+        user = self._user
+        if user is None or not getattr(user, "is_active", False):
+            return False
+        role = getattr(user, "role", None)
+        codename = getattr(role, "codename", None)
+        return codename in (PlatformRoleType.OPERATOR, PlatformRoleType.ADMIN)
 
     @property
     def workspace_role(self) -> str | None:

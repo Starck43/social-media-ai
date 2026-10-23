@@ -1374,6 +1374,7 @@ async def _lane_run_rows(job: Any) -> list[dict[str, Any]]:
 			"lane_type": row.lane_type,
 			"query": row.query,
 			"fetched": row.fetched,
+			"limit_count": getattr(row, "limit_count", None),
 			"selected": row.selected,
 			"needs_review": row.needs_review,
 			"rejected": row.rejected,

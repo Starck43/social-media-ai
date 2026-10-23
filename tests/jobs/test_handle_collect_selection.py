@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.jobs import handlers as module
+from app.services.collection.context import build_collection_context
 from app.types import SourceType
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -220,3 +221,96 @@ class TestLaneEvidenceClassifiesTheSource:
         assert stats["items"] == 3
         assert stats["per_source"][0]["source_id"] == env.source.id
         assert stats["per_source"][0]["outcome"] == "collected"
+
+
+class TestCollectionContextAndRunScope:
+    """Which collection scope the handler hands to the collector.
+
+    A task run — including a detached replay of one — carries its own parsed
+    context and one deduplication set per invocation. A taskless CLI run hands
+    the collector neither, so the standalone per-source legacy cap stays in
+    charge; the handler still summarises the source from its local context.
+    """
+
+    def test_taskless_run_passes_no_task_context_to_the_collector(self, env, monkeypatch):
+        """Taskless collection keeps the standalone source-specific legacy cap.
+
+        The handler builds a context for its own summary, but the collector
+        must receive `None`: a source-level cap is not a task intent, and
+        cross-source deduplication belongs to container-level runs only.
+        """
+        monkeypatch.setattr(module, "_load_task", AsyncMock(return_value=None))
+
+        stats = asyncio.run(module.handle_collect({}))
+
+        kwargs = env.collector.collect_from_source.await_args.kwargs
+        assert kwargs["collection_context"] is None
+        assert kwargs["seen_items"] is None
+        assert kwargs["task_id"] is None
+        assert stats["sources"] == 1
+        assert stats["per_source"][0]["outcome"] == "collected"
+
+    def test_task_run_passes_its_context_and_a_run_scoped_seen_set(self, env):
+        """A task run owns the intent and the one deduplication set of the run."""
+        env.task.payload = {"collection": {"limit": 250}}
+
+        stats = _collect(env)
+
+        kwargs = env.collector.collect_from_source.await_args.kwargs
+        context = kwargs["collection_context"]
+        assert context is not None
+        assert context.platform == "vk"
+        assert context.source_id == env.source.id
+        assert context.intent.limit == 250
+        assert type(kwargs["seen_items"]) is set
+        assert kwargs["seen_items"] == set(), "the set starts empty on every invocation"
+        assert kwargs["task_id"] == env.task.id
+        assert stats["per_source"][0]["collection"]["limit"] == 250
+
+    def test_replay_run_passes_a_rebuilt_context_and_its_own_seen_set(self, env):
+        """A detached replay is still a task-context run, without a task row."""
+        payload = {
+            "retry_of_job_id": 99,
+            "_effective_snapshot": {
+                "version": 1,
+                "dry_run": False,
+                "task_payload": {
+                    "source_ids": [env.source.id],
+                    "cli_dates": {"start_date": "2026-01-01", "end_date": "2026-02-01"},
+                    "collection": {"limit": 300},
+                },
+            },
+        }
+
+        stats = asyncio.run(module.handle_collect(payload))
+
+        kwargs = env.collector.collect_from_source.await_args.kwargs
+        context = kwargs["collection_context"]
+        assert context is not None, "the snapshot's task payload drives the replay intent"
+        assert context.intent.limit == 300
+        assert type(kwargs["seen_items"]) is set
+        assert kwargs["seen_items"] == set()
+        assert kwargs["task_id"] is None, "a replay carries no task row"
+        assert stats["per_source"][0]["collection"]["limit"] == 300
+        env.record_lane.assert_awaited_once()
+
+    def test_taskless_run_summarises_the_source_from_its_local_context(self, env, monkeypatch):
+        """A result without a `collection` key still gets the local summary.
+
+        The collector double returns content but no context summary, so the
+        per-source row must fall back to the context the handler built itself
+        instead of dereferencing the `None` it passed to the collector.
+        """
+        monkeypatch.setattr(module, "_load_task", AsyncMock(return_value=None))
+        env.collector.collect_from_source.return_value = {"content_count": 2, "new_items": 2, "staged": 2}
+
+        stats = asyncio.run(module.handle_collect({}))
+
+        kwargs = env.collector.collect_from_source.await_args.kwargs
+        assert kwargs["collection_context"] is None
+        per = stats["per_source"][0]
+        assert per["items"] == 2
+        expected = build_collection_context({}, platform="vk", source_id=env.source.id).summary()
+        assert per["collection"] == expected
+        assert per["collection"]["platform"] == "vk"
+        assert per["collection"]["content_types"] == ["posts"]

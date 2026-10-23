@@ -2099,6 +2099,26 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         otherwise never become due. Compute it from the cron expression so
         admin-created tasks actually fire (a @once task is scheduled ~1 min out).
         """
+        # The payload is a JSON column, so the form can hand back any JSON value
+        # (a list, a string, a number). The collection limits inside it are
+        # parsed by the shared writer on every other write surface (web, API,
+        # CLI, chat); the admin used to store them unchecked, so a malformed
+        # limit reached the runner. Validate and canonicalise before any query.
+        from collections.abc import Mapping
+
+        from app.services.collection.intent import CollectionIntentError, apply_collection, collection_error_message
+
+        job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
+        raw_payload = data["payload"] if "payload" in data else getattr(model, "payload", None)
+        if raw_payload is None:
+            raw_payload = {}
+        if not isinstance(raw_payload, Mapping):
+            raise ValueError('Параметры задачи: нужен JSON-объект, например {"period": "day"}')
+        try:
+            data["payload"] = apply_collection(dict(raw_payload), raw_payload.get("collection"), job_type=job_type)
+        except CollectionIntentError as exc:
+            raise ValueError(collection_error_message(str(exc))) from None
+
         # Guard: an active source-based task (collect/analyze) needs at least one
         # active source to operate on. Empty links fall back to "all active
         # sources", so the check is on the workspace, mirroring the web rule.
@@ -2107,7 +2127,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         from app.models.managers.agent_task_manager import AgentTaskManager
 
         active = data.get("is_active", getattr(model, "is_active", False))
-        job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
         tenant_val = data.get("tenant") or getattr(model, "tenant_id", None)
         tenant_id = tenant_val.id if hasattr(tenant_val, "id") else tenant_val
         # The form delivers the workspace as a string ("1"), and a `tenant_id`

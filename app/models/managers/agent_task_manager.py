@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from croniter import croniter
 
@@ -721,6 +721,56 @@ class AgentTaskManager(BaseManager):
             .prefetch_related("agent_scenario", "sources")
             .order_by(AgentTask.created_at.desc(), AgentTask.id.desc())
         )
+
+    async def delete_blockers_for_sources(
+        self, source_ids: Sequence[int], tenant_id: int
+    ) -> dict[int, list["AgentTask"]]:
+        """Return active readers and paused last-link tasks in one scoped query.
+
+        The source list asks whether each row may be deleted. Active tasks
+        block while they explicitly read it; a paused task blocks only when
+        this is its sole explicit source, since an empty link set means all
+        active sources when the task resumes.
+        """
+        from sqlalchemy import func, or_
+
+        from ..agent_task import AgentTask, agent_task_sources
+
+        ids = sorted({int(sid) for sid in source_ids if sid is not None})
+        if not ids:
+            return {}
+        link_counts = (
+            self.get_queryset()
+            .values(agent_task_sources.c.agent_task_id, func.count().label("link_count"))
+            .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
+            .filter(AgentTask.tenant_id == tenant_id)
+            .group_by(agent_task_sources.c.agent_task_id)
+            .to_select()
+            .subquery("task_source_link_counts")
+        )
+        rows = await (
+            self.get_queryset()
+            .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
+            .join(link_counts, link_counts.c.agent_task_id == AgentTask.id)
+            .filter(
+                AgentTask.tenant_id == tenant_id,
+                agent_task_sources.c.source_id.in_(ids),
+                or_(AgentTask.is_active.is_(True), link_counts.c.link_count == 1),
+            )
+            .values(
+                agent_task_sources.c.source_id,
+                AgentTask.id,
+                AgentTask.name,
+                AgentTask.is_active,
+            )
+            .rows()
+        )
+        linked: dict[int, list[AgentTask]] = {}
+        for source_id, task_id, name, is_active in rows:
+            linked.setdefault(int(source_id), []).append(
+                AgentTask(id=int(task_id), name=str(name), is_active=bool(is_active))
+            )
+        return linked
 
     @staticmethod
     def _task_effectively_active(task, workspace_active_source_ids) -> bool:

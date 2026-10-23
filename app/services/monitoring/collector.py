@@ -21,6 +21,70 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+_PARENT_CONTEXT_TEXT_LIMIT = 16_000
+_PARENT_CONTEXT_TRUNCATION_MARKER = "\n… [parent text truncated]"
+
+
+def _parent_context_snapshot(post: dict[str, Any]) -> dict[str, Any] | None:
+	"""Copy only bounded, JSON-safe parent fields needed to understand a comment."""
+	external_id = post.get("external_id") or post.get("id")
+	if external_id is None or not str(external_id).strip():
+		return None
+	text = str(post.get("text") or "")
+	if len(text) > _PARENT_CONTEXT_TEXT_LIMIT:
+		body_limit = _PARENT_CONTEXT_TEXT_LIMIT - len(_PARENT_CONTEXT_TRUNCATION_MARKER)
+		text = text[:body_limit] + _PARENT_CONTEXT_TRUNCATION_MARKER
+	date = post.get("published_at") or post.get("date") or post.get("created_at")
+	if hasattr(date, "isoformat"):
+		date = date.isoformat()
+	elif date is not None and type(date) not in (str, int, float, bool):
+		date = str(date)
+	if isinstance(date, str):
+		date = date[:100]
+	platform = post.get("platform")
+	author = post.get("author")
+	if isinstance(author, dict):
+		bounded_author = {}
+		for key, value in author.items():
+			if key not in {"id", "name", "username", "url"} or type(value) not in (str, int, float, bool):
+				continue
+			bounded_author[key] = value[:500] if isinstance(value, str) else value
+		author = bounded_author
+	else:
+		author = None
+	permalink = post.get("permalink") or post.get("url")
+	return {
+		"external_id": str(external_id)[:255],
+		"platform": str(platform)[:50] if platform is not None else None,
+		"text": text,
+		"date": date,
+		"permalink": permalink[:500] if isinstance(permalink, str) else None,
+		"author": author,
+	}
+
+
+def _attach_parent_context(posts: list[dict[str, Any]], comments: list[Any]) -> None:
+	"""Attach deterministic first-seen parent snapshots before thread selection."""
+	parents: dict[tuple[str, str], dict[str, Any]] = {}
+	for post in posts:
+		if not isinstance(post, dict):
+			continue
+		snapshot = _parent_context_snapshot(post)
+		if snapshot is None:
+			continue
+		key = (str(snapshot.get("platform") or ""), snapshot["external_id"])
+		parents.setdefault(key, snapshot)
+	for comment in comments:
+		if not isinstance(comment, dict):
+			continue
+		parent_external_id = comment.get("parent_external_id")
+		if parent_external_id is None:
+			continue
+		key = (str(comment.get("platform") or ""), str(parent_external_id))
+		parent = parents.get(key)
+		if parent is not None:
+			comment["parent_context"] = dict(parent)
+
 
 def _collection_summary(context: Any) -> dict | None:
 	"""A bounded task-collection summary, never the task payload itself."""
@@ -124,6 +188,7 @@ class ContentCollector:
 		run_id: Optional[int],
 		*, durable: bool = False,
 		selection: dict[str, tuple[str, str | None]] | None = None,
+		raise_on_error: bool = False,
 	) -> int:
 		"""Park a fetched batch in `collected_items` as the durable copy.
 
@@ -137,7 +202,8 @@ class ContentCollector:
 		analysis keeps the content for a retry".
 
 		Telegram collection requests strict durable admission; errors propagate
-		before inline analysis. Other platforms retain legacy count/error policy.
+		before inline analysis. `raise_on_error` applies the same rule to other
+		platforms when a run-scoped identity may be claimed only after staging.
 		Returns the number of rows written. The run's hash ledger lives on the
 		call's result, not here, so it outlives the rows themselves.
 		"""
@@ -159,8 +225,12 @@ class ContentCollector:
 		try:
 			async with session.begin():
 				written = await CollectedItem.objects.store_items(session, rows)
-		except Exception as e:  # noqa: BLE001 — staging must not fail a collection
+				if raise_on_error:
+					await CollectedItem.objects.confirm_stored_items(session, rows)
+		except Exception:  # noqa: BLE001 — legacy callers retain best-effort staging
 			logger.warning("collector_staging_failed error_code=storage_operation_failed")
+			if raise_on_error:
+				raise
 			return 0
 		finally:
 			await session.close()
@@ -335,6 +405,7 @@ class ContentCollector:
 			selection_scope: Any = None,
 			task_id: int | None = None,
 			collection_context: Any = None,
+			seen_items: set[tuple[str, str, str]] | None = None,
 	) -> Optional[dict]:
 		"""
 		Collect content from a single source.
@@ -372,13 +443,38 @@ class ContentCollector:
 				platform_obj = await Platform.objects.get(id=platform_id)
 
 			client = get_social_client(platform_obj)
+			from app.services.monitoring.selection_store import limit_reached as selection_limit_reached
+			from app.services.monitoring.selection_store import source_limit
+
+			task_limit = getattr(getattr(collection_context, "intent", None), "limit", None)
+			effective_limit = source_limit(source, task_limit)
 
 			# Collect data with date parameters preserved
 			logger.info(
 				f"Collecting {content_type} from source {source.id} ({source.name}) ... [{source.last_checked}]"
 			)
 
-			content = await client.collect_data(source, content_type)
+			# Provider clients read the source's existing params. Overlay the task
+			# cap only for this call, then restore the exact original params object;
+			# source-level settings may narrow the task cap via source_limit().
+			original_params = source.params
+			if collection_context is not None:
+				params = dict(original_params or {})
+				collection_params = params.get("collection")
+				params["collection"] = dict(collection_params) if isinstance(collection_params, dict) else {}
+				params["collection"]["limit"] = effective_limit
+				source.params = params
+			try:
+				provider_content = await client.collect_data(source, content_type)
+			finally:
+				if collection_context is not None:
+					source.params = original_params
+
+			parent_count = min(len(provider_content or []), effective_limit)
+			parent_limit_reached = selection_limit_reached(
+				provider_content or [], effective_limit
+			)
+			content = list(provider_content or [])[:effective_limit]
 
 			if not content:
 				logger.warning(f"No content collected from source {source.id}")
@@ -400,6 +496,7 @@ class ContentCollector:
 					logger.warning("collection_comments_failed error_code=comments_operation_failed")
 					comments = None
 				if comments is not None and comments.items:
+					_attach_parent_context(content, comments.items)
 					content = list(content) + list(comments.items)
 					logger.info(
 						f"Collected {len(comments.items)} comments for {comments.posts} post(s) "
@@ -463,20 +560,6 @@ class ContentCollector:
 			profiles_report = _profiles_report(city_scope, profiles, profile_fetch is not None)
 
 
-			# How many of these the platform handed us are actually new.
-			#
-			# `content_count` is the size of the API response, and the platform
-			# does not remember what we already fetched: re-collecting an unchanged
-			# wall returns the same N posts every single time. Reporting that N as
-			# "records collected" made a run that found nothing new look identical
-			# to a productive one — so the count of unseen items is reported
-			# separately, reusing the dedup index rather than a second query of its
-			# own.
-			#
-			# Computed before the analysis, because that is what decides whether the
-			# analysis is paid for at all.
-			new_count = await self._count_new_items(content, source)
-
 			# The item hashes, whatever happens next.
 			#
 			# These are the run's own record of what the platform handed us, and
@@ -487,11 +570,7 @@ class ContentCollector:
 			# good. Written here, the ledger survives a failed analysis.
 			from app.services.ai.dedup import item_hash
 			from app.services.monitoring.selection import SelectionScope, select_for_collection
-			from app.services.monitoring.selection_store import (
-				limit_reached as selection_limit_reached,
-				record_collection_selection,
-				source_limit,
-			)
+			from app.services.monitoring.selection_store import record_collection_selection
 
 			hashes = [item_hash(item) for item in content]
 
@@ -511,14 +590,52 @@ class ContentCollector:
 				for decision in selection_result.decisions
 				if isinstance(decision.item, dict)
 			}
-			storable = selection_result.selected + selection_result.needs_review
-			effective_limit = source_limit(source)
+			analysis_content = list(selection_result.selected)
+			stage_content = content if selection_result.selected or selection_result.needs_review else []
+			new_item_content = content
+			claimed_identities: set[tuple[str, str, str]] = set()
+			duplicate_count = 0
+			run_dedup_enabled = seen_items is not None
+			if run_dedup_enabled and seen_items is not None:
+				from app.services.collection.planner import item_identity
 
+				selected_object_ids = {id(item) for item in selection_result.selected}
+				eligible_object_ids = selected_object_ids | {
+					id(item) for item in selection_result.needs_review
+				}
+				stage_content = []
+				analysis_content = []
+				new_item_content = []
+				counted_identities: set[tuple[str, str, str]] = set()
+				for item in content:
+					identity = item_identity(item) if isinstance(item, dict) else None
+					if identity is None:
+						new_item_content.append(item)
+					elif identity not in seen_items and identity not in counted_identities:
+						new_item_content.append(item)
+						counted_identities.add(identity)
+
+					if id(item) not in eligible_object_ids:
+						continue
+					if identity is not None and (identity in seen_items or identity in claimed_identities):
+						duplicate_count += 1
+						continue
+					stage_content.append(item)
+					if id(item) in selected_object_ids:
+						analysis_content.append(item)
+					if identity is not None:
+						claimed_identities.add(identity)
+
+			# Count through the existing source-scoped dedup index, excluding
+			# identities an earlier lane in this run already claimed.
+			new_count = await self._count_new_items(new_item_content, source)
 			# A dry run answers "what would this source give us?" without
 			# touching the write-ahead copy, spending a model call, or moving the
 			# collection cursor: a rehearsal that advanced `last_checked` would
 			# make the following real run skip exactly the window it rehearsed.
 			if dry_run:
+				if run_dedup_enabled and seen_items is not None:
+					seen_items.update(claimed_identities)
 				# A rehearsal must answer the operator's real question: not just
 				# "how many rows came back" but "how many of them would this
 				# task actually analyse". Selection runs over the full fetched
@@ -535,6 +652,10 @@ class ContentCollector:
 				return {
 					"source_id": source.id,
 					"content_count": len(content),
+					"parent_count": parent_count,
+					"limit_count": effective_limit,
+					"limit_reached": parent_limit_reached,
+					"duplicate_count": duplicate_count,
 					"new_items": new_count,
 					"analyzed": False,
 					"analytics_count": 0,
@@ -557,14 +678,18 @@ class ContentCollector:
 			# up. Rows are retired per the analyses that actually saved something,
 			# which is why a failed analysis leaves the batch staged for a retry.
 			staged = 0
-			if storable:
+			if stage_content:
+				stage_options = {"raise_on_error": True} if run_dedup_enabled else {}
 				staged = await self._stage_items(
-					content,
+					stage_content,
 					source,
 					run_id,
-					durable=all(item.get("platform") == "telegram" for item in content),
+					durable=all(item.get("platform") == "telegram" for item in stage_content),
 					selection=selection_by_hash,
+					**stage_options,
 				)
+				if run_dedup_enabled and seen_items is not None:
+					seen_items.update(claimed_identities)
 
 			# Rejected text is not stored, but its identity/count/reason is:
 			# `collection_seen` keeps dedupe stable and the lane run explains
@@ -576,19 +701,19 @@ class ContentCollector:
 				run_id=run_id,
 				task_id=task_id,
 				limit_count=effective_limit,
-				limit_reached=selection_limit_reached(content, effective_limit),
+				limit_reached=parent_limit_reached,
 			)
 
 			analytics = None
 			analysis_errors = None
-			if analyze and selection_result.selected:
+			if analyze and analysis_content:
 				# Inline analysis sees only collection-selected items; the later
 				# analyze path reads the same statuses and does not re-filter.
 				# This collector reuses its analyzer across sources/users. Report only
 				# this call's measured delta, never old failures or coerced counters.
 				errors_before = getattr(self.analyzer, "reported_errors", None)
 				analytics = await self.analyzer.analyze_content(
-					selection_result.selected, source, force_reanalyze=force_reanalyze
+					analysis_content, source, force_reanalyze=force_reanalyze
 				)
 				errors_after = getattr(self.analyzer, "reported_errors", None)
 				if (
@@ -605,6 +730,10 @@ class ContentCollector:
 			result = {
 				"source_id": source.id,
 				"content_count": len(content),
+				"parent_count": parent_count,
+				"limit_count": effective_limit,
+				"limit_reached": parent_limit_reached,
+				"duplicate_count": duplicate_count,
 				"new_items": new_count,
 				"analyzed": analyze,
 				"analytics_count": len(analytics) if analytics else 0,

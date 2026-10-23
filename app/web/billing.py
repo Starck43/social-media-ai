@@ -53,7 +53,7 @@ async def billing_exposure(request: Request):
 
     Platform-operator surface only: the same `guard_superuser` rule as the queue
     page. The workspace pin keeps the ledger read inside the selected tenant;
-    the model catalog is global and read-only. A failed read is shown as
+    the model catalog is actor-owned and read-only. A failed read is shown as
     unavailable instead of a fabricated zero.
     """
     denied = guard_superuser(request, back="/app/jobs")
@@ -73,7 +73,7 @@ async def billing_exposure(request: Request):
         unpriced = await unpriced_attempt_models(tenant_id)
         zero_price = await zero_price_active_models()
     except Exception:  # noqa: BLE001 - a read failure must not fabricate zeros
-        logger.exception("billing_exposure_read_failed")
+        logger.warning("billing_exposure_read_failed error_code=billing_read_unavailable")
         unavailable = True
 
     return render(

@@ -263,9 +263,31 @@ def test_source_name_and_edit_value_are_inert_on_source_detail(page_env, payload
     assert next(attrs["value"] for attrs in parsed.elements("input") if attrs.get("name") == "name") == payload
     assert any(attrs.get("action") == "/app/sources/7" for _, attrs in parsed.tags)
     assert "Настройки источника" in "".join(parsed.text)
+    # The fixture models a non-admin source detail page; the destructive raw
+    # cleanup form is shown only when the route grants its explicit admin flag.
     assert not any(attrs.get("action", "").endswith("/delete-unprocessed") for _, attrs in parsed.tags)
     assert any(
         attrs.get("name") == "_csrf" and attrs.get("value") == "csrf-fixture" for attrs in parsed.elements("input")
+    )
+
+
+def test_source_detail_raw_cleanup_form_requires_admin_context(page_env):
+    ctx = context("source")
+    ctx["can_delete_unprocessed"] = True
+    rendered = page_env.get_template("web/source_detail.html").render(**ctx)
+    parsed = Document(rendered)
+    form = next(
+        (
+            attrs
+            for tag, attrs in parsed.tags
+            if tag == "form" and attrs.get("action") == "/app/sources/7/delete-unprocessed"
+        ),
+        None,
+    )
+    assert form is not None
+    assert any(
+        attrs.get("name") == "_csrf" and attrs.get("value") == "csrf-fixture"
+        for attrs in parsed.elements("input")
     )
 
 

@@ -185,6 +185,34 @@
                             <p class="text-xs text-slate-600 dark:text-slate-400">последняя проверка</p>
                         </div>
                     </div>
+                    {% if can_delete_unprocessed %}
+                        <div class="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+                            <p class="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                Необработанный контент: {{ pending_count }} записей
+                            </p>
+                            <p class="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                                Администратор workspace может удалить сырые записи этого источника.
+                                Сохранённые анализы и квитанции анализа останутся без изменений.
+                                Удаление недоступно, пока сбор или анализ ожидает запуска либо выполняется.
+                            </p>
+                            <form method="post" action="/app/sources/{{ source.id }}/delete-unprocessed"
+                                  class="mt-3"
+                                  data-confirm="Будут удалены все сырые записи этого источника. Сохранённые анализы и квитанции анализа останутся без изменений."
+                                  data-confirm-title="Удалить необработанный контент?"
+                                  data-confirm-label="Удалить контент">
+                                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                {% if is_superuser %}
+                                    <input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">
+                                {% endif %}
+                                <button type="submit"
+                                        class="rounded-lg border border-rose-300 px-4 py-2 text-sm text-rose-700
+                                               hover:bg-rose-50 dark:border-rose-900/70 dark:text-rose-300
+                                               dark:hover:bg-rose-950/40">
+                                    Удалить необработанный контент
+                                </button>
+                            </form>
+                        </div>
+                    {% endif %}
                 </section>
             </div>
 

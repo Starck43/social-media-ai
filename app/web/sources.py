@@ -479,6 +479,7 @@ async def source_detail(request: Request, source_id: int):
     """Show source settings, source-level statistics, and linked tasks."""
     from app.core.tenant_context import tenant_scope
     from app.models.ai_analytics import AIAnalytics
+    from app.web.tasks import _diagnostics_admin
 
     is_superuser = False
     filter_tenant_id, _tenants = await tenant_filter_context(request, is_superuser)
@@ -579,6 +580,7 @@ async def source_detail(request: Request, source_id: int):
         active_linked_tasks=active_linked_tasks,
         can_update=perms_can(request, "source", "update"),
         can_delete=perms_can(request, "source", "delete"),
+        can_delete_unprocessed=_diagnostics_admin(request),
         is_superuser=is_superuser,
         is_ready=is_ready,
         readiness_hint=readiness_hint,

@@ -14,6 +14,11 @@ from rich.table import Table
 
 app = typer.Typer(name="llm", help="Manage LLM providers and models")
 
+_CATALOG_ACTOR_REQUIRED = (
+    "Personal LLM catalog access requires an authenticated active user. "
+    "Open the authenticated personal model settings to view or test your own models."
+)
+
 
 def _run(coro):
     import asyncio
@@ -24,19 +29,38 @@ def _run(coro):
         return asyncio.run(coro)
 
 
+def _catalog_owner_id() -> int:
+    """Trusted personal catalog actor from the existing permission context.
+
+    Tenant bypass alone is not an owner and no ID flag, environment value,
+    workspace owner, admin role or first catalog row may stand in for one.
+    """
+    from app.core.personal_catalog_context import current_catalog_owner_id
+    from app.services.ai.personal_catalog import require_actor
+
+    try:
+        owner_id = current_catalog_owner_id()
+        # A worker-bound catalog scope without the matching permission actor is
+        # not CLI authentication either.
+        require_actor(owner_id)
+    except PermissionError:
+        rprint(f"[red]{_CATALOG_ACTOR_REQUIRED}[/red]")
+        raise typer.Exit(1) from None
+    if type(owner_id) is not int or owner_id <= 0:
+        rprint(f"[red]{_CATALOG_ACTOR_REQUIRED}[/red]")
+        raise typer.Exit(1)
+    return owner_id
+
+
 @app.command("provider-list")
 def provider_list():
-    """List all LLM providers."""
+    """List LLM providers in the authenticated personal catalog."""
+    owner_id = _catalog_owner_id()
 
     async def _list():
-        from app.models import LLMModel, LLMProvider
+        from app.services.ai.personal_catalog import catalog_metadata
 
-        providers = await LLMProvider.objects.order_by(LLMProvider.id)
-        all_models = await LLMModel.objects.filter(provider_id__in=[p.id for p in providers]).all()
-        counts: dict[int, int] = {}
-        for m in all_models:
-            counts[m.provider_id] = counts.get(m.provider_id, 0) + 1
-
+        catalog = await catalog_metadata(user_id=owner_id)
         table = Table(title="LLM Providers")
         for col in (
             "id",
@@ -47,20 +71,25 @@ def provider_list():
             "models",
         ):
             table.add_column(col)
-        for p in providers:
+        for p in catalog["providers"]:
             table.add_row(
-                str(p.id),
-                p.name,
-                p.api_format,
-                p.base_url,
-                "yes" if p.is_active else "no",
-                str(counts.get(p.id, 0)),
+                str(p["id"]),
+                p["name"],
+                p["api_format"],
+                p["base_url"],
+                "yes" if p["is_active"] else "no",
+                str(len(p["models"])),
             )
         return table
 
     from rich.console import Console
 
-    Console().print(_run(_list()))
+    try:
+        table = _run(_list())
+    except Exception:
+        rprint("[red]Personal LLM catalog could not be read. Check the database connection and configuration.[/red]")
+        raise typer.Exit(1) from None
+    Console().print(table)
 
 
 @app.command("model-list")
@@ -69,12 +98,13 @@ def model_list(
     active: bool = typer.Option(None, "--active", help="Filter by active flag"),
     model_type: str = typer.Option(None, "--type", help="Filter by model_type"),
 ):
-    """List all LLM models."""
+    """List LLM models in the authenticated personal catalog."""
+    owner_id = _catalog_owner_id()
 
     async def _list():
         from app.models import LLMModel
 
-        filters: dict = {}
+        filters: dict = {"owner_user_id": owner_id}
         if provider is not None:
             filters["provider_id"] = provider
         if active is not None:
@@ -119,7 +149,12 @@ def model_list(
 
     from rich.console import Console
 
-    Console().print(_run(_list()))
+    try:
+        table = _run(_list())
+    except Exception:
+        rprint("[red]Personal LLM catalog could not be read. Check the database connection and configuration.[/red]")
+        raise typer.Exit(1) from None
+    Console().print(table)
 
 
 @app.command("model-add")
@@ -265,13 +300,17 @@ def model_test(
         rprint("Use --mock for a local check, or the authenticated admin model test for a real request.")
         raise typer.Exit(1)
 
+    owner_id = _catalog_owner_id()
+
     async def _test():
+        from app.core.personal_catalog_context import assert_catalog_model
         from app.models import LLMModel
         from app.services.ai.model_probe import probe_mock
 
-        model = await LLMModel.objects.select_related("provider").get(id=model_id)
+        model = await LLMModel.objects.select_related("provider").get(id=model_id, owner_user_id=owner_id)
         if model is None or model.provider is None:
             raise ValueError("Model or provider unavailable")
+        assert_catalog_model(model)
         # The shared mock intentionally does not check/decrypt provider keys or
         # require an active provider: it is not a readiness/reachability verdict.
         result = probe_mock(model, prompt)

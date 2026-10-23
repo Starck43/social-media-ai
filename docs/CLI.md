@@ -731,24 +731,58 @@ python -m cli.main scenarios output-schema 1695 --tenant owner \
 
 ## LLM catalog and local model tests
 
+The CLI has no standalone sign-in flow. `llm provider-list`, `llm model-list`
+and `llm model-test --mock` operate only inside the personal model catalog of
+an already-authenticated, active actor supplied by the existing permission
+context. They resolve that actor through `app.core.personal_catalog_context`
+and manager-owned catalog APIs, and require a valid positive actor ID.
+
+Tenant bypass, a workspace owner, an admin role, an environment or default
+value, an ID flag or the first catalog row never selects the catalog owner.
+There is no impersonation flag, no user/owner option and no new auth plumbing;
+the embedding surface owns establishing the permission scope. In an ordinary
+terminal the permission context has no actor, so these commands fail closed
+with exit 1 and a fixed redacted message that points to the authenticated
+personal model settings surface. They do not read or print any catalog.
+
 `llm provider-list` displays provider ID, name, API format, base URL, active
-flag and model count. Defaults belong to models; providers have no default
-flag after migration 0091. Model lifecycle commands continue using the existing
-model manager; this package does not change capability filtering or API/tool
-schemas. `model-list --type` remains an exact stored-value filter.
+flag and model count for the actor's catalog. Defaults belong to models;
+providers have no default flag after migration 0091. Model lifecycle commands
+continue using the existing model manager; this package does not change
+capability filtering or API/tool schemas. `model-list --type` remains an exact
+stored-value filter.
+
+A standalone shell invocation cannot supply that actor. Each
+`python -m cli.main …` call starts a fresh Python process with an empty
+permission context, so it does not inherit any `contextvars` set by a caller:
 
 ```bash
-# Trusted operator catalog reads (require the configured database)
+# Standalone process, no inherited actor: exits 1 by design.
 python -m cli.main llm provider-list
-python -m cli.main llm model-list
-
-# Shared local mock: catalog lookup, no provider request or key decryption
-python -m cli.main llm model-test 7 --mock --prompt "Local check"
 ```
 
+A genuinely authenticated embedding must instead invoke the CLI handlers
+in-process, inside the permission scope it has already established. That
+embedding owns the actor, and the handlers then read only that actor's catalog:
+
+```python
+from cli.commands.llm import model_list, model_test, provider_list
+
+# The embedding has already established its authenticated permission scope here.
+provider_list()
+model_list(provider=None, active=None, model_type=None)
+model_test(model_id=7, prompt="Local check", mock=True)
+```
+
+`model-test --mock` in that in-process call is the shared local mock: an
+actor-scoped catalog lookup with no provider request or key decryption. Running
+the same command from a shell never authenticates anything.
+
 `model-test` accepts a positive PostgreSQL INTEGER ID (1–2147483647) and a
-nonblank prompt of at most 8000 characters. `--mock` explicitly selects the
-shared `model_probe.probe_mock` service. It reads the model/provider from the
+nonblank prompt of at most 8000 characters. The mock lookup is restricted to
+the actor's own model and provider rows; a foreign, missing or providerless row
+is a generic nonzero failure. `--mock` explicitly selects the shared
+`model_probe.probe_mock` service. It reads the model/provider from the
 catalog but never constructs a provider client, decrypts a key, reserves
 billing, journals a provider attempt or sends a request. Inactive models and
 providers can be mocked: success is **not** a readiness, authorization or
@@ -768,17 +802,21 @@ probe; its current admission, permission, CSRF, capping and accounting rules
 remain unchanged. No automatic fallback or CLI impersonation flag is added.
 Do not grant global catalog tools to workspace chat as a workaround.
 
-Exit codes: **0** for a successful mock; **1** for semantic validation,
-missing model/provider, failed/malformed probe, lookup/service error or the
-blocked real path; **2** for Typer parsing errors. Failed probes print a fixed
-generic message, never raw exceptions/provider diagnostics. No retries.
+Exit codes: **0** for a successful mock; **1** for semantic validation, no
+authenticated catalog actor, foreign/missing model or provider, failed or
+malformed probe, catalog/lookup/service error, or the blocked real path; **2**
+for Typer parsing errors. Failed catalog reads and probes print fixed generic
+messages, never raw exceptions, prompts, keys, DSNs, tracebacks or provider
+diagnostics. No retries.
 
 ### LLM CLI validation handoff
 
-P10-T13 is based on dev `be07e515c4fa86e856af04faf2233c0680a57acd`.
-Remote execution used Python 3.13.14 in a separate sandbox venv, Typer 0.27.3
-and Rich 15.0.0 from `requirements.txt`; Black 26.10.1 and isort 9.0.2 were
-also pinned there. Direct unittest commands, without pytest/conftest:
+The remote results below are historical evidence for the earlier CLI baseline
+at dev `be07e515c4fa86e856af04faf2233c0680a57acd`; they predate the personal
+catalog reconciliation and do not describe a run of this candidate. At that
+revision, remote execution used Python 3.13.14 in a separate sandbox venv,
+Typer 0.27.3 and Rich 15.0.0 from `requirements.txt`; Black 26.10.1 and isort
+9.0.2 were also pinned there. The direct-unittest commands were:
 
 ```bash
 python tests/test_llm_cli_contracts.py -v
@@ -788,26 +826,31 @@ python -m black --check cli/commands/llm.py tests/test_llm_cli_contracts.py test
 git diff --check
 ```
 
-Results: 17 whole-source handler/shared-mock tests and 8 real Typer/Rich parser
-checks passed (exit 0, no skips/expected failures). On a separate clean archive
-of the same dev SHA, the new tests fail as expected: handler suite 17 tests,
-5 failures/5 errors; parser suite 8 tests, 5 failures (both exit 1). All model
-queries, tenant context and provider boundaries were explicit doubles; no app,
-settings, real DB, secrets or providers were loaded. Actual shared mock source
-ran with an isolated pricing double; this is not full pricing acceptance.
+Historical results: 17 whole-source handler/shared-mock tests and 8 real
+Typer/Rich parser checks passed (exit 0, no skips/expected failures). On a
+separate clean archive of the same dev SHA, the new tests failed as expected:
+handler suite 17 tests, 5 failures/5 errors; parser suite 8 tests, 5 failures
+(both exit 1). All model queries, tenant context and provider boundaries were
+explicit doubles; no app, settings, real DB, secrets or providers were loaded.
+Actual shared mock source ran with an isolated pricing double; this is not full
+pricing acceptance. Those suites now live under `tests/ai/`; their expectations
+must be re-derived for the authenticated-actor contract before they are run
+against this candidate.
 
-Draft/BLOCKED until the coordinating local agent reviews the exact published
-PR SHA and validates existing-catalog ORM behavior, missing/providerless rows,
-mock zero writes/dispatch/key access, and exit codes in the owner's approved
-environment. The examples above are deferred acceptance guidance, not remote
-execution evidence or permission to start a runtime/use a real DB. No schema,
-paid probe or deployment is required or authorized by this package.
+This candidate is not yet on `dev`; the personal-catalog owner retains that
+integration. The coordinating local agent reviews the exact candidate SHA and
+validates actor fail-closed behavior, existing-catalog ORM behavior,
+missing/providerless/foreign rows, mock zero writes/dispatch/key access, and
+exit codes in the owner's approved environment. The examples above are
+acceptance guidance, not execution evidence, and do not authorize starting a
+runtime or using a real DB. No schema, paid probe or deployment is required or
+authorized by this package.
 
-Active audit PR #216 (P10-T11) is historical at `e79583e`: reconcile its
-provider-list/model-test expected-failure probes and outdated CLI warnings
-before integrating both PRs; retain its pinned audit evidence. PR #217
-(P10-T12) owns chat task-tool fixes; no task-tool/API/billing files are changed
-here. All existing dirty worktree copies remain untouched.
+Historical audit PR #216 (P10-T11) at `e79583e` retains its pinned audit
+evidence; its provider-list/model-test expected-failure probes and outdated CLI
+warnings still need reconciliation by the test owner before integration. PR
+#217 (P10-T12) owns chat task-tool fixes; no task-tool/API/billing files are
+changed here.
 
 ---
 
@@ -825,6 +868,9 @@ operations re-enter a concrete workspace scope. This means:
    validation and accounting boundaries; bypass is not end-user authorization.
 3. The `--tenant` option is used to scope operations to a specific workspace
    when needed.
+4. The personal LLM catalog commands additionally require an authenticated
+   actor from the permission context; tenant bypass never supplies a catalog
+   owner.
 
 ### Async Execution
 

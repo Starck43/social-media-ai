@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.admin.role_picker import RoleChoiceField, role_choices
+from app.admin.role_picker import RoleChoiceField, role_choices, role_edit
 from app.core.access_catalog import role_label
 from app.models.identity.user import User
 from app.models.managers.user_manager import UserManager
@@ -252,3 +252,41 @@ def test_picker_field_reads_the_bound_role_codename():
     bound = _Form(obj=SimpleNamespace(role=SimpleNamespace(codename="operator"))).role
     assert bound.data == "operator"
     assert [value for value, *_ in bound.iter_choices()] == ["operator", "user"]
+
+
+def test_role_is_shown_but_not_editable_for_self_and_the_owner():
+    """The disabled select is a display, not a promise: the manager is the gate.
+
+    A mis-click on your own account would demote you with no other console path
+    back, and the owner's role is not a setting at all. Both render the current
+    role so the page still answers "which role is this?" — but only one option,
+    and the manager refuses the write anyway.
+    """
+    owner = _account(2, "superuser")
+    admin = _account(7, "admin")
+    ordinary = _account(1, "user")
+
+    # Own account: the role is shown, nothing is offered.
+    assert role_edit(owner, owner)[0] == [("superuser", role_label("superuser"))]
+    assert role_edit(admin, admin)[0] == [("admin", role_label("admin"))]
+    assert "Свою платформенную роль" in role_edit(admin, admin)[1]
+
+    # The owner's account: same for everybody, owner included.
+    assert role_edit(admin, owner)[0] == [("superuser", role_label("superuser"))]
+    assert "собственника" in role_edit(admin, owner)[1]
+
+    # Someone else, below the actor: the ordinary list.
+    assert role_edit(owner, ordinary) == (role_choices(owner), None)
+    assert role_edit(admin, ordinary) == (role_choices(admin), None)
+
+
+def test_a_locked_picker_renders_disabled_and_does_not_submit():
+    """A disabled select is what keeps `update_model` from seeing a role change."""
+    from wtforms import Form
+
+    class _Locked(Form):
+        role = RoleChoiceField(choices=[("superuser", "Собственник")], render_kw={"disabled": True})
+
+    html = str(_Locked().role)
+    assert "disabled" in html
+    assert 'value="superuser"' in html

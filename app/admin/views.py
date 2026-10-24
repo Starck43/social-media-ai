@@ -52,7 +52,7 @@ from ..services.ai.llm_client import LLMClientFactory
 from .base import BaseAdmin
 from .catalog import PermissionLabelAdmin, PlatformRoleGrantAdmin
 from .price_fields import ExactModelPriceField
-from .role_picker import RoleChoiceField, RolePickerConverter, role_choices
+from .role_picker import RoleChoiceField, RolePickerConverter, role_choices, role_edit
 from .widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
 
 logger = logging.getLogger(__name__)
@@ -167,12 +167,23 @@ class UserAdmin(BaseAdmin, model=User):
 
         With nothing bound the choices are empty and the select is disabled:
         fail closed, never "every role".
+
+        The edit form also knows *whom* it edits: the actor's own account and the
+        platform owner's account render the role read-only (`role_edit`), because
+        `UserManager.set_platform_role` refuses those writes.
         """
         from app.admin.authorization import bound_console_request
 
         request = bound_console_request()
         actor = self.get_admin_user(request) if request is not None else None
-        converter = type("_RolePicker", (RolePickerConverter,), {"choices": role_choices(actor)})
+        choices, locked = role_choices(actor), None
+        if request is not None and (pk := request.path_params.get("pk")) is not None:
+            current = await User.objects.prefetch_related("role").get(id=int(pk))
+            if current is not None:
+                choices, locked = role_edit(actor, current)
+        converter = type(
+            "_RolePicker", (RolePickerConverter,), {"choices": choices, "locked_reason": locked}
+        )
         form = await get_model_form(
             model=self.model,
             session_maker=self.session_maker,

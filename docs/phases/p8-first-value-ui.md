@@ -1,4 +1,4 @@
-# P8 — First value and support UI (gate PRD-08)
+# P8 — First value and support UI (gate: a first-time owner reaches value and support can see what is happening)
 
 Goal: operators can detect and own stale sources, backlog, stalled loops,
 delivery failures or spend anomalies; home answers "what needs attention, what
@@ -85,11 +85,11 @@ Attention feed lives in the floating bell (B), not a home card.
   [PR #175 visual report](https://github.com/Starck43/social-media-ai/pull/175#issuecomment-6152533703)
 
 - [x] P8-T06 — inventory operational signal and readiness coverage against
-  PRD-08; accept: no duplicate P1/P2 work; depends: none;
+  this phase's gate; accept: no duplicate P1/P2 work; depends: none;
   owns: inventory lane; owner: opencode; status: DONE — accepted: codex,
   2026-10-16, source `431059c`; coverage and follow-ups below.
 
-Coverage evidence vs PRD-08 (state/refs → task):
+Coverage evidence vs the P8 gate (state/refs → task):
 - Stale sources MISSING (T07): `last_checked`/`get_sources_for_monitoring(hours_since_check=)` gate runtime; bell only `source_inactive`.
 - Credential expiry PARTIAL (T08): `connections.py` reauth/missing + human expiry text; no near-expiry signal.
 - Queue backlog/age/quarantine MISSING (T09): `job_manager.reap_stale(30)` quarantines + retries; no operator signal.
@@ -252,7 +252,8 @@ P8-T06 and does not alter its task record.
   the supplied prompt or a short default, with bounded output, existing consent,
   payer admission and no retry; mode-specific useful diagnostics; no migrations;
   owns: admin model action/endpoint/template/JS, probe helpers, focused tests/docs;
-  owner: codex (`fix/admin-model-real-request`); status: IN_PROGRESS
+  owner: codex (`fix/admin-model-real-request`); status: BLOCKED — implementation
+  ready, waiting for exclusive-schema PostgreSQL/ASGI acceptance by the owner
   (implementation ready; required local ASGI/PostgreSQL acceptance unavailable).
   Remote evidence: 107 isolated no-DB tests passed; 56 offline Chromium
   viewport/theme/state cases plus form/consent/no-JS checks passed;
@@ -262,12 +263,22 @@ P8-T06 and does not alter its task record.
   settlement. PR #207 was merged at owner-authorized exception; its local
   R8/R10 acceptance remains deferred, not passed.
 
-- [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
+- [x] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
   platform role, and expose platform-admin-only role-grant/permission-label
   editing without mutable catalog identities or role escalation; owner: codex
-  (`fix/admin-role-picker-controls`); status: IN_PROGRESS
-  (owner-requested self-role protection and responsive permission transfer picker;
-  base dev `58a90c1` (includes PR #212 and fresh documentation); owner-local real PostgreSQL acceptance remains pending).
+  (`fix/admin-role-picker-controls`); status: DONE — accepted by coordinating
+  Codex on 2026-10-24 at `7509f8fd7f83e5b13dc37b4cb3b50b5c371aab71`.
+  Local PostgreSQL/ASGI catalog acceptance: 8 collected, 8 passed in the
+  isolated dev worktree, with persisted operator grants and permission labels,
+  immutable catalog identities, operator/revoked/inactive/anonymous/CSRF denials
+  and unchanged denied storage. The later exclusive three-case probe package
+  also passed, including model-test POST menu and verified actor/role display.
+  These tested files and shell/authorization dependencies match the accepted
+  commit. Target `localhost:5432/social_manager/test_schema`, revision `0109`;
+  seeded grants/labels were restored by fixtures. No schema operation or live
+  provider. Earlier remote browser evidence remains source-pinned below;
+  no new owner-browser execution is claimed. The remaining text records the
+  earlier owner-requested self-role/picker work and deferred checkpoints.
   Owns: shared admin shell/CSS/authorization, role and permission views, focused
   regression tests and documentation. P8-T15 model request behavior is unchanged.
   Evidence: 131 isolated tests passed, including real SQLAdmin routes/forms with
@@ -342,7 +353,7 @@ P8-T06 and does not alter its task record.
   visible pre-dispatch blockers with no bypass of CONFIGURE/CSRF/payer admission;
   owns: model-test action/endpoint/template/JS/CSS, opt-in client diagnostics,
   focused regression tests/docs; owner: codex
-  (`fix/admin-model-diagnostics`); status: IN_PROGRESS (implementation ready; real
+  (`fix/admin-model-diagnostics`); status: BLOCKED — implementation ready, real
   PostgreSQL/owner-environment acceptance deferred under the owner's explicit
   implementation-and-dev instruction following their merge exception).
   Evidence: 167 isolated tests passed (actual client source over MockTransport,
@@ -360,7 +371,7 @@ P8-T06 and does not alter its task record.
   preserve answer/JSON/statuses and normal model usage; no activation/migrations;
   owns: model-test endpoint/actions/probe/client diagnostic label/template/JS,
   focused tests/docs; owner: codex (`fix/admin-model-owner-mode`);
-  status: IN_PROGRESS only for deferred owner-local acceptance, not implementation.
+  status: BLOCKED only for deferred owner-local acceptance, not implementation.
   Owner explicitly clarified that disabled personal billing is normal single-owner
   operation and must not block real tests. Evidence: 178 isolated tests passed;
   80 offline Chromium viewport/theme/state cases plus owner blank/custom submit
@@ -395,7 +406,7 @@ P8-T06 and does not alter its task record.
   model-test persistence and response-only truncation; replace JSON copy text
   control with accessible corner SVG feedback and semantic status text colors.
   Scope: model-test UI, focused cost extraction if needed, regression tests/docs.
-  Owner: codex (`fix/admin-model-cost-feedback`); status: IN_PROGRESS (implementation ready;
+  Owner: codex (`fix/admin-model-cost-feedback`); status: BLOCKED (implementation ready;
   owner-local PostgreSQL/ASGI acceptance remains deferred under the explicit
   in-session dev delivery/merge exception).
   Acceptance: supplied 470/8/478, zero-cost response has faithful cost evidence;
@@ -417,6 +428,18 @@ P8-T06 and does not alter its task record.
   Remote tests are self-executed per the owner's explicit exception, now recorded
   in the remote skill; shared-doc sync follows the existing all-agent procedure.
 
+  Local takeover checkpoint for P8-T15/P8-T17/P8-T18/P8-T20 on 2026-10-24:
+  candidate `7509f8fd7f83e5b13dc37b4cb3b50b5c371aab71` repairs the trusted
+  actor context for non-real admin model-test POSTs. Three exclusive real
+  PostgreSQL/ASGI regressions passed: own metadata check, foreign credential
+  refusal with zero HTTP, and local mock menu/actor continuity. The adapted
+  full billing suite executed 45/45 successfully, but a foreign pytest started
+  on the same schema during that run; this is not final acceptance under R8.
+  These four tasks stay BLOCKED until that suite is repeated with
+  exclusive schema ownership. Target was `test_schema` revision `0109`;
+  no live provider, migration, reset or runtime activation. The owner chose
+  to let other chats finish first; our DB HOLD is released.
+
 - [x] P8-T21 — add/edit related FK/m2m records without losing the parent form.
   Accept: permission-aware controls on existing editable relationships; normal
   guarded CRUD in a separate window; successful save updates the correct select,
@@ -428,9 +451,10 @@ P8-T06 and does not alter its task record.
   focused tests/docs/ADMIN.md; owner: remote
   Notion agent (`feat/admin-related-records`); status: DONE (owner accepted the bounded implementation and explicitly
   authorized Ready/merge after reporting that the updated local UI works).
-  Synchronized base: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Active PRs #216
-  (P10-T11) and #217 (P10-T12) inspected; their reservations, ownership and
-  evidence remain on their own branches, with no code ownership conflict.
+  Synchronized base: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. The then-open
+  P10-T11/P10-T12 pull requests were inspected at that base; both were later
+  resolved in dev (see `docs/validation/open-pr-review-2026-10-23.md`), and no
+  code ownership conflict was found.
   Evidence at `6f1f695dec730396bda79043d19414fea13a2094`: 20 isolated tests passed
   (exit 0, no failures/skips), 32 offline Chromium assertions at 390/1440px
   (exit 0, all requests intercepted); actual target route/fragment behavior

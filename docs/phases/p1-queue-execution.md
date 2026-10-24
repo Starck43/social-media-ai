@@ -1,4 +1,4 @@
-# P1 — Truthful queue execution (gate PRD-05)
+# P1 — Truthful queue execution (gate: queue execution stays truthful about live and historical state)
 
 Goal: no handler starts after claim loss; recovery cannot duplicate an
 unresolved external effect; execution outcome remains truthful.

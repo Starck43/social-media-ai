@@ -1,8 +1,8 @@
-# P10 — Source-audit hardening (2026-10-15 audit)
+# P10 — Source-audit hardening (gate: the audited runtime defects are closed)
 
 Goal: implement the runtime fixes from the source-pinned audit. Baseline
-`7ba5fe4`; report, evidence and exclusive per-task file ownership:
-[PR #196](https://github.com/Starck43/social-media-ai/pull/196)
+`7ba5fe4`; report, evidence and exclusive per-task file ownership live in
+[the audit branch](https://github.com/Starck43/social-media-ai/pull/196)
 (`docs/audits/2026-10-15-dev.md` on that branch). Risk-based source coverage,
 not a full security/production certification. One bounded task per
 implementation; serialize shared-file lanes and all DB acceptance under R10.
@@ -14,7 +14,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   approved operator-only reset; no anonymous hash mutation or password logs;
   depends: none; owner: unassigned; status: TODO
 
-- [ ] P10-T02 (AUD-02, P1) — remove password hashes from HTTP user responses;
+- [x] P10-T02 (AUD-02, P1) — remove password hashes from HTTP user responses;
   accept: HTTP/OpenAPI profiles exclude password hashes, existing rights
   preserved; depends: serialize `user.py`/schema writes with P10-T03;
   owns: tests/test_http_user_response_privacy.py, docs/validation/http-user-response-privacy.md
@@ -148,7 +148,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   or eligibility-backed staged counts; depends: P10-T08 (same files);
   owner: unassigned; status: TODO
 
-- [ ] P10-T10 (AUD-10, P2) — distributable package runtime completeness;
+- [x] P10-T10 (AUD-10, P2) — distributable package runtime completeness;
   accept: nested runtime modules/assets and encryption/driver dependencies in
   wheel; no-dev installed app.core.database/app.main imports, actual template
   and static lookup from empty CWD; explicit writable LOG_DIR; no DB/provider
@@ -207,13 +207,14 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   application startup, full regression, real DB, migration/reset, provider or
   deployment was run; those behaviors remain outside this task's acceptance.
 
-- [ ] P10-T13 — repair post-migration LLM CLI contracts; owner: codex; status: IN_PROGRESS. Accept: provider listing without removed default
+- [x] P10-T13 — repair post-migration LLM CLI contracts; owner: codex; status: DONE. Accept: provider listing without removed default
   flag; shared local mock probe, no client/key/network setup; positive model ID
   and bounded prompt validation; explicit nonzero failures with no exception
   disclosure; real CLI dispatch fails closed without an authenticated payer.
   Synchronized base: `be07e515c4fa86e856af04faf2233c0680a57acd`.
-  IDs P10-T11/P10-T12 are reserved by active PRs #216/#217; those drafts and
-  old dirty worktrees are preserved. No shared API/tool or billing changes.
+  IDs P10-T11/P10-T12 were reserved by the pull requests that carried them and
+  are now resolved in dev; those drafts and old dirty worktrees are preserved
+  as history. No shared API/tool or billing changes.
   Implementation: provider default read removed; shared local mock restored;
   real CLI probes fail closed before catalog access (no authenticated payer).
   Remote self-run evidence: Python 3.13.14; pinned Typer/Rich and formatters;
@@ -240,15 +241,36 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   §«LLM catalog and local model tests» and the name-based `AGENT_MODEL` lookup
   in `docs/CONFIGURATION.md` still describe the global behavior and must be
   updated with this contract when #229 lands.
+  Accepted by coordinating Codex on 2026-10-24 at
+  `0693c6985d28b274e955a97ac60a0fabeb680346`. Isolated CLI handler/parser
+  checks: 40 passed through Kilo after the original OpenCode quota blocker.
+  Real PostgreSQL catalog checks: 6 passed through the explicitly authorized
+  Codex-subagent fallback, with two independent owners, foreign/no-actor
+  refusal and mock zero-write/no-dispatch guards. The tested working candidate
+  preceded the scoped commit; reviewed CLI and catalog dependency contents
+  are unchanged in the accepted commit. Target was
+  `localhost:5432/social_manager/test_schema`, revision `0109`; no schema or
+  live-provider operation. The standalone shell has no authenticated actor
+  and fails closed; this task does not add CLI sign-in or enable paid probes.
+  The remaining paragraphs retain historical handoff boundaries.
+  Owner-authorized worktree takeover resumed on 2026-10-24 at published dev
+  `0f07e179f21c6a6e18a618169e700b64d15c50b5`. Personal catalog integration
+  had landed; the prepared actor-scoped CLI adaptation and handler/parser/
+  PostgreSQL suites were first reconciled as an uncommitted candidate.
+  Primary OpenCode was then blocked by its old provider quota. The completed
+  fallback checks and subsequent scoped commit are accepted above.
 
-- [ ] P10-T11 — audit post-migration CLI/API and embedded web-chat tools;
+- [x] P10-T11 — audit post-migration CLI/API and embedded web-chat tools;
   accept: source-pinned interface inventory, prioritized verified findings,
   isolated no-DB reproductions and corrected interface documentation; no
   runtime/security acceptance implied. Depends: none; owns:
   docs/audits/2026-10-18-cli-api-chat.md on PR #216, scoped CLI/API/AGENT
   documentation and interface audit probes (reconcile the branch's root test
-  into the current domain layout); owner: remote Notion agent;
-  status: IN_PROGRESS. Canonical row restored from Draft
+  into the current domain layout); owner: codex;
+  status: DONE — accepted by coordinating Codex on 2026-10-24 at
+  `94e9fff80b09c2d4a58cbc22ce0324f207ecf7c3`. Scope is the source-pinned
+  inventory, current isolated reproductions and documentation; no general
+  runtime/security acceptance. Canonical row restored from Draft
   [PR #216](https://github.com/Starck43/social-media-ai/pull/216), head
   `b9faf8dc68aecf350f2b656c9356a90cd1bf26fd`, after live head/ID verification
   on 2026-10-21. Original base `bd123b7` and 14 offline probes (4 passed,
@@ -261,8 +283,18 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   becomes a numeric `agent_model_id` FK with no name fallback, so name-based
   selection expectations in the audit are historical, not current-source
   evidence.
+  The owner transferred the remaining worktrees to Codex on 2026-10-24.
+  The refreshed audit pins source `0693c698` and retains the source-pinned
+  historical audit separately. Current isolated probes: 21 collected,
+  17 passed, 4 strict xfailed through the owner-authorized Codex-subagent
+  fallback; no app/DB/provider imports. The four expected failures document
+  remaining capability/schema and credential-route gaps, not accepted runtime
+  behavior. Source inventory and exact audit/probe commit were reviewed;
+  the current CLI count is 29 literal declarations plus six generated task
+  commands. Historical expected failures were preserved without presenting
+  them as current passing behavior.
 
-- [ ] P10-T12 — preserve chat task configuration on partial updates and restore
+- [x] P10-T12 — preserve chat task configuration on partial updates and restore
   task listing; accept: omitted scenario/dates/targets remain unchanged;
   explicit scenario clearing; cron and next-run persistence agree;
   unavailable source/scenario inputs refused before writes; explicit source
@@ -270,7 +302,19 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Depends: P10-T11 audit context only, no merge dependency; owns:
   app/agent/toolset/tasks.py, chat task contract tests in the current domain
   layout, scoped docs/AGENT_TASKS.md; owner: codex;
-  status: IN_PROGRESS. Canonical row restored from Draft
+  status: DONE. Accepted by coordinating Codex on 2026-10-24 at
+  `6c581bf5ce2f1c36498f0f4c3d05c09e8b207bf5`. Final isolated-worktree
+  acceptance through OpenCode build on
+  `river/deepseek-ai/DeepSeek-V4.1-Flash-1017`: 41 collected, 41 passed,
+  0 failed. This covers the actual manager/persistence boundary, partial
+  fields, exact source links, rollback, scenario clearing/foreign and invalid
+  ID refusal, schedule persistence and merging after the task lock. The run
+  used the working candidate at `c56b699`; the scoped commit contains the
+  same reviewed runtime and test contents. Target
+  `localhost:5432/social_manager/test_schema`, revision `0109`; no migration,
+  reset, seed or live provider. Earlier failed/mixed-checkout results below
+  are superseded by this isolated run, not additional green evidence.
+  Canonical row restored from Draft
   [PR #217](https://github.com/Starck43/social-media-ai/pull/217), head
   `c4161b5e67919d505e707f70ef18e6081cf11c81`, verified live 2026-10-21.
   Historical branch evidence: 27 new offline and 26 confirmation tests passed
@@ -286,6 +330,12 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   finish these contracts and focused offline plus sequential persistence/
   permission checks on integrated code. Preserve current task-owned collection
   and omitted-field behavior.
+  Worktree takeover on 2026-10-24 reconciled the prepared implementation onto
+  published base `0f07e179`: the update locks the current task before merging
+  partial fields, task/link writes share one transaction, and the existing
+  manager retains scenario/source validation and pending-job invalidation.
+  That initial candidate was uncommitted; the isolated 41-case acceptance and
+  scoped implementation commit are accepted above.
   Binding validation is manager-owned in P3-T94 (Draft #229): the parent row and
   every source/scenario row are locked and validated before writes, and a
   caller-supplied session is forwarded without a second commit. Reconcile with
@@ -301,10 +351,10 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   tests after personal catalog ownership (`0109`): `llm_model_manager.py` still
   documents step 1–4 candidate ordering and the FK-reset count, but the body
   hardcodes both fields to empty. A delete therefore reports no evidence of the
-  scenario bindings it just cleared, and P8-T16/T20 admin diagnostics cannot
+  scenario bindings it just cleared, and the P8-T17 admin diagnostics cannot
   surface it. Depends: none; owns: `app/models/managers/llm_model_manager.py`
   delete path, focused manager tests; owner: opencode; status: READY at local
-  dev `7b4a3d9` (2026-10-24).
+  dev `cb2793a` (2026-10-24).
   Do not re-implement the candidate ordering as a side effect: the replacement
   default is now chosen inside the owner's catalog (the previous
   `last_success_at` → `ai_analytics` name ordering is no longer the contract).

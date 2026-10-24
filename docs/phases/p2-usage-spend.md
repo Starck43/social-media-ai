@@ -1,4 +1,4 @@
-# P2 — Complete usage and spend (gate PRD-03)
+# P2 — Complete usage and spend (gate: usage and spend are complete and attributable)
 
 Goal: no request starts without committed admission under the current cap;
 parallel attempts cannot bypass it; undefined cost is never free or zero;
@@ -30,6 +30,10 @@ background runs; changing payer requires new payer consent.
   `digest_runs.llm_cost`) and the digest builder reading a flat-tariff estimate
   as a known provider total. The analyzer already keeps `NULL` for resolved
   unknown spend (`_price_usage`). No migration, schema or tariff change.
+  Delivered on local dev `f220725` (2026-10-24): transport fallbacks keep the
+  cost unresolved instead of publishing `0.0`, consumers carry the unknown
+  through, and `tests/billing/test_unknown_cost_propagation.py` pins the
+  propagation. owner: opencode; status: READY at local dev `f220725`.
 
 - [x] P2-T13 — bind journal tariffs to exact provider/model identity; accept: same model_id across paid/free providers cannot resolve another provider's tariff, fail closed on ambiguity, regression evidence; depends: P2-T10; owns: journal tariff resolver and focused tests; owner: codex-token-cost; status: DONE at dev `b6efff9cac5f53827b8adbf6ae7a97c5e7bd9965`. Dispatch-time model row ID and normalized provider/model identity now select the tariff; missing, mismatched or ambiguous legacy identity stays unpriced. Verified with isolated no-DB tests `test_llm_attempt_journal.py` 30/30 and `test_scoped_attempt_journal.py` 16/16 (46 passed, 0 failed/skipped; 8 subtests) via Codex test subagent fallback after OpenCode initialization and Kilo availability failed. See [audit](../audits/2026-10-20-token-cache-cost.md).
 
@@ -123,7 +127,7 @@ background runs; changing payer requires new payer consent.
 
 - [ ] P2-T08 — corporate/shared billing accounts; accept: keep clear deferred
   status, no implementation now; depends: owner deferral;
-  owner: owner; status: TODO — deferred by owner
+  owner: product-owner; status: TODO — deferred by owner
 
 - [ ] P2-T09 — production billing verification; accept: independently verified
   live billing behavior after production activation — admission wired through

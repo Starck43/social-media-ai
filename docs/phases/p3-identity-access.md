@@ -1,4 +1,4 @@
-# P3 — Identity and approvals (gate PRD-02)
+# P3 — Identity and approvals (gate: identity, permissions and approvals fail closed)
 
 Goal: unknown, removed or revoked actors fail closed; approval is actor-bound,
 versioned and single-use.
@@ -18,7 +18,7 @@ production acceptance, real-DB pending-confirmation end-to-end run.
 
 ## Tasks
 
-- [ ] P3-T01 — finish PRD-02 digest send permission parity acceptance;
+- [ ] P3-T01 — finish the digest send permission parity acceptance;
   accept: delegated acceptance via R10 at the exact current integrated source
   revision; preserve the digest permission parity contract already in dev
   (`6d16436`). PR #176 is closed and unmerged (live GitHub verification,
@@ -30,7 +30,13 @@ production acceptance, real-DB pending-confirmation end-to-end run.
 - [ ] P3-T02 — close one actor/workspace/tool/write gap including revocation,
   expiry or replay where applicable; accept: gap verified in current code,
   fail-closed behavior proven with focused tests; depends: none;
-  owns: per selection; owner: unassigned; status: TODO
+  owns: per selection; owner: unassigned; status: TODO — placeholder: no
+  concrete defect is written down, so the candidate must be named before
+  claiming. Known candidates from neighbouring work: revocation of a
+  personal-provider credential that is already in flight to a dispatch
+  (interacts with P3-T93), and replay of an idempotent agent write across two
+  workspaces of the same owner. If none of them survives verification in the
+  current code, this row should be DROPPED rather than claimed.
 
 - [x] P3-T93 — personal LLM provider/model ownership across a user's workspaces;
   accept: explicit reviewed legacy ownership map, owner-scoped CRUD/defaults/fallback,

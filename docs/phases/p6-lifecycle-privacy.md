@@ -1,4 +1,4 @@
-# P6 — Lifecycle and privacy (gate PRD-06)
+# P6 — Lifecycle and privacy (gate: data lifecycle and privacy contracts hold)
 
 Goal: tenant data is isolated and auditable; deletion preserves evidence
 required for unresolved effects and accounting.
@@ -10,13 +10,19 @@ required for unresolved effects and accounting.
   matters, `DATA_RETENTION_MONTHS` confirmed (default 1 — first daily prune
   irreversibly deletes analyses older than cutoff), post-deploy verification
   recorded, then this row is removed; depends: owner deployment approval;
-  owner: owner; status: BLOCKED — owner decision (2026-10-12): do not deploy yet;
+  owner: product-owner; status: BLOCKED — owner decision (2026-10-12): do not deploy yet;
   reiterated 2026-10-22: rollout is deferred to the final deployment stage.
 
 - [ ] P6-T02 — decide and implement one bounded retention, export, offboarding,
   credential-revocation or logging contract; accept: contract documented and
   implemented with isolation/audit evidence; depends: none;
-  owns: per selection; owner: unassigned; status: TODO
+  owns: per selection; owner: unassigned; status: TODO — placeholder: no
+  concrete contract is chosen. Candidates already blocked elsewhere: the
+  retention rollout itself is P6-T01 (owner-deferred), so this row must not be
+  used to deploy it early; a real candidate is the workspace-offboarding path
+  (what happens to analyses, receipts and credentials when a workspace is
+  removed). If no candidate survives verification, this row should be DROPPED
+  rather than claimed.
 
 - [x] P6-T03 — add a workspace-admin-only action on the source page to delete
   only that source's raw staged `CollectedItem` rows; accept: explicit

@@ -1,4 +1,4 @@
-# P5 — Safe AI boundaries (gate PRD-07)
+# P5 — Safe AI boundaries (gate: AI boundaries hold on typed output and hostile input)
 
 Goal: invalid typed output cannot gain authority; partial evidence coverage is
 explicit; useful siblings remain available; failed outputs are persisted
@@ -9,7 +9,13 @@ safely.
 - [ ] P5-T01 — select and close one bounded typed-output, hostile-input,
   evidence-coverage or failed-output persistence gap; accept: gap verified in
   current code, fix keeps boundary invariants, focused tests via R10;
-  depends: none; owns: per selection; owner: unassigned; status: TODO
+  depends: none; owns: per selection; owner: unassigned; status: TODO —
+  placeholder: no concrete defect is written down, so the candidate must be
+  named before claiming. Known candidates: a provider answer that is valid JSON
+  but violates the output contract on the analysis path, and a paid attempt
+  whose projection fails after the call (evidence must survive). If neither
+  survives verification in the current code, this row should be DROPPED rather
+  than claimed.
 
 - [x] P5-T02 — audit the collection-to-analysis path for task 1582 and scenario
   8, including source 2939; trace task/source conditions through collection,
@@ -88,7 +94,14 @@ safely.
   `3e5779460aa9cbb277a5b5c8c0a7ab8e27b4c526` and contains the same
   feature/test changes; depends: none; owns: analysis
   receipt design/implementation and focused tests; owner: codex-analysis-receipts;
-  status: IN_PROGRESS.
+  status: BLOCKED — implementation and receipts are on dev (`24dfbaa`), the lane
+  is held by one unresolved DB-scope case. Re-verified on 2026-10-24 at dev
+  `cb2793a`: `tests/web/test_web_analytics.py::test_workspace_owner_without_structured_delete_right_cannot_delete_analytics`
+  still fails — a workspace owner without the structured `DELETE` right sees
+  `action="/app/analytics/{id}/delete"` in the page, i.e. the delete form is
+  rendered on membership ownership alone. That is a real permission leak to fix
+  (web analytics delete gating), not a stale expectation; until it is fixed the
+  full DB scope for this task cannot pass.
 
 - [x] P5-T05 — bounded-output map-reduce analysis pipeline so any text model,
   including small output caps (observed: `zai-org/GLM-5.3-Flash` truncated at

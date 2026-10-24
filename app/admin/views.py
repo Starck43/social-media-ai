@@ -10,11 +10,13 @@ from sqladmin.forms import get_model_form
 from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
-from wtforms import FloatField, validators, widgets
+from wtforms import FloatField, Form, validators, widgets
 
 from app.admin.actions import LLMModelActions
 from app.admin.formatters import format_date, format_usd, model_price, plan_badge
 from app.core.hashing import get_password_hash
+from app.core.personal_catalog_context import catalog_execution_scope
+from app.core.provider_uid import slugify_uid
 from app.models import (
     AgentScenario,
     AgentTask,
@@ -1264,6 +1266,10 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
     name = "Провайдер ИИ"
     name_plural = "Провайдеры ИИ"
     icon = "fa fa-server"
+    # The stock templates have no hook for a page script; these two add the UID
+    # autofill next to them.
+    create_template = "sqladmin/llm_create.html"
+    edit_template = "sqladmin/llm_edit.html"
 
     # Проба подключения ходит в провайдера его же ключом и тратит токены —
     # это часть настройки, а не чтение.
@@ -1296,10 +1302,27 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         **BaseAdmin.column_labels,
     )
 
-    form_excluded_columns = BaseAdmin.form_excluded_columns + ["models"]
+    # Explicit order, so the two identity fields sit under the name instead of
+    # wherever the mapper happens to list them; `models` is the relationship the
+    # console never edits inline. `scaffold_form` drops the owner for an actor
+    # who does not choose it.
+    form_columns = [
+        "owner_user_id",
+        "name",
+        "uid",
+        "description",
+        "api_format",
+        "base_url",
+        "auth_header",
+        "encrypted_api_key",
+        "is_active",
+    ]
 
     form_overrides = {
         "api_format": SelectField,
+        # A plain foreign-key column is skipped by sqladmin's form builder; the
+        # owner is still a real field, so it is declared as a select.
+        "owner_user_id": SelectField,
         **BaseAdmin.form_overrides,
     }
 
@@ -1307,9 +1330,31 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         "base_url": {"placeholder": "https://api.openai.com/v1"},
         "auth_header": {"placeholder": "Authorization: Bearer {key}"},
         "encrypted_api_key": {"type": "password", "placeholder": "Enter API key"},
+        "owner_user_id": {"placeholder": "Выберите владельца"},
+        "uid": {
+            "placeholder": "unorouter",
+            # Read-only for everyone but the owner: a slug someone else's links
+            # already point at is not a value an admin edits by hand.
+            "data-uid-autofill": "name",
+            "spellcheck": "false",
+            "autocomplete": "off",
+        },
     }
 
     form_args = {
+        "owner_user_id": {
+            "label": "Владелец",
+            "description": "Чей это провайдер. Каталог, ключ и модели видны только этому пользователю.",
+            # WTForms snapshots `choices` when the form class is built, so the
+            # actor's list has to be part of the arguments, not patched after.
+            "choices": [],
+            "coerce": str,
+        },
+        "uid": {
+            "label": "UID провайдера",
+            "description": "Короткий идентификатор латиницей, например unorouter. По умолчанию берётся из названия "
+            "до точки; меняет только владелец платформы.",
+        },
         "name": {"label": "Название", "description": "Например: OpenAI, DeepSeek, Anthropic"},
         "description": {"label": "Описание", "description": "Для справки"},
         "api_format": {
@@ -1338,8 +1383,138 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         **BaseAdmin.form_args,
     }
 
+    async def scaffold_form(self, rules=None):
+        """Hide the fields the signed-in actor may not write.
+
+        The owner is the platform owner's field: an admin or operator creates
+        providers in their own catalog, so a user picker would only invite a
+        choice the server overrides. The UID stays visible to everyone — it is
+        part of the provider's identity and links point at it — but read-only
+        outside the platform owner, because renaming it breaks those links. The
+        server normalises whatever a readonly field still submits.
+
+        The owner select is built here, through `get_model_form` and
+        `_form_overrides`, the same way `UserAdmin` builds the role select.
+        `scaffold_form` caches its first form on the instance, so mutating the
+        cached one would freeze the first actor's choices for every later
+        request; a fresh form also means "no owner field for an admin" is a
+        property of the actor, not of whoever opened the page first.
+        """
+        from app.admin.authorization import bound_console_request
+
+        request = bound_console_request()
+        actor = self.get_admin_user(request) if request is not None else None
+        may_choose = bool(actor is not None and getattr(actor, "is_superuser", False))
+
+        columns = [name for name in self._form_prop_names if may_choose or name != "owner_user_id"]
+        form_args = dict(self.form_args)
+        if may_choose and "owner_user_id" in columns:
+            # The select carries usernames, not ids: a console operator who *may*
+            # assign the catalog should not read `42` and guess. The choices are
+            # frozen into the class, so they pass through `form_args`.
+            from app.models import User as PlatformUser
+
+            owners = await PlatformUser.objects.filter(is_active=True).order_by("username")
+            form_args["owner_user_id"] = {
+                **form_args.get("owner_user_id", {}),
+                "choices": [(str(user.id), user.username) for user in owners],
+                "coerce": str,
+            }
+        form = await get_model_form(
+            model=self.model,
+            session_maker=self.session_maker,
+            only=columns,
+            column_labels=self._column_labels,
+            form_args=form_args,
+            form_widget_args=self.form_widget_args,
+            form_class=self.form_base_class,
+            form_overrides=self._form_overrides,
+            form_ajax_refs=self._form_ajax_refs,
+            form_include_pk=self.form_include_pk,
+            form_converter=self.form_converter,
+        )
+        if hasattr(form, "uid"):
+            # An empty UID is "derive it from the name", not a missing field:
+            # the browser previews the slug and skips the release, so the server
+            # fills it here — from the submitted name, before validation.
+            #
+            # `form` is a class here; `meta.bind_field` is the one seam that sees
+            # both the bound field and the form data, for every instance.
+            base_meta = form.Meta if "Meta" in dir(form) else Form.Meta
+            form_meta = type("ProviderFormMeta", (base_meta,), {})
+
+            def bind_field(meta_self, form_instance, unbound_field, options):
+                field = base_meta.bind_field(meta_self, form_instance, unbound_field, options)
+                if unbound_field.name != "uid":
+                    return field
+                original = field.process
+
+                def process(formdata, data=None, **kwargs):
+                    original(formdata, data=data, **kwargs)
+                    if formdata is None:
+                        return
+                    raw = (field.raw_data or [""])[0]
+                    source = raw or formdata.get("name") or ""
+                    slug = slugify_uid(source)
+                    if not slug and not raw:
+                        return
+                    # WTForms validates `raw_data`, so the derived value has to
+                    # land there too — an empty list means "missing".
+                    field.data = slug or None
+                    if slug:
+                        field.raw_data = [slug]
+
+                field.process = process
+                return field
+
+            form_meta.bind_field = bind_field
+            form.Meta = form_meta
+        if rules:
+            self._validate_form_class(rules, form)
+        return form
+
+    async def on_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
+        """Who owns the catalog row is a rule, not a text field.
+
+        The platform owner may hand a catalog to anyone. An admin or operator
+        never picks a stranger's owner: their new provider belongs to them, and
+        the owner of an existing row stays as it is. A forged POST is refused
+        the same way, because this runs on the data the form accepted.
+        """
+        actor = self.get_admin_user(request)
+        may_choose = bool(actor is not None and getattr(actor, "is_superuser", False))
+        if not may_choose:
+            data.pop("owner_user_id", None)
+            if is_created:
+                if actor is None:
+                    raise HTTPException(status_code=403, detail="Не удалось определить владельца провайдера")
+                data["owner_user_id"] = actor.id
+                model.owner_user_id = actor.id
+        elif is_created and not data.get("owner_user_id"):
+            data["owner_user_id"] = actor.id
+        if "owner_user_id" in data and data["owner_user_id"] is not None:
+            try:
+                data["owner_user_id"] = int(data["owner_user_id"])
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="Не удалось определить владельца провайдера")
+
+        uid = data.get("uid")
+        if uid is not None:
+            slug = slugify_uid(uid)
+            if not slug:
+                raise HTTPException(status_code=400, detail="UID провайдера может содержать только a-z, 0-9, «-» и «_»")
+            data["uid"] = slug
+            model.uid = slug
+
+        with self._catalog_scope(request):
+            await super().on_model_change(data, model, is_created, request)
+
     @action(name="test-connection", label="🔌 Проверить подключение", add_in_list=True, add_in_detail=True)
     async def test_connection_action(self, request: Request):
+        with self._catalog_scope(request):
+            return await self._test_connection(request)
+
+    async def _test_connection(self, request: Request):
         pks = request.query_params.get("pks", "")
         if not pks:
             request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
@@ -1368,12 +1543,13 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
     async def after_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
-        if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
-            from app.utils.crypto import encrypt_secret
+        with self._catalog_scope(request):
+            if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
+                from app.utils.crypto import encrypt_secret
 
-            model.encrypted_api_key = encrypt_secret(model.encrypted_api_key)
-            await LLMProvider.objects.update_by_id(model.id, encrypted_api_key=model.encrypted_api_key)
-        await super().after_model_change(data, model, is_created, request)
+                model.encrypted_api_key = encrypt_secret(model.encrypted_api_key)
+                await LLMProvider.objects.update_by_id(model.id, encrypted_api_key=model.encrypted_api_key)
+            await super().after_model_change(data, model, is_created, request)
 
 
 def _catalog_rate(value, token_unit: int) -> str:
@@ -1385,6 +1561,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     name = "Модель ИИ"
     name_plural = "Модели ИИ"
     icon = "fa fa-microchip"
+    create_template = "sqladmin/llm_create.html"
+    edit_template = "sqladmin/llm_edit.html"
 
     # Local checks and an explicitly confirmed real probe require operator configuration rights.
     action_permissions = {"test-model": ActionType.CONFIGURE}
@@ -1609,6 +1787,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     column_formatters_detail = column_formatters
 
     async def scaffold_form(self, rules=None):
+        from app.admin.authorization import bound_console_request
+
         form = await super().scaffold_form(rules)
 
         # Ensure SelectMultipleField for model_type uses proper multi-value coercion/processing
@@ -1617,7 +1797,10 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             # Actually WTForms SelectMultipleField handles list of strings, but model.model_type is a string.
             pass
 
-        providers = await LLMProvider.objects.all().order_by("name")
+        # The signed-in operator's own providers only: a model is filed in the
+        # catalog it belongs to, and a foreign provider is not even offered.
+        with self._catalog_scope(bound_console_request()):
+            providers = await LLMProvider.objects.all().order_by("name")
 
         if hasattr(form, "provider_id"):
             field_name = "provider_id"
@@ -1626,27 +1809,62 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         else:
             return form
 
-        getattr(form, field_name).kwargs.update(
-            {
-                "data": [(str(p.id), p) for p in providers],
-                "get_label": lambda obj: obj.name,
-            }
-        )
+        # `choices` is what validation and the widget both read; a `data` list of
+        # model instances renders the options but never validates them, and the
+        # submitted id is then rejected as "Not a valid choice".
+        field = getattr(form, field_name)
+        field.data = [(str(p.id), p.name) for p in providers]
+        field.choices = list(field.data)
+        field.coerce = str
+        field.get_label = lambda option, field=field: dict(field.choices).get(str(option), "")
 
         return form
+
+    async def insert_model(self, request: Request, data: dict) -> Any:
+        """Fill the owner before sqladmin touches the relation.
+
+        The field is out of the form (`owner_user_id` is half of the composite
+        key to the provider and NOT NULL), so the provider decides it. sqladmin
+        fills a many-to-one relation from the related row's *primary key* only,
+        while this relation carries two FK columns — a `KeyError` naming
+        `owner_user_id` is exactly that. The value is already set here, so the
+        relation is dropped and the scalar FK goes in instead.
+        """
+        provider_id = data.pop("provider_id", None) or data.pop("provider", None)
+        with self._catalog_scope(request):
+            provider = await LLMProvider.objects.get(id=int(provider_id)) if provider_id not in (None, "") else None
+        if provider is None:
+            raise HTTPException(status_code=400, detail="Выберите провайдера — от него берётся владелец модели")
+
+        # The catalog scope already answered "is this provider in *my* catalog":
+        # a foreign or unknown id is simply not found, so the case never reaches
+        # here. The owner comes from the provider — the form has no such field.
+        data["owner_user_id"] = provider.owner_user_id
+        data["provider_id"] = provider.id
+        with self._catalog_scope(request):
+            return await super().insert_model(request, data)
 
     async def on_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
         if "model_type" in data and isinstance(data["model_type"], list):
             data["model_type"] = ",".join(data["model_type"])
         if is_created:
-            # 0109 made owner_user_id NOT NULL; admin-created models join the
-            # legacy platform catalog owned by user 2, consistent with the backfill.
-            data["owner_user_id"] = 2
-            model.owner_user_id = 2
-        await super().on_model_change(data, model, is_created, request)
+            model.owner_user_id = data["owner_user_id"]
+            model.provider_id = data["provider_id"]
+        else:
+            # SQLAdmin resolves the `provider` relation from the provider's
+            # primary key alone, and this relation carries two FK columns — a
+            # `KeyError` on `owner_user_id`. The model stays in its provider (the
+            # pair is half of the composite key and immutable by design), so the
+            # field is dropped and the stored scalars answer for it.
+            data.pop("provider", None)
+            data.pop("provider_id", None)
+            data.pop("owner_user_id", None)
+        with self._catalog_scope(request):
+            await super().on_model_change(data, model, is_created, request)
 
     async def after_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
-        await super().after_model_change(data, model, is_created, request)
+        with self._catalog_scope(request):
+            await super().after_model_change(data, model, is_created, request)
 
         if model.is_default:
             # One default per capability fleet-wide — the same rule
@@ -1656,7 +1874,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             # request; matching on the model_type *string* left both flagged
             # and forked the fleet into a provider-priority lottery. Runs
             # after the commit, where a freshly created row already has its id.
-            await LLMModel.objects.set_default(model.id)
+            with self._catalog_scope(request):
+                await LLMModel.objects.set_default(model.id)
 
     async def delete_model(self, request: Request, pk: Union[int, str]) -> None:
         """Override default delete to use manager's reassignment logic.
@@ -1665,7 +1884,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         before forwarding to the manager which expects an integer id.
         """
         model_id = int(pk) if isinstance(pk, str) else pk
-        result = await LLMModel.objects.delete_with_default_reassignment(model_id)
+        with self._catalog_scope(request):
+            result = await LLMModel.objects.delete_with_default_reassignment(model_id)
         warnings = result.get("warnings", [])
         if warnings:
             msg = "; ".join(warnings)
@@ -1686,7 +1906,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             request.session["admin_message"] = {"type": "error", "message": "Не выбрана модель для тестирования"}
             return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
-        return await LLMModelActions.test_model(self, request, pks, self.identity)
+        with self._catalog_scope(request):
+            return await LLMModelActions.test_model(self, request, pks, self.identity)
 
 
 class TenantAdmin(BaseAdmin, model=Tenant):

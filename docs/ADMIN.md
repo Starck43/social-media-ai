@@ -54,6 +54,41 @@ schema; prior isolated migration/backfill acceptance remains in the evidence
 ledger. No deployment is claimed. See
 [ownership evidence and rollout boundary](validation/personal-llm-ownership.md).
 
+### Who sees which rows, and who writes the owner
+
+The catalog is **personal on every read path, including the platform owner**.
+A grant decides which *actions* an operator may perform; it never widens *whose*
+rows they see. An auditor should check four things:
+
+1. **Reads.** `LLMProvider` / `LLMModel` are `__personal_scoped__`; their manager
+   adds `owner_user_id == current_catalog_owner_id()` to every query and raises
+   `PermissionError` when no owner is bound (`BaseManager._personal_criterion`).
+   The platform bypass does **not** skip that filter — it only allows a write to
+   name the owner (`_personal_values`). The console therefore runs each query as
+   the signed-in operator (`BaseAdmin._catalog_scope`): list/count (`list_query`,
+   `count_query`), details, edit, and every read/write inside the two LLM views.
+   A direct URL to a foreign row is 403 on read and on write.
+2. **Provider owner.** `owner_user_id` is a real form field (`form_overrides`
+   → `SelectField`, `choices` = usernames) **only for the platform owner**
+   (`superuser`). For everyone else the field is absent from the form and
+   `LLMProviderAdmin.on_model_change` stamps the actor's id, dropping whatever
+   was posted. The owner is immutable after creation (trigger
+   `guard_personal_catalog_owner`, migration 0109), so a reassignment POST is
+   refused by the database rather than silently applied.
+3. **Model owner.** `LLMModelAdmin` has **no** `owner_user_id` and no `uid`
+   field: the model inherits the provider's owner, and the provider select lists
+   only the actor's own providers. A model filed under a foreign provider id is
+   refused, for the platform owner too.
+4. **E2E.** `tests/admin/test_admin_llm_catalog_scope.py` pins all of the above
+   on source alone (`__source_only__`, no database): scope binding per actor,
+   list/count restriction, the owner field's presence rule, forged-owner
+   dropping, and the foreign-provider refusal.
+
+Provider UID: the form field is **UID провайдера**; an empty value is derived
+from the name (`UnoRouter.AI` → `unorouter`, via `app/core/provider_uid.py`) —
+the browser previews the same slug from `app/static/js/admin-uid.js`.
+
+
 ## Authentication and platform authority
 
 [Auth backend](../app/admin/auth.py),

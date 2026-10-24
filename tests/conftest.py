@@ -61,16 +61,28 @@ import pytest  # noqa: E402
 
 import app.models.managers.base_manager as base_manager_module  # noqa: E402
 
+# A `__source_only__` module in this file may run alone: its tests are doubles
+# and must pass without any database, so a broken or unseeded suite schema
+# cannot mask them. Session fixtures are built before the first test body, so
+# the answer is decided at collection, from the selected items.
+_ONLY_SOURCE = {"off": False}
+
+
+def pytest_collection_modifyitems(config, items):
+    _ONLY_SOURCE["off"] = not any(
+        not getattr(item.module, "__source_only__", False) for item in items if getattr(item, "module", None)
+    )
+
 
 @pytest.fixture(autouse=True)
 def _platform_scope(request, monkeypatch):
     """Run legacy tests inside the bootstrap workspace (superuser bypass)."""
-    if request.node.get_closest_marker("tenancy"):
-        yield
-        return
-    monkeypatch.setattr(base_manager_module, "is_bypass", lambda: True)
+    source_only = getattr(request.module, "__source_only__", False)
+    if not request.node.get_closest_marker("tenancy") and not source_only:
+        monkeypatch.setattr(base_manager_module, "is_bypass", lambda: True)
     # Legacy tests already model the operator surface. Make its authorization
     # explicit; security/tenancy tests opt out above and remain fail-closed.
+    # Source-only modules bind it too: they read the actor from it, never storage.
     from app.core.permissions import operator_permission_scope
 
     with operator_permission_scope():
@@ -78,11 +90,21 @@ def _platform_scope(request, monkeypatch):
 
 
 @pytest.fixture(scope="session", autouse=True)
-async def _test_database():
-    """Validate the configured test schema and reference rows without writes."""
+async def _test_database(request):
+    """Validate the configured test schema and reference rows without writes.
+
+    When only `__source_only__` modules are selected the fixture yields without
+    looking at the database: those tests are doubles and must pass without it,
+    so a broken or unseeded suite schema cannot mask them.
+    """
+    if _ONLY_SOURCE["off"]:
+        yield
+        return
+    from sqlalchemy import select, text
+
+    from app.core.access_catalog import RESOURCES
     from app.core.config import settings
     from app.core.database import async_engine
-    from app.core.access_catalog import RESOURCES
     from app.models import Base, ModelType, Permission, Platform, PlatformRole, WorkspaceRole
     from app.types import ActionType
     from scripts.setup_test_db import check_existing_schema

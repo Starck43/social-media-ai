@@ -704,7 +704,14 @@ class BaseManager(Generic[M]):
         return QuerySet(manager=self, session=session, criterion=self._tenant_criterion() + self._personal_criterion())
 
     def _personal_criterion(self):
-        if not getattr(self.model, "__personal_scoped__", False) or is_bypass():
+        """The signed-in user's catalog, whoever they are — owner included.
+
+        A personal catalog is not a workspace-wide fleet, so the platform
+        bypass must not widen the read: the owner sees their own providers and
+        models, an admin theirs. The bypass still matters on writes
+        (`_personal_values`), where it means "the actor names the owner".
+        """
+        if not getattr(self.model, "__personal_scoped__", False):
             return []
         from app.core.personal_catalog_context import current_catalog_owner_id
         return [self.model.owner_user_id == current_catalog_owner_id()]

@@ -121,7 +121,11 @@ Additional restrictions:
   badge: an actor assigns a role strictly **below their own** — the owner
   (`superuser`) offers `admin`/`operator`/`user`, an `admin` offers
   `operator`/`user`, an `operator` offers `user`, and a rank with nothing below it
-  sees a disabled empty select. The `identity.user` UPDATE right still decides who
+  sees a disabled empty select. Two rows show the role **read-only** instead of a
+  choice list — the actor's own account and the platform owner's account: the
+  select holds the current role only and is disabled, with the reason in its
+  hint, because `set_platform_role()` refuses both writes. The `identity.user`
+  UPDATE right still decides who
   opens the form at all; the rank decides what the form may submit. The write goes
   through `UserManager.set_platform_role()`, never the generic `role_id` column, so
   a forged payload is refused too.

@@ -17,7 +17,8 @@ from uuid import uuid4
 import pytest
 
 from app.core.config import settings
-from app.core.permissions import permission_scope
+from app.core.permissions import operator_permission_scope, permission_scope
+from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.tenant_context import tenant_scope
 from app.models import (
     LLMModel,
@@ -35,74 +36,107 @@ from app.services.ai.dispatch_receipts import build_dispatch_receipt
 from app.services.ai.outcome_events import build_outcome_event
 from app.services.billing.personal_ledger import observe_personal_outcome, reserve_personal_dispatch
 
+pytestmark = pytest.mark.tenancy
+
+
+@pytest.fixture(autouse=True)
+def _trusted_fixture_permission_scope():
+    """Allow trusted DB fixture setup without enabling BaseManager bypass."""
+    with operator_permission_scope():
+        yield
+
 
 async def _billing_environment(monkeypatch, marker: str) -> dict:
     """Create an owned billing account with a reviewed request bound."""
     monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", True)
-    tenant = await Tenant.objects.create(slug=f"pbex-{marker}", name=f"PBEX {marker}", plan="business")
-    platform_admin = await PlatformRole.objects.get(codename="admin")
-    workspace_owner = await WorkspaceRole.objects.get(codename="owner")
-    user = await User.objects.create(
-        username=f"pbex-{marker}",
-        email=f"pbex-{marker}@example.invalid",
-        hashed_password="synthetic-test-only",
-        role_id=platform_admin.id,
-        is_active=True,
-    )
-    await TenantUser.objects.create(
-        tenant_id=tenant.id,
-        user_id=user.id,
-        role_id=workspace_owner.id,
-        channel="web",
-        external_user_id=f"pbex+{marker}",
-        is_active=True,
-    )
-    account = await PersonalBillingAccount.objects.create(
-        user_id=user.id,
-        daily_limit_usd=Decimal("1"),
-        is_active=True,
-        configured_at=datetime.now(timezone.utc),
-        policy_version="personal-daily-cap-v1",
-    )
-    midnight = datetime.combine(datetime.now(timezone.utc).date(), time.min, timezone.utc)
-    await PersonalBillingCutover.objects.create(
-        account_id=account.id,
-        effective_at=midnight,
-        reviewed_by_user_id=user.id,
-        review_version="acceptance-clean-midnight-v1",
-    )
-    provider = await LLMProvider.objects.create(
-        name=f"pbex-{marker}",
-        api_format="openai",
-        base_url="https://example.invalid/v1",
-        is_active=True,
-    )
-    model = await LLMModel.objects.create(
-        provider_id=provider.id,
-        name=f"PBEX {marker}",
-        model_id=f"pbex-{marker}",
-        model_type="text",
-        input_cost_per_1k=1.0,
-        output_cost_per_1k=1.0,
-        cache_read_cost_per_1m=0,
-        cache_write_5m_cost_per_1m=0,
-        cache_write_1h_cost_per_1m=0,
-        max_tokens=64,
-        default_temperature=0.0,
-        is_active=True,
-    )
-    await PersonalLLMBoundPolicy.objects.create(
-        provider_row_id=provider.id,
-        model_row_id=model.id,
-        provider_name=provider.name,
-        model_id=model.model_id,
-        version="acceptance-v1",
-        max_input_tokens=63,
-        max_output_tokens=1,
-        request_mode="text_only",
-        reviewed_by_user_id=user.id,
-    )
-    loaded = await LLMModel.objects.select_related("provider").get(id=model.id)
+    tenant = user = account = provider = model = None
+    try:
+        tenant = await Tenant.objects.create(slug=f"pbex-{marker}", name=f"PBEX {marker}", plan="business")
+        platform_admin = await PlatformRole.objects.get(codename="admin")
+        workspace_owner = await WorkspaceRole.objects.get(codename="owner")
+        user = await User.objects.create(
+            username=f"pbex-{marker}",
+            email=f"pbex-{marker}@example.invalid",
+            hashed_password="synthetic-test-only",
+            role_id=platform_admin.id,
+            is_active=True,
+        )
+        await TenantUser.objects.create(
+            tenant_id=tenant.id,
+            user_id=user.id,
+            role_id=workspace_owner.id,
+            channel="web",
+            external_user_id=f"pbex+{marker}",
+            is_active=True,
+        )
+        account = await PersonalBillingAccount.objects.create(
+            user_id=user.id,
+            daily_limit_usd=Decimal("1"),
+            is_active=True,
+            configured_at=datetime.now(timezone.utc),
+            policy_version="personal-daily-cap-v1",
+        )
+        midnight = datetime.combine(datetime.now(timezone.utc).date(), time.min, timezone.utc)
+        await PersonalBillingCutover.objects.create(
+            account_id=account.id,
+            effective_at=midnight,
+            reviewed_by_user_id=user.id,
+            review_version="acceptance-clean-midnight-v1",
+        )
+        with catalog_execution_scope(user.id):
+            provider = await LLMProvider.objects.create(
+                uid=f"pbex-{marker}",
+                name=f"pbex-{marker}",
+                api_format="openai",
+                base_url="https://example.invalid/v1",
+                is_active=True,
+            )
+            model = await LLMModel.objects.create(
+                provider_id=provider.id,
+                name=f"PBEX {marker}",
+                model_id=f"pbex-{marker}",
+                model_type="text",
+                input_cost_per_1k=1.0,
+                output_cost_per_1k=1.0,
+                cache_read_cost_per_1m=0,
+                cache_write_5m_cost_per_1m=0,
+                cache_write_1h_cost_per_1m=0,
+                max_tokens=64,
+                default_temperature=0.0,
+                is_active=True,
+            )
+            assert provider.owner_user_id == user.id
+            assert model.owner_user_id == user.id
+        await PersonalLLMBoundPolicy.objects.create(
+            provider_row_id=provider.id,
+            model_row_id=model.id,
+            provider_name=provider.name,
+            model_id=model.model_id,
+            version="acceptance-v1",
+            max_input_tokens=63,
+            max_output_tokens=1,
+            request_mode="text_only",
+            reviewed_by_user_id=user.id,
+        )
+        with catalog_execution_scope(user.id):
+            loaded = await LLMModel.objects.select_related("provider").get(id=model.id)
+    except Exception:
+        if account is not None:
+            await PersonalBillingCutover.objects.delete(account_id=account.id)
+        if provider is not None and user is not None:
+            with catalog_execution_scope(user.id):
+                await PersonalLLMBoundPolicy.objects.delete(provider_row_id=provider.id)
+                if model is not None:
+                    await LLMModel.objects.delete(id=model.id)
+                await LLMProvider.objects.delete(id=provider.id)
+        if account is not None:
+            await PersonalBillingAccount.objects.delete(user_id=account.user_id)
+        if user is not None:
+            await TenantUser.objects.delete(user_id=user.id)
+            await User.objects.delete_user(user.id)
+        if tenant is not None:
+            await Tenant.objects.delete_by_id(tenant.id)
+        raise
     return {
         "tenant_id": tenant.id,
         "user": user,
@@ -112,6 +146,18 @@ async def _billing_environment(monkeypatch, marker: str) -> dict:
         "model_id": loaded.model_id,
         "marker": marker,
     }
+
+
+async def _catalog_user(marker: str) -> User:
+    """Create an active actor who owns the fixture catalog rows."""
+    role = await PlatformRole.objects.get(codename="admin")
+    return await User.objects.create(
+        username=f"pbex-catalog-{marker}",
+        email=f"pbex-catalog-{marker}@example.invalid",
+        hashed_password="synthetic-test-only",
+        role_id=role.id,
+        is_active=True,
+    )
 
 
 def _request_shape(env: dict) -> dict:
@@ -129,7 +175,7 @@ async def _settle(env: dict, amount: str) -> str:
     """Reserve one dispatch and settle it at an explicit provider-reported cost."""
     from app.models import LLMOutcomeEvent
 
-    with tenant_scope(env["tenant_id"]), permission_scope(env["user"]):
+    with catalog_execution_scope(env["user"].id), tenant_scope(env["tenant_id"]), permission_scope(env["user"]):
         admission = await reserve_personal_dispatch(
             env["model"],
             purpose="analysis",
@@ -157,7 +203,7 @@ async def _settle(env: dict, amount: str) -> str:
 
 async def _reserve_open(env: dict) -> str:
     """Reserve one dispatch and leave it pending."""
-    with tenant_scope(env["tenant_id"]), permission_scope(env["user"]):
+    with catalog_execution_scope(env["user"].id), tenant_scope(env["tenant_id"]), permission_scope(env["user"]):
         admission = await reserve_personal_dispatch(
             env["model"],
             purpose="analysis",
@@ -180,7 +226,7 @@ async def _reserve_unknown(monkeypatch, env: dict) -> str:
         receipt["tariff_state"] = "undefined"
         return receipt
 
-    with tenant_scope(env["tenant_id"]), permission_scope(env["user"]):
+    with catalog_execution_scope(env["user"].id), tenant_scope(env["tenant_id"]), permission_scope(env["user"]):
         await PersonalBillingAccount.objects.configure_self(Decimal("0"))
         monkeypatch.setattr(personal_llm_billing_manager, "build_dispatch_receipt", build_undefined_receipt)
         admission = await reserve_personal_dispatch(
@@ -266,40 +312,59 @@ async def test_unpriced_models_counts_undefined_dispatch_attempts_per_tenant_and
     from app.models import LLMDispatchReceipt, LLMOutcomeEvent
 
     marker = uuid4().hex
-    tenant_a = await Tenant.objects.create(slug=f"pbex-{marker}a", name=f"PBEX A {marker}", plan="business")
-    tenant_b = await Tenant.objects.create(slug=f"pbex-{marker}b", name=f"PBEX B {marker}", plan="business")
-    provider = await LLMProvider.objects.create(
-        name=f"pbex-{marker}",
-        api_format="openai",
-        base_url="https://example.invalid/v1",
-        is_active=True,
-    )
-    model = await LLMModel.objects.create(
-        provider_id=provider.id,
-        name=f"PBEX {marker}",
-        model_id=f"pbex-{marker}",
-        model_type="text",
-        input_cost_per_1k=1.0,
-        output_cost_per_1k=1.0,
-        cache_read_cost_per_1m=0,
-        cache_write_5m_cost_per_1m=0,
-        cache_write_1h_cost_per_1m=0,
-        max_tokens=64,
-        default_temperature=0.0,
-        is_active=True,
-    )
-    loaded = await LLMModel.objects.select_related("provider").get(id=model.id)
+    tenant_a = tenant_b = catalog_user = provider = None
+    try:
+        tenant_a = await Tenant.objects.create(slug=f"pbex-{marker}a", name=f"PBEX A {marker}", plan="business")
+        tenant_b = await Tenant.objects.create(slug=f"pbex-{marker}b", name=f"PBEX B {marker}", plan="business")
+        catalog_user = await _catalog_user(marker)
+        with catalog_execution_scope(catalog_user.id):
+            provider = await LLMProvider.objects.create(
+                uid=f"pbex-{marker}",
+                name=f"pbex-{marker}",
+                api_format="openai",
+                base_url="https://example.invalid/v1",
+                is_active=True,
+            )
+            model = await LLMModel.objects.create(
+                provider_id=provider.id,
+                name=f"PBEX {marker}",
+                model_id=f"pbex-{marker}",
+                model_type="text",
+                input_cost_per_1k=1.0,
+                output_cost_per_1k=1.0,
+                cache_read_cost_per_1m=0,
+                cache_write_5m_cost_per_1m=0,
+                cache_write_1h_cost_per_1m=0,
+                max_tokens=64,
+                default_temperature=0.0,
+                is_active=True,
+            )
+            assert provider.owner_user_id == catalog_user.id
+            assert model.owner_user_id == catalog_user.id
+            loaded = await LLMModel.objects.select_related("provider").get(id=model.id)
+    except Exception:
+        if provider is not None and catalog_user is not None:
+            with catalog_execution_scope(catalog_user.id):
+                await LLMProvider.objects.delete(id=provider.id)
+        if catalog_user is not None:
+            await User.objects.delete_user(catalog_user.id)
+        if tenant_b is not None:
+            await Tenant.objects.delete_by_id(tenant_b.id)
+        if tenant_a is not None:
+            await Tenant.objects.delete_by_id(tenant_a.id)
+        raise
     now = datetime.now(timezone.utc)
 
     async def receipt_for(tenant_id: int, prepared_at: datetime) -> dict:
-        record = build_dispatch_receipt(
-            loaded,
-            tenant_id=tenant_id,
-            purpose="analysis",
-            stage="text_analysis",
-            dispatch_id=uuid4().hex,
-            prepared_at=prepared_at,
-        )
+        with catalog_execution_scope(catalog_user.id):
+            record = build_dispatch_receipt(
+                loaded,
+                tenant_id=tenant_id,
+                purpose="analysis",
+                stage="text_analysis",
+                dispatch_id=uuid4().hex,
+                prepared_at=prepared_at,
+            )
         with tenant_scope(tenant_id):
             assert await LLMDispatchReceipt.objects.record_receipt(record) is True
         return record
@@ -378,7 +443,9 @@ async def test_unpriced_models_counts_undefined_dispatch_attempts_per_tenant_and
     finally:
         # Receipts/events are immutable and keep their plain-integer references;
         # only the removable catalog rows are deleted.
-        await LLMProvider.objects.delete(id=provider.id)
+        with catalog_execution_scope(catalog_user.id):
+            await LLMProvider.objects.delete(id=provider.id)
+        await User.objects.delete_user(catalog_user.id)
 
 
 @pytest.mark.asyncio
@@ -386,44 +453,60 @@ async def test_unpriced_models_counts_undefined_dispatch_attempts_per_tenant_and
 async def test_zero_price_active_models_lists_only_active_zero_tariff_rows():
     """Only active 0/0 models are listed; total counts past the page limit."""
 
-    before = await LLMModel.objects.zero_price_active_models(limit=50)
     marker = uuid4().hex
-    provider = await LLMProvider.objects.create(
-        name=f"pbex-{marker}",
-        api_format="openai",
-        base_url="https://example.invalid/v1",
-        is_active=True,
-    )
+    catalog_user = provider = None
     try:
-        zero_models = [
-            await LLMModel.objects.create(
+        catalog_user = await _catalog_user(marker)
+        with catalog_execution_scope(catalog_user.id):
+            before = await LLMModel.objects.zero_price_active_models(limit=50)
+            provider = await LLMProvider.objects.create(
+                uid=f"pbex-{marker}",
+                name=f"pbex-{marker}",
+                api_format="openai",
+                base_url="https://example.invalid/v1",
+                is_active=True,
+            )
+    except Exception:
+        if provider is not None and catalog_user is not None:
+            with catalog_execution_scope(catalog_user.id):
+                await LLMProvider.objects.delete(id=provider.id)
+        if catalog_user is not None:
+            await User.objects.delete_user(catalog_user.id)
+        raise
+    try:
+        with catalog_execution_scope(catalog_user.id):
+            zero_models = [
+                await LLMModel.objects.create(
+                    provider_id=provider.id,
+                    name=f"PBEX Zero {marker} {index}",
+                    model_id=f"pbex-zero-{marker}-{index}",
+                    model_type="text",
+                    is_active=True,
+                )
+                for index in range(3)
+            ]
+            with permission_scope(catalog_user):
+                zero_models[0] = await LLMModel.objects.set_default(zero_models[0].id)
+            assert all(model.owner_user_id == catalog_user.id for model in zero_models)
+            inactive = await LLMModel.objects.create(
                 provider_id=provider.id,
-                name=f"PBEX Zero {marker} {index}",
-                model_id=f"pbex-zero-{marker}-{index}",
+                name=f"PBEX Inactive {marker}",
+                model_id=f"pbex-inactive-{marker}",
+                model_type="text",
+                is_active=False,
+            )
+            nonzero = await LLMModel.objects.create(
+                provider_id=provider.id,
+                name=f"PBEX Paid {marker}",
+                model_id=f"pbex-paid-{marker}",
                 model_type="text",
                 is_active=True,
-                is_default=index == 0,
+                input_cost_per_1k=1.0,
+                output_cost_per_1k=0.0,
             )
-            for index in range(3)
-        ]
-        inactive = await LLMModel.objects.create(
-            provider_id=provider.id,
-            name=f"PBEX Inactive {marker}",
-            model_id=f"pbex-inactive-{marker}",
-            model_type="text",
-            is_active=False,
-        )
-        nonzero = await LLMModel.objects.create(
-            provider_id=provider.id,
-            name=f"PBEX Paid {marker}",
-            model_id=f"pbex-paid-{marker}",
-            model_type="text",
-            is_active=True,
-            input_cost_per_1k=1.0,
-            output_cost_per_1k=0.0,
-        )
 
-        full = await LLMModel.objects.zero_price_active_models(limit=50)
+        with catalog_execution_scope(catalog_user.id):
+            full = await LLMModel.objects.zero_price_active_models(limit=50)
         assert full["total"] == before["total"] + 3
         # All matching rows fit one page in this schema; a catalog that outgrew
         # the limit needs a tighter fixture, not weaker assertions.
@@ -438,9 +521,12 @@ async def test_zero_price_active_models_lists_only_active_zero_tariff_rows():
         assert inactive.model_id not in rows
         assert nonzero.model_id not in rows
 
-        limited = await LLMModel.objects.zero_price_active_models(limit=2)
+        with catalog_execution_scope(catalog_user.id):
+            limited = await LLMModel.objects.zero_price_active_models(limit=2)
         assert limited["total"] == full["total"]
         assert len(limited["models"]) == 2
         assert all(row["provider"] for row in limited["models"])
     finally:
-        await LLMProvider.objects.delete(id=provider.id)
+        with catalog_execution_scope(catalog_user.id):
+            await LLMProvider.objects.delete(id=provider.id)
+        await User.objects.delete_user(catalog_user.id)

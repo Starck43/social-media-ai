@@ -48,8 +48,9 @@
         <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Ветки сбора</p>
         <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400">
             {% for lane in summary.lane_runs %}
+            {% set post_lane = lane.lane_type in ("source_stage", "wall_posts", "post_search") %}
             <li>
-                {{ lane.lane_type }}{% if lane.query %} · «{{ lane.query }}»{% endif %} · получено {{ lane.fetched }}{% if lane.selected %} · отобрано {{ lane.selected }}{% endif %}{% if lane.rejected %} · отброшено {{ lane.rejected }}{% endif %}{% if lane.needs_review %} · на проверку {{ lane.needs_review }}{% endif %}{% if lane.limit_reached %} · лимит достигнут{% endif %}{% if lane.error_code %} · ошибка {{ lane.error_code }}{% endif %}{% if lane.unsupported_reason %} · {{ lane.unsupported_reason }}{% endif %}
+                {{ lane.lane_type }}{% if lane.query %} · «{{ lane.query }}»{% endif %} · получено {{ lane.fetched }}{% if post_lane %} постов{% endif %}{% if lane.selected %} · отобрано {{ lane.selected }} записей{% endif %}{% if lane.rejected %} · отброшено {{ lane.rejected }} записей{% endif %}{% if lane.needs_review %} · на проверку {{ lane.needs_review }} записей{% endif %}{% if lane.limit_reached %} · {% if lane.limit_count is defined and lane.limit_count is not none %}Достигнут лимит {{ lane.limit_count }}{% if post_lane %} постов{% endif %}; выборка может быть неполной{% else %}Достигнут лимит; выборка может быть неполной{% endif %}{% endif %}{% if lane.error_code %} · ошибка {{ lane.error_code }}{% endif %}{% if lane.unsupported_reason %} · {{ lane.unsupported_reason }}{% endif %}
             </li>
             {% endfor %}
         </ul>

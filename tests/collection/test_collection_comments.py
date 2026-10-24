@@ -9,6 +9,7 @@ independently, and every cap that stopped the batch is reported.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -219,3 +220,52 @@ async def test_a_matching_comment_keeps_its_parent_through_selection_and_staging
     comment_row = next(row for row in rows if row["content_type"] == "comment")
     assert comment_row["parent_external_id"] == "1_10"
     assert comment_row["selection_status"] == "selected"
+
+
+@pytest.mark.asyncio
+async def test_source_stage_cap_evidence_counts_parent_posts_not_expanded_comments(monkeypatch):
+    """The source-stage cap uses the same parent-post unit as the collector."""
+    from app.models import CollectionLaneRun, CollectionSeen
+    from app.services.monitoring import selection_store
+
+    class _Transaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class _Session:
+        def begin(self):
+            return _Transaction()
+
+        async def close(self):
+            return None
+
+    recorded = {}
+
+    async def record_lane(_session, **kwargs):
+        recorded.update(kwargs)
+
+    monkeypatch.setattr(selection_store, "new_session", _Session)
+    monkeypatch.setattr(CollectionSeen.objects, "record_outcomes", AsyncMock())
+    monkeypatch.setattr(CollectionLaneRun.objects, "record", record_lane)
+    source = SimpleNamespace(id=7, tenant_id=1, params={})
+    parents = [_post("1_10"), _post("1_11")]
+    comments = [_comment("1_10", i) for i in range(3)]
+    selection = select_for_collection(parents + comments, SelectionScope(), thread=True)
+
+    await selection_store.record_collection_selection(
+        source,
+        parents + comments,
+        selection,
+        run_id=12,
+        task_id=5,
+        limit_count=2,
+        limit_reached=True,
+    )
+
+    assert recorded["fetched"] == 2
+    assert recorded["limit_count"] == 2
+    assert recorded["limit_reached"] is True
+    assert recorded["selected"] == len(selection.selected) == 5

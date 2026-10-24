@@ -76,12 +76,16 @@ admin console) — it is a billing act, not a workspace preference.
 | `tenant_users` | global | Membership: which user belongs to which workspace. |
 | `tenant_invites` | global | Invite codes (hashed); `redeem()` checks expiry/uses. |
 | `tenant_channels` | global | Chat→tenant binding; unique per `(channel, chat_id)`. |
-| `user_credentials` | global | Personal secrets (L2 user tokens / sessions), keyed by `users.id`, encrypted at rest with Fernet. |
+| `user_credentials` | personal user (not tenant-marked) | Personal secrets (L2 user tokens / sessions), keyed by `users.id`, encrypted at rest with Fernet. |
 | `sources`, `agent_tasks`, `jobs`, `digest_runs`, `ai_analytics`, `agent_scenarios`, `bot_actions`, `notifications`, `agent_sessions`, `agent_messages`, `agent_feedback`, `agent_memory` | tenant | Every `TenantScopedMixin` model. |
 
-**Global tables** (never tenant-scoped): `Platform`, `LLMProvider`, `LLMModel`,
-`ModelType`, `Permission`, `Role`, `User`, `UserCredential` — plus the tenancy
-tables themselves (because they are resolved *before* a tenant context exists).
+**No TenantScopedMixin does not mean globally shared authority.** `Platform`,
+`ModelType`, `Permission`, `Role`, `User` and tenancy lookup tables have no tenant
+marker. Social `Platform` is a system-wide catalog, including across users;
+`UserCredential` remains personal. In the 0109 candidate, `LLMProvider` and
+`LLMModel` are also personal, filtered by `owner_user_id`, with a composite
+model/provider owner FK. They are shared only across their user's workspaces,
+not among different users. See [the 0109 contract](#personal-llm-catalog-0109-source-contract-deployment-pending).
 
 ## Routing
 
@@ -265,10 +269,12 @@ unknown or forbidden bookmarks fall back to a permitted tab. GET is no-store.
 | Tab/scope | Current read/action boundary |
 | --- | --- |
 | My account | Active authenticated caller's read-only profile and browser notification display preferences; theme remains in the shell. The exact GET/HEAD Settings page remains reachable without membership, showing the account tab (and the explicit global Platforms tab for platform admins). |
+| My account | Active authenticated caller's read-only profile and browser notification display preferences; theme remains in the shell. The exact GET/HEAD Settings page remains reachable without workspace membership, showing the account tab (and the personal Models tab for active callers, plus the global Platforms tab for platform administrators). |
+| Models (0109) | Active caller's personal provider/model metadata; owner-checked atomic save and shared default service. Available without workspace via exact `/app/settings/models/save` and `/default` POST allowlist, with CSRF; no blanket `/settings/*` bypass. |
 | My connections | Caller-only credential metadata/status, with existing guarded connect/OAuth writes unchanged. No other member's credentials or secrets; existing connection routes still require onboarding. |
 | Workspace | Current active membership may read name/timezone only. Full configuration, budget and quota projections require `can_manage_workspace(concrete target)`; individual counts also retain model VIEW gates. |
 | Team | Same concrete-target management capability; only selected-tab member queries. Roles and disable controls retain server checks. Invitations use the shared guarded lazy dialog, not eager team-page queries. |
-| Agent / delivery channels | Concrete-target management capability before queries/mutations. Existing platform model catalogue is read only for the permitted Agent tab; this grants no global provider/model edit privilege. |
+| Agent / delivery channels | Concrete-target management capability before queries/mutations. Agent options come from the caller's eligible personal catalog; chat selection stores integer `agent_model_id`. Workspace management never authorizes use of another user's model/key. |
 | Platforms | Explicit global section for active `is_platform_admin` callers only, independent of workspace membership. Read/create/update platform name, base URL and active flag; fixed type on update, no params/secrets projection or delete action. POST rechecks role and CSRF. Operators and workspace-only owners/admins are refused. |
 | Admin | Global platform model/action rights, separate from all workspace tabs. |
 
@@ -319,3 +325,22 @@ role/revocation/tenant acceptance remain environment-dependent verification.
 Admin entry requires an active platform operator/admin account, independently of
 workspace membership. Model/action grants remain authoritative in the global
 console. See [ADMIN](ADMIN.md).
+
+## Personal LLM catalog (0109 source contract; code integrated, rollout pending)
+
+Providers/models are user-owned, not global. `owner_user_id` and a composite
+model/provider owner FK constrain ownership. Personal CRUD/defaults require an
+active caller and are shared across that caller's workspaces. UI lives at
+Settings → Models; social Platform remains a separate global directory.
+`Tenant.agent_model_id` is a numeric FK, not a model-name lookup. An explicit
+unavailable chat model fails closed; automatic fallback cannot use another
+user's keys for any capability — text, image, video and audio resolution and
+the analyzer's failover queue all stay inside one personal catalog. Scheduled
+execution uses the stored task payer's personal catalog; missing consent never
+guesses a workspace owner. Platform inspection permission
+does not grant another user's key use.
+
+Pre-0109 dev used a global LLM fleet; current source integration is recorded in
+dev `b34353645fe37de53c97c4d022c05af0044dc8ba`. This does not prove that a
+running database has been migrated. Migration definition, source-pinned
+acceptance evidence and rollout boundary: [personal ownership evidence](validation/personal-llm-ownership.md).

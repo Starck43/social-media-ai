@@ -99,23 +99,26 @@ Coverage evidence vs PRD-08 (state/refs → task):
 - Support/escalation + measures MISSING (T13): none named in P8 files.
 - Delivered bell: `task_failures`, `statuses_needing_action`, `report_ready`/`api_error`/`connection_error`/`source_inactive`, read/read-window — windowed 100/50, dedup, permission-gated.
 
-- [ ] P8-T07 — stale-source observable; accept: active sources not checked within
+- [x] P8-T07 — stale-source observable; accept: active sources not checked within
   configured hours via `get_sources_for_monitoring`/`last_checked`, honest "never checked",
-  gated `source.view`; depends: none; owns: source freshness lane; owner: opencode; status: READY.
+  gated `source.view`; depends: none; owns: source freshness lane; owner: opencode;
+  acceptance: codex; status: DONE — accepted on 2026-10-24 at `f762088`.
   Evidence: the window is configured, not invented in a template —
   `SOURCE_STALE_HOURS` (`app/core/config.py`, default 24, `ge=1`; documented in
   `docs/CONFIGURATION.md` and `.env.example`). `/app/sources` computes one
   summary through `SourceManager.get_sources_for_monitoring` (the existing
   staleness predicate: active, and never checked or older than the window),
-  intersected with the rows the page actually renders so a superuser's
-  cross-workspace page counts its own filter, not every workspace. The banner
+  intersected with the ordinary source rows the workspace page renders.
+  Task-owned query lanes follow their task schedule and are excluded from this
+  fixed-window source signal; their rows remain visible. The current `/app`
+  route is workspace-pinned and makes no cross-workspace visibility claim. The banner
   names the count of the active total and the window, and counts sources that
   were **never** checked separately — "older than N hours" is never claimed for
   a source that has no check at all; each stale row is marked «устарел» or
   «не проверялся» with its last check in the title. Read-only: no write, no
   collection trigger, no provider call. Inactive sources are excluded (nothing
-  is expected of them) and task-owned lanes never appear because the page does
-  not render them — a lane's freshness is its owning task's signal. Gated by
+  is expected of them). Task-owned lanes remain visible but are excluded from
+  this summary — a lane's freshness is its owning task's signal. Gated by
   `perms_can(request, "source", "view")`; without it the summary is `None` and
   neither the banner nor the marks render. Tests: `tests/collection/test_web_sources.py`
   11 passed, 4 new — stale/never/inactive counting with per-row marks, a
@@ -124,7 +127,18 @@ Coverage evidence vs PRD-08 (state/refs → task):
   absent without `source.view`. Known unrelated failures in that run
   (`tests/web/test_web_ui.py`, `tests/web/test_web_list_layout.py`: settings and
   source-detail markup) are outside this lane and untouched here. Migration
-  implications: none.
+  implications: none. Final source review also corrects the banner: never-checked
+  sources require a check but have no elapsed check age. The banner states the
+  configured freshness threshold separately from their count.
+  Final code review passed on 2026-10-24 (`8c80d45`, fixture correction
+  `af38f3e`); the focused no-DB acceptance package passed 132 tests and 33
+  subtests. Final exact-SHA PostgreSQL/ASGI acceptance through OpenCode River
+  at `f7620887f0fdcb4b32f9657cfb070fad89d96543`: 76 collected, 76 passed,
+  0 failed, 0 skipped in 162.92 seconds, including the source freshness suite.
+  The nine-file package and command are recorded under P5-T14. Root conftest
+  redirected to `localhost:5432/social_manager/test_schema`; revision stayed
+  `0109`. No migration, reset, seed, live provider call or runtime start was
+  performed by this acceptance.
 - [ ] P8-T08 — credential expiry/near-expiry signal; accept: reauth/missing plus near-expiry from
   vault `expires_at` metadata — reads only, never decrypts; `renewable` auto-renewal is not reauth/error;
   personal vs operator split honest; depends: none; owns: credential signal lane; owner: unassigned; status: TODO
@@ -137,9 +151,24 @@ Coverage evidence vs PRD-08 (state/refs → task):
 - [ ] P8-T11 — incomplete-delivery aggregate signal; accept: bell/operator view of undelivered/retried/
   quarantined deliveries from existing outcome receipts (job + digest) only, no new delivery semantics;
   depends: none; owns: delivery signal lane; owner: unassigned; status: TODO
-- [ ] P8-T12 — unknown-price/spend exposure signal; accept: operator view of provider models
+- [x] P8-T12 — unknown-price/spend exposure signal; accept: operator view of provider models
   without known price plus spend totals via personal account managers (post P2-T06); depends: P2-T06;
-  owns: financial visibility lane; owner: opencode; status: READY.
+  owns: financial visibility lane; owner: opencode; acceptance: codex;
+  status: DONE — accepted by Codex on 2026-10-24 at `f762088`.
+  The audit found the platform-role flag had been hardcoded false, denying
+  every operator. Restore its identity check while retaining the workspace pin
+  and disabled global workspace mode. The model review list already uses the
+  manager's trusted personal-catalog scope; it is not a global catalog read.
+  Final review passed on 2026-10-24 (`8c80d45`, fixture correction `af38f3e`).
+  The focused no-DB package passed 132 tests and 33 subtests across the two
+  revisions; application code is unchanged between them. Final exact-SHA
+  PostgreSQL/ASGI acceptance through OpenCode River at
+  `f7620887f0fdcb4b32f9657cfb070fad89d96543`: collection 76, execution 76
+  passed, 0 failed, 0 skipped in 162.92 seconds. This includes actor-owned
+  catalog fixtures, workspace financial reads and real ASGI identity,
+  permission, workspace selection, unavailable-read and zero-write checks.
+  The nine-file package and command are recorded under P5-T14. Schema revision
+  remained `0109`; no migrations or schema repairs were part of the run.
   Implementation `7c23602`: `GET /app/billing/exposure` (platform-operator
   `guard_superuser`, active workspace pin, no writes) renders today's personal-ledger
   aggregates for the workspace (settled/reserved/provider-reported/tariff-reconstructed,
@@ -151,10 +180,11 @@ Coverage evidence vs PRD-08 (state/refs → task):
   suite 4 passed + 6 subtests (`tests/unit_web/test_billing_exposure.py`), PostgreSQL
   manager suite 3 passed (`tests/billing/test_billing_exposure_db.py`) through the
   primary OpenCode runner on the shared test schema; `git diff --check` clean; no
-  migration, live provider call, runtime start or deployment. READY is implementation
-  review only. Limits: the zero-price list is a review aid, explicit free and an
+  migration, live provider call, runtime start or deployment. These historical
+  checks precede the final ASGI acceptance above. Limits: the zero-price list
+  is a review aid, explicit free and an
   unconfigured default are indistinguishable; legacy unattributed attempts are outside
-  the ledger projection; real browser/ASGI role acceptance is not covered by these suites.
+  the ledger projection; browser interaction was not part of this acceptance.
 - [ ] P8-T13 — named support/escalation + pilot measures; accept: escalation owner and agreed
   latency/freshness/usefulness measures for the managed pilot, written and owner-signed; depends:
   P8-T10, P8-T11; owns: support contract lane; owner: unassigned; status: TODO

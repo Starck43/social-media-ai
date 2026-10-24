@@ -252,7 +252,7 @@ trust store if the OS does not ship it.
 | `TELEGRAM_DIGEST_CHANNEL_ID`   | Deprecated; ignored by digest delivery (use workspace bindings) |
 | `MAX_BOT_TOKEN`                | MAX bot access token                             |
 | `MAX_CHANNEL_ID`               | Deprecated; ignored by digest delivery (use workspace bindings) |
-| `AGENT_MODEL`                  | Preferred LLM model name for the summary         |
+| `AGENT_MODEL`                  | Not consulted by the digest summary (see CONFIGURATION for its acting-catalog lookup) |
 
 Recipient authorization comes from active, digest-enabled workspace bindings,
 not from env. Result keys are consistently `transport:chat_id`, including

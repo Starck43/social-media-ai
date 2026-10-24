@@ -18,16 +18,19 @@ required for unresolved effects and accounting.
   implemented with isolation/audit evidence; depends: none;
   owns: per selection; owner: unassigned; status: TODO
 
-- [ ] P6-T03 — add a workspace-admin-only action on the source page to delete
+- [x] P6-T03 — add a workspace-admin-only action on the source page to delete
   only that source's raw staged `CollectedItem` rows; accept: explicit
   confirmation, server-side admin and CSRF checks, tenant/source scoped delete,
   refuse while collect/analyze work is pending or running, analytics and
-  receipts untouched; add focused tests; no live DB cleanup; depends: none;
+  receipts untouched; focused tests; no live DB cleanup; depends: none;
   owns: `app/web/sources.py`, `app/web/templates/web/source_detail.html`,
   `app/models/managers/collected_item_manager.py` and focused tests;
-  owner: codex; status: IN_PROGRESS; evidence: diff review and `git diff --check`
-  passed, compileall passed; focused pytest was not run because the OpenCode
-  model quota was exhausted and the secondary Kilo task handoff was rejected.
+  owner: codex; status: DONE — accepted by Codex 2026-10-23 at candidate
+  commit `57a62d14d4171c59b9ea07931ee6d352a08d8ffa`. Focused OpenCode
+  acceptance at that exact commit: 12 passed, 0 failed. The broader combined
+  run also exposed five unrelated failures in
+  `test_task_editor_json_roundtrips_without_script_breakout` because its
+  fixture omits `target_fields`; the focused P6 scope passed on rerun.
 
 ## Phase approval
 

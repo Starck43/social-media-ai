@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Boolean, Column, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, relationship
 
 from ...core.config import settings
@@ -13,10 +13,19 @@ from ..base import Base, TimestampMixin
 @app_label("llm")
 class LLMProvider(Base, TimestampMixin):
     __tablename__ = "llm_providers"
-    __table_args__ = {"schema": settings.DB_SCHEMA}
+    __personal_scoped__ = True
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "uid", name="uq_llm_provider_owner_uid"),
+        UniqueConstraint("id", "owner_user_id", name="uq_llm_provider_id_owner"),
+        {"schema": settings.DB_SCHEMA},
+    )
 
     id: Mapped[int] = Column(Integer, primary_key=True)
-    name: Mapped[str] = Column(String(255), nullable=False, unique=True)
+    owner_user_id: Mapped[int] = Column(
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    uid: Mapped[str] = Column(String(100), nullable=False)
+    name: Mapped[str] = Column(String(255), nullable=False)
     description: Mapped[str | None] = Column(Text, nullable=True)
 
     api_format: Mapped[str] = Column(String(20), nullable=False, default="openai")
@@ -30,7 +39,7 @@ class LLMProvider(Base, TimestampMixin):
         "LLMModel",
         back_populates="provider",
         cascade="all, delete-orphan",
-        foreign_keys="LLMModel.provider_id",
+        foreign_keys="[LLMModel.provider_id, LLMModel.owner_user_id]",
     )
 
     if TYPE_CHECKING:
@@ -45,6 +54,9 @@ class LLMProvider(Base, TimestampMixin):
         return f"{self.name} [{self.api_format}]"
 
     def get_api_key(self) -> str:
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        if self.owner_user_id != current_catalog_owner_id():
+            raise PermissionError("Provider credentials belong to another user")
         if self.encrypted_api_key:
             from ...utils.crypto import decrypt_secret
 

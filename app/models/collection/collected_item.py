@@ -148,7 +148,13 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
             "author": dict(self.author or {}),
             "permalink": self.permalink,
             "content_hash": self.content_hash,
+            "content_type": self.content_type or "post",
+            "parent_external_id": self.parent_external_id,
+            "lane_id": self.lane_id,
         }
+        parent_context = metrics.get("parent_context")
+        if isinstance(parent_context, dict):
+            item["parent_context"] = dict(parent_context)
         if attachments is not None:
             item["attachments"] = attachments
         return item

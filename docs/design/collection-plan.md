@@ -328,8 +328,9 @@ The scenario is not a filter. It analyses rows that already passed selection.
 
 ## Limits and pagination
 
-- `collection.limit` defaults to 1000; per-lane override is allowed below the
-  hard ceiling.
+- `collection.limit` defaults to 1000 and caps parent posts for each source
+  lane. An explicit source override may lower this cap; every cap is bounded
+  by the deployment hard ceiling. Comment expansion uses its separate budgets.
 - `comments.max_per_post` and `comments.total` bound comment expansion.
 - `candidates.limit` bounds discovery; confirmation is capped.
 - `total_items` is an overall guard.
@@ -403,7 +404,9 @@ Data migration for task 2027 (applied on 2026-10-21, code `c9cc0b4`):
 - source 3174 was deactivated and unlinked (the row is kept for its trail);
 - scenario 1695's `output_schema` was written explicitly, so the fields its
   prompt asks for are validated (`topic_hint` stays in the contract);
-- the live dry-run is still waiting for Q-5 to unblock the VK search methods.
+- successful live search remains deferred under Q-5/Q-9; the later bounded
+  live dry-run recorded `api_1051` for search while readable wall lanes
+  continued collecting (see the phase's stage F evidence).
 
 The migration itself is a reviewed tool, not a one-off script:
 `python -m cli.main collection lanes <task_id> --query … --apply` plans first
@@ -411,20 +414,44 @@ and writes second, and
 `python -m cli.main scenarios output-schema <scenario_id> --add-field … --apply`
 does the same for a scenario contract. Both are dry-run by default.
 
-What the runtime still does not do: it resolves the task's sources and builds a
-per-source collection context, but it does not execute the planned lanes, so
-per-lane counts and the lane limit warning are not written yet (Q-6). A
-task-scoped search lane runs as an ordinary source, and the VK search methods
-answer `1051`, which the handler already reports per source as `api_1051`.
+The runtime executes population discovery, provisions task-owned mention
+sources and collects the linked source lanes. It writes per-lane counts,
+bounded failures and the applied parent-post cap in `collection_lane_runs`.
+Fetched and limit counts on post lanes refer to parent posts; selection counts
+refer to records, including expanded comments. Comment counts and their
+independent cap warnings remain in each source's job result. The pure planner
+remains available for planning. VK search methods may still answer `1051`
+for the configured application profile, reported as `api_1051`; live search
+activation remains tracked separately from this runtime contract.
+
+Source deletion is refused while an active explicit reader or active owning
+query task depends on it. A paused task also blocks deletion of its final
+explicit source: an empty link set would otherwise mean all active workspace
+sources on resume. A paused owner alone does not block cleanup of an unlinked
+lane. List and detail controls mirror the same scoped dependency rule; the
+transactional deletion service is authoritative. Unresolvable task ownership
+returns a bounded conflict rather than deleting or exposing foreign names.
 
 ## Acceptance
 
 - One task with two query lanes and two walls collects both; a post found by
-  both is stored once.
+  both is stored once inside that run. Eligible posts and comments share the
+  run identity ledger `(platform, content_type, external_id)`, while per-lane
+  selection evidence is retained. A run claims an identity only after durable
+  staging acknowledges it; independent runs keep source-scoped history.
 - A lane limit of 5 returns 5 rows and `limit_reached=true`; the warning is
   visible in web/API/CLI.
 - `collected_items` contains only `selected`/`needs_review`, with the correct
-  `content_type`; a comment carries `parent_external_id`.
+  `content_type`; a comment carries `parent_external_id`. Each expanded
+  comment also retains an allowlisted parent snapshot in `metrics.parent_context`
+  so a later drain can analyze it even if another lane already stored the
+  parent. Copied parent text is capped at 16,000 characters with an explicit
+  truncation marker. The snapshot is prompt context, not another primary item
+  or receipt; comment text and identity hashes stay unchanged. Matching legacy
+  staged rows may gain only the missing reserved context key, preserving their
+  status, attempt counters, text and run ownership. A conflicting stored hash
+  or selection status fails admission before the run claims the identity or
+  advances a Telegram cursor; it never silently promotes a review row.
 - A post without the phrase but with a matching comment is selected at thread
   level.
 - Discovery with a city returns candidates; unknown city goes to
@@ -432,8 +459,9 @@ answer `1051`, which the handler already reports per source as `api_1051`.
 - `content_types` on the task drives collection; the scenario field does not.
 - Source 3174 is gone and task 2027 runs through lanes.
 - Telegram unsupported lanes return a named reason; known channels still work.
-- Dry run writes no rows, calls no model, does not advance cursors and reports
-  counts.
+- Dry run writes no collected content or candidates, creates no source lanes,
+  calls no model and does not advance cursors. Bounded lane-run evidence may
+  persist so the task page can explain rehearsal counts and failures.
 - Tenant scoping, permissions and secret hygiene are unchanged.
 - Focused tests pass via the primary OpenCode test-runner; shared test DB runs
   are sequential.

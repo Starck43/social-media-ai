@@ -167,9 +167,9 @@ def _connection_banners(sources, statuses: dict) -> list[dict]:
 async def _delete_blockers(sources: list[Any], lane_tasks: dict[int, Any]) -> dict[int, str]:
     """Why each row's delete control is disabled, keyed by source id.
 
-    Only an ACTIVE task blocks a delete: it reads the source on purpose, so the
-    scope is removed inside that task. A lane whose owning task is paused (or
-    gone) is an orphan — nothing reads it, so the operator may clean it up here.
+    Active explicit readers block deletion, as does a paused task that would
+    lose its only explicit source. A task-owned lane blocks only while its
+    owner is active; a paused owner alone leaves a deletable orphan.
     """
     from app.core.tenant_context import tenant_scope
     from app.models.managers.agent_task_manager import AgentTaskManager
@@ -178,24 +178,40 @@ async def _delete_blockers(sources: list[Any], lane_tasks: dict[int, Any]) -> di
     for source in sources:
         ids_by_tenant.setdefault(int(source.tenant_id), []).append(int(source.id))
 
-    active_by_source: dict[int, list[Any]] = {}
+    dependencies_by_source: dict[int, list[Any]] = {}
     for tenant_id, ids in ids_by_tenant.items():
         with tenant_scope(tenant_id):
-            active_by_source.update(await AgentTaskManager().active_for_sources(ids, tenant_id))
+            dependencies_by_source.update(await AgentTaskManager().delete_blockers_for_sources(ids, tenant_id))
 
     blockers: dict[int, str] = {}
     for source in sources:
-        tasks = active_by_source.get(int(source.id), [])
+        tasks = dependencies_by_source.get(int(source.id), [])
         owner = lane_tasks.get(source.owner_task_id) if source.owner_task_id else None
-        if owner is not None and owner.is_active:
-            blockers[source.id] = f"Поиск задачи «{owner.name}» — удаляется в задаче"
-        elif tasks:
-            named = ", ".join(f"№{task.id} «{task.name}»" for task in tasks)
+        active_tasks = [task for task in tasks if task.is_active]
+        paused_last_source_tasks = [task for task in tasks if not task.is_active]
+        if source.owner_task_id is not None and owner is None:
             blockers[source.id] = (
-                f"Используется активной задачей {named} — удаляется в задаче"
-                if len(tasks) == 1
-                else f"Используется активными задачами {named} — удаляется в задачах"
+                "Не удалось проверить владельца и связи задачи; восстановите или удалите задачу "
+                "перед удалением источника"
             )
+            continue
+        if owner is not None and owner.is_active:
+            active_tasks = [owner, *[task for task in active_tasks if task.id != owner.id]]
+
+        reasons = []
+        if active_tasks:
+            named = ", ".join(f"№{task.id} «{task.name}»" for task in active_tasks)
+            action = "удалите источник в настройках задачи"
+            if source.owner_task_id and owner is not None and owner.is_active:
+                action = "остановите поиск или удалите источник в задаче"
+            reasons.append(f"Используется активной задачей {named} — {action}")
+        if paused_last_source_tasks:
+            named = ", ".join(f"№{task.id} «{task.name}»" for task in paused_last_source_tasks)
+            reasons.append(
+                f"Это единственный источник приостановленной задачи {named} — назначьте ей другой источник или удалите задачу"
+            )
+        if reasons:
+            blockers[source.id] = ". ".join(reasons)
     return blockers
 
 
@@ -517,6 +533,7 @@ async def source_detail(request: Request, source_id: int):
     """Show source settings, source-level statistics, and linked tasks."""
     from app.core.tenant_context import tenant_scope
     from app.models.ai_analytics import AIAnalytics
+    from app.web.tasks import _diagnostics_admin
 
     is_superuser = False
     filter_tenant_id, _tenants = await tenant_filter_context(request, is_superuser)
@@ -558,32 +575,14 @@ async def source_detail(request: Request, source_id: int):
             workspace_active_source_ids = await task_manager.get_workspace_active_source_ids()
             effective_schedules = await task_manager.effective_active_map(task_models, workspace_active_source_ids)
         schedules = [_schedule_view(task, effective_schedules.get(task.id, False)) for task in task_models]
-    # Delete guard on the page mirrors `source_delete`: an explicitly linked
-    # task whose own flag is still on keeps the source undeletable, so the
-    # page must say so instead of offering a button that only fails later.
-    with tenant_scope(source.tenant_id):
-        linked_tasks = await AgentTaskManager().for_source(
-            source.id, source.tenant_id, source_is_active=False, include_all_active=False
-        )
-        active_linked_tasks = [task for task in linked_tasks if task.is_active]
-    # A lane is deletable once nothing reads it: its owning task paused (or
-    # gone) leaves an orphan, and blocking that delete only hid the row from the
-    # operator who wanted it gone. An ACTIVE reader — the owning task or any
-    # task linking the source — is what keeps the row, and the page says which.
-    delete_blocker = None
-    owner_task = None
+    # Keep detail and list deletion hints on the same batched dependency query.
+    lane_tasks = {}
     if source.owner_task_id is not None:
         with tenant_scope(source.tenant_id):
-            owner_task = await AgentTaskManager().get(id=source.owner_task_id)
-    if owner_task is not None and owner_task.is_active:
-        delete_blocker = f"Поиск задачи «{owner_task.name}» — удаляется в задаче"
-    elif active_linked_tasks:
-        named = ", ".join(f"№{task.id} «{task.name}»" for task in active_linked_tasks)
-        delete_blocker = (
-            f"Используется активной задачей {named} — удаляется в задаче"
-            if len(active_linked_tasks) == 1
-            else f"Используется активными задачами {named} — удаляется в задачах"
-        )
+            owner_task = await AgentTaskManager().get(id=source.owner_task_id, tenant_id=source.tenant_id)
+        if owner_task is not None:
+            lane_tasks[owner_task.id] = owner_task
+    delete_blocker = (await _delete_blockers([source], lane_tasks)).get(source.id)
     is_ready, readiness_hint = await _readiness(
         source,
         task_models if can_view_tasks else None,
@@ -632,10 +631,10 @@ async def source_detail(request: Request, source_id: int):
         owner_connection=owner_connection,
         schedules=schedules,
         can_view_tasks=can_view_tasks,
-        active_linked_tasks=active_linked_tasks,
         delete_blocker=delete_blocker,
         can_update=perms_can(request, "source", "update"),
         can_delete=perms_can(request, "source", "delete"),
+        can_delete_unprocessed=_diagnostics_admin(request),
         is_superuser=is_superuser,
         is_ready=is_ready,
         readiness_hint=readiness_hint,
@@ -655,7 +654,6 @@ async def source_detail(request: Request, source_id: int):
 async def source_analysis_progress(request: Request, source_id: int):
     """Small polling fragment for the existing recent-analyses table."""
     from fastapi.responses import HTMLResponse
-
     from app.core.tenant_context import tenant_scope
     from app.models.managers.job_manager import JobManager
 
@@ -856,6 +854,10 @@ async def _stale_sources_summary(request: Request, sources: list) -> dict | None
     A source that was never checked is counted and named separately. Filing it
     under "stale" would claim a check that never happened; calling it "fresh"
     because there is no timestamp to compare is the opposite lie.
+
+    Task-owned query lanes (`owner_task_id`) are left out: their runs follow the
+    owning task's schedule, so a paused or weekly task cannot raise a 24h alert
+    here. Lanes stay visible on the page itself.
     """
     if not perms_can(request, "source", "view"):
         return None
@@ -863,9 +865,10 @@ async def _stale_sources_summary(request: Request, sources: list) -> dict | None
     from app.models.managers.source_manager import SourceManager
 
     hours = _stale_window_hours()
+    ordinary = [row for row in sources if getattr(row, "owner_task_id", None) is None]
     stale_ids = {row.id for row in await SourceManager().get_sources_for_monitoring(hours_since_check=hours)}
-    rows = [row for row in sources if row.id in stale_ids]
-    active_total = sum(1 for row in sources if row.is_active)
+    rows = [row for row in ordinary if row.id in stale_ids]
+    active_total = sum(1 for row in ordinary if row.is_active)
     never_ids = frozenset(row.id for row in rows if row.last_checked is None)
     return {
         "hours": hours,
@@ -1025,10 +1028,8 @@ async def _readiness(source, schedules, effective_schedules=None) -> tuple[bool,
         return False, "Ни одна задача не ссылается на этот источник — сбор не запускается."
     elif not any(s.is_active for s in schedules):
         return False, "Все задачи по этому источнику на паузе."
-    if (
-        schedules is not None
-        and effective_schedules is not None
-        and not any(effective_schedules.get(task.id, False) for task in schedules)
+    if schedules is not None and effective_schedules is not None and not any(
+        effective_schedules.get(task.id, False) for task in schedules
     ):
         return False, "Задачи не выполняются: проверьте, что назначенный сценарий активен."
     if (source.params or {}).get("mode", "pull") == "push":
@@ -1091,8 +1092,7 @@ async def source_collect_now(
 
         try:
             outcome = await run_job_inline(
-                "collect",
-                {"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})},
+                "collect", {"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})}
             )
         except SourceJobBusy:
             add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
@@ -1175,10 +1175,7 @@ async def source_analyze_now(
                 reset_count = await CollectedItem.objects.reset_attempts(session, source_id, **bounds)
                 job = await JobManager().admit_source_job(
                     job_type="analyze",
-                    payload={
-                        "source_ids": [source.id],
-                        **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {}),
-                    },
+                    payload={"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})},
                     tenant_id=tenant_id,
                     session=session,
                 )
@@ -1246,9 +1243,7 @@ async def source_delete_unprocessed(
                     return RedirectResponse("/app/sources", status_code=302)
                 running = await _source_has_running_job(source_id)
                 if running["collect"] or running["analyze"]:
-                    add_flash(
-                        request, "info", "Нельзя удалить контент, пока сбор или анализ ожидает запуска или выполняется"
-                    )
+                    add_flash(request, "info", "Нельзя удалить контент, пока сбор или анализ ожидает запуска или выполняется")
                     return RedirectResponse(back, status_code=302)
                 deleted = await CollectedItem.objects.delete_unprocessed_for_source(
                     session, source_id, active_tenant_id
@@ -1282,7 +1277,7 @@ async def source_delete(
 
     from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
-    from app.services.collection.source_deletion import SourceDeleteBlocked, delete_source
+    from app.services.collection.source_deletion import SourceDeleteBlocked, SourceDeleteScopeError, delete_source
 
     session = new_session()
     try:
@@ -1293,23 +1288,47 @@ async def source_delete(
                     add_flash(request, "error", "Источник не найден")
                     return RedirectResponse("/app/sources", status_code=302)
 
-                # A lane is deletable once nothing reads it: its owning task
-                # paused or gone leaves an orphan nobody uses. The shared delete
-                # path still refuses while an ACTIVE task links the row, and
-                # that refusal names the task.
+                # An orphan lane may be deleted once nothing reads it. A paused
+                # task's final explicit link is not an orphan: resume would
+                # otherwise widen the task to every active workspace source.
                 # `sources.analytics` is delete-orphan, so the analysis rows go
                 # with it. The service refuses while an active task still reads
-                # the source, so the scope is removed inside that task instead.
+                # the source, or while a paused task would lose its last explicit
+                # one, so the scope is removed inside the task instead.
                 removal = await delete_source(session, source_id=source_id, tenant_id=tenant_id)
+    except SourceDeleteScopeError:
+        add_flash(
+            request,
+            "error",
+            "Не удалось проверить связи задач источника; проверьте или удалите связанную задачу перед удалением источника",
+        )
+        return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
     finally:
         await session.close()
 
     if isinstance(removal, SourceDeleteBlocked):
-        ids = ", ".join(f"№{task.task_id}" for task in removal.active_tasks)
-        if len(removal.active_tasks) == 1:
-            add_flash(request, "error", f"Источник используется активной задачей {ids} — удалите его в задаче")
-        else:
-            add_flash(request, "error", f"Источник используется активными задачами {ids} — удалите их в задачах")
+        if removal.active_tasks:
+            ids = ", ".join(f"№{task.task_id}" for task in removal.active_tasks)
+            if len(removal.active_tasks) == 1:
+                add_flash(request, "error", f"Источник используется активной задачей {ids} — удалите его в задаче")
+            else:
+                add_flash(request, "error", f"Источник используется активными задачами {ids} — удалите их в задачах")
+        if removal.last_source_tasks:
+            names = ", ".join(f"«{task.name}»" for task in removal.last_source_tasks)
+            if len(removal.last_source_tasks) == 1:
+                add_flash(
+                    request,
+                    "error",
+                    f"Источник — единственный у задачи {names}: выберите ей другой источник "
+                    "или удалите задачу, прежде чем удалять источник",
+                )
+            else:
+                add_flash(
+                    request,
+                    "error",
+                    f"Источник — единственный у задач {names}: выберите им другие источники "
+                    "или удалите эти задачи, прежде чем удалять источник",
+                )
         return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
     if removal is None:
@@ -1317,14 +1336,4 @@ async def source_delete(
         return RedirectResponse("/app/sources", status_code=302)
 
     add_flash(request, "success", f"Источник '{removal.name}' удалён вместе с его аналитикой")
-    if removal.paused_tasks:
-        # An empty link set means "all active sources", so a task whose last
-        # explicit source just went away would silently widen. It was paused
-        # instead — name it, or the operator finds a stopped task unexplained.
-        names = ", ".join(f"«{task.name}»" for task in removal.paused_tasks)
-        add_flash(
-            request,
-            "info",
-            f"Задача {names} приостановлена: у неё не осталось выбранных источников",
-        )
     return RedirectResponse("/app/sources", status_code=302)

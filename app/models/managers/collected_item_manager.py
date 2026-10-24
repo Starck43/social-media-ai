@@ -133,6 +133,92 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         )
         return int(stored.scalar() or 0)
 
+    async def confirm_stored_items(self, session: Any, rows: Sequence[dict[str, Any]]) -> None:
+        """Confirm a strict staging receipt inside the caller's transaction.
+
+        Unlike ``store_items``' compatibility count, this proves every identity
+        is durable before a collection run claims it. Existing rows are only
+        enriched with a missing reserved parent context; their payload and
+        processing state remain untouched.
+        """
+        if not rows:
+            return
+
+        from app.core.tenant_context import current_tenant_id, is_bypass
+
+        tenant_id = current_tenant_id()
+        if is_bypass() or type(tenant_id) is not int or tenant_id <= 0:
+            raise ValueError("content_tenant_invalid")
+        expected: dict[tuple[str, str | None, str | None], dict[str, Any]] = {}
+        source_ids = {row.get("source_id") for row in rows}
+        if len(source_ids) != 1 or any(type(value) is not int or value <= 0 for value in source_ids):
+            raise ValueError("content_source_invalid")
+        for row in rows:
+            if row.get("tenant_id", tenant_id) != tenant_id:
+                raise ValueError("content_tenant_invalid")
+            content_type = str(row.get("content_type") or "post")
+            external_id = row.get("external_id")
+            external_id = str(external_id) if external_id is not None else None
+            digest = row.get("content_hash")
+            if type(digest) is not str or len(digest) != 64:
+                raise ValueError("content_identity_invalid")
+            key = (content_type, external_id, None if external_id is not None else digest)
+            if key in expected and expected[key].get("content_hash") != digest:
+                raise ValueError("content_identity_conflict")
+            expected[key] = row
+        if not expected:
+            return
+
+        model = self.model
+        source_id = next(iter(source_ids))
+        identity_clauses = []
+        for content_type, external_id, anonymous_hash in expected:
+            clause = [model.content_type == content_type]
+            if external_id is not None:
+                clause.append(model.external_id == external_id)
+            else:
+                clause.extend((model.external_id.is_(None), model.content_hash == anonymous_hash))
+            identity_clauses.append(and_(*clause))
+        persisted = (await session.execute(
+            select(model).where(
+                model.tenant_id == tenant_id,
+                model.source_id == source_id,
+                or_(*identity_clauses),
+            ).with_for_update()
+        )).scalars().all()
+        by_identity: dict[tuple[str, str | None, str | None], Any] = {}
+        for stored in persisted:
+            key = (
+                stored.content_type or "post",
+                stored.external_id,
+                None if stored.external_id is not None else stored.content_hash,
+            )
+            by_identity.setdefault(key, stored)
+
+        matched: list[tuple[Any, dict[str, Any]]] = []
+        for key, row in expected.items():
+            stored = by_identity.get(key)
+            if stored is None:
+                raise ValueError("content_receipt_missing")
+            if stored.content_hash != row["content_hash"]:
+                raise ValueError("content_identity_conflict")
+            stored_status = stored.selection_status or "selected"
+            incoming_status = row.get("selection_status") or "selected"
+            if stored_status != incoming_status:
+                raise ValueError("content_selection_conflict")
+            matched.append((stored, row))
+
+        for stored, row in matched:
+            incoming_metrics = row.get("metrics") if isinstance(row.get("metrics"), dict) else {}
+            parent_context = incoming_metrics.get("parent_context")
+            if not isinstance(parent_context, dict):
+                continue
+            metrics = dict(stored.metrics) if isinstance(stored.metrics, dict) else {}
+            if "parent_context" not in metrics:
+                metrics["parent_context"] = dict(parent_context)
+                stored.metrics = metrics
+        await session.flush()
+
     async def admit_items(self, session: Any, rows: Sequence[dict[str, Any]]) -> int:
         """Strict borrowed-transaction receipt, not the legacy rowcount estimate.
 
@@ -177,15 +263,22 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             expected[identity] = row
         model = self.model
         scope = (model.tenant_id == tenant_id, model.source_id == source_id)
-        existing = (await session.execute(select(model.external_id, model.content_hash).where(
+        existing = (await session.execute(select(
+            model.external_id, model.content_hash, model.selection_status,
+        ).where(
             *scope, model.external_id.in_(list(expected)),
         ).with_for_update())).all()
-        present = dict(existing)
+        present = {external_id: (digest, status) for external_id, digest, status in existing}
         missing = []
         for identity, row in expected.items():
             if identity in present:
-                if present[identity] != row["content_hash"]:
+                stored_hash, stored_status = present[identity]
+                if stored_hash != row["content_hash"]:
                     raise ValueError("content_identity_conflict")
+                # A locked row whose durable selection differs from this receipt
+                # is a conflicting admission, not a duplicate to swallow.
+                if (stored_status or "selected") != row["selection_status"]:
+                    raise ValueError("content_selection_conflict")
             else:
                 missing.append(row)
         if not missing:
@@ -214,11 +307,19 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         ).returning(model.external_id))).scalars().all()
         # A concurrent non-admission writer must not turn a conflicting identity
         # into a successful receipt. Read every pending identity back exactly.
-        stored = dict((await session.execute(select(model.external_id, model.content_hash).where(
-            *scope, model.external_id.in_([row["external_id"] for row in pending]),
-        ).with_for_update())).all())
-        if any(stored.get(row["external_id"]) != row["content_hash"] for row in pending):
-            raise ValueError("content_receipt_missing")
+        stored = {external_id: (digest, status) for external_id, digest, status in (
+            await session.execute(select(
+                model.external_id, model.content_hash, model.selection_status,
+            ).where(
+                *scope, model.external_id.in_([row["external_id"] for row in pending]),
+            ).with_for_update())
+        ).all()}
+        for row in pending:
+            record = stored.get(row["external_id"])
+            if record is None or record[0] != row["content_hash"]:
+                raise ValueError("content_receipt_missing")
+            if (record[1] or "selected") != row["selection_status"]:
+                raise ValueError("content_selection_conflict")
         return len(inserted)
 
     async def for_source(

@@ -16,13 +16,13 @@ a preference — it follows `docs/TENANCY.md`:
 * **channels** — where digests and the agent are delivered.
 * **platforms** — the global catalog, active platform administrators only.
 
-Deliberately absent: `llm_providers` / `llm_models`. The fleet is global and
-one-per-deployment, so it stays in the sqladmin console with its connection
-tests — a workspace must not be able to repoint the model the runtime uses.
+Personal providers/models are managed on the models tab. Workspace chat
+configuration references a numeric model ID in the current user's catalog.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
@@ -39,7 +39,16 @@ router = APIRouter(prefix="/settings")
 
 BACK = "/app/settings"
 
-TABS: tuple[str, ...] = ("account", "connections", "workspace", "team", "agent", "channels", "platforms")
+TABS: tuple[str, ...] = (
+    "account",
+    "connections",
+    "models",
+    "workspace",
+    "team",
+    "agent",
+    "channels",
+    "platforms",
+)
 #: Tabs that only configure the workspace; a member who cannot manage it does
 #: not get them (their forms are refused anyway by `_guard_workspace_settings`).
 MANAGER_TABS: frozenset[str] = frozenset({"agent", "channels"})
@@ -167,7 +176,7 @@ def _visible_tabs(request: Request, tenant_id: int | None) -> tuple[str, ...]:
     workspace_tabs = tuple(tab for tab in TABS if tab != "platforms")
     if not _workspace_access(request, tenant_id):
         # Existing personal connection write/OAuth routes still require onboarding.
-        return ("account",) + global_tabs
+        return ("account", "models") + global_tabs
     perms = getattr(request.state, "web_perms", None)
     if perms is not None and perms.can_manage_workspace(tenant_id):
         return workspace_tabs + global_tabs
@@ -198,7 +207,9 @@ async def settings_page(request: Request):
         "settings_team_visible": manage,
         "is_superuser": False,
         "settings_scope": (
-            "global" if tab == "platforms" else ("personal" if tab in ("account", "connections") else "workspace")
+            "global"
+            if tab == "platforms"
+            else ("personal" if tab in ("account", "connections", "models") else "workspace")
         ),
     }
 
@@ -226,18 +237,8 @@ async def settings_page(request: Request):
             # Explicit member read contract: no budget/prompt/channel/plan configuration.
             context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
     elif tab == "agent" and manage:
-        from app.models.llm_model import LLMModel
-        from app.services.ai.llm_client import default_model_sort_key
-
-        models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.id)
-        options = []
-        for model in sorted(models, key=default_model_sort_key):
-            provider_name = model.provider.name if model.provider else "?"
-            unit_label = "1K" if model.pricing_token_unit == 1000 else "1M"
-            cost = f"${model.input_cost_per_1k}/${model.output_cost_per_1k}/{unit_label}"
-            label = f"{provider_name}/{model.model_id} ({cost})" + (" ★" if model.is_default else "")
-            options.append({"id": model.name, "label": label})
-        context["agent_model_options"] = options
+        from app.services.ai.personal_catalog import chat_model_options
+        context["agent_model_options"] = await chat_model_options(user_id=user.id, tenant_id=tenant_id)
 
         # Read the last probe result from session (set by /agent/model-probe).
         probe_result = request.session.get("agent_model_probe_result")
@@ -272,6 +273,9 @@ async def settings_page(request: Request):
             role_labels=ROLE_LABELS,
             member_role_keys={m.id: member_roles.key_of(m) for m in memberships},
         )
+    elif tab == "models":
+        from .settings_llm import settings_llm_context
+        context.update(await settings_llm_context(request))
     elif tab == "connections":
         from app.models.managers.user_credential_manager import user_credentials
         from app.services.social.connections import CONNECTIONS, connection_statuses
@@ -291,19 +295,6 @@ async def settings_page(request: Request):
             }
             for spec in CONNECTIONS
         ]
-    elif tab == "agent" and manage:
-        from app.models.llm_model import LLMModel
-        from app.services.ai.llm_client import default_model_sort_key
-
-        models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.id)
-        options = []
-        for model in sorted(models, key=default_model_sort_key):
-            provider_name = model.provider.name if model.provider else "?"
-            unit_label = "1K" if model.pricing_token_unit == 1000 else "1M"
-            cost = f"${model.input_cost_per_1k}/${model.output_cost_per_1k}/{unit_label}"
-            label = f"{provider_name}/{model.model_id} ({cost})" + (" ★" if model.is_default else "")
-            options.append({"id": model.name, "label": label})
-        context["agent_model_options"] = options
     elif tab == "channels" and manage:
         from app.models.managers.tenant_manager import TenantChannelManager
 
@@ -456,7 +447,7 @@ async def workspace_update(
 @router.post("/agent")
 async def agent_settings_update(
     request: Request,
-    agent_model: str = Form(""),
+    agent_model_id: str = Form(""),
     agent_max_tokens: str = Form(""),
     agent_temperature: str = Form(""),
     agent_system_prompt: str = Form(""),
@@ -496,7 +487,7 @@ async def agent_settings_update(
     if agent_temperature.strip():
         try:
             temperature = float(agent_temperature)
-            if temperature < 0 or temperature > 2:
+            if not math.isfinite(temperature) or temperature < 0 or temperature > 2:
                 add_flash(request, "error", "Temperature должно быть от 0 до 2")
                 return RedirectResponse(BACK, status_code=302)
         except ValueError:
@@ -504,12 +495,20 @@ async def agent_settings_update(
             return RedirectResponse(BACK, status_code=302)
 
     # Clean string fields
-    model = agent_model.strip() or None
+    try:
+        selected_id = int(agent_model_id) if agent_model_id.strip() else None
+        from app.services.ai.personal_catalog import validate_chat_model
+        selected = await validate_chat_model(
+            user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=selected_id
+        )
+    except (ValueError, PermissionError):
+        add_flash(request, "error", "Модель недоступна для пользователя или пространства")
+        return RedirectResponse(BACK + "?tab=agent", status_code=302)
     prompt = agent_system_prompt.strip() or None
 
     await tenants.update_by_id(
         tenant_id,
-        agent_model=model,
+        agent_model_id=selected.id if selected is not None else None,
         agent_max_tokens=max_tokens,
         agent_temperature=temperature,
         agent_system_prompt=prompt,
@@ -525,7 +524,7 @@ async def agent_settings_update(
 @router.post("/agent/model-probe")
 async def agent_model_probe(
     request: Request,
-    agent_model: str = Form(""),
+    agent_model_id: str = Form(""),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
 ):
@@ -547,13 +546,18 @@ async def agent_model_probe(
 
     tenant = await tenants.get(id=tenant_id)
     model = None
-    if agent_model and agent_model not in ("None", "null", ""):
+    if agent_model_id.strip():
         try:
-            model_id = int(agent_model)
-            model = await LLMModel.objects.select_related("provider").filter(id=model_id, is_active=True).first()
-        except ValueError:
-            model = await LLMModel.objects.select_related("provider").filter(name=agent_model, is_active=True).first()
+            from app.services.ai.personal_catalog import validate_chat_model
+            model = await validate_chat_model(
+                user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=int(agent_model_id)
+            )
+        except (ValueError, PermissionError):
+            add_flash(request, "error", "Выбранная модель недоступна")
+            return RedirectResponse(BACK + "?tab=agent", status_code=302)
 
+    else:
+        model = await LLMModel.objects.resolve_default_model("text")
     result = probe_short(model)
 
     # Save probe result in session and redirect back to the settings page so

@@ -318,7 +318,15 @@ async def test_a_collected_wall_source_writes_one_evidence_row(workspace, task, 
 
     _double_collector(
         monkeypatch,
-        {"content_count": 3, "new_items": 3, "selected": 2, "needs_review": 1, "rejected": 1},
+        {
+            "content_count": 3,
+            "new_items": 3,
+            "selected": 2,
+            "needs_review": 1,
+            "rejected": 1,
+            "limit_count": 2,
+            "limit_reached": True,
+        },
     )
     with tenant_scope(workspace.id), operator_permission_scope():
         await AgentTaskManager().update_by_id(task.id, payload={"collection": {"limit": 2}})

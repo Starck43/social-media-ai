@@ -40,15 +40,12 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P5-T04 — persist analysis receipts to prevent duplicate model spend → [p5](docs/phases/p5-ai-boundaries.md) — owner: codex-analysis-receipts — IN_PROGRESS
 - [ ] P6-T01 — data-retention rollout (deploy gated) → [p6](docs/phases/p6-lifecycle-privacy.md) — owner — BLOCKED
 - [ ] P6-T02 — one bounded retention/export/offboarding contract → [p6](docs/phases/p6-lifecycle-privacy.md) — unassigned — TODO
-- [ ] P6-T03 — admin removal of unprocessed source content → [p6](docs/phases/p6-lifecycle-privacy.md) — owner: codex — IN_PROGRESS
 - [ ] P7-T01 — loopback-only DB binding (pre-production) → [p7](docs/phases/p7-operations.md) — owner — TODO
 - [ ] P7-T02 — one staging-backed operation proof → [p7](docs/phases/p7-operations.md) — unassigned — TODO
-- [ ] P8-T07 — operator-visible stale-source observable → [p8](docs/phases/p8-first-value-ui.md) — owner: opencode — READY
 - [ ] P8-T08 — credential expiry/near-expiry signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P8-T09 — queue backlog/age/quarantine operator signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P8-T10 — scheduler/worker/listener freshness identity → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P8-T11 — incomplete-delivery aggregate signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
-- [ ] P8-T12 — unknown-price/spend exposure signal → [p8](docs/phases/p8-first-value-ui.md) — opencode — READY
 - [ ] P8-T13 — named support/escalation ownership + pilot measures → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P9-T01 — one capability-specific activation contract → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
 - [ ] P10-T01 — authorized password recovery (AUD-01, P0) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
@@ -65,7 +62,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T12 — preserve partial chat task updates and restore task listing (#217) → [p10](docs/phases/p10-audit-hardening.md) — codex — IN_PROGRESS
 
 
-- [ ] P5-T14 — universal collection plan: task-owned typed collection, lanes, limits, comments and candidates → [p5](docs/phases/p5-ai-boundaries.md) — owner (fork #2) — READY for review (stages E, F)
 
 - [ ] P8-T29 — agent paraphrase/search/compose tools for abstract "find and analyse" requests → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 
@@ -82,25 +78,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
   asked by: $local (opencode); status: OPEN
 
 <!-- Q-<n> — question; context: <link/file>; asked by: <agent>; status: OPEN|RESOLVED(delete row) -->
-
-- [ ] Q-6 — should the runtime execute the planned lanes (per-lane counts in
-  `collection_lane_runs`, `limit_reached` warning) or is the current per-source
-  execution enough? Context: `plan_collection`/`query_source_spec` are pure and
-  uncalled; `handle_collect` resolves the task's sources and builds a
-  per-source `CollectionContext`, so a task-scoped SEARCH lane runs as an
-  ordinary source and its failure is reported per source (`api_1051`), but no
-  lane-level counts or limit warnings are written.
-  Context: [collection plan](docs/design/collection-plan.md),
-  [p5 phase](docs/phases/p5-ai-boundaries.md); asked by: $local (opencode);
-  status: OPEN
-
-- [ ] Q-7 — should scenario 1695's `is_relevant` become a real runtime gate, or
-  stay a validated field only? Context: the analyzer's only relevance gate is
-  `scope["relevance_filter"]` + `is_meaningful` + `min_confidence`;
-  `is_relevant` is read nowhere, so writing it into `output_schema` only
-  validates the value.
-  Context: [p5 phase](docs/phases/p5-ai-boundaries.md); asked by: $local
-  (opencode); status: OPEN
 
 - [ ] Q-9 — will the deployment move to a Standalone VK application so the
   global search family opens? Context: a read-only probe answered 1051 for

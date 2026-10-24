@@ -1,0 +1,38 @@
+{% from 'web/_macros.html' import control, popover_select with context %}
+{% macro model_row(prefix, model=none) %}
+<div class="llm-model-fields" data-llm-row>
+    <input type="hidden" name="model_db_id" value="{{ model.id if model else '' }}">
+    <div><label for="{{ prefix }}-api">Имя модели в API</label><input id="{{ prefix }}-api" name="model_api_id" value="{{ model.model_id if model else '' }}" maxlength="100" placeholder="qwen-plus" class="{{ control('font-mono') }}" data-model-api></div>
+    <div><label for="{{ prefix }}-name">Название модели</label><input id="{{ prefix }}-name" name="model_name" value="{{ model.name if model else '' }}" maxlength="100" placeholder="Qwen Plus" class="{{ control() }}" data-model-name></div>
+    {% if not model %}<button type="button" class="ui-control" data-llm-remove aria-label="Убрать новую модель">Убрать</button>{% endif %}
+</div>
+{% endmacro %}
+{% macro provider_fields(prefix, provider=none) %}
+<input type="hidden" name="provider_id" value="{{ provider.id if provider else '' }}">
+<div class="llm-provider-fields">
+    <div><label for="{{ prefix }}-name">Название провайдера</label><input id="{{ prefix }}-name" name="provider_name" required maxlength="255" value="{{ provider.name if provider else '' }}" placeholder="Qwen.AI" class="{{ control() }}"></div>
+    <div><label for="{{ prefix }}-uid">UID провайдера</label><input id="{{ prefix }}-uid" name="provider_uid" required pattern="[a-z0-9][a-z0-9_\-]{0,99}" maxlength="100" value="{{ provider.uid if provider else '' }}" placeholder="qwen" class="{{ control('font-mono') }}" aria-describedby="{{ prefix }}-uid-help"><p id="{{ prefix }}-uid-help" class="ui-muted">Короткий идентификатор, например qwen.</p></div>
+</div>
+<div><label for="{{ prefix }}-url">API URL (HTTPS)</label><input id="{{ prefix }}-url" name="base_url" type="url" required pattern="https://.*" maxlength="500" value="{{ provider.base_url or '' if provider else '' }}" placeholder="https://api.example.com/v1" class="{{ control() }}"></div>
+<details class="llm-key"><summary data-llm-key-summary>{{ 'Заменить API-ключ' if provider and provider.has_api_key else 'Добавить API-ключ' }}</summary><label for="{{ prefix }}-key">API-ключ</label><input id="{{ prefix }}-key" name="api_key" type="password" autocomplete="new-password" class="{{ control() }}"><p class="ui-muted">Сохранённый ключ не показывается. Пустое поле не меняет его.</p></details>
+{% endmacro %}
+<div class="llm-catalog" data-llm-catalog>
+    <div class="llm-toolbar"><p class="ui-muted">Ваш личный каталог для всех пространств. Другие пользователи не видят ваши ключи.</p><a href="#llm-add" class="ui-control settings-primary" data-llm-open>Добавить провайдера и модели</a></div>
+    {% for provider in llm_catalog.providers %}
+    <section class="ui-card llm-provider" aria-labelledby="llm-provider-{{ provider.id }}">
+        <header class="llm-card-heading"><div><h3 id="llm-provider-{{ provider.id }}">{{ provider.name }}</h3><p class="ui-muted">{{ provider.uid }}{% if not provider.is_active %} · Провайдер отключён{% endif %}</p></div><span class="llm-badge">Моделей: {{ provider.models|length }}</span></header>
+        {% for model in provider.models %}
+        <div class="llm-model-entry">
+            <div><strong>{{ model.name }}</strong><p class="ui-muted llm-api-name">{{ model.model_id }}</p><div class="llm-badges">{% if model.id == llm_catalog.effective_default_model_id %}<span class="llm-badge llm-default">По умолчанию</span>{% elif model.is_default %}<span class="llm-badge">По умолчанию · {{ model.model_type }}</span>{% endif %}{% if model.id == llm_chat_model_id %}<span class="llm-badge">Выбрана для чата</span>{% endif %}{% if not model.is_active %}<span class="llm-badge">Модель отключена</span>{% endif %}</div></div>
+            {% if model.is_active and provider.is_active and not model.is_default %}<form method="post" action="/app/settings/models/default"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="model_id" value="{{ model.id }}"><button class="ui-control">Сделать по умолчанию</button></form>{% endif %}
+        </div>
+        {% else %}<p class="ui-muted">Моделей пока нет. Добавьте их ниже.</p>{% endfor %}
+        <details class="llm-editor"><summary>Изменить провайдера и модели</summary><form method="post" action="/app/settings/models/save" class="settings-form llm-bundle" data-llm-bundle><input type="hidden" name="_csrf" value="{{ csrf }}">{{ provider_fields('provider-' ~ provider.id, provider) }}<fieldset><legend>Модели</legend><div data-llm-rows>{% for model in provider.models %}{{ model_row('model-' ~ model.id, model) }}{% endfor %}</div><button type="button" class="ui-control" data-llm-add>Добавить ещё модель</button></fieldset><div class="llm-actions"><button class="ui-control settings-primary">Сохранить изменения</button></div></form></details>
+    </section>
+    {% else %}<section class="ui-card"><h3>Моделей пока нет</h3><p class="ui-muted">Добавьте провайдера и одну или несколько моделей за один раз.</p></section>{% endfor %}
+    <details id="llm-add" class="ui-card llm-editor"><summary>Добавить провайдера и модели</summary><form method="post" action="/app/settings/models/save" class="settings-form llm-bundle" data-llm-bundle data-llm-new><input type="hidden" name="_csrf" value="{{ csrf }}"><div><label for="llm-existing-trigger">Провайдер</label>{% set provider_options = [] %}{% for provider in llm_catalog.providers %}{% set _ = provider_options.append((provider.id, provider.name, provider.uid)) %}{% endfor %}{{ popover_select('existing_provider', 'llm-existing', provider_options, placeholder='Новый провайдер', label='Выбрать провайдера') }}<p class="ui-muted">Выберите существующего — его UID и API URL подставятся автоматически.</p></div>{{ provider_fields('new-provider') }}<fieldset><legend>Модели</legend><div data-llm-rows>{{ model_row('new-model-0') }}</div><button type="button" class="ui-control" data-llm-add>Добавить ещё модель</button></fieldset><div class="llm-actions"><button class="ui-control settings-primary">Сохранить провайдера и модели</button></div></form></details>
+    <template data-llm-row-template>{{ model_row('llm-row-INDEX') }}</template>
+    <script type="application/json" data-llm-providers>{{ llm_provider_choices|tojson }}</script>
+    <p class="ui-muted">«По умолчанию» — модель для автоматического выбора. Явный выбор модели для чата настраивается в разделе «Агент для чата» и учитывает доступность модели.</p>
+    <noscript><p>Для добавления нескольких моделей за один раз и подстановки провайдера включите JavaScript. Существующие записи можно редактировать без него.</p></noscript>
+</div>

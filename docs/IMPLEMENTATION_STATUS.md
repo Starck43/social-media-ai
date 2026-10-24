@@ -16,6 +16,36 @@ PR #176 remains Draft/open despite the cherry-picked implementation. This
 audit preserves prior owner evidence and adds only static/offline contract
 checks; no application/DB/pytest/release acceptance is claimed.
 
+## Personal LLM catalog and workspace-safe bindings — integrated; rollout separate
+
+PR #230 merged into the feature, followed by backend #229 into dev. Final dev
+SHA `b34353645fe37de53c97c4d022c05af0044dc8ba`, tree
+`c5a72aeae0e6d86adf5a951e7463c8e4c104f3c3`, is byte-identical to #230 head
+`56fb209704e2ada7510f26d77b2d3006135e8462`. P3-T93–T96 are DONE, accepted by
+Codex on 2026-10-23 at that source SHA; source integration is not migration or deployment.
+
+Evidence retains its execution SHAs: queue 53/53, PostgreSQL catalog 9/9 and
+UI ASGI 7/7 at combined `87d87281ec4d8b6959e947e32cb5487ac2a14564` (tree
+`357068ecd0aced56adfcb2585267826762688bb6`, same as
+`0749a86980f3cdd199f773665d21267fe7ff63fc`); Chromium catalog 24/24 + layout
+104/104 and isolated UI 53/53 at #230 head
+`56fb209704e2ada7510f26d77b2d3006135e8462`; owner-local WebKit layout 104/104
+at that same head. No test was run on `b343536`; tree equality transfers source
+identity, not execution attribution. The standalone keyboard fixture timeout is
+NOT PASS; the layout suite covers that path. See
+[source-pinned ownership evidence](validation/personal-llm-ownership.md).
+
+Integrated source behavior: user-owned LLM providers/models shared across that user's
+workspaces; numeric workspace chat model FK and common eligibility; atomic
+provider+models/default service; validated task/source/scenario links. Social
+Platform remains global and UserCredential personal. No working/deployment
+schema upgrade, durable user-2 backfill or deployment is claimed; prior
+disposable acceptance and isolated backfill remain recorded at their original
+source SHAs.
+See [canonical evidence/checklist](validation/personal-llm-ownership.md),
+[API](API.md), [models](MODELS.md), [tenancy](TENANCY.md) and [admin](ADMIN.md).
+Historical delivered rows below remain pinned to their original revisions.
+
 ## Delivered foundations
 
 | Area | Delivered behavior | Integration references | Remaining boundary |

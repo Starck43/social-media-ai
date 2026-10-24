@@ -146,11 +146,12 @@ async def delete_source(
     source_id: int,
     _user = Depends(require_model_perm("source", ActionType.DELETE)),
 ):
-    """Delete a source; refused while an active task still reads it."""
+    """Delete a source; refused while a linked task still depends on it."""
     from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
     from app.services.collection.source_deletion import (
         SourceDeleteBlocked,
+        SourceDeleteScopeError,
         delete_source as delete_workspace_source,
     )
 
@@ -162,21 +163,25 @@ async def delete_source(
     try:
         # The row is read through the tenant-guarded queryset, so its workspace
         # *is* the caller's. Re-entering that workspace keeps the deletion
-        # repair path (source-admission lock, task pause) on the owning tenant
+        # admission lock and the linked-task decision on the owning tenant
         # instead of relying on an ambient scope the caller may not have.
         with tenant_scope(source.tenant_id):
             async with session.begin():
                 removal = await delete_workspace_source(session, source_id=source_id, tenant_id=source.tenant_id)
+    except SourceDeleteScopeError:
+        raise HTTPException(status_code=409, detail={"error": SourceDeleteScopeError.code}) from None
     finally:
         await session.close()
     if isinstance(removal, SourceDeleteBlocked):
-        # The source is still an active task's scope: the same rule the web
-        # enforces, so a client cannot delete what the operator's page refuses.
+        # The source is still a task's scope: the same rule the web enforces, so
+        # a client cannot delete what the operator's page refuses. An active
+        # reader wins the reason; a paused task argues `source_is_last_task_source`
+        # because resuming it would widen the task to every active source.
         raise HTTPException(
             status_code=409,
             detail={
-                "error": "source_in_active_task",
-                "task_ids": [task.task_id for task in removal.active_tasks],
+                "error": removal.reason,
+                "task_ids": [task.task_id for task in removal.blocking_tasks],
             },
         )
     if removal is None:

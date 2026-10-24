@@ -68,6 +68,11 @@ def build_staged_rows(
 				"text": item.get("text"),
 				"metrics": {
 					**(item.get("metrics") if isinstance(item.get("metrics"), dict) else {}),
+					**(
+						{"parent_context": item["parent_context"]}
+						if isinstance(item.get("parent_context"), dict)
+						else {}
+					),
 					**{
 						key: item[key]
 						for key in ("reactions", "comments", "views", "metric_availability")

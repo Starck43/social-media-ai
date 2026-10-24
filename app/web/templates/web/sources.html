@@ -60,7 +60,8 @@
             {% if stale_sources and stale_sources.count %}
             <div class="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
                 <span class="text-sm text-amber-900 dark:text-amber-200">
-                    {{ stale_sources.count }} из {{ stale_sources.active_total }} активных источников не проверялись дольше {{ stale_sources.hours }} ч{% if stale_sources.never %}, из них {{ stale_sources.never }} — ни разу{% endif %}.
+                    {{ stale_sources.count }} из {{ stale_sources.active_total }} обычных активных источников требуют проверки: порог свежести — {{ stale_sources.hours }} ч{% if stale_sources.never %}, из них {{ stale_sources.never }} не проверялись ни разу{% endif %}.
+                    Источники, заведённые задачами, в эти счётчики не входят: их запуски идут по расписанию задачи.
                     Устаревший источник помечен в таблице.
                 </span>
             </div>

@@ -116,15 +116,30 @@ class ContentClassifier:
 		for i in range(0, len(items), step):
 			if len(selected) >= sample_size:
 				break
-			text = items[i].get("text", "")
-			if text and len(text.strip()) > 10:
+			item = items[i]
+			text = item.get("text", "")
+			parent_context = item.get("parent_context")
+			is_contextual_comment = (
+				str(item.get("content_type") or "").lower() == "comment"
+				and isinstance(parent_context, dict)
+				and bool(str(parent_context.get("text") or "").strip())
+			)
+			if text and (len(text.strip()) > 10 or (is_contextual_comment and text.strip())):
 				selected.append(items[i])
 		return selected
 
 	@staticmethod
 	def prepare_text_content(items: list[dict[str, Any]], sample_size: int = 100) -> str:
 		"""Format the bounded sample without certifying omitted items as analyzed."""
-		return "\n\n".join(
-			f"[{item.get('date', '')}] {item['text']}"
-			for item in ContentClassifier.select_text_content(items, sample_size)
-		)
+		blocks = []
+		for item in ContentClassifier.select_text_content(items, sample_size):
+			parent = item.get("parent_context")
+			if str(item.get("content_type") or "").lower() == "comment" and isinstance(parent, dict):
+				parent_text = str(parent.get("text") or "").strip()
+				if parent_text:
+					parent_date = parent.get("date") or ""
+					parent_id = parent.get("external_id") or ""
+					platform = parent.get("platform") or item.get("platform") or ""
+					blocks.append(f"[CONTEXT: parent {platform}:{parent_id} {parent_date}] {parent_text}")
+			blocks.append(f"[{item.get('date', '')}] {item['text']}")
+		return "\n\n".join(blocks)

@@ -79,11 +79,13 @@ async def create_llm_model(
         model = await LLMModel.objects.create_model(**data, **prices, pricing_token_unit=unit)
         logger.info(f"LLM model created: {model.name} (ID: {model.id})")
         return _model_response(model)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Personal catalog access denied")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid personal catalog data")
     except Exception as e:
-        logger.error(f"Error creating LLM model: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to create LLM model: {e}")
+        logger.error("Personal catalog operation failed")
+        raise HTTPException(status_code=500, detail="Personal catalog operation failed")
 
 
 @router.get("/", response_model=LLMModelList)
@@ -105,9 +107,13 @@ async def list_llm_models(
 
         models = await LLMModel.objects.select_related("provider").filter(**filters).order_by("name")
         return LLMModelList(models=[_model_response(m) for m in models], total=len(models))
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Personal catalog access denied")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid personal catalog data")
     except Exception as e:
-        logger.error(f"Error listing LLM models: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to list LLM models: {e}")
+        logger.error("Personal catalog operation failed")
+        raise HTTPException(status_code=500, detail="Personal catalog operation failed")
 
 
 @router.get("/{model_id}", response_model=LLMModelResponse)
@@ -123,9 +129,13 @@ async def get_llm_model(
         return _model_response(model)
     except HTTPException:
         raise
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Personal catalog access denied")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid personal catalog data")
     except Exception as e:
-        logger.error(f"Error getting LLM model {model_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get LLM model: {e}")
+        logger.error("Personal catalog operation failed")
+        raise HTTPException(status_code=500, detail="Personal catalog operation failed")
 
 
 @router.patch("/{model_id}", response_model=LLMModelResponse)
@@ -155,11 +165,13 @@ async def update_llm_model(
         return _model_response(model)
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Personal catalog access denied")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid personal catalog data")
     except Exception as e:
-        logger.error(f"Error updating LLM model {model_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to update LLM model: {e}")
+        logger.error("Personal catalog operation failed")
+        raise HTTPException(status_code=500, detail="Personal catalog operation failed")
 
 
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -174,6 +186,10 @@ async def delete_llm_model(
         logger.info(f"LLM model deleted: {model_id}, reassignment: {result}")
     except HTTPException:
         raise
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Personal catalog access denied")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid personal catalog data")
     except Exception as e:
-        logger.error(f"Error deleting LLM model {model_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to delete LLM model: {e}")
+        logger.error("Personal catalog operation failed")
+        raise HTTPException(status_code=500, detail="Personal catalog operation failed")

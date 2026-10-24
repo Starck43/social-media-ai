@@ -86,10 +86,13 @@ class AgentTaskManager(BaseManager):
     # --- permission-gated writes (user surfaces: web, agent tools, CLI) ----
 
     @require_permission("agenttask", ActionType.CREATE)
-    async def create(self, **kwargs: Any) -> "AgentTask":
+    @with_db_session
+    async def create(self, session: "AsyncSession", **kwargs: Any) -> "AgentTask":
         self._require_job_retention_permission(kwargs.get("job_type"))
         self._validate_job_retention_schedule(kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr"))
-        return await super().create(**kwargs)
+        task = await super().create(session=session, **kwargs)
+        await self._validate_scenario_binding(session, task)
+        return task
 
     # Fields that define what the next occurrence will do. A change to any of
     # them makes an already queued occurrence a stale plan: it carries the
@@ -156,6 +159,8 @@ class AgentTaskManager(BaseManager):
         )
         replaces_pending = self._replaces_pending_occurrence(current, kwargs)
         updated = await super().update_by_id(instance_id, session=session, **kwargs)
+        if updated is not None:
+            await self._validate_scenario_binding(session, updated)
         if replaces_pending and updated is not None:
             from .job_manager import JobManager
 
@@ -168,10 +173,11 @@ class AgentTaskManager(BaseManager):
         from sqlalchemy import select
 
         from app.core.database import async_session_maker
-
         from ..agent_task import AgentTask
         from .job_manager import JobManager
 
+        if "agent_scenario_id" in values:
+            raise ValueError("Use update_by_id for scenario binding changes")
         unknown = set(values) - set(AgentTask.__mapper__.column_attrs.keys())
         immutable = {"id", "tenant_id"}.intersection(values)
         if unknown:
@@ -311,6 +317,24 @@ class AgentTaskManager(BaseManager):
         """Link sources to the task, keeping the links that already exist."""
         return await self._mutate_task_sources(task_id, source_ids, replace=False, session=session)
 
+    @staticmethod
+    async def _validate_scenario_binding(session, task):
+        if task.agent_scenario_id is None:
+            return
+        from sqlalchemy import select
+
+        from ..agent_scenario import AgentScenario
+
+        identity = (
+            await session.execute(
+                select(AgentScenario.id)
+                .where(AgentScenario.id == task.agent_scenario_id, AgentScenario.tenant_id == task.tenant_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if identity is None:
+            raise ValueError("Scenario is unavailable in this workspace")
+
     async def _mutate_task_sources(
         self,
         task_id: int,
@@ -320,36 +344,42 @@ class AgentTaskManager(BaseManager):
         session: "AsyncSession | None" = None,
     ) -> int:
         """Change source links under the same gate and task lock as admission."""
-        from sqlalchemy import delete as sa_delete
-        from sqlalchemy import select
+        from sqlalchemy import delete as sa_delete, select
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         from ..agent_task import agent_task_sources
         from ..source import Source
         from .job_manager import JobManager
 
-        values = sorted({int(value) for value in source_ids})
+        if type(task_id) is not int or task_id <= 0:
+            raise ValueError("Invalid task ID")
+        if any(type(value) is not int or value <= 0 for value in source_ids):
+            raise ValueError("Invalid source IDs")
+        values = sorted(set(source_ids))
         if not replace and not values:
             return 0
         async with self._get_owned_session(session) as db:
             task = await self._lock_task_for_mutation(db, task_id)
             if task is None:
                 return 0
-            owned_ids = (
-                set(
-                    (
-                        await db.execute(
-                            select(Source.id).where(Source.tenant_id == task.tenant_id, Source.id.in_(values))
-                        )
+            sources = (
+                (
+                    await db.execute(
+                        select(Source)
+                        .where(Source.tenant_id == task.tenant_id, Source.id.in_(values))
+                        .order_by(Source.id)
+                        .with_for_update()
                     )
-                    .scalars()
-                    .all()
                 )
+                .scalars()
+                .all()
                 if values
-                else set()
+                else []
             )
-            if owned_ids != set(values):
+            if {source.id for source in sources} != set(values):
                 raise ValueError("Task sources must belong to the same workspace")
+            if any(source.owner_task_id is not None and source.owner_task_id != task.id for source in sources):
+                raise ValueError("A task-owned source cannot be linked to another task")
             existing = set(
                 (
                     await db.execute(
@@ -597,6 +627,12 @@ class AgentTaskManager(BaseManager):
     async def _linked_source_ids(self, task_ids: list[int]) -> dict[int, list[int]]:
         if not task_ids:
             return {}
+        # Visibility goes through the manager query itself: `QuerySet` has no
+        # `values_list`, and the tenant/personal criteria must still apply.
+        visible = await self.filter(id__in=task_ids)
+        task_ids = [row.id for row in visible]
+        if not task_ids:
+            return {}
         from sqlalchemy import select
 
         from ..agent_task import agent_task_sources
@@ -686,33 +722,59 @@ class AgentTaskManager(BaseManager):
             .order_by(AgentTask.created_at.desc(), AgentTask.id.desc())
         )
 
-    async def active_for_sources(self, source_ids: Sequence[int], tenant_id: int) -> dict[int, list["AgentTask"]]:
-        """Active tasks that explicitly link each of the given sources.
+    async def delete_blockers_for_sources(
+        self, source_ids: Sequence[int], tenant_id: int
+    ) -> dict[int, list["AgentTask"]]:
+        """Return active readers and paused last-link tasks in one scoped query.
 
-        The sources page asks one question per row — may this be deleted? — and
-        the answer is the active tasks that still read it. One query for the
-        whole page, keyed by source id. Only explicit links count: an empty
-        link set means "all active sources", which is not a link to this row.
+        The source list asks whether each row may be deleted. Active tasks
+        block while they explicitly read it; a paused task blocks only when
+        this is its sole explicit source, since an empty link set means all
+        active sources when the task resumes.
         """
+        from sqlalchemy import func, or_, select
+
         from ..agent_task import AgentTask, agent_task_sources
 
         ids = sorted({int(sid) for sid in source_ids if sid is not None})
         if not ids:
             return {}
-        rows = await (
-            self.get_queryset()
-            .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
-            .filter(
-                AgentTask.tenant_id == tenant_id,
-                AgentTask.is_active.is_(True),
-                agent_task_sources.c.source_id.in_(ids),
+        tenant_criteria = [*self._tenant_criterion(), AgentTask.tenant_id == tenant_id]
+        link_counts = (
+            select(
+                agent_task_sources.c.agent_task_id,
+                func.count().label("link_count"),
             )
-            .values(agent_task_sources.c.source_id, AgentTask.id, AgentTask.name)
-            .rows()
+            .select_from(AgentTask)
+            .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
+            .where(*tenant_criteria)
+            .group_by(agent_task_sources.c.agent_task_id)
+            .subquery("task_source_link_counts")
         )
+        query = self.get_queryset()
+        stmt = (
+            select(
+                agent_task_sources.c.source_id,
+                AgentTask.id,
+                AgentTask.name,
+                AgentTask.is_active,
+            )
+            .select_from(AgentTask)
+            .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
+            .join(link_counts, link_counts.c.agent_task_id == AgentTask.id)
+            .where(
+                *tenant_criteria,
+                agent_task_sources.c.source_id.in_(ids),
+                or_(AgentTask.is_active.is_(True), link_counts.c.link_count == 1),
+            )
+        )
+        async with query._get_session() as session:
+            rows = (await session.execute(stmt)).all()
         linked: dict[int, list[AgentTask]] = {}
-        for source_id, task_id, name in rows:
-            linked.setdefault(int(source_id), []).append(AgentTask(id=int(task_id), name=str(name)))
+        for source_id, task_id, name, is_active in rows:
+            linked.setdefault(int(source_id), []).append(
+                AgentTask(id=int(task_id), name=str(name), is_active=bool(is_active))
+            )
         return linked
 
     @staticmethod

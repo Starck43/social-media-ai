@@ -48,6 +48,10 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P8-T11 — incomplete-delivery aggregate signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P8-T13 — named support/escalation ownership + pilot measures → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P9-T01 — one capability-specific activation contract → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
+- [ ] P9-T02 — platform-owner role SUPERUSER with guarded assignment → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
+- [ ] P9-T03 — owner-level gates on the superuser role → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
+- [ ] P9-T04 — read-only table registry for the platform owner → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
+- [ ] P9-T05 — owner access documentation and regression guard → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
 - [ ] P10-T01 — authorized password recovery (AUD-01, P0) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T03 — profile vs privilege update separation (AUD-03) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T04 — shared cookie-independent login protection (AUD-04) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
@@ -66,6 +70,12 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P8-T29 — agent paraphrase/search/compose tools for abstract "find and analyse" requests → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 
 ## Questions
+
+- [ ] Q-11 — how do clients (individuals and companies) enter the platform?
+  Owner's current direction: anyone may register as an individual on the
+  starting tier; corporate multi-account onboarding is undecided and stays
+  separate from the platform-owner access work in P9-T02–P9-T05. Context:
+  [P9 phase](docs/phases/p9-safe-activation.md); asked by: owner; status: OPEN
 
 - [ ] Q-5 — which VK application type/credentials should the deployment use for
   search methods? Context: `newsfeed.search`, `groups.search`, `users.search`

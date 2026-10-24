@@ -41,7 +41,7 @@ business workflow" is a distinct product concept (see AGENTS.md).
 | P6 | Lifecycle and privacy (PRD-06) | 6 | OPEN | [p6-lifecycle-privacy.md](p6-lifecycle-privacy.md) |
 | P7 | Reproducible operation (PRD-04) | 7 | OPEN | [p7-operations.md](p7-operations.md) |
 | P8 | First value and support UI (PRD-08) | 8 | IN_PROGRESS | [p8-first-value-ui.md](p8-first-value-ui.md) |
-| P9 | Safe activation (PRD-09) | 9 | OPEN | [p9-safe-activation.md](p9-safe-activation.md) |
+| P9 | Safe activation and platform access (PRD-09) | 9 | OPEN | [p9-safe-activation.md](p9-safe-activation.md) |
 | P10 | Source-audit hardening (PR #196) | P0 items first | OPEN | [p10-audit-hardening.md](p10-audit-hardening.md) |
 
 Phase status: `OPEN` (not started), `IN_PROGRESS`, `DONE` (all tasks DONE +

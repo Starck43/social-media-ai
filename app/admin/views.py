@@ -1514,15 +1514,15 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         "pricing_token_unit": lambda m, a: "1K tokens" if m.pricing_token_unit == 1000 else "1M tokens",
         "input_cost_per_1k": lambda m, a: _catalog_rate(m.input_cost_per_1k, m.pricing_token_unit),
         "output_cost_per_1k": lambda m, a: _catalog_rate(m.output_cost_per_1k, m.pricing_token_unit),
-        "cache_read_cost_per_1m": lambda m, a: model_price(m.cache_read_cost_per_1m)
-        if m.cache_read_cost_per_1m is not None
-        else "—",
-        "cache_write_5m_cost_per_1m": lambda m, a: model_price(m.cache_write_5m_cost_per_1m)
-        if m.cache_write_5m_cost_per_1m is not None
-        else "—",
-        "cache_write_1h_cost_per_1m": lambda m, a: model_price(m.cache_write_1h_cost_per_1m)
-        if m.cache_write_1h_cost_per_1m is not None
-        else "—",
+        "cache_read_cost_per_1m": lambda m, a: (
+            model_price(m.cache_read_cost_per_1m) if m.cache_read_cost_per_1m is not None else "—"
+        ),
+        "cache_write_5m_cost_per_1m": lambda m, a: (
+            model_price(m.cache_write_5m_cost_per_1m) if m.cache_write_5m_cost_per_1m is not None else "—"
+        ),
+        "cache_write_1h_cost_per_1m": lambda m, a: (
+            model_price(m.cache_write_1h_cost_per_1m) if m.cache_write_1h_cost_per_1m is not None else "—"
+        ),
         **BaseAdmin.column_formatters,
     }
 
@@ -1558,6 +1558,11 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     async def on_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
         if "model_type" in data and isinstance(data["model_type"], list):
             data["model_type"] = ",".join(data["model_type"])
+        if is_created:
+            # 0109 made owner_user_id NOT NULL; admin-created models join the
+            # legacy platform catalog owned by user 2, consistent with the backfill.
+            data["owner_user_id"] = 2
+            model.owner_user_id = 2
         await super().on_model_change(data, model, is_created, request)
 
     async def after_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:

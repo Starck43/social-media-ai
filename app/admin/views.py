@@ -1249,8 +1249,6 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 
 
 class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
-    can_create = False
-    can_edit = False
     name = "Провайдер ИИ"
     name_plural = "Провайдеры ИИ"
     icon = "fa fa-server"
@@ -1372,8 +1370,6 @@ def _catalog_rate(value, token_unit: int) -> str:
 
 
 class LLMModelAdmin(BaseAdmin, model=LLMModel):
-    can_create = False
-    can_edit = False
     name = "Модель ИИ"
     name_plural = "Модели ИИ"
     icon = "fa fa-microchip"

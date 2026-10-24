@@ -139,9 +139,18 @@ Coverage evidence vs the P8 gate (state/refs → task):
   redirected to `localhost:5432/social_manager/test_schema`; revision stayed
   `0109`. No migration, reset, seed, live provider call or runtime start was
   performed by this acceptance.
-- [ ] P8-T08 — credential expiry/near-expiry signal; accept: reauth/missing plus near-expiry from
+- [x] P8-T08 — credential expiry/near-expiry signal; accept: reauth/missing plus near-expiry from
   vault `expires_at` metadata — reads only, never decrypts; `renewable` auto-renewal is not reauth/error;
-  personal vs operator split honest; depends: none; owns: credential signal lane; owner: unassigned; status: TODO
+  personal vs operator split honest; depends: none; owns: credential signal lane; owner: codex;
+  status: DONE, accepted by Codex on 2026-10-25 after exact-SHA review of
+  `ed910ed63e0f351f982b088d6e422934b89b5295`. OpenCode/River ran
+  `tests/unit_services/test_connection_status_metadata.py`: 4 passed, 0 failed,
+  0 skipped; no-DB (`--noconftest -o addopts= -q --tb=short --no-header`).
+  Test SHA-256: `9a339c9f501ef427abf262722ea3e56d9cf3b15e9ce3f20c2700b1f6e6a66b44`.
+  The tests stub the vault metadata lookup; real encrypted-vault integration is
+  outside this focused signal scope. Near-expiry status text states when the
+  credential expires instead of implying an automatic refresh; renewal wording
+  stays on the `renewable` path.
 - [x] P8-T09 — queue backlog/age/quarantine signal; accept: operator view reusing
   `job_manager` claim/reap evidence (stale quarantine, retry receipts): pending count, oldest age, quarantined
   rows; no runtime write; depends: none; owns: queue signal lane; owner: codex; status: DONE, accepted by Codex

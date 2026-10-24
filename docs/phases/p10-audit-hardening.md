@@ -342,7 +342,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   that implementation instead of adding a second validator, and keep PR #217's
   additive source update from bypassing atomic replacement.
 
-- [ ] P10-T15 — report scenario resets and warnings on default-model deletion;
+- [x] P10-T15 — report scenario resets and warnings on default-model deletion;
   accept: `LLMModelManager.delete_with_default_reassignment` returns the number
   of agent scenarios/clients whose model FK was reset to NULL and the bounded
   warnings it already documents (for example "no model left for type X"), not
@@ -353,8 +353,14 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   hardcodes both fields to empty. A delete therefore reports no evidence of the
   scenario bindings it just cleared, and the P8-T17 admin diagnostics cannot
   surface it. Depends: none; owns: `app/models/managers/llm_model_manager.py`
-  delete path, focused manager tests; owner: opencode; status: READY at local
-  dev `cb2793a` (2026-10-24).
+  delete path, focused manager tests; owner: opencode; status: DONE, accepted
+  by coordinating Codex on 2026-10-24 at local dev
+  `cb2793a6850641a87a51d5c69734bc0e6a54c111`. The reviewed implementation
+  counts distinct scenarios, reports bounded replacement/workspace warnings,
+  and makes no schema or migration changes. Focused manager coverage in this
+  commit asserts scenario counts, warning content and the quiet replacement
+  path. The task criteria and exact-SHA source diff were reviewed; no tests were
+  run during this review.
   Do not re-implement the candidate ordering as a side effect: the replacement
   default is now chosen inside the owner's catalog (the previous
   `last_success_at` → `ai_analytics` name ordering is no longer the contract).

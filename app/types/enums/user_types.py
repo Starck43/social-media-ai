@@ -9,6 +9,9 @@ class PlatformRoleType(str, Enum):
     USER = "user"
     OPERATOR = "operator"
     ADMIN = "admin"
+    # The single platform owner. Assignable only by a reviewed migration; no
+    # console, API or CLI path may grant it (see `UserManager.set_platform_role`).
+    SUPERUSER = "superuser"
 
     def __str__(self):
         return self.value

@@ -49,7 +49,19 @@ class User(Base, TimestampMixin):
 
     @property
     def is_platform_admin(self) -> bool:
-        return bool(self.is_active and self.role and self.role.codename == PlatformRoleType.ADMIN)
+        """Full console authority: the platform admin role or the platform owner.
+
+        Both levels reach every registered console model; the owner additionally
+        clears the roles reserved for it (global catalog editing, table registry).
+        """
+        return bool(
+            self.is_active and self.role and self.role.codename in (PlatformRoleType.ADMIN, PlatformRoleType.SUPERUSER)
+        )
+
+    @property
+    def is_superuser(self) -> bool:
+        """The single platform-owner account: full access to all data."""
+        return bool(self.is_active and self.role and self.role.codename == PlatformRoleType.SUPERUSER)
 
     def _is_superuser_role(self) -> bool:
         """Compatibility predicate for platform entrypoints only."""
@@ -95,7 +107,9 @@ class User(Base, TimestampMixin):
 
     def has_admin_access(self) -> bool:
         return bool(
-            self.is_active and self.role and self.role.codename in (PlatformRoleType.OPERATOR, PlatformRoleType.ADMIN)
+            self.is_active
+            and self.role
+            and self.role.codename in (PlatformRoleType.OPERATOR, PlatformRoleType.ADMIN, PlatformRoleType.SUPERUSER)
         )
 
     def __str__(self) -> str:

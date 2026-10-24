@@ -40,6 +40,14 @@ def test_workspace_models_are_the_tenant_scoped_ones() -> None:
     names = workspace_models()
     assert {"source", "agenttask", "agentscenario", "aianalytics", "digestrun"} <= names
     assert not {"llmmodel", "llmprovider", "platform", "user", "role", "tenant"} & names
+    # Every platform role, including the owner, keeps workspace models out of
+    # its preset: membership decisions never follow the platform ladder.
+    from app.core.access_catalog import workspace_grants
+
+    for platform_role in PlatformRoleType:
+        for workspace_role in WorkspaceRoleType:
+            granted = workspace_grants(workspace_role.value)
+            assert all(model in names for model, _ in granted), platform_role
 
 
 def test_member_role_is_the_only_workspace_authority() -> None:

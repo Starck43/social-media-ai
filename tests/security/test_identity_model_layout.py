@@ -96,10 +96,10 @@ def test_permission_model_type_relationship_and_platform_role_storage():
     assert codename.type.python_type is str
     assert any(
         isinstance(constraint, CheckConstraint)
-        and "codename IN ('user', 'operator', 'admin')" in str(constraint.sqltext)
+        and "codename IN ('user', 'operator', 'admin', 'superuser')" in str(constraint.sqltext)
         for constraint in PlatformRole.__table__.constraints
     )
-    assert {member.value for member in PlatformRoleType} == {"user", "operator", "admin"}
+    assert {member.value for member in PlatformRoleType} == {"user", "operator", "admin", "superuser"}
     assert "name" not in PlatformRole.__table__.c
     assert "is_superuser" not in __import__("app.models.identity.user", fromlist=["User"]).User.__table__.c
 

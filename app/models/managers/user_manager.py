@@ -95,21 +95,36 @@ class UserManager(BaseManager):
 
     async def set_platform_role(self, user_id: int, role_code: PlatformRoleType, actor_id: int) -> Optional["User"]:
         """Set a user's platform role after rechecking the actor from the DB."""
-        from app.models import PlatformRole, User
+        from app.models import PlatformRole
+        from app.models import User as PlatformUser
 
-        actor = await User.objects.prefetch_related("role").get(id=actor_id)
-        if actor is None or not actor.is_active or not actor.is_platform_admin:
+        actor = await PlatformUser.objects.prefetch_related("role").get(id=actor_id)
+        if actor is None or not actor.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin required")
+        if role_code == PlatformRoleType.SUPERUSER or str(role_code) == PlatformRoleType.SUPERUSER.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Роль собственника платформы назначается только миграцией",
+            )
+        if not actor.is_platform_admin:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin required")
         if actor.id == user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Нельзя менять свою платформенную роль. Обратитесь к другому администратору платформы.",
             )
+        target = await PlatformUser.objects.prefetch_related("role").get(id=user_id)
+        if target is None:
+            return None
+        if target.is_superuser:
+            # No console, API or CLI operation may demote or re-role the owner.
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Нельзя менять платформенную роль собственника",
+            )
         role = await PlatformRole.objects.get_by_codename(role_code)
         if role is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown platform role")
-        if await self.get(id=user_id) is None:
-            return None
         updated = await self.update_by_id(user_id, role_id=role.id)
         logger.info(
             "platform_role_changed actor_id=%s target_id=%s role=%s",

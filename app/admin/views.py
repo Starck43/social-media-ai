@@ -140,6 +140,13 @@ class UserAdmin(BaseAdmin, model=User):
             raise HTTPException(status_code=400, detail="Используйте отдельную операцию назначения платформенной роли")
         return await super().update_model(request, pk, data)
 
+    async def delete_model(self, request: Request, pk: Any) -> bool:
+        """The platform-owner account is never deleted from the console."""
+        target = await User.objects.prefetch_related("role").get(id=pk)
+        if target is not None and target.is_superuser:
+            raise HTTPException(status_code=403, detail="Нельзя удалить аккаунт собственника платформы")
+        return await super().delete_model(request, pk)
+
     @action(
         name="change_password",
         label="Изменить пароль",

@@ -40,9 +40,25 @@ def manager_source():
             self.model = model
 
     fresh = NS(id=7, is_active=True, is_platform_admin=True)
-    identities = NS(prefetch_related=Mock(return_value=NS(get=AsyncMock(return_value=fresh))))
+    identities = NS()
     roles = NS(get_by_codename=AsyncMock(return_value=NS(id=128, codename="operator")))
+    # The target row the manager re-reads through the same storage before it
+    # writes the new role.
+    target = NS(id=8, is_active=True, is_superuser=False, is_platform_admin=False)
+
+    # A later assignment can point the actor lookup at another identity (revoked,
+    # inactive, deleted), so the rows are resolved per requested id, not by call order.
+    def _row(**kwargs):
+        return fresh if kwargs.get("id") == fresh.id else target
+
+    # One `get` double for both lookups: tests can point either row at another
+    # identity (revoked/inactive/deleted) through `identities.get`.
+    identities.get = AsyncMock(side_effect=_row)
+    identities.prefetch_related = Mock(return_value=identities)
+
     user_class = NS(objects=identities)
+    # `set_platform_role` imports the identity class as `PlatformUser` so the
+    # type-checked forward reference cannot shadow the class lookup.
     module = load_isolated_source(
         "app.models.managers._self_role_guard",
         ROOT / "app/models/managers/user_manager.py",
@@ -55,6 +71,8 @@ def manager_source():
             "app.models": NS(User=user_class, PlatformRole=NS(objects=roles)),
         },
     )
+    # The source resolves the identity class through the declared import double.
+    module.PlatformUser = user_class
     manager = module.UserManager()
     manager.get = AsyncMock(return_value=NS(id=8))
     manager.update_by_id = AsyncMock(return_value=NS(id=8, role_id=128))
@@ -83,10 +101,11 @@ async def test_admin_can_still_assign_another_users_role():
 @pytest.mark.parametrize("failure", ["revoked", "inactive", "deleted"])
 async def test_role_assignment_still_rechecks_authority(failure):
     ctx = manager_source()
-    ctx.identities.prefetch_related.return_value.get.return_value = (
+    ctx.identities.get.side_effect = None
+    ctx.identities.get.return_value = (
         None
         if failure == "deleted"
-        else NS(id=7, is_active=failure != "inactive", is_platform_admin=failure != "revoked")
+        else NS(id=7, is_active=failure != "inactive", is_platform_admin=failure != "revoked", is_superuser=False)
     )
     with pytest.raises(HTTPException) as exc:
         await ctx.manager.set_platform_role(8, TYPES.PlatformRoleType.OPERATOR, actor_id=7)

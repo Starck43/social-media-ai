@@ -21,7 +21,7 @@ role_permission = Table(
 class PlatformRole(Base, TimestampMixin):
     __tablename__ = "roles"
     __table_args__ = (
-        CheckConstraint("codename IN ('user', 'operator', 'admin')", name="ck_platform_role_codename"),
+        CheckConstraint("codename IN ('user', 'operator', 'admin', 'superuser')", name="ck_platform_role_codename"),
         {"schema": settings.DB_SCHEMA},
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

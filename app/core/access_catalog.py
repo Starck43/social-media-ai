@@ -117,7 +117,12 @@ def resolve_permission_key(key):
     return _ALIASES.get(key)
 
 
-PLATFORM_LABELS = {"user": "Пользователь", "operator": "Оператор", "admin": "Администратор платформы"}
+PLATFORM_LABELS = {
+    "user": "Пользователь",
+    "operator": "Оператор",
+    "admin": "Администратор платформы",
+    "superuser": "Собственник платформы",
+}
 WORKSPACE_LABELS = {
     "owner": "Владелец",
     "admin": "Администратор",

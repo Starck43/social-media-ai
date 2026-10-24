@@ -41,9 +41,12 @@ def test_web_and_core_agree_without_platform_elevation(platform, role, model, ac
     membership = member(role.value)
     grants = workspace_grants(role.value)
     perms = WebPerms(actor, [membership], 11, grants)
+    # The platform owner reaches every console model by design; the other
+    # platform levels never gain personal-provider configuration from a workspace.
+    owner = platform is PlatformRoleType.SUPERUSER
     with tenant_scope(11), permission_scope(actor, is_owner=membership.is_owner, member_grants=grants):
         assert has_permission(actor, model, action) == perms.can(model, action)
-        assert not has_permission(actor, "llmprovider", "configure")
+        assert has_permission(actor, "llmprovider", "configure") is owner
         assert not perms.can("llmprovider", "configure")
     if role == WorkspaceRoleType.VIEWER and action == "delete":
         assert not perms.can(model, action)
@@ -99,7 +102,7 @@ def test_no_grants_from_missing_membership_or_unresolved_role():
 
 
 def test_role_names_are_fixed_strings_without_order_based_authority():
-    assert {r.value for r in PlatformRoleType} == {"user", "operator", "admin"}
+    assert {r.value for r in PlatformRoleType} == {"user", "operator", "admin", "superuser"}
     assert {r.value for r in WorkspaceRoleType} == {"owner", "admin", "manager", "analyst", "viewer"}
     assert all(isinstance(r.value, str) for r in (*PlatformRoleType, *WorkspaceRoleType))
     assert ("aianalytics", ActionType.DELETE) not in workspace_grants("analyst")
@@ -179,8 +182,7 @@ def test_migration_permission_map_keeps_canonical_model_without_permissions(monk
     assert len(captured) == 1
     select_sql = captured[0].replace("p.action_type::text", "p.action_type")
     with sqlite3.connect(":memory:") as connection:
-        connection.executescript(
-            """
+        connection.executescript("""
             CREATE TABLE model_types (id INTEGER PRIMARY KEY, resource_key TEXT NOT NULL);
             CREATE TABLE permissions (id INTEGER PRIMARY KEY, model_type_id INTEGER NOT NULL, action_type TEXT NOT NULL);
             CREATE TABLE _access_model_map (old_id INTEGER NOT NULL, keep_id INTEGER NOT NULL, resource_key TEXT NOT NULL);
@@ -188,8 +190,7 @@ def test_migration_permission_map_keeps_canonical_model_without_permissions(monk
             INSERT INTO _access_model_map VALUES
                 (1, 1, 'collection.source'), (2, 1, 'collection.source'), (3, 1, 'collection.source');
             INSERT INTO permissions VALUES (10, 2, 'VIEW'), (11, 3, 'VIEW');
-            """
-        )
+            """)
         rows = connection.execute(select_sql).fetchall()
 
     assert rows == [
@@ -228,9 +229,10 @@ def test_migration_retires_only_allowlisted_model_metadata_and_keeps_physical_da
 
             migration._retire_legacy_model_types(connection, "model_types", "permissions", "role_permission")
 
-            assert connection.execute(
-                text("SELECT id, table_name FROM model_types ORDER BY id")
-            ).all() == [(1, "sources"), (3, "unexpected_legacy")]
+            assert connection.execute(text("SELECT id, table_name FROM model_types ORDER BY id")).all() == [
+                (1, "sources"),
+                (3, "unexpected_legacy"),
+            ]
             assert connection.execute(text("SELECT id, model_type_id FROM permissions ORDER BY id")).all() == [
                 (10, 1),
                 (30, 3),
@@ -286,34 +288,49 @@ def test_migration_seeds_missing_resource_catalog_rows_idempotently():
             """))
 
             migration._seed_resource_model_types(connection, "model_types")
-            after_first_seed = connection.execute(
-                text("""
+            after_first_seed = connection.execute(text("""
                     SELECT id, app_name, model_name, table_name, description, is_managed,
                            resource_key, created_at, updated_at
                       FROM model_types ORDER BY table_name, id
-                """)
-            ).all()
+                """)).all()
             migration._seed_resource_model_types(connection, "model_types")
-            after_second_seed = connection.execute(
-                text("""
+            after_second_seed = connection.execute(text("""
                     SELECT id, app_name, model_name, table_name, description, is_managed,
                            resource_key, created_at, updated_at
                       FROM model_types ORDER BY table_name, id
-                """)
-            ).all()
+                """)).all()
 
             rows_by_table = {row[3]: row for row in after_second_seed}
             assert set(rows_by_table) == set(migration.RESOURCES) | {"unexpected_legacy"}
             assert after_second_seed == after_first_seed
             assert rows_by_table["sources"] == (
-                41, "legacy", "OldSource", "sources", "keep this row", 0, None, "old", "old"
+                41,
+                "legacy",
+                "OldSource",
+                "sources",
+                "keep this row",
+                0,
+                None,
+                "old",
+                "old",
             )
             assert rows_by_table["unexpected_legacy"][0:7] == (
-                99, "legacy", "Mystery", "unexpected_legacy", "keep unknown", 1, None
+                99,
+                "legacy",
+                "Mystery",
+                "unexpected_legacy",
+                "keep unknown",
+                1,
+                None,
             )
             model_type = rows_by_table["model_types"]
             assert model_type[1:7] == (
-                "identity", "modeltype", "model_types", "Registered access resource", 1, "identity.model_type"
+                "identity",
+                "modeltype",
+                "model_types",
+                "Registered access resource",
+                1,
+                "identity.model_type",
             )
     finally:
         engine.dispose()
@@ -333,8 +350,13 @@ def test_operator_http_identity_loss_fails_closed_even_with_data_bypass():
 
 
 def test_platform_grant_identity_does_not_depend_on_orm_class_metadata():
-    permission = Permission(action_type=ActionType.VIEW, name="View results", model_type=ModelType(
-        resource_key="analysis.result", model_name="old_analytics_class", table_name="ai_analytics"))
+    permission = Permission(
+        action_type=ActionType.VIEW,
+        name="View results",
+        model_type=ModelType(
+            resource_key="analysis.result", model_name="old_analytics_class", table_name="ai_analytics"
+        ),
+    )
     actor = user("operator", [permission])
     assert actor.has_perm_for("analysis.result", ActionType.VIEW)
     assert not actor.has_perm_for("llm.provider", ActionType.VIEW)

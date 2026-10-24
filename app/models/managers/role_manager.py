@@ -58,7 +58,7 @@ class RoleManager(BaseManager["Role"]):
                 Role object or None
         """
         value = codename.value if isinstance(codename, PlatformRoleType) else str(codename)
-        aliases = {"viewer": "user", "superuser": "admin"}
+        aliases = {"viewer": "user"}
         return await self.filter(codename=aliases.get(value.strip().lower(), value.strip().lower())).first()
 
     async def get_with_permissions(self, role_id: int) -> Optional["Role"]:

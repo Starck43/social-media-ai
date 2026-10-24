@@ -33,7 +33,13 @@ background runs; changing payer requires new payer consent.
   Delivered on local dev `f220725` (2026-10-24): transport fallbacks keep the
   cost unresolved instead of publishing `0.0`, consumers carry the unknown
   through, and `tests/billing/test_unknown_cost_propagation.py` pins the
-  propagation. owner: opencode; status: READY at local dev `f220725`.
+  propagation. This was a partial delivery at `f220725`.
+  Coordinator completion claim on 2026-10-25: status IN_PROGRESS, isolated
+  branch `fix/p2-t12-final-acceptance`, synchronized base `7848823`.
+  Complete the no-payload unknown-cost fallback, reject numeric chat estimates
+  through the shared cost-certainty helper, and isolate cache tariff evidence
+  from timestamps in the PostgreSQL replay acceptance. Historical source and
+  run evidence at `f220725` and `7884c3a` remains attributed to those SHAs.
 
 - [x] P2-T13 — bind journal tariffs to exact provider/model identity; accept: same model_id across paid/free providers cannot resolve another provider's tariff, fail closed on ambiguity, regression evidence; depends: P2-T10; owns: journal tariff resolver and focused tests; owner: codex-token-cost; status: DONE at dev `b6efff9cac5f53827b8adbf6ae7a97c5e7bd9965`. Dispatch-time model row ID and normalized provider/model identity now select the tariff; missing, mismatched or ambiguous legacy identity stays unpriced. Verified with isolated no-DB tests `test_llm_attempt_journal.py` 30/30 and `test_scoped_attempt_journal.py` 16/16 (46 passed, 0 failed/skipped; 8 subtests) via Codex test subagent fallback after OpenCode initialization and Kilo availability failed. See [audit](../audits/2026-10-20-token-cache-cost.md).
 

@@ -65,10 +65,11 @@ class AgentMessageManager(BaseManager["AgentMessage"]):
         An unresolved cost keeps the column NULL instead of a numeric zero: the
         turn then counts as unknown spend, not as a free call.
         """
+        from app.services.ai.output_contracts import known_cost_usd
+
         tokens = int(usage.get("total_tokens") or 0)
-        raw_cost = usage.get("cost")
-        cost = float(raw_cost) if isinstance(raw_cost, (int, float)) and not isinstance(raw_cost, bool) else None
-        if not tokens and not cost:
+        cost = known_cost_usd({"usage": usage})
+        if not tokens and cost is None:
             return
         model = self.model
         assert model is not None

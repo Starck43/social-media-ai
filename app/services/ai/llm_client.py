@@ -453,9 +453,11 @@ class LLMClient(ABC):
     ) -> dict[str, Any]:
         """Legacy numeric adapter failures cannot discard a paid API envelope."""
         try:
-            return self._usage_block_for_response(prompt, completion, data) if data is not None else self._usage_block(
-                prompt, completion
-            )
+            if data is not None:
+                return self._usage_block_for_response(prompt, completion, data)
+            result = self._usage_block(prompt, completion)
+            result.update(cost_source="flat_tariff_estimate", cost_is_estimate=True)
+            return result
         except (ArithmeticError, TypeError, ValueError):
             prompt, completion = prompt or 0, completion or 0
             if data is not None:
@@ -474,7 +476,9 @@ class LLMClient(ABC):
                 "prompt_tokens": prompt,
                 "completion_tokens": completion,
                 "total_tokens": prompt + completion,
-                "cost": 0.0,
+                "cost": None,
+                "cost_source": "undefined",
+                "cost_is_estimate": True,
             }
 
     @abstractmethod

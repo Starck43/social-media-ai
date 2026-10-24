@@ -257,19 +257,21 @@ async def test_a_paused_owner_task_does_not_block_without_an_explicit_link():
         await Tenant.objects.delete_by_id(tenant.id)
 
 
-async def test_a_foreign_owner_reference_fails_closed_without_exposing_its_task():
-    """A malformed lane owner cannot turn a cross-tenant task into a delete."""
+async def test_a_cross_tenant_owner_reference_is_rejected_atomically_at_insert():
+    """The workspace ownership trigger rejects a lane bound to a foreign task."""
     tenant = await _tenant()
     other = await _tenant()
     try:
         foreign_task = await _task(other.id, "private-owner")
-        source = await _source(tenant.id, "malformed-owner", owner_task_id=foreign_task.id)
+        with pytest.raises(DBAPIError) as error:
+            await _source(tenant.id, "malformed-owner", owner_task_id=foreign_task.id)
 
-        with pytest.raises(ValueError, match="^source_task_scope_invalid$"):
-            await _delete(tenant.id, source.id)
+        original = error.value.orig
+        sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+        assert sqlstate == "23514", "the database workspace trigger must reject the foreign binding"
 
         with tenant_scope(tenant.id):
-            assert await Source.objects.get(id=source.id) is not None
+            assert await Source.objects.filter(name="malformed-owner").first() is None
         with tenant_scope(other.id):
             assert await AgentTask.objects.get(id=foreign_task.id) is not None
     finally:

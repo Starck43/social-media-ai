@@ -5,7 +5,8 @@ CHECK on `roles.codename` admits the new codename, the catalog gains the row, an
 the owner account moves onto it at the same time. Nothing infers an owner: the
 target account is supplied explicitly with `-x superuser_user_id=<id>` and must
 already be an active `admin` — the migration never picks an account by name,
-email or "first admin".
+email or "first admin", and it refuses to run without that reviewed id so the
+catalog change cannot land with the owner still on `admin`.
 
 Definition only: this revision does not deploy, and applying it needs separate
 authorization for the target schema.
@@ -49,9 +50,12 @@ def upgrade():
             {"description": OWNER_DESCRIPTION},
         )
 
+    # The owner is part of the migration, not an optional argument: without an
+    # explicit reviewed id the promotion is ambiguous, so the upgrade stops
+    # before it half-applies the catalog change.
     owner = context.get_x_argument(as_dictionary=True).get("superuser_user_id")
     if owner is None:
-        return
+        raise RuntimeError("Platform owner promotion requires -x superuser_user_id=<id> (reviewed owner account)")
     if not owner.isdigit():
         raise RuntimeError("Reviewed owner id must be numeric")
     current = bind.execute(
@@ -75,12 +79,12 @@ def upgrade():
 
 def downgrade():
     bind = op.get_bind()
-    _, roles, _users = _schema_objects(bind)
+    _, roles, users = _schema_objects(bind)
     # Give any owner account the previous top role before the codename disappears.
     bind.execute(
         sa.text(
-            "UPDATE users SET role_id=(SELECT id FROM roles WHERE codename='admin') "
-            "WHERE role_id IN (SELECT id FROM roles WHERE codename='superuser')"
+            f"UPDATE {users} SET role_id=(SELECT id FROM {roles} WHERE codename='admin') "
+            f"WHERE role_id IN (SELECT id FROM {roles} WHERE codename='superuser')"
         )
     )
     bind.execute(sa.text(f"DELETE FROM {roles} WHERE codename='superuser'"))

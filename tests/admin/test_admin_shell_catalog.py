@@ -194,20 +194,46 @@ async def test_real_form_fields_are_narrow_and_clear_all_is_valid(source):
 
 @pytest.mark.asyncio
 async def test_role_route_shows_actor_and_guarded_form(source):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
         response = await client.get("/admin/platform-role/edit/2")
     assert response.status_code == 200, response.text
-    assert "verified-admin" in response.text and "Администратор платформы" in response.text
+    assert "verified-admin" in response.text and "Собственник платформы" in response.text
+    # The console names the level truthfully: the owner is not a plain admin.
+    assert "Собственник: полный доступ ко всем данным" in response.text
     assert 'name="csrf_token"' in response.text and 'name="permissions"' in response.text
     assert 'name="users"' not in response.text and 'name="codename"' not in response.text
     assert "/admin/permission/list" in response.text
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["user", "admin", "operator"])
-async def test_platform_admin_can_open_every_role_edit_route(source, role):
+async def test_only_the_platform_owner_edits_the_role_catalog(source):
+    """Role grants are the owner's alone; a platform admin keeps its own rights."""
+    owner = actor("superuser")
+    ctx = console(source, owner)
+    ctx.target.get.return_value.codename = "operator"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
+        response = await client.get("/admin/platform-role/edit/2")
+        assert response.status_code == 200, response.text
+        assert "Собственник: полный доступ ко всем данным" in response.text
+        assert 'name="permissions"' in response.text
+
+
+@pytest.mark.asyncio
+async def test_platform_admin_gets_no_catalog_edit_access(source):
+    """`admin` runs the platform; it does not rewrite the permission matrix."""
     ctx = console(source)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
+        for route in ["platform-role/edit/2", "permission/edit/1"]:
+            assert (await client.get("/admin/" + route)).status_code == 403
+            assert (await client.post("/admin/" + route, data={"name": "Bad"})).status_code == 403
+    ctx.target.set_permissions.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["user", "admin", "operator"])
+async def test_owner_can_open_every_role_edit_route(source, role):
+    ctx = console(source, actor("superuser"))
     ctx.target.get.return_value.codename = role
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
         response = await client.get("/admin/platform-role/edit/2")
@@ -240,7 +266,7 @@ def request_for(ctx, token=None):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("target_role", ["user", "admin", "operator"])
 async def test_role_writer_uses_canonical_manager_for_every_role_with_actor_scope(source, target_role):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     ctx.target.get.return_value.codename = target_role
     observed = []
 
@@ -257,7 +283,7 @@ async def test_role_writer_uses_canonical_manager_for_every_role_with_actor_scop
 @pytest.mark.asyncio
 @pytest.mark.parametrize("data", [{"users": [1]}, {"permissions": [], "codename": "admin"}, {"name": "New"}])
 async def test_role_writer_rejects_extra_fields(source, data):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     with pytest.raises(HTTPException):
         await ctx.admin._views[0].update_model(request_for(ctx), "2", data)
     ctx.target.set_permissions.assert_not_awaited()
@@ -267,7 +293,7 @@ async def test_role_writer_rejects_extra_fields(source, data):
 @pytest.mark.parametrize("which", [0, 1])
 @pytest.mark.parametrize("failure", ["csrf", "revoked", "inactive"])
 async def test_catalog_write_checks_csrf_and_fresh_actor(source, which, failure):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     request = request_for(ctx, "invalid" if failure == "csrf" else None)
     if failure != "csrf":
         fresh = actor("operator" if failure == "revoked" else "admin", active=failure != "inactive")
@@ -283,7 +309,7 @@ async def test_catalog_write_checks_csrf_and_fresh_actor(source, which, failure)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("data", [{"action_type": "DELETE"}, {"name": "x", "roles": [1]}, {"name": " "}])
 async def test_permission_writer_rejects_identity_or_grant_changes(source, data):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     with pytest.raises(HTTPException) as exc:
         await ctx.admin._views[1].update_model(request_for(ctx), "1", data)
     assert exc.value.status_code == 422
@@ -292,7 +318,7 @@ async def test_permission_writer_rejects_identity_or_grant_changes(source, data)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("target_role", ["user", "admin", "operator"])
 async def test_http_role_post_clears_grants_and_rejects_missing_csrf_for_every_role(source, target_role):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     ctx.target.get.return_value.codename = target_role
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
         response = await client.post("/admin/platform-role/edit/2", data={"save": "Save"})
@@ -307,7 +333,7 @@ async def test_http_role_post_clears_grants_and_rejects_missing_csrf_for_every_r
 
 @pytest.mark.asyncio
 async def test_permission_label_writer_does_not_forward_other_fields(source, monkeypatch):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     writer = AsyncMock(return_value=NS(id=1, name="Readable"))
     monkeypatch.setattr(source.BaseAdmin, "update_model", writer)
     result = await ctx.admin._views[1].update_model(request_for(ctx), "1", {"name": " Readable "})
@@ -326,8 +352,8 @@ async def test_escaped_verified_identity_ignores_session_username(source):
 
 
 @pytest.mark.asyncio
-async def test_role_list_has_an_edit_link_for_every_record_for_platform_admin(source):
-    ctx = console(source)
+async def test_role_list_has_an_edit_link_for_every_record_for_platform_owner(source):
+    ctx = console(source, actor("superuser"))
     rows = [
         source.PlatformRole(id=pk, codename=codename, description=codename)
         for pk, codename in [(1, "user"), (6, "admin"), (128, "operator")]
@@ -342,7 +368,7 @@ async def test_role_list_has_an_edit_link_for_every_record_for_platform_admin(so
 
 @pytest.mark.asyncio
 async def test_missing_role_is_not_written(source):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     ctx.target.get.return_value = None
     with pytest.raises(HTTPException) as exc:
         await ctx.admin._views[0].update_model(request_for(ctx), "999999", {"permissions": []})
@@ -352,7 +378,7 @@ async def test_missing_role_is_not_written(source):
 
 @pytest.mark.asyncio
 async def test_role_choice_labels_include_names_and_preserve_escaped_native_values(source):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     resource = source.canonical_model_type(
         id=1, resource_key="agent.message", model_name="message", table_name="messages"
     )

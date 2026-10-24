@@ -20,9 +20,11 @@ class CatalogEditAdmin(BaseAdmin):
     can_export = False
 
     def has_permission(self, request: Request, action: str, obj: Any | None = None) -> bool:
+        # The role and permission catalog is the owner's alone: a platform admin
+        # runs workspaces and accounts, it does not rewrite the grant matrix.
         if action == Action.EDIT:
             actor = self.get_admin_user(request)
-            if actor is None or not actor.is_platform_admin:
+            if actor is None or not actor.is_superuser:
                 return False
         return super().has_permission(request, action, obj)
 
@@ -33,8 +35,8 @@ class CatalogEditAdmin(BaseAdmin):
         fresh = (
             await User.objects.prefetch_related("role").get(id=actor.id, is_active=True) if actor is not None else None
         )
-        if fresh is None or not fresh.is_platform_admin:
-            raise HTTPException(status_code=403, detail="Нужны права администратора платформы")
+        if fresh is None or not fresh.is_superuser:
+            raise HTTPException(status_code=403, detail="Нужны права собственника платформы")
         manager = getattr(admin.authentication_backend, "csrf_manager", None) or get_csrf_manager(request)
         form = await request.form()
         token = form.get("csrf_token")
@@ -56,9 +58,9 @@ class PlatformRoleGrantAdmin(CatalogEditAdmin):
     form_converter = RolePermissionFormConverter
 
     catalog_edit_notice = (
-        "Администратор платформы может редактировать разрешения всех ролей. Роль admin сохраняет полный доступ "
-        "независимо от списка разрешений; роль user не получает вход в консоль. Коды ролей и назначения пользователей "
-        "не изменяются этой формой."
+        "Разрешения ролей редактирует только собственник платформы. Роль admin сохраняет полный доступ "
+        "независимо от списка разрешений; роли superuser и user в консоль по этому списку не входят. "
+        "Коды ролей и назначения пользователей не изменяются этой формой."
     )
 
     async def update_model(self, request: Request, pk: str, data: dict) -> Any:

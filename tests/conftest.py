@@ -109,7 +109,7 @@ async def _test_database():
             for resource_key, action in permission_rows
         }
 
-    missing_platform_roles = {"user", "operator", "admin"} - platform_roles
+    missing_platform_roles = {"user", "operator", "admin", "superuser"} - platform_roles
     missing_workspace_roles = {"owner", "admin", "manager", "analyst", "viewer"} - workspace_roles
     missing_platforms = {"vk", "telegram"} - active_platforms
     missing_resources = {resource.key for resource in RESOURCES} - registered_resources

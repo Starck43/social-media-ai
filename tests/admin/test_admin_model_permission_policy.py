@@ -40,7 +40,7 @@ def policy_user_class():
     """Keep real method bodies, omit only mapped fields/ORM class construction."""
     tree = ast.parse((ROOT / "app/models/identity/user.py").read_text())
     original = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "User")
-    names = {"is_platform_admin", "model_permissions", "has_perm_for", "has_admin_access"}
+    names = {"is_platform_admin", "is_superuser", "model_permissions", "has_perm_for", "has_admin_access"}
     methods = [n for n in original.body if isinstance(n, ast.FunctionDef) and n.name in names]
     assert len(methods) == len(names)
     node = ast.ClassDef(name="PolicyUser", bases=[], keywords=[], body=methods, decorator_list=[])

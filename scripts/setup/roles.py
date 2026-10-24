@@ -10,6 +10,7 @@ ROLE_DESCRIPTIONS = {
     PlatformRoleType.USER: "Registered account without access to the operator console.",
     PlatformRoleType.OPERATOR: "Platform console access limited to explicitly assigned permissions.",
     PlatformRoleType.ADMIN: "Full platform administration, including operator grants.",
+    PlatformRoleType.SUPERUSER: "Platform owner: every table, and the only role that edits the grant catalog.",
 }
 WORKSPACE_ROLE_DESCRIPTIONS = {
     WorkspaceRoleType.OWNER: "Workspace owner with full access inside their workspace.",

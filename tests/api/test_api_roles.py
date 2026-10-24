@@ -54,6 +54,16 @@ async def test_roles_list_requires_authentication():
     assert resp.status_code == 401
 
 
+async def test_role_alias_does_not_hide_the_platform_owner():
+    """`superuser` is a real role: a legacy alias to `admin` would erase it."""
+    token = await _user_with_role("ADMIN")
+    async with await _client() as client:
+        owner = await client.get(f"{ROLES_URL}/superuser", headers={"Authorization": f"Bearer {token}"})
+    assert owner.status_code == 200, owner.text
+    assert owner.json()["codename"] == "superuser"
+    assert owner.json()["label"] == "Собственник платформы"
+
+
 async def test_roles_list_includes_permissions():
     """A m2m needs prefetch_related: select_related returns empty collections.
 
@@ -92,8 +102,10 @@ async def test_get_unknown_role_is_404():
     assert resp.status_code == 404
 
 
-async def test_permission_update_requires_admin():
-    token = await _user_with_role("OPERATOR")
+@pytest.mark.parametrize("codename", ["OPERATOR", "ADMIN"])
+async def test_permission_update_requires_the_platform_owner(codename):
+    """Grants are the owner's alone: neither an operator nor a platform admin writes them."""
+    token = await _user_with_role(codename)
     payload = {"permissions": ["social.Source.view"], "strategy": "replace"}
 
     async with await _client() as client:
@@ -104,8 +116,8 @@ async def test_permission_update_requires_admin():
     assert resp.status_code == 403
 
 
-async def test_admin_can_update_role_permissions():
-    """The ADMIN gate passes and the service really writes the new set."""
+async def test_owner_can_update_role_permissions():
+    """The OWNER gate passes and the service really writes the new set."""
     from app.services.user.permissions import RolePermissionService
 
     with tenant_scope(bypass=True):
@@ -121,7 +133,7 @@ async def test_admin_can_update_role_permissions():
     with tenant_scope(bypass=True):
         await RolePermissionService._set_role_permissions(role.id, [perms[0].id, perms[1].id])
 
-    token = await _user_with_role("ADMIN")
+    token = await _user_with_role("SUPERUSER")
     try:
         async with await _client() as client:
             resp = await client.put(
@@ -146,7 +158,7 @@ async def test_admin_can_update_role_permissions():
 
 async def test_permission_update_reports_unknown_role():
     """Only the operator role's grants may be changed; a fixed role is refused."""
-    token = await _user_with_role("ADMIN")
+    token = await _user_with_role("SUPERUSER")
     payload = {"permissions": ["social.notification.view"], "strategy": "replace"}
 
     async with await _client() as client:

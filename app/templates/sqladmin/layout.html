@@ -26,7 +26,7 @@
                 <strong data-admin-username>{{ admin_user.username }}</strong>
                 <span class="admin-caption">Платформенная роль</span>
                 <span data-admin-role>{{ admin_user.role.label }}</span>
-                <small>{{ 'Полный доступ к консоли' if admin_user.is_platform_admin else 'Доступ по назначенным правам' }}</small>
+                <small data-admin-access>{{ 'Собственник: полный доступ ко всем данным' if admin_user.is_superuser else ('Полный доступ к консоли' if admin_user.is_platform_admin else 'Доступ по назначенным правам') }}</small>
             </section>
             {% endif %}
             <details class="admin-navigation" open>

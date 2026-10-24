@@ -10,7 +10,7 @@ from app.types import ActionType, PlatformRoleType
 
 router = APIRouter(tags=["users"])
 
-_LEGACY_ROLE_ALIASES = {"viewer": "user", "superuser": "admin"}
+_LEGACY_ROLE_ALIASES = {"viewer": "user"}
 
 
 def _canonical_role_code(role_name: str) -> str:
@@ -46,9 +46,9 @@ async def get_role(
 async def update_role_permissions(
     role_name: str,
     permissions_request: PermissionsRequest,
-    current_user=Depends(require_platform_role(PlatformRoleType.ADMIN)),
+    current_user=Depends(require_platform_role(PlatformRoleType.SUPERUSER)),
 ) -> dict:
-    """Change operator grants. Fixed roles and user grants cannot be edited."""
+    """Change operator grants. Only the platform owner edits the role catalog."""
     role_code = _canonical_role_code(role_name)
     if role_code != PlatformRoleType.OPERATOR.value:
         raise HTTPException(400, "Only operator grants can be changed")

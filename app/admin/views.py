@@ -144,11 +144,18 @@ class UserAdmin(BaseAdmin, model=User):
         The manager is the single place that knows the assignment rules (rank,
         self-edit, the owner account), so the console must not write `role_id`
         itself, even with a forged payload.
+
+        The owner's account is out of reach for anyone else: the role picker
+        renders it read-only, but a hand-crafted POST never touches that form.
+        The owner keeps the right to change their own name, email and password.
         """
+        target = await User.objects.prefetch_related("role").get(id=int(pk))
+        actor = self.get_admin_user(request)
+        if target is not None and target.is_superuser and (actor is None or actor.id != target.id):
+            raise HTTPException(status_code=403, detail="Нельзя изменять аккаунт собственника платформы")
         role_name = data.pop("role", None)
         if data.get("role_id"):
             raise HTTPException(status_code=400, detail="Используйте отдельную операцию назначения платформенной роли")
-        actor = self.get_admin_user(request)
         if role_name:
             await User.objects.set_platform_role(
                 user_id=int(pk),

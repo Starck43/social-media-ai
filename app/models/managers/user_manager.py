@@ -73,7 +73,7 @@ class UserManager(BaseManager):
         Returns:
                 Updated User object or None if not found
         """
-        user = await self.get(id=user_id)
+        user = await self.prefetch_related("role").get(id=user_id)
         if not user:
             return None
 
@@ -86,6 +86,11 @@ class UserManager(BaseManager):
             raise HTTPException(status_code=403, detail="Authenticated actor required")
         if set(update_data) - {"username", "email"}:
             raise HTTPException(status_code=400, detail="Unsupported profile field")
+        # The owner's profile is not another administrator's to rewrite. The
+        # owner may still edit their own name and email; `set_platform_role`
+        # and the password routes guard the rest.
+        if user.is_superuser and (actor is None or actor.id != user_id):
+            raise HTTPException(status_code=403, detail="Нельзя изменять профиль собственника платформы")
         if actor is not None:
             fresh = await User.objects.prefetch_related("role").get(id=actor.id, is_active=True)
             if fresh is None or (fresh.id != user_id and not fresh.is_platform_admin):
@@ -162,12 +167,25 @@ class UserManager(BaseManager):
         """
         Delete a user by ID.
 
+        The platform owner is not deletable from anywhere — console, API or a
+        direct manager call. The database also refuses it (catalog rows hold an
+        FK to the owner), but relying on that would make the refusal depend on
+        whichever row happens to reference the account; the rule belongs here.
+
         Args:
                 user_id: ID of the user to delete
 
         Returns:
                 bool: True if deletion successful, False otherwise
         """
+        from app.models import User
+
+        target = await User.objects.prefetch_related("role").get(id=user_id)
+        if target is not None and target.is_superuser:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Нельзя удалить аккаунт собственника платформы",
+            )
         return await self.delete_by_id(user_id)
 
     async def change_password(

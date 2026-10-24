@@ -144,9 +144,16 @@ Additional restrictions:
 - `superuser` is never assignable at runtime: not by an admin, not by the owner,
   not from the console, the API or any CLI. Only revision `0110`/the bootstrap
   command (`scripts/setup/bootstrap_owner.py`) put an account on it, and a second
-  owner cannot be created. The owner account cannot be re-roled or deleted from
-  the console; nobody changes their own role. An `admin` also cannot rewrite an
-  account that already sits at or above their rank, so peers stay peers.
+  owner cannot be created. An `admin` also cannot rewrite an account that already
+  sits at or above their rank, so peers stay peers.
+
+  The owner's account is protected at every seam, not only in the form:
+  `UserManager.delete_user()` refuses it (so `DELETE /api/v1/users/{id}` cannot
+  drop it — the old protection was an incidental foreign key from the catalog),
+  `UserManager.update_user()` and `UserAdmin.update_model()` refuse another
+  account writing it, and both password routes (`GET`/`POST
+  /admin/user/change-password/{id}`) answer 403. Nobody changes their own role.
+  The owner keeps the routine rights: their own name, email and password.
 - New users always receive the ordinary platform `user` role: the create form has
   no role field.
 - `UserManager.set_platform_role()` rejects every self-assignment (including

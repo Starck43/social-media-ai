@@ -146,9 +146,14 @@ async def change_password_form_path(
             raise HTTPException(status_code=403, detail="Platform administrator required for password reset")
         await require_admin_perm(request, "user", ActionType.UPDATE)
 
-    target_user = await User.objects.get(id=int(user_id))
+    target_user = await User.objects.prefetch_related("role").get(id=int(user_id))
     if not target_user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    # Nobody resets the owner's password from the console — including the
+    # owner's peers and the owner's own reset link. The owner changes it in
+    # their own profile, where the current password is required.
+    if is_admin_reset and target_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Нельзя изменить пароль собственника платформы")
 
     # Store the referer URL for redirect back after password change
     referer = request.headers.get("referer", "")
@@ -241,10 +246,14 @@ async def change_password_submit_path(
         if not current_user.is_platform_admin:
             raise HTTPException(status_code=403, detail="Platform administrator required for password reset")
         await require_admin_perm(request, "user", ActionType.UPDATE)
-        target_user = await User.objects.get(id=target_id)
+        target_user = await User.objects.prefetch_related("role").get(id=target_id)
         if not target_user:
             request.session["_messages"].append("Пользователь не найден")
             return RedirectResponse(url=f"/admin/user/change-password/{user_id}", status_code=status.HTTP_303_SEE_OTHER)
+        # Refused before any write: the owner's password is theirs to change,
+        # and only with the current password at hand.
+        if target_user.is_superuser:
+            raise HTTPException(status_code=403, detail="Нельзя изменить пароль собственника платформы")
 
     # Basic validation
     errors = []

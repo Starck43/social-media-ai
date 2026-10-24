@@ -31,7 +31,7 @@ from sqlalchemy import and_, func, or_
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from app.jobs.recovery_policy import outcome_unconfirmed
+from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX, outcome_unconfirmed
 from app.models.job import Job
 
 from .deps import (
@@ -205,6 +205,7 @@ def queue_signals(rows: list[Job], now: datetime) -> dict[str, int | None]:
     overdue_ages: list[timedelta] = []
     stale_running = 0
     unconfirmed_failed = 0
+    quarantined = 0
     for job in rows:
         if job.status == "pending":
             run_at = _as_utc(job.run_at)
@@ -214,13 +215,17 @@ def queue_signals(rows: list[Job], now: datetime) -> dict[str, int | None]:
             locked_at = _as_utc(job.locked_at)
             if locked_at is not None and locked_at < stale_cutoff:
                 stale_running += 1
-        elif job.status == "failed" and outcome_unconfirmed(job.error):
-            unconfirmed_failed += 1
+        elif job.status == "failed":
+            if outcome_unconfirmed(job.error):
+                unconfirmed_failed += 1
+            if isinstance(job.error, str) and job.error.startswith(OUTCOME_UNCONFIRMED_PREFIX):
+                quarantined += 1
     return {
         "overdue_pending": len(overdue_ages),
         "oldest_overdue_minutes": int(max(overdue_ages).total_seconds() // 60) if overdue_ages else None,
         "stale_running": stale_running,
         "unconfirmed_failed": unconfirmed_failed,
+        "quarantined": quarantined,
     }
 
 

@@ -142,9 +142,19 @@ Coverage evidence vs the P8 gate (state/refs → task):
 - [ ] P8-T08 — credential expiry/near-expiry signal; accept: reauth/missing plus near-expiry from
   vault `expires_at` metadata — reads only, never decrypts; `renewable` auto-renewal is not reauth/error;
   personal vs operator split honest; depends: none; owns: credential signal lane; owner: unassigned; status: TODO
-- [ ] P8-T09 — queue backlog/age/quarantine signal; accept: operator view reusing
+- [x] P8-T09 — queue backlog/age/quarantine signal; accept: operator view reusing
   `job_manager` claim/reap evidence (stale quarantine, retry receipts): pending count, oldest age, quarantined
-  rows; no runtime write; depends: none; owns: queue signal lane; owner: unassigned; status: TODO
+  rows; no runtime write; depends: none; owns: queue signal lane; owner: codex; status: DONE, accepted by Codex
+  on 2026-10-25 at exact tested SHA `2d15b4e2b12b1b307267285ab861e8a4189947d3`. Existing workspace-scoped
+  pending/age/stale-running and generic unconfirmed-failure signals remain; a separate exact
+  `OUTCOME_UNCONFIRMED_PREFIX` count is rendered as a redacted subset without widening row content.
+  OpenCode/River exact-SHA no-DB `tests/jobs/test_jobs_queue_signals.py`: 11 passed, 0 failed/skipped, with
+  `PYTHONPATH=tests` and isolated pytest flags. PostgreSQL
+  `tests/jobs/test_jobs_lifecycle_replay_db.py`: 5 passed, 0 failed/skipped,
+  root conftest + `DB_TEST_SCHEMA=test_schema`; shared schema revision was not
+  recorded. The fixture explicitly binds synthetic jobs to their tenant under
+  the platform-bypass test harness. No migration/reset/seed; browser check not
+  run.
 - [ ] P8-T10 — runtime freshness identity; accept: signal distinct from `/livez`-`/readyz` (API+DB only),
   honestly reporting single `app.runtime` component presence; depends: none;
   owns: runtime freshness lane; owner: unassigned; status: TODO

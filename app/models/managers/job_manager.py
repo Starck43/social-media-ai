@@ -1410,7 +1410,13 @@ class JobManager(BaseManager["Job"]):
         if type(tenant_id) is not int or tenant_id <= 0:
             return (
                 {"pending": 0, "running": 0, "done": 0, "failed": 0, "attention": 0},
-                {"overdue_pending": 0, "oldest_overdue_minutes": None, "stale_running": 0, "unconfirmed_failed": 0},
+                {
+                    "overdue_pending": 0,
+                    "oldest_overdue_minutes": None,
+                    "stale_running": 0,
+                    "unconfirmed_failed": 0,
+                    "quarantined": 0,
+                },
             )
         if not is_bypass() and current_tenant_id() != tenant_id:
             raise RuntimeError("Jobs overview cannot cross the active tenant scope")
@@ -1456,6 +1462,15 @@ class JobManager(BaseManager["Job"]):
                     )
                 )
             ).scalar_one()
+            quarantined = (
+                await session.execute(
+                    select(func.count()).where(
+                        JobModel.tenant_id == tenant_id,
+                        JobModel.status == "failed",
+                        JobModel.error.startswith(OUTCOME_UNCONFIRMED_PREFIX),
+                    )
+                )
+            ).scalar_one()
             attention = (
                 await session.execute(
                     select(func.count()).where(
@@ -1475,6 +1490,7 @@ class JobManager(BaseManager["Job"]):
             "oldest_overdue_minutes": oldest_minutes,
             "stale_running": int(stale),
             "unconfirmed_failed": int(uncertain),
+            "quarantined": int(quarantined),
         }
         return stats, signals
 

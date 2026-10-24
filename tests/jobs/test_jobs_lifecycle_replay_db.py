@@ -18,7 +18,7 @@ resolve_and_redirect()  # Refuses any schema other than the configured test sche
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.jobs.lifecycle import cleanup_terminal_job_history
-from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR
+from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR, OUTCOME_UNCONFIRMED_PREFIX
 from app.models import AgentTask, Job, Platform, PlatformRole, Source, Tenant, User
 from app.models.managers.job_manager import JobManager
 from app.types import PlatformType, SourceType
@@ -93,7 +93,12 @@ class JobLifecycleReplayDatabaseTests(unittest.IsolatedAsyncioTestCase):
             return task
 
     async def create_job(self, tenant, **changes):
+        # The suite runs under the platform-owner bypass, where BaseManager stamps
+        # an omitted tenant_id with the bootstrap workspace instead of the scope
+        # tenant; name the owner explicitly so the row lands where the contract
+        # expects it.
         values = {
+            "tenant_id": tenant.id,
             "job_type": "learn",
             "payload": {},
             "run_at": NOW,
@@ -103,6 +108,9 @@ class JobLifecycleReplayDatabaseTests(unittest.IsolatedAsyncioTestCase):
             "max_attempts": 3,
             "result": {},
         }
+        explicit_tenant = changes.get("tenant_id")
+        if explicit_tenant is not None and explicit_tenant != tenant.id:
+            raise ValueError(f"create_job tenant {tenant.id} conflicts with explicit tenant_id {explicit_tenant}")
         with tenant_scope(tenant.id):
             return await Job.objects.create(**(values | changes))
 
@@ -152,6 +160,39 @@ class JobLifecycleReplayDatabaseTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await cleanup_terminal_job_history(tenant_id=self.own.id, now=NOW), 2)
             self.assertIsNone(await Job.objects.get(id=retained_30h.id))
             self.assertIsNone(await Job.objects.get(id=reverted.id))
+
+    async def test_overview_counts_quarantined_rows_within_the_active_tenant_only(self):
+        quarantined = await self.create_job(self.own, status="failed", error=f"{OUTCOME_UNCONFIRMED_PREFIX}lease lost")
+        cancelled = await self.create_job(self.own, status="failed", error=OPERATOR_CANCELLED_ERROR)
+        ordinary = await self.create_job(self.own, status="failed", error="ordinary failure")
+        foreign_marker = f"foreign-{uuid4().hex}"
+        foreign = await self.create_job(
+            self.other, status="failed", error=f"{OUTCOME_UNCONFIRMED_PREFIX}{foreign_marker}"
+        )
+
+        # Fixture visibility: the three own failed rows must be readable from the
+        # own tenant scope before the aggregate is exercised, so a zero count
+        # points at the overview query rather than at the created rows.
+        with tenant_scope(self.own.id):
+            for row in (quarantined, cancelled, ordinary):
+                stored = await Job.objects.get(id=row.id)
+                self.assertIsNotNone(stored)
+                self.assertEqual(stored.tenant_id, self.own.id)
+                self.assertEqual(stored.status, "failed")
+
+        with tenant_scope(self.own.id):
+            stats, signals = await JobManager().overview_for_web(self.own.id, now=NOW)
+
+        self.assertEqual(stats["failed"], 3)
+        self.assertEqual(signals["quarantined"], 1)
+        # The generic review count keeps the recovery vocabulary: quarantine and
+        # operator cancel both require a manual effect check; the foreign row never counts.
+        self.assertEqual(signals["unconfirmed_failed"], 2)
+        self.assertNotIn(foreign_marker, repr((stats, signals)))
+        self.assertIsNotNone(await Job.objects.get(id=quarantined.id))
+        self.assertIsNotNone(await Job.objects.get(id=cancelled.id))
+        with tenant_scope(self.other.id):
+            self.assertIsNotNone(await Job.objects.get(id=foreign.id))
 
     async def test_active_page_includes_attention_and_clean_history_excludes_it(self):
         clean = await self.create_job(self.own, result={"new_items": 3})

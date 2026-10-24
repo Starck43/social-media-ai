@@ -741,10 +741,10 @@ class AgentTaskManager(BaseManager):
             return {}
         link_counts = (
             self.get_queryset()
-            .values(agent_task_sources.c.agent_task_id, func.count().label("link_count"))
             .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
             .filter(AgentTask.tenant_id == tenant_id)
             .group_by(agent_task_sources.c.agent_task_id)
+            .values(agent_task_sources.c.agent_task_id, func.count().label("link_count"))
             .to_select()
             .subquery("task_source_link_counts")
         )

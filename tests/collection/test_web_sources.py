@@ -693,7 +693,7 @@ async def test_delete_refuses_a_source_an_active_task_reads():
         detail = await client.get(f"/app/sources/{source.id}")
         assert detail.status_code == 200
         assert f'action="/app/sources/{source.id}/delete"' not in detail.text
-        assert "Источник используется активной задачей" in detail.text
+        assert "Используется активной задачей" in detail.text
         assert f"№{task.id}" in detail.text
         assert "удалите его в задаче" in detail.text
 

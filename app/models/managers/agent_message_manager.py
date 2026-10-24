@@ -60,9 +60,14 @@ class AgentMessageManager(BaseManager["AgentMessage"]):
         return sum(float(row.cost or 0.0) for row in rows)
 
     async def record_usage(self, *, session_id: int, usage: dict[str, Any]) -> None:
-        """Attribute token/cost metadata from an LLM reply to the latest turn."""
+        """Attribute token/cost metadata from an LLM reply to the latest turn.
+
+        An unresolved cost keeps the column NULL instead of a numeric zero: the
+        turn then counts as unknown spend, not as a free call.
+        """
         tokens = int(usage.get("total_tokens") or 0)
-        cost = float(usage.get("cost") or 0.0)
+        raw_cost = usage.get("cost")
+        cost = float(raw_cost) if isinstance(raw_cost, (int, float)) and not isinstance(raw_cost, bool) else None
         if not tokens and not cost:
             return
         model = self.model

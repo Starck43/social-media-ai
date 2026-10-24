@@ -157,10 +157,18 @@ def reflection_result(payload: Any, allowed_fact_ids: set[int]) -> ReflectionRes
 
 
 def known_cost_usd(response: Any) -> float | None:
-    """Retain reported finite nonnegative cost; missing usage is not free usage."""
+    """Retain a reported finite nonnegative USD total; missing usage is not free.
+
+    A transport projection (`cost_is_estimate`) is not provider spend evidence:
+    callers persist this value as money, so an estimate must stay unknown
+    instead of being written as a number the ledger cannot justify.
+    """
     if not isinstance(response, dict) or not isinstance(response.get("usage"), dict):
         return None
-    value = response["usage"].get("cost")
+    usage = response["usage"]
+    if usage.get("cost_is_estimate"):
+        return None
+    value = usage.get("cost")
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     try:

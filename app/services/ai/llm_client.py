@@ -315,10 +315,13 @@ class LLMClient(ABC):
 
         report_claimed, reported = provider_cost_evidence(data)
         if report_claimed:
+            # A claimed but unusable provider total (non-USD, malformed, out of
+            # range) is unresolved spend. Publishing 0.0 here let a paid call
+            # count as free everywhere the legacy `cost` key is read.
             amount = (
                 float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
                 if reported is not None
-                else 0.0
+                else None
             )
             return {
                 "prompt_tokens": int(prompt_tokens or 0),
@@ -335,7 +338,7 @@ class LLMClient(ABC):
                 "prompt_tokens": int(prompt_tokens or 0),
                 "completion_tokens": int(completion_tokens or 0),
                 "total_tokens": int(prompt_tokens or 0) + int(completion_tokens or 0),
-                "cost": 0.0,
+                "cost": None,
             }
             result.update(cost_source="undefined", cost_is_estimate=True)
             return result

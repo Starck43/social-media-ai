@@ -9,6 +9,7 @@ from app.core.database import async_engine
 from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
+from .registry import TableRegistryAdmin
 from .related import RelatedAdmin, related_controls, related_token
 from .views import (
     AgentScenarioAdmin,
@@ -114,6 +115,9 @@ def setup_admin(app):
         UserCredentialAdmin,
     ]
 
+    # The owner's read-only map of every table, first in the menu so the widest
+    # surface is not buried under the model pages it summarises.
+    admin.add_view(TableRegistryAdmin)
     for view_class in view_configs:
         admin.add_view(view_class)
 

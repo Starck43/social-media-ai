@@ -1,0 +1,44 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12" data-table-registry-detail="{{ item.table }}">
+    <div class="card">
+        <div class="card-body">
+            <h3 class="card-title">{{ item.table }}</h3>
+            <p class="text-secondary mb-0">
+                Модель: {{ item.model or '—' }} · ключ ресурса: {{ item.resource_key or '—' }} ·
+                схема: {{ item.schema or '—' }}
+            </p>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table" data-table-registry-columns>
+                <thead>
+                    <tr>
+                        <th scope="col">Столбец</th>
+                        <th scope="col">Тип</th>
+                        <th scope="col">Обязателен</th>
+                        <th scope="col">Ключ</th>
+                        <th scope="col">Ссылка</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for column in item.columns %}
+                    <tr data-column="{{ column.name }}">
+                        <td>{{ column.name }}{% if column.sensitive %} <span class="badge bg-yellow-lt">чувствительный</span>{% endif %}</td>
+                        <td>{{ column.type }}</td>
+                        <td>{{ 'да' if not column.nullable else 'нет' }}</td>
+                        <td>{{ 'PK' if column.primary_key else '' }}</td>
+                        <td>{{ column.foreign_key or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <a class="btn btn-link mt-2" href="{{ registry_url }}" data-table-registry-back>← Ко всем таблицам</a>
+</div>
+{% endblock %}

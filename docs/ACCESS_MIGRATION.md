@@ -1,5 +1,19 @@
 # Access model migration
 
+## Three platform levels (revision `0110`)
+
+The access model has three non-overlapping levels: the **platform owner**
+(`PlatformRoleType.SUPERUSER`, one account), **platform staff** (`admin`,
+`operator`) and **clients** (`user` plus workspace membership). Revision `0110`
+widens the `roles.codename` CHECK, inserts the `superuser` catalog row and moves
+one reviewed account onto it; it refuses to run without
+`-x superuser_user_id=<id>` and only promotes an account that is already an
+active `admin`. No console, API or CLI path grants `superuser`: the role is
+reachable through that migration alone, it cannot be assigned to another
+account, and the owner account cannot be demoted or deleted from the console.
+Owner-only surfaces are the role/permission catalog and the read-only table
+registry; see [ADMIN.md](ADMIN.md#additional-restrictions).
+
 Revision `0096` separates platform roles from workspace roles and replaces
 screen-oriented permission names with stable resource/action identities. It is
 forward-only because the old shared role model cannot represent the new

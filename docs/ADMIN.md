@@ -96,13 +96,25 @@ Additional restrictions:
 - `TenantAdmin.is_accessible()` requires a platform admin, not merely a tenant
   model grant or ownership of one workspace.
 - Platform role and permission identities remain fixed: no create/delete or code,
-  resource/action, or user-assignment editing. A platform admin may edit the
-  permission selection of every role (`user`, `admin`, `operator`) through `RoleManager.set_permissions`,
-  and may edit a permission's display name. Operators cannot edit either catalog,
-  even with explicit grants. Writes recheck the active platform admin and CSRF.
-  Stored grants do not change fixed role authority: `admin` retains wildcard
-  console access, and `user` cannot enter the console. The role API/service keeps
-  its separate operator-only update contract; the SQLAdmin editor is admin-only.
+  resource/action, or user-assignment editing. Only the platform owner
+  (`superuser`) may edit the permission selection of the operator role
+  (`RoleManager.set_permissions`) and a permission's display name; a platform
+  `admin` is refused, even though it keeps the console wildcard. Operators cannot
+  edit either catalog, even with explicit grants. Writes recheck the active owner
+  and CSRF. Stored grants do not change fixed role authority: `admin` retains
+  wildcard console access, and `user` cannot enter the console. The API
+  `PUT /api/v1/users/roles/{role}/permissions` uses the same owner gate.
+- The console names the signed-in level truthfully: the owner's identity block
+  says «Собственник: полный доступ ко всем данным», an admin sees «Полный доступ
+  к консоли», an operator «Доступ по назначенным правам».
+- Реестр таблиц (`/admin/registry`, [registry.py](../app/admin/registry.py),
+  [table_registry.py](../app/admin/table_registry.py)) is the owner's read-only map
+  of every mapped table, including association tables and tables without a
+  console page: search by table, model or resource key, pagination, and a detail
+  page with columns, types, keys, foreign keys and sensitive-column markers.
+  It is gated on `is_accessible` (`User.is_superuser`) rather than model grants,
+  so an admin's wildcard does not open it; it has no create/edit/delete/export
+  route and reads no rows.
 - User forms exclude `role` / `role_id`; new users receive the ordinary platform
   `user` role. Creating an operator/admin or changing operator grants is not an
   ordinary SQLAdmin user-form operation. `UserManager.set_platform_role()` also

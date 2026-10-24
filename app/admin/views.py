@@ -1771,12 +1771,13 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     def is_accessible(self, request: Request) -> bool:
         """Workspace-wide administration is reserved for platform admins.
 
-        A model permission would be the wrong gate even here — the list spans
-        every workspace, and the owner of one of them has no business seeing or
-        editing the others.
+        The gate is the `tenancy.workspace` right, not the platform badge: the
+        owner holds every registered action, an `admin` must be granted the
+        right like any other role. A model permission is still the right
+        question rather than a per-row one — the list spans every workspace.
         """
         user = self.get_admin_user(request)
-        return user is not None and bool(user.is_platform_admin)
+        return bool(user is not None and user.has_perm_for("tenant", ActionType.VIEW))
 
 
 class UserCredentialAdmin(BaseAdmin, model=UserCredential):

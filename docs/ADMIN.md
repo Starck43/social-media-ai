@@ -26,10 +26,17 @@ mismatches remain listed below. See [MODELS](MODELS.md) for ORM definitions and
 
 The baseline sections below retain historical console/action descriptions. In the
 0109 candidate, providers/models are **personally owned**, shared across one
-user's workspaces, not a global editable fleet. `LLMProviderAdmin.can_create`,
-`can_edit` and `LLMModelAdmin.can_create`, `can_edit` are false: raw SQLAdmin forms
-are not the configuration write path. Use Settings → Models with the active
-owner's catalog service for atomic provider+models saves and per-user defaults.
+user's workspaces, not a global editable fleet.
+
+The console is a first-class write path again: `LLMProviderAdmin` and
+`LLMModelAdmin` no longer pin `can_create` / `can_edit`, so the owner and any
+role holding `llm.provider` / `llm.model` CREATE or UPDATE get the create button
+and the edit column. The `can_create`/`can_edit` freeze from `e14c395` hid the buttons while
+leaving the routes open, which made the owner open `/admin/llm-provider/create`
+by URL to see a form the list would not offer. Settings → Models stays the
+place for atomic provider+models saves and per-user defaults; the console writes
+the same rows through the same managers (API keys are encrypted in
+`after_model_change`).
 This does not assert that every existing inspection/delete/test action is disabled.
 
 Platform operator entry/model-action grants are still required for the admin
@@ -62,9 +69,11 @@ clears the browser session.
 
 Authenticated requests resolve the JWT subject to a fresh active User with
 platform role/permissions. The backend does not trust a stale session `user_id`
-as a second identity source. A platform admin receives wildcard console grants;
-an operator receives explicit model/action grants. There is no current
-`User.is_superuser` column.
+as a second identity source. **Only the platform owner (`superuser`) receives
+wildcard console grants.** An `admin` and an `operator` both receive explicit
+model/action grants from `role_permission`; the difference is what the stored
+grants say, not a code-level bypass. There is no current `User.is_superuser`
+column.
 
 Permissions come from `role_permission` → `permissions.model_type_id` /
 `action_type`, with stable `ModelType.resource_key` registered in
@@ -85,35 +94,38 @@ presets and scope checks; do not reuse console grants as workspace membership.
 | export | EXPORT |
 | custom action | Explicit `BaseAdmin.action_permissions` entry; otherwise UPDATE |
 
-For operators, any granted non-VIEW action also implies list/details so its form
-can be reached. No grants means no model access. View-level `can_*` flags still
-disable operations even for platform admins. Custom action declarations are
+For operators and admins, any granted non-VIEW action also implies list/details
+so its form can be reached. No grants means no model access. The owner skips the
+lookup entirely. View-level `can_*` flags still disable operations even for the
+owner. Custom action declarations are
 checked against the action slugs; unknown declaration keys are logged when the
 lazy view catalog is built. Menu visibility alone is not authorization.
 
 Additional restrictions:
 
-- `TenantAdmin.is_accessible()` requires a platform admin, not merely a tenant
-  model grant or ownership of one workspace.
+- `TenantAdmin.is_accessible()` requires the `tenancy.workspace` VIEW right, not
+  the platform badge and not ownership of one workspace. The owner holds it
+  through the wildcard; an `admin` needs it granted like any other role.
 - Platform role and permission identities remain fixed: no create/delete or code,
   resource/action, or user-assignment editing. Only the platform owner
   (`superuser`) may edit the permission selection of the operator role
   (`RoleManager.set_permissions`) and a permission's display name; a platform
-  `admin` is refused, even though it keeps the console wildcard. Operators cannot
+  `admin` is refused. Operators cannot
   edit either catalog, even with explicit grants. Writes recheck the active owner
-  and CSRF. Stored grants do not change fixed role authority: `admin` retains
-  wildcard console access, and `user` cannot enter the console. The API
+  and CSRF. Stored grants decide role authority: widening an `admin` means
+  granting the right in `role_permission`, never restoring a bypass, and `user`
+  cannot enter the console. The API
   `PUT /api/v1/users/roles/{role}/permissions` uses the same owner gate.
 - The console names the signed-in level truthfully: the owner's identity block
-  says «Собственник: полный доступ ко всем данным», an admin sees «Полный доступ
-  к консоли», an operator «Доступ по назначенным правам».
+  says «Собственник: полный доступ ко всем данным», an admin sees «Доступ по
+  назначенным правам», an operator the same.
 - Реестр таблиц (`/admin/registry`, [registry.py](../app/admin/registry.py),
   [table_registry.py](../app/admin/table_registry.py)) is the owner's read-only map
   of every mapped table, including association tables and tables without a
   console page: search by table, model or resource key, pagination, and a detail
   page with columns, types, keys, foreign keys and sensitive-column markers.
   It is gated on `is_accessible` (`User.is_superuser`) rather than model grants,
-  so an admin's wildcard does not open it; it has no create/edit/delete/export
+  so an admin's grants do not open it; it has no create/edit/delete/export
   route and reads no rows.
 - User forms: the edit page carries a **role picker**
   ([role_picker.py](../app/admin/role_picker.py)) listing only the roles the
@@ -177,8 +189,9 @@ only on visible matches. Group changes clear transient marks, never selected gra
 
 The native select remains the sole submitted value source, including filtered-out
 choices, and remains usable if JavaScript is disabled. This needs no new dependency
-or schema migration. Editing stored grants on `admin` does not remove its wildcard
-access and is distinct from changing one's account role.
+or schema migration. Editing stored grants on `admin` is how its console reach is narrowed or
+widened — there is no wildcard to remove — and is distinct from changing one's
+account role.
 
 Offline validation: `tests/permission_transfer_fixture.py` renders actual SQLAdmin
 forms with up to 206 synthetic permissions and explicit storage doubles;
@@ -228,8 +241,8 @@ business-workflow execution.
 | `AIAnalyticsAdmin` | `AIAnalytics` | `/admin/ai-analytics/list` | Create disabled; stored analysis view |
 | `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection: create/edit/delete/export disabled |
 | `NotificationAdmin` | `Notification` | `/admin/notification/list` | Shared workspace read state; guarded hidden send action |
-| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Personal catalog inspection and connection test; raw create/edit disabled in 0109, owner-only credential use, configuration goes through Settings → Models |
-| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Personal model inspection and short/mock/real checks; raw create/edit disabled in 0109 |
+| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Personal catalog: create/edit for roles holding `llm.provider` CREATE/UPDATE (the owner always), connection test, owner-only credential use |
+| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Personal models: create/edit for roles holding `llm.model` CREATE/UPDATE (the owner always), short/mock/real checks |
 | `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Global workspace settings; platform-admin-only visibility |
 | `UserCredentialAdmin` | `UserCredential` | `/admin/user-credential/list` | Personal credential vault rows, not workspace-owned credentials |
 

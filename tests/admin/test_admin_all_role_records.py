@@ -95,4 +95,6 @@ def test_stored_grants_do_not_change_fixed_platform_role_authority():
     administrator = actor("admin")
     administrator.role.permissions = []
     assert administrator.is_platform_admin
-    assert administrator.model_permissions("llmmodel") == set(TYPES.ActionType)
+    # `admin` reaches the console, but the console is exactly what its role
+    # grants. The owner alone gets the wildcard.
+    assert administrator.model_permissions("llmmodel") == set()

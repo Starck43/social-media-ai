@@ -76,12 +76,21 @@ class _StubUser:
         return True
 
     @property
-    def is_platform_admin(self) -> bool:
-        """Mirror the real `User.is_platform_admin`: the platform admin role.
+    def is_superuser(self) -> bool:
+        """Mirror the real `User.is_superuser`: the platform owner alone.
 
-        A platform admin passes every gate (the wildcard grant); an operator
-        with narrower rights does not. It is a property on the model, so the
-        stub must be one too — a bound method would always be truthy.
+        Only the owner gets the wildcard grant and every `model_permissions`
+        action; an `admin` is held to the grants stored for its role.
+        """
+        return self._superuser
+
+    @property
+    def is_platform_admin(self) -> bool:
+        """Mirror the real `User.is_platform_admin`: admin or owner.
+
+        Console access only. It no longer implies the wildcard grant — that is
+        `is_superuser` — so a stub must expose both. A property, not a method:
+        a bound method would always be truthy.
         """
         return self._superuser
 

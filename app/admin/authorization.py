@@ -124,13 +124,16 @@ class AdminAuthorizationBackend(GrantsAuthorizationBackend):
     async def get_grants(self, request: Request) -> set[tuple[str, str]]:
         """The `(identity, action)` pairs the signed-in operator may use.
 
-        Empty for an anonymous/non-operator request, the wildcard pair for a platform admin, and
-        the role's rights translated into console actions otherwise.
+        Empty for an anonymous/non-operator request, the wildcard pair for the
+        platform owner, and the role's rights translated into console actions
+        otherwise. An `admin` is not a wildcard holder: its console is exactly
+        what `role_permission` grants the `admin` role, which is what lets the
+        owner narrow one admin's reach without touching the owner's own.
         """
         user = await self.resolve_user(request)
         if user is None or not user.has_admin_access():
             return set()
-        if user.is_platform_admin:
+        if user.is_superuser:
             return {(WILDCARD, WILDCARD)}
 
         model_by_identity, custom_rights = self._catalog(request)

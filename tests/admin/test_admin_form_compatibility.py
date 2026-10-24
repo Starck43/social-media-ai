@@ -5,6 +5,8 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace as NS
 
+from app.types import ActionType
+
 import pytest
 from source_import_isolation import load_isolated_source
 from sqlalchemy import DOUBLE, FLOAT, REAL, Column, Double, Float, Integer, Numeric, inspect
@@ -51,7 +53,12 @@ def tenant_case(base_source=None):
         for n in ast.parse((ROOT / "app/admin/views.py").read_text()).body
         if isinstance(n, ast.ClassDef) and n.name == "TenantAdmin"
     )
-    ns = {"BaseAdmin": base.BaseAdmin, "Tenant": tenant.Tenant, "plan_badge": lambda value: value}
+    ns = {
+        "BaseAdmin": base.BaseAdmin,
+        "Tenant": tenant.Tenant,
+        "plan_badge": lambda value: value,
+        "ActionType": ActionType,
+    }
     tree = ast.Module(
         body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), node],
         type_ignores=[],
@@ -171,7 +178,12 @@ async def test_actual_related_tenant_get_uses_canonical_form_without_storage(mod
 
     class SyntheticPlatformAdmin(AuthorizationBackend):
         async def load(self, request):
-            request.state.admin_user = NS(is_platform_admin=True)
+            request.state.admin_user = NS(
+                is_platform_admin=True,
+                is_superuser=True,
+                has_perm_for=lambda model_name, action: True,
+            )
+            await super().load(request)
 
         def has_permission(self, *args):
             return True

@@ -16,6 +16,7 @@ from app.admin.csrf import get_csrf_manager
 from app.core.config import settings
 from app.core.hashing import generate_temporary_password, get_password_hash, verify_password
 from app.models import Tenant, User
+from app.models.managers.user_manager import UserManager
 from app.services.user.auth import get_authenticated_user
 from app.types import ActionType
 
@@ -152,7 +153,7 @@ async def change_password_form_path(
     # Nobody resets the owner's password from the console — including the
     # owner's peers and the owner's own reset link. The owner changes it in
     # their own profile, where the current password is required.
-    if is_admin_reset and target_user.is_superuser:
+    if is_admin_reset and UserManager._is_platform_owner(target_user):
         raise HTTPException(status_code=403, detail="Нельзя изменить пароль собственника платформы")
 
     # Store the referer URL for redirect back after password change
@@ -252,7 +253,7 @@ async def change_password_submit_path(
             return RedirectResponse(url=f"/admin/user/change-password/{user_id}", status_code=status.HTTP_303_SEE_OTHER)
         # Refused before any write: the owner's password is theirs to change,
         # and only with the current password at hand.
-        if target_user.is_superuser:
+        if UserManager._is_platform_owner(target_user):
             raise HTTPException(status_code=403, detail="Нельзя изменить пароль собственника платформы")
 
     # Basic validation

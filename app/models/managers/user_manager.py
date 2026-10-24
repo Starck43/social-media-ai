@@ -89,7 +89,7 @@ class UserManager(BaseManager):
         # The owner's profile is not another administrator's to rewrite. The
         # owner may still edit their own name and email; `set_platform_role`
         # and the password routes guard the rest.
-        if user.is_superuser and (actor is None or actor.id != user_id):
+        if self._is_platform_owner(user) and (actor is None or actor.id != user_id):
             raise HTTPException(status_code=403, detail="Нельзя изменять профиль собственника платформы")
         if actor is not None:
             fresh = await User.objects.prefetch_related("role").get(id=actor.id, is_active=True)
@@ -163,6 +163,18 @@ class UserManager(BaseManager):
         """The write itself, after every guard has passed."""
         return await self.update_by_id(user_id, role_id=role_id)
 
+    @staticmethod
+    def _is_platform_owner(account: Optional["User"]) -> bool:
+        """Ownership by role, not by `is_superuser`.
+
+        `is_superuser` folds in `is_active`, which is right for *authority* — a
+        suspended owner must not keep the keys — and wrong for *protection*: a
+        suspended account is the last one somebody should be allowed to rewrite
+        or delete.
+        """
+        codename = getattr(getattr(account, "role", None), "codename", None)
+        return codename == PlatformRoleType.SUPERUSER
+
     async def delete_user(self, user_id: int) -> bool:
         """
         Delete a user by ID.
@@ -181,7 +193,7 @@ class UserManager(BaseManager):
         from app.models import User
 
         target = await User.objects.prefetch_related("role").get(id=user_id)
-        if target is not None and target.is_superuser:
+        if self._is_platform_owner(target):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Нельзя удалить аккаунт собственника платформы",
@@ -189,26 +201,44 @@ class UserManager(BaseManager):
         return await self.delete_by_id(user_id)
 
     async def change_password(
-        self, user_id: int, current_password: str, new_password: str, current_user: Optional["User"] = None
+        self,
+        user_id: int,
+        current_password: str,
+        new_password: str,
+        current_user: Optional["User"] = None,
+        *,
+        is_admin_reset: Optional[bool] = None,
     ) -> bool:
         """
         Change a user's password.
+
+        An operator resetting *another* account's password says so with
+        `is_admin_reset=True`: that form needs no current password, only the
+        user-update grant. Every other caller is checked as a self-change and
+        must know the current password, so a caller that forgets to name the
+        actor cannot slip an empty password through.
+
+        The platform owner's password is never reset by anyone else — not by an
+        admin, not anonymously — before any privilege is evaluated.
 
         Args:
                 user_id: ID of the user
                 current_password: A current password for verification
                 new_password: New password to set
                 current_user: Optional user making the request
+                is_admin_reset: The caller already proved it may reset another account
 
         Returns:
                 bool: True if password was changed successfully
         """
-        user = await self.get(id=user_id)
+        user = await self.prefetch_related("role").get(id=user_id)
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-        # Only allow admins, or the user themselves to change password
-        if current_user and current_user.id != user_id:
+        by_another = current_user is not None and current_user.id != user_id
+        if self._is_platform_owner(user) and (current_user is None or current_user.id != user_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нельзя изменить пароль собственника платформы")
+        if by_another and is_admin_reset is not False:
             from app.models import User
 
             actor = await User.objects.prefetch_related("role.permissions").get(id=current_user.id)

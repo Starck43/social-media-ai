@@ -32,6 +32,7 @@ from app.models import (
     User,
     UserCredential,
 )
+from app.models.managers.user_manager import UserManager
 from app.tasks.cron import cron_to_human
 from app.types import (
     ActionType,
@@ -149,9 +150,11 @@ class UserAdmin(BaseAdmin, model=User):
         renders it read-only, but a hand-crafted POST never touches that form.
         The owner keeps the right to change their own name, email and password.
         """
+        # sqladmin hands `pk` over as a string from the URL while the column is
+        # an integer: asyncpg refuses `integer = varchar`, so cast before the read.
         target = await User.objects.prefetch_related("role").get(id=int(pk))
         actor = self.get_admin_user(request)
-        if target is not None and target.is_superuser and (actor is None or actor.id != target.id):
+        if UserManager._is_platform_owner(target) and (actor is None or actor.id != target.id):
             raise HTTPException(status_code=403, detail="Нельзя изменять аккаунт собственника платформы")
         role_name = data.pop("role", None)
         if data.get("role_id"):
@@ -210,8 +213,10 @@ class UserAdmin(BaseAdmin, model=User):
 
     async def delete_model(self, request: Request, pk: Any) -> bool:
         """The platform-owner account is never deleted from the console."""
-        target = await User.objects.prefetch_related("role").get(id=pk)
-        if target is not None and target.is_superuser:
+        # sqladmin hands `pk` over as a string from the URL; the column is an
+        # integer, and asyncpg refuses `integer = varchar` instead of casting.
+        target = await User.objects.prefetch_related("role").get(id=int(pk))
+        if UserManager._is_platform_owner(target):
             raise HTTPException(status_code=403, detail="Нельзя удалить аккаунт собственника платформы")
         return await super().delete_model(request, pk)
 

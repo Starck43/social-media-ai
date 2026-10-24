@@ -47,7 +47,11 @@ async def test_skipped_when_no_channels(monkeypatch):
     async def fake_broadcast(text):
         return {}
 
+    async def fake_summarize(data):
+        return "Спокойный день", {"model": "test-model"}
+
     monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
     result = await builder.build_and_publish(period="day")
     assert result["status"] == "skipped"
     run = (await DigestRun.objects.filter())[-1]

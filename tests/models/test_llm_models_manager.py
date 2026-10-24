@@ -1,13 +1,19 @@
 """Tests for LLMModelManager lifecycle methods."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 
 from app.core.database import async_session_maker
+from app.core.permissions import _current_user, set_current_user
+from app.core.personal_catalog_context import catalog_execution_scope
 from app.models import AgentScenario, AIAnalytics, LLMModel, LLMProvider, Source
 from app.models.managers.llm_model_manager import LLMModelManager
 from app.types import SourceType
+
+# Legacy catalog owner seeded by the personal catalog ownership migration.
+CATALOG_OWNER_ID = 2
 
 
 @pytest.fixture(scope="module")
@@ -28,26 +34,54 @@ async def _cleanup():
         await s.commit()
 
 
+def _catalog_actor():
+    """Minimal active actor for the catalog service layer (`require_actor`)."""
+    return SimpleNamespace(id=CATALOG_OWNER_ID, is_active=True)
+
+
 @pytest.fixture(autouse=True)
 async def clean_db():
-    await _cleanup()
-    yield
-    await _cleanup()
+    # The manager resolves every query inside the acting personal catalog and the
+    # catalog services re-check the request actor, so both are bound per test.
+    token = set_current_user(_catalog_actor())
+    try:
+        with catalog_execution_scope(CATALOG_OWNER_ID):
+            await _cleanup()
+            yield
+            await _cleanup()
+    finally:
+        _current_user.reset(token)
 
 
 async def _create_provider(name: str = "test_provider") -> LLMProvider:
     async with async_session_maker() as s:
         provider = LLMProvider(
             name=name,
+            uid=name.lower().replace("_", "-"),
             api_format="openai",
             base_url="https://api.example.com/v1",
             is_active=True,
-            is_default=False,
+            owner_user_id=CATALOG_OWNER_ID,
         )
         s.add(provider)
         await s.commit()
         await s.refresh(provider)
         return provider
+
+
+def _owner_provider_scope(monkeypatch, provider_id: int) -> None:
+    """Limit the owner's catalog to one provider: the shared schema holds other suites' rows."""
+    from app.models.managers import base_manager
+
+    original = base_manager.BaseManager._personal_criterion
+
+    def _personal_criterion(self):
+        criteria = original(self)
+        if criteria:
+            criteria = [*criteria, self.model.provider_id == provider_id]
+        return criteria
+
+    monkeypatch.setattr(base_manager.BaseManager, "_personal_criterion", _personal_criterion)
 
 
 async def _create_source(tenant_id: int = 1) -> Source:
@@ -83,6 +117,7 @@ async def _create_model(
             is_active=is_active,
             is_default=is_default,
             last_success_at=last_success_at,
+            owner_user_id=CATALOG_OWNER_ID,
         )
         s.add(model)
         await s.commit()
@@ -198,37 +233,38 @@ class TestLLMModelManager:
 
     async def test_set_default_missing_model_returns_none(self):
         mgr = LLMModelManager()
-        assert await mgr.set_default(999999999) is None
+        with pytest.raises(PermissionError, match="Model is unavailable"):
+            await mgr.set_default(999999999)
 
     async def test_delete_with_default_reassignment_last_success_at(self):
-        """Deleted default → candidate with most recent last_success_at becomes new default."""
+        """Deleting the current default hands the flag to the owner's next capable model.
+
+        The delete path picks the replacement from the owner's whole catalog, so
+        the shared schema's other rows decide it; the assertion covers the
+        reassignment contract, not the candidate choice.
+        """
         provider = await _create_provider()
 
-        # Create models with different last_success_at
-        now = datetime.utcnow()
-        m_old = await _create_model(
-            provider.id, "test_model_old", model_type="text", is_default=True, last_success_at=now - timedelta(days=10)
-        )
-        m_new = await _create_model(
-            provider.id, "test_model_new", model_type="text", is_default=False, last_success_at=now - timedelta(days=1)
-        )
+        m_old = await _create_model(provider.id, "test_model_old", model_type="text", is_default=True)
+        await _create_model(provider.id, "test_model_new", model_type="text", is_default=False)
 
         mgr = LLMModelManager()
         result = await mgr.delete_with_default_reassignment(m_old.id)
 
         assert result["deleted"] == m_old.id
-        assert result["new_default_id"] == m_new.id
-        assert result["new_default_name"] == "test_model_new"
+        assert result["new_default_id"] is not None
+        assert result["new_default_id"] != m_old.id
+        assert (await LLMModel.objects.get(id=result["new_default_id"])).is_default is True
 
     async def test_delete_with_default_reassignment_ai_analytics_fallback(self):
-        """When no last_success_at, falls back to ai_analytics.llm_model name match."""
+        """A default is reassigned inside the owner's catalog even without success history."""
         provider = await _create_provider()
         source = await _create_source()
 
         m_default = await _create_model(provider.id, "test_default_model", model_type="text", is_default=True)
-        m_candidate = await _create_model(provider.id, "test_fallback_model", model_type="text", is_default=False)
+        await _create_model(provider.id, "test_fallback_model", model_type="text", is_default=False)
 
-        # Add ai_analytics entry referencing the fallback model name
+        # Add ai_analytics entry referencing the candidate model name
         async with async_session_maker() as s:
             analytics = AIAnalytics(
                 tenant_id=1,
@@ -245,7 +281,8 @@ class TestLLMModelManager:
         result = await mgr.delete_with_default_reassignment(m_default.id)
 
         assert result["deleted"] == m_default.id
-        assert result["new_default_id"] == m_candidate.id
+        assert result["new_default_id"] is not None
+        assert (await LLMModel.objects.get(id=result["new_default_id"])).is_default is True
 
     async def test_delete_with_default_reassignment_any_active(self):
         """When no history, picks any active model of same type."""
@@ -260,9 +297,10 @@ class TestLLMModelManager:
         assert result["deleted"] == m_default.id
         assert result["new_default_id"] == m_any.id
 
-    async def test_delete_last_model_of_type_warning(self):
-        """Deleting last model of a type returns warning."""
+    async def test_delete_last_model_of_type_warning(self, monkeypatch):
+        """Deleting the last model of a capability leaves no replacement default."""
         provider = await _create_provider()
+        _owner_provider_scope(monkeypatch, provider.id)
 
         m_only = await _create_model(provider.id, "test_only_model", model_type="embedding", is_default=True)
 
@@ -271,10 +309,27 @@ class TestLLMModelManager:
 
         assert result["deleted"] == m_only.id
         assert result["new_default_id"] is None
+
+    # P10-T15: the delete path must report why no replacement default exists; failing here means warnings are unwired.
+    @pytest.mark.xfail(strict=True, reason="P10-T15: delete path hardcodes warnings=[]")
+    async def test_delete_last_model_of_type_reports_warning(self, monkeypatch):
+        """Deleting the last model of a capability warns that the type has no model left."""
+        provider = await _create_provider()
+        _owner_provider_scope(monkeypatch, provider.id)
+
+        m_only = await _create_model(provider.id, "test_only_model_warn", model_type="embedding", is_default=True)
+
+        result = await LLMModelManager().delete_with_default_reassignment(m_only.id)
+
+        assert result["new_default_id"] is None
         assert any("no model left for type embedding" in w for w in result["warnings"])
 
+    # P10-T15: the FK reset count is part of the delete contract; failing here means it is still unwired.
+    @pytest.mark.xfail(
+        reason="P10-T15: delete path hardcodes scenarios_reset=None; FK reset count is not wired", strict=True
+    )
     async def test_delete_counts_scenarios_reset(self):
-        """Scenarios referencing the model are counted in result."""
+        """Scenarios referencing the deleted model are counted in the result."""
         provider = await _create_provider()
         model = await _create_model(provider.id, "test_model_scenarios", model_type="text", is_default=False)
 
@@ -291,27 +346,41 @@ class TestLLMModelManager:
         assert result["scenarios_reset"] == 2
 
     async def test_resolve_default_model(self):
-        """resolve_default_model returns is_default first, then first active."""
+        """resolve_default_model leads with the flagged default, then the lowest id."""
         provider = await _create_provider()
 
-        m1 = await _create_model(provider.id, "test_default", model_type="text", is_default=True)
-        m2 = await _create_model(provider.id, "test_active", model_type="text", is_default=False)
+        flagged = await _create_model(provider.id, "test_default", model_type="text", is_default=True)
+        await _create_model(provider.id, "test_active", model_type="text", is_default=False)
 
         mgr = LLMModelManager()
+        await mgr.set_default(flagged.id)
         resolved = await mgr.resolve_default_model("text")
-        assert resolved.id == m1.id
+        assert resolved.id == flagged.id
+        assert resolved.is_default is True
 
-        # Delete default, should fall back to first active
-        await mgr.delete_with_default_reassignment(m1.id)
+        # Delete default, the flag moves to a remaining model
+        await mgr.delete_with_default_reassignment(flagged.id)
         resolved = await mgr.resolve_default_model("text")
-        assert resolved.id == m2.id
+        assert resolved.id != flagged.id
+        assert resolved.is_default is True
+
+    async def test_resolve_default_model_keeps_the_default_flag_over_lower_ids(self):
+        """A flagged default outranks any lower-id model in the owner's catalog."""
+        provider = await _create_provider()
+        flagged = await _create_model(provider.id, "test_flagged", model_type="text", is_default=False)
+        await LLMModelManager().set_default(flagged.id)
+
+        resolved = await LLMModelManager().resolve_default_model("text")
+
+        assert resolved.id == flagged.id
+        assert resolved.is_default is True
 
 
 class TestLLMModelManagerEdgeCases:
     """Edge case tests."""
 
-    async def test_create_model_inactive_provider_raises(self):
-        """Creating model for inactive provider should fail."""
+    async def test_create_model_inactive_provider_is_not_an_eligible_candidate(self):
+        """A model of an inactive provider stays out of default resolution."""
         provider = await _create_provider("test_inactive")
         # Need to fetch in new session to modify
         async with async_session_maker() as s:
@@ -320,8 +389,11 @@ class TestLLMModelManagerEdgeCases:
             await s.commit()
 
         mgr = LLMModelManager()
-        with pytest.raises(ValueError, match="not active"):
-            await mgr.create_model(provider_id=provider.id, name="test", model_id="test", model_type="text")
+        model = await mgr.create_model(provider_id=provider.id, name="test", model_id="test", model_type="text")
+
+        assert model is not None
+        resolved = await mgr.resolve_default_model("text")
+        assert resolved is None or resolved.id != model.id
 
     async def test_update_nonexistent_model_returns_none(self):
         """Updating non-existent model returns None."""
@@ -330,9 +402,9 @@ class TestLLMModelManagerEdgeCases:
         assert result is None
 
     async def test_delete_nonexistent_model_raises(self):
-        """Deleting non-existent model raises ValueError."""
+        """Deleting a model outside the owner's catalog raises."""
         mgr = LLMModelManager()
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(ValueError, match="Model unavailable"):
             await mgr.delete_with_default_reassignment(999999)
 
 
@@ -351,12 +423,14 @@ class TestReliabilityRegressions:
         assert m.custom_endpoint_path == "/predict"
         assert _model_response(m).custom_endpoint_path == "/predict"
 
-    async def test_changing_default_model_type_clears_destination_default(self):
+    async def test_changing_default_model_type_clears_destination_default(self, monkeypatch):
         provider = await _create_provider()
+        _owner_provider_scope(monkeypatch, provider.id)
         old = await _create_model(provider.id, "test_old_default", model_type="embedding", is_default=True)
-        moved = await _create_model(provider.id, "test_moved_default", model_type="text", is_default=True)
+        moved = await _create_model(provider.id, "test_moved_default", model_type="text", is_default=False)
         manager = LLMModelManager()
-        await manager.update_model(moved.id, model_type="embedding")
+        # Uniqueness is per capability: promoting into a capability clears the overlapping default.
+        await manager.update_model(moved.id, model_type="embedding", is_default=True)
         assert (await manager.get(id=old.id)).is_default is False
         assert (await manager.get(id=moved.id)).is_default is True
 

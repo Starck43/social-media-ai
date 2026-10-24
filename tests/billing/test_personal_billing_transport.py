@@ -10,9 +10,20 @@ from starlette.requests import Request
 
 import app.services.ai.llm_client as llm_client
 from app.core.config import settings
+from app.core.personal_catalog_context import catalog_execution_scope
 from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
 from app.services.ai.budget_admission import BudgetAdmissionDenied
 from app.services.ai.llm_client import CustomClient, OpenAICompatibleClient, chat_with_fallback
+
+# Legacy catalog owner seeded by the personal catalog ownership migration.
+CATALOG_OWNER_ID = 2
+
+
+@pytest.fixture(autouse=True)
+def _catalog_owner():
+    """Clients assert the model belongs to the acting personal catalog."""
+    with catalog_execution_scope(CATALOG_OWNER_ID):
+        yield
 
 
 def model(model_id: int = 1):
@@ -24,6 +35,7 @@ def model(model_id: int = 1):
         base_url="https://example.invalid/v1",
         auth_header=None,
         get_api_key=lambda: "test-key",
+        owner_user_id=CATALOG_OWNER_ID,
     )
     return SimpleNamespace(
         id=model_id,
@@ -36,6 +48,7 @@ def model(model_id: int = 1):
         default_temperature=0.0,
         input_cost_per_1k=1,
         output_cost_per_1k=1,
+        owner_user_id=CATALOG_OWNER_ID,
     )
 
 
@@ -48,6 +61,7 @@ def custom_model(model_id: int = 1):
         base_url="https://example.invalid/v1",
         auth_header=None,
         get_api_key=lambda: "test-key",
+        owner_user_id=CATALOG_OWNER_ID,
     )
     return SimpleNamespace(
         id=model_id,
@@ -61,6 +75,7 @@ def custom_model(model_id: int = 1):
         default_temperature=0.0,
         input_cost_per_1k=1,
         output_cost_per_1k=1,
+        owner_user_id=CATALOG_OWNER_ID,
     )
 
 

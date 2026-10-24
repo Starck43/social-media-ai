@@ -7,10 +7,13 @@ counts only — the cap never fired. These tests pin the pricing contract: USD,
 Decimal math, tariffs from llm_models (never hardcoded), no DB.
 """
 
-from types import SimpleNamespace
 from contextlib import ExitStack
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from app.core.personal_catalog_context import catalog_execution_scope
 from app.services.ai import llm_client as llm_client_module
 from app.services.ai.llm_client import (
     AnthropicClient,
@@ -20,6 +23,16 @@ from app.services.ai.llm_client import (
     price_usage_usd,
 )
 
+# Legacy catalog owner seeded by the personal catalog ownership migration.
+CATALOG_OWNER_ID = 2
+
+
+@pytest.fixture(autouse=True)
+def _catalog_owner():
+    """Clients assert the model belongs to the acting personal catalog."""
+    with catalog_execution_scope(CATALOG_OWNER_ID):
+        yield
+
 
 def _model(input_cost_per_1k=0.01, output_cost_per_1k=0.02, **extra):
     provider = SimpleNamespace(
@@ -27,11 +40,13 @@ def _model(input_cost_per_1k=0.01, output_cost_per_1k=0.02, **extra):
         base_url="https://stub.invalid/v1",
         get_api_key=lambda: "k",
         auth_header=None,  # mirrors LLMProvider.auth_header default; _headers() falls back to Bearer
+        owner_user_id=CATALOG_OWNER_ID,
         **extra.pop("provider", {}),
     )
     return SimpleNamespace(
         provider=provider,
         model_id="stub-model",
+        owner_user_id=CATALOG_OWNER_ID,
         max_tokens=512,
         default_temperature=0.3,
         input_cost_per_1k=input_cost_per_1k,

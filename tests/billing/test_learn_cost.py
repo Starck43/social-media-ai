@@ -154,26 +154,35 @@ async def test_run_reflect_skipped_at_daily_cap(monkeypatch, actor_workspace):
     key = f"capfact_{_uniq()}"
     from app.models.managers.agent_memory_manager import agent_memory
 
+    # Reflection needs one actor fact to reach the cap gate. The fact is written
+    # explicitly for this workspace: the suite's operator bypass stamps the
+    # bootstrap tenant otherwise.
     with tenant_scope(tenant.id), memory_actor_scope(user.id, True):
-        await agent_memory.write(key, "fact", source="learn", confidence=0.9)
+        await agent_memory.create(
+            user_id=user.id, tenant_id=tenant.id, scope="global", key=key, value="fact", source="learn", confidence=0.9
+        )
+    with tenant_scope(tenant.id), memory_actor_scope(user.id, True):
         result = await learning.run_reflect()
     assert result["status"] == "skipped"
     assert result["reason"] == "cost_cap"
-    with tenant_scope(tenant.id), memory_actor_scope(user.id, True):
-        await agent_memory.write(key, None)
 
 
-async def test_execute_job_persists_learn_llm_cost():
+async def test_execute_job_persists_learn_llm_cost(actor_workspace):
     async def fake_learn(payload):
         return {"status": "ok", "llm_cost": 0.011}
 
     import app.jobs.handlers as handlers
 
+    tenant, user = actor_workspace
+    with tenant_scope(tenant.id):
+        await tenant_users.add_web_member(tenant_id=tenant.id, user_id=user.id, role="owner")
+
     orig = handlers.handle_learn
     handlers.HANDLERS["learn"] = lambda payload: fake_learn(payload)
     dispatcher_module.HANDLERS["learn"] = handlers.HANDLERS["learn"]
     try:
-        pending = await _make_job()
+        # The dispatcher resolves the job's personal catalog owner from its initiator.
+        pending = await _make_job(tenant_id=tenant.id, initiated_by_user_id=user.id)
         job = await Job.objects.claim_job(pending.id)
         assert job is not None and job.status == "running"
         await dispatcher_module.execute_job(job, dispatcher_module.HANDLERS["learn"])

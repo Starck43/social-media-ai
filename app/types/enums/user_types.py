@@ -17,6 +17,46 @@ class PlatformRoleType(str, Enum):
         return self.value
 
 
+# Rank decides who may hand a role out: an actor assigns only a role below
+# their own. `superuser` outranks every staff level but cannot be minted.
+PLATFORM_ROLE_RANK = {
+    PlatformRoleType.USER: 10,
+    PlatformRoleType.OPERATOR: 20,
+    PlatformRoleType.ADMIN: 30,
+    PlatformRoleType.SUPERUSER: 40,
+}
+
+
+def platform_role_rank(codename) -> int | None:
+    """Numeric rank of a platform role code, or None when unknown."""
+    value = getattr(codename, "value", codename)
+    if isinstance(value, str):
+        value = value.strip().lower()
+    try:
+        return PLATFORM_ROLE_RANK[PlatformRoleType(value)]
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+def assignable_platform_roles(actor) -> list[PlatformRoleType]:
+    """Roles the actor may assign: strictly below their own, never the owner role."""
+    own = platform_role_rank(getattr(getattr(actor, "role", None), "codename", None))
+    if own is None:
+        return []
+    return [role for role in PlatformRoleType if PLATFORM_ROLE_RANK[role] < own]
+
+
+def can_assign_platform_role(actor, codename) -> bool:
+    """True when assigning `codename` keeps the actor at or above by rank."""
+    wanted = platform_role_rank(codename)
+    own = platform_role_rank(getattr(getattr(actor, "role", None), "codename", None))
+    if wanted is None or own is None:
+        return False
+    if wanted == PLATFORM_ROLE_RANK[PlatformRoleType.SUPERUSER]:
+        return False
+    return wanted < own
+
+
 class WorkspaceRoleType(str, Enum):
     OWNER = "owner"
     ADMIN = "admin"

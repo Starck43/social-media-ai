@@ -6,13 +6,42 @@ The access model has three non-overlapping levels: the **platform owner**
 (`PlatformRoleType.SUPERUSER`, one account), **platform staff** (`admin`,
 `operator`) and **clients** (`user` plus workspace membership). Revision `0110`
 widens the `roles.codename` CHECK, inserts the `superuser` catalog row and moves
-one reviewed account onto it; it refuses to run without
-`-x superuser_user_id=<id>` and only promotes an account that is already an
-active `admin`. No console, API or CLI path grants `superuser`: the role is
-reachable through that migration alone, it cannot be assigned to another
+the platform owner onto it. The owner is addressed explicitly:
+
+```
+alembic -x superuser_user_id=<id> upgrade 0110   # pin the reviewed account
+alembic upgrade 0110                             # deploy-time default
+```
+
+The optional `-x superuser_user_id=<id>` pins the exact account and only
+promotes it when it is already an active `admin`. Without it — the normal deploy
+path, where the account sitting at the shell already has prod access — the
+migration falls back to the sole active `admin` and refuses when there is none
+or when several exist; it never guesses between candidates. No console, API or
+CLI path grants `superuser` afterwards: it cannot be assigned to another
 account, and the owner account cannot be demoted or deleted from the console.
 Owner-only surfaces are the role/permission catalog and the read-only table
 registry; see [ADMIN.md](ADMIN.md#additional-restrictions).
+
+### Bootstrapping the owner without the migration (P9-T06)
+
+[`scripts/setup/bootstrap_owner.py`](../scripts/setup/bootstrap_owner.py) is the
+same decision as `0110`, for anchors where the revision has already passed or an
+owner disappeared. It is idempotent, runs on the host shell (never over HTTP) and
+refuses rather than guesses:
+
+```
+python -m scripts.setup.bootstrap_owner --verify          # exit 1 when no owner
+python -m scripts.setup.bootstrap_owner --login owner     # promote a named admin
+python -m scripts.setup.bootstrap_owner                   # the sole active admin
+python -m scripts.setup.bootstrap_owner --create --login owner --email owner@example.com
+```
+
+An existing owner is reported and left alone. Promotion requires an active
+`admin`; without `--login` the command uses the sole active admin and fails when
+there are none or several. `--create` needs `--login`, `--email` and a password
+(`--password` or `P9_OWNER_PASSWORD`), because a secret on the command line ends
+up in shell history. The role catalog must exist first (`scripts/setup/roles.py`).
 
 Revision `0096` separates platform roles from workspace roles and replaces
 screen-oriented permission names with stable resource/action identities. It is

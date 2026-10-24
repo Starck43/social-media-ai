@@ -115,12 +115,28 @@ Additional restrictions:
   It is gated on `is_accessible` (`User.is_superuser`) rather than model grants,
   so an admin's wildcard does not open it; it has no create/edit/delete/export
   route and reads no rows.
-- User forms exclude `role` / `role_id`; new users receive the ordinary platform
-  `user` role. Creating an operator/admin or changing operator grants is not an
-  ordinary SQLAdmin user-form operation. `UserManager.set_platform_role()` also
-  rejects every self-assignment (including selecting `admin` again) before any
-  write; another active platform admin must change the account's role. Generic
-  SQLAdmin updates reject role fields rather than bypassing this service guard.
+- User forms: the edit page carries a **role picker**
+  ([role_picker.py](../app/admin/role_picker.py)) listing only the roles the
+  signed-in actor may assign, highest rank first. The rule is the rank, not the
+  badge: an actor assigns a role strictly **below their own** — the owner
+  (`superuser`) offers `admin`/`operator`/`user`, an `admin` offers
+  `operator`/`user`, an `operator` offers `user`, and a rank with nothing below it
+  sees a disabled empty select. The `identity.user` UPDATE right still decides who
+  opens the form at all; the rank decides what the form may submit. The write goes
+  through `UserManager.set_platform_role()`, never the generic `role_id` column, so
+  a forged payload is refused too.
+- `superuser` is never assignable at runtime: not by an admin, not by the owner,
+  not from the console, the API or any CLI. Only revision `0110`/the bootstrap
+  command (`scripts/setup/bootstrap_owner.py`) put an account on it, and a second
+  owner cannot be created. The owner account cannot be re-roled or deleted from
+  the console; nobody changes their own role. An `admin` also cannot rewrite an
+  account that already sits at or above their rank, so peers stay peers.
+- New users always receive the ordinary platform `user` role: the create form has
+  no role field.
+- `UserManager.set_platform_role()` rejects every self-assignment (including
+  selecting the same role again) before any write; another account above the
+  target's rank must change it. Generic SQLAdmin updates reject role fields rather
+  than bypassing this service guard.
 - External FastAPI dashboards use `require_admin_perm()` explicitly. Password
   administration has its additional self/cross-account checks below.
 
@@ -479,6 +495,7 @@ independent template environment or URL safety.
 | --- | --- |
 | `app/admin/setup.py` | Console/auth/authorization setup, globals, static mount and 16 registered views |
 | `app/admin/views.py` | Forms, lists, flags, queries and 10 action declarations |
+| `app/admin/role_picker.py` | Rank-limited platform-role select on the user edit form |
 | `app/admin/auth.py` | Login/logout and fresh platform entry |
 | `app/admin/authorization.py` | Per-request grants, lazy identity/action catalog and external-route guard |
 | `app/admin/base.py`, `formatters.py`, `widgets.py` | Shared view configuration, display formatting and form widgets |

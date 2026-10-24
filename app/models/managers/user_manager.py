@@ -8,7 +8,7 @@ from passlib.context import CryptContext
 
 from app.core.hashing import get_password_hash, verify_password
 from app.models.managers.base_manager import BaseManager
-from app.types import ActionType, PlatformRoleType
+from app.types import ActionType, PlatformRoleType, can_assign_platform_role
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -94,20 +94,33 @@ class UserManager(BaseManager):
         return await self.update_by_id(user_id, **update_data)
 
     async def set_platform_role(self, user_id: int, role_code: PlatformRoleType, actor_id: int) -> Optional["User"]:
-        """Set a user's platform role after rechecking the actor from the DB."""
+        """Assign a platform role the actor is allowed to hand out.
+
+        The rule is the rank, not the badge: an actor assigns a role strictly
+        below their own, and the table right that opened the form is checked by
+        the caller's route, not here. So an `admin` assigns `operator` or
+        `user`, the owner assigns those too, and nobody — owner included —
+        mints a second owner or touches the owner's account.
+        """
         from app.models import PlatformRole
         from app.models import User as PlatformUser
 
         actor = await PlatformUser.objects.prefetch_related("role").get(id=actor_id)
         if actor is None or not actor.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin required")
-        if role_code == PlatformRoleType.SUPERUSER or str(role_code) == PlatformRoleType.SUPERUSER.value:
+        if not actor.is_platform_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin required")
+        wanted = role_code.value if isinstance(role_code, PlatformRoleType) else str(role_code).strip().lower()
+        if wanted == PlatformRoleType.SUPERUSER.value:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Роль собственника платформы назначается только миграцией",
             )
-        if not actor.is_platform_admin:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin required")
+        if not can_assign_platform_role(actor, wanted):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Нельзя назначить роль выше своей",
+            )
         if actor.id == user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -122,10 +135,17 @@ class UserManager(BaseManager):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Нельзя менять платформенную роль собственника",
             )
+        # The target must sit below the actor too: an admin does not demote a
+        # peer by rewriting the peer's account when the row has drifted.
+        if not can_assign_platform_role(actor, getattr(getattr(target, "role", None), "codename", None)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Нельзя менять роль не ниже своей",
+            )
         role = await PlatformRole.objects.get_by_codename(role_code)
         if role is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown platform role")
-        updated = await self.update_by_id(user_id, role_id=role.id)
+        updated = await self._apply_role_change(user_id, role.id)
         logger.info(
             "platform_role_changed actor_id=%s target_id=%s role=%s",
             actor_id,
@@ -133,6 +153,10 @@ class UserManager(BaseManager):
             role.codename,
         )
         return updated
+
+    async def _apply_role_change(self, user_id: int, role_id: int) -> Optional["User"]:
+        """The write itself, after every guard has passed."""
+        return await self.update_by_id(user_id, role_id=role_id)
 
     async def delete_user(self, user_id: int) -> bool:
         """

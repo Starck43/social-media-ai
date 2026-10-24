@@ -1,12 +1,14 @@
-"""Platform-owner role `superuser` and the reviewed owner account.
+"""Platform-owner role `superuser` and the owner account.
 
 The platform keeps exactly one owner account, promoted here from `admin`. The
 CHECK on `roles.codename` admits the new codename, the catalog gains the row, and
-the owner account moves onto it at the same time. Nothing infers an owner: the
-target account is supplied explicitly with `-x superuser_user_id=<id>` and must
-already be an active `admin` — the migration never picks an account by name,
-email or "first admin", and it refuses to run without that reviewed id so the
-catalog change cannot land with the owner still on `admin`.
+the owner account moves onto it at the same time.
+
+`-x superuser_user_id=<id>` pins the reviewed account. It is optional on purpose:
+the deploy path is a shell on the production host, so the person running the
+upgrade already holds that access. Without the argument the migration promotes
+the sole active `admin` and refuses when there is none or when several exist —
+it never picks an account by name, email or "first admin".
 
 Definition only: this revision does not deploy, and applying it needs separate
 authorization for the target schema.
@@ -50,30 +52,48 @@ def upgrade():
             {"description": OWNER_DESCRIPTION},
         )
 
-    # The owner is part of the migration, not an optional argument: without an
-    # explicit reviewed id the promotion is ambiguous, so the upgrade stops
-    # before it half-applies the catalog change.
+    # Promote the owner together with the catalog row, so the revision never
+    # lands with `superuser` present but nobody holding it.
     owner = context.get_x_argument(as_dictionary=True).get("superuser_user_id")
-    if owner is None:
-        raise RuntimeError("Platform owner promotion requires -x superuser_user_id=<id> (reviewed owner account)")
-    if not owner.isdigit():
-        raise RuntimeError("Reviewed owner id must be numeric")
-    current = bind.execute(
-        sa.text(
-            f"SELECT r.codename FROM {users} u JOIN {roles} r ON r.id=u.role_id "
-            "WHERE u.id=:owner AND u.is_active=true"
-        ),
-        {"owner": int(owner)},
-    ).scalar_one_or_none()
-    if current is None:
-        raise RuntimeError(f"Reviewed owner account {owner} must exist and be active")
-    if current == "superuser":
-        return
-    if current != "admin":
-        raise RuntimeError(f"Reviewed owner account {owner} must already hold the admin role, got {current!r}")
+    if owner is not None:
+        if not owner.isdigit():
+            raise RuntimeError("Reviewed owner id (-x superuser_user_id) must be numeric")
+        owner_id = int(owner)
+        current = bind.execute(
+            sa.text(
+                f"SELECT r.codename FROM {users} u JOIN {roles} r ON r.id=u.role_id "
+                "WHERE u.id=:owner AND u.is_active=true"
+            ),
+            {"owner": owner_id},
+        ).scalar_one_or_none()
+        if current is None:
+            raise RuntimeError(f"Reviewed owner account {owner_id} must exist and be active")
+        if current == "superuser":
+            return
+        if current != "admin":
+            raise RuntimeError(f"Reviewed owner account {owner_id} must already hold the admin role, got {current!r}")
+    else:
+        admins = (
+            bind.execute(
+                sa.text(
+                    f"SELECT id FROM {users} WHERE is_active=true AND role_id=(SELECT id FROM {roles} WHERE codename='admin')"
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not admins:
+            raise RuntimeError(
+                "No active admin to promote to the platform owner: create one or pass -x superuser_user_id=<id>"
+            )
+        if len(admins) > 1:
+            raise RuntimeError(
+                f"{len(admins)} active admins ({sorted(admins)}): pass -x superuser_user_id=<id> to name the owner"
+            )
+        owner_id = admins[0]
     bind.execute(
         sa.text(f"UPDATE {users} SET role_id=(SELECT id FROM {roles} WHERE codename='superuser') WHERE id=:owner"),
-        {"owner": int(owner)},
+        {"owner": owner_id},
     )
 
 

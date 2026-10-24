@@ -6,6 +6,7 @@ from typing import Any, Union
 from fastapi import HTTPException
 from sqladmin import action
 from sqladmin.fields import SelectField
+from sqladmin.forms import get_model_form
 from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
@@ -51,6 +52,7 @@ from ..services.ai.llm_client import LLMClientFactory
 from .base import BaseAdmin
 from .catalog import PermissionLabelAdmin, PlatformRoleGrantAdmin
 from .price_fields import ExactModelPriceField
+from .role_picker import RoleChoiceField, RolePickerConverter, role_choices
 from .widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
 
 logger = logging.getLogger(__name__)
@@ -87,8 +89,13 @@ class UserAdmin(BaseAdmin, model=User):
         "hashed_password",
     ]
     form_create_rules = ["username", "email", "hashed_password", "is_active"]
-    form_edit_rules = ["username", "email", "is_active"]
-    form_excluded_columns = ["role", "role_id"] + BaseAdmin.form_excluded_columns
+    # The role select is edit-only: new accounts start at `user` (see below).
+    form_edit_rules = ["username", "email", "is_active", "role"]
+    form_overrides = {**BaseAdmin.form_overrides, "role": RoleChoiceField}
+    # The role select is the only field with a fixed, actor-dependent choice
+    # list; `role_picker.RolePickerConverter` reads it from `form_converter`.
+    form_converter = RolePickerConverter
+    form_excluded_columns = ["role_id"] + BaseAdmin.form_excluded_columns
 
     form_widget_args = {
         "hashed_password": {"type": "password"},
@@ -131,14 +138,73 @@ class UserAdmin(BaseAdmin, model=User):
             raise HTTPException(status_code=400, detail="Требуется заполнить поле 'Пароль'")
         return await super().insert_model(request, data)
 
+    async def scaffold_form(self, rules: list[str] | None = None):
+        """Build the edit form with the choices the signed-in actor may assign.
+
+        SQLAdmin keeps one form class per view, so the role select would
+        otherwise hold the choices of whoever rendered the page first. The
+        converter is bound per call: each request gets its own actor's list.
+        """
+        request = getattr(self, "_form_request", None)
+        actor = self.get_admin_user(request) if request is not None else None
+        # SQLAdmin instantiates the converter (`form_converter()`), so a
+        # request-local subclass is the seam: one operator's rank never rides
+        # along on a class attribute shared by every request.
+        converter = type("_RolePicker", (RolePickerConverter,), {"choices": role_choices(actor)})
+        form = await get_model_form(
+            model=self.model,
+            session_maker=self.session_maker,
+            only=self._form_prop_names,
+            column_labels=self._column_labels,
+            form_args=self.form_args,
+            form_widget_args=self.form_widget_args,
+            form_class=self.form_base_class,
+            form_overrides=self._form_overrides,
+            form_ajax_refs=self._form_ajax_refs,
+            form_include_pk=self.form_include_pk,
+            form_converter=converter,
+        )
+        # A create page carries no role select; SQLAdmin would otherwise keep
+        # the required field and reject every new account. Deleting through the
+        # metaclass also clears the cached unbound fields.
+        if rules is not None and "role" not in rules and hasattr(form, "role"):
+            delattr(form, "role")
+        return form
+
     async def update_model(self, request: Request, pk: str, data: dict) -> Any:
-        """Keep role assignment out of generic CRUD, including forged payloads."""
-        if {"role", "role_id"} & data.keys():
-            actor = self.get_admin_user(request)
-            if actor is not None and str(actor.id) == str(pk):
-                raise HTTPException(status_code=403, detail="Нельзя менять свою платформенную роль")
+        """Write identity fields generically; the role goes through its manager.
+
+        The manager is the single place that knows the assignment rules (rank,
+        self-edit, the owner account), so the console must not write `role_id`
+        itself, even with a forged payload.
+        """
+        role_name = data.pop("role", None)
+        if data.get("role_id"):
             raise HTTPException(status_code=400, detail="Используйте отдельную операцию назначения платформенной роли")
+        actor = self.get_admin_user(request)
+        if role_name:
+            await User.objects.set_platform_role(
+                user_id=int(pk),
+                role_code=PlatformRoleType(str(getattr(role_name, "codename", role_name))),
+                actor_id=actor.id,
+            )
         return await super().update_model(request, pk, data)
+
+    async def edit(self, request: Request, *args: Any, **kwargs: Any):
+        """Expose the request to `scaffold_form` for the actor's role choices."""
+        self._form_request = request
+        try:
+            return await super().edit(request, *args, **kwargs)
+        finally:
+            self._form_request = None
+
+    async def create(self, request: Request, *args: Any, **kwargs: Any):
+        """Same seam for the create form, which must not offer a role at all."""
+        self._form_request = request
+        try:
+            return await super().create(request, *args, **kwargs)
+        finally:
+            self._form_request = None
 
     async def delete_model(self, request: Request, pk: Any) -> bool:
         """The platform-owner account is never deleted from the console."""

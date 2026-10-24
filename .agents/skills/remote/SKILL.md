@@ -12,6 +12,7 @@ Read current AGENTS.md, docs/RULES.md and docs/COLLABORATION.md. Use docs/PRODUC
 - For remote isolated checks, create a separate sandbox virtual environment with the selected test dependencies matching repository manifests; do not substitute system Python for the owner's project .venv. If dependencies cannot be installed, report the specific blocker. Do not claim prepared checks have passed.
 - Hand full regression, database, integration and environment-dependent validation to the local agent with branch, exact implementation SHA, commands and acceptance criteria. Use references/local-validation.md when a detailed validation assignment is needed.
 - Keep PR draft while required evidence is outstanding. Recheck heads before accepting reports, preserving their original SHA and attribution. Follow current owner authorization for Ready/merge; do not infer deployment or schema permission.
+- Before READY the PR handoff must carry the durable test fingerprint (tested SHA, exact scopes, counts, route, limitations). The remote lane never marks DONE — acceptance belongs to the coordinating Codex.
 - Before session switches, update the PR's compact current handoff per docs/COLLABORATION.md. Use ROADMAP.md / docs/phases/ for ownership/status; do not create a second task list.
 - Synchronize `ROADMAP.md` and owned `docs/` with fresh `dev` and relevant active
   PR/handoff ownership before claiming IDs, editing and publishing; follow

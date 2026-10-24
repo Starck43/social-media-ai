@@ -64,7 +64,7 @@ The remote agent (Starck43 on origin) prepares bounded packages with an "Owner h
 
 ## Reporting back
 
-Return to the owner/agent: verdict (approved / corrections pushed), exact tested SHA, command/result/exit per suite, log filenames, current pushed head, redacted failures, and not-run scope. Publish the review as a PR comment for the remote agent (that is how findings reach him), terse per the communication rule.
+Return to the owner/agent: verdict (approved / corrections pushed), exact tested SHA, command/result/exit per suite, log filenames, current pushed head, redacted failures, and not-run scope. Publish the review as a PR comment for the remote agent (that is how findings reach him), terse per the communication rule. Never change a task status to DONE or delete ROADMAP rows — the package stays READY (or returns to the remote agent); acceptance belongs to the coordinating Codex.
 
 ## Evidence integrity (hard rules)
 

@@ -49,4 +49,7 @@ Follow routing and safeguards in AGENTS.md and docs/RULES.md (R8/R10). Task file
 
 ## Routing boundary
 
-Routine work uses `routine-worker`; this agent runs pytest.
+Routine work uses `routine-worker`; this agent runs pytest. It reports the
+`TEST RUN` block and nothing else — it never accepts tasks, changes task
+statuses, or deletes ROADMAP rows (acceptance belongs to the coordinating
+Codex).

@@ -46,6 +46,27 @@ Follow routine and test routing in [AGENTS.md](../AGENTS.md) and
 [docs/RULES.md](RULES.md) (R10). Codex owns architecture, review and acceptance;
 preserve HEAD, permission and ownership blockers.
 
+### READY task acceptance
+
+**Executor side (all implementation agents).** Before a task is reported
+`READY`, its phase-file row must carry the durable test fingerprint: tested
+SHA, exact test paths/scopes, passed/failed/skipped counts, execution route,
+and known limitations (committed in the phase file/PR body; the
+`.agents/tmp/` report stays transient audit evidence). Executors stop at
+`READY` — they never mark `DONE` or delete ROADMAP rows.
+
+**Accepting side (Codex).** Perform a bounded code review at the recorded
+SHA: read the diff against the acceptance criteria, check correctness, edge
+cases and security patterns in the changed files only. Reuse the recorded
+evidence — do NOT re-run the full suite or scopes that already passed at the
+same SHA. For token economy, the read-only diff sweep may be delegated to the
+`routine-worker` subagent (returns the `ACCEPT …` block, ≤120 tokens) instead
+of being read in the main context. If the review finds a defect that requires
+a fix, apply the fix and re-run only the focused scopes covering the changed
+behavior through the primary test-runner subagent (R10); never the whole
+suite. If the code passes review as-is, mark `DONE` with no new test run.
+Docs-only and mechanical changes need no pytest at all.
+
 Use subagents for independent read-heavy audit lanes and bounded implementation
 tasks; reserve them for parallelizable work. Give each agent one question or
 task, a file/claim boundary, relevant SHA, expected evidence and a compact

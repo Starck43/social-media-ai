@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import secrets
 
+import pytest
+
 from app.core.tenant_context import tenant_scope
 from app.models import AgentTask
 from app.models.managers.agent_task_manager import AgentTaskManager
@@ -46,6 +48,7 @@ async def _links(tenant_id: int, task_id: int) -> list[int]:
         return await AgentTaskManager().get_sources(task_id)
 
 
+@pytest.mark.tenancy
 async def test_delete_source_reports_the_active_reader_then_the_paused_last_source() -> None:
     """The refusal follows the task state; only a surplus link may be deleted."""
     async with await _client() as client:
@@ -71,6 +74,9 @@ async def test_delete_source_reports_the_active_reader_then_the_paused_last_sour
             assert task.status_code == 201, task.text
             task_id = task.json()["id"]
             assert task.json()["is_active"] is True
+            with tenant_scope(tenant_id):
+                stored = await AgentTask.objects.get(id=task_id)
+            assert stored is not None and stored.tenant_id == tenant_id
 
             refused = await client.delete(f"/api/v1/sources/{source_id}", headers=headers)
             assert refused.status_code == 409, refused.text

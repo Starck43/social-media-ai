@@ -482,10 +482,11 @@ async def test_zero_price_active_models_lists_only_active_zero_tariff_rows():
                     model_id=f"pbex-zero-{marker}-{index}",
                     model_type="text",
                     is_active=True,
-                    is_default=index == 0,
                 )
                 for index in range(3)
             ]
+            with permission_scope(catalog_user):
+                zero_models[0] = await LLMModel.objects.set_default(zero_models[0].id)
             assert all(model.owner_user_id == catalog_user.id for model in zero_models)
             inactive = await LLMModel.objects.create(
                 provider_id=provider.id,

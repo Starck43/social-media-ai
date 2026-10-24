@@ -256,12 +256,21 @@ async def test_non_operator_identities_are_denied_before_any_billing_read(identi
             users.append(user)
             await _join(user, tenant.id)
         async with await _client() as client:
-            if user is not None:
+            if identity == "inactive_admin":
+                token = await _csrf(client, "/app/login")
+                login = await client.post(
+                    "/app/login", data={"username": user.username, "password": PASSWORD, "_csrf": token}
+                )
+                assert login.status_code == 400, "inactive accounts must not establish a web session"
+            elif user is not None:
                 await _login(client, user.username)
             page = await client.get(EXPOSURE)
 
         assert calls == [], "authorization must decide before any billing read"
-        if user is not None and identity != "inactive_admin":
+        if identity == "platform_user":
+            assert page.status_code == 403
+            assert "data-section-denied" in page.text
+        elif identity == "workspace_owner":
             assert page.status_code == 200
             assert str(page.url).endswith("/app/jobs")
             assert DENIED in page.text

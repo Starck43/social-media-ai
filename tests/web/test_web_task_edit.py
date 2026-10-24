@@ -333,6 +333,7 @@ async def test_tasks_page_add_modal_offers_targets_and_digest_params(client: Asy
         await tenants.delete_by_id(tenant_id)
 
 
+@pytest.mark.tenancy
 async def test_create_stores_targets_for_the_bound_scenario(client: AsyncClient) -> None:
     """The add modal posts its target fields into AgentTask.payload.
 
@@ -365,6 +366,7 @@ async def test_create_stores_targets_for_the_bound_scenario(client: AsyncClient)
         with tenant_scope(bypass=True):
             created = await AgentTask.objects.filter(name=name).first()
         assert created is not None
+        assert created.tenant_id == tenant_id
         assert created.job_type == "analyze"
         assert created.agent_scenario_id == scenario.id
         assert created.payload["collect_before_analyze"] is True
@@ -380,10 +382,12 @@ async def test_create_stores_targets_for_the_bound_scenario(client: AsyncClient)
         if scenario is not None:
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
-        await User.objects.delete_user(user.id)
-        await tenants.delete_by_id(tenant_id)
+        with tenant_scope(bypass=True):
+            await User.objects.delete_user(user.id)
+            await tenants.delete_by_id(tenant_id)
 
 
+@pytest.mark.tenancy
 @pytest.mark.asyncio
 async def test_legacy_collect_creation_becomes_unified_analysis_and_warns(client: AsyncClient) -> None:
     """Legacy form submissions use the unified web analysis workflow."""
@@ -408,6 +412,7 @@ async def test_legacy_collect_creation_becomes_unified_analysis_and_warns(client
         with tenant_scope(bypass=True):
             created = await AgentTask.objects.filter(name=name).first()
         assert created is not None
+        assert created.tenant_id == tenant_id
         assert created.job_type == "analyze"
         assert created.payload["collect_before_analyze"] is True
         assert "укажите в параметрах задачи" in resp.text
@@ -418,10 +423,12 @@ async def test_legacy_collect_creation_becomes_unified_analysis_and_warns(client
         if scenario is not None:
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
-        await User.objects.delete_user(user.id)
-        await tenants.delete_by_id(tenant_id)
+        with tenant_scope(bypass=True):
+            await User.objects.delete_user(user.id)
+            await tenants.delete_by_id(tenant_id)
 
 
+@pytest.mark.tenancy
 async def test_create_digest_task_stores_grouping_params(client: AsyncClient) -> None:
     """A digest task created from the modal carries period and grouping axis."""
     user, tenant_id = await _register(client, "AddDigest")
@@ -447,6 +454,7 @@ async def test_create_digest_task_stores_grouping_params(client: AsyncClient) ->
         with tenant_scope(bypass=True):
             created = await AgentTask.objects.filter(name=name).first()
         assert created is not None
+        assert created.tenant_id == tenant_id
         assert created.payload["period"] == "week"
         assert created.payload["group_by"] == "sources"
         assert created.payload["time_breakdown"] is True
@@ -457,8 +465,9 @@ async def test_create_digest_task_stores_grouping_params(client: AsyncClient) ->
         if scenario is not None:
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
-        await User.objects.delete_user(user.id)
-        await tenants.delete_by_id(tenant_id)
+        with tenant_scope(bypass=True):
+            await User.objects.delete_user(user.id)
+            await tenants.delete_by_id(tenant_id)
 
 
 async def _make_source(tenant_id: int, name: str):

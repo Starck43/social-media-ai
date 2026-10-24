@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import require_model_perm
+from app.core.permissions import service_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import AgentTask
 from app.schemas.task import TaskCreate, TaskUpdate, TaskRunRequest, TaskResponse
@@ -151,7 +152,10 @@ async def create_task(
     # Link sources if provided
     if request.source_ids:
         from app.models.managers.agent_task_manager import AgentTaskManager
-        with tenant_scope(task.tenant_id):
+        # Creating the task is authorized by the endpoint dependency. Linking
+        # its initial sources is trusted bookkeeping performed for that new
+        # tenant-owned task, so grant only the manager's update right here.
+        with tenant_scope(task.tenant_id), service_permission_scope("agenttask", "update"):
             await AgentTaskManager().add_sources(task.id, request.source_ids)
 
     return _task_response(task)
@@ -257,7 +261,10 @@ async def pause_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    await AgentTask.objects.update_by_id(task_id, is_active=resume)
+    # The manager serializes schedule changes with source admission. Re-enter
+    # the persisted tenant of the already-scoped task for that lock.
+    with tenant_scope(task.tenant_id):
+        await AgentTask.objects.update_by_id(task_id, is_active=resume)
     task = await AgentTask.objects.get(id=task_id)
     return _task_response(task)
 

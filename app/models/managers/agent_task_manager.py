@@ -732,39 +732,44 @@ class AgentTaskManager(BaseManager):
         this is its sole explicit source, since an empty link set means all
         active sources when the task resumes.
         """
-        from sqlalchemy import func, or_
+        from sqlalchemy import func, or_, select
 
         from ..agent_task import AgentTask, agent_task_sources
 
         ids = sorted({int(sid) for sid in source_ids if sid is not None})
         if not ids:
             return {}
+        tenant_criteria = [*self._tenant_criterion(), AgentTask.tenant_id == tenant_id]
         link_counts = (
-            self.get_queryset()
+            select(
+                agent_task_sources.c.agent_task_id,
+                func.count().label("link_count"),
+            )
+            .select_from(AgentTask)
             .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
-            .filter(AgentTask.tenant_id == tenant_id)
+            .where(*tenant_criteria)
             .group_by(agent_task_sources.c.agent_task_id)
-            .values(agent_task_sources.c.agent_task_id, func.count().label("link_count"))
-            .to_select()
             .subquery("task_source_link_counts")
         )
-        rows = await (
-            self.get_queryset()
-            .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
-            .join(link_counts, link_counts.c.agent_task_id == AgentTask.id)
-            .filter(
-                AgentTask.tenant_id == tenant_id,
-                agent_task_sources.c.source_id.in_(ids),
-                or_(AgentTask.is_active.is_(True), link_counts.c.link_count == 1),
-            )
-            .values(
+        query = self.get_queryset()
+        stmt = (
+            select(
                 agent_task_sources.c.source_id,
                 AgentTask.id,
                 AgentTask.name,
                 AgentTask.is_active,
             )
-            .rows()
+            .select_from(AgentTask)
+            .join(agent_task_sources, agent_task_sources.c.agent_task_id == AgentTask.id)
+            .join(link_counts, link_counts.c.agent_task_id == AgentTask.id)
+            .where(
+                *tenant_criteria,
+                agent_task_sources.c.source_id.in_(ids),
+                or_(AgentTask.is_active.is_(True), link_counts.c.link_count == 1),
+            )
         )
+        async with query._get_session() as session:
+            rows = (await session.execute(stmt)).all()
         linked: dict[int, list[AgentTask]] = {}
         for source_id, task_id, name, is_active in rows:
             linked.setdefault(int(source_id), []).append(

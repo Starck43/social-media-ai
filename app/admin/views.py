@@ -138,39 +138,6 @@ class UserAdmin(BaseAdmin, model=User):
             raise HTTPException(status_code=400, detail="Требуется заполнить поле 'Пароль'")
         return await super().insert_model(request, data)
 
-    async def scaffold_form(self, rules: list[str] | None = None):
-        """Build the edit form with the choices the signed-in actor may assign.
-
-        SQLAdmin keeps one form class per view, so the role select would
-        otherwise hold the choices of whoever rendered the page first. The
-        converter is bound per call: each request gets its own actor's list.
-        """
-        request = getattr(self, "_form_request", None)
-        actor = self.get_admin_user(request) if request is not None else None
-        # SQLAdmin instantiates the converter (`form_converter()`), so a
-        # request-local subclass is the seam: one operator's rank never rides
-        # along on a class attribute shared by every request.
-        converter = type("_RolePicker", (RolePickerConverter,), {"choices": role_choices(actor)})
-        form = await get_model_form(
-            model=self.model,
-            session_maker=self.session_maker,
-            only=self._form_prop_names,
-            column_labels=self._column_labels,
-            form_args=self.form_args,
-            form_widget_args=self.form_widget_args,
-            form_class=self.form_base_class,
-            form_overrides=self._form_overrides,
-            form_ajax_refs=self._form_ajax_refs,
-            form_include_pk=self.form_include_pk,
-            form_converter=converter,
-        )
-        # A create page carries no role select; SQLAdmin would otherwise keep
-        # the required field and reject every new account. Deleting through the
-        # metaclass also clears the cached unbound fields.
-        if rules is not None and "role" not in rules and hasattr(form, "role"):
-            delattr(form, "role")
-        return form
-
     async def update_model(self, request: Request, pk: str, data: dict) -> Any:
         """Write identity fields generically; the role goes through its manager.
 
@@ -190,21 +157,38 @@ class UserAdmin(BaseAdmin, model=User):
             )
         return await super().update_model(request, pk, data)
 
-    async def edit(self, request: Request, *args: Any, **kwargs: Any):
-        """Expose the request to `scaffold_form` for the actor's role choices."""
-        self._form_request = request
-        try:
-            return await super().edit(request, *args, **kwargs)
-        finally:
-            self._form_request = None
+    async def scaffold_form(self, rules: list[str] | None = None):
+        """Build the edit form with the choices the signed-in actor may assign.
 
-    async def create(self, request: Request, *args: Any, **kwargs: Any):
-        """Same seam for the create form, which must not offer a role at all."""
-        self._form_request = request
-        try:
-            return await super().create(request, *args, **kwargs)
-        finally:
-            self._form_request = None
+        sqladmin passes no `request` here, so the actor comes from the request
+        the authorization backend bound for this task. That binding is per
+        request (`load()` runs before the view renders), so one operator's rank
+        never rides along on a class attribute shared by every request.
+
+        With nothing bound the choices are empty and the select is disabled:
+        fail closed, never "every role".
+        """
+        from app.admin.authorization import bound_console_request
+
+        request = bound_console_request()
+        actor = self.get_admin_user(request) if request is not None else None
+        converter = type("_RolePicker", (RolePickerConverter,), {"choices": role_choices(actor)})
+        form = await get_model_form(
+            model=self.model,
+            session_maker=self.session_maker,
+            only=self._form_prop_names,
+            column_labels=self._column_labels,
+            form_args=self.form_args,
+            form_widget_args=self.form_widget_args,
+            form_class=self.form_base_class,
+            form_overrides=self._form_overrides,
+            form_ajax_refs=self._form_ajax_refs,
+            form_include_pk=self.form_include_pk,
+            form_converter=converter,
+        )
+        if rules is not None and "role" not in rules and hasattr(form, "role"):
+            delattr(form, "role")
+        return form
 
     async def delete_model(self, request: Request, pk: Any) -> bool:
         """The platform-owner account is never deleted from the console."""

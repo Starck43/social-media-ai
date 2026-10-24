@@ -57,6 +57,10 @@ import os  # noqa: E402
 
 os.environ["DB_POOL"] = "null"
 
+# The platform owner's account: the legacy tests' personal catalog belongs to it,
+# matching what the owner's console request binds (`AdminScopeMiddleware`).
+BOOTSTRAP_OWNER_ID = 2
+
 import pytest  # noqa: E402
 
 import app.models.managers.base_manager as base_manager_module  # noqa: E402
@@ -69,20 +73,26 @@ def _platform_scope(request, monkeypatch):
         yield
         return
     monkeypatch.setattr(base_manager_module, "is_bypass", lambda: True)
+    # The query layer reads the patched name above; every other caller — the admin
+    # scope, the personal-catalogue owner — reads the real `tenant_context`
+    # functions. A module-level test never runs inside the platform bypass: the
+    # scope it opens itself (`tenant_scope`) owns the answer, exactly as in HTTP.
     # Legacy tests already model the operator surface. Make its authorization
     # explicit; security/tenancy tests opt out above and remain fail-closed.
     from app.core.permissions import operator_permission_scope
+    from app.core.personal_catalog_context import catalog_execution_scope
+    from app.core.tenant_context import tenant_scope
 
-    with operator_permission_scope():
+    with tenant_scope(bypass=True), catalog_execution_scope(BOOTSTRAP_OWNER_ID), operator_permission_scope():
         yield
 
 
 @pytest.fixture(scope="session", autouse=True)
 async def _test_database():
     """Validate the configured test schema and reference rows without writes."""
+    from app.core.access_catalog import RESOURCES
     from app.core.config import settings
     from app.core.database import async_engine
-    from app.core.access_catalog import RESOURCES
     from app.models import Base, ModelType, Permission, Platform, PlatformRole, WorkspaceRole
     from app.types import ActionType
     from scripts.setup_test_db import check_existing_schema

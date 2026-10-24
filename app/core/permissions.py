@@ -14,7 +14,7 @@ from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional, Union
 
 from app.core.access_catalog import resolve_permission_key, resource_for, workspace_grants
-from app.core.tenant_context import current_tenant_id, is_bypass
+from app.core.tenant_context import current_tenant_id, current_tenant_ids, is_bypass
 from app.types import ActionType, PlatformRoleType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -134,15 +134,20 @@ def member_decision(user, model_name, action):
     current = get_current_user()
     if current is None:
         return None
+    # The role belongs to the workspace the *write* concerns. A console operator
+    # reads several workspaces at once (`current_tenant_ids()`); the active one
+    # decides, so a right from one workspace can never re-authorize another.
+    tenant_id = (member[0] if member is not None else None) or current_tenant_id()
     if (
         resource is None
         or not resource.workspace
         or member is None
         or user is None
         or member[0] != current_tenant_id()
-        or member[1] is None
+        or tuple(member) != (tenant_id, getattr(current, "id", None), member[2])
         or member[1] != getattr(current, "id", None)
         or member[1] != getattr(user, "id", None)
+        or current_tenant_id() not in current_tenant_ids()
     ):
         return False
     return action in resource.actions and (resource.model_name, action) in member[2]

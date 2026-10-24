@@ -5,17 +5,17 @@ Fixes identified issues and improves API consistency.
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, date
-from typing import Any, Generic, TypeVar, Type, Optional, Sequence, cast, Callable
+from datetime import date, datetime
+from typing import Any, Callable, Generic, Optional, Sequence, Type, TypeVar, cast
 
 from fastapi import HTTPException
 from sqlalchemy import ColumnElement, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload, QueryableAttribute, InstrumentedAttribute
-from sqlalchemy.sql import and_, exists, select, Select
+from sqlalchemy.orm import InstrumentedAttribute, QueryableAttribute, joinedload, selectinload
+from sqlalchemy.sql import Select, and_, exists, select
 
 from app.core.database import async_session_maker, with_db_session
-from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+from app.core.tenant_context import TenantContextError, current_tenant_ids, is_bypass
 from app.schemas.common import PaginationResult
 
 M = TypeVar("M")
@@ -367,7 +367,11 @@ class QuerySet(Generic[M]):
 
         if "tenant_id" in values and getattr(self._manager.model, "__tenant_scoped__", False):
             raise ValueError("Workspace ownership is immutable")
-        if getattr(self._manager.model, "__personal_scoped__", False) and set(values) & {"owner_user_id", "provider_id", "is_default"}:
+        if getattr(self._manager.model, "__personal_scoped__", False) and set(values) & {
+            "owner_user_id",
+            "provider_id",
+            "is_default",
+        }:
             raise ValueError("Use the validated personal catalog service")
         conditions: list[ColumnElement[bool]] = list(self._criterion)
         if self._kw_filters:
@@ -707,12 +711,14 @@ class BaseManager(Generic[M]):
         if not getattr(self.model, "__personal_scoped__", False) or is_bypass():
             return []
         from app.core.personal_catalog_context import current_catalog_owner_id
+
         return [self.model.owner_user_id == current_catalog_owner_id()]
 
     def _personal_values(self, values):
         if not getattr(self.model, "__personal_scoped__", False):
             return values
         from app.core.personal_catalog_context import current_catalog_owner_id
+
         if values.get("is_default"):
             raise ValueError("Use the atomic personal default service")
         explicit = values.get("owner_user_id")
@@ -742,13 +748,18 @@ class BaseManager(Generic[M]):
         if not self._tenant_scoped() or is_bypass():
             return []
 
-        tenant_id = current_tenant_id()
-        if tenant_id is None:
+        # A console operator may hold several workspaces; the scope carries all
+        # of them, so the filter is a set, never "the first workspace".
+        tenant_ids = current_tenant_ids()
+        if not tenant_ids:
             raise TenantContextError(
                 f"{self.model.__name__} is tenant-scoped but no tenant is in context; "
                 f"use app.core.tenant_context.tenant_scope() or an explicit bypass"
             )
-        return [cast(Any, self.model).tenant_id == tenant_id]
+        column = cast(Any, self.model).tenant_id
+        if len(tenant_ids) == 1:
+            return [column == tenant_ids[0]]
+        return [column.in_(tenant_ids)]
 
     @staticmethod
     async def _default_tenant_id(session: AsyncSession) -> int:
@@ -1149,7 +1160,8 @@ class BaseManager(Generic[M]):
         open their own session and hand-roll delete+insert-on-conflict, which
         duplicated the same logic in three places.
         """
-        from sqlalchemy import delete as sa_delete, insert as sa_insert
+        from sqlalchemy import delete as sa_delete
+        from sqlalchemy import insert as sa_insert
 
         async with self._get_owned_session(session) as db:
             await db.execute(sa_delete(table).where(table.c[key_column] == key_value))

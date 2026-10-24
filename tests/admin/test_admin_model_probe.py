@@ -18,8 +18,16 @@ COST_EVIDENCE = load_isolated_source("_probe_cost_evidence", ROOT / "app/service
 
 
 def model(**changes):
+    """A personal-catalogue model with an owner, like every 0109+ row.
+
+    `LLMClient.__init__` refuses a model whose owner (or whose provider's owner)
+    is not the bound catalogue owner, so the fixture carries the same owner on
+    both sides instead of relying on the guard being off.
+    """
+    owner_id = changes.pop("owner_user_id", 2)
     values = dict(
         id=7,
+        owner_user_id=owner_id,
         name="Example <script>bad()</script>",
         model_id="example/model",
         model_type="text,image",
@@ -30,7 +38,13 @@ def model(**changes):
         output_cost_per_1k=0.002,
         last_success_at=None,
         last_error_at=None,
-        provider=NS(name="Provider", api_format="openai", is_active=True, get_api_key=lambda: "fake-test-key"),
+        provider=NS(
+            name="Provider",
+            owner_user_id=owner_id,
+            api_format="openai",
+            is_active=True,
+            get_api_key=lambda: "fake-test-key",
+        ),
     )
     values.update(changes)
     return NS(**values)

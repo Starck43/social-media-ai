@@ -22,15 +22,63 @@ provider call or messenger send was performed remotely. Other legacy page
 mismatches remain listed below. See [MODELS](MODELS.md) for ORM definitions and
 [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) for attributed prior acceptance.
 
+## Console data scope: the owner sees everything, everyone else their own
+
+One rule decides what any screen shows, in the list and behind a direct URL
+alike ([scope.py](../app/admin/scope.py), `AdminScopeMiddleware`):
+
+| Actor | Personal rows (`owner_user_id`) | Workspace rows (`tenant_id`) | Platform catalogs |
+| --- | --- | --- | --- |
+| `superuser` (the owner) | all | all | all |
+| `admin` / `operator` | **own only** | only workspaces they are a web member of | per platform grants |
+| invited member (workspace role) | **own only** | only their workspaces, rights from **that membership's role** | per platform grants |
+
+"Own" is the signed-in actor, never a value taken from the form, the path or the
+query string. The middleware binds that identity for every `/admin` request;
+`BaseManager` then filters personal models on `owner_user_id` and workspace
+models on the memberships, exactly as `/app` and `/api` do. A row outside the
+scope does not exist for the actor: `/admin/llm-provider/edit/<foreign id>` is a
+404/403, not an editable form, and a provider found that way cannot decrypt its
+key (`LLMProvider.get_api_key()`).
+
+An invited member carries **the same authority in the console as in the web
+UI**: if user1 invites user2 into their workspace with the `admin` membership
+role, user2 may configure user1's sources, scenarios and tasks from `/admin` as
+well — with `admin`-role rights, in that workspace only. Membership never
+widens the personal catalogue: being an admin of user1's workspace does not make
+user1's provider key usable by user2.
+
+Two rules do not come from the scope and stay per-table:
+
+- **business rules** — a queue row is written by the dispatcher (`JobAdmin` keeps
+  create/edit/delete/export off for everyone, the owner included); an analysis
+  run is written by the analyser (`AIAnalyticsAdmin.can_create = False`);
+- **rank/owner gates** — the role and permission catalogs remain the owner's,
+  and role assignment stays strictly below the actor's rank (below).
+
+`/static/*`, `/health` and `/docs` keep the platform bypass
+(`PlatformScopeMiddleware`); `/admin/*` is excluded from it, so the two
+middleware cannot disagree about who the request runs for. `AdminScopeMiddleware`
+is registered **last**, which makes it the outermost wrapper: it replaces the
+incoming scope before the bypass opens on any path. An actor with no workspace
+membership gets a `403` on a workspace page (the same answer `/api` gives for
+"no workspace membership"), never an empty list and never a 500; personal and
+global pages still open for them.
+
+Whether a page needs a workspace is derived from its model
+(`__tenant_scoped__`), not from a hand-kept list, so the classification cannot
+drift when a view is renamed or added. Unknown identities count as
+workspace-bound (fail closed).
+
 ## Personal catalog source contract (0109; PR #229 + #230 integrated)
 
-The baseline sections below retain historical console/action descriptions. In the
-0109 candidate, providers/models are **personally owned**, shared across one
-user's workspaces, not a global editable fleet. `LLMProviderAdmin.can_create`,
-`can_edit` and `LLMModelAdmin.can_create`, `can_edit` are false: raw SQLAdmin forms
-are not the configuration write path. Use Settings → Models with the active
-owner's catalog service for atomic provider+models saves and per-user defaults.
-This does not assert that every existing inspection/delete/test action is disabled.
+Providers/models remain **personally owned**: one user's catalog is shared
+across that user's workspaces and is not a global editable fleet. The console
+now edits *the actor's own* catalog (`LLMProviderAdmin`, `LLMModelAdmin` use
+SQLAdmin's normal create/edit; the previous `can_create`/`can_edit = False`
+crutch was removed once the middleware started binding an owner). Settings →
+Models stays the surface for atomic provider+models saves and per-user defaults;
+the console writes one row at a time through the same manager guards.
 
 Platform operator entry/model-action grants are still required for the admin
 console, but never grant another user's key use. Existing connection/model test
@@ -56,15 +104,18 @@ ledger. No deployment is claimed. See
 
 `GET /admin/login` displays the SQLAdmin login form. Login accepts username or
 email and password, validates its CSRF token, and requires an active account
-whose **platform** role is `operator` or `admin` (`User.has_admin_access()`).
-Workspace owner/admin membership does not confer console access. SQLAdmin logout
-clears the browser session.
+whose **platform** role is `superuser`, `operator` or `admin`
+(`User.has_admin_access()`). A workspace membership alone does not open the
+console; once inside, the membership decides *which* workspace rows the actor
+sees (see the scope section above). SQLAdmin logout clears the browser session.
 
 Authenticated requests resolve the JWT subject to a fresh active User with
 platform role/permissions. The backend does not trust a stale session `user_id`
-as a second identity source. A platform admin receives wildcard console grants;
-an operator receives explicit model/action grants. There is no current
-`User.is_superuser` column.
+as a second identity source. `AdminScopeMiddleware` resolves the same identity
+from the same session token and binds the data scope for the request. A platform
+admin receives wildcard console grants; an operator receives explicit
+model/action grants. `User.is_superuser` is the single owner account (revision
+`0110`) and is the only actor that keeps the console-wide bypass.
 
 Permissions come from `role_permission` → `permissions.model_type_id` /
 `action_type`, with stable `ModelType.resource_key` registered in
@@ -93,8 +144,11 @@ lazy view catalog is built. Menu visibility alone is not authorization.
 
 Additional restrictions:
 
-- `TenantAdmin.is_accessible()` requires a platform admin, not merely a tenant
-  model grant or ownership of one workspace.
+- Every screen is narrowed by the actor's scope (section at the top): the owner
+  sees all, anyone else only their personal rows and their workspaces.
+  `TenantAdmin` is reachable by any operator, which is what lets an invited
+  member administer *their* workspace; what they may change there is the
+  `tenancy.workspace` UPDATE right of their membership role.
 - Platform role and permission identities remain fixed: no create/delete or code,
   resource/action, or user-assignment editing. Only the platform owner
   (`superuser`) may edit the permission selection of the operator role
@@ -140,10 +194,14 @@ Additional restrictions:
 - External FastAPI dashboards use `require_admin_perm()` explicitly. Password
   administration has its additional self/cross-account checks below.
 
-The main app's `PlatformScopeMiddleware` supplies explicit tenant bypass for the
-operator console/infrastructure, while `/app` and `/api` have their own scope
-middleware. Admin listings are not filtered by the web UI's selected workspace.
-Actions that execute a task re-enter the selected task's owning workspace.
+The main app resolves the console scope per request: `AdminScopeMiddleware`
+binds the actor and their memberships for `/admin`, and
+`PlatformScopeMiddleware` supplies the bypass only for `/static`, `/health` and
+`/docs` (and for the console request itself when the actor **is** the owner).
+`/app` and `/api` have their own scope middleware. Admin listings are not
+filtered by the web UI's selected workspace; they are filtered by the actor's
+scope, which for a member is every workspace they belong to. Actions that
+execute a task re-enter the selected task's owning workspace.
 
 ## Role permission picker
 
@@ -220,13 +278,13 @@ business-workflow execution.
 | `CollectedItemAdmin` | `CollectedItem` | `/admin/collected-item/list` | Raw staged content |
 | `AgentScenarioAdmin` | `AgentScenario` | `/admin/agent-scenario/list` | Analysis methodology, prompt preview and active flag |
 | `AgentTaskAdmin` | `AgentTask` | `/admin/agent-task/list` | Scheduled tasks and inline run action |
-| `BotActionAdmin` | `BotAction` | `/admin/bot-action/list` | Create disabled; edit form contains only `status` |
-| `AIAnalyticsAdmin` | `AIAnalytics` | `/admin/ai-analytics/list` | Create disabled; stored analysis view |
-| `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection: create/edit/delete/export disabled |
+| `BotActionAdmin` | `BotAction` | `/admin/bot-action/list` | Create disabled for all (written by the run); edit form contains only `status` |
+| `AIAnalyticsAdmin` | `AIAnalytics` | `/admin/ai-analytics/list` | Create disabled for all (written by the analyser); stored analysis view |
+| `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection for all, the owner included: create/edit/delete/export disabled |
 | `NotificationAdmin` | `Notification` | `/admin/notification/list` | Shared workspace read state; guarded hidden send action |
-| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Personal catalog inspection and connection test; raw create/edit disabled in 0109, owner-only credential use, configuration goes through Settings → Models |
-| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Personal model inspection and short/mock/real checks; raw create/edit disabled in 0109 |
-| `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Global workspace settings; platform-admin-only visibility |
+| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Actor's own personal catalog (the owner: every catalog); create/edit enabled, foreign rows are 403, connection test |
+| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Actor's own personal models; create/edit enabled, short/mock/real checks |
+| `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Workspaces the actor belongs to (the owner: all); changes need `tenancy.workspace` UPDATE |
 | `UserCredentialAdmin` | `UserCredential` | `/admin/user-credential/list` | Personal credential vault rows, not workspace-owned credentials |
 
 `Role` is a Python compatibility alias; the mapped class is `PlatformRole` and

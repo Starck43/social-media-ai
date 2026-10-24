@@ -417,9 +417,8 @@ async def case(monkeypatch, record_property):
             "policy_id": owned.policy_id,
             "cutover_id": owned.cutover_id,
             "setup_complete": setup_complete,
-            "retained": setup_complete or any(
-                value is not None for value in (owned.account_id, owned.policy_id, owned.cutover_id)
-            ),
+            "retained": setup_complete
+            or any(value is not None for value in (owned.account_id, owned.policy_id, owned.cutover_id)),
         }
         record_property("owned_fixture_manifest", json.dumps(manifest, sort_keys=True))
         print("OWNED_FIXTURE_MANIFEST " + json.dumps(manifest, sort_keys=True))
@@ -439,6 +438,12 @@ async def case(monkeypatch, record_property):
 
 
 async def test_admin_list_details_and_forms_are_real(case):
+    """The actor's own catalogue is readable *and* writable from the console.
+
+    Providers and models are personal (`owner_user_id`), so `admin`/`operator`
+    edit the models they own — the `can_create/can_edit = False` crutch from
+    0109 is gone (`docs/ADMIN.md`). `case.model` belongs to `case.admin`.
+    """
     async with case.client(case.admin) as client:
         listing = page_ok(await client.get(f"{BASE}/list", params={"search": case.marker}))
         assert case.marker in listing and "0.001" in listing and "0.002" in listing
@@ -446,7 +451,17 @@ async def test_admin_list_details_and_forms_are_real(case):
         assert case.marker in detail and "text,image" in detail and "1024" in detail
         for path in (f"{BASE}/create", f"{BASE}/edit/{case.model.id}"):
             response = await client.get(path)
-            assert response.status_code == 403, f"Global SQLAdmin model CRUD must remain disabled: {path}"
+            assert response.status_code == 200, f"The owner of the catalogue edits it: {path}"
+    await case.no_dispatch()
+
+
+async def test_a_foreign_personal_model_is_refused_even_to_a_platform_admin(case):
+    """Someone else's model is not the platform admin's to edit — 403, direct URL."""
+    other_admin = await case.user("admin")
+    async with case.client(other_admin) as client:
+        for path in (f"{BASE}/details/{case.model.id}", f"{BASE}/edit/{case.model.id}"):
+            response = await client.get(path)
+            assert response.status_code in {403, 404}, f"Foreign personal catalogue leaked: {path}"
     await case.no_dispatch()
 
 
@@ -454,7 +469,7 @@ async def test_admin_global_model_crud_is_disabled_and_personal_catalog_is_avail
     async with case.client(case.admin) as client:
         for path in (f"{BASE}/create", f"{BASE}/edit/{case.model.id}"):
             response = await client.get(path)
-            assert response.status_code == 403, f"Global SQLAdmin model CRUD must remain disabled: {path}"
+            assert response.status_code == 200, f"The actor's own catalogue is editable: {path}"
     async with case.client(case.admin, "web") as client:
         settings_page = page_ok(await client.get("/app/settings?tab=models"))
         assert case.marker in settings_page
@@ -789,6 +804,12 @@ async def test_short_and_mock_do_not_require_billing_or_workspace_selection(case
 
 
 async def test_other_platform_admin_cannot_probe_fixture_owners_model_key(case):
+    """Another admin's model is outside the scope: the action is refused, not run.
+
+    The probe uses *the model's* provider key, so a foreign model must never reach
+    the service at all — `AdminScopeMiddleware` binds the actor's own catalogue,
+    and the credential check refuses the row before any HTTP call.
+    """
     other_admin = await case.user("admin")
     async with case.client(other_admin) as client:
         response = await client.post(
@@ -800,8 +821,7 @@ async def test_other_platform_admin_cannot_probe_fixture_owners_model_key(case):
                 "csrf_token": case.app.state.csrf_manager.generate_token(),
             },
         )
-        assert response.status_code == 200, "Global platform-admin inspection remains available"
-        assert "Проверьте API-ключ и активность модели/провайдера." in response.text
+        assert response.status_code in {403, 404}, "Foreign personal catalogue must be refused"
         assert "API доступен" not in response.text
     await case.no_dispatch()
 

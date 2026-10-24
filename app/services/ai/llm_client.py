@@ -51,10 +51,14 @@ async def _personal_admission(
     uses_tools: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Reserve one trusted provider envelope before HTTP when personal billing is active."""
-    from app.services.ai.personal_dispatch import validate_personal_dispatch
-    await validate_personal_dispatch(client)
+    # Flag off: no reservation, no payer, and no ORM. The check comes first so a
+    # deployment that never enabled personal billing is not forced to satisfy the
+    # dispatch validator (it reads the model row and the bound catalog owner).
     if not settings.PERSONAL_BILLING_ENABLED:
         return None, None
+    from app.services.ai.personal_dispatch import validate_personal_dispatch
+
+    await validate_personal_dispatch(client)
     api_format = getattr(client.provider, "api_format", None)
     adapter = {
         "openai": "openai_chat_completions",

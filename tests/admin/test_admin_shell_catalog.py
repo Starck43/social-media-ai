@@ -58,7 +58,9 @@ def source():
         {
             "app.types": TYPES,
             "app.core.access_catalog": CATALOG,
-            "app.core.tenant_context": NS(current_tenant_id=lambda: None, is_bypass=lambda: False),
+            "app.core.tenant_context": NS(
+                current_tenant_id=lambda: None, current_tenant_ids=lambda: (), is_bypass=lambda: False
+            ),
         },
     )
     catalog = load_isolated_source(

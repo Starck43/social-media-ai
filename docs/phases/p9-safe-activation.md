@@ -72,6 +72,30 @@ database tables" are limited by which models have a registered view in
   P9-T02, P9-T03, P9-T04; owns: the two docs, one permission regression test
   file; owner: unassigned; status: TODO
 
+- [ ] P9-T06 — build-time owner bootstrap: rank-based assignment in the console,
+  an idempotent CLI for the first/prod owner, and the optional `-x` pin;
+  accept: `/admin/user/edit` offers a role picker limited to the actor's
+  assignable ranks; `UserManager.set_platform_role` enforces the same rule
+  server-side (no runtime path grants `superuser`, no self-edit, the owner
+  account is untouchable, an admin cannot rewrite a peer); the create form has
+  no role field; `0110` runs with or without `-x superuser_user_id`, falling back
+  to the sole active admin and refusing on zero or several;
+  `scripts/setup/bootstrap_owner.py` performs the same decision idempotently
+  outside the web; depends: P9-T02, P9-T05; owns: `app/admin/role_picker.py`,
+  `UserAdmin`, `UserManager.set_platform_role`, `PLATFORM_ROLE_RANK` helpers,
+  `scripts/setup/bootstrap_owner.py`, `0110` docs; owner: opencode;
+  status: DONE (dev `eecd30f`), awaiting review
+
+  Evidence: targeted run only —
+  `tests/permissions tests/admin/test_admin_user_role_picker.py
+  tests/admin/test_admin_shell_catalog.py tests/admin/test_admin_table_registry.py
+  tests/api/test_api_roles.py` → 97 passed. Probe on the real `UserAdmin` form:
+  owner sees `admin/operator/user` (highest first), a `user` rank gets a disabled
+  empty select, the create form carries no `role`. `0110` was applied to the
+  working `public` schema earlier with `-x superuser_user_id=2`
+  (`alembic_version=0110`); the no-argument branch is the one added here and has
+  only been reviewed, not exercised.
+
 ## Out of scope (explicit)
 
 - Arbitrary SQL / query console, DDL or DML from the web.

@@ -1254,8 +1254,10 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 
 
 class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
-    can_create = False
-    can_edit = False
+    # Write access is the actor's own catalog (or the owner's whole one), bound
+    # by `AdminScopeMiddleware`; the view no longer switches itself off. The
+    # credential checks in `LLMProvider.get_api_key()` still refuse a foreign
+    # row, so a direct URL to someone else's provider is a 403, not a form.
     name = "Провайдер ИИ"
     name_plural = "Провайдеры ИИ"
     icon = "fa fa-server"
@@ -1377,8 +1379,9 @@ def _catalog_rate(value, token_unit: int) -> str:
 
 
 class LLMModelAdmin(BaseAdmin, model=LLMModel):
-    can_create = False
-    can_edit = False
+    # Same rule as the provider screen: the actor writes their own models (the
+    # owner, any model), and "own" is the personal catalogue bound by
+    # `AdminScopeMiddleware` — never a row picked from the form.
     name = "Модель ИИ"
     name_plural = "Модели ИИ"
     icon = "fa fa-microchip"
@@ -1605,6 +1608,24 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 
     column_formatters_detail = column_formatters
 
+    def list_query(self, request: Request) -> Select:
+        # The manager, not a bare `select()`, so the personal criterion of
+        # `AdminScopeMiddleware`'s actor applies: another user's models are simply
+        # not in the result (`docs/ADMIN.md` — "everyone else their own").
+        # No `select_related`: sqladmin adds `selectinload(provider)` itself for
+        # `column_list`, and two loaders for one path are a mapper conflict.
+        return LLMModel.objects.filter().to_select()
+
+    def details_query(self, request: Request) -> Select:
+        # A foreign model must 404 here, never render: sqladmin's default query is
+        # `select(LLMModel).where(id == pk)`, which has no owner in it.
+        return LLMModel.objects.prefetch_related("provider").filter(id=int(request.path_params["pk"])).to_select()
+
+    def form_edit_query(self, request: Request) -> Select:
+        # Same for the edit form: `details` and `edit` are two separate statements
+        # in sqladmin, and both bypass the manager unless overridden.
+        return LLMModel.objects.prefetch_related("provider").filter(id=int(request.path_params["pk"])).to_select()
+
     async def scaffold_form(self, rules=None):
         form = await super().scaffold_form(rules)
 
@@ -1635,11 +1656,9 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     async def on_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
         if "model_type" in data and isinstance(data["model_type"], list):
             data["model_type"] = ",".join(data["model_type"])
-        if is_created:
-            # 0109 made owner_user_id NOT NULL; admin-created models join the
-            # legacy platform catalog owned by user 2, consistent with the backfill.
-            data["owner_user_id"] = 2
-            model.owner_user_id = 2
+        # The catalog owner is the actor's own catalogue, bound by
+        # `AdminScopeMiddleware`. With no actor there is nothing to write into:
+        # the manager refuses (`PermissionError`) rather than picking a user.
         await super().on_model_change(data, model, is_created, request)
 
     async def after_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
@@ -1778,14 +1797,16 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     }
 
     def is_accessible(self, request: Request) -> bool:
-        """Workspace-wide administration is reserved for platform admins.
+        """Workspace settings follow membership, like every console screen.
 
-        A model permission would be the wrong gate even here — the list spans
-        every workspace, and the owner of one of them has no business seeing or
-        editing the others.
+        Nothing is hard-coded per role here: `AdminScopeMiddleware` gives the
+        owner every workspace, and an invited member only the workspaces they
+        belong to. What changes per actor is the *right* — the workspace the
+        member is not allowed to configure is read-only for them, because
+        `tenancy.workspace` UPDATE is not in their membership role's grants.
         """
         user = self.get_admin_user(request)
-        return user is not None and bool(user.is_platform_admin)
+        return user is not None and bool(user.has_admin_access())
 
 
 class UserCredentialAdmin(BaseAdmin, model=UserCredential):
@@ -2320,9 +2341,13 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         if admin_user is None or not getattr(admin_user, "is_active", False):
             raise HTTPException(status_code=403, detail="Доступ запрещён: оператор не аутентифицирован")
 
-        # Operator console: read the task across workspaces (bypass), then act
-        # inside the task's own workspace — the shared helper does the scoping.
-        with tenant_scope(bypass=True):
+        # The task must be one the actor may already see: `AdminScopeMiddleware`
+        # narrowed the console to the owner's everything or the actor's own
+        # workspaces, and a job is executed for the task's workspace, so reading
+        # it by bypass would let a non-member run a foreign workspace's task from
+        # a guessed id. The scoped read below resolves it to `None` instead, and
+        # the redirect reports nothing was run.
+        with tenant_scope(bypass=bool(admin_user.is_superuser)):
             task = await AgentTask.objects.get(id=task_id)
         if task:
             from app.core.permissions import permission_scope
@@ -2343,7 +2368,14 @@ from app.models import Job
 
 
 class JobAdmin(BaseAdmin, model=Job):
-    """Global operator inspection; mutations use the scoped queue workflow."""
+    """Workspace queue inspection; the owner reads the whole one.
+
+    The four flags below are *business* rules, not actor rules, and they apply to
+    the owner too: a queue row is written by the dispatcher, so fabricating,
+    rewriting or deleting one from a form would desynchronise it from its
+    `AgentTask`. Who reaches the page at all — and which workspaces' jobs are in
+    it — is decided by `AdminScopeMiddleware` like every other console screen.
+    """
 
     name = "Выполнение"
     name_plural = "Очередь выполнения"

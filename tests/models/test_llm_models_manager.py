@@ -1,5 +1,6 @@
 """Tests for LLMModelManager lifecycle methods."""
 
+import secrets
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -8,7 +9,7 @@ import pytest
 from app.core.database import async_session_maker
 from app.core.permissions import _current_user, set_current_user
 from app.core.personal_catalog_context import catalog_execution_scope
-from app.models import AgentScenario, AIAnalytics, LLMModel, LLMProvider, Source
+from app.models import AgentScenario, AIAnalytics, LLMModel, LLMProvider, Source, Tenant
 from app.models.managers.llm_model_manager import LLMModelManager
 from app.types import SourceType
 
@@ -310,8 +311,6 @@ class TestLLMModelManager:
         assert result["deleted"] == m_only.id
         assert result["new_default_id"] is None
 
-    # P10-T15: the delete path must report why no replacement default exists; failing here means warnings are unwired.
-    @pytest.mark.xfail(strict=True, reason="P10-T15: delete path hardcodes warnings=[]")
     async def test_delete_last_model_of_type_reports_warning(self, monkeypatch):
         """Deleting the last model of a capability warns that the type has no model left."""
         provider = await _create_provider()
@@ -324,10 +323,6 @@ class TestLLMModelManager:
         assert result["new_default_id"] is None
         assert any("no model left for type embedding" in w for w in result["warnings"])
 
-    # P10-T15: the FK reset count is part of the delete contract; failing here means it is still unwired.
-    @pytest.mark.xfail(
-        reason="P10-T15: delete path hardcodes scenarios_reset=None; FK reset count is not wired", strict=True
-    )
     async def test_delete_counts_scenarios_reset(self):
         """Scenarios referencing the deleted model are counted in the result."""
         provider = await _create_provider()
@@ -344,6 +339,74 @@ class TestLLMModelManager:
         result = await mgr.delete_with_default_reassignment(model.id)
 
         assert result["scenarios_reset"] == 2
+
+    async def test_delete_counts_scenario_naming_model_twice_once(self):
+        """One scenario naming the deleted model in two media columns is one reset, not two."""
+        provider = await _create_provider()
+        model = await _create_model(provider.id, "test_model_multi_column", model_type="text", is_default=False)
+
+        async with async_session_maker() as s:
+            scenario = AgentScenario(
+                name="test_scenario_multi",
+                text_llm_model_id=model.id,
+                video_llm_model_id=model.id,
+                tenant_id=1,
+                is_active=True,
+            )
+            s.add(scenario)
+            await s.commit()
+
+        result = await LLMModelManager().delete_with_default_reassignment(model.id)
+
+        assert result["scenarios_reset"] == 1
+
+    async def test_delete_ignores_scenarios_referencing_other_models(self):
+        """A scenario bound to a different model is not part of the reset count."""
+        provider = await _create_provider()
+        model = await _create_model(provider.id, "test_model_deleted", model_type="text", is_default=False)
+        survivor = await _create_model(provider.id, "test_model_survivor", model_type="text", is_default=False)
+
+        async with async_session_maker() as s:
+            scenario = AgentScenario(
+                name="test_scenario_survivor", text_llm_model_id=survivor.id, tenant_id=1, is_active=True
+            )
+            s.add(scenario)
+            await s.commit()
+
+        result = await LLMModelManager().delete_with_default_reassignment(model.id)
+
+        assert result["scenarios_reset"] == 0
+
+    async def test_delete_reports_workspace_that_lost_its_agent_model(self):
+        """A workspace pinned to the deleted model yields a warning and no scenario reset."""
+        provider = await _create_provider()
+        model = await _create_model(provider.id, "test_model_tenant", model_type="text", is_default=False)
+
+        tenant = await Tenant.objects.create(
+            name="Delete agent model", slug=f"delete-agent-model-{secrets.token_hex(6)}", plan="business"
+        )
+        await Tenant.objects.update_by_id(tenant.id, agent_model_id=model.id)
+
+        result = await LLMModelManager().delete_with_default_reassignment(model.id)
+
+        assert result["scenarios_reset"] == 0
+        assert any("workspace(s) lost their agent model" in w for w in result["warnings"])
+        assert any(w.startswith("1 workspace(s) lost their agent model") for w in result["warnings"])
+
+    async def test_delete_with_replacement_and_no_references_reports_nothing(self, monkeypatch):
+        """The ordinary path stays quiet: a replacement exists and nothing referenced the model."""
+        provider = await _create_provider()
+        _owner_provider_scope(monkeypatch, provider.id)
+        model = await _create_model(provider.id, "test_model_clean", model_type="embedding", is_default=True)
+        replacement = await _create_model(
+            provider.id, "test_model_clean_next", model_type="embedding", is_default=False
+        )
+
+        result = await LLMModelManager().delete_with_default_reassignment(model.id)
+
+        assert result["new_default_id"] == replacement.id
+        assert result["scenarios_reset"] == 0
+        assert result["warnings"] == []
 
     async def test_resolve_default_model(self):
         """resolve_default_model leads with the flagged default, then the lowest id."""

@@ -271,13 +271,12 @@ class LLMModelManager(BaseManager):
         """
         Delete a model and reassign default if the deleted model was default.
 
-        Candidate order (same model_type, active):
-        1. last_success_at desc (most recent success)
-        2. name present in distinct ai_analytics.llm_model (legacy signal)
-        3. any active same type
-        4. none → warning
+        The replacement default is chosen inside the acting owner's catalog, by
+        the model that carries at least the deleted model's capabilities.
 
-        Also: scenarios referencing the model get FK SET NULL (count them).
+        Rows that reference the deleted model lose the reference (FK SET NULL).
+        Agent scenarios and workspaces that lose their model are counted before
+        the delete; the count is committed with the delete.
 
         Returns:
             {
@@ -287,12 +286,16 @@ class LLMModelManager(BaseManager):
                 "scenarios_reset": int,
                 "warnings": list[str]
             }
+
+        `warnings` reports what the delete could not repair: no model of the
+        same type left in the catalog, or workspaces whose agent model was reset.
         """
-        from sqlalchemy import select
+        from sqlalchemy import func, or_, select
         from app.core.personal_catalog_context import current_catalog_owner_id
         from app.services.ai.personal_catalog import lock_owner, require_actor, set_default_in_session
         from ..llm_model import LLMModel
         from sqlalchemy.orm import selectinload
+
         owner_id = current_catalog_owner_id()
         require_actor(owner_id)
         async with self._get_owned_session() as session:
@@ -300,18 +303,48 @@ class LLMModelManager(BaseManager):
             model = await self.get(id=model_id, owner_user_id=owner_id, session=session)
             if model is None:
                 raise ValueError("Model unavailable")
+            from ..agent_scenario import AgentScenario
+            from ..tenant import Tenant
+
+            model_type = model.model_type
             was_default, caps = model.is_default, set(model.capabilities)
+            scenario_refs = [
+                AgentScenario.text_llm_model_id == model_id,
+                AgentScenario.image_llm_model_id == model_id,
+                AgentScenario.video_llm_model_id == model_id,
+            ]
+            # A scenario that names the model in two media columns loses both links.
+            reset_scenarios = (
+                await session.execute(select(func.count()).select_from(AgentScenario).where(or_(*scenario_refs)))
+            ).scalar_one()
+            reset_workspaces = (
+                await session.execute(select(func.count()).select_from(Tenant).where(Tenant.agent_model_id == model_id))
+            ).scalar_one()
             await session.delete(model)
             await session.flush()
-            candidates = (await session.execute(select(LLMModel).where(
-                LLMModel.owner_user_id == owner_id, LLMModel.is_active.is_(True)
-            ).options(selectinload(LLMModel.provider)).order_by(LLMModel.id))).scalars().all()
+            candidates = (
+                await session.execute(
+                    select(LLMModel)
+                    .where(LLMModel.owner_user_id == owner_id, LLMModel.is_active.is_(True))
+                    .options(selectinload(LLMModel.provider))
+                    .order_by(LLMModel.id)
+                )
+            ).scalars().all()
             replacement = next((m for m in candidates if m.provider.is_active and caps <= set(m.capabilities)), None)
             if was_default and replacement is not None:
                 await set_default_in_session(session, replacement)
-            result = {"deleted": model_id, "new_default_id": replacement.id if was_default and replacement else None,
-                      "new_default_name": replacement.name if was_default and replacement else None,
-                      "scenarios_reset": None, "warnings": []}
+            warnings: list[str] = []
+            if was_default and replacement is None:
+                warnings.append(f"no model left for type {model_type}")
+            if reset_workspaces:
+                warnings.append(f"{reset_workspaces} workspace(s) lost their agent model")
+            result = {
+                "deleted": model_id,
+                "new_default_id": replacement.id if was_default and replacement else None,
+                "new_default_name": replacement.name if was_default and replacement else None,
+                "scenarios_reset": int(reset_scenarios),
+                "warnings": warnings,
+            }
         return result
 
     async def _find_default_candidate(self, model_type: str, exclude_id: int | None = None) -> Optional["LLMModel"]:

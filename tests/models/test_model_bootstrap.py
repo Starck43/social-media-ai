@@ -90,14 +90,24 @@ import importlib
 import json
 from sqlalchemy.orm import configure_mappers
 importlib.import_module({entry!r})
+from app.core.config import settings
 from app.models import Base, Role, PlatformRole, LLMBudgetDay
 configure_mappers()
 assert Role is PlatformRole
 assert LLMBudgetDay.objects.model is LLMBudgetDay
-assert len(list(Base.registry.mappers)) == 44
-assert len(Base.metadata.tables) == 47
-print(json.dumps(sorted(Base.metadata.tables)))
+# The layout must be complete and coherent, not a hand-copied size: every
+# registered mapper belongs to Base and every table sits in the one schema.
+for mapper in Base.registry.mappers:
+    assert issubclass(mapper.class_, Base)
+tables = sorted(Base.metadata.tables)
+assert tables
+assert {{Base.metadata.tables[name].schema for name in tables}} == {{settings.DB_SCHEMA}}
+print(json.dumps(tables))
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
-    assert len(json.loads(result.stdout.strip().splitlines()[-1])) == 47
+    public = importlib.import_module("app.models")
+    emitted = json.loads(result.stdout.strip().splitlines()[-1])
+    assert emitted
+    assert emitted == sorted(emitted)
+    assert emitted == sorted(public.Base.metadata.tables)

@@ -32,11 +32,13 @@ MODELS = {
 }
 # Entire-class snapshots, normalizing relative import targets. The LLM entries
 # moved with their package; the analysis entries are unchanged since dev
-# 0be47bbf.
+# 0be47bbf. The LLMModel and LLMProvider classes changed after that snapshot:
+# cache tariff fields and the pricing token unit (afe30b6), then personal
+# ownership with per-owner constraints and the get_api_key owner guard (e14c395).
 CLASS_FINGERPRINTS = {'AIAnalytics': '5d5f4e40a0f1e71cd52a25b89c20fc426ab0935d42b7c27a3f337ec5c9733aa1',
  'AgentScenario': 'b3510e7960b9329f3f3ee8b040d8d83dd085efa978946e0c4acb65bccb02877b',
- 'LLMModel': 'faad86b192c7e93c38cc7b86d82b8be8fb290b9145c3137fe32cb43b1a7da690',
- 'LLMProvider': '152952d270820a915a1fe8efe05360f3b15cf5c23513217c140900b6728232dd'}
+ 'LLMModel': 'c4ba75818e22dcb147bbac9ac531be0f938dd1c9d96f5533cb6e9bfa37d1a3a1',
+ 'LLMProvider': '8c3c27ae91d7f42eb9a20bdd1c5d42985b8d9e6a42a4ac06675f48ecc8c2a0b4'}
 
 
 def _canonical_ast(node):
@@ -169,6 +171,7 @@ def test_model_tariff_conversion_and_scenario_legacy_prompt_alias_preserved():
 
 @pytest.mark.parametrize("stored", [None, "", "synthetic-ciphertext"])
 def test_provider_crypto_import_still_targets_app_utils(monkeypatch, stored):
+    from app.core.personal_catalog_context import catalog_execution_scope
     from app.models.analysis import LLMProvider
     from app.utils import crypto
 
@@ -179,9 +182,24 @@ def test_provider_crypto_import_still_targets_app_utils(monkeypatch, stored):
         return "synthetic-plaintext"
 
     monkeypatch.setattr(crypto, "decrypt_secret", fake_decrypt)
-    result = LLMProvider.get_api_key(SimpleNamespace(encrypted_api_key=stored))
+    with catalog_execution_scope(2):
+        result = LLMProvider.get_api_key(SimpleNamespace(encrypted_api_key=stored, owner_user_id=2))
     assert result == ("synthetic-plaintext" if stored else "")
     assert calls == ([stored] if stored else [])
+
+
+@pytest.mark.parametrize("stored", [None, "", "synthetic-ciphertext"])
+def test_provider_api_key_denied_for_another_catalog_owner(monkeypatch, stored):
+    from app.core.personal_catalog_context import catalog_execution_scope
+    from app.models.analysis import LLMProvider
+    from app.utils import crypto
+
+    calls = []
+    monkeypatch.setattr(crypto, "decrypt_secret", lambda value: calls.append(value) or "synthetic-plaintext")
+    with catalog_execution_scope(2):
+        with pytest.raises(PermissionError):
+            LLMProvider.get_api_key(SimpleNamespace(encrypted_api_key=stored, owner_user_id=3))
+    assert calls == []
 
 
 @pytest.mark.parametrize("key,expected", [

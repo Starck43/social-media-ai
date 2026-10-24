@@ -1,5 +1,5 @@
 name = "test-runner"
-description = "Primary test delegation via OpenCode + qwenplan/deepseek-v4.1-flash-1017. Handles isolated and database-backed checks."
+description = "Primary test delegation via OpenCode + river/deepseek-ai/DeepSeek-V4.1-Flash-1017. Handles isolated and database-backed checks."
 model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 
@@ -9,8 +9,8 @@ Delegate all assigned test scopes through OpenCode. Independent checks proven no
 
 HARD RULES
 1. Before delegating: verify the worktree with `git rev-parse HEAD` and check for a concurrent run with exactly `pgrep -fl pytest` (no pipes, redirects or other shell operators). Exit code 1 means no pytest is running. Before database-backed checks, verify that no test process is active and the target is safe. Before overlapping isolated checks, verify all participating scopes avoid the shared DB and schema setup. An unknown process or uncertain target blocks a database-backed run.
-2. Delegate via OpenCode primary agent `build` pinned to the qwenplan/deepseek-v4.1-flash-1017. Attach the task file, do not paste secrets:
-   `opencode run --dir <worktree> -m qwenplan/deepseek-v4.1-flash-1017 --auto "Выполни тестовое задание из прикреплённого файла: проверь HEAD и отсутствие pytest, запусти <worktree>/.venv/bin/python -m pytest с путями и флагами из задания, с соблюдением изоляции: DB последовательно, независимые no-DB допускают параллельный запуск; без reset/drop/migrate/seed. Следуй разрешённому ownership в задании, запиши evidence и верни итоговый блок TEST RUN." --file <task-file>`
+2. Delegate via OpenCode primary agent `build` pinned to `river/deepseek-ai/DeepSeek-V4.1-Flash-1017`. Attach the task file, do not paste secrets:
+   `opencode run --dir <worktree> --agent build -m river/deepseek-ai/DeepSeek-V4.1-Flash-1017 --auto "Выполни тестовое задание из прикреплённого файла: проверь HEAD и отсутствие pytest, запусти <worktree>/.venv/bin/python -m pytest с путями и флагами из задания, с соблюдением изоляции: DB последовательно, независимые no-DB допускают параллельный запуск; без reset/drop/migrate/seed. Следуй разрешённому ownership в задании, запиши evidence и верни итоговый блок TEST RUN." --file <task-file>`
 3. Run collection before execution after enum/import changes. Use the requested paths and flags; isolated scopes use `--noconftest -o addopts= -q --tb=short --no-header`. Report collection and execution separately.
 4. Routine fixes are allowed only within concrete file ownership explicitly assigned by the parent, including assigned test fixtures/assertions and mechanical stale names/imports that do not change application behavior. Preserve and strengthen the agreed contract; never weaken tests to pass. Do not change application policy, schema, migration, or transaction behavior without a specific parent assignment. Report ambiguous failures to the parent before changing behavior. Never alter unrelated files, Git state, or DB schema. Never run setup/reset/drop/stamp/migration commands, live providers, senders, workers, listeners, or deploys. Write test evidence only to `.agents/tmp/test-report.md`.
 
@@ -20,7 +20,7 @@ Write `.agents/tmp/test-report.md` with: tested commit, route, exact commands, e
 RESPONSE TO PARENT (TOKEN BUDGET <= 120 tokens)
 The parent model will NOT open `.agents/tmp/test-report.md`. Your final message must contain ONLY this block — no raw logs, no explanations:
 
-TEST RUN <PASS|FAIL|BLOCKED> commit=<short-hash> route=opencode-qwenplan/deepseek-v4.1-flash-1017 passed=<n> failed=<n> skipped=<n>
+TEST RUN <PASS|FAIL|BLOCKED> commit=<short-hash> route=opencode-build-river/deepseek-ai/DeepSeek-V4.1-Flash-1017 passed=<n> failed=<n> skipped=<n>
 - <test_id>: <one-line failure reason>
 
 Only include failure lines when status is FAIL. If blocked, reply with exactly:

@@ -71,9 +71,9 @@ Shared by all agents (Codex, OpenCode, Kilo, remote). Operational workflow:
   conflict workaround.
 - **R10 — OpenCode owns primary test execution.** Delegate every assigned
   pytest scope through `.codex/agents/test-runner.toml`, using OpenCode `build`
-  pinned to `qwenplan/deepseek-v4.1-flash-1017` with that exact model name (no
-  `opencode/` prefix). The primary invocation is
-  `opencode run --dir <worktree> -m qwenplan/deepseek-v4.1-flash-1017 --auto "<message>" --file <task-file>`.
+  pinned to `river/deepseek-ai/DeepSeek-V4.1-Flash-1017` with that exact model
+  name. The primary invocation is
+  `opencode run --dir <worktree> --agent build -m river/deepseek-ai/DeepSeek-V4.1-Flash-1017 --auto "<message>" --file <task-file>`.
   Verify the task file is attached and readable. Collect before execution
   after enum/import changes. Use `.venv/bin/python -m pytest`, assigned paths
   as positional arguments, and isolated flags

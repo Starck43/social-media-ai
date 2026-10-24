@@ -95,7 +95,7 @@ Primary test route (R10): Codex subagent `.codex/agents/test-runner.toml` delega
 to OpenCode:
 
 ```sh
-opencode run --dir /absolute/task/worktree -m qwenplan/deepseek-v4.1-flash-1017 \
+opencode run --dir /absolute/task/worktree --agent build -m river/deepseek-ai/DeepSeek-V4.1-Flash-1017 \
   --auto "Выполни тестовое задание из прикреплённого файла и верни итоговый блок TEST RUN." \
   --file /absolute/task/worktree/.agents/tmp/test-task.md
 ```

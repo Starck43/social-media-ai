@@ -12,7 +12,12 @@ Follow routing and safeguards in AGENTS.md and docs/RULES.md (R8/R10). Task file
 1. Verify: `git rev-parse HEAD` == expected HEAD; `pgrep -fl pytest` (exact
    command, no operators; exit 1 = free). Mismatch or an active/unknown pytest
    process ⇒ reply `TEST RUN BLOCKED reason=<one line>` and stop.
-2. Run only the assigned scope: `<worktree>/.venv/bin/python -m pytest <paths>
+2. Coordinator launch reference: delegate through OpenCode `build`, pinned to
+   `river/deepseek-ai/DeepSeek-V4.1-Flash-1017`, using
+   `opencode run --dir <worktree> --agent build -m river/deepseek-ai/DeepSeek-V4.1-Flash-1017 --auto "<task>" --file <task-file>`.
+   When running as the OpenCode executor, execute the assigned scope directly;
+   do not launch another OpenCode process. Run only
+   `<worktree>/.venv/bin/python -m pytest <paths>
    --noconftest -o addopts= -q --tb=short --no-header` (paths positional;
    collect-only first after enum/import changes or when the task asks).
    Shared-DB scopes strictly sequential; no-DB scopes may parallelize only if
@@ -30,7 +35,7 @@ Follow routing and safeguards in AGENTS.md and docs/RULES.md (R8/R10). Task file
 6. Final reply (≤120 tokens, nothing else):
 
    ```
-   TEST RUN <PASS|FAIL|BLOCKED> commit=<short-hash> passed=<n> failed=<n> skipped=<n>
+   TEST RUN <PASS|FAIL|BLOCKED> commit=<short-hash> route=opencode-build-river/deepseek-ai/DeepSeek-V4.1-Flash-1017 passed=<n> failed=<n> skipped=<n>
    - <test_id>: <one-line failure reason>   (only when FAIL)
    ```
 

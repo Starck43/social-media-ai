@@ -396,7 +396,9 @@ Data migration for task 2027 (applied on 2026-10-21, code `c9cc0b4`):
 - source 3174 was deactivated and unlinked (the row is kept for its trail);
 - scenario 1695's `output_schema` was written explicitly, so the fields its
   prompt asks for are validated (`topic_hint` stays in the contract);
-- the live dry-run is still waiting for Q-5 to unblock the VK search methods.
+- successful live search remains deferred under Q-5/Q-9; the later bounded
+  live dry-run recorded `api_1051` for search while readable wall lanes
+  continued collecting (see the phase's stage F evidence).
 
 The migration itself is a reviewed tool, not a one-off script:
 `python -m cli.main collection lanes <task_id> --query … --apply` plans first

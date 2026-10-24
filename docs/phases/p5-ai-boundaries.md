@@ -291,7 +291,7 @@ safely.
   «Тестовый прогон» label/note plus a selection preview («прошли фильтр N из
   M») over the full fetched batch, without staging or calling a model.
 
-- [ ] P5-T14 — universal collection plan: task-owned typed collection,
+- [x] P5-T14 — universal collection plan: task-owned typed collection,
   multi-lane search, explicit limits, comments and candidates across VK/TG.
   Goal: one task declaration (what to collect, where, filters, limits) and a
   deterministic plan of collection lanes; final selected items land in
@@ -433,7 +433,7 @@ safely.
     saves; admin form tests; existing scenario presets migrate without losing
     prompts; scenario `content_types` no longer changes collection; tenant and
     permission checks unchanged.
-    Status: READY (E1–E5 implemented; evidence below).
+    Status: DONE (Codex, 2026-10-24; final acceptance `f762088`).
     Evidence: E1–E2 are committed as `7388588` (editor/create-modal collection
     intent, grouped picker, no-JS save) and `fbe9089` (phase progress); E3–E5
     are committed as `e038f44`. The focused web/admin/API/chat/CLI suite passed
@@ -499,11 +499,12 @@ safely.
       passed 49 with 5 pre-existing failures; `test_scenario_output_contract.py`
       passed 22 with its 11 pre-existing failures (stale isolated analyzer stub).
       The pre-existing failures are unchanged on the base revision.
-    - Still open: the live dry-run (Q-5/`1051` — `newsfeed.search` answers
-      1051, and the runtime already names it as `api_1051` per source), the
-      per-lane counts and the limit warning (the runtime does not execute the
-      planned lanes yet — Q-6), and whether `is_relevant` should become a real
-      runtime gate (Q-7).
+    - At this revision, live search, per-lane counts/limit warnings (Q-6) and
+      the `is_relevant` runtime gate (Q-7) remained open. The owner decisions
+      implemented in `4275d12` below resolved Q-6 and Q-7: lane runs now carry
+      counts and limits, and a real boolean `is_relevant=False` filters a post.
+      Successful live search remains deferred under Q-5/Q-9; the runtime
+      reports the configured application's refusal as `api_1051` per source.
     - Follow-up (code `8c3ca84`, docs `559e0ba`): because VK's global search
       is refused for this app profile (1051 with both tokens — Q-9), the
       operator's browser list is the only source of communities, so
@@ -558,7 +559,8 @@ safely.
       list now lists task-owned lanes with a badge naming their task, uses the
       jobs list's trash icon for delete, and refuses to delete a source that
       an active task still reads (paused tasks do not block).
-  - **Stage F status: READY for review at `9276083`.** Focused scope (task
+  - **Stage F implementation: DONE (Codex, 2026-10-24; final acceptance
+    `f762088`).** Historical submitted candidate `9276083`: focused scope (task
     form, sources list and page, mention lanes, relevance gate, collect
     selection): 79 passed, 0 failed. Full `tests/collection/ tests/jobs/
     tests/ai/` at `9276083`: 1845 passed, 209 failed, no hang — every
@@ -596,13 +598,42 @@ safely.
   explicit scope of a paused task and blocks an active owning task even before
   its lane is relinked. List/detail dependency hints share one batched manager
   query; invalid ownership returns a bounded conflict. SQLAdmin uses the shared
-  collection-intent validator. These changes await final code review and the
-  focused OpenCode checks; historical READY results do not certify this diff.
+  collection-intent validator. Final code review passed on 2026-10-24;
+  implementation `8c80d45` and fixture correction `af38f3e` are committed.
+  Focused no-DB acceptance through OpenCode River passed 132 tests and 33
+  subtests: 13 unchanged files at `8c80d45`, then the corrected Telegram
+  admission file at `af38f3e` (29 tests and 18 subtests). Application code is
+  identical at both revisions. Final scoped corrections are committed as
+  `f7620887f0fdcb4b32f9657cfb070fad89d96543`: the batched blocker query has an
+  explicit join root and preserves tenant criteria; initial API source links
+  receive one trusted bookkeeping right; task pause re-enters the persisted
+  tenant for its admission lock. The authenticated task-creation/deletion tests
+  now opt out of the legacy fixture's forced bypass and assert the saved
+  workspace. The scenario-binding trigger remains enforced.
+  Final exact-SHA PostgreSQL/ASGI acceptance through OpenCode River at
+  `f762088`: collection 76, execution 76 passed, 0 failed, 0 skipped
+  (162.92 seconds). The nine files are
+  `tests/collection/test_staging_receipt_db.py`,
+  `tests/collection/test_source_deletion_scope_db.py`,
+  `tests/api/test_api_source_deletion.py`,
+  `tests/collection/test_web_sources.py`,
+  `tests/billing/test_billing_exposure_db.py`,
+  `tests/web/test_operator_signals_acceptance.py`,
+  `tests/web/test_web_task_edit.py`, `tests/collection/test_mention_lanes.py`
+  and `tests/collection/test_source_delete_unprocessed_db.py`.
+  The command used root conftest with `DB_TEST_SCHEMA=test_schema`,
+  `-o addopts= -q --tb=short --no-header -p no:cacheprovider`; conftest redirects
+  the original working schema before importing the application. The separate
+  owner-authorized backup/migration/rollback window left `test_schema` at
+  `0109`; acceptance did not migrate, reset or seed it. No live provider calls,
+  runtime start or deployment formed part of this acceptance. Q-6/Q-7 are
+  resolved by the implemented lane evidence and boolean relevance gate;
+  successful live VK search remains deferred under Q-5/Q-9.
 
   Depends: P5-T13 (search primitives; DONE) and P5-T08 (selection before the
   model; DONE) are closed; P5-T05 was dropped, so `handlers.py`/`analyzer.py`
-  carry no competing ownership. Stages A–D are DONE, and stages E and F are READY
-  for review; F's live search half stays blocked on Q-5/Q-9. Owns:
+  carry no competing ownership. Implementation stages A–F are DONE; successful
+  live search activation remains tracked separately by Q-5/Q-9. Owns:
   `docs/design/collection-plan.md`, `app/services/collection/`,
   `app/services/social/`, `app/services/monitoring/`, `app/jobs/handlers.py`,
   `app/models/collection/`, `app/models/scheduling/`, `app/web/tasks.py`,
@@ -610,8 +641,8 @@ safely.
   `app/templates/`, `app/core/scenario_presets.py`, `app/admin/views.py`,
   `app/agent/toolset/`, `cli/`, `app/api/`, `app/services/ai/scenario*.py`,
   one Alembic revision, tests. Owner: owner (fork #2); acceptance: codex;
-  status: IN_PROGRESS — final audit resumed at `4eafb34` on 2026-10-23
-  (stages A–D DONE, E and F READY; live search blocked on Q-5/Q-9).
+  status: DONE — accepted by Codex on 2026-10-24 at `f762088`
+  (implementation accepted; live search activation deferred under Q-5/Q-9).
   Evidence: [collection plan](../design/collection-plan.md); append stage
   evidence at the exact tested SHA. Test routing: primary OpenCode
   test-runner subagent per stage (RULES.md R10), shared DB sequential (R8).

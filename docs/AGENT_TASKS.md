@@ -324,6 +324,17 @@ operator's explicit choices. The CLI `task <job_type>` command runs a task
 with its stored dates unless flags override — the job payload is built from
 the task payload, so a task that saved a window keeps it.
 
+The chat `task_update` tool treats omitted fields as unchanged. A supplied
+start or end date replaces only that bound and retains the other bound;
+`scenario_id` changes the binding, while `clear_scenario=true` explicitly
+removes it. Supplying `source_ids` replaces the full link set, including `[]`
+for the existing empty-link meaning (all active workspace sources). Source
+and scenario ownership is checked by `AgentTaskManager` under the workspace
+admission/task locks. The task row and link replacement commit together, and a
+rejected source or scenario leaves both unchanged. Cron edits persist both the
+expression and its next occurrence. These edits invalidate pending task runs
+through the same manager path used by other task editors.
+
 ## Default tasks
 
 `app/tasks/bootstrap.py::ensure_all_default_tasks()` seeds every active

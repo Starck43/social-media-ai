@@ -129,7 +129,13 @@ class Case:
     payload: dict = field(
         default_factory=lambda: {
             "choices": [{"message": {"content": SYNTHETIC_ANSWER}}],
-            "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+            "usage": {
+                "prompt_tokens": 4,
+                "completion_tokens": 2,
+                "total_tokens": 6,
+                # OpenAI prompt_tokens includes cached tokens; explicit zeros are complete evidence.
+                "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+            },
         }
     )
     transport_error: str | None = None
@@ -175,14 +181,17 @@ class Case:
                 )
                 self.cutover_id = boundary.id
             if policy:
+                # The reviewed envelope must cover the request mode under test:
+                # blank probes ask for 8 output tokens, custom questions for 512.
+                output_tokens = self.expected_max_tokens
                 envelope = await PersonalLLMBoundPolicy.objects.create(
                     provider_row_id=self.provider.id,
                     model_row_id=self.model.id,
                     provider_name=self.provider.name,
                     model_id=self.model.model_id,
                     version=self.marker,
-                    max_input_tokens=512,
-                    max_output_tokens=8,
+                    max_input_tokens=self.model.max_tokens - output_tokens,
+                    max_output_tokens=output_tokens,
                     request_mode="text_only",
                     reviewed_by_user_id=self.admin.id,
                 )
@@ -315,6 +324,7 @@ async def case(monkeypatch, record_property):
     assert settings.DB_SCHEMA == "test_schema", "STOP: application schema was not redirected"
     owned = Case(create_application())
     forbidden = []
+    setup_complete = False
     original_connect = socket.socket.connect
     original_connect_ex = socket.socket.connect_ex
 
@@ -361,7 +371,11 @@ async def case(monkeypatch, record_property):
                 plan="business",
                 is_active=True,
             )
+        owned.admin = await owned.user("admin", membership="owner")
+        with fixture_scope():
             owned.provider = await LLMProvider.objects.create(
+                owner_user_id=owned.admin.id,
+                uid=owned.marker,
                 name=owned.marker,
                 base_url="https://provider.invalid/v1",
                 api_format="openai",
@@ -370,6 +384,7 @@ async def case(monkeypatch, record_property):
             )
             owned.model = await LLMModel.objects.create(
                 provider_id=owned.provider.id,
+                owner_user_id=owned.admin.id,
                 name=owned.marker,
                 model_id=owned.marker,
                 model_type="text,image",
@@ -377,10 +392,16 @@ async def case(monkeypatch, record_property):
                 default_temperature=0.3,
                 input_cost_per_1k=0.001,
                 output_cost_per_1k=0.002,
+                # Cache-aware pricing needs an explicit ordinary unit and every
+                # cache rate before a capped payer can get a bounded reservation.
+                cache_read_cost_per_1m=Decimal("0.0003"),
+                cache_write_5m_cost_per_1m=Decimal("0.0006"),
+                cache_write_1h_cost_per_1m=Decimal("0.0012"),
+                pricing_token_unit=1000,
                 is_active=True,
                 is_default=False,
             )
-        owned.admin = await owned.user("admin")
+        setup_complete = True
         yield owned
     finally:
         # Never delete append-only billing evidence, nor its referenced users/workspaces.
@@ -388,15 +409,32 @@ async def case(monkeypatch, record_property):
         manifest = {
             "marker": owned.marker,
             "users": owned.users,
+            "catalog_owner_user_id": getattr(owned.admin, "id", None),
             "tenant_id": getattr(owned.tenant, "id", None),
             "provider_id": getattr(owned.provider, "id", None),
             "model_id": getattr(owned.model, "id", None),
             "account_id": owned.account_id,
             "policy_id": owned.policy_id,
             "cutover_id": owned.cutover_id,
+            "setup_complete": setup_complete,
+            "retained": setup_complete or any(
+                value is not None for value in (owned.account_id, owned.policy_id, owned.cutover_id)
+            ),
         }
         record_property("owned_fixture_manifest", json.dumps(manifest, sort_keys=True))
-        print("RETAINED_SYNTHETIC_FIXTURES " + json.dumps(manifest, sort_keys=True))
+        print("OWNED_FIXTURE_MANIFEST " + json.dumps(manifest, sort_keys=True))
+        if not setup_complete and not any(
+            value is not None for value in (owned.account_id, owned.policy_id, owned.cutover_id)
+        ):
+            with fixture_scope():
+                if owned.model is not None:
+                    await LLMModel.objects.delete_by_id(owned.model.id)
+                if owned.provider is not None:
+                    await LLMProvider.objects.delete_by_id(owned.provider.id)
+                if owned.tenant is not None:
+                    await Tenant.objects.delete_by_id(owned.tenant.id)
+                for user_id in reversed(owned.users):
+                    await User.objects.delete_user(user_id)
         assert not forbidden, "Forbidden network attempted: " + ", ".join(forbidden)
 
 
@@ -407,58 +445,31 @@ async def test_admin_list_details_and_forms_are_real(case):
         detail = page_ok(await client.get(f"{BASE}/details/{case.model.id}"))
         assert case.marker in detail and "text,image" in detail and "1024" in detail
         for path in (f"{BASE}/create", f"{BASE}/edit/{case.model.id}"):
-            fields = Fields(page_ok(await client.get(path)))
-            assert {"name", "model_id", "model_type", "max_tokens", "default_temperature"} <= fields.names
-            assert "provider" in fields.names
-            assert not ({"last_request_cost", "use_count", "fail_count", "last_used_at"} & fields.names)
+            response = await client.get(path)
+            assert response.status_code == 403, f"Global SQLAdmin model CRUD must remain disabled: {path}"
     await case.no_dispatch()
 
 
-async def test_admin_create_and_edit_roundtrip(case):
-    name = f"{case.marker}-crud"
+async def test_admin_global_model_crud_is_disabled_and_personal_catalog_is_available(case):
     async with case.client(case.admin) as client:
-        create = await client.get(f"{BASE}/create")
-        data = Fields(page_ok(create)).hidden | {
-            "provider": str(case.provider.id),
-            "name": name,
-            "model_id": name,
-            "description": "Synthetic acceptance",
-            "model_type": ["text", "image"],
-            "custom_endpoint_path": "",
-            "input_cost_per_1k": "0.0000001",
-            "output_cost_per_1k": "0.002",
-            "max_tokens": "128",
-            "default_temperature": "0.2",
-            "is_active": "True",
-            "is_default": "False",
-            "save": "Save",
-        }
-        response = await client.post(f"{BASE}/create", data=data)
-        assert response.status_code in {302, 303}, "Create failed validation or persistence"
-        with fixture_scope():
-            model = await LLMModel.objects.filter(name=name, provider_id=case.provider.id).first()
-        assert model and set(model.capabilities) == {"text", "image"} and not model.is_default
-        assert model.input_cost_per_1k == pytest.approx(0.0000001) and model.max_tokens == 128
-        data.update(Fields(page_ok(await client.get(f"{BASE}/edit/{model.id}"))).hidden)
-        data.update(max_tokens="256", default_temperature="0.4", is_active="False", model_type=["text", "video"])
-        response = await client.post(f"{BASE}/edit/{model.id}", data=data)
-        assert response.status_code in {302, 303}
-        with fixture_scope():
-            changed = await LLMModel.objects.get(id=model.id)
-        assert changed.max_tokens == 256 and not changed.is_active and not changed.is_default
-        assert changed.default_temperature == pytest.approx(0.4) and set(changed.capabilities) == {"text", "video"}
-        print(f"RETAINED_SYNTHETIC_CRUD_MODEL {model.id} marker={name}")
+        for path in (f"{BASE}/create", f"{BASE}/edit/{case.model.id}"):
+            response = await client.get(path)
+            assert response.status_code == 403, f"Global SQLAdmin model CRUD must remain disabled: {path}"
+    async with case.client(case.admin, "web") as client:
+        settings_page = page_ok(await client.get("/app/settings?tab=models"))
+        assert case.marker in settings_page
+        assert "Добавить провайдера и модели" in settings_page
     await case.no_dispatch()
 
 
 async def test_admin_short_metadata_and_web_short_stays_offline(case):
-    owner = await case.user(membership="owner")
+    owner = case.admin
     async with case.client(case.admin) as client:
         html = page_ok(await case.post(client))
         assert "API доступен" in html and "GET /models" in html and "Нет платного вызова" in html
     async with case.client(owner, "web") as client:
         csrf = token_from(await client.get("/app/settings?tab=agent"), "_csrf")
-        result = await client.post(WEB_POST, data={"agent_model": str(case.model.id), "_csrf": csrf})
+        result = await client.post(WEB_POST, data={"agent_model_id": str(case.model.id), "_csrf": csrf})
         assert result.status_code == 302 and "tab=agent" in result.headers["location"]
         html = page_ok(await client.get(result.headers["location"]))
         assert "Статус и локальный mock: OK" in html
@@ -643,6 +654,51 @@ async def test_unknown_usage_keeps_reserved_liability_not_free(case):
     assert not any(row.entry_kind in {"settlement", "release"} for row in ledger)
 
 
+async def test_missing_cache_counters_keep_estimate_unknown(case):
+    """Unreported cache counters keep the tariff estimate unknown, not free."""
+    await case.billing()
+    # Paid admission still has a reviewed bound; only the provider cache evidence is absent.
+    case.payload["usage"] = {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}
+    async with case.client(case.admin) as client:
+        html = page_ok(await case.post(client, "real"))
+    assert "Проверка завершена" in html
+    assert "Оценка по тарифу, USD</dt><dd>Неизвестно</dd>" in html
+    assert "Не сообщена" in html
+    assert len(case.sent) == 1
+    (dispatch,) = await case.dispatches()
+    reservation, state, ledger = await case.accounting(dispatch.dispatch_id)
+    assert reservation.ceiling_state == "bounded" and reservation.cap_usd is not None
+    assert state.status == "reserved"
+    assert not any(row.entry_kind in {"settlement", "release"} for row in ledger)
+    with fixture_scope():
+        updated = await LLMModel.objects.get(id=case.model.id)
+    assert updated.last_request_cost is None
+    assert updated.last_request_cost_at is None
+
+
+async def test_capped_admission_refuses_missing_cache_rate(case):
+    """A capped payer cannot claim a bound while a required cache rate is absent."""
+    await case.billing()
+    # Cached tokens must be positive so the absent read rate is actually required.
+    case.payload["usage"] = {
+        "prompt_tokens": 4,
+        "completion_tokens": 2,
+        "total_tokens": 6,
+        "prompt_tokens_details": {"cached_tokens": 2, "cache_write_tokens": 0},
+    }
+    with fixture_scope():
+        await LLMModel.objects.update_by_id(case.model.id, cache_read_cost_per_1m=None)
+    async with case.client(case.admin) as client:
+        html = page_ok(await case.post(client, "real"))
+    assert "Проверка не пройдена" in html
+    assert "model_bound_required" in html
+    await case.no_dispatch()
+    with fixture_scope():
+        updated = await LLMModel.objects.get(id=case.model.id)
+    assert updated.last_request_cost is None
+    assert updated.last_request_cost_at is None
+
+
 @pytest.mark.parametrize("failure", ["timeout", "status"])
 async def test_transport_failure_never_replays(case, failure):
     await case.billing()
@@ -696,10 +752,10 @@ async def test_legacy_paid_route_is_inert(case):
 
 @pytest.mark.parametrize("variant", ["invalid_csrf", "viewer", "foreign_workspace"])
 async def test_web_settings_csrf_and_workspace_boundary(case, variant):
-    actor = await case.user(membership="viewer" if variant == "viewer" else "owner")
+    actor = case.admin if variant in {"invalid_csrf", "foreign_workspace"} else await case.user(membership="viewer")
     async with case.client(actor, "web") as client:
         csrf = token_from(await client.get("/app/settings?tab=agent"), "_csrf")
-        data = {"agent_model": str(case.model.id), "_csrf": csrf}
+        data = {"agent_model_id": str(case.model.id), "_csrf": csrf}
         if variant == "invalid_csrf":
             data["_csrf"] = "invalid"
         elif variant == "foreign_workspace":
@@ -730,6 +786,24 @@ async def test_short_and_mock_do_not_require_billing_or_workspace_selection(case
         mock = page_ok(await case.post(client, "mock", tenant_id="bad", prompt="Synthetic question"))
         assert "локальный ответ" in mock
     await case.no_dispatch(metadata_requests=1)
+
+
+async def test_other_platform_admin_cannot_probe_fixture_owners_model_key(case):
+    other_admin = await case.user("admin")
+    async with case.client(other_admin) as client:
+        response = await client.post(
+            POST,
+            data={
+                "model_id": str(case.model.id),
+                "test_type": "short",
+                "prompt": "",
+                "csrf_token": case.app.state.csrf_manager.generate_token(),
+            },
+        )
+        assert response.status_code == 200, "Global platform-admin inspection remains available"
+        assert "Проверьте API-ключ и активность модели/провайдера." in response.text
+        assert "API доступен" not in response.text
+    await case.no_dispatch()
 
 
 @pytest.mark.parametrize("broken", ["inactive_model", "inactive_provider", "missing_key", "unsupported_format"])
@@ -765,8 +839,8 @@ async def test_single_owner_real_runs_without_personal_account_or_workspace(case
     assert updated.use_count == 1 and updated.last_request_cost == pytest.approx(0.000008)
 
 
-async def test_single_owner_zero_provider_price_stays_separate_from_saved_tariff_estimate(case, monkeypatch):
-    """Prepared local DB readback; never part of remote no-DB coverage."""
+async def test_single_owner_explicit_zero_provider_cost_is_persisted(case, monkeypatch):
+    """Explicit zero provider cost outranks the tariff estimate; local DB readback only."""
     monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", False)
     case.personal_mode = False
     case.payload["choices"] = [{"message": {"role": "assistant", "content": None}, "finish_reason": "length"}]
@@ -780,9 +854,5 @@ async def test_single_owner_zero_provider_price_stays_separate_from_saved_tariff
     with fixture_scope():
         updated = await LLMModel.objects.get(id=case.model.id)
     assert updated.use_count == 1
-    # Fixture's configured rates, not the explicit zero retail report.
-    expected = (
-        Decimal(470) * Decimal(str(case.model.input_cost_per_1k))
-        + Decimal(8) * Decimal(str(case.model.output_cost_per_1k))
-    ) / 1000
-    assert updated.last_request_cost == pytest.approx(float(expected))
+    # A recognized explicit provider zero is the saved estimate, not a tariff recomputation.
+    assert updated.last_request_cost == 0

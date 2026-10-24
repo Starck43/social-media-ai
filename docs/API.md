@@ -1409,9 +1409,14 @@ Returns the current user's personal credentials (secrets are encrypted, never re
 ### Disable Credential
 
 ```
-PATCH /api/v1/credentials/{credential_id}/disable
+PATCH /api/v1/credentials/credentials/{credential_id}/disable
 Authorization: Bearer <token>
 ```
+
+**Implementation discrepancy:** `entry.py` mounts the credentials router under
+`/credentials`, and this endpoint also declares `/credentials/{credential_id}/disable`.
+The composed route therefore repeats the segment. The single-segment path
+`/api/v1/credentials/{credential_id}/disable` is not registered by the current source.
 
 Deactivates a credential (row kept for audit).
 

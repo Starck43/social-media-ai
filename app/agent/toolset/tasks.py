@@ -22,6 +22,7 @@ def _get_job_types() -> tuple[str, ...]:
 # with what is missing, so the same turn can ask the owner instead of creating
 # a half-configured task.
 _REQUIRED_START_DATE = ("start_date", "с какой даты собирать контент")
+_MAX_PG_INTEGER = 2_147_483_647
 
 
 def _missing_task_fields(
@@ -58,6 +59,7 @@ async def task_list() -> list[dict[str, Any]]:
     from zoneinfo import ZoneInfo
 
     from app.core.config import settings
+    from app.models import AgentTask
 
     rows = await AgentTask.objects.order_by(AgentTask.id)
     tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
@@ -301,24 +303,34 @@ async def task_add(
     # created here in the global zone would shift by the offset on its first fire.
     tenant = await Tenant.objects.get(id=current_tenant_id())
     tz = resolve_tz(tenant)
-    task = await AgentTask.objects.create(
-        name=name,
-        cron_expr=cron,
-        job_type=job_type,
-        payload=payload,
-        agent_scenario_id=scenario_id,
-        is_active=True,
-        next_run_at=next_run_at(cron, tz),
-    )
+    from app.core.database import new_session
 
-    if source_ids:
-        from app.models.managers.agent_task_manager import AgentTaskManager
+    session = new_session()
+    try:
+        async with session.begin():
+            from app.models.managers.job_manager import JobManager
 
-        # The m2m table has no tenant column, so a link written here is the
-        # only thing keeping a task out of another workspace's sources. Verify
-        # them against the task's own workspace, like the CLI and web do.
-        await _check_task_sources(source_ids, task.tenant_id)
-        await AgentTaskManager().add_sources(task.id, source_ids)
+            if source_ids is not None and any(
+                type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
+            ):
+                return {"error": "Source ids must be positive PostgreSQL INTEGER values"}
+            await JobManager.lock_source_admission(session, current_tenant_id())
+            task = await AgentTask.objects.create(
+                session=session,
+                name=name,
+                cron_expr=cron,
+                job_type=job_type,
+                payload=payload,
+                agent_scenario_id=scenario_id,
+                is_active=True,
+                next_run_at=next_run_at(cron, tz),
+            )
+            if source_ids is not None:
+                await AgentTaskManager().set_sources(task.id, source_ids, session=session)
+    except ValueError as error:
+        return {"error": str(error)}
+    finally:
+        await session.close()
 
     result: dict[str, Any] = {
         "status": "created",
@@ -347,17 +359,6 @@ async def task_add(
     return result
 
 
-async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
-    """Reject source ids that are missing or belong to another workspace."""
-    from app.models import Source
-
-    if not source_ids:
-        return
-    sources = {s.id: s for s in await Source.objects.filter(id__in=source_ids)}
-    foreign = sorted(sid for sid, s in sources.items() if s.tenant_id != tenant_id)
-    if foreign:
-        raise ValueError(f"Source(s) {', '.join(map(str, foreign))} belong to another workspace")
-
 
 @tool(
     name="task_remove",
@@ -382,7 +383,8 @@ async def task_remove(name: str) -> dict[str, Any]:
     description=(
         "Изменить существующую задачу. Можно поменять: job_type (collect, digest, prune, analyze, learn, reflect), "
         "cron-расписание, payload (tracked_users, keywords_list, brands, competitors и т.д.), "
-        "scenario_id, source_ids. Передавайте только те поля, которые нужно изменить. "
+        "scenario_id, source_ids. clear_scenario=true явно отвязывает сценарий; source_ids заменяет весь список. "
+        "Передавайте только те поля, которые нужно изменить. "
         "Неизменные поля остаются текущими. job_type можно сменить полностью."
     ),
     confirm=True,
@@ -407,7 +409,7 @@ async def task_remove(name: str) -> dict[str, Any]:
             "source_ids": {
                 "type": "array",
                 "items": {"type": "integer"},
-                "description": "Новый список source IDs (пусто = все активные)",
+                "description": "Новый точный список source IDs, заменяющий текущие связи; [] = все активные",
             },
             "tracked_users": {
                 "type": "array",
@@ -424,7 +426,14 @@ async def task_remove(name: str) -> dict[str, Any]:
                 "enum": ["any", "all"],
                 "description": "any — любая из фраз, all — все",
             },
-            "scenario_id": {"type": "integer", "description": "Новый ID сценария агента"},
+            "scenario_id": {
+                "type": "integer",
+                "description": "Новый ID сценария агента; не передавайте, чтобы сохранить текущий",
+            },
+            "clear_scenario": {
+                "type": "boolean",
+                "description": "true — отвязать сценарий; нельзя одновременно с scenario_id",
+            },
             "period": {"type": "string", "description": "Период для digest: day | week"},
             "start_date": {
                 "type": "string",
@@ -489,6 +498,7 @@ async def task_update(
     keywords_list: list[str] | None = None,
     keywords_match: str | None = None,
     scenario_id: int | None = None,
+    clear_scenario: bool = False,
     period: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -507,131 +517,162 @@ async def task_update(
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.tasks.cron import next_run_at, resolve_tz
 
-    task = await AgentTask.objects.get(name=name)
-    if task is None:
-        return {"error": f"Task {name!r} not found"}
+    from app.core.database import new_session
 
-    job_types = _get_job_types()
-    if job_type is not None and job_type not in job_types:
-        return {"error": f"Unknown job_type: {job_type!r}. Use one of: {', '.join(job_types)}"}
-    if cron is not None and not AgentTaskManager.validate_cron(cron):
-        return {"error": f"Invalid cron expression: {cron!r}"}
-
-    from app.services.monitoring.selection import SelectionError
-
-    # Build updated payload by merging into existing payload
-    updated_payload = dict(task.payload) if task.payload else {}
-    # The removed author-selection key never survives a task update.
+    session = new_session()
     try:
-        updated_payload = AgentTaskManager.build_selection_payload(
-            tracked_users=tracked_users,
-            keywords=keywords_list,
-            keywords_match=keywords_match,
-            existing=updated_payload,
-        )
-    except SelectionError as error:
-        return {"error": f"Некорректная выборка задачи: {error}"}
-    if period is not None:
-        updated_payload["period"] = period
-    for key, value in (
-        ("brands", brands),
-        ("competitors", competitors),
-        ("hashtags", hashtags),
-        ("influencer_names", influencer_names),
-        ("topic_list", topic_list),
-    ):
-        if value is not None:
-            updated_payload[key] = list(value)
+        async with session.begin():
+            manager = AgentTaskManager()
+            task = await AgentTask.objects.get(name=name, session=session)
+            if task is None:
+                return {"error": f"Task {name!r} not found"}
+            task = await manager._lock_task_for_mutation(session, task.id)
+            if task is None:
+                return {"error": f"Task {name!r} not found"}
+            original_job_type = task.job_type
+            original_cron = task.cron_expr
+            if source_ids is not None and any(
+                type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
+            ):
+                return {"error": "Source ids must be positive PostgreSQL INTEGER values"}
 
-    # Handle date fields for collect/analyze
-    _existing_cli_dates = (task.payload or {}).get("cli_dates", {})
-    if job_type is not None and AgentTaskManager.requires_content_dates(job_type):
-        start = AgentTaskManager.parse_date(start_date)
-        if start is None:
-            start = AgentTaskManager.parse_date(_existing_cli_dates.get("start_date"))
-        end = AgentTaskManager.parse_date(end_date)
-        if end is None:
-            end = AgentTaskManager.parse_date(_existing_cli_dates.get("end_date"))
-        fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
-        updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
-        if force_reanalyze is not None:
-            updated_payload["force_reanalyze"] = force_reanalyze
-    elif job_type is None and AgentTaskManager.requires_content_dates(task.job_type):
-        # job_type unchanged but dates provided
-        if start_date or end_date or force_refresh is not None:
-            start = AgentTaskManager.parse_date(start_date) if start_date else None
-            end = AgentTaskManager.parse_date(end_date) if end_date else None
-            fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
-            updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
-            if force_reanalyze is not None:
-                updated_payload["force_reanalyze"] = force_reanalyze
+            job_types = _get_job_types()
+            if job_type is not None and job_type not in job_types:
+                return {"error": f"Unknown job_type: {job_type!r}. Use one of: {', '.join(job_types)}"}
+            if cron is not None and not AgentTaskManager.validate_cron(cron):
+                return {"error": f"Invalid cron expression: {cron!r}"}
+            if clear_scenario and scenario_id is not None:
+                return {"error": "Нельзя одновременно передать scenario_id и clear_scenario=true"}
 
-    # Determine new job_type
-    new_job_type = job_type if job_type is not None else task.job_type
-    new_cron = cron if cron is not None else task.cron_expr
+            from app.services.monitoring.selection import SelectionError
 
-    if deactivate_after_success is not None:
-        # Same key the scheduler reads; clearing it returns the task to a
-        # normal recurring schedule.
-        if deactivate_after_success:
-            updated_payload["deactivate_after_success"] = True
-        else:
-            updated_payload.pop("deactivate_after_success", None)
+            # Build updated payload by merging into existing payload
+            updated_payload = dict(task.payload) if task.payload else {}
+            # The removed author-selection key never survives a task update.
+            try:
+                updated_payload = AgentTaskManager.build_selection_payload(
+                    tracked_users=tracked_users,
+                    keywords=keywords_list,
+                    keywords_match=keywords_match,
+                    existing=updated_payload,
+                )
+            except SelectionError as error:
+                return {"error": f"Некорректная выборка задачи: {error}"}
+            if period is not None:
+                updated_payload["period"] = period
+            for key, value in (
+                ("brands", brands),
+                ("competitors", competitors),
+                ("hashtags", hashtags),
+                ("influencer_names", influencer_names),
+                ("topic_list", topic_list),
+            ):
+                if value is not None:
+                    updated_payload[key] = list(value)
 
-    from app.services.collection.intent import (
-        CollectionIntentError,
-        apply_collection,
-        collection_error_message,
-    )
+            for field, value in (("start_date", start_date), ("end_date", end_date)):
+                if value is not None and AgentTaskManager.parse_date(value) is None:
+                    return {"error": f"Некорректная {field}: {value!r} (ожидается YYYY-MM-DD)"}
+            new_job_type = job_type if job_type is not None else task.job_type
+            existing_dates = (task.payload or {}).get("cli_dates") or {}
+            if AgentTaskManager.requires_content_dates(new_job_type):
+                start = (
+                    AgentTaskManager.parse_date(start_date)
+                    if start_date is not None
+                    else AgentTaskManager.parse_date(existing_dates.get("start_date"))
+                )
+                end = (
+                    AgentTaskManager.parse_date(end_date)
+                    if end_date is not None
+                    else AgentTaskManager.parse_date(existing_dates.get("end_date"))
+                )
+                changed_type = job_type is not None and new_job_type != task.job_type
+                changed_window = start_date is not None or end_date is not None or force_refresh is not None
+                if start is None and (changed_type or changed_window):
+                    return {
+                        "error": "Для задачи этого типа укажите start_date "
+                        "(с какой даты собирать контент, YYYY-MM-DD)"
+                    }
+                if start is not None and end is not None and start > end:
+                    return {"error": "start_date не может быть позже end_date"}
+                if start is not None and (changed_type or changed_window):
+                    refresh = (
+                        force_refresh
+                        if force_refresh is not None
+                        else bool((task.payload or {}).get("force_refresh", False))
+                    )
+                    updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=refresh))
+                if force_reanalyze is not None:
+                    updated_payload["force_reanalyze"] = force_reanalyze
 
-    if collection is not None:
-        collection_raw = collection or None
-    else:
-        collection_raw = updated_payload.get("collection") if "collection" in updated_payload else None
-    try:
-        updated_payload = apply_collection(updated_payload, collection_raw, job_type=new_job_type)
-    except CollectionIntentError as error:
-        return {"error": collection_error_message(str(error))}
+            # Determine new job_type
+            new_job_type = job_type if job_type is not None else task.job_type
+            new_cron = cron if cron is not None else task.cron_expr
 
-    # Compute next_run_at if cron changed
-    tenant = await Tenant.objects.get(id=current_tenant_id())
-    updates: dict[str, Any] = {
-        "job_type": new_job_type,
-        "payload": updated_payload,
-    }
-    # A field the caller did not send keeps its current value. Writing
-    # `agent_scenario_id: None` on every update silently unbound the task's
-    # scenario — the analysis then ran without its methodology. The same
-    # happened to the trial flag, which was set after the payload was written
-    # and therefore never saved at all.
-    if scenario_id is not None:
-        updates["agent_scenario_id"] = scenario_id
-    if cron is not None:
-        updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
-    if deactivate_after_success is not None:
-        # A trial task gets a live schedule back: it had been switched off
-        # after its success, so re-arming means the next run must be planned.
-        updates["is_active"] = True
-        if cron is None:
-            updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
+            if deactivate_after_success is not None:
+                # Same key the scheduler reads; clearing it returns the task to a
+                # normal recurring schedule.
+                if deactivate_after_success:
+                    updated_payload["deactivate_after_success"] = True
+                else:
+                    updated_payload.pop("deactivate_after_success", None)
 
-    await AgentTask.objects.update_by_id(task.id, **updates)
+            from app.services.collection.intent import (
+                CollectionIntentError,
+                apply_collection,
+                collection_error_message,
+            )
 
-    # Update sources if provided
-    if source_ids is not None:
-        await _check_task_sources(source_ids, task.tenant_id)
-        await AgentTaskManager().add_sources(task.id, source_ids)
+            if collection is not None or (job_type is not None and new_job_type != task.job_type):
+                collection_raw = (collection or None) if collection is not None else updated_payload.get("collection")
+                try:
+                    updated_payload = apply_collection(updated_payload, collection_raw, job_type=new_job_type)
+                except CollectionIntentError as error:
+                    return {"error": collection_error_message(str(error))}
 
-    changes: dict[str, Any] = {"status": "updated", "name": task.name}
-    if job_type:
-        changes["old_job_type"] = task.job_type
-        changes["new_job_type"] = job_type
-    if cron:
-        changes["old_cron"] = task.cron_expr
-        changes["new_cron"] = cron
-    if source_ids is not None:
-        changes["sources_updated"] = True
-    return changes
+            # Compute next_run_at if cron changed
+            tenant = await Tenant.objects.get(id=current_tenant_id(), session=session)
+            updates: dict[str, Any] = {
+                "job_type": new_job_type,
+                "payload": updated_payload,
+            }
+            # A field the caller did not send keeps its current value. Writing
+            # `agent_scenario_id: None` on every update silently unbound the task's
+            # scenario — the analysis then ran without its methodology. The same
+            # happened to the trial flag, which was set after the payload was written
+            # and therefore never saved at all.
+            if clear_scenario:
+                updates["agent_scenario_id"] = None
+            elif scenario_id is not None:
+                updates["agent_scenario_id"] = scenario_id
+            if cron is not None and cron != task.cron_expr:
+                updates["cron_expr"] = cron
+                updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
+            if deactivate_after_success is not None:
+                # A trial task gets a live schedule back: it had been switched off
+                # after its success, so re-arming means the next run must be planned.
+                updates["is_active"] = True
+                if cron is None or cron == task.cron_expr:
+                    updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
+
+            await AgentTask.objects.update_by_id(task.id, session=session, **updates)
+            if source_ids is not None:
+                await AgentTaskManager().set_sources(task.id, source_ids, session=session)
+
+            changes: dict[str, Any] = {"status": "updated", "name": task.name}
+            if job_type:
+                changes["old_job_type"] = original_job_type
+                changes["new_job_type"] = job_type
+            if cron:
+                changes["old_cron"] = original_cron
+                changes["new_cron"] = cron
+            if source_ids is not None:
+                changes["sources_updated"] = True
+            return changes
+    except ValueError as error:
+        return {"error": str(error)}
+    finally:
+        await session.close()
 
 
 @tool(

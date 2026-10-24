@@ -90,9 +90,13 @@ class AgentTaskManager(BaseManager):
     async def create(self, session: "AsyncSession", **kwargs: Any) -> "AgentTask":
         self._require_job_retention_permission(kwargs.get("job_type"))
         self._validate_job_retention_schedule(kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr"))
-        task = await super().create(session=session, **kwargs)
-        await self._validate_scenario_binding(session, task)
-        return task
+        # Resolve the tenant through BaseManager's normal context/bootstrap path
+        # before validating the scenario, so the FK failure is a domain error.
+        stamped = await self._apply_tenant(session, dict(kwargs))
+        await self._validate_scenario_binding(
+            session, stamped["tenant_id"], stamped.get("agent_scenario_id")
+        )
+        return await super().create(session=session, **stamped)
 
     # Fields that define what the next occurrence will do. A change to any of
     # them makes an already queued occurrence a stale plan: it carries the
@@ -157,10 +161,13 @@ class AgentTaskManager(BaseManager):
             kwargs.get("payload", current.payload),
             kwargs.get("cron_expr", current.cron_expr),
         )
+        await self._validate_scenario_binding(
+            session,
+            current.tenant_id,
+            kwargs.get("agent_scenario_id", current.agent_scenario_id),
+        )
         replaces_pending = self._replaces_pending_occurrence(current, kwargs)
         updated = await super().update_by_id(instance_id, session=session, **kwargs)
-        if updated is not None:
-            await self._validate_scenario_binding(session, updated)
         if replaces_pending and updated is not None:
             from .job_manager import JobManager
 
@@ -318,9 +325,11 @@ class AgentTaskManager(BaseManager):
         return await self._mutate_task_sources(task_id, source_ids, replace=False, session=session)
 
     @staticmethod
-    async def _validate_scenario_binding(session, task):
-        if task.agent_scenario_id is None:
+    async def _validate_scenario_binding(session, tenant_id: int, scenario_id: int | None) -> None:
+        if scenario_id is None:
             return
+        if type(scenario_id) is not int or not 0 < scenario_id <= 2_147_483_647:
+            raise ValueError("Invalid scenario ID")
         from sqlalchemy import select
 
         from ..agent_scenario import AgentScenario
@@ -328,7 +337,7 @@ class AgentTaskManager(BaseManager):
         identity = (
             await session.execute(
                 select(AgentScenario.id)
-                .where(AgentScenario.id == task.agent_scenario_id, AgentScenario.tenant_id == task.tenant_id)
+                .where(AgentScenario.id == scenario_id, AgentScenario.tenant_id == tenant_id)
                 .with_for_update()
             )
         ).scalar_one_or_none()

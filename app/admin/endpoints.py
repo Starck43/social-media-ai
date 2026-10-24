@@ -497,10 +497,13 @@ async def submit_llm_model_test(request: Request):
                 request.app.state.admin, request, str(form.get("model_id", "")), "real", str(form.get("prompt", ""))
             )
 
-    return await LLMModelActions.submit_test(
-        request.app.state.admin,
-        request,
-        str(form.get("model_id", "")),
-        str(form.get("test_type", "")),
-        str(form.get("prompt", "")),
-    )
+    from app.core.permissions import permission_scope
+
+    with permission_scope(user):
+        return await LLMModelActions.submit_test(
+            request.app.state.admin,
+            request,
+            str(form.get("model_id", "")),
+            str(form.get("test_type", "")),
+            str(form.get("prompt", "")),
+        )

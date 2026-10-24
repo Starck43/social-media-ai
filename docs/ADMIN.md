@@ -342,8 +342,9 @@ not from the source list.
   If saving fails, the answer remains visible with a warning; never automatically
   repeat a paid call. Model tariffs are never rewritten from generated text.
   This estimate is not journal completeness, settled spend or budget admission.
-  `last_request_cost` remains an estimate (the existing column contract), not the
-  API-reported price. `_record_llm_usage` updates model health/use counters, not
+  `last_request_cost` stores the estimate, preferring a resolved provider USD
+  total (including explicit zero) over a tariff fallback. It does not certify
+  settled spend. `_record_llm_usage` updates model health/use counters, not
   per-call token rows. The existing `llm_attempts` journal records input/output
   tokens and exact provider USD evidence when a trusted tenant scope is present;
   its best-effort writer can skip/fail. In single-owner mode without that scope,

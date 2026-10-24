@@ -292,6 +292,37 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   that implementation instead of adding a second validator, and keep PR #217's
   additive source update from bypassing atomic replacement.
 
+- [ ] P10-T15 — report scenario resets and warnings on default-model deletion;
+  accept: `LLMModelManager.delete_with_default_reassignment` returns the number
+  of agent scenarios/clients whose model FK was reset to NULL and the bounded
+  warnings it already documents (for example "no model left for type X"), not
+  the placeholder `scenarios_reset: None` / `warnings: []`; no new cascade
+  rules, no schema or migration change. Found on 2026-10-24 while repairing
+  tests after personal catalog ownership (`0109`): `llm_model_manager.py` still
+  documents step 1–4 candidate ordering and the FK-reset count, but the body
+  hardcodes both fields to empty. A delete therefore reports no evidence of the
+  scenario bindings it just cleared, and P8-T16/T20 admin diagnostics cannot
+  surface it. Depends: none; owns: `app/models/managers/llm_model_manager.py`
+  delete path, focused manager tests; owner: opencode; status: READY at local
+  dev `7b4a3d9` (2026-10-24).
+  Do not re-implement the candidate ordering as a side effect: the replacement
+  default is now chosen inside the owner's catalog (the previous
+  `last_success_at` → `ai_analytics` name ordering is no longer the contract).
+  Delivered: `scenarios_reset` counts distinct agent scenarios whose
+  text/image/video model column is the deleted id (one row counted once) and
+  `warnings` reports only what the delete could not repair — `no model left for
+  type <type>` when a deleted default has no replacement, and
+  `<n> workspace(s) lost their agent model` when `tenants.agent_model_id` was
+  reset. Both counts are read before the delete in the same transaction; the
+  second relies on `tenants` not being row-filtered (no RLS in migrations). No
+  cascade, schema or migration change. The two `xfail(strict=True)` markers in
+  `tests/models/test_llm_models_manager.py` turned into XPASS and were removed,
+  together with four new cases (double reference in one scenario, foreign
+  scenario ignored, workspace warning, silent ordinary path). Verified:
+  `tests/models/test_llm_models_manager.py` 27 passed; combined with the
+  repaired layout tests 95 passed, 0 failed. Not yet reviewed by the
+  coordinator; DONE is set by Codex after review at this commit.
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

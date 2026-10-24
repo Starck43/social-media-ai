@@ -65,6 +65,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T11 — refresh source-pinned CLI/API/chat audit and reproductions (#216) → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — IN_PROGRESS
 - [ ] P10-T12 — preserve partial chat task updates and restore task listing (#217) → [p10](docs/phases/p10-audit-hardening.md) — codex — IN_PROGRESS
 
+- [ ] P10-T15 — default-model deletion reports scenario resets and warnings → [p10](docs/phases/p10-audit-hardening.md) — opencode — READY
+
 
 
 - [ ] P8-T29 — agent paraphrase/search/compose tools for abstract "find and analyse" requests → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO

@@ -377,6 +377,20 @@ Related audit notes: admission activation → P2-T01; operator recovery → P4-T
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.
 
+- [ ] P10-T16 — bring `tests/models/test_scheduling_model_layout.py` back to
+  the real model layout; accept: the file no longer pins `_app_label == "social"`
+  (the scheduling models report `scheduling` since `eb6cad6`) and its
+  `DigestRun`/`BotAction` fingerprints match the current classes, or the checks
+  that merely restate `tests/models/test_model_bootstrap.py` are removed instead
+  of re-pinned; `pytest tests/models/` runs clean; no application code change.
+  Found on 2026-10-24 while re-running `tests/models/` + `tests/permissions/`
+  after the personal-catalog work: 248 passed with this file ignored and 9
+  failed inside it, none of them caused by recent changes (the file is
+  untouched since `d49c3ed`). Re-pinning is the second option, not the first —
+  a layout test that needs a fresh fingerprint on every model edit buys no
+  protection. Depends: none; owns: `tests/models/test_scheduling_model_layout.py`;
+  owner: codex; status: TODO
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

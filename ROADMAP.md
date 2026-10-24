@@ -54,6 +54,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T08 — per-component home pipeline gating (AUD-08) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T09 — truthful pipeline counts/labels (AUD-09) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T15 — default-model deletion reports scenario resets and warnings → [p10](docs/phases/p10-audit-hardening.md) — opencode — READY
+- [ ] P10-T16 — bring the scheduling layout test back to the real model layout → [p10](docs/phases/p10-audit-hardening.md) — codex — TODO
 
 ## Questions
 

@@ -104,6 +104,7 @@ async def run_task_plan(
     from app.services.task_launch import launch_social_task
     from app.core.permissions import has_permission
     from app.jobs.source_activity import SourceJobBusy
+    from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
 
     # One-off plans create a task receipt, so callers need both rights even
     # though the legacy task-run route only requires update.
@@ -122,6 +123,11 @@ async def run_task_plan(
         raise HTTPException(status_code=403, detail=str(error)) from None
     except SourceJobBusy:
         raise HTTPException(status_code=409, detail="A source in this plan already has an active job") from None
+    except PersonalBillingUnavailable:
+        raise HTTPException(
+            status_code=409,
+            detail="Task was saved inactive; configure personal billing before retrying this request.",
+        ) from None
 
 
 def _task_response(t: AgentTask) -> TaskResponse:

@@ -535,6 +535,33 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   registry styles committed verbatim. No migration, schema, DB or deployment
   change; no deployed-browser acceptance.
 
+- [x] P10-T20 — align the digest-confirmation suites with the deliberate intent
+  dedup; accept: both suites pass by pinning the `82555f2` contract without
+  weakening single-use/CAS, and a case that encodes a real defect is fixed in
+  the source with both sides proven; owner: opencode (PR #240); status: DONE —
+  accepted 2026-10-26 at branch head `6e6dbbf` on
+  `fix/p10-t20-digest-confirmation-dedup` (claim `c0bdf5b`, implementation
+  `cadde1e`, audit fix `6e6dbbf`); integration into `dev` pending.
+  Both failing cases were stale expectations: `82555f2` answers a repeated
+  identical intent from the pending one, so the `intent_id` is deliberately
+  reused; the *changed*-intent case keeps its CAS refusal and gained a DB twin.
+  Reading them surfaced the real defect: `_same_pending_intent` matched name +
+  `arguments_digest` only, so an **expired** intent was answered with «уже ждёт
+  вашего ответа» and the following «да» was rejected as `expired_intent` — the
+  dead end `82555f2` set out to remove. The helper now also requires a live
+  `expires_at` (missing/malformed/naive/past ⇒ not the same intent ⇒ a fresh
+  question is staged); the live path is unchanged because
+  `make_pending_intent` always sets it. The `82555f2` unit test gained a live
+  expiry plus expired/untimed/malformed negatives, digest assertions untouched.
+  Checks on the PR head: 63 passed on the touched unit/parity suites; 115 passed
+  with 2 pre-existing failures in `test_runtime_confirmation_authorization.py`
+  (reproduced on the base via `git stash`); the DB suite, unblocked by a
+  temporary in-transaction removal of the P8-T29 `test_schema` UNIQUE drift,
+  **31 passed** — its first run failed on the audit's own assertion spending the
+  snapshot before «да», fixed in `6e6dbbf`. Black/isort 120 clean on the added
+  lines (pre-existing hunks untouched). No migration, schema change or external
+  call. [PR #240](https://github.com/Starck43/social-media-ai/pull/240).
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

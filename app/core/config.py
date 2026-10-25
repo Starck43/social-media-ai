@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     ADMIN_ENABLED: bool = True
 
     # Rate limiting settings
-    RESET_PASSWORD_RATE_LIMIT: str = "3/hour"
     CHANGE_PASSWORD_RATE_LIMIT: str = "5/minute"
     LOGIN_TIMEOUT_MINUTES: int = 15  # Lockout duration after max attempts
     MAX_LOGIN_ATTEMPTS: int = 5

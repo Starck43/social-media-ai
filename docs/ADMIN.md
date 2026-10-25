@@ -470,8 +470,6 @@ delivery; it is not a per-recipient delivery report. See [NOTIFICATIONS](NOTIFIC
 
 | Method / route | Current contract |
 | --- | --- |
-| `GET /admin/reset-password` | Legacy public form still renders and issues a CSRF token; it is not a verified recovery flow |
-| `POST /admin/reset-password` | Handler raises **410 Gone** without account lookup, password mutation or temporary-password logging; limiter can reject earlier |
 | `GET /admin/user/change-password/{user_id}` | Active platform operator/admin required; self-change or platform-admin-only cross-account reset |
 | `POST /admin/user/change-password/{user_id}` | Same authority plus CSRF, confirmation and password validation; self-change verifies current password; cross-account reset also checks `user.update` |
 | `POST /admin/verify-current-password` | Uses the authenticated token subject and platform-entry gate; checks only that account's supplied `current_password`; returns `valid` Boolean |
@@ -479,15 +477,48 @@ delivery; it is not a per-recipient delivery report. See [NOTIFICATIONS](NOTIFIC
 The password action's UPDATE grant alone does **not** authorize an operator to
 reset someone else's password. An operator may change their own through the
 external form without a user UPDATE grant. A platform admin resetting another
-account does not need that account's current password. No delivered expiring,
-one-use, account-bound self-service recovery mechanism is implied by the inert
-legacy form. Historical anonymous password replacement is no longer the current
-POST implementation; this documentation change did not implement that fix.
+account does not need that account's current password.
+
+**Accepted recovery mechanism (P10-T01).** Recovery is the operator-issued reset
+above, not self-service. A platform admin resets a member account after identity
+confirmation; the owner changes their own password with their current one. The
+legacy public `/admin/reset-password` form (and its "Забыли пароль?" login-page
+link) has been removed from both routes and templates: there is no anonymous
+password-mutation route and no handler that looks an account up by a submitted
+email address. Account-bound, expiring, one-use email recovery is **not**
+implemented; it is deferred to a separate task that must also bring a verified
+delivery channel. Nothing in the current console flow mutates a hash without an
+authenticated operator, and no route logs a password or a temporary credential.
 
 Password rules come from `validate_password()` and `PASSWORD_*` settings, including
 minimum length and configured uppercase/lowercase/digit/special requirements.
-Rate-limit defaults: reset POST `3/hour`, change-password POST `5/minute`;
-`DEBUG` disables this endpoint limiter. These limits are not authorization.
+Rate limiting: the change-password POST keeps `CHANGE_PASSWORD_RATE_LIMIT`
+(`5/minute`); `DEBUG` disables this endpoint limiter. These limits are not
+authorization.
+
+### Owner recovery (out-of-band)
+
+The console refuses to reset the owner's password for *everyone*, including other
+platform admins and the owner's own reset link — the owner changes it only with
+the current password. If the owner loses that password, recovery happens on the
+deployment host with write access to the database, never through a web route:
+
+1. Generate the hash with the application's own hasher, entering the new secret
+   through a prompt so it never reaches the shell history:
+   `.venv/bin/python -c "import getpass; from app.core.hashing import get_password_hash; print(get_password_hash(getpass.getpass()))"`.
+2. Update only that account, qualified by `DB_SCHEMA` (`public` by default), and
+   check the returned row:
+   `psql "$POSTGRES_URL" -c "UPDATE public.users SET hashed_password = '<hash>' WHERE id = <owner-id> RETURNING id, username"`.
+3. Record actor, timestamp, reason and the host in the operator log. Do not paste
+   the password or the hash into chat, tickets or the log.
+4. Treat every access token issued before the reset as still valid: tokens are
+   stateless JWTs with no server-side revocation list, so a reset does not by
+   itself sign live sessions out. Rotate `SECRET_KEY` (invalidating all tokens for
+   all users) when the compromise of a session is suspected, and confirm the
+   recovery with the owner over an already trusted channel.
+
+This path is an accepted residual risk for the single-owner pilot, not a
+self-service product feature.
 
 ## Dashboard routes
 

@@ -14,7 +14,7 @@ from starlette.templating import Jinja2Templates
 from app.admin.authorization import require_admin_perm
 from app.admin.csrf import get_csrf_manager
 from app.core.config import settings
-from app.core.hashing import generate_temporary_password, get_password_hash, verify_password
+from app.core.hashing import get_password_hash, verify_password
 from app.models import Tenant, User
 from app.models.managers.user_manager import UserManager
 from app.services.user.auth import get_authenticated_user
@@ -63,52 +63,6 @@ async def llm_model_test_real(
     if user is None or not user.is_active or not user.is_platform_admin:
         raise HTTPException(status_code=403, detail="Нужны активные права администратора платформы")
     raise HTTPException(status_code=410, detail="Open the model test page and confirm a new probe explicitly")
-
-
-@router.get("/admin/reset-password", name="reset_password_page")
-async def reset_password_page(request: Request):
-    csrf_manager = get_csrf_manager(request)
-    csrf_token = csrf_manager.generate_token()
-
-    # Store the token in the session
-    request.session["csrf_token"] = csrf_token
-    request.session.setdefault("_session_modified", True)
-
-    # Get any error message from query params
-    error = request.query_params.get("error")
-    message = None
-    if error == "user_not_found":
-        message = "Пользователь не найден или недостаточно прав"
-    elif error == "invalid_csrf":
-        message = "Срок действия токена безопасности истёк. Попробуйте ещё раз."
-    elif error == "email_required":
-        message = "Необходимо указать электронную почту"
-
-    # Get the admin instance from the request
-    admin = request.app.state.admin
-    admin.title = "Сброс пароля"
-
-    return templates.TemplateResponse(
-        request,
-        "sqladmin/user/reset_password.html",
-        {
-            "csrf_token": csrf_token,
-            "admin": admin,
-            "message": message,
-            "error": error,
-        },
-    )
-
-
-@router.post("/admin/reset-password", name="reset_password")
-@limiter.limit(settings.RESET_PASSWORD_RATE_LIMIT)
-async def reset_password(request: Request, email: str = Form(None), csrf_token: str = Form(None)):
-    """
-    Handle password reset with rate limiting (disabled in development) and CSRF protection.
-    """
-    # There is no verified delivery flow for generated credentials. Keep the
-    # old public recovery URL inert; operators use the authenticated password form.
-    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Use authenticated password administration")
 
 
 @router.get("/admin/user/change-password/{user_id}", response_class=HTMLResponse)

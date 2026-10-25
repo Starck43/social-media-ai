@@ -50,7 +50,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P10](docs/tasks/p10-audit-hardening.md)
 
-- [P10-T01](docs/tasks/p10-t01.md) Authorized password recovery (P0) — **TODO** · unassigned · —
+- [P10-T01](docs/tasks/p10-t01.md) Authorized password recovery (P0) — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
 - [P10-T03](docs/tasks/p10-t03.md) Separate profile and privilege changes — **TODO** · unassigned · —
 - [P10-T04](docs/tasks/p10-t04.md) Shared cookie-independent login protection — **TODO** · unassigned · —
 - [P10-T06](docs/tasks/p10-t06.md) Safe provider errors with accounting — **TODO** · unassigned · —
@@ -65,5 +65,6 @@ means not recorded; source recovery links remain in the card.
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · —
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · —
 - [Q-11](docs/tasks/q-11.md) Individual and company onboarding — **OPEN** · unassigned · —
+- [Q-12](docs/tasks/q-12.md) Self-service email password recovery for the public phase — **OPEN** · product-owner · —
 
 Choose one unclaimed dependency-ready task; P10 security P0 items have priority.

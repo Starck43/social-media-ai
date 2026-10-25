@@ -582,3 +582,58 @@ async def test_a_plan_downgrade_reports_what_must_be_deleted(plan_ws, plan_arran
         # A tier that fits reports nothing, so the operator is not warned about
         # a problem that does not exist.
         assert await limits.plan_overage(tenant.id, "pro") == []
+
+
+@pytest.mark.asyncio
+async def test_the_deployment_member_ceiling_caps_every_tier(monkeypatch, plan_ws) -> None:
+    """`MAX_WORKSPACE_MEMBERS` (Q-11) applies on top of the tier, tighter wins.
+
+    The pilot allows an owner plus one invited person whatever the tier says, so
+    a `business` workspace — unlimited by its plan — is still held at two. Raising
+    the knob must lift the deployment ceiling without inventing a tier limit.
+    """
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.tenant_manager import tenant_users
+
+    monkeypatch.setattr(limits.settings, "MAX_WORKSPACE_MEMBERS", 2)
+    async with plan_ws("business") as tenant:
+        with tenant_scope(tenant.id):
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=(await _web_user()).id, role="owner")
+            assert await limits.check_member_limit(tenant) is None, "the owner alone is under the ceiling"
+            second = await _web_user()
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=second.id, role="viewer")
+            blocked = await limits.check_member_limit(tenant)
+            assert blocked is not None, "business has no tier cap; the deployment ceiling must still hold"
+            assert "2" in blocked
+
+    monkeypatch.setattr(limits.settings, "MAX_WORKSPACE_MEMBERS", 3)
+    async with plan_ws("business") as tenant:
+        with tenant_scope(tenant.id):
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=(await _web_user()).id, role="owner")
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=(await _web_user()).id, role="viewer")
+            assert await limits.check_member_limit(tenant) is None, "three people fit the raised ceiling"
+            third = await _web_user()
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=third.id, role="viewer")
+            assert await limits.check_member_limit(tenant) is not None
+
+
+@pytest.mark.asyncio
+async def test_the_deployment_ceiling_refuses_an_invite_as_no_seat(monkeypatch, plan_ws) -> None:
+    """A full pilot workspace answers `no_seat` and does not burn the invite."""
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.tenant_manager import TenantInviteManager, tenant_users
+
+    monkeypatch.setattr(limits.settings, "MAX_WORKSPACE_MEMBERS", 1)
+    async with plan_ws("business") as tenant:
+        with tenant_scope(tenant.id):
+            owner = await _web_user()
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=owner.id, role="owner")
+            invites = TenantInviteManager()
+            # The issue path rechecks the acting member's authority, so the
+            # owner types the invite exactly as the settings page does.
+            with permission_scope(owner, is_owner=True):
+                invite, code = await invites.issue(tenant_id=tenant.id, role="member")
+            result = await invites.redeem_web(code=code, user_id=(await _web_user()).id)
+            assert result["status"] == "no_seat", result
+            refreshed = await invites.get(id=invite.id)
+            assert refreshed.used_count == 0, "an invite refused for the ceiling stays usable"

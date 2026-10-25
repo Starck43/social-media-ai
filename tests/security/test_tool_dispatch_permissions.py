@@ -165,7 +165,19 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_workspace_owner_cannot_reach_global_handler_in_either_path(self):
         self.register("llm.model.create")
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+        # `llm.model` is the personal catalog, not a workspace right: the owner
+        # preset never carries it (`member_decision` answers False), and the
+        # platform role is not consulted inside a workspace either. The rig's
+        # account predicate allows it, so only that dispatch gate can hold.
+        with (
+            self.tenant.tenant_scope(31),
+            self.perms.permission_scope(self.user, is_owner=True, member_grants=self.catalog.workspace_grants("owner")),
+        ):
+            self.assertFalse(self.perms.member_decision(self.user, "llmmodel", self.action.CREATE))
+            self.assertFalse(
+                {model for model, _ in self.catalog.workspace_grants("owner")} & {"llmmodel", "llmprovider"}
+            )
+            self.tools.has_permission_by_codename = lambda user, codename: False
             with self.assertRaises(self.perms.PermissionDeniedError):
                 await self.tools.call_tool("test_write", {})
             result = json.loads(await self.tools.execute("test_write", {}))

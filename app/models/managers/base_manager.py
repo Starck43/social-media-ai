@@ -781,6 +781,12 @@ class BaseManager(Generic[M]):
         - normal call: takes the tenant from context, rejects a different one;
         - superuser call: honours an explicit `tenant_id`, else falls back to the
           bootstrap tenant (owner CLI/legacy admin writing in its own workspace).
+
+        A superuser write that takes its tenant from context is not a choice
+        between workspaces: the caller is already running as one and simply
+        omitted the column. Requiring it twice made every such write land in the
+        bootstrap workspace instead of the one the request had selected — the
+        row was created and then invisible to the scoped read that followed.
         """
         if not self._tenant_scoped():
             return kwargs
@@ -788,7 +794,10 @@ class BaseManager(Generic[M]):
         explicit = kwargs.pop("tenant_id", None)
 
         if is_bypass():
-            kwargs["tenant_id"] = explicit if explicit is not None else await self._default_tenant_id(session)
+            tenant_id = explicit if explicit is not None else current_tenant_id()
+            if tenant_id is None:
+                tenant_id = await self._default_tenant_id(session)
+            kwargs["tenant_id"] = tenant_id
             return kwargs
 
         tenant_id = current_tenant_id()

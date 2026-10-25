@@ -49,8 +49,24 @@ async def _loaded(user: User) -> User:
 
 
 async def _viewer() -> User:
-    """VIEWER has source.view only — any create/update/delete must be denied."""
-    return await _loaded(await _user(await _role("VIEWER")))
+    """A workspace member with the VIEWER preset: `source.view` only.
+
+    Workspace rights are the *membership* role's, not the platform badge's
+    (`PlatformRoleType` has no VIEWER/MANAGER), so these cases state the preset
+    through `permission_scope(member_grants=...)` instead of a platform role.
+    """
+    return await _loaded(await _user(await _role("USER")))
+
+
+def _preset(codename: str):
+    from app.core.access_catalog import workspace_grants
+
+    return workspace_grants(WorkspaceRoleType(codename).value)
+
+
+def _member(user: User, codename: str):
+    """`permission_scope` with the workspace preset the member's role implies."""
+    return permission_scope(user, member_grants=_preset(codename))
 
 
 async def _workspace() -> int:
@@ -69,9 +85,9 @@ async def test_task_writes_deny_viewer_allow_admin_and_pass_bypass():
     from app.models import AgentTask
 
     viewer = await _viewer()
-    admin = await _loaded(await _user(await _role("ADMIN")))
+    admin = await _loaded(await _user(await _role("SUPERUSER")))
 
-    with tenant_scope(await _workspace()), permission_scope(viewer):
+    with tenant_scope(await _workspace()), _member(viewer, "viewer"):
         with pytest.raises(PermissionDeniedError):
             await AgentTask.objects.create(name="nope", cron_expr="@once", job_type="digest")
         with pytest.raises(PermissionDeniedError):
@@ -79,7 +95,7 @@ async def test_task_writes_deny_viewer_allow_admin_and_pass_bypass():
         with pytest.raises(PermissionDeniedError):
             await AgentTaskManager().add_sources(1, [])
 
-    with tenant_scope(await _workspace()), permission_scope(admin):
+    with tenant_scope(await _workspace()), _member(admin, "owner"):
         task = await AgentTask.objects.create(name=f"ok-{secrets.token_hex(3)}", cron_expr="@once", job_type="digest")
         assert task.id
         assert await AgentTask.objects.update_by_id(task.id, is_active=False) is not None
@@ -107,7 +123,7 @@ async def test_task_mark_triggered_and_record_result_skip_checks():
     tid = await _workspace()
     with tenant_scope(bypass=True):
         task = await AgentTask.objects.create(name=f"rec-{secrets.token_hex(3)}", cron_expr="@once", job_type="digest")
-    with tenant_scope(tid), permission_scope(viewer):
+    with tenant_scope(tid), _member(viewer, "viewer"):
         # No PermissionDeniedError even though viewer lacks agenttask.update.
         await AgentTaskManager().mark_triggered(task.id, datetime.now(timezone.utc))
         await AgentTaskManager().record_result(task.id, "ok")
@@ -119,7 +135,7 @@ async def test_task_reads_stay_open():
     from app.models import AgentTask
 
     viewer = await _viewer()
-    with tenant_scope(await _workspace()), permission_scope(viewer):
+    with tenant_scope(await _workspace()), _member(viewer, "viewer"):
         assert isinstance(await AgentTaskManager().get_active(), list)
         assert isinstance(await AgentTaskManager().get_due(), list)
 
@@ -131,9 +147,9 @@ async def test_scenario_writes_deny_viewer_allow_admin_and_pass_bypass():
     from app.models import AgentScenario
 
     viewer = await _viewer()
-    admin = await _loaded(await _user(await _role("ADMIN")))
+    admin = await _loaded(await _user(await _role("SUPERUSER")))
 
-    with tenant_scope(await _workspace()), permission_scope(viewer):
+    with tenant_scope(await _workspace()), _member(viewer, "viewer"):
         with pytest.raises(PermissionDeniedError):
             await AgentScenario.objects.create(name="nope")
         with pytest.raises(PermissionDeniedError):
@@ -145,7 +161,7 @@ async def test_scenario_writes_deny_viewer_allow_admin_and_pass_bypass():
         with pytest.raises(PermissionDeniedError):
             await AgentScenario.objects.delete_by_id(1)
 
-    with tenant_scope(await _workspace()), permission_scope(admin):
+    with tenant_scope(await _workspace()), _member(admin, "owner"):
         row = await AgentScenario.objects.create(name=f"ok-{secrets.token_hex(3)}")
         assert row.id
         assert await AgentScenarioManager().update_scenario_activity(row.id, False) is not None
@@ -165,7 +181,7 @@ async def test_scenario_reads_stay_open():
     from app.models import AgentScenario
 
     viewer = await _viewer()
-    with tenant_scope(await _workspace()), permission_scope(viewer):
+    with tenant_scope(await _workspace()), _member(viewer, "viewer"):
         assert isinstance(await AgentScenario.objects.get_active_scenarios(), list)
 
 
@@ -185,10 +201,10 @@ async def test_source_writes_deny_viewer_allow_manager_and_pass_bypass():
     from app.types import SourceType
 
     viewer = await _viewer()
-    manager = await _loaded(await _user(await _role("MANAGER")))
+    manager = await _loaded(await _user(await _role("USER")))
     platform_id = await _platform_id()
 
-    with tenant_scope(await _workspace()), permission_scope(viewer):
+    with tenant_scope(await _workspace()), _member(viewer, "viewer"):
         with pytest.raises(PermissionDeniedError):
             await Source.objects.create(
                 platform_id=platform_id,
@@ -205,7 +221,7 @@ async def test_source_writes_deny_viewer_allow_manager_and_pass_bypass():
         with pytest.raises(PermissionDeniedError):
             await Source.objects.delete_by_id(1)
 
-    with tenant_scope(await _workspace()), permission_scope(manager):
+    with tenant_scope(await _workspace()), _member(manager, "manager"):
         row = await SourceManager().create_source(
             platform_id=platform_id,
             source_type=SourceType.CHANNEL,
@@ -240,7 +256,7 @@ async def test_source_bookkeeping_stays_unchecked():
             external_id=f"wm-{secrets.token_hex(4)}",
             name="wm",
         )
-    with tenant_scope(tid), permission_scope(viewer):
+    with tenant_scope(tid), _member(viewer, "viewer"):
         updated = await Source.objects.update_last_checked(row.id)
         assert updated is not None and updated.last_checked is not None
     with tenant_scope(bypass=True):
@@ -251,7 +267,7 @@ async def test_source_reads_stay_open():
     from app.models import Source
 
     viewer = await _viewer()
-    with tenant_scope(await _workspace()), permission_scope(viewer):
+    with tenant_scope(await _workspace()), _member(viewer, "viewer"):
         assert isinstance(await Source.objects.get_active_sources(), list)
         assert isinstance(await Source.objects.get_stats(), dict)
 

@@ -290,9 +290,7 @@ async def test_selected_source_from_another_workspace_is_refused(workspace):
         async with workspace.actor_scope():
             await configure_current_personal_account("20")
             with pytest.raises(ValueError, match="outside the task's platform/workspace"):
-                await launch_social_task(
-                    _plan(scenario.id, foreign_source.id), request_id="request-foreign-source-01"
-                )
+                await launch_social_task(_plan(scenario.id, foreign_source.id), request_id="request-foreign-source-01")
         with tenant_scope(workspace.tenant.id):
             assert await AgentTask.objects.count() == 0
     finally:
@@ -311,4 +309,3 @@ async def test_revoked_membership_blocks_a_stale_interactive_scope(workspace):
         await tenant_users.update_by_id(membership.id, is_active=False)
         with pytest.raises(PermissionError, match="active workspace membership"):
             await launch_social_task(_plan(scenario.id, source.id), request_id="request-revoked-01")
-

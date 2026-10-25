@@ -55,10 +55,7 @@ async def task_result(task_id: int, *, job_id: int | None = None, limit: int = 5
     raw = job.result if isinstance(job.result, dict) else {}
     result["counts"] = outcome_counts(raw)
     actor = get_current_user()
-    if not (
-        has_permission(actor, "source", ActionType.VIEW)
-        and has_permission(actor, "aianalytics", ActionType.VIEW)
-    ):
+    if not (has_permission(actor, "source", ActionType.VIEW) and has_permission(actor, "aianalytics", ActionType.VIEW)):
         return result
     ids: list[int] = []
     sources: set[int] = set()

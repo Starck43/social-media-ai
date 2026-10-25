@@ -1,7 +1,7 @@
 """Persist stable one-off task launch receipts.
 
-Revision ID: 0111
-Revises: 0110
+Revision ID: 0112
+Revises: 0111
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "0111"
-down_revision = "0110"
+revision = "0112"
+down_revision = "0111"
 branch_labels = None
 depends_on = None
 SCHEMA = settings.DB_SCHEMA

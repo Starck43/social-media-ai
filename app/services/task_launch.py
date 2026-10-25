@@ -136,17 +136,21 @@ async def launch_social_task(
                             raise ValueError("Scenario is unavailable in this workspace")
                     if plan.source_ids:
                         selected = (
-                            await session.execute(
-                                select(Source.id)
-                                .join(Platform, Platform.id == Source.platform_id)
-                                .where(
-                                    Source.id.in_(plan.source_ids),
-                                    Source.tenant_id == tenant.id,
-                                    Source.is_active.is_(True),
-                                    Platform.platform_type.in_(plan.platforms),
+                            (
+                                await session.execute(
+                                    select(Source.id)
+                                    .join(Platform, Platform.id == Source.platform_id)
+                                    .where(
+                                        Source.id.in_(plan.source_ids),
+                                        Source.tenant_id == tenant.id,
+                                        Source.is_active.is_(True),
+                                        Platform.platform_type.in_(plan.platforms),
+                                    )
                                 )
                             )
-                        ).scalars().all()
+                            .scalars()
+                            .all()
+                        )
                         if set(selected) != set(plan.source_ids):
                             raise ValueError("Selected sources are inactive or outside the task's platform/workspace")
                     task = await AgentTask.objects.create(

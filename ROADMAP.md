@@ -58,7 +58,6 @@ means not recorded; source recovery links remain in the card.
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
-- [P10-T17](docs/tasks/p10-t17.md) Compact task index and lazy documentation — **IN_PROGRESS** · codex · [dialogue](/Users/admin/.codex/sessions/2026/10/25/rollout-2026-10-25T12-39-07-01a1726d-96c3-7083-8828-2a2a1558676b.jsonl)
 
 ## Questions
 

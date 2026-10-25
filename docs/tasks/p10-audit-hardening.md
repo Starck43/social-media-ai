@@ -433,6 +433,16 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Black/isort/diff-check clean on the edited files; `api_scope.py` was already
   not black-clean at base, unrelated lines untouched. No schema, migration or
   production change.
+  **Correction (2026-10-25, P10-T03):** the `/api/v1/users/me` part of this
+  acceptance was wrong. The route is documented as account-level
+  (`docs/API.md` Authorization: "require active authentication without
+  workspace membership"), and sending it through `_resolve_tenant` made an
+  API-only registration — which creates no workspace — unable to read or edit
+  its own profile. The workspace denial from `8e5fd3c` belongs to the endpoints
+  that read workspace data, not to the profile route; P10-T03 restored the
+  account-level routing and moved the two deactivated-workspace probes in
+  `tests/security/test_inactive_workspace_access.py` to `GET /api/v1/sources`,
+  keeping both properties pinned.
 
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.

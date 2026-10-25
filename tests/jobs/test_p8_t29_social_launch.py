@@ -36,10 +36,12 @@ from app.models import (
     AgentScenario,
     AgentTask,
     Job,
+    PersonalBillingAccount,
     Platform,
     PlatformRole,
     Source,
     Tenant,
+    TaskBillingPayer,
     User,
     WorkspaceRole,
 )
@@ -131,6 +133,8 @@ class Workspace:
                 await AgentScenario.objects.delete_by_id(scenario_id)
             for source_id in reversed(self.source_ids):
                 await Source.objects.delete_by_id(source_id)
+            await TaskBillingPayer.objects.delete(tenant_id=self.tenant.id, payer_user_id=self.user.id)
+            await PersonalBillingAccount.objects.delete(user_id=self.user.id)
             await tenants.delete_by_id(self.tenant.id)
             await User.objects.delete_by_id(self.user.id)
 
@@ -190,7 +194,7 @@ def test_new_plan_defaults_to_a_bounded_one_day_window_and_materializes_once():
 async def test_same_request_concurrently_creates_one_task_and_one_job(workspace):
     scenario = await workspace.scenario()
     source = await workspace.source()
-    async with workspace.actor_scope():
+    with workspace.actor_scope():
         await configure_current_personal_account("20")
         plan = _plan(scenario.id, source.id)
         first, second = await __import__("asyncio").gather(
@@ -212,7 +216,7 @@ async def test_same_request_concurrently_creates_one_task_and_one_job(workspace)
 async def test_request_key_cannot_be_reused_for_different_conditions(workspace):
     scenario = await workspace.scenario()
     source = await workspace.source()
-    async with workspace.actor_scope():
+    with workspace.actor_scope():
         await configure_current_personal_account("20")
         plan = _plan(scenario.id, source.id)
         created = await launch_social_task(plan, request_id="request-mismatch-01")
@@ -229,7 +233,7 @@ async def test_request_key_cannot_be_reused_for_different_conditions(workspace):
 async def test_launch_receipt_survives_job_pruning(workspace):
     scenario = await workspace.scenario()
     source = await workspace.source()
-    async with workspace.actor_scope():
+    with workspace.actor_scope():
         await configure_current_personal_account("20")
         plan = _plan(scenario.id, source.id)
         created = await launch_social_task(plan, request_id="request-pruned-01")
@@ -246,7 +250,7 @@ async def test_launch_receipt_survives_job_pruning(workspace):
             finished_at=datetime.now(timezone.utc) - timedelta(days=3),
         )
         await Job.objects.delete_by_id(job.id)
-    async with workspace.actor_scope():
+    with workspace.actor_scope():
         replay = await launch_social_task(plan, request_id="request-pruned-01")
 
     assert replay["status"] == "replayed"
@@ -261,7 +265,7 @@ async def test_launch_receipt_survives_job_pruning(workspace):
 async def test_missing_personal_payer_keeps_an_inactive_draft_without_a_job(workspace):
     scenario = await workspace.scenario()
     source = await workspace.source()
-    async with workspace.actor_scope():
+    with workspace.actor_scope():
         plan = _plan(scenario.id, source.id)
         with pytest.raises(PersonalBillingUnavailable):
             await launch_social_task(plan, request_id="request-no-payer-01")
@@ -287,7 +291,7 @@ async def test_selected_source_from_another_workspace_is_refused(workspace):
     foreign = await Workspace.create()
     try:
         foreign_source = await foreign.source()
-        async with workspace.actor_scope():
+        with workspace.actor_scope():
             await configure_current_personal_account("20")
             with pytest.raises(ValueError, match="outside the task's platform/workspace"):
                 await launch_social_task(_plan(scenario.id, foreign_source.id), request_id="request-foreign-source-01")
@@ -300,7 +304,7 @@ async def test_selected_source_from_another_workspace_is_refused(workspace):
 async def test_revoked_membership_blocks_a_stale_interactive_scope(workspace):
     scenario = await workspace.scenario()
     source = await workspace.source()
-    async with workspace.actor_scope():
+    with workspace.actor_scope():
         await configure_current_personal_account("20")
         membership = await tenant_users.filter(
             tenant_id=workspace.tenant.id, channel="web", user_id=workspace.user.id

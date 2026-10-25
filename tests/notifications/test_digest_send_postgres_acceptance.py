@@ -475,12 +475,14 @@ async def test_real_cas_rejects_foreign_scope_and_stale_replaced_intent(digest_e
         # same `intent_id` survives and the stored snapshot is unchanged.
         assert replacement["intent_id"] == old["intent_id"]
         assert replacement == old
-        with tenant_scope(workspace.tenant_id):
-            assert await agent_sessions.consume_pending_confirmation(subject.session.id, old) is not None
-        assert "pending_confirmation" not in await subject.stored()
-        digest_effects.publisher.assert_not_awaited()
-        await subject.yes()
+        # Exactly one question is outstanding and one «да» answers it. The CAS is
+        # the unit twin's job (`test_repeated_identical_intent_keeps_intent_id_
+        # and_stays_answerable_once`); consuming the snapshot by hand here would
+        # spend the intent and leave «да» with nothing to confirm.
+        reply = await subject.yes()
+        assert "отклонено" not in reply
         digest_effects.publisher.assert_awaited_once_with(**ARGS)
+        assert "pending_confirmation" not in await subject.stored()
 
 
 async def test_real_changed_intent_retires_the_old_snapshot(digest_effects):
@@ -491,7 +493,11 @@ async def test_real_changed_intent_retires_the_old_snapshot(digest_effects):
         identity = await subject.identity()
         with tenant_scope(workspace.tenant_id):
             await runtime._dispatch_or_stage(
-                subject.session, "digest_send_now", {**ARGS, "period": "themes-of-week"}, f"call-{uuid4().hex}", identity
+                subject.session,
+                "digest_send_now",
+                {**ARGS, "period": "themes-of-week"},
+                f"call-{uuid4().hex}",
+                identity,
             )
         replacement = (await subject.stored())["pending_confirmation"]
         assert replacement["intent_id"] != old["intent_id"]

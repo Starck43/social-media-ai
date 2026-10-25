@@ -419,3 +419,7 @@ retries, and an inspectable history with no extra service. It does **not** give
 distributed workers across machines or priority queues — if that is ever
 needed, revisit this decision. `app/celery/` is superseded and not started by
 any entrypoint.
+
+## Explicit task plans (P8-T29)
+
+Target: [universal tasks](design/universal-tasks.md). New explicit plans distinguish selected, discovery and all-authorized source scope and fixed versus rolling data windows. Legacy tasks retain their existing empty-link semantics. All surfaces share validation; effective conditions and personal payer are fixed at admission. See the task card for delivered checks; this section alone is not acceptance evidence.

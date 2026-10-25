@@ -386,3 +386,7 @@ starting: satisfy A integration requirements, or obtain an explicit exception fo
 a separate stacked B branch from the accepted A implementation. Until then, B
 implementation is blocked on its base, not complete or in progress. All prior
 deferred checks and no-DB/no-runtime/no-live-action restrictions remain open.
+
+## P8-T29 design constraint
+
+The [universal task contract](universal-tasks.md) preserves this shell and independent sources, scenarios, tasks/schedules and digests pages. Chat is supplementary. Add needed settings using existing controls/styles; do not replace navigation or introduce a new visual design.

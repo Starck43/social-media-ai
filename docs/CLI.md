@@ -885,3 +885,7 @@ Digest command help lists `themes`, `sources`, `entities`, `intent` and
 `topic_chains`. `days` is web-only chronology; use `time_breakdown` for digest
 chronology. Sentiment and media are metrics/cross-filters, not grouping axes.
 Saved legacy task payloads with `sentiment` or `content_type` normalize to themes.
+
+## Universal social task parity (P8-T29)
+
+Expose the [shared task plan](design/universal-tasks.md) through existing task commands with read-only preview and canonical input. Keep explicit workspace selection, one-off and recurring tasks, source/scenario management and digest commands. CLI execution does not bypass collection rights or external-send safeguards. See P8-T29 for actual implementation and evidence.

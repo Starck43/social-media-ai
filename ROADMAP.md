@@ -43,7 +43,7 @@ means not recorded; source recovery links remain in the card.
 - [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —
 - [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks across web/chat/API/CLI/admin; VK first — **IN_PROGRESS** · codex-p8-t29 · —
-- [P8-T30](docs/tasks/p8-t30.md) Additional VK search categories — **TODO** · unassigned · —
+- [P8-T32](docs/tasks/p8-t32.md) Additional VK search categories — **TODO** · unassigned · —
 - [P8-T31](docs/tasks/p8-t31.md) Non-social resources and connector actions — **TODO** · unassigned · —
 
 ## [P9](docs/tasks/p9-safe-activation.md)

@@ -729,3 +729,7 @@ DELETE URL are not truncated or rewritten. Buttons remain outside that scrolling
 region. Custom confirmation bodies use the same wrapping boundary.
 See [deletion audit](MODEL_DELETION.md) before changing cascade policies or treating
 multi-select deletion as one atomic transaction.
+
+## Universal social task parity (P8-T29)
+
+Keep existing source/scenario/task model pages and design. Task plan fields use the same [shared contract](design/universal-tasks.md) as web/API/CLI/tools; collector/runtime-written evidence and secrets are not user-editable. Run-now retains the standard admission path. See P8-T29 for actual implementation/checks.

@@ -41,7 +41,8 @@ Existing components and navigation remain; no redesign.
   filters, scenario, limits and result. Empty new selections cannot silently
   expand to all sources. Preserve legacy empty-link behavior for old tasks.
 - Timing: once or recurring, timezone, next run and pause/resume. Distinguish
-  the execution trigger from a fixed or rolling data window.
+  the execution trigger from a fixed or rolling data window. New plans default
+  to a rolling one-day window when no window is supplied; show this in previews.
 - Digests: source/scenario/period/grouping, preview, destinations and manual or
   scheduled send. A preview cannot send. Collection before digest is explicit.
 - Connections: personal access, capabilities, reauthorization and revocation.
@@ -100,4 +101,4 @@ once/recurring triggers, fresh rights/payer checks, duplicate launch protection,
 honest failures/coverage, result links and digest scope. Record exact checks and
 source SHA. Review/general refactoring are later; no production activation.
 
-Additional VK categories: P8-T30. File/network/business connectors: P8-T31.
+Additional VK categories: P8-T32. File/network/business connectors: P8-T31.

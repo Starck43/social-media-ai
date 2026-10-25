@@ -1665,3 +1665,7 @@ a flash message. No delete, sync, live API probe, personal credentials or global
 provider/model editing is exposed by this section.
 See [tenancy boundaries](TENANCY.md#web-settings-and-ownedgranted-workspace-context)
 and [deletion policy](MODEL_DELETION.md).
+
+## Universal social task parity (P8-T29)
+
+The [universal task contract](design/universal-tasks.md) adds a typed plan to the existing task operations. API and web/CLI/admin/tools must preserve identical source scope, scenario and data-window semantics. Preview is read-only; execution still performs fresh authorization and budget admission. Existing task routes remain compatible. Exact implementation/checks live in [P8-T29](tasks/p8-t29.md).

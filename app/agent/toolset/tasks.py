@@ -738,6 +738,40 @@ async def task_execute_once(request_id: str, plan: dict[str, Any]) -> dict[str, 
         return await launch_social_task(plan, request_id=request_id, job_type="analyze")
     except (TypeError, ValueError) as error:
         return {"error": str(error), "code": "task_plan_invalid"}
+    except PermissionError:
+        return {"error": "Нет доступа к запуску задачи или личному плательщику", "code": "task_launch_forbidden"}
+    except RuntimeError:
+        return {
+            "error": "Запуск недоступен: проверьте личный AI-бюджет и состояние источников на странице задачи",
+            "code": "task_launch_unavailable",
+        }
+
+
+@tool(
+    name="task_result",
+    description=(
+        "Показать состояние запуска и доступные результаты задачи. "
+        "После task_execute_once используй возвращённый task_id; queued ещё не означает готовый результат."
+    ),
+    required_permission="scheduling.task.view",
+    parameters={
+        "type": "object",
+        "properties": {
+            "task_id": {"type": "integer"},
+            "job_id": {"type": "integer"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+        },
+        "required": ["task_id"],
+    },
+)
+async def task_result(task_id: int, job_id: int | None = None, limit: int = 5) -> dict[str, Any]:
+    from app.services.task_results import task_result as read_result
+
+    try:
+        result = await read_result(task_id, job_id=job_id, limit=limit)
+    except ValueError as error:
+        return {"error": str(error), "code": "task_result_invalid"}
+    return result if result is not None else {"error": "Задача или запуск не найдены", "code": "task_not_found"}
 
 
 @tool(

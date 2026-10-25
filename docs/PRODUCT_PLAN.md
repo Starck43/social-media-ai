@@ -7,6 +7,10 @@ not a claim of shipped features or production/legal certification.
 Goal → authorized sources → collect/search → verify → analyze/calculate →
 propose → approve when required → deliver/execute → follow up.
 
+## Universal social tasks
+
+The owner-approved first vertical and cross-surface contract are in [universal tasks](design/universal-tasks.md). Preserve independent management pages and the existing design; chat is supplementary. Current delivery is P8-T29; future categories/connectors are P8-T30/P8-T31.
+
 ## Foundation directions
 
 Choose one task from [ROADMAP](../ROADMAP.md), then its linked card. Parent phase

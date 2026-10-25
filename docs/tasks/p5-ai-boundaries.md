@@ -8,6 +8,10 @@ Goal: invalid typed output cannot gain authority; partial evidence coverage is
 explicit; useful siblings remain available; failed outputs are persisted
 safely.
 
+## Social execution boundary
+
+The [universal task contract](../design/universal-tasks.md) reuses collection lanes and typed analysis. One-off research stays inside fresh rights and payer limits; schedules and sends retain confirmation. Retrieved content cannot grant authority. This direction is not new acceptance evidence.
+
 ## Closed tasks
 
 - [x] P5-T02 — audit the collection-to-analysis path for task 1582 and scenario

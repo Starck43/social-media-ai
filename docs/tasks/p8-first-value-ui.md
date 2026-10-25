@@ -17,6 +17,10 @@ browser-local notification preferences C (#190), bounded settings scopes D
 authorization predicates; no SPA replacement, no new navigation service.
 Attention feed lives in the floating bell (B), not a home card.
 
+## Universal social task direction
+
+Keep existing sources, scenarios, tasks/schedules and digests independently usable. Chat and forms share the [universal task contract](../design/universal-tasks.md), with API/CLI/admin/tool parity. Active work lives in ROADMAP; historical acceptance below is unchanged.
+
 ## Closed tasks
 
 - [x] P8-T26 — implement the accepted jobs lifecycle audit: built-in cleanup

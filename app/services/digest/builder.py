@@ -8,15 +8,15 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.ai.llm_client import LLMClientFactory
-from app.services.ai.reporting import ReportAggregator, normalize_digest_axis
 from app.services.ai.output_contracts import (
     DigestSummary,
     OutputContractError,
     known_cost_usd,
-    validate_output,
     response_is_incomplete,
+    validate_output,
 )
 from app.services.ai.prompt_sanitizer import frame_untrusted_text
+from app.services.ai.reporting import ReportAggregator, ReportScope, normalize_digest_axis
 from app.services.digest.coverage import job_coverage_note
 from app.services.digest.render import render_digest
 
@@ -126,26 +126,55 @@ async def aggregate(
     days = (end - start).days + 1
     agg = ReportAggregator()
 
-    sentiment = await agg.get_sentiment_trends(days=days)
-    topics = await agg.get_top_topics(days=days, limit=8)
-    content_mix = await agg.get_content_mix(days=days)
-    engagement = await agg.get_engagement_metrics(days=days)
-    llm_stats = await agg.get_llm_provider_stats(days=days)
+    # AUD-07: one immutable scope for every section. The five top-level
+    # aggregates used to read a `today - days` window with no upper bound, no
+    # base-row-kind filter and no source/scenario selection while the brief
+    # applied its own — sections could disagree, a day report leaked
+    # yesterday/future rows and saved rollups were double-counted. One bounded
+    # read is reused by all sections instead of re-materializing per section.
+    from app.core.tenant_context import current_tenant_id
+
+    scope = ReportScope(
+        start=start,
+        end=end,
+        source_ids=frozenset(source_ids) if source_ids else None,
+        scenario_id=scenario_id,
+        tenant_id=current_tenant_id(),
+    )
+    rows = await agg.scoped_rows(scope)
+
+    sentiment = await agg.get_sentiment_trends(days=days, rows=rows)
+    topics = await agg.get_top_topics(days=days, limit=8, rows=rows)
+    content_mix = await agg.get_content_mix(days=days, rows=rows)
+    engagement = await agg.get_engagement_metrics(days=days, rows=rows)
+    llm_stats = await agg.get_llm_provider_stats(days=days, rows=rows)
 
     # Hybrid step 1: the algorithmic brief, grouped by group_by axis
     # and extended with the scenario's analysis_types sections. No LLM here.
     brief = await agg.generate_digest_brief(
-        period=period, source_ids=source_ids, group_by=group_by, time_breakdown=time_breakdown, scenario_id=scenario_id
+        period=period,
+        source_ids=source_ids,
+        group_by=group_by,
+        time_breakdown=time_breakdown,
+        scenario_id=scenario_id,
+        scope=scope,
+        rows=rows,
     )
 
     # Persist a WEEKLY/MONTHLY rollup row per source so `period_type` reflects
     # the digest period (reads like get_by_date_range(period_type=WEEKLY) work).
+    # Rollup write ownership (AUD-07): the digest aggregate step owns these
+    # writes, and the selection follows the digest's source set — a
+    # source-selected digest no longer writes rollups for unselected sources.
+    # Scenario is not a rollup dimension: rollups fold per
+    # (source, analysis_fingerprint) context, and the base-row-kind filter in
+    # scoped reads keeps them out of every later digest sum.
     if period in ("week", "month"):
         from app.models.managers.ai_analytics_manager import AIAnalyticsManager
         from app.types import PeriodType
 
         period_type = PeriodType.WEEK if period == "week" else PeriodType.MONTH
-        await AIAnalyticsManager().build_period_rollups(period_type, start, end)
+        await AIAnalyticsManager().build_period_rollups(period_type, start, end, source_ids=source_ids)
 
     dist = {"positive": 0, "neutral": 0, "negative": 0}
     total_analyses = 0

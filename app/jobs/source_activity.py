@@ -22,6 +22,23 @@ def job_source_ids(payload: Any, task_id: int | None, task_sources: dict[int, se
     A missing/deleted task falls back to the payload, just like the worker.
     Malformed legacy payloads conservatively occupy all active sources.
     """
+    plan = payload.get("task_plan") if isinstance(payload, dict) else None
+    scope = plan.get("source_scope") if isinstance(plan, dict) else None
+    if scope in {"selected", "discovery", "all"}:
+        # New-plan admission stores the authorized source snapshot on the job.
+        # Use it instead of every source historically linked to the task. A
+        # discovery plan may add reusable sources only after admission, so its
+        # unknown future set conservatively reserves the active workspace.
+        if scope == "discovery":
+            return active
+        raw = payload.get("source_ids")
+        if isinstance(raw, list) and all(type(value) is int and value > 0 for value in raw) and raw:
+            return set(raw)
+        if scope == "selected":
+            selected = plan.get("source_ids")
+            if isinstance(selected, list) and selected and all(type(value) is int and value > 0 for value in selected):
+                return set(selected)
+        return active
     if task_id is not None and task_id in task_sources:
         return task_sources[task_id] or active
     raw = payload.get("source_ids") if isinstance(payload, dict) else None

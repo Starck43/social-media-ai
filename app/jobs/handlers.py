@@ -139,8 +139,6 @@ async def _resolve_sources(
     sources. When no task triggered the job, fall back to the legacy
     `payload["source_ids"]` if present, else all active sources.
     """
-    from sqlalchemy import or_
-
     from app.models import Source
 
     if task is not None:
@@ -159,41 +157,31 @@ async def _resolve_sources(
             if platforms is None:
                 logger.warning(f"Task {task.id} has invalid platform scope; refusing collection")
                 return []
-            active_task_sources = [source for source in task_sources if source.is_active]
+            raw_snapshot = (payload or {}).get("source_ids") or []
+            if not isinstance(raw_snapshot, list) or any(
+                type(value) is not int or value <= 0 for value in raw_snapshot
+            ):
+                logger.warning(f"Task {task.id} has invalid admitted source snapshot; refusing collection")
+                return []
+            allowed = set(raw_snapshot)
+            allowed.update(value for value in discovered_source_ids or () if type(value) is int and value > 0)
             if scope == "selected":
                 raw_selected = plan.get("source_ids")
                 if not isinstance(raw_selected, list) or any(type(value) is not int for value in raw_selected):
                     logger.warning(f"Task {task.id} has invalid selected source scope; refusing collection")
                     return []
-                allowed = set(raw_selected)
-                allowed.update(value for value in discovered_source_ids or () if type(value) is int)
-                # Query/search lanes belong to this task and are generated
-                # from its canonical collection intent.
-                return [
-                    source
-                    for source in active_task_sources
-                    if (source.id in allowed or getattr(source, "owner_task_id", None) == task.id)
-                    and _source_in_task_platform_scope(source, platforms)
-                ]
-            if scope == "discovery":
-                # An empty discovery result must never widen to every workspace
-                # source. Only entities linked by this task's population step
-                # (including a reviewed reusable source) can be collected.
-                allowed = set(value for value in discovered_source_ids or () if type(value) is int)
-                return [
-                    source
-                    for source in active_task_sources
-                    if (source.id in allowed or getattr(source, "owner_task_id", None) == task.id)
-                    and _source_in_task_platform_scope(source, platforms)
-                ]
-            # Explicit all-authorized scope includes workspace sources and this
-            # task's own generated lanes, never another task's lanes.
+                if not set(raw_selected).issubset(allowed):
+                    logger.warning(
+                        f"Task {task.id} selected sources are outside its admitted snapshot; refusing collection"
+                    )
+                    return []
+            # Admission snapshots bind the ordinary scope. This run may add
+            # only exact sources returned by its own population/mention steps;
+            # current m2m links and workspace contents cannot widen the job.
+            if not allowed:
+                return []
             rows = list(
-                await Source.objects.filter(
-                    or_(Source.owner_task_id.is_(None), Source.owner_task_id == task.id),
-                    is_active=True,
-                    tenant_id=task.tenant_id,
-                )
+                await Source.objects.filter(is_active=True, id__in=allowed, tenant_id=task.tenant_id)
                 .select_related("platform")
             )
             return [source for source in rows if _source_in_task_platform_scope(source, platforms)]
@@ -211,47 +199,24 @@ async def _resolve_sources(
     plan = (payload or {}).get("task_plan")
     scope = plan.get("source_scope") if isinstance(plan, dict) else None
     if scope in {"selected", "discovery", "all"}:
-        task_id = (payload or {}).get("agent_task_id")
         platforms = _task_plan_platforms(plan)
         if platforms is None:
             return []
-        if scope == "discovery":
-            allowed_ids = {
-                value for value in ((payload or {}).get("source_ids") or []) if type(value) is int
-            }
-            allowed_ids.update(value for value in discovered_source_ids or () if type(value) is int)
-            if type(task_id) is int:
-                allowed_ids.update(
-                    source.id
-                    for source in await Source.objects.filter(is_active=True, owner_task_id=task_id)
-                )
-            if not allowed_ids:
-                return []
-            rows = list(
-                await Source.objects.filter(is_active=True, id__in=allowed_ids).select_related("platform")
-            )
-            return [source for source in rows if _source_in_task_platform_scope(source, platforms)]
+        # A detached replay has no task relationship to re-resolve. Its source
+        # IDs were captured by admission; do not widen them using today's task
+        # links, generated lanes, or workspace sources.
+        allowed_ids = {value for value in source_ids if type(value) is int and value > 0}
         if scope == "selected":
             selected = plan.get("source_ids")
-            if not isinstance(selected, list) or any(type(value) is not int for value in selected):
+            if not isinstance(selected, list) or any(type(value) is not int or value <= 0 for value in selected):
                 return []
-            from sqlalchemy import or_
-
-            if type(task_id) is int:
-                rows = list(
-                    await Source.objects.filter(
-                        or_(Source.id.in_(selected), Source.owner_task_id == task_id), is_active=True
-                    ).select_related("platform")
-                )
-            else:
-                rows = list(await Source.objects.filter(is_active=True, id__in=selected).select_related("platform"))
-            return [source for source in rows if _source_in_task_platform_scope(source, platforms)]
-        from sqlalchemy import or_
-
+            if not set(selected).issubset(allowed_ids):
+                return []
+        allowed_ids.update(value for value in discovered_source_ids or () if type(value) is int and value > 0)
+        if not allowed_ids:
+            return []
         rows = list(
-            await Source.objects.filter(
-                or_(Source.owner_task_id.is_(None), Source.owner_task_id == task_id), is_active=True
-            ).select_related("platform")
+            await Source.objects.filter(is_active=True, id__in=allowed_ids).select_related("platform")
         )
         return [source for source in rows if _source_in_task_platform_scope(source, platforms)]
     if source_ids:
@@ -476,7 +441,7 @@ async def _llm_failure_code(source_id: int, since: Any) -> str | None:
     return None
 
 
-def _population_platform(task) -> str:
+def _population_platform(task, task_payload: dict[str, Any] | None = None) -> str:
     """The platform the population search runs on.
 
     The discovery block declares no platform of its own, so the task's linked
@@ -485,6 +450,14 @@ def _population_platform(task) -> str:
     """
     from app.services.collection.context import platform_name
 
+    task_plan = (task_payload or {}).get("task_plan")
+    if isinstance(task_plan, dict):
+        platforms = _task_plan_platforms(task_plan)
+        if platforms:
+            # VK supports the current people/community discovery adapter. If
+            # only another platform was requested, pass that platform through
+            # so population reports unsupported without probing VK out of scope.
+            return "vk" if "vk" in platforms else sorted(platforms)[0]
     names: list[str] = []
     for source in getattr(task, "sources", None) or []:
         name = platform_name(source)
@@ -554,7 +527,7 @@ async def _run_population_step(
     if not discovery.queries or not (discovery.communities or discovery.people):
         return None
 
-    platform_key = _population_platform(task)
+    platform_key = _population_platform(task, task_payload)
     started_at = datetime.now(timezone.utc)
     summary: dict[str, Any] = {
         "ran": True,
@@ -652,7 +625,9 @@ async def _run_population_step(
         created=len(result.created_source_ids),
         reused=len(result.reused_source_ids),
         linked=len(result.linked_source_ids),
-        source_ids=list(result.linked_source_ids[:500]),
+        # `linked_source_ids` is the task's complete m2m list. Discovery must
+        # contribute only the identities matched by this population request.
+        source_ids=list(dict.fromkeys((*result.created_source_ids, *result.reused_source_ids)))[:500],
         would_create=len(result.would_create),
         refused=list(result.refused[:5]),
         warnings=list(result.warnings[:10]),
@@ -717,11 +692,14 @@ async def _run_mention_lanes_step(
     phrases = mention_lane_queries(intent)
     if not phrases:
         return None
-    platform_key = _population_platform(task)
+    platform_keys = _task_plan_platforms(task_payload.get("task_plan", {}))
+    if not platform_keys:
+        platform_keys = {_population_platform(task, task_payload)}
     summary: dict[str, Any] = {
         "ran": True,
         "dry_run": dry_run,
-        "platform": platform_key,
+        "platform": next(iter(platform_keys)) if len(platform_keys) == 1 else None,
+        "platforms": sorted(platform_keys),
         "match": intent.queries_match,
         "queries": list(phrases)[:10],
         "total": len(phrases),
@@ -735,8 +713,19 @@ async def _run_mention_lanes_step(
         "note": "",
     }
     try:
-        specs = [query_source_spec(task_id=int(task.id), platform=platform_key, query=phrase) for phrase in phrases]
-        result = await ensure_query_lanes(task, specs, platform=platform_key, dry_run=dry_run)
+        created = reused = linked = 0
+        refused: list[str] = []
+        missing: list[str] = []
+        source_ids: list[int] = []
+        for platform_key in sorted(platform_keys):
+            specs = [query_source_spec(task_id=int(task.id), platform=platform_key, query=phrase) for phrase in phrases]
+            result = await ensure_query_lanes(task, specs, platform=platform_key, dry_run=dry_run)
+            created += len(result.created_source_ids)
+            reused += len(result.reused_source_ids)
+            linked += len(result.linked_source_ids)
+            source_ids.extend((*result.created_source_ids, *result.reused_source_ids))
+            refused.extend(result.refused[: max(0, 5 - len(refused))])
+            missing.extend(result.missing[: max(0, 10 - len(missing))])
     except LaneMigrationError as error:
         summary.update(error_code="lane_migration_error", error_hint=" ".join(str(error).split())[:160])
         summary["note"] = mention_note(summary)
@@ -746,11 +735,12 @@ async def _run_mention_lanes_step(
         summary["note"] = mention_note(summary)
         return summary
     summary.update(
-        created=len(result.created_source_ids),
-        reused=len(result.reused_source_ids),
-        linked=len(result.linked_source_ids),
-        refused=list(result.refused[:5]),
-        missing=list(result.missing[:10]),
+        created=created,
+        reused=reused,
+        linked=linked,
+        source_ids=list(dict.fromkeys(source_ids))[:500],
+        refused=refused,
+        missing=missing,
     )
     summary["note"] = mention_note(summary)
     return summary
@@ -935,7 +925,11 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
             # picks them up.
             task = await _load_task(payload.get("agent_task_id")) or task
 
-    discovered_source_ids = (population or {}).get("source_ids") or []
+    discovered_source_ids = list(
+        dict.fromkeys(
+            (*(population or {}).get("source_ids", []), *(mention or {}).get("source_ids", []))
+        )
+    )
     sources = await _resolve_sources(None if snapshot else task, payload, discovered_source_ids=discovered_source_ids)
 
     collector = ContentCollector()

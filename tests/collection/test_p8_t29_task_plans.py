@@ -7,9 +7,11 @@ import pytest
 from app.services.task_plans import (
     TaskPlanError,
     apply_task_plan,
+    apply_task_plan_override,
     materialize_task_plan_window,
     parse_task_plan,
     task_plan_block,
+    task_plan_timezone,
 )
 
 
@@ -56,6 +58,21 @@ def test_selected_scope_requires_real_workspace_source_ids():
         ({"source_scope": "discovery", "collection": {"limit": 10}}, "task_plan_discovery_queries_required"),
         ({"source_scope": "all", "source_ids": [2]}, "task_plan_source_ids_scope_conflict"),
         ({"platforms": ["filesystem"]}, "task_plan_platform_unsupported"),
+        (
+            {"collection": {"queries": [f"phrase {index}" for index in range(6)]}},
+            "task_plan_query_limit_exceeded",
+        ),
+        (
+            {
+                "collection": {
+                    "discovery": {
+                        "communities": True,
+                        "queries": [f"phrase {index}" for index in range(6)],
+                    }
+                }
+            },
+            "task_plan_query_limit_exceeded",
+        ),
         ({"trigger": {"type": "schedule", "cron": "@once"}}, "task_plan_schedule_requires_recurring_cron"),
         ({"window": {"type": "rolling", "days": 0}}, "task_plan_rolling_days_invalid"),
     ],
@@ -108,3 +125,37 @@ def test_rolling_window_materializes_once_and_replay_keeps_same_bounds():
 def test_task_plan_cannot_be_applied_to_digest_payload():
     with pytest.raises(TaskPlanError, match="task_plan_requires_collect_or_analyze"):
         apply_task_plan({}, _plan(), job_type="digest")
+
+
+def test_explicit_schedule_timezone_controls_next_fire_and_legacy_uses_fallback():
+    from app.tasks.cron import next_run_at
+
+    request = _plan(trigger={"type": "schedule", "cron": "0 9 * * *", "timezone": "Europe/Kirov"})
+    plan = parse_task_plan(request)
+    zone = task_plan_timezone(task_plan_block(plan), "UTC")
+
+    assert zone == "Europe/Kirov"
+    assert next_run_at("0 9 * * *", zone, datetime(2026, 10, 25, 5, tzinfo=timezone.utc)) == datetime(
+        2026, 10, 25, 6, tzinfo=timezone.utc
+    )
+    assert task_plan_timezone(None, "Europe/Moscow") == "Europe/Moscow"
+
+
+def test_schedule_timezone_must_be_a_real_iana_zone():
+    with pytest.raises(TaskPlanError, match="task_plan_timezone_invalid"):
+        parse_task_plan(_plan(trigger={"type": "schedule", "cron": "0 9 * * *", "timezone": "Mars/Olympus"}))
+
+
+def test_per_run_plan_override_normalizes_window_but_cannot_change_scope():
+    persisted = apply_task_plan({}, _plan(source_scope="selected", source_ids=[12]), job_type="collect")
+    requested = _plan(
+        source_scope="selected",
+        source_ids=[12],
+        window={"type": "fixed", "start": "2026-10-20", "end": "2026-10-25"},
+    )
+
+    overridden = apply_task_plan_override(persisted, requested, job_type="collect")
+
+    assert overridden["cli_dates"] == {"start_date": "2026-10-20", "end_date": "2026-10-25"}
+    with pytest.raises(TaskPlanError, match="task_plan_override_changes_persisted_scope"):
+        apply_task_plan_override(persisted, _plan(source_scope="all"), job_type="collect")

@@ -1017,6 +1017,9 @@ class AgentTaskManager(BaseManager):
                 if not scheduled:
                     self._require_job_retention_permission(row.job_type)
                 self._validate_job_retention_schedule(row.job_type, row.payload, row.cron_expr)
+                self._validate_task_plan_binding(
+                    row.job_type, row.payload, row.cron_expr, row.agent_scenario_id
+                )
                 if scheduled:
                     active_source_ids = set()
                     if self.requires_sources(row.job_type) and not row.sources:
@@ -1035,7 +1038,13 @@ class AgentTaskManager(BaseManager):
                 schedule_error = None
                 if scheduled and not once:
                     try:
-                        next_fire = next_run_at(row.cron_expr, timezone_name or settings.SCHEDULER_TIMEZONE, after=now)
+                        from app.services.task_plans import task_plan_timezone
+
+                        task_plan = (row.payload or {}).get("task_plan") if isinstance(row.payload, dict) else None
+                        effective_timezone = task_plan_timezone(
+                            task_plan, timezone_name or settings.SCHEDULER_TIMEZONE
+                        )
+                        next_fire = next_run_at(row.cron_expr, effective_timezone, after=now)
                     except (ValueError, KeyError) as error:
                         schedule_error = str(error)
                         next_fire = now
@@ -1048,11 +1057,34 @@ class AgentTaskManager(BaseManager):
                 else:
                     payload = dict(row.payload or {})
                     if extra_payload:
+                        persisted_plan = payload.get("task_plan")
+                        protected = {"source_ids", "collection", "cli_dates"}
+                        requested_protected = protected.intersection(extra_payload)
+                        requested_plan = extra_payload.get("task_plan")
+                        override_keys = set(extra_payload) - {"task_plan"}
+                        if isinstance(persisted_plan, dict):
+                            if requested_protected:
+                                raise ValueError(
+                                    "Task plan run overrides must use task_plan for source, collection, "
+                                    "and window fields"
+                                )
+                            override_keys -= protected
+                            if requested_plan is not None:
+                                from app.services.task_plans import apply_task_plan_override
+
+                                payload = apply_task_plan_override(
+                                    payload, requested_plan, job_type=row.job_type
+                                )
+                                self._validate_task_plan_binding(
+                                    row.job_type, payload, row.cron_expr, row.agent_scenario_id
+                                )
+                        elif requested_plan is not None:
+                            raise ValueError("A task without a saved plan cannot accept a per-run task_plan override")
                         payload.update(
                             {
                                 key: value
                                 for key, value in extra_payload.items()
-                                if value is not None and key != "task_plan"
+                                if value is not None and key in override_keys
                             }
                         )
                     from app.services.task_plans import materialize_task_plan_window
@@ -1123,7 +1155,9 @@ class AgentTaskManager(BaseManager):
                         source_scope = plan.get("source_scope") if plan else None
                         if source_scope == "selected":
                             selected_ids = plan.get("source_ids")
-                            if not isinstance(selected_ids, list) or any(type(value) is not int for value in selected_ids):
+                            if not isinstance(selected_ids, list) or any(
+                                type(value) is not int for value in selected_ids
+                            ):
                                 raise ValueError("Selected task source scope is malformed")
                             selected_set = set(selected_ids)
                             linked_ids = {source.id for source in linked_sources}
@@ -1142,7 +1176,16 @@ class AgentTaskManager(BaseManager):
                                 raise ValueError("Task links sources outside its explicit selected scope")
                             source_rows = [source for source in linked_sources if source.is_active]
                         elif source_scope == "discovery":
-                            source_rows = [source for source in linked_sources if source.is_active]
+                            # Discovery links may include manually selected or
+                            # previously imported workspace sources. This run
+                            # resolves exact population matches dynamically;
+                            # only this task's generated lanes are safe to put
+                            # in the detached replay snapshot up front.
+                            source_rows = [
+                                source
+                                for source in linked_sources
+                                if source.is_active and source.owner_task_id == row.id
+                            ]
                         elif source_scope == "all":
                             from sqlalchemy import or_
 

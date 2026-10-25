@@ -612,6 +612,22 @@ def test_active_membership_is_conservative_and_distinct_from_terminal_jobs():
     assert activity.source_conflict({"source_ids": [1]}, None, ignored, {}, {1}) is None
 
 
+def test_task_plan_admission_uses_scoped_snapshot_and_discovery_reserves_unknown_sources():
+    linked = {4, 5, 6}
+    active = {1, 2, 3, 4, 5, 6}
+
+    selected = {
+        "task_plan": {"source_scope": "selected", "source_ids": [4]},
+        "source_ids": [4, 5],
+    }
+    all_authorized = {"task_plan": {"source_scope": "all"}, "source_ids": [1, 2, 5]}
+    discovery = {"task_plan": {"source_scope": "discovery"}, "source_ids": [5]}
+
+    assert activity.job_source_ids(selected, 10, {10: linked}, active) == {4, 5}
+    assert activity.job_source_ids(all_authorized, 10, {10: linked}, active) == {1, 2, 5}
+    assert activity.job_source_ids(discovery, 10, {10: linked}, active) == active
+
+
 @pytest.mark.asyncio
 async def test_busy_api_run_returns_conflict_without_running_existing_job():
     import ast

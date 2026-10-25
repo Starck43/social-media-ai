@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal, Mapping
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.services.collection.intent import CollectionIntent, collection_block, parse_collection_intent
 
@@ -52,6 +53,8 @@ class TaskPlan:
 
 
 _PLATFORMS = frozenset({"vk", "telegram"})
+_MAX_PLAN_PLATFORMS = 2
+_MAX_PLAN_QUERIES = 5
 _WINDOW_DAYS_MAX = 365
 _COLLECTING_JOB_TYPES = frozenset({"collect", "analyze"})
 
@@ -78,7 +81,11 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
             raise TaskPlanError("task_plan_goal_invalid")
 
     platforms_raw = raw.get("platforms", ["vk"])
-    if not isinstance(platforms_raw, (list, tuple)) or not platforms_raw:
+    if (
+        not isinstance(platforms_raw, (list, tuple))
+        or not platforms_raw
+        or len(platforms_raw) > _MAX_PLAN_PLATFORMS
+    ):
         raise TaskPlanError("task_plan_platforms_invalid")
     platforms: list[str] = []
     for platform in platforms_raw:
@@ -125,6 +132,8 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
         collection = parse_collection_intent({"collection": collection_input})
     except (TypeError, ValueError) as error:
         raise TaskPlanError(str(error)) from error
+    if len(collection.queries) > _MAX_PLAN_QUERIES or len(collection.discovery.queries) > _MAX_PLAN_QUERIES:
+        raise TaskPlanError("task_plan_query_limit_exceeded")
 
     window = _parse_window(raw.get("window"), collection)
     if source_scope == "discovery" and not (
@@ -278,7 +287,40 @@ def _parse_trigger(raw: Any) -> TaskTrigger:
     timezone = raw.get("timezone")
     if timezone is not None and (not isinstance(timezone, str) or not timezone.strip()):
         raise TaskPlanError("task_plan_timezone_invalid")
-    return TaskTrigger("schedule", cron.strip(), timezone.strip() if timezone else None)
+    if timezone is not None:
+        timezone = timezone.strip()
+        try:
+            ZoneInfo(timezone)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise TaskPlanError("task_plan_timezone_invalid") from error
+    return TaskTrigger("schedule", cron.strip(), timezone)
+
+
+def task_plan_timezone(raw: Mapping[str, Any] | None, fallback: str) -> str:
+    """Return a scheduled plan's explicit IANA zone, or preserve legacy fallback."""
+    if raw is None:
+        return fallback
+    return parse_task_plan(raw).trigger.timezone or fallback
+
+
+def apply_task_plan_override(
+    payload: Mapping[str, Any], raw: Mapping[str, Any], *, job_type: str
+) -> dict[str, Any]:
+    """Normalize a per-run plan while keeping its persisted execution identity.
+
+    A run may refine its collection filters/window, but cannot change platforms,
+    source authority, selected IDs, scenario, or schedule. Source relationship
+    changes belong to the task save transaction, not an invocation payload.
+    """
+    existing_raw = payload.get("task_plan")
+    if not isinstance(existing_raw, Mapping):
+        raise TaskPlanError("task_plan_override_requires_persisted_plan")
+    existing = parse_task_plan(existing_raw)
+    proposed = parse_task_plan(raw)
+    fixed_fields = ("platforms", "source_scope", "source_ids", "scenario_id", "trigger")
+    if any(getattr(existing, field) != getattr(proposed, field) for field in fixed_fields):
+        raise TaskPlanError("task_plan_override_changes_persisted_scope")
+    return apply_task_plan(payload, raw, job_type=job_type)
 
 
 def materialize_task_plan_window(payload: Mapping[str, Any], now: Any) -> dict[str, Any]:

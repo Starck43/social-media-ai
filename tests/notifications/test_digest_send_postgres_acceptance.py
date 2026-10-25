@@ -471,13 +471,34 @@ async def test_real_cas_rejects_foreign_scope_and_stale_replaced_intent(digest_e
         assert (await subject.stored())["pending_confirmation"] == old
         await subject.stage()
         replacement = (await subject.stored())["pending_confirmation"]
+        # `82555f2`: an identical repeat is answered by the pending intent, so the
+        # same `intent_id` survives and the stored snapshot is unchanged.
+        assert replacement["intent_id"] == old["intent_id"]
+        assert replacement == old
+        with tenant_scope(workspace.tenant_id):
+            assert await agent_sessions.consume_pending_confirmation(subject.session.id, old) is not None
+        assert "pending_confirmation" not in await subject.stored()
+        digest_effects.publisher.assert_not_awaited()
+        await subject.yes()
+        digest_effects.publisher.assert_awaited_once_with(**ARGS)
+
+
+async def test_real_changed_intent_retires_the_old_snapshot(digest_effects):
+    """A *changed* intent is a new question; the old snapshot must not consume it."""
+    async with owned_workspace() as workspace:
+        subject = await actor(workspace)
+        old = await staged(subject, digest_effects)
+        identity = await subject.identity()
+        with tenant_scope(workspace.tenant_id):
+            await runtime._dispatch_or_stage(
+                subject.session, "digest_send_now", {**ARGS, "period": "themes-of-week"}, f"call-{uuid4().hex}", identity
+            )
+        replacement = (await subject.stored())["pending_confirmation"]
         assert replacement["intent_id"] != old["intent_id"]
         with tenant_scope(workspace.tenant_id):
             assert await agent_sessions.consume_pending_confirmation(subject.session.id, old) is None
         assert (await subject.stored())["pending_confirmation"] == replacement
         digest_effects.publisher.assert_not_awaited()
-        await subject.yes()
-        digest_effects.publisher.assert_awaited_once_with(**ARGS)
 
 
 async def test_two_real_confirmation_turns_wait_on_row_then_publish_once(digest_effects, monkeypatch):

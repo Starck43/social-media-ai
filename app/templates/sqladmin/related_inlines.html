@@ -1,0 +1,31 @@
+{% set inline_sections = related_inlines(model_view, inline_object, request) %}
+{% if inline_sections %}
+<section class="col-12" aria-label="Связанные записи" data-admin-related-inlines>
+  <div class="w-100">
+    <h3 class="mt-3">Связанные записи</h3>
+    <p class="text-muted">Только просмотр. Показаны записи в доступной вам области видимости.</p>
+    {% for section in inline_sections %}
+    <div class="card mb-3">
+      <div class="card-header">
+        <h4 class="card-title">{{ section.title }} <small class="text-muted">({{ section.foreign_key }})</small></h4>
+      </div>
+      <div class="table-responsive">
+        <table class="table card-table table-vcenter">
+          <thead><tr>{% for label in section.columns %}<th scope="col">{{ label }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for row in section.rows %}
+            <tr>{% for value in row %}<td class="text-break">{{ value }}</td>{% endfor %}</tr>
+            {% else %}
+            <tr><td colspan="{{ section.columns|length }}" class="text-muted">Нет доступных записей</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if section.truncated %}
+      <div class="card-footer text-muted">Показаны первые {{ section.limit }} доступных записей.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}

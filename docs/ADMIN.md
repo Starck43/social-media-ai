@@ -89,6 +89,45 @@ from the name (`UnoRouter.AI` → `unorouter`, via `app/core/provider_uid.py`) �
 the browser previews the same slug from `app/static/js/admin-uid.js`.
 
 
+## Read-only related FK lists (P8-T30)
+
+Persisted details and edit pages append **Связанные записи** below the main
+content, including custom Source, analytics and LLM/scenario templates. Creates,
+list pages and unsaved objects do not render this footer. This is a read-only
+projection, not a new CRUD route: no add/edit/delete buttons, detail links,
+exports or foreign-record popup controls are introduced by these lists.
+
+- Discover inbound FK constraints among **registered admin model views** with a
+  registered access resource. Compound FKs stay conjunctive; multiple independent
+  FKs to the parent get separate sections. Missing ORM backrefs are supported.
+  Unregistered models and association-table/many-to-many editors are not exposed.
+- Require a fresh active console actor and parent/target list/details grants and
+  view accessibility. Parent visibility is checked before loading any child list.
+- The lists add scope constraints beyond the historical global console queries.
+  Non-owner platform operators/admins see workspace rows only through their
+  active web membership in an active workspace, and only when that membership's
+  fixed role grants VIEW on the target resource. Owning and granted workspaces
+  are both supported; authorship does not replace workspace rights. Disabled,
+  foreign, unknown-role and unresolved memberships do not grant visibility.
+- The platform owner's existing global workspace inspection exception remains.
+  It does **not** widen personal provider/model catalogs or credentials: those
+  are restricted to the signed-in user's owner/user id for every platform role.
+  Global reference catalogs still require console model rights. These new filters
+  do not change the legacy global scope of the main console pages or grant an
+  ordinary workspace member access to `/admin`.
+- Each FK section selects at most 25 visible records in primary-key order, plus
+  one sentinel for a truthful truncation notice. No unscoped total is queried.
+  Existing view query predicates are preserved. Only configured scalar list
+  columns also allowed in details are projected; sensitive names, JSON/binary
+  values, relationship labels and arbitrary/custom row formatters are excluded.
+  Cells are escaped plain text, length bounded, and never invoke ORM `__str__`.
+  Empty means **Нет доступных записей**, not that no rows exist globally.
+
+Implementation: [inlines.py](../app/admin/inlines.py). Synthetic role/scope,
+ASGI and canonical metadata checks: [P8-T30 tests](../tests/admin/test_p8_t30_related_inlines.py).
+Real PostgreSQL/session and deployed UI audit remain owner-local follow-up;
+mocked evidence does not certify the deployed console.
+
 ## Authentication and platform authority
 
 [Auth backend](../app/admin/auth.py),

@@ -65,6 +65,12 @@
                 <div class="container-fluid">
                     <div class="row row-deck row-cards">
                         {% block content %} {% endblock %}
+                        {% if related_inlines is defined and model_view is defined and request.scope.get('endpoint') and request.scope.get('endpoint').__name__ in ('details', 'edit') %}
+                        {% set inline_object = model if model is defined else (obj if obj is defined else none) %}
+                        {% if inline_object is not none %}
+                        {% include 'sqladmin/related_inlines.html' %}
+                        {% endif %}
+                        {% endif %}
                     </div>
                 </div>
             </div>

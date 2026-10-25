@@ -2418,9 +2418,33 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         if not isinstance(raw_payload, Mapping):
             raise ValueError('Параметры задачи: нужен JSON-объект, например {"period": "day"}')
         try:
-            data["payload"] = apply_collection(dict(raw_payload), raw_payload.get("collection"), job_type=job_type)
+            payload = apply_collection(dict(raw_payload), raw_payload.get("collection"), job_type=job_type)
+            if "task_plan" in raw_payload:
+                from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+
+                plan_raw = raw_payload["task_plan"]
+                plan = parse_task_plan(plan_raw)
+                planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
+                cron_value = data.get("cron_expr") or getattr(model, "cron_expr", None)
+                if cron_value != planned_cron:
+                    raise TaskPlanError("cron_expr must match task_plan.trigger")
+                raw_sources = data.get("sources")
+                if plan.source_scope == "selected" and raw_sources is not None:
+                    linked_ids = sorted(getattr(source, "id", source) for source in raw_sources)
+                    if linked_ids != sorted(plan.source_ids):
+                        raise TaskPlanError("Admin source selection must match task_plan.source_scope")
+                raw_scenario = data.get("agent_scenario")
+                selected_scenario = getattr(raw_scenario, "id", raw_scenario)
+                if selected_scenario is not None and selected_scenario != plan.scenario_id:
+                    raise TaskPlanError("Admin scenario must match task_plan.scenario_id")
+                if plan.source_scope != "selected":
+                    data["sources"] = []
+                payload = apply_task_plan(payload, plan_raw, job_type=job_type)
+            data["payload"] = payload
         except CollectionIntentError as exc:
             raise ValueError(collection_error_message(str(exc))) from None
+        except ValueError as exc:
+            raise ValueError(str(exc)) from None
 
         # Guard: an active source-based task (collect/analyze) needs at least one
         # active source to operate on. Empty links fall back to "all active
@@ -2430,6 +2454,16 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         from app.models.managers.agent_task_manager import AgentTaskManager
 
         active = data.get("is_active", getattr(model, "is_active", False))
+        # The platform admin has no personal payer context. A newly authored
+        # paid plan must be activated by its workspace owner after consent.
+        if is_created and isinstance(data.get("payload"), Mapping) and "task_plan" in data["payload"]:
+            active = False
+            data["is_active"] = False
+            if request is not None and getattr(request, "session", None) is not None:
+                request.session["admin_message"] = {
+                    "type": "warning",
+                    "message": "Новая задача сохранена неактивной: владелец пространства должен настроить оплату и активировать её.",
+                }
         tenant_val = data.get("tenant") or getattr(model, "tenant_id", None)
         tenant_id = tenant_val.id if hasattr(tenant_val, "id") else tenant_val
         # The form delivers the workspace as a string ("1"), and a `tenant_id`

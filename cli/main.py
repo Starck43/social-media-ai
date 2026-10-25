@@ -211,17 +211,42 @@ async def _add_task(
 
             tenant_row = await tenants.get(id=tenant_id) if tenant_id else None
             next_run = next_run_at(cron, resolve_tz(tenant_row))
-        task = await AgentTaskManager().create(
-            name=name,
-            cron_expr=cron,
-            job_type=job_type,
-            payload=parsed_payload,
-            agent_scenario_id=scenario_id,
-            is_active=True,
-            next_run_at=next_run,
-        )
-        if parsed_source_ids:
-            await _set_task_sources(task.id, parsed_source_ids, task.tenant_id)
+        if isinstance(parsed_payload.get("task_plan"), dict):
+            from app.core.database import new_session
+            from app.core.permissions import service_permission_scope
+
+            session = new_session()
+            try:
+                async with session.begin():
+                    task = await AgentTaskManager().create(
+                        session=session,
+                        name=name,
+                        cron_expr=cron,
+                        job_type=job_type,
+                        payload=parsed_payload,
+                        agent_scenario_id=scenario_id,
+                        is_active=False,
+                        next_run_at=next_run,
+                    )
+                    with service_permission_scope("agenttask", "update"):
+                        await AgentTaskManager().set_sources(task.id, parsed_source_ids, session=session)
+            finally:
+                await session.close()
+            rprint(
+                "[yellow]Universal-plan task was saved inactive. Activate it from the workspace after the owner configures payer consent.[/yellow]"
+            )
+        else:
+            task = await AgentTaskManager().create(
+                name=name,
+                cron_expr=cron,
+                job_type=job_type,
+                payload=parsed_payload,
+                agent_scenario_id=scenario_id,
+                is_active=True,
+                next_run_at=next_run,
+            )
+            if parsed_source_ids:
+                await _set_task_sources(task.id, parsed_source_ids, task.tenant_id)
 
         # Hint when the bound scenario wants specific targets the task does not
         # carry — the analysis would otherwise have nothing to aim at.
@@ -260,6 +285,7 @@ def task_add(
         False, "--force-refresh", help="Re-fetch the whole window on every run (collect); stored on the task"
     ),
     payload: str = typer.Option("{}", "--payload", "-p", help='Extra JSON payload, e.g. \'{"period": "week"}\''),
+    task_plan: str = typer.Option(None, "--task-plan", help="Canonical social task plan JSON; source scope is explicit"),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id to create the task in"),
     # Specific analysis targets — they belong on the task (payload), not the
     # scenario (methodology), see app/services/ai/param_registry.py.
@@ -298,6 +324,26 @@ def task_add(
     if not isinstance(parsed_payload, dict):
         rprint("[red]Payload must be a JSON object[/red]")
         raise typer.Exit(1)
+    parsed_source_ids = _split_ints(source_ids)
+    if task_plan is not None:
+        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+
+        try:
+            raw_plan = _json.loads(task_plan)
+            plan = parse_task_plan(raw_plan)
+            planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
+            if cron != planned_cron:
+                raise TaskPlanError("cron must match task_plan.trigger")
+            if source_ids is not None and parsed_source_ids != list(plan.source_ids):
+                raise TaskPlanError("--sources must match task_plan.source_scope and source_ids")
+            if scenario_id is not None and scenario_id != plan.scenario_id:
+                raise TaskPlanError("--scenario must match task_plan.scenario_id")
+            parsed_source_ids = list(plan.source_ids)
+            scenario_id = plan.scenario_id
+            parsed_payload = apply_task_plan(parsed_payload, raw_plan, job_type=job_type)
+        except (ValueError, TypeError) as error:
+            rprint(f"[red]Invalid task plan: {error}[/red]")
+            raise typer.Exit(1) from error
     from app.services.monitoring.selection import SelectionError
 
     try:
@@ -336,7 +382,7 @@ def task_add(
             cron=cron,
             job_type=job_type,
             parsed_payload=parsed_payload,
-            parsed_source_ids=_split_ints(source_ids),
+            parsed_source_ids=parsed_source_ids,
             scenario_id=scenario_id,
             tenant=tenant,
         )
@@ -423,6 +469,7 @@ def task_update(
         "-p",
         help='JSON object merged into the task payload, e.g. \'{"collection": {"content_types": ["posts", "comments"]}}\'',
     ),
+    task_plan: str = typer.Option(None, "--task-plan", help="Replace the canonical social task plan JSON"),
     brands: str = typer.Option(None, "--brands", help="New comma/space separated brands"),
     competitors: str = typer.Option(
         None, "--competitors", help="New comma/space separated competitors"
@@ -453,6 +500,16 @@ def task_update(
     from ._tenant import resolve_tenant_id, tenant_label
 
     parsed_patch: dict | None = None
+    parsed_plan: dict | None = None
+    if task_plan is not None:
+        try:
+            parsed_plan = _json.loads(task_plan)
+        except _json.JSONDecodeError as error:
+            rprint(f"[red]Invalid task plan JSON: {error}[/red]")
+            raise typer.Exit(1) from error
+        if not isinstance(parsed_plan, dict):
+            rprint("[red]Task plan must be a JSON object[/red]")
+            raise typer.Exit(1)
     if payload is not None:
         try:
             parsed_patch = _json.loads(payload)
@@ -524,6 +581,29 @@ def task_update(
 
                 if parsed_patch is not None:
                     updated_payload.update(parsed_patch)
+                planned_sources = None
+                if parsed_plan is not None:
+                    from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+
+                    try:
+                        plan = parse_task_plan(parsed_plan)
+                        planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
+                        if cron is not None and cron != planned_cron:
+                            raise TaskPlanError("--cron must match task_plan.trigger")
+                        if source_ids is not None and _split_ints(source_ids) != list(plan.source_ids):
+                            raise TaskPlanError("--sources must match task_plan.source_scope and source_ids")
+                        if scenario_id is not None and scenario_id != plan.scenario_id:
+                            raise TaskPlanError("--scenario must match task_plan.scenario_id")
+                        new_cron = planned_cron
+                        planned_sources = list(plan.source_ids)
+                        scenario_id_to_store = plan.scenario_id
+                        updated_payload = apply_task_plan(updated_payload, parsed_plan, job_type=new_job_type)
+                    except (ValueError, TypeError) as error:
+                        rprint(f"[red]Invalid task plan: {error}[/red]")
+                        raise typer.Exit(1) from error
+                else:
+                    new_cron = cron if cron is not None else task.cron_expr
+                    scenario_id_to_store = scenario_id if scenario_id is not None else task.agent_scenario_id
                 try:
                     updated_payload = apply_collection(
                         updated_payload,
@@ -534,24 +614,42 @@ def task_update(
                     rprint(f"[red]{collection_error_message(str(error))}[/red]")
                     raise typer.Exit(1) from error
 
-                new_cron = cron if cron is not None else task.cron_expr
                 updates: dict = {
                     "job_type": new_job_type,
                     "payload": updated_payload,
                 }
-                if scenario_id is not None:
-                    updates["agent_scenario_id"] = scenario_id
-                if cron is not None:
+                if scenario_id is not None or parsed_plan is not None:
+                    updates["agent_scenario_id"] = scenario_id_to_store
+                if cron is not None or parsed_plan is not None:
                     tenant_row = await Tenant.objects.get(id=task.tenant_id)
-                    updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant_row))
+                    if new_cron.strip() == "@once":
+                        from datetime import datetime, timedelta, timezone
 
-                await AgentTask.objects.update_by_id(task.id, **updates)
+                        updates["next_run_at"] = datetime.now(timezone.utc) + timedelta(minutes=1)
+                    else:
+                        updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant_row))
 
-                # Update sources if provided
-                if source_ids is not None:
-                    parsed = _split_ints(source_ids)
-                    await _check_task_sources(parsed, task.tenant_id)
-                    await AgentTaskManager().add_sources(task.id, parsed)
+                if parsed_plan is not None:
+                    from app.core.database import new_session
+                    from app.core.permissions import service_permission_scope
+
+                    await _check_task_sources(planned_sources or [], task.tenant_id)
+                    session = new_session()
+                    try:
+                        async with session.begin():
+                            await AgentTask.objects.update_by_id(task.id, session=session, **updates)
+                            with service_permission_scope("agenttask", "update"):
+                                await AgentTaskManager().set_sources(
+                                    task.id, planned_sources or [], session=session
+                                )
+                    finally:
+                        await session.close()
+                else:
+                    await AgentTask.objects.update_by_id(task.id, **updates)
+                    if source_ids is not None:
+                        parsed = _split_ints(source_ids)
+                        await _check_task_sources(parsed, task.tenant_id)
+                        await AgentTaskManager().set_sources(task.id, parsed)
 
                 where = await tenant_label(task.tenant_id)
                 changes = [f"{k}={v}" for k, v in {

@@ -10,7 +10,15 @@ from app.api.deps import require_model_perm
 from app.core.permissions import service_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import AgentTask
-from app.schemas.task import TaskCreate, TaskUpdate, TaskRunRequest, TaskResponse
+from app.schemas.task import (
+    TaskCreate,
+    TaskPlanPreviewRequest,
+    TaskPlanPreviewResponse,
+    TaskPlanRunRequest,
+    TaskRunRequest,
+    TaskResponse,
+    TaskUpdate,
+)
 from app.types import ActionType
 
 
@@ -66,6 +74,56 @@ def _request_collection(request, payload: dict | None) -> dict | None:
 router = APIRouter(tags=["tasks"])
 
 
+@router.post("/plan", response_model=TaskPlanPreviewResponse)
+async def preview_task_plan(
+    request: TaskPlanPreviewRequest,
+    _user = Depends(require_model_perm("agenttask", ActionType.CREATE)),
+):
+    """Normalize a social-task request without writing rows or calling a platform."""
+    from app.services.task_plans import TaskPlanError, parse_task_plan, task_plan_block
+
+    try:
+        plan = parse_task_plan(request.task_plan)
+    except (TaskPlanError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    if request.job_type not in {"collect", "analyze", "digest"}:
+        raise HTTPException(status_code=400, detail="Unsupported job type for a social task plan")
+    return TaskPlanPreviewResponse(
+        task_plan=task_plan_block(plan),
+        collection=task_plan_block(plan).get("collection", {}),
+        warnings=["VK search availability depends on the configured application profile."],
+    )
+
+
+@router.post("/run/plan", response_model=dict)
+async def run_task_plan(
+    request: TaskPlanRunRequest,
+    _user = Depends(require_model_perm("agenttask", ActionType.CREATE)),
+):
+    """Launch one explicit social plan through the common idempotent runner."""
+    from app.services.task_launch import launch_social_task
+    from app.core.permissions import has_permission
+    from app.jobs.source_activity import SourceJobBusy
+
+    # One-off plans create a task receipt, so callers need both rights even
+    # though the legacy task-run route only requires update.
+    if not has_permission(_user, "agenttask", ActionType.UPDATE):
+        raise HTTPException(status_code=403, detail="Missing permission: agenttask.update")
+
+    try:
+        return await launch_social_task(
+            request.task_plan,
+            request_id=request.request_id,
+            job_type=request.job_type,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from None
+    except SourceJobBusy:
+        raise HTTPException(status_code=409, detail="A source in this plan already has an active job") from None
+
+
 def _task_response(t: AgentTask) -> TaskResponse:
     return TaskResponse(
         id=t.id,
@@ -119,9 +177,41 @@ async def create_task(
     if existing:
         raise HTTPException(status_code=409, detail=f"Task '{request.name}' already exists")
 
-    # Validate cron
-    if not AgentTask.objects.validate_cron(request.cron_expr):
-        raise HTTPException(status_code=400, detail=f"Invalid cron expression: {request.cron_expr}")
+    # A canonical plan owns its trigger and source scope. Legacy callers retain
+    # the existing cron/source fields and semantics.
+    payload = _collection_payload(
+        _selection_payload(request, _web_api_payload(request.payload)),
+        _request_collection(request, request.payload),
+        job_type=request.job_type,
+    )
+    source_ids = list(request.source_ids)
+    scenario_id = request.agent_scenario_id
+    cron_expr = request.cron_expr
+    if request.task_plan is not None:
+        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+
+        try:
+            plan = parse_task_plan(request.task_plan)
+            planned_sources = list(plan.source_ids)
+            planned_scenario = plan.scenario_id
+            planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
+            if "source_ids" in request.model_fields_set and source_ids != planned_sources:
+                raise TaskPlanError("source_ids must match task_plan.source_scope and source_ids")
+            if scenario_id is not None and scenario_id != planned_scenario:
+                raise TaskPlanError("agent_scenario_id must match task_plan.scenario_id")
+            if cron_expr is not None and cron_expr != planned_cron:
+                raise TaskPlanError("cron_expr must match task_plan.trigger")
+            source_ids = planned_sources
+            scenario_id = planned_scenario
+            cron_expr = planned_cron
+            payload = apply_task_plan(payload, request.task_plan, job_type=request.job_type)
+        except (TaskPlanError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+
+    if not cron_expr:
+        raise HTTPException(status_code=400, detail="cron_expr or task_plan.trigger is required")
+    if not AgentTask.objects.validate_cron(cron_expr):
+        raise HTTPException(status_code=400, detail=f"Invalid cron expression: {cron_expr}")
 
     # Get tenant timezone for next_run_at
     from app.core.tenant_context import current_tenant_id
@@ -130,33 +220,65 @@ async def create_task(
     tz = resolve_tz(tenant)
 
     # Calculate next run
-    if request.cron_expr.strip() == "@once":
+    if cron_expr.strip() == "@once":
         next_run = datetime.now(timezone.utc) + timedelta(minutes=1)
     else:
-        next_run = next_run_at(request.cron_expr, tz)
+        next_run = next_run_at(cron_expr, tz)
 
-    task = await AgentTask.objects.create(
-        name=request.name.strip()[:100],
-        cron_expr=request.cron_expr,
-        job_type=request.job_type,
-        payload=_collection_payload(
-            _selection_payload(request, _web_api_payload(request.payload)),
-            _request_collection(request, request.payload),
+    if request.task_plan is None:
+        task = await AgentTask.objects.create(
+            name=request.name.strip()[:100],
+            cron_expr=cron_expr,
             job_type=request.job_type,
-        ),
-        agent_scenario_id=request.agent_scenario_id,
-        is_active=request.is_active,
-        next_run_at=next_run,
-    )
+            payload=payload,
+            agent_scenario_id=scenario_id,
+            is_active=request.is_active,
+            next_run_at=next_run,
+        )
+    else:
+        # New plan, task, scenario and source scope form one transaction. A
+        # failed relationship write cannot leave an empty-link legacy task,
+        # which would otherwise mean every active workspace source.
+        from app.core.database import new_session
 
-    # Link sources if provided
-    if request.source_ids:
         from app.models.managers.agent_task_manager import AgentTaskManager
-        # Creating the task is authorized by the endpoint dependency. Linking
-        # its initial sources is trusted bookkeeping performed for that new
-        # tenant-owned task, so grant only the manager's update right here.
-        with tenant_scope(task.tenant_id), service_permission_scope("agenttask", "update"):
-            await AgentTaskManager().add_sources(task.id, request.source_ids)
+
+        session = new_session()
+        try:
+            async with session.begin():
+                task = await AgentTask.objects.create(
+                    session=session,
+                    name=request.name.strip()[:100],
+                    cron_expr=cron_expr,
+                    job_type=request.job_type,
+                    payload=payload,
+                    agent_scenario_id=scenario_id,
+                    is_active=False,
+                    next_run_at=next_run,
+                )
+                with tenant_scope(task.tenant_id), service_permission_scope("agenttask", "update"):
+                    await AgentTaskManager().set_sources(task.id, source_ids, session=session)
+        except (TaskPlanError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        finally:
+            await session.close()
+
+        # Never activate a newly authored paid plan until its creator explicitly
+        # accepts the existing task-payer contract. On unavailable billing the
+        # saved task remains a recoverable inactive draft.
+        if request.is_active:
+            from app.services.billing import consent_current_user_as_task_payer
+            from app.models.managers.personal_billing_manager import PersonalBillingError, PersonalBillingUnavailable
+
+            try:
+                await consent_current_user_as_task_payer(task.id)
+            except (PersonalBillingError, PersonalBillingUnavailable) as error:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Task {task.id} was saved inactive; configure personal billing and consent before activation.",
+                ) from error
+            await AgentTask.objects.update_by_id(task.id, is_active=True)
+            task = await AgentTask.objects.get(id=task.id)
 
     return _task_response(task)
 
@@ -173,6 +295,8 @@ async def update_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     updates = request.model_dump(exclude_unset=True)
+    task_plan_raw = updates.pop("task_plan", None)
+    task_plan_supplied = "task_plan" in request.model_fields_set
     selection_fields = {
         key: updates.pop(key) for key in ("tracked_users", "keywords_list", "keywords_match") if key in updates
     }
@@ -201,6 +325,33 @@ async def update_task(
     if "name" in updates:
         updates["name"] = updates["name"].strip()[:100]
 
+    plan_source_ids = None
+    if task_plan_supplied:
+        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+
+        if task_plan_raw is None:
+            raise HTTPException(status_code=400, detail="task_plan cannot be null; omit it to preserve the plan")
+        try:
+            plan = parse_task_plan(task_plan_raw)
+            plan_source_ids = list(plan.source_ids)
+            planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
+            if "source_ids" in updates:
+                if list(updates["source_ids"]) != plan_source_ids:
+                    raise TaskPlanError("source_ids must match task_plan.source_scope and source_ids")
+            if "agent_scenario_id" in updates and updates["agent_scenario_id"] != plan.scenario_id:
+                raise TaskPlanError("agent_scenario_id must match task_plan.scenario_id")
+            if "cron_expr" in updates and updates["cron_expr"] != planned_cron:
+                raise TaskPlanError("cron_expr must match task_plan.trigger")
+            updates["payload"] = apply_task_plan(
+                _web_api_payload(updates.get("payload", task.payload)),
+                task_plan_raw,
+                job_type=updates.get("job_type", task.job_type),
+            )
+            updates["cron_expr"] = planned_cron
+            updates["agent_scenario_id"] = plan.scenario_id
+        except (TaskPlanError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+
     # Validate cron if changing
     if "cron_expr" in updates:
         if not AgentTask.objects.validate_cron(updates["cron_expr"]):
@@ -222,16 +373,34 @@ async def update_task(
 
     # Update sources if provided
     source_ids = updates.pop("source_ids", None)
+    if plan_source_ids is not None:
+        source_ids = plan_source_ids
 
-    if updates:
-        await AgentTask.objects.update_by_id(task_id, **updates)
-
-    if source_ids is not None:
+    if task_plan_supplied:
+        from app.core.database import new_session
         from app.models.managers.agent_task_manager import AgentTaskManager
-        # The task was loaded through the request's tenant-guarded queryset;
-        # re-enter its persisted tenant for the manager's admission lock.
-        with tenant_scope(task.tenant_id):
-            await AgentTaskManager().add_sources(task_id, source_ids)
+
+        session = new_session()
+        try:
+            with tenant_scope(task.tenant_id):
+                async with session.begin():
+                    await AgentTask.objects.update_by_id(task_id, session=session, **updates)
+                    with service_permission_scope("agenttask", "update"):
+                        await AgentTaskManager().set_sources(task_id, source_ids or [], session=session)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        finally:
+            await session.close()
+    else:
+        if updates:
+            await AgentTask.objects.update_by_id(task_id, **updates)
+
+        if source_ids is not None:
+            from app.models.managers.agent_task_manager import AgentTaskManager
+            # The task was loaded through the request's tenant-guarded queryset;
+            # re-enter its persisted tenant for the manager's admission lock.
+            with tenant_scope(task.tenant_id):
+                await AgentTaskManager().set_sources(task_id, source_ids)
 
     task = await AgentTask.objects.get(id=task_id)
     return _task_response(task)

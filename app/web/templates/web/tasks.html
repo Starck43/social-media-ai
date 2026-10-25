@@ -227,6 +227,36 @@
                 {{ task_retention_fields("add", "task.job_type") }}
                 {{ task_collection_fields(collection_defaults, "add", "task.job_type", collection_defaults.start_date, collection_defaults.end_date) }}
 
+                <div x-show="task.job_type === 'collect' || task.job_type === 'analyze'" x-cloak
+                     class="space-y-3 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                    <label class="block text-sm text-slate-700 dark:text-slate-300">Цель задачи</label>
+                    <input name="task_goal" type="text" maxlength="500" placeholder="Например: найти свежие обращения по ремонту квартир"
+                           class="{{ control() }}">
+                    <div class="grid gap-3 sm:grid-cols-2">
+                        <label class="block text-sm text-slate-700 dark:text-slate-300">Область источников
+                            <select name="source_scope" x-model="task.source_scope" class="{{ control() }} mt-1">
+                                <option value="selected">Выбранные источники</option>
+                                <option value="discovery">Найти сообщества по теме</option>
+                                <option value="all">Все активные источники</option>
+                            </select>
+                        </label>
+                        <label class="block text-sm text-slate-700 dark:text-slate-300">Окно данных
+                            <select name="window_type" x-model="task.window_type" class="{{ control() }} mt-1">
+                                <option value="fixed">Фиксированный период</option>
+                                <option value="rolling">Последние N дней (обновлять при запуске)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="block text-sm text-slate-700 dark:text-slate-300">Дней для скользящего окна
+                        <input name="rolling_days" type="number" min="1" max="365" value="1" class="{{ control() }} mt-1">
+                    </label>
+                    <fieldset>
+                        <legend class="mb-1 text-sm text-slate-700 dark:text-slate-300">Платформы</legend>
+                        <label class="mr-4 text-sm"><input type="checkbox" name="platforms" value="vk" checked> VK</label>
+                        <label class="text-sm"><input type="checkbox" name="platforms" value="telegram"> Telegram</label>
+                    </fieldset>
+                </div>
+
                 <div>
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Расписание</label>
                     <div x-data="scheduleBuilder()"
@@ -321,7 +351,7 @@
                 </div>
 
                 {% if sources %}
-                <div x-show="task.job_type !== 'prune'" x-cloak>
+                <div x-show="(task.job_type === 'collect' || task.job_type === 'analyze') && task.source_scope === 'selected'" x-cloak>
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
                     <div class="space-y-2 max-h-40 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                         {% for group in source_groups %}
@@ -343,7 +373,7 @@
                         </ul>
                         {% endfor %}
                     </div>
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Оставьте пустым для всех источников. Отметка деактивированного источника активирует его.</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Выберите минимум один источник. Отметка деактивированного источника активирует его.</p>
                 </div>
                 {% endif %}
 
@@ -840,8 +870,10 @@
             schedOnce: false,
             task: {
                 source_ids: PREFILL_SOURCE_IDS.slice(),
+                source_scope: PREFILL_SOURCE_IDS.length ? "selected" : "all",
                 job_type: PREFILL_JOB_TYPE,
                 scenario_id: PREFILL_SCENARIO_ID || "",
+                window_type: "rolling",
                 start_date: "",
                 end_date: "",
                 digest_period: "day",

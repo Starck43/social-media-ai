@@ -42,8 +42,6 @@ from app.services.ai.cache_pricing import (
 )
 from app.services.ai.dispatch_receipts import build_dispatch_receipt
 
-pytestmark = pytest.mark.cache_tariff_db
-
 D = Decimal
 
 

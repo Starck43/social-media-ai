@@ -58,7 +58,7 @@ means not recorded; source recovery links remain in the card.
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · —
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · —
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · —
-- [Q-11](docs/tasks/q-11.md) Individual and company onboarding — **OPEN** · unassigned · —
+- [Q-11](docs/tasks/q-11.md) Individual and company onboarding — **RESOLVED** · owner decision 2026-10-25 · [PR #238](https://github.com/Starck43/social-media-ai/pull/238)
 - [Q-12](docs/tasks/q-12.md) Self-service email password recovery for the public phase — **OPEN** · product-owner · —
 
 Choose one unclaimed dependency-ready task; P10 security P0 items have priority.

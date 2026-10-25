@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 from uuid import uuid4
+from unittest.mock import AsyncMock
 
 _conftest_path = Path(__file__).resolve().parents[1] / "conftest.py"
 _conftest = next(
@@ -133,7 +134,7 @@ class Workspace:
                 await AgentScenario.objects.delete_by_id(scenario_id)
             for source_id in reversed(self.source_ids):
                 await Source.objects.delete_by_id(source_id)
-            await TaskBillingPayer.objects.delete(tenant_id=self.tenant.id, payer_user_id=self.user.id)
+            assert await TaskBillingPayer.objects.filter(tenant_id=self.tenant.id).count() == 0
             await PersonalBillingAccount.objects.delete(user_id=self.user.id)
             await tenants.delete_by_id(self.tenant.id)
             await User.objects.delete_by_id(self.user.id)
@@ -146,12 +147,28 @@ def _actor_scope(workspace: Workspace):
 
 
 @pytest.fixture
-async def workspace():
+async def workspace(request, monkeypatch):
+    # Consent persistence belongs to the existing personal-billing contract.
+    # This suite tests the launch boundary and its committed task/job races.
+    # Double only a successful consent's append-only side effect; keep the
+    # missing-account and membership-refusal paths real. This prevents immortal
+    # synthetic consent rows in a shared schema without weakening its triggers.
+    consent = None
+    if request.node.name in {
+        "test_same_request_concurrently_creates_one_task_and_one_job",
+        "test_request_key_cannot_be_reused_for_different_conditions",
+        "test_launch_receipt_survives_job_pruning",
+    }:
+        consent = AsyncMock()
+        monkeypatch.setattr("app.services.billing.payer.consent_current_user_as_task_payer", consent)
     value = await Workspace.create()
     try:
         yield value
     finally:
         await value.cleanup()
+    if consent is not None:
+        assert consent.await_count > 0
+        assert all(call.args[0] in value.task_ids for call in consent.await_args_list)
 
 
 def _plan(scenario_id: int, source_id: int) -> dict:

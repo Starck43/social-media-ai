@@ -84,6 +84,7 @@
           x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }"
           x-on:pageshow.window="sending = false" data-task-editor-form>
         <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="trigger_timezone" value="{{ edit.trigger_timezone }}">
         <input type="hidden" name="return_to_detail" value="1">
         {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                          value="{{ filter_tenant_id }}">{% endif %}

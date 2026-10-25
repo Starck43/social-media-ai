@@ -439,7 +439,7 @@ def _payload_from_form(
 
 def _task_plan_from_form(
 		goal, platforms, source_scope, source_ids, scenario_id, job_type, cron_expr, payload,
-		window_type, rolling_days,
+		window_type, rolling_days, trigger_timezone="",
 ) -> dict | None:
 	"""Build the additive canonical plan from the current task form."""
 	if source_scope == "legacy":
@@ -455,6 +455,8 @@ def _task_plan_from_form(
 		cli_dates = payload.get("cli_dates") if isinstance(payload.get("cli_dates"), dict) else {}
 		window = {"type": "fixed", "start": cli_dates.get("start_date"), "end": cli_dates.get("end_date")}
 	trigger = {"type": "once"} if cron_expr == "@once" else {"type": "schedule", "cron": cron_expr}
+	if trigger["type"] == "schedule" and trigger_timezone.strip():
+		trigger["timezone"] = trigger_timezone.strip()
 	raw = {
 		"version": 1,
 		"goal": goal.strip() or None,
@@ -543,6 +545,7 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"cron_expr": task.cron_expr,
 		"is_active": task.id in effective_active,
 		"source_ids": source_ids,
+		"trigger_timezone": ((payload.get("task_plan") or {}).get("trigger") or {}).get("timezone") or "",
 		"task_goal": (payload.get("task_plan") or {}).get("goal") or "",
 		"source_scope": (payload.get("task_plan") or {}).get(
 			"source_scope", "selected" if source_ids else "all"
@@ -924,6 +927,7 @@ async def task_create(
 		platforms: list[str] = Form([]),
 		window_type: str = Form("fixed"),
 		rolling_days: int | None = Form(default=None),
+		trigger_timezone: str = Form(""),
 		scenario_id: int = Form(default=None),
 		tracked_users: str = Form(""),
 		keywords_match: str = Form("any"),
@@ -1095,7 +1099,7 @@ async def task_create(
 		try:
 			task_plan = _task_plan_from_form(
 				task_goal, platforms, source_scope, parsed_source_ids, scenario_id,
-				job_type, cron_expr, payload, window_type, rolling_days,
+				job_type, cron_expr, payload, window_type, rolling_days, trigger_timezone,
 			)
 			if task_plan is not None:
 				from app.services.task_plans import apply_task_plan
@@ -1158,7 +1162,8 @@ async def task_create(
 	# The workspace zone wins; the global setting is only the fallback. Must
 	# agree with the runner, which re-advances the schedule in the same zone.
 	tenant = await tenants.get(id=tenant_id)
-	tz = resolve_tz(tenant)
+	from app.services.task_plans import task_plan_timezone
+	tz = task_plan_timezone(task_plan, resolve_tz(tenant))
 
 	if cron_expr == "@once":
 		next_run = datetime.now(timezone.utc) + timedelta(minutes=1)
@@ -1919,6 +1924,7 @@ async def task_update(
 		platforms: list[str] = Form([]),
 		window_type: str = Form("fixed"),
 		rolling_days: int | None = Form(default=None),
+		trigger_timezone: str = Form(""),
 		scenario_id: int = Form(default=None),
 		tracked_users: str = Form(""),
 		keywords_match: str = Form("any"),
@@ -2123,7 +2129,7 @@ async def task_update(
 		try:
 			task_plan = _task_plan_from_form(
 				task_goal, platforms, source_scope, parsed_source_ids, scenario_id,
-				job_type, cron_expr, payload, window_type, rolling_days,
+				job_type, cron_expr, payload, window_type, rolling_days, trigger_timezone,
 			)
 			if task_plan is not None:
 				from app.services.task_plans import apply_task_plan
@@ -2159,7 +2165,9 @@ async def task_update(
 	# Same rule as create: the workspace zone, so an edit does not silently
 	# re-schedule the task in the global zone the runner would keep using.
 	tenant = await tenants.get(id=tenant_id)
-	tz = resolve_tz(tenant)
+	from app.services.task_plans import task_plan_timezone
+	stored_plan = (task.payload or {}).get("task_plan") if isinstance(task.payload, dict) else None
+	tz = task_plan_timezone(task_plan or stored_plan, resolve_tz(tenant))
 
 	if cron_expr == "@once":
 		next_run = datetime.now(timezone.utc) + timedelta(minutes=1)

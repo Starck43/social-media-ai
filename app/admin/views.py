@@ -2542,8 +2542,13 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                 # the offset between the two on its first fire.
                 with tenant_scope(bypass=True):
                     tenant = await Tenant.objects.get(id=tenant_id) if tenant_id else None
+                from app.services.task_plans import task_plan_timezone
 
-                data["next_run_at"] = compute_next(cron_expr, resolve_tz(tenant))
+                task_plan = (data.get("payload") or {}).get("task_plan")
+                data["next_run_at"] = compute_next(
+                    cron_expr,
+                    task_plan_timezone(task_plan, resolve_tz(tenant)),
+                )
         await super().on_model_change(data, model, is_created, request)
 
     def list_query(self, request: Request) -> Select:

@@ -222,6 +222,7 @@
                   x-on:schedule-once.window="schedOnce = $event.detail"
                   x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="trigger_timezone" value="">
                 {{ tenant_field(is_superuser, filter_tenant_id) }}
                 {{ task_fields(job_types, "add", "task.job_type", "Хранение истории Jobs" if prefill_retention else "") }}
                 {{ task_retention_fields("add", "task.job_type") }}

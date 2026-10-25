@@ -136,6 +136,58 @@ def task_list():
     _run_platform(_run())
 
 
+@task_app.command("result")
+def task_result_cmd(
+    task_id: int = typer.Argument(..., help="AgentTask ID"),
+    job_id: int = typer.Option(None, "--job-id", help="Read one retained run instead of the latest run"),
+    limit: int = typer.Option(5, min=1, max=10, help="Maximum permitted analysis summaries"),
+    tenant: str = typer.Option(..., "--tenant", help="Workspace slug or ID"),
+):
+    """Read bounded task status and permitted analysis summaries."""
+    from rich import print as rprint
+    from rich.table import Table
+
+    from app.core.tenant_context import tenant_scope
+    from app.services.task_results import task_result
+
+    async def _run():
+        from ._tenant import resolve_tenant_id
+
+        tenant_id = await resolve_tenant_id(tenant)
+        if tenant_id is None:
+            rprint("[red]Specify --tenant to keep task results workspace-scoped.[/red]")
+            raise typer.Exit(1)
+        with tenant_scope(tenant_id):
+            result = await task_result(task_id, job_id=job_id, limit=limit)
+        if result is None:
+            rprint("[yellow]Task or run not found[/yellow]")
+            raise typer.Exit(1)
+        rprint(
+            f"Task {result['task_id']} · status={result['status'] or 'unknown'} · "
+            f"job={result['job_id'] or '—'} ({result['job_status']}) · coverage={result['coverage']}"
+        )
+        if result["counts"]:
+            rprint("Counts: " + ", ".join(f"{key}={value}" for key, value in result["counts"].items()))
+        if result["analyses"]:
+            table = Table(title="Recent analyses")
+            table.add_column("ID")
+            table.add_column("Title")
+            table.add_column("Summary")
+            table.add_column("URL")
+            for analysis in result["analyses"]:
+                table.add_row(
+                    str(analysis["id"]),
+                    analysis["title"],
+                    analysis["summary"] or "—",
+                    analysis["url"],
+                )
+            rprint(table)
+        else:
+            rprint("No analysis summaries are available to this operator.")
+
+    _run_platform(_run())
+
+
 async def _add_task(
     name: str,
     cron: str,
@@ -156,6 +208,7 @@ async def _add_task(
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
     from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.models.managers.tenant_manager import tenants
     from app.services.collection.intent import (
         CollectionIntentError,
         apply_collection,
@@ -190,11 +243,10 @@ async def _add_task(
         # The workspace tier caps how many scheduled tasks it may hold. The CLI
         # is an operator surface, so it is still the tier that answers — not an
         # "administrators may exceed the quota" escape hatch.
+        tenant_row = await tenants.get(id=tenant_id) if tenant_id else None
         if tenant_id:
-            from app.models.managers.tenant_manager import tenants
             from app.services.tenancy.limits import check_task_limit
 
-            tenant_row = await tenants.get(id=tenant_id)
             if tenant_row is not None:
                 blocked = await check_task_limit(tenant_row)
                 if blocked:
@@ -202,15 +254,14 @@ async def _add_task(
                     raise typer.Exit(1)
         # `@once` is not a croniter expression, so it gets a near-term fire time
         # (same rule as the web form) instead of going through next_run_at().
+        from app.services.task_plans import task_plan_timezone
+        from app.tasks.cron import resolve_tz
+
+        plan_tz = task_plan_timezone(parsed_payload.get("task_plan"), resolve_tz(tenant_row))
         if cron.strip() == "@once":
             next_run = datetime.now(timezone.utc) + timedelta(minutes=1)
         else:
-            # The workspace zone, same rule as the web form and the runner.
-            from app.models.managers.tenant_manager import tenants
-            from app.tasks.cron import resolve_tz
-
-            tenant_row = await tenants.get(id=tenant_id) if tenant_id else None
-            next_run = next_run_at(cron, resolve_tz(tenant_row))
+            next_run = next_run_at(cron, plan_tz)
         if isinstance(parsed_payload.get("task_plan"), dict):
             from app.core.database import new_session
             from app.core.permissions import service_permission_scope
@@ -539,6 +590,7 @@ def task_update(
 
             for task in matches:
                 updated_payload = dict(task.payload) if task.payload else {}
+                stored_plan = updated_payload.get("task_plan")
                 if tracked_users is not None or keywords is not None:
                     try:
                         updated_payload = AgentTaskManager.build_selection_payload(
@@ -604,6 +656,29 @@ def task_update(
                 else:
                     new_cron = cron if cron is not None else task.cron_expr
                     scenario_id_to_store = scenario_id if scenario_id is not None else task.agent_scenario_id
+                    if isinstance(stored_plan, dict):
+                        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+
+                        try:
+                            stored = parse_task_plan(stored_plan)
+                            stored_cron = "@once" if stored.trigger.type == "once" else stored.trigger.cron
+                            if cron is not None and cron != stored_cron:
+                                raise TaskPlanError("Use --task-plan when changing a planned task trigger")
+                            if source_ids is not None and _split_ints(source_ids) != list(stored.source_ids):
+                                raise TaskPlanError("Use --task-plan when changing a planned task source scope")
+                            if scenario_id is not None and scenario_id != stored.scenario_id:
+                                raise TaskPlanError("Use --task-plan when changing a planned task scenario")
+                            if parsed_patch is not None:
+                                if parsed_patch.get("task_plan", stored_plan) != stored_plan:
+                                    raise TaskPlanError("Use --task-plan when changing a planned task")
+                                if parsed_patch.get("collection", stored_plan.get("collection")) != stored_plan.get(
+                                    "collection"
+                                ):
+                                    raise TaskPlanError("Use --task-plan when changing a planned task collection")
+                            updated_payload = apply_task_plan(updated_payload, stored_plan, job_type=new_job_type)
+                        except (TaskPlanError, ValueError, TypeError) as error:
+                            rprint(f"[red]Invalid task plan: {error}[/red]")
+                            raise typer.Exit(1) from error
                 try:
                     updated_payload = apply_collection(
                         updated_payload,
@@ -622,12 +697,18 @@ def task_update(
                     updates["agent_scenario_id"] = scenario_id_to_store
                 if cron is not None or parsed_plan is not None:
                     tenant_row = await Tenant.objects.get(id=task.tenant_id)
+                    from app.services.task_plans import task_plan_timezone
+
+                    plan_tz = task_plan_timezone(
+                        parsed_plan if parsed_plan is not None else stored_plan,
+                        resolve_tz(tenant_row),
+                    )
                     if new_cron.strip() == "@once":
                         from datetime import datetime, timedelta, timezone
 
                         updates["next_run_at"] = datetime.now(timezone.utc) + timedelta(minutes=1)
                     else:
-                        updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant_row))
+                        updates["next_run_at"] = next_run_at(new_cron, plan_tz)
 
                 if parsed_plan is not None:
                     from app.core.database import new_session

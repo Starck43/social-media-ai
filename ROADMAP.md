@@ -48,7 +48,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P10](docs/tasks/p10-audit-hardening.md)
 
-- [P10-T06](docs/tasks/p10-t06.md) Safe provider errors with accounting — **TODO** · unassigned · —
+- [P10-T06](docs/tasks/p10-t06.md) Safe provider errors with accounting — **READY** · remote Notion agent (fix/p10-t06-safe-provider-errors) · [PR #236](https://github.com/Starck43/social-media-ai/pull/236)
 - [P10-T07](docs/tasks/p10-t07.md) Consistent digest scope/window/rows — **READY** · remote Notion agent (fix/p10-t07-digest-scope-consistency) · [PR #235](https://github.com/Starck43/social-media-ai/pull/235)
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —

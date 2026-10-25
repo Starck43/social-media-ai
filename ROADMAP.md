@@ -49,7 +49,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P10](docs/tasks/p10-audit-hardening.md)
 
-- [P10-T03](docs/tasks/p10-t03.md) Separate profile and privilege changes — **TODO** · unassigned · —
+- [P10-T03](docs/tasks/p10-t03.md) Separate profile and privilege changes — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
 - [P10-T06](docs/tasks/p10-t06.md) Safe provider errors with accounting — **TODO** · unassigned · —
 - [P10-T07](docs/tasks/p10-t07.md) Consistent digest scope/window/rows — **TODO** · unassigned · —
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —

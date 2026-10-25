@@ -794,3 +794,64 @@ ul#model_type li label {
         flex-direction: column;
     }
 }
+
+/* ── Table registry (admin): блоки идут вертикально, левый — сверху ── */
+[data-table-registry],
+[data-table-registry-detail] {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+[data-table-registry] > .card,
+[data-table-registry-detail] > .card {
+    width: 100%;
+    max-width: 100%;
+}
+[data-table-registry] .card-table,
+[data-table-registry-detail] .card-table {
+    width: 100%;
+}
+[data-table-registry] .card-table th,
+[data-table-registry] .card-table td,
+[data-table-registry-detail] .card-table th,
+[data-table-registry-detail] .card-table td {
+    white-space: nowrap;
+    vertical-align: middle;
+}
+[data-table-registry] .card-table td:first-child a,
+[data-table-registry-detail] .card-table td:first-child {
+    font-weight: 600;
+}
+[data-table-registry] .card-footer .pagination,
+[data-table-registry-detail] .card-footer .pagination {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+}
+[data-table-registry] .card-footer .pagination > li,
+[data-table-registry-detail] .card-footer .pagination > li {
+    margin-bottom: 0.25rem;
+}
+[data-table-registry] form[role=search] {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+[data-table-registry] form[role=search] .btn {
+    width: auto;
+}
+@media (max-width: 575.98px) {
+    [data-table-registry] .card-body,
+    [data-table-registry-detail] .card-body {
+        padding: 0.75rem;
+    }
+    [data-table-registry] .card-footer,
+    [data-table-registry-detail] .card-footer {
+        justify-content: center;
+    }
+    [data-table-registry] form[role=search] {
+        flex-direction: column;
+    }
+    [data-table-registry] form[role=search] .btn {
+        width: 100%;
+    }
+}

@@ -21,6 +21,13 @@ CELL_LIMIT = 180
 # List projections are intentionally stricter than general console formatters.
 PRIVATE_NAMES = ("password", "secret", "token", "key", "hash", "payload", "error", "meta", "params", "prompt")
 
+#: Tables whose rows are the platform's high-volume payload, not a relation of
+#: the parent worth listing inline. `collected_items` alone is the largest
+#: table and its rows are long texts and media, so showing the newest 25 under
+#: every workspace only duplicates the collection pages and makes the form
+#: slow. They stay reachable through their own console views.
+INLINE_EXCLUDED_TABLES = frozenset({"collected_items"})
+
 
 def scope_predicate(model: Any, actor: Any):
     """Additional inline scope; console grants alone never widen membership.
@@ -175,6 +182,8 @@ async def related_inlines(view: Any, obj: Any, request: Any) -> list[dict]:
     sections = []
     for target in view._admin_ref._views:
         if not getattr(target, "model", None) or not readable(target, request):
+            continue
+        if target.model.__table__.name in INLINE_EXCLUDED_TABLES:
             continue
         if resource_for(target.model.__table__.name) is None:
             continue

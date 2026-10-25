@@ -40,7 +40,6 @@ means not recorded; source recovery links remain in the card.
 - [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —
 - [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
 - [P8-T29](docs/tasks/p8-t29.md) Plan abstract search-and-analyse requests — **TODO** · unassigned · —
-- [P8-T30](docs/tasks/p8-t30.md) read-only scoped admin reverse-FK lists — **READY** · Notion remote executor/custodian · [PR #234 evidence](https://github.com/Starck43/social-media-ai/pull/234#issuecomment-6401468805)
 
 ## [P9](docs/tasks/p9-safe-activation.md)
 
@@ -48,13 +47,12 @@ means not recorded; source recovery links remain in the card.
 
 ## [P10](docs/tasks/p10-audit-hardening.md)
 
-- [P10-T06](docs/tasks/p10-t06.md) Safe provider errors with accounting — **READY** · remote Notion agent (fix/p10-t06-safe-provider-errors) · [PR #236](https://github.com/Starck43/social-media-ai/pull/236)
-- [P10-T07](docs/tasks/p10-t07.md) Consistent digest scope/window/rows — **READY** · remote Notion agent (fix/p10-t07-digest-scope-consistency) · [PR #235](https://github.com/Starck43/social-media-ai/pull/235)
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
 - [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
 - [P10-T20](docs/tasks/p10-t20.md) Align the digest-confirmation suites with the deliberate intent dedup — **TODO** · unassigned · —
+- [P10-T21](docs/tasks/p10-t21.md) Admin polish after P8-T30: drop the collected-items inline and steady the registry tests — **IN PROGRESS** · opencode · —
 
 ## Questions
 

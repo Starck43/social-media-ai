@@ -407,6 +407,40 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Seven pre-existing workspace/permissions test failures at base `0997534`
   (verified by stash) are not claimed by this task.
 
+- [x] P10-T03 (AUD-03, P1) — separate self-service profile updates from
+  privilege updates; accept: profile updates cannot elevate authority; fresh
+  privileged operator policy and endpoint/manager negative controls; owner:
+  opencode; status: DONE — accepted 2026-10-25, integrated into dev `bd97589`
+  (implementation `682e22b`, claim `4bc03d0`; rebased over the P3-T01 merge
+  `f46de6e`, then fast-forward).
+  Finding source: `docs/audits/2026-10-15-dev.md#aud-03` on the audit branch.
+  The audited design (profile input forwarding `is_superuser`/`is_active` to
+  storage) was already replaced by `eb6cad6`, so the task proved the replacement
+  through the real endpoint and the real manager and pinned it.
+  `tests/security/test_p10_t03_profile_privilege_split.py` (8 cases) covers the
+  schema (`UserUpdate` is `username`/`email` only), the manager's independent
+  `400` for any other key, a hostile-body self-update and an operator update of
+  a third account (role, state, identity and password hash unchanged), a
+  cross-target self-update (`403`), a grant revoked between two requests (fails
+  closed on the next one), and platform-role changes only through
+  `PUT /users/{id}/platform-role`, never to `superuser`.
+  One real defect was found in the same area and fixed: P10-T18 had routed
+  `/api/v1/users/me` through `_resolve_tenant`, contradicting the documented
+  account-level contract (`docs/API.md`, Authorization) and leaving an API-only
+  registration — which creates no workspace — unable to read or edit its own
+  profile. `/users/me` and `/auth/change-password` are account-level again
+  (`_ACCOUNT_PATHS`); the deactivated-workspace and foreign-`X-Tenant-Id`
+  denials are proven on `GET /api/v1/sources`, and the P10-T18 entry above
+  carries the correction. The bounded policy lives in
+  `docs/ACCESS_MIGRATION.md` ("Profile updates and privilege updates are
+  separate").
+  Checks at the integrated revision: the new suite with the inactive-workspace
+  suite 11 passed; with the workspace-member-role, registration-privilege and
+  owner-guard suites 63 passed; 19 passed on the rebased branch before
+  integration. Black/isort/diff-check clean on the edited files; the two
+  pre-existing non-black-clean hunks in `api_scope.py` were left untouched. No
+  migration, schema, provider, delivery or production change.
+
 - [x] P10-T18 — repair the workspace-access contracts broken by the
   authorization split; accept: seven pre-existing failures classified, product
   defects fixed, stale expectations updated, neighbouring suites unchanged;

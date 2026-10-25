@@ -55,6 +55,7 @@ means not recorded; source recovery links remain in the card.
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
+- [P10-T18](docs/tasks/p10-t18.md) Repair the workspace-access contracts broken by the authorization split — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
 
 ## Questions
 

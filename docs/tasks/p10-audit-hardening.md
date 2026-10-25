@@ -407,6 +407,33 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   Seven pre-existing workspace/permissions test failures at base `0997534`
   (verified by stash) are not claimed by this task.
 
+- [x] P10-T18 — repair the workspace-access contracts broken by the
+  authorization split; accept: seven pre-existing failures classified, product
+  defects fixed, stale expectations updated, neighbouring suites unchanged;
+  owner: opencode; status: DONE — accepted 2026-10-25 at dev
+  `b3c295c` (task commit and fast-forward integration; claim `609586a`).
+  Two real defects: `permission_scope(is_owner=True, member_grants=...)` only
+  used the owner preset when the argument was `None`, so a defensive empty set
+  stripped the workspace owner of every workspace right (the unused
+  `_workspace_owner` context var is gone); and the early
+  `/api/v1/users/me` bypass from `eb6cad6` skipped `_resolve_tenant`, undoing the
+  deactivated-workspace fail-closed check from `8e5fd3c` — profile routes again
+  resolve active membership and validate `X-Tenant-Id`, while
+  `/api/v1/auth/change-password` stays account-level by design. Five further
+  failures were expectations older than the `platforms` settings tab and the
+  personal LLM catalog: `tenant` is a workspace resource, and
+  `llmmodel`/`llmprovider` follow the acting user only (never a workspace role
+  or another identity). Checks on the integrated revision: the three repaired
+  suites 12 passed; `tests/web/test_web_settings.py` +
+  `test_settings_admin_entry_acceptance.py` 20 passed; whole `tests/security`
+  plus the API privacy suite compared with dev `c1069ef` — no new failures, the
+  six security cases here are the only difference. The directory still carries
+  pre-existing stale failures (`test_access_policy.py` alone: 46 failed on dev)
+  and the privacy suite 47 errors on dev; this task does not claim them.
+  Black/isort/diff-check clean on the edited files; `api_scope.py` was already
+  not black-clean at base, unrelated lines untouched. No schema, migration or
+  production change.
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

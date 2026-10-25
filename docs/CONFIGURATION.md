@@ -72,7 +72,6 @@ PASSWORD_REQUIRE_NUMBERS=true
 PASSWORD_REQUIRE_SPECIAL=false
 
 # ─── Rate Limiting ────────────────────────────────────────────
-RESET_PASSWORD_RATE_LIMIT=3/hour
 CHANGE_PASSWORD_RATE_LIMIT=5/minute
 
 # ─── CSRF ─────────────────────────────────────────────────────
@@ -203,8 +202,7 @@ failure tracking and cookie-independent limits as a separate implementation task
 
 | Variable | Default | Description |
 |---|---|---|
-| `RESET_PASSWORD_RATE_LIMIT` | `3/hour` | Rate limit for password reset endpoint |
-| `CHANGE_PASSWORD_RATE_LIMIT` | `5/minute` | Rate limit for change password endpoint |
+| `CHANGE_PASSWORD_RATE_LIMIT` | `5/minute` | Rate limit for the operator password change/reset endpoint |
 
 ### CSRF
 

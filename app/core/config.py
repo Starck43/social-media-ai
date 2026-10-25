@@ -35,8 +35,9 @@ class Settings(BaseSettings):
     # Rate limiting settings
     RESET_PASSWORD_RATE_LIMIT: str = "3/hour"
     CHANGE_PASSWORD_RATE_LIMIT: str = "5/minute"
-    LOGIN_TIMEOUT_MINUTES: int = 15  # Lockout duration after max attempts
-    MAX_LOGIN_ATTEMPTS: int = 5
+    LOGIN_TIMEOUT_MINUTES: int = 15  # Lockout duration and counting window, shared across login surfaces
+    MAX_LOGIN_ATTEMPTS: int = 5  # Failed attempts per account before the shared lockout
+    LOGIN_IP_MAX_ATTEMPTS: int = 20  # Failed attempts per client address, across all accounts
 
     # Collection freshness. An active source that has not been checked for
     # longer than this is reported on the sources page. Collection runs on the

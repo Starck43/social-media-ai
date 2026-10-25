@@ -507,9 +507,17 @@ from the web UI selector or full data-endpoint acceptance from a page GET.
   storage. It carries an access JWT; max age is 24 hours. Access JWT expiry follows
   the environment-specific token settings. HTTPS-only is false only for the
   explicit development profile.
-- `LOGIN_TIMEOUT_MINUTES` is the legacy lockout interval, not session lifetime.
-  Login counters are cookie-local; ordinary wrong-password returns do not call
-  `track_login_attempt()`. A shared cross-surface throttle is still open work.
+- `LOGIN_TIMEOUT_MINUTES` is the counting window and lockout duration, not
+  session lifetime. Failed logins are counted in the global `login_attempts`
+  table keyed by the casefolded account identifier and by the client address, so
+  the console, `/app/login` and `POST /api/v1/auth/login` share one budget across
+  cookies and processes. The account lockout is `MAX_LOGIN_ATTEMPTS`; the
+  per-address budget is `LOGIN_IP_MAX_ATTEMPTS`. A successful login clears the
+  account key, the address key decays with the window, and every refusal answers
+  the same generic credentials error. Unknown accounts verify a real placeholder
+  bcrypt hash, so the failure path does not reveal whether the account exists.
+  Losing or not migrating the table breaks login — apply the revision with the
+  deploy.
 - Login, password-change and the model-test POST handlers explicitly verify `csrf_token`. The current
   `CSRFTokenManager` constructor defaults to **30 minutes** and a signed timed
   payload. Setup passes only `secret_key`; the similarly named

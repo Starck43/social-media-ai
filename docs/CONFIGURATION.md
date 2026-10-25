@@ -61,8 +61,9 @@ REDIS_URL=redis://localhost:6379/0
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=43200    # 30 days in dev, overridden to 60 in prod
 REFRESH_TOKEN_EXPIRE_DAYS=30
-LOGIN_TIMEOUT_MINUTES=15             # lockout duration after max attempts
-MAX_LOGIN_ATTEMPTS=5
+LOGIN_TIMEOUT_MINUTES=15             # counting window and lockout duration, shared by all login surfaces
+MAX_LOGIN_ATTEMPTS=5                 # failed attempts per account before the lockout
+LOGIN_IP_MAX_ATTEMPTS=20             # failed attempts per client address, across accounts
 
 # ─── Password Policy ──────────────────────────────────────────
 PASSWORD_MIN_LENGTH=8
@@ -182,12 +183,15 @@ LOG_LEVEL=INFO
 | `ALGORITHM` | `HS256` | JWT signing algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `43200` (30 days) | Overridden to `60` (1 hour) in production |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token lifetime |
-| `LOGIN_TIMEOUT_MINUTES` | `15` | Legacy admin cookie-local lockout interval, not session lifetime |
-| `MAX_LOGIN_ATTEMPTS` | `5` | Legacy admin threshold; ordinary wrong-password failures currently do not increment it |
+| `LOGIN_TIMEOUT_MINUTES` | `15` | Counting window and lockout duration for the shared login budget |
+| `MAX_LOGIN_ATTEMPTS` | `5` | Failed attempts per account before the shared lockout |
+| `LOGIN_IP_MAX_ATTEMPTS` | `20` | Failed attempts per client address, across accounts |
 
-API and `/app/login` have no shared login throttle. These settings are not proof
-of brute-force protection; the audit tracks shared attempt accounting, ordinary
-failure tracking and cookie-independent limits as a separate implementation task.
+The console, `/app/login` and `POST /api/v1/auth/login` share one budget stored in
+the `login_attempts` table, so it survives a cleared cookie and applies to every
+process. The table is created by revision `0111`; deploying the code without that
+revision breaks login. These settings are not a substitute for a password policy
+or for provider-side rate limiting.
 
 ### Password Policy
 

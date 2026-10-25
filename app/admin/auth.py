@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import HTTPException, Request
@@ -10,6 +9,14 @@ from app.core.config import settings
 from app.core.hashing import verify_password
 from app.models import User
 from app.services.user.auth import get_authenticated_user
+from app.services.user.login_protection import (
+    LoginLocked,
+    clear_login_failures,
+    client_address,
+    guard_login,
+    record_login_failure,
+    verify_dummy_password,
+)
 from app.utils.token import create_access_token
 
 logger = logging.getLogger(__name__)
@@ -28,6 +35,7 @@ class AdminAuthBackend(AuthenticationBackend):
         form = await request.form()
         username: str = form.get("username")
         password: str = form.get("password")
+        address = client_address(request)
 
         logger.info("🔑 Admin login attempt username=%s", username)
 
@@ -43,10 +51,16 @@ class AdminAuthBackend(AuthenticationBackend):
             request.session["login_error"] = "Введите имя пользователя и пароль"
             return False
 
+        # The budget is shared with the web and API login pages and stored in
+        # the database, so a new cookie does not give the visitor a fresh try.
         try:
-            # Check login attempts and lockout
-            await self.check_login_lockout(request, username)
+            await guard_login(username, address)
+        except LoginLocked:
+            logger.warning("Admin login refused by the shared throttle")
+            request.session["login_error"] = "Неверное имя пользователя или пароль"
+            return False
 
+        try:
             user = await User.objects.get_by_username_or_email(username)
             if user and verify_password(password, user.hashed_password) and user.is_active:
                 user = await User.objects.prefetch_related("role.permissions").get(id=user.id)
@@ -65,17 +79,15 @@ class AdminAuthBackend(AuthenticationBackend):
                 if "login_error" in request.session:
                     del request.session["login_error"]
 
-                # Reset login attempts on successful login
-                attempt_key = f"login_attempts:{username}"
-                if attempt_key in request.session:
-                    del request.session[attempt_key]
-
+                await clear_login_failures(username)
                 return True
+            if user is None:
+                # Unknown account: spend the same verification work as a real one.
+                await verify_dummy_password(password)
         except Exception as e:
             logger.error("Login error: %s", e)
-            # Track failed attempt
-            await self.track_login_attempt(request, username)
 
+        await record_login_failure(username, address)
         request.session["login_error"] = "Неверное имя пользователя или пароль"
         return False
 
@@ -109,29 +121,3 @@ class AdminAuthBackend(AuthenticationBackend):
         except HTTPException:
             request.session.clear()
             return False
-
-    @staticmethod
-    async def track_login_attempt(request: Request, username: str):
-        if settings.DEBUG:
-            return
-
-        attempt_key = f"login_attempts:{username}"
-        current_attempts = request.session.get(attempt_key, 0)
-        request.session[attempt_key] = current_attempts + 1
-
-        if current_attempts >= settings.MAX_LOGIN_ATTEMPTS:
-            lockout_key = f"login_lockout:{username}"
-            request.session[lockout_key] = datetime.now().isoformat()
-            raise HTTPException(status_code=429, detail="Слишком много попыток входа")
-
-    @staticmethod
-    async def check_login_lockout(request: Request, username: str):
-        if settings.DEBUG:
-            return
-
-        lockout_key = f"login_lockout:{username}"
-        lockout_time = request.session.get(lockout_key)
-        if lockout_time:
-            lockout_time = datetime.fromisoformat(lockout_time)
-            if datetime.now() < lockout_time + timedelta(minutes=settings.LOGIN_TIMEOUT_MINUTES):
-                raise HTTPException(status_code=429, detail="Учётная запись временно заблокирована")

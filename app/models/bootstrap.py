@@ -10,6 +10,7 @@ def bind_managers(models):
     models.PlatformRole.objects = RoleManager(models.PlatformRole)
     models.WorkspaceRole.objects = BaseManager(models.WorkspaceRole)
     models.ModelType.objects = BaseManager(models.ModelType)
+    models.LoginAttempt.objects = BaseManager(models.LoginAttempt)
     models.LLMOutcomeEvent.objects = import_module(
         "app.models.managers.llm_outcome_event_manager"
     ).LLMOutcomeEventManager()

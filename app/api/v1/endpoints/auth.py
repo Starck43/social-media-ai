@@ -1,13 +1,20 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.logger import logger
 from app.models import PlatformRole, User
 from app.schemas.token import Token, TokenWithRefresh
 from app.schemas.user import UserCreate, UserPasswordChange
-from app.services.user.auth import authenticate, get_authenticated_user, oauth2_scheme
+from app.services.user.auth import GENERIC_LOGIN_ERROR, authenticate, get_authenticated_user, oauth2_scheme
+from app.services.user.login_protection import (
+    LoginLocked,
+    clear_login_failures,
+    client_address,
+    guard_login,
+    record_login_failure,
+)
 from app.types import PlatformRoleType
 from app.utils.token import create_access_token, create_tokens_pair
 
@@ -15,7 +22,7 @@ router = APIRouter(tags=["auth"])
 
 
 @router.post("/login", response_model=TokenWithRefresh)
-async def login_access_token(form_data: OAuth2PasswordRequestForm = Depends()) -> dict[str, Any]:
+async def login_access_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()) -> dict[str, Any]:
     """
     OAuth2 compatible token login, get access and refresh tokens.
 
@@ -25,8 +32,24 @@ async def login_access_token(form_data: OAuth2PasswordRequestForm = Depends()) -
     Returns both access and refresh tokens for authenticated requests.
     The access token is short-lived, while the refresh token can be used to
     get a new access token when it expires.
+
+    Failed attempts count into the same per-account and per-address budget the
+    console and the web pages use; the answer stays one generic error.
     """
     from app.core.hashing import verify_password
+
+    address = client_address(request)
+    credentials_error = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=GENERIC_LOGIN_ERROR,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        await guard_login(form_data.username, address)
+    except LoginLocked:
+        logger.warning("Login refused by the shared throttle")
+        raise credentials_error
 
     try:
         # Authenticate the user
@@ -36,21 +59,27 @@ async def login_access_token(form_data: OAuth2PasswordRequestForm = Depends()) -
 
         if not user:
             logger.warning(f"Failed login attempt for username or email: {form_data.username}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Incorrect username/email or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            await record_login_failure(form_data.username, address)
+            raise credentials_error
 
         # Generate both access and refresh tokens
         tokens = create_tokens_pair(subject=str(user.id))
+        await clear_login_failures(form_data.username)
         logger.info(f"Successful login for user: {user.username}")
 
         return tokens
 
-    except HTTPException:
-        # Re-raise HTTP exceptions (like invalid credentials)
-        raise
+    except HTTPException as exc:
+        # One answer for wrong credentials and an unknown/inactive account; a
+        # counted failure is recorded once, never for a server fault.
+        if exc is credentials_error:
+            raise
+        await record_login_failure(form_data.username, address)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=GENERIC_LOGIN_ERROR,
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
 
     except Exception as e:
         logger.error(f"Unexpected error during login: {str(e)}", exc_info=True)

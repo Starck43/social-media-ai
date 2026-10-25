@@ -13,6 +13,8 @@ from app.services.task_plans import (
 )
 
 
+__source_only__ = True
+
 def _plan(**overrides):
     value = {
         "version": 1,

@@ -7,14 +7,12 @@ The tests enqueue mockable work but never call a VK API or execute a job.
 from __future__ import annotations
 
 import sys
-from contextlib import asynccontextmanager
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 from uuid import uuid4
-
-import pytest
 
 _conftest_path = Path(__file__).resolve().parents[1] / "conftest.py"
 _conftest = next(
@@ -122,10 +120,13 @@ class Workspace:
         return row
 
     async def cleanup(self) -> None:
-        # Remove only rows created by this fixture; do not sweep other test rows.
+        # This fixture owns a fresh tenant, so clean every task in that tenant,
+        # including one created just before an assertion failed to record its ID.
         with tenant_scope(bypass=True):
-            for task_id in reversed(self.task_ids):
-                await AgentTask.objects.delete_by_id(task_id)
+            tasks = await AgentTask.objects.filter(tenant_id=self.tenant.id)
+            for task in reversed(tasks):
+                await AgentTask.objects.delete_by_id(task.id)
+            assert await AgentTask.objects.filter(tenant_id=self.tenant.id) == []
             for scenario_id in reversed(self.scenario_ids):
                 await AgentScenario.objects.delete_by_id(scenario_id)
             for source_id in reversed(self.source_ids):
@@ -134,8 +135,8 @@ class Workspace:
             await User.objects.delete_by_id(self.user.id)
 
 
-@asynccontextmanager
-async def _actor_scope(workspace: Workspace):
+@contextmanager
+def _actor_scope(workspace: Workspace):
     with tenant_scope(workspace.tenant.id), permission_scope(workspace.user, is_owner=True):
         yield
 

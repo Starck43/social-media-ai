@@ -16,6 +16,8 @@ from app.models.managers.personal_billing_manager import PersonalBillingUnavaila
 from app.schemas.task import TaskPlanPreviewRequest, TaskPlanRunRequest
 
 
+__source_only__ = True
+
 def _plan() -> dict:
     return {
         "version": 1,

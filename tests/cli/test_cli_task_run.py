@@ -14,7 +14,7 @@ import typer
 
 from app.core.permissions import has_permission, operator_permission_scope, permission_scope, service_permission_scope
 from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
-from app.models import AgentTask, Job, Platform, Source
+from app.models import AgentTask, Job, Platform, Source, Tenant
 from app.models.managers.job_manager import JobManager
 from app.models.managers.tenant_manager import tenants
 from app.types.enums.platform_types import SourceType
@@ -72,6 +72,33 @@ async def _make_source(tenant_id: int) -> Source:
             )
 
 
+async def _ids(model) -> set[int]:
+    rows = await model.objects.all()
+    return {row.id for row in rows}
+
+
+@pytest.fixture(autouse=True)
+async def clean_created_rows():
+    """Remove only rows this test added to the serialized test schema."""
+    with tenant_scope(bypass=True):
+        before = {
+            Job: await _ids(Job),
+            AgentTask: await _ids(AgentTask),
+            Source: await _ids(Source),
+            Tenant: await _ids(Tenant),
+        }
+    yield
+    with tenant_scope(bypass=True), operator_permission_scope():
+        # Jobs can outlive tasks, and tasks can retain source references.
+        for model in (Job, AgentTask, Source, Tenant):
+            after_ids = await _ids(model)
+            for row_id in after_ids - before[model]:
+                if model is Tenant:
+                    await tenants.delete_by_id(row_id)
+                else:
+                    await model.objects.delete_by_id(row_id)
+
+
 @pytest.fixture(autouse=True)
 def stub_handlers(monkeypatch):
     """Replace the real handlers: these tests are about *which* job runs."""
@@ -87,6 +114,7 @@ def stub_handlers(monkeypatch):
 async def test_task_run_executes_only_the_requested_job():
     """A manual run must not drain somebody else's older pending job."""
     my_task = await _make_task(None, _uniq("run-mine-"))
+    await _make_source(my_task.tenant_id)
     other = await tenants.create(name=_uniq("WS "), slug=_uniq("ws-"))
     with tenant_scope(bypass=True):
         foreign = await JobManager().enqueue(job_type="collect", payload={}, tenant_id=other.id)
@@ -98,6 +126,7 @@ async def test_task_run_executes_only_the_requested_job():
 
 async def test_task_run_records_the_trigger():
     task = await _make_task(None, _uniq("run-once-"), cron="@once")
+    await _make_source(task.tenant_id)
 
     await _cli(_run_task, task=str(task.id), **RUN_ARGS)
 
@@ -114,6 +143,7 @@ async def test_task_run_reports_a_failing_job():
 
     dispatcher.HANDLERS = {"collect": boom}
     task = await _make_task(None, _uniq("run-fail-"))
+    await _make_source(task.tenant_id)
 
     with pytest.raises(typer.Exit) as exit_info:
         await _cli(_run_task, task=str(task.id), **RUN_ARGS)

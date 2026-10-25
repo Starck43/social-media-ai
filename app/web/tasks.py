@@ -428,6 +428,7 @@ def _payload_from_form(
 	elif AgentTaskManager.requires_content_dates(job_type) and window_type == "rolling":
 		payload.pop("cli_dates", None)
 	if job_type == "digest":
+		payload.pop("task_plan", None)
 		if digest_period and digest_period in ("day", "week", "month"):
 			payload["period"] = digest_period
 		if digest_group_by:
@@ -551,7 +552,9 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 			"source_scope", "selected" if source_ids else "all"
 		),
 		"platforms": (payload.get("task_plan") or {}).get("platforms") or ["vk"],
-		"window_type": ((payload.get("task_plan") or {}).get("window") or {}).get("type", "rolling"),
+		"window_type": ((payload.get("task_plan") or {}).get("window") or {}).get(
+			"type", "fixed" if payload.get("cli_dates") else "rolling"
+		),
 		"rolling_days": ((payload.get("task_plan") or {}).get("window") or {}).get("days", 1),
 		"scenario_id": task.agent_scenario_id,
 		"tracked_users": ", ".join(payload.get("tracked_users") or []),
@@ -661,7 +664,14 @@ async def _activate_selected_sources(tenant_id: int, source_ids: list[int]) -> N
 				await Source.objects.update_by_id(source.id, is_active=True)
 
 
-async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], scenario_id: int | None) -> str | None:
+async def _can_activate(
+	tenant_id: int,
+	job_type: str,
+	source_ids: list[int],
+	scenario_id: int | None,
+	*,
+	payload: dict[str, Any] | None = None,
+) -> str | None:
 	"""Return why the task cannot be activated, or None if it can.
 
 	A task is only activatable when its scenario (if one is chosen) is active
@@ -680,6 +690,16 @@ async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], sc
 				return "выбранный сценарий деактивирован"
 
 		if not AgentTaskManager.requires_sources(job_type):
+			return None
+		plan = payload.get("task_plan") if isinstance(payload, dict) else None
+		collection = plan.get("collection") if isinstance(plan, dict) else None
+		discovery = collection.get("discovery") if isinstance(collection, dict) else None
+		if (
+			isinstance(plan, dict)
+			and plan.get("source_scope") == "discovery"
+			and isinstance(discovery, dict)
+			and discovery.get("queries")
+		):
 			return None
 		if source_ids:
 			sources = await Source.objects.filter(id__in=source_ids)
@@ -777,6 +797,14 @@ async def queue_task_now(task: "AgentTask", initiated_by_user_id: int | None = N
 	from app.jobs.dispatcher import launch_job_background
 	from app.jobs.enqueue import enqueue_task_run
 	from app.jobs.source_activity import SourceJobBusy
+	from app.models.managers.agent_task_manager import AgentTaskManager
+
+	linked_sources = await AgentTaskManager().get_sources(task.id)
+	blocked = await _can_activate(
+		task.tenant_id, task.job_type, linked_sources, task.agent_scenario_id, payload=task.payload
+	)
+	if blocked is not None:
+		return {"status": "blocked", "reason": blocked}
 
 	if initiated_by_user_id is None:
 		from app.core.permissions import get_current_user
@@ -1066,6 +1094,8 @@ async def task_create(
 	# older client that posts the legacy fields alone keeps the task's stored
 	# block instead of silently resetting it to posts.
 	if collection_configured == "1":
+		if job_type in ("collect", "analyze") and window_type == "rolling":
+			payload.pop("cli_dates", None)
 		try:
 			collection_block = _collection_block(
 				job_type,
@@ -1185,7 +1215,7 @@ async def task_create(
 	# A task can only be created active when it has an active scenario and, for
 	# a source-based type, at least one active source; otherwise it starts
 	# inactive.
-	activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id)
+	activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id, payload=payload)
 	if activation_blocked is not None:
 		add_flash(
 			request,
@@ -1799,7 +1829,7 @@ async def task_toggle(
 		from app.models.managers.agent_task_manager import AgentTaskManager
 
 		linked = await AgentTaskManager().get_sources(task.id)
-		blocked = await _can_activate(tenant_id, task.job_type, linked, task.agent_scenario_id)
+		blocked = await _can_activate(tenant_id, task.job_type, linked, task.agent_scenario_id, payload=task.payload)
 		if blocked is not None:
 			add_flash(request, "error", f"Задача «{task.name}» не активирована: {blocked}")
 			return RedirectResponse("/app/tasks", status_code=302)
@@ -1853,6 +1883,9 @@ async def task_run_now(
 	# job pending for *another* task on the same sources is still reported as
 	# busy — replacing it would cancel somebody else's run.
 	outcome = await queue_task_now(task, getattr(request.state.web_user, "id", None))
+	if outcome.get("status") == "blocked":
+		add_flash(request, "error", f"Задача «{task.name}» не запущена: {outcome.get('reason')}")
+		return RedirectResponse(back, status_code=302)
 	if outcome.get("already_running"):
 		add_flash(request, "info", "Источник уже занят сбором или анализом. Новый запуск не создан")
 	else:
@@ -2065,6 +2098,8 @@ async def task_update(
 	payload = new_payload if job_type == "prune" else (task.payload.copy() if isinstance(task.payload, dict) else {})
 	if job_type != "prune":
 		payload.update(new_payload)
+	if job_type in ("collect", "analyze") and window_type == "rolling":
+		payload.pop("cli_dates", None)
 	requested_active = is_active == "on"
 	if job_type == "analyze":
 		scenario_block = await _unified_analysis_scenario_block(
@@ -2140,6 +2175,9 @@ async def task_update(
 			add_flash(request, "error", f"Проверьте план задачи: {error}")
 			return RedirectResponse(back, status_code=302)
 
+	if job_type == "digest":
+		payload.pop("task_plan", None)
+
 	# Warn about missing target params for the scenario's analysis types —
 	# the scenario this save binds, not the one the row held before the edit.
 	if scenario_id and job_type != "prune":
@@ -2189,7 +2227,7 @@ async def task_update(
 	# source-based type, at least one active source; otherwise it stays inactive.
 	activation_blocked = None
 	if requested_active:
-		activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id)
+		activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id, payload=payload)
 		if activation_blocked is not None:
 			add_flash(
 				request,

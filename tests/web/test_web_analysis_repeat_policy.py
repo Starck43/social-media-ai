@@ -31,11 +31,14 @@ async def test_web_queue_explicitly_disables_force_flags_for_legacy_task():
         "enqueue_task_run": enqueue,
         "SourceJobBusy": RuntimeError,
         "launch_job_background": lambda job_id, **kwargs: None,
+        "AgentTaskManager": lambda: NS(get_sources=AsyncMock(return_value=[])),
+        "_can_activate": AsyncMock(return_value=None),
     }
     module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
     exec(compile(module, "isolated_web_queue", "exec"), scope)
 
-    task = NS(id=7, payload={"force_refresh": True, "force_reanalyze": True})
+    task = NS(id=7, tenant_id=4, job_type="digest", agent_scenario_id=None,
+              payload={"force_refresh": True, "force_reanalyze": True})
     result = await scope["queue_task_now"](task, initiated_by_user_id=3)
 
     assert result == {"job_id": 12, "status": "pending"}

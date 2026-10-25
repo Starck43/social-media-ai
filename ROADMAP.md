@@ -12,7 +12,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P3](docs/tasks/p3-identity-access.md)
 
-- [P3-T01](docs/tasks/p3-t01.md) finish the digest send permission parity acceptance — **IN_PROGRESS** · remote Notion agent (fix/p3-t01-digest-send-parity) · —
+- [P3-T01](docs/tasks/p3-t01.md) finish the digest send permission parity acceptance — **READY** · remote Notion agent (fix/p3-t01-digest-send-parity) · —
 
 ## [P4](docs/tasks/p4-delivery.md)
 

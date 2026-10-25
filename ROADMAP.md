@@ -51,7 +51,7 @@ means not recorded; source recovery links remain in the card.
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
 - [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
-- [P10-T20](docs/tasks/p10-t20.md) Align the digest-confirmation suites with the deliberate intent dedup — **TODO** · unassigned · —
+- [P10-T20](docs/tasks/p10-t20.md) Align the digest-confirmation suites with the deliberate intent dedup — **IN_PROGRESS** · opencode (fix/p10-t20-digest-confirmation-dedup) · —
 
 ## Questions
 

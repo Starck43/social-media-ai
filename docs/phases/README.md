@@ -40,7 +40,7 @@ business workflow" is a distinct product concept (see AGENTS.md).
 
 | Phase | Scope (gate) | Priority | Status | Tasks |
 | --- | --- | --- | --- | --- |
-| P1 | Truthful queue execution | 1 | IN_PROGRESS | [p1-queue-execution.md](p1-queue-execution.md) |
+| P1 | Truthful queue execution | 1 | DONE | [p1-queue-execution.md](p1-queue-execution.md) |
 | P2 | Complete usage and spend | 2 | IN_PROGRESS | [p2-usage-spend.md](p2-usage-spend.md) |
 | P3 | Identity and approvals | 3 | IN_PROGRESS | [p3-identity-access.md](p3-identity-access.md) |
 | P4 | Tenant-safe delivery | 4 | OPEN | [p4-delivery.md](p4-delivery.md) |

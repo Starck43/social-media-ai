@@ -90,22 +90,36 @@ changes that leave a queued snapshot stale.
   Accepted by Codex on 2026-10-22 at dev
   `c9ccf9d4a2328ec2c707b71f45cd7541375daa97`: committed file blobs match the
   reviewed and tested snapshots; the later integration changes were checked
-  for relevant overlap. The resolved registry row was removed. P1-T01 remains
-  accepted; P1-T03 stays open and the phase is not closed.
+  for relevant overlap. The resolved registry row was removed. At this
+  acceptance, P1-T01 remained accepted; P1-T03 was still open and the phase
+  was not closed.
 
-- [ ] P1-T03 — distinguish a live queued Job from the task's historical queued
+- [x] P1-T03 — distinguish a live queued Job from the task's historical queued
   receipt; accept: task list and detail show no live-queue claim when the last
   pending Job was invalidated, while real pending/running Jobs still have their
   current state and historical trigger metadata is retained; tenant and
   permission boundaries stay intact, focused projection tests via R10;
   depends: P1-T02; owns: task status projections in `app/web/tasks.py`, task
-  templates and focused web tests; owner: unassigned; status: TODO.
-  Confirmed during the P1-T02 review: admission records `last_status="queued"`,
-  invalidation removes the Job without changing that historical receipt, and
-  `templates/web/tasks.html` plus the no-Job panel's
-  `_legacy_task_status_label` still render it as a live queue status. The
-  execution-invalidation contract is separate from this display correction.
+  templates and focused web tests; owner: codex; status: DONE.
+  Admission records `last_status="queued"`; invalidation can remove the pending
+  Job without changing that historical receipt. At `f55aa2a2c7418e29a642324bf8753bbc53880ad3`,
+  the task list reports live pending/running state only from `running_jobs`,
+  while both list and detail label an orphaned queued receipt as historical.
+  An unconfirmed-outcome warning and a live Job state remain independently
+  visible. Tenant query scope, permissions and trigger metadata are unchanged;
+  no migration.
+  Acceptance evidence at exact dev commit `f55aa2a2c7418e29a642324bf8753bbc53880ad3`:
+  OpenCode/River no-DB run of
+  `tests/unit_web/test_task_detail_progress.py::test_task_run_panel_keeps_legacy_status_and_scope_when_task_has_no_job`,
+  `tests/unit_web/test_task_detail_progress.py::test_task_list_row_reports_queue_state_only_from_a_live_job`,
+  and `tests/jobs/test_queue_recovery_admission.py::ProjectionAndRetentionTests::test_ui_shows_unknown_and_does_not_offer_blind_retry`
+  — 3 passed, 0 failed/skipped. The DB-backed endpoint assertion in
+  `tests/jobs/test_task_run_now.py` was updated but not part of this final
+  focused run; no database changes were made. A broader exploratory run at the
+  pre-acceptance base had 33 passed and 3 unrelated dispatcher-policy failures;
+  its targeted projection node passed on the accepted commit. Accepted by
+  Codex after reviewing the exact diff and test evidence.
 
 ## Phase approval
 
-- [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —
+- [x] PHASE DONE — approved by: codex, date: 2026-10-25, dev SHA: f55aa2a2c7418e29a642324bf8753bbc53880ad3

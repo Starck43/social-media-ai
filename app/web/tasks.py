@@ -450,8 +450,10 @@ def _task_plan_from_form(
 	if source_scope not in {"selected", "discovery", "all"}:
 		raise TaskPlanError("Выберите область источников задачи")
 	selected_ids = source_ids if source_scope == "selected" else []
+	collection_input = dict(payload.get("collection") or {})
 	if window_type == "rolling":
 		window = {"type": "rolling", "days": rolling_days}
+		collection_input.pop("date_window", None)
 	else:
 		cli_dates = payload.get("cli_dates") if isinstance(payload.get("cli_dates"), dict) else {}
 		window = {"type": "fixed", "start": cli_dates.get("start_date"), "end": cli_dates.get("end_date")}
@@ -464,7 +466,7 @@ def _task_plan_from_form(
 		"platforms": list(dict.fromkeys(platforms or ["vk"])),
 		"source_scope": source_scope,
 		"source_ids": selected_ids,
-		"collection": payload.get("collection", {}),
+		"collection": collection_input,
 		"window": window,
 		"scenario_id": scenario_id,
 		"trigger": trigger,
@@ -697,8 +699,15 @@ async def _can_activate(
 		if (
 			isinstance(plan, dict)
 			and plan.get("source_scope") == "discovery"
-			and isinstance(discovery, dict)
-			and discovery.get("queries")
+			and isinstance(collection, dict)
+			and (
+				collection.get("queries")
+				or (
+					isinstance(discovery, dict)
+					and discovery.get("queries")
+					and (discovery.get("people") or discovery.get("communities"))
+				)
+			)
 		):
 			return None
 		if source_ids:

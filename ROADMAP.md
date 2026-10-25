@@ -55,6 +55,7 @@ means not recorded; source recovery links remain in the card.
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
 - [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
 - [P10-T20](docs/tasks/p10-t20.md) Align the digest-confirmation suites with the deliberate intent dedup — **TODO** · unassigned · —
+- [P10-T21](docs/tasks/p10-t21.md) Admin polish after P8-T30: drop the collected-items inline and steady the registry tests — **IN PROGRESS** · opencode · —
 
 ## Questions
 

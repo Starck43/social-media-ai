@@ -516,6 +516,25 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   migration or public-schema write.
   [PR #235 evidence](https://github.com/Starck43/social-media-ai/pull/235#issuecomment-6401728847).
 
+- [x] P10-T21 — admin polish after P8-T30; accept: the collected-items section
+  leaves the workspace form without touching any other reverse-FK section, and
+  the registry suites stop depending on a literal table count; owner: opencode;
+  status: DONE — merged as PR #237 (`d43b07f`, branch commits `fab1409`
+  claim, `1807329` deny-list + registry test, `6907530` owner CSS).
+  `INLINE_EXCLUDED_TABLES = {"collected_items"}` is a table-level deny-list, so
+  the section is skipped for every console reader including the platform owner,
+  while the remaining sections keep the P8-T30 scope/grant checks; the table
+  stays reachable through its own console list and `docs/ADMIN.md` documents
+  the rule. `test_registry_page_size_selection_is_bounded` pinned `Всего 51`,
+  made stale by P10-T04's `login_attempts` (51 → 52 tables; verified by
+  comparing the registry listing on `e321a7a` and on dev), and now derives the
+  total from `Base.metadata` and asserts the default-page fallback.
+  Checks: 39 passed in `test_p8_t30_related_inlines`; 72 passed across
+  `test_p8_t30_related_inlines` + `test_admin_table_registry` +
+  `test_admin_related` on merged dev; Black/isort clean. Owner-authored
+  registry styles committed verbatim. No migration, schema, DB or deployment
+  change; no deployed-browser acceptance.
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

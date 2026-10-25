@@ -701,3 +701,40 @@ P8-T06 and does not alter its task record.
   [PR #234 evidence](https://github.com/Starck43/social-media-ai/pull/234#issuecomment-6401731849).
   No deployed-browser acceptance is claimed; owner-local follow-up P10-T21
   excludes the high-volume `collected_items` section.
+
+- [x] P8-T31 — configurable paginated admin reverse-FK inlines; accept:
+  independent pages and sizes per FK section, scoped counts, clamped input and
+  preserved P8-T30/P10-T21 behaviour; owner: Notion remote executor/custodian
+  (PR #239); status: DONE — accepted 2026-10-25 at dev `008df07` (published
+  tested head `dd2d6bd`; documentation-only delta between them).
+  Each section reuses SQLAdmin `Pagination`: previous/next, numbered pages, a
+  visible-row count and a page-size selector (10/25/50/100, default 25). The
+  count is `SELECT count(*)` over the *same* scoped DISTINCT subquery the page is
+  read from, so counts and rows can never disagree or leak a cross-scope total;
+  including the primary keys in that projection keeps `DISTINCT` valid on
+  PostgreSQL and stable in order. Query parameters are namespaced per target and
+  FK constraint (`inline-<identity>-<fk>-page|size`), every value is parsed by an
+  ASCII-digit, ≤9-character, positive-only guard before `int()`, and unsupported
+  sizes fall back to the view's configured default, so no request text reaches a
+  SQL identifier or a large `OFFSET`. Links preserve the parent's and other
+  sections' query state and carry the section anchor; an edit page states that
+  navigation is a GET reload rather than saving the form.
+  Presentation is configured on the target view (`inline_columns`,
+  `inline_page_size`, `inline_page_size_options`, `inline_exclude`) and remains
+  intersected with the list∩details, scalar-only, non-sensitive projection, so a
+  view can narrow but never widen what an inline shows. `collected_items` stays
+  excluded through `CollectedItemAdmin.inline_exclude` instead of the former
+  central deny-list; enum cells now render their `label`. The parent gate is
+  unchanged: fresh active console actor, `readable`, object-level `details`
+  permission and a scalar parent-visibility probe before any child query.
+  Checks: executor 146 passed on `593f2bf` in a disposable sandbox venv plus
+  offline Chromium at 390/768/1440 px in both themes (6/6; two defects found and
+  fixed: active-page contrast and ID wrapping). Owner-side helper re-ran the six
+  admin suites on an isolated `audit_t31` schema with the root conftest and the
+  owner `.venv` — 146 passed, 0 failed, 0 skipped; Black/isort clean on all five
+  touched Python files.
+  [PR #239 audit](https://github.com/Starck43/social-media-ai/pull/239#issuecomment-6404285569).
+  Two non-blocking notes recorded there: `email` appears in the user inline (it
+  is already in `UserAdmin.column_list`, so no new disclosure), and the per-
+  section count adds one query per section. No deployed-console or real-
+  PostgreSQL acceptance is claimed.

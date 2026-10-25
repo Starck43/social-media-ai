@@ -40,7 +40,6 @@ means not recorded; source recovery links remain in the card.
 - [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —
 - [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
 - [P8-T29](docs/tasks/p8-t29.md) Plan abstract search-and-analyse requests — **TODO** · unassigned · —
-- [P8-T31](docs/tasks/p8-t31.md) configurable paginated admin inlines — **READY** · Notion remote executor/custodian · [PR #239 evidence](https://github.com/Starck43/social-media-ai/pull/239#issuecomment-6404098828)
 
 ## [P9](docs/tasks/p9-safe-activation.md)
 

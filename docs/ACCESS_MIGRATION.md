@@ -168,8 +168,8 @@ triggers and three supporting functions; `public` counts were unchanged.
 The test catalog contains three platform roles, five workspace roles and 31
 resource identities, with no unmapped or retired resource metadata. Ordinary
 pytest startup now validates schema/reference completeness read-only and does
-not create, migrate or seed the shared target. Exceptional future schema changes
-follow the explicit authorization and backup requirements in `docs/COLLABORATION.md`.
+not create, migrate or seed the shared target. Separate schema preparation
+follows the target, backup and cleanup rules in [database policy](COLLABORATION.md#database).
 
 ## Acceptance before cutover
 

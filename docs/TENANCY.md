@@ -251,9 +251,9 @@ the revision of any running database. Check a target explicitly before upgrade o
 rollback, and use the schema resolved from `settings.DB_SCHEMA`.
 
 Tests default to the shared `DB_TEST_SCHEMA=test_schema` on the configured test
-database. Follow `docs/COLLABORATION.md`: run at most one database test owner at a time
-and never create, reset, drop, stamp or migrate a schema without explicit owner
-authorization. A historical test count is not current evidence.
+database. Follow [database policy](COLLABORATION.md#database) for exclusive
+ownership, authorized test-schema preparation/migrations, cleanup and public
+schema restrictions. Historical test counts are not current evidence.
 
 For a tenancy change, verify at least unknown identity, missing membership,
 revoked/disabled membership, cross-workspace read/write, manager update/delete,

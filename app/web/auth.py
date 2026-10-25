@@ -22,6 +22,13 @@ from app.models.managers.tenant_manager import (
     tenants,
 )
 from app.services.user.auth import authenticate
+from app.services.user.login_protection import (
+    LoginLocked,
+    clear_login_failures,
+    client_address,
+    guard_login,
+    record_login_failure,
+)
 from app.types import PlatformRoleType
 from app.utils.token import create_tokens_pair
 
@@ -83,12 +90,21 @@ async def login_submit(
 ):
     if not ensure_csrf(request, token):
         return render(request, "web/login.html", status_code=403, error="Сессия истекла, попробуйте ещё раз")
+    # The budget is shared with the console and the API and stored in the
+    # database: a new cookie does not hand the visitor another attempt.
+    address = client_address(request)
+    try:
+        await guard_login(username, address)
+    except LoginLocked:
+        return render(request, "web/login.html", status_code=400, error="Неверный логин или пароль")
     try:
         user = await authenticate(username, password, verify_password)
     except Exception:
-        # `authenticate` answers 400 for both wrong credentials and inactive users;
-        # the page only needs one generic message.
+        # `authenticate` answers 400 for wrong credentials, inactive users and the
+        # same generic message for both; the page only needs one generic message too.
+        await record_login_failure(username, address)
         return render(request, "web/login.html", status_code=400, error="Неверный логин или пароль")
+    await clear_login_failures(username)
     tokens = create_tokens_pair(subject=str(user.id))
     request.session["token"] = tokens["access_token"]
     return RedirectResponse(safe_next(next) or "/app/", status_code=302)

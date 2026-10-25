@@ -40,6 +40,11 @@ username=<username_or_email>&password=<password>
 }
 ```
 
+Failed attempts count into the shared login budget
+([ADMIN](ADMIN.md#sessions-csrf-and-known-verification-limits)): an unknown
+account, a wrong password, an inactive account and a locked budget all answer
+`400` with the same generic detail.
+
 ### Refresh Token
 
 Get a new access token using a refresh token.

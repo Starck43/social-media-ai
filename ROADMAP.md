@@ -40,7 +40,6 @@ means not recorded; source recovery links remain in the card.
 - [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —
 - [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks across web/chat/API/CLI/admin; VK first — **IN_PROGRESS** · codex-p8-t29 · —
-- [P8-T30](docs/tasks/p8-t30.md) read-only scoped admin reverse-FK lists — **READY** · Notion remote executor/custodian · [PR #234 evidence](https://github.com/Starck43/social-media-ai/pull/234#issuecomment-6401468805)
 - [P8-T31](docs/tasks/p8-t31.md) Non-social resources and connector actions — **TODO** · unassigned · —
 - [P8-T32](docs/tasks/p8-t32.md) Additional VK search categories — **TODO** · unassigned · —
 
@@ -50,8 +49,6 @@ means not recorded; source recovery links remain in the card.
 
 ## [P10](docs/tasks/p10-audit-hardening.md)
 
-- [P10-T06](docs/tasks/p10-t06.md) Safe provider errors with accounting — **READY** · remote Notion agent (fix/p10-t06-safe-provider-errors) · [PR #236](https://github.com/Starck43/social-media-ai/pull/236)
-- [P10-T07](docs/tasks/p10-t07.md) Consistent digest scope/window/rows — **READY** · remote Notion agent (fix/p10-t07-digest-scope-consistency) · [PR #235](https://github.com/Starck43/social-media-ai/pull/235)
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —

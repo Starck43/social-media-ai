@@ -122,6 +122,12 @@ exports or foreign-record popup controls are introduced by these lists.
   values, relationship labels and arbitrary/custom row formatters are excluded.
   Cells are escaped plain text, length bounded, and never invoke ORM `__str__`.
   Empty means **Нет доступных записей**, not that no rows exist globally.
+- `INLINE_EXCLUDED_TABLES` (`collected_items` only today) keeps high-volume
+  payload tables out of every object page, the platform owner included. Those
+  rows are the newest 25 long texts/media of a workspace, so the section only
+  duplicated the collection pages and made the edit form heavy; they stay
+  reachable through their own console list. The deny-list is by table name and
+  never widens or narrows scope for the sections that remain.
 
 Implementation: [inlines.py](../app/admin/inlines.py). Synthetic role/scope,
 ASGI and canonical metadata checks: [P8-T30 tests](../tests/admin/test_p8_t30_related_inlines.py).

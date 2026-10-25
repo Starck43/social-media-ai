@@ -478,6 +478,63 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   `tests/security/test_inactive_workspace_access.py` to `GET /api/v1/sources`,
   keeping both properties pinned.
 
+- [x] P10-T06 (AUD-06) — safe provider error envelopes with preserved
+  accounting; accept: analyze failures carry an allowlisted code instead of raw
+  provider text, and token/cost evidence survives every failure path;
+  owner: remote Notion agent (PR #236); status: DONE — accepted 2026-10-25 at
+  dev `fc0a4a1` (merge of `2be9f6e`; claimed `0682f0c`, implemented `0128f3d`).
+  All three analyze paths share `_analyze_failure`/`_analyze_transport_error`;
+  the code is mapped by exception type, logs carry a fixed message plus the
+  code, the envelope keeps `model`/`llm_model_id`/`provider`/`dispatch_id` and
+  drops prompt, messages, media, endpoint and provider body,
+  `HTTPStatusError` no longer interpolates `r.text`, unknown token/cost stays
+  `None` rather than a numeric zero, `_record_llm_usage` and the personal
+  outcome hooks still run on each failure path, and the output-failure branch
+  is fail-closed (`parsed={}`) while success content is unchanged. Chat,
+  catalog, admission and delivery code are outside the diff.
+  Checks: executor 181 passed; owner-side helper re-ran privacy/journal/
+  outcome/billing/`test_ai_output_boundaries_db` on `fc0a4a1` with the root
+  conftest — 186 passed, 0 failed, 0 skipped. The four ancillary failures the
+  executor reproduced on the baseline are stale expectations in unrelated
+  `tests/ai/` suites and are not claimed. No migration, schema or provider
+  call. [PR #236 evidence](https://github.com/Starck43/social-media-ai/pull/236#issuecomment-6401730140).
+
+- [x] P10-T07 (AUD-07) — one digest scope, window and base-row set for every
+  report section; accept: aggregates, rollups and brief sections read the same
+  bounded rows and the same source selection; owner: remote Notion agent
+  (PR #235); status: DONE — accepted 2026-10-25 at dev `fc0a4a1`.
+  One immutable `ReportScope`, a single bounded base-row read shared by all
+  five aggregations and the brief sections, an explicit inclusive upper bound,
+  DAY base rows only (stored WEEK/MONTH not re-summed), source set/scenario/
+  narrow-only tenant applied consistently, and rollup writes limited to the
+  selected sources; `source_ids=None` keeps the legacy whole-workspace write.
+  No delivery, checkpoint, permission or schema change.
+  Checks: executor 110 isolated; the owner-side helper executed the deferred
+  command from the PR body on `fc0a4a1` with the root conftest and the real
+  PostgreSQL test schema — 138 passed, 0 failed, 0 skipped (four DB suites plus
+  the executor's suites). Synthetic rows were removed by the same suites; no
+  migration or public-schema write.
+  [PR #235 evidence](https://github.com/Starck43/social-media-ai/pull/235#issuecomment-6401728847).
+
+- [x] P10-T21 — admin polish after P8-T30; accept: the collected-items section
+  leaves the workspace form without touching any other reverse-FK section, and
+  the registry suites stop depending on a literal table count; owner: opencode;
+  status: DONE — merged as PR #237 (`d43b07f`, branch commits `fab1409`
+  claim, `1807329` deny-list + registry test, `6907530` owner CSS).
+  `INLINE_EXCLUDED_TABLES = {"collected_items"}` is a table-level deny-list, so
+  the section is skipped for every console reader including the platform owner,
+  while the remaining sections keep the P8-T30 scope/grant checks; the table
+  stays reachable through its own console list and `docs/ADMIN.md` documents
+  the rule. `test_registry_page_size_selection_is_bounded` pinned `Всего 51`,
+  made stale by P10-T04's `login_attempts` (51 → 52 tables; verified by
+  comparing the registry listing on `e321a7a` and on dev), and now derives the
+  total from `Base.metadata` and asserts the default-page fallback.
+  Checks: 39 passed in `test_p8_t30_related_inlines`; 72 passed across
+  `test_p8_t30_related_inlines` + `test_admin_table_registry` +
+  `test_admin_related` on merged dev; Black/isort clean. Owner-authored
+  registry styles committed verbatim. No migration, schema, DB or deployment
+  change; no deployed-browser acceptance.
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

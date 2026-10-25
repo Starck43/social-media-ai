@@ -678,3 +678,30 @@ P8-T06 and does not alter its task record.
   broader DB/runtime/manual application acceptance was not run or certified.
   P8-T22 was later dropped/absorbed by P5-T14 stage E; its historical
   blocked state and evidence remain unchanged.
+
+- [x] P8-T30 — read-only scoped reverse-FK sections on console object pages;
+  accept: authenticated operator sees the related records the console already
+  lets it list, and nothing wider; owner: remote Notion executor/custodian
+  (PR #234); status: DONE — accepted 2026-10-25 at dev `fc0a4a1`
+  (merge `5d4e584` of `e93b77d`).
+  `app/admin/inlines.py` discovers inbound FK constraints among registered views
+  that have a registered access resource (compound FKs kept conjunctive,
+  independent FKs to one parent separated, no ORM backref required, unsaved
+  parents not queried), rechecks accessibility and list/details grants for both
+  parent and child, and adds explicit scope before `LIMIT`: personal catalogs
+  and credentials stay owner/user-scoped for every platform role, workspace
+  resources need an active membership in an active workspace whose fixed role
+  preset grants VIEW, and unknown resources/ownership layouts/unregistered
+  tenants fall back to `false()`. Only scalar columns present in both list and
+  details are projected, sensitive names plus JSON/binary are dropped, cells
+  are escaped and bounded, and no `__str__`, relationship label, count or
+  mutation control is rendered. The platform owner keeps its pre-existing
+  global workspace inspection; workspace membership alone still grants no
+  console entry.
+  Checks: executor 38 new + 70 existing isolated; owner-side helper re-ran
+  `test_p8_t30_related_inlines`, `test_admin_related`,
+  `test_admin_shell_catalog` and `test_admin_model_permission_policy` on
+  `fc0a4a1` with the root conftest — 108 passed, 0 failed.
+  [PR #234 evidence](https://github.com/Starck43/social-media-ai/pull/234#issuecomment-6401731849).
+  No deployed-browser acceptance is claimed; owner-local follow-up P10-T21
+  excludes the high-volume `collected_items` section.

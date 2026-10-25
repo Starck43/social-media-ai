@@ -27,16 +27,35 @@ production acceptance, real-DB pending-confirmation end-to-end run.
   owner: remote Notion
   agent; status: TODO — no duplicate runs, no parallel shared-schema writers
 
-- [ ] P3-T02 — close one actor/workspace/tool/write gap including revocation,
-  expiry or replay where applicable; accept: gap verified in current code,
-  fail-closed behavior proven with focused tests; depends: none;
-  owns: per selection; owner: unassigned; status: TODO — placeholder: no
-  concrete defect is written down, so the candidate must be named before
-  claiming. Known candidates from neighbouring work: revocation of a
-  personal-provider credential that is already in flight to a dispatch
-  (interacts with P3-T93), and replay of an idempotent agent write across two
-  workspaces of the same owner. If none of them survives verification in the
-  current code, this row should be DROPPED rather than claimed.
+- [x] P3-T02 — reject a stale personal provider credential at dispatch;
+  accept: revalidate the client's selected provider/model and API-key identity
+  at the final application check immediately before outbound HTTP; a provider
+  disable or key rotation committed while billing admission is in progress
+  must fail closed without sending; a request that passed the final check and
+  was already sent is not claimed to be cancellable; tenant/model ownership
+  and billing admission remain intact; focused mocked-client tests via R10;
+  depends: P3-T93; owns `app/services/ai/llm_client.py` and its focused tests;
+  owner: codex; status: DONE at dev `82a95a8580a87f75995aeb3f9836354855d42051`.
+  Candidate audit found a
+  time-of-check/time-of-use window between cached-key validation and provider
+  HTTP send. The same-owner cross-workspace confirmation replay candidate was
+  separately reviewed and rejected: session, tenant, actor and one-use grant
+  checks bind the authorization to its originating workspace.
+  Fix: all OpenAI-compatible, Anthropic and custom analyze/chat paths revalidate
+  the fresh catalog owner, model/provider state, selected endpoint and API-key
+  identity after billing admission. A stale selection records a proven
+  `not_dispatched` outcome and cannot reach the HTTP client; if recording that
+  release fails, the reservation remains held. No schema change.
+  OpenCode/River focused no-DB evidence at base dev `d1e26832e72145ed69a3d5b957acab0f3bcf5ffe`
+  with the three task files dirty: `test_credential_revoked_after_admission_releases_reservation_without_http`
+  and `TestProviderCostUsageProjection.test_all_actual_adapter_chat_and_analyze_calls_use_provider_totals`
+  — 2 passed, 0 failed/skipped. The task-scoped blobs in accepted code commit
+  `82a95a8580a87f75995aeb3f9836354855d42051` exactly match the tested worktree
+  (`llm_client.py` `2125004…`, transport test `40a6aac…`, usage test
+  `48560b8…`). A post-commit rerun was attempted but not executed: OpenCode
+  blocked before pytest and the secondary Kilo route stalled before starting a
+  test runner. No DB test or schema operation was performed. Accepted by Codex
+  after reviewing the exact committed diff and matching tested blobs.
 
 - [x] P3-T93 — personal LLM provider/model ownership across a user's workspaces;
   accept: explicit reviewed legacy ownership map, owner-scoped CRUD/defaults/fallback,

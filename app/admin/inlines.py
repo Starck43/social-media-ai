@@ -6,12 +6,14 @@ list predicates and adding explicit personal/workspace visibility before LIMIT.
 """
 
 from contextlib import nullcontext
+from dataclasses import replace
 from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
 import anyio
-from sqlalchemy import JSON, LargeBinary, and_, false, inspect, select, true
+from sqladmin.pagination import Pagination
+from sqlalchemy import JSON, LargeBinary, and_, false, func, inspect, select, true
 
 from app.core.access_catalog import WORKSPACE_LABELS, resource_for, workspace_grants
 from app.types import ActionType
@@ -20,13 +22,6 @@ INLINE_LIMIT = 25
 CELL_LIMIT = 180
 # List projections are intentionally stricter than general console formatters.
 PRIVATE_NAMES = ("password", "secret", "token", "key", "hash", "payload", "error", "meta", "params", "prompt")
-
-#: Tables whose rows are the platform's high-volume payload, not a relation of
-#: the parent worth listing inline. `collected_items` alone is the largest
-#: table and its rows are long texts and media, so showing the newest 25 under
-#: every workspace only duplicates the collection pages and makes the form
-#: slow. They stay reachable through their own console views.
-INLINE_EXCLUDED_TABLES = frozenset({"collected_items"})
 
 
 def scope_predicate(model: Any, actor: Any):
@@ -85,7 +80,10 @@ def projection_columns(view: Any) -> list[str]:
     mapper = inspect(view.model)
     details = set(view._details_prop_names)
     names = []
-    for name in view._list_prop_names:
+    configured = getattr(view, "inline_columns", None)
+    for name in dict.fromkeys(configured if configured is not None else view._list_prop_names):
+        if name not in view._list_prop_names:
+            continue
         if name not in mapper.column_attrs or name not in details:
             continue
         prop = mapper.column_attrs[name]
@@ -118,14 +116,19 @@ def reverse_foreign_keys(parent: Any, target: Any):
             yield ", ".join(constraint.column_keys), and_(*predicates)
 
 
-def scoped_projection(view: Any, request: Any, actor: Any, names: list[str], predicate: Any):
+def scoped_projection(
+    view: Any, request: Any, actor: Any, names: list[str], predicate: Any, *, limit: int | None = INLINE_LIMIT
+):
     # Reuse the view's predicates (including catalog filtering) without invoking
     # its ORM formatters/eager loaders. An outer scalar SELECT strips ORM options.
     context = view._catalog_scope(request) if hasattr(view, "_catalog_scope") else nullcontext()
     with context:
         rows = view.list_query(request).where(scope_predicate(view.model, actor), predicate).order_by(None).subquery()
     keys = [inspect(view.model).get_property_by_column(col).key for col in inspect(view.model).primary_key]
-    return select(*(rows.c[name] for name in names)).order_by(*(rows.c[key] for key in keys)).limit(INLINE_LIMIT + 1)
+    # Include keys to keep DISTINCT and deterministic ordering compatible even
+    # when a compact inline omits ID. Counts and pages use this exact projection.
+    selected = dict.fromkeys([*keys, *names])
+    return select(*(rows.c[name] for name in selected)).distinct().order_by(*(rows.c[key] for key in keys)).limit(limit)
 
 
 async def read_rows(view: Any, statement: Any) -> list[dict]:
@@ -151,11 +154,55 @@ def cell_text(value: Any) -> str:
     if isinstance(value, date):
         return value.strftime("%d.%m.%Y")
     if isinstance(value, Enum):
-        value = value.value
+        value = getattr(value, "label", value.value)
     if not isinstance(value, (str, int, float)):
         return "—"
     text = str(value)
     return text[:CELL_LIMIT] + "…" if len(text) > CELL_LIMIT else text
+
+
+def positive_int(value: Any, default: int) -> int:
+    """Bound parsing before int(): malformed/huge query values never reach SQL."""
+    text = str(value)
+    return int(text) if text.isascii() and text.isdigit() and len(text) <= 9 and int(text) > 0 else default
+
+
+def inline_pagination(view: Any, request: Any, section_id: str, count: int):
+    """Reuse SQLAdmin's page window/clamping with isolated per-section URLs."""
+    options = tuple(
+        dict.fromkeys(
+            size
+            for size in getattr(view, "inline_page_size_options", (10, 25, 50, 100))
+            if type(size) is int and 0 < size <= 200
+        )
+    ) or (INLINE_LIMIT,)
+    default = getattr(view, "inline_page_size", INLINE_LIMIT)
+    default = default if type(default) is int and default in options else options[0]
+    page_key, size_key = f"{section_id}-page", f"{section_id}-size"
+    size = positive_int(request.query_params.get(size_key), default)
+    size = size if size in options else default
+    page = positive_int(request.query_params.get(page_key), 1)
+    pagination = Pagination(rows=[], page=page, page_size=size, count=count)
+    pagination.add_pagination_urls(request.url)
+
+    def url(**params):
+        return str(request.url.include_query_params(**params).replace(fragment=section_id))
+
+    for control in pagination.page_controls:
+        control.url = url(**{page_key: control.number})
+    sizes = [
+        {
+            "size": option,
+            "url": url(
+                **{
+                    size_key: option,
+                    page_key: replace(pagination, page_controls=[]).resize(option).page,
+                }
+            ),
+        }
+        for option in options
+    ]
+    return pagination, sizes
 
 
 async def related_inlines(view: Any, obj: Any, request: Any) -> list[dict]:
@@ -177,13 +224,13 @@ async def related_inlines(view: Any, obj: Any, request: Any) -> list[dict]:
     if any(getattr(obj, key, None) is None for key in keys):
         return []
     parent_filter = and_(*(getattr(view.model, key) == getattr(obj, key) for key in keys))
-    if not await read_rows(view, scoped_projection(view, request, actor, keys, parent_filter)):
+    if not await read_rows(view, scoped_projection(view, request, actor, keys, parent_filter, limit=1)):
         return []
     sections = []
     for target in view._admin_ref._views:
         if not getattr(target, "model", None) or not readable(target, request):
             continue
-        if target.model.__table__.name in INLINE_EXCLUDED_TABLES:
+        if getattr(target, "inline_exclude", False):
             continue
         if resource_for(target.model.__table__.name) is None:
             continue
@@ -191,15 +238,31 @@ async def related_inlines(view: Any, obj: Any, request: Any) -> list[dict]:
         if not columns:
             continue
         for foreign_key, predicate in reverse_foreign_keys(obj, target.model):
-            rows = await read_rows(target, scoped_projection(target, request, actor, columns, predicate))
+            # Stable names isolate every FK's navigation, including two FKs to
+            # one parent. Only metadata, never request-supplied SQL identifiers.
+            section_id = f"inline-{target.identity}-{foreign_key.replace(', ', '-')}"
+            statement = scoped_projection(target, request, actor, columns, predicate, limit=None)
+            count_rows = await read_rows(
+                target, select(func.count().label("total")).select_from(statement.order_by(None).subquery())
+            )
+            pagination, sizes = inline_pagination(target, request, section_id, count_rows[0]["total"])
+            rows = await read_rows(
+                target, statement.limit(pagination.page_size).offset((pagination.page - 1) * pagination.page_size)
+            )
+            pagination.rows = [[cell_text(row[name]) for name in columns] for row in rows]
             sections.append(
                 {
+                    "id": section_id,
                     "title": target.name_plural,
                     "foreign_key": foreign_key,
+                    "relation_label": " · ".join(
+                        target._column_labels.get(key, key) for key in foreign_key.split(", ")
+                    ),
+                    "column_names": columns,
                     "columns": [target._column_labels.get(name, name) for name in columns],
-                    "rows": [[cell_text(row[name]) for name in columns] for row in rows[:INLINE_LIMIT]],
-                    "truncated": len(rows) > INLINE_LIMIT,
-                    "limit": INLINE_LIMIT,
+                    "rows": pagination.rows,
+                    "pagination": pagination,
+                    "sizes": sizes,
                 }
             )
     return sections

@@ -935,6 +935,7 @@ class AgentTaskManager(BaseManager):
         extra_payload: Optional[dict[str, Any]] = None,
         retry_exhausted: bool = False,
         supersede_unfinished: bool = False,
+        launch_request_key: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         """Internal trigger boundary: insert and schedule advancement commit together.
 
@@ -993,7 +994,9 @@ class AgentTaskManager(BaseManager):
                 row = (await session.execute(query.with_for_update(skip_locked=scheduled))).scalar_one_or_none()
                 if row is None:
                     return None
-                if row.launch_key is not None and row.launch_job_id is not None:
+                if launch_request_key is not None and row.launch_key != launch_request_key:
+                    raise ValueError("Launch receipt key does not match this task")
+                if launch_request_key is not None and row.launch_job_id is not None:
                     from ..job import Job as JobModel
 
                     existing_job = (
@@ -1087,9 +1090,10 @@ class AgentTaskManager(BaseManager):
                                 if value is not None and key in override_keys
                             }
                         )
-                    from app.services.task_plans import materialize_task_plan_window
+                    if isinstance(payload.get("task_plan"), dict):
+                        from app.services.task_plans import materialize_task_plan_window
 
-                    payload = materialize_task_plan_window(payload, now)
+                        payload = materialize_task_plan_window(payload, now)
                     retry_reset_count = 0
                     if retry_exhausted:
                         if row.job_type != "analyze":
@@ -1332,7 +1336,7 @@ class AgentTaskManager(BaseManager):
                         if retry_exhausted:
                             raise _RetryAdmissionBusy(busy.job) from busy
                         return _busy_admission_receipt(row.id, busy.job)
-                    if row.launch_key is not None:
+                    if launch_request_key is not None:
                         row.launch_job_id = job.id
                     row.last_status = "queued"
                     row.last_error = None

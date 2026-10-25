@@ -175,7 +175,7 @@ async def launch_social_task(
             # active membership and task rights and never guesses another payer.
             await consent_current_user_as_task_payer(task_id)
         receipt = await AgentTaskManager()._admit_task_run(
-            task_id, now=datetime.now(timezone.utc), initiated_by_user_id=actor.id
+            task_id, now=datetime.now(timezone.utc), initiated_by_user_id=actor.id, launch_request_key=key
         )
         if receipt is None:
             raise ValueError("Task run was not admitted")

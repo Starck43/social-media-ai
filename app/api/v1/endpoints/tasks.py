@@ -471,15 +471,23 @@ async def update_task(
         finally:
             await session.close()
     else:
-        if updates:
-            await AgentTask.objects.update_by_id(task_id, **updates)
+        from app.core.database import new_session
+        from app.models.managers.agent_task_manager import AgentTaskManager
 
-        if source_ids is not None:
-            from app.models.managers.agent_task_manager import AgentTaskManager
-            # The task was loaded through the request's tenant-guarded queryset;
-            # re-enter its persisted tenant for the manager's admission lock.
+        # Resolve both row and relationship writes in the same persisted
+        # workspace, including legacy callers without a task_plan envelope.
+        session = new_session()
+        try:
             with tenant_scope(task.tenant_id):
-                await AgentTaskManager().set_sources(task_id, source_ids)
+                async with session.begin():
+                    if updates:
+                        await AgentTask.objects.update_by_id(task_id, session=session, **updates)
+                    if source_ids is not None:
+                        await AgentTaskManager().set_sources(task_id, source_ids, session=session)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        finally:
+            await session.close()
 
     task = await AgentTask.objects.get(id=task_id)
     return _task_response(task)

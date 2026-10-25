@@ -158,6 +158,7 @@ async def workspace(request, monkeypatch):
         "test_same_request_concurrently_creates_one_task_and_one_job",
         "test_request_key_cannot_be_reused_for_different_conditions",
         "test_launch_receipt_survives_job_pruning",
+        "test_manual_rerun_does_not_replace_automatic_request_receipt",
     }:
         consent = AsyncMock()
         monkeypatch.setattr("app.services.billing.payer.consent_current_user_as_task_payer", consent)
@@ -277,6 +278,28 @@ async def test_launch_receipt_survives_job_pruning(workspace):
     with tenant_scope(workspace.tenant.id):
         remaining = await Job.objects.filter(agent_task_id=created["task_id"])
     assert remaining == []
+
+
+async def test_manual_rerun_does_not_replace_automatic_request_receipt(workspace):
+    from app.jobs.enqueue import enqueue_task_run
+
+    scenario = await workspace.scenario()
+    source = await workspace.source()
+    with workspace.actor_scope():
+        await configure_current_personal_account("20")
+        plan = _plan(scenario.id, source.id)
+        first = await launch_social_task(plan, request_id="request-manual-again-01")
+        workspace.task_ids.append(first["task_id"])
+        await Job.objects.update_by_id(first["job_id"], status="done", finished_at=datetime.now(timezone.utc))
+        task = await AgentTask.objects.get(id=first["task_id"])
+        second = await enqueue_task_run(task, initiated_by_user_id=workspace.user.id)
+        replay = await launch_social_task(plan, request_id="request-manual-again-01")
+        refreshed = await AgentTask.objects.get(id=task.id)
+
+    assert second.id != first["job_id"]
+    assert replay["job_id"] == first["job_id"]
+    assert replay["status"] == "replayed"
+    assert refreshed.launch_job_id == first["job_id"]
 
 
 async def test_missing_personal_payer_keeps_an_inactive_draft_without_a_job(workspace):

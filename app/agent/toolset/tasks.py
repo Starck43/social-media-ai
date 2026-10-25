@@ -390,6 +390,8 @@ async def task_add(
 
     result: dict[str, Any] = {
         "status": "created",
+        "id": task.id,
+        "task_url": f"/app/tasks/{task.id}",
         "name": task.name,
         "next_run_at": (
             task.next_run_at.astimezone(ZoneInfo(tz)).strftime("%d.%m.%Y %H:%M") if task.next_run_at else None
@@ -403,12 +405,12 @@ async def task_add(
             await consent_current_user_as_task_payer(task.id)
             await AgentTask.objects.update_by_id(task.id, is_active=True)
             result["active"] = True
-        except Exception as error:
+        except Exception:
             # Keep the task available for explicit setup, but never activate an
             # AI plan until the authenticated owner has consented to its payer.
             result["active"] = False
             result["billing_consent_required"] = True
-            result["billing_error"] = str(error)
+            result["billing_error"] = "Настройте личный AI-бюджет и подтвердите оплату задачи в настройках"
 
     # Hint when the bound scenario wants specific targets the task does not
     # carry — the analysis would otherwise have nothing to aim at. Surfaced as
@@ -794,7 +796,9 @@ async def task_update(
             if source_ids is not None:
                 await AgentTaskManager().set_sources(task.id, source_ids, session=session)
 
-            changes: dict[str, Any] = {"status": "updated", "name": task.name}
+            changes: dict[str, Any] = {
+                "status": "updated", "id": task.id, "task_url": f"/app/tasks/{task.id}", "name": task.name
+            }
             if job_type:
                 changes["old_job_type"] = original_job_type
                 changes["new_job_type"] = job_type

@@ -36,11 +36,19 @@ class Tenant(Base):
     id = Column(Integer, primary_key=True)
 
 
+class Platform(Base):
+    __tablename__ = "fixture_platforms"
+    id = Column(Integer, primary_key=True)
+    platform_type = Column(String)
+
+
 class Source(Base):
     __tablename__ = "fixture_sources"
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer)
     is_active = Column(Boolean, default=True)
+    platform_id = Column(ForeignKey("fixture_platforms.id"))
+    platform = relationship(Platform)
 
 
 links = Table(
@@ -595,12 +603,16 @@ async def test_web_queue_reports_existing_job_without_claiming_it():
         "enqueue_task_run": AsyncMock(side_effect=activity.SourceJobBusy(NS(id=9, status="running"))),
         "SourceJobBusy": activity.SourceJobBusy,
         "launch_job_background": lambda job_id, **kw: None,  # busy path returns early; never called
+        "AgentTaskManager": lambda: NS(get_sources=AsyncMock(return_value=[1])),
+        "_can_activate": AsyncMock(return_value=None),
     }
     exec(
         compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), "isolated_web_queue", "exec"),
         scope,
     )
-    assert await scope["queue_task_now"](NS(id=10)) == {"job_id": 9, "status": "running", "already_running": True}
+    assert await scope["queue_task_now"](
+        NS(id=10, tenant_id=7, job_type="collect", payload={}, agent_scenario_id=None)
+    ) == {"job_id": 9, "status": "running", "already_running": True}
 
 
 def test_active_membership_is_conservative_and_distinct_from_terminal_jobs():

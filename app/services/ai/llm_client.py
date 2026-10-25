@@ -112,6 +112,33 @@ async def _verify_personal_dispatch_day(receipt: dict[str, Any] | None) -> None:
         raise PersonalBillingUnavailable("UTC billing day changed after reservation; retry under the new day")
 
 
+async def _revalidate_personal_dispatch_before_http(client: Any, receipt: dict[str, Any] | None) -> None:
+    """Reject changed provider credentials after admission and before HTTP send."""
+    from app.services.ai.personal_dispatch import validate_personal_dispatch
+
+    try:
+        await validate_personal_dispatch(client)
+    except asyncio.CancelledError:
+        if receipt is not None:
+            task = asyncio.create_task(_observe_personal_failure(receipt, not_dispatched=True))
+            try:
+                await asyncio.shield(task)
+            except BaseException:
+                pass
+        raise
+    except Exception:
+        if receipt is not None:
+            try:
+                await _observe_personal_failure(receipt, not_dispatched=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Keep the reservation held if the no-dispatch release cannot be
+                # recorded; do not send with a credential that failed revalidation.
+                logger.debug("Failed to record no-dispatch after credential revalidation", exc_info=True)
+        raise
+
+
 async def _observe_personal_outcome(
     receipt: dict[str, Any] | None,
     *,
@@ -495,6 +522,7 @@ class OpenAICompatibleClient(LLMClient):
         await _verify_personal_dispatch_day(receipt)
         if receipt is not None:
             request_meta["dispatch_id"] = reserved_dispatch_id
+        await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
             async with httpx.AsyncClient() as c:
@@ -602,6 +630,7 @@ class OpenAICompatibleClient(LLMClient):
         if isinstance(diagnostic, dict):
             diagnostic["effective_max_tokens"] = payload["max_tokens"]
         await _verify_personal_dispatch_day(receipt)
+        await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
             if isinstance(diagnostic, dict):
@@ -778,6 +807,7 @@ class AnthropicClient(LLMClient):
         await _verify_personal_dispatch_day(receipt)
         if receipt is not None:
             request_meta["dispatch_id"] = reserved_dispatch_id
+        await _revalidate_personal_dispatch_before_http(self, receipt)
         try:
             async with httpx.AsyncClient() as c:
                 r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
@@ -875,6 +905,7 @@ class AnthropicClient(LLMClient):
             uses_tools=bool(tools),
         )
         await _verify_personal_dispatch_day(receipt)
+        await _revalidate_personal_dispatch_before_http(self, receipt)
         try:
             async with httpx.AsyncClient() as c:
                 r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
@@ -973,6 +1004,7 @@ class CustomClient(LLMClient):
         await _verify_personal_dispatch_day(receipt)
         if receipt is not None:
             request_meta["dispatch_id"] = reserved_dispatch_id
+        await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
             async with httpx.AsyncClient() as c:
@@ -1061,6 +1093,7 @@ class CustomClient(LLMClient):
             uses_tools=bool(tools),
         )
         await _verify_personal_dispatch_day(receipt)
+        await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
             async with httpx.AsyncClient() as c:

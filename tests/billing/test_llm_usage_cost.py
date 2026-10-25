@@ -34,6 +34,14 @@ def _catalog_owner():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _skip_personal_dispatch_revalidation(monkeypatch):
+    """Cost tests isolate usage projections from catalog persistence."""
+    final_check = AsyncMock()
+    monkeypatch.setattr(llm_client_module, "_revalidate_personal_dispatch_before_http", final_check)
+    return final_check
+
+
 def _model(input_cost_per_1k=0.01, output_cost_per_1k=0.02, **extra):
     provider = SimpleNamespace(
         name="Stub",
@@ -242,7 +250,9 @@ class TestProviderCostUsageProjection:
         assert result["cost_source"] == "cache_tariff"
         assert result["cost_is_estimate"] is True
 
-    async def test_all_actual_adapter_chat_and_analyze_calls_use_provider_totals(self):
+    async def test_all_actual_adapter_chat_and_analyze_calls_use_provider_totals(
+        self, _skip_personal_dispatch_revalidation
+    ):
         cases = [
             (
                 _openai_client(input_cost_per_1k=0, output_cost_per_1k=0),
@@ -282,6 +292,8 @@ class TestProviderCostUsageProjection:
                         else await client.analyze("hi")
                     )
                 assert result["usage"]["cost"] == 0.31
+
+        assert _skip_personal_dispatch_revalidation.await_count == 6
 
     async def test_chat_parse_failure_and_malformed_usage_keep_valid_provider_total(self):
         client = _openai_client(input_cost_per_1k=10, output_cost_per_1k=10)

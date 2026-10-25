@@ -9,6 +9,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 
 import app.services.ai.llm_client as llm_client
+import app.services.ai.personal_dispatch as personal_dispatch
 from app.core.config import settings
 from app.core.personal_catalog_context import catalog_execution_scope
 from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
@@ -17,6 +18,13 @@ from app.services.ai.llm_client import CustomClient, OpenAICompatibleClient, cha
 
 # Legacy catalog owner seeded by the personal catalog ownership migration.
 CATALOG_OWNER_ID = 2
+_REAL_REVALIDATE_PERSONAL_DISPATCH = llm_client._revalidate_personal_dispatch_before_http
+
+
+@pytest.fixture(autouse=True)
+def _skip_personal_dispatch_revalidation(monkeypatch):
+    """Keep unrelated transport tests isolated from catalog persistence."""
+    monkeypatch.setattr(llm_client, "_revalidate_personal_dispatch_before_http", AsyncMock())
 
 
 @pytest.fixture(autouse=True)
@@ -249,6 +257,36 @@ async def test_prior_day_reservation_records_not_dispatched_and_sends_no_http(mo
     monkeypatch.setattr(llm_client, "_observe_personal_failure", release)
     with pytest.raises(PersonalBillingUnavailable):
         await client.chat([{"role": "user", "content": "hello"}])
+    posts.assert_not_awaited()
+    release.assert_awaited_once_with(receipt, not_dispatched=True)
+
+
+@pytest.mark.asyncio
+async def test_credential_revoked_after_admission_releases_reservation_without_http(monkeypatch):
+    monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", True)
+    client = OpenAICompatibleClient(model())
+    monkeypatch.setattr(client, "_rate_limit", AsyncMock())
+    posts = AsyncMock()
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        llm_client.httpx,
+        "AsyncClient",
+        lambda **kwargs: _CountingAsyncClient(real_client, posts, **kwargs),
+    )
+    receipt = {"dispatch_id": "b" * 32, "utc_day": datetime.now(timezone.utc).date()}
+    monkeypatch.setattr(llm_client, "_personal_admission", AsyncMock(return_value=(receipt, receipt["dispatch_id"])))
+    release = AsyncMock(return_value=None)
+    monkeypatch.setattr(llm_client, "_observe_personal_failure", release)
+    monkeypatch.setattr(llm_client, "_revalidate_personal_dispatch_before_http", _REAL_REVALIDATE_PERSONAL_DISPATCH)
+    monkeypatch.setattr(
+        personal_dispatch,
+        "validate_personal_dispatch",
+        AsyncMock(side_effect=PermissionError("Provider configuration changed; reload before dispatch")),
+    )
+
+    with pytest.raises(PermissionError, match="Provider configuration changed"):
+        await client.chat([{"role": "user", "content": "hello"}])
+
     posts.assert_not_awaited()
     release.assert_awaited_once_with(receipt, not_dispatched=True)
 

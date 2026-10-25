@@ -45,13 +45,14 @@ def role_edit(actor: Any, target: Any) -> tuple[list[tuple[str, str]], str | Non
     target's current role so the page still answers "which role is this?".
     """
     from app.core.access_catalog import role_label
+    from app.types import PlatformRoleType
 
     current = getattr(getattr(target, "role", None), "codename", None)
     shown = [(str(current), role_label(str(current)))] if current else []
 
     if getattr(actor, "id", None) is not None and getattr(actor, "id", None) == getattr(target, "id", None):
         return shown, "Свою платформенную роль изменить нельзя: её назначает другой администратор платформы"
-    if getattr(target, "is_superuser", False):
+    if current == PlatformRoleType.SUPERUSER.value:
         return shown, "Роль собственника платформы не меняется из консоли"
     return role_choices(actor), None
 

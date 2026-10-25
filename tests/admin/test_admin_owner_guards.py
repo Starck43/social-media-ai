@@ -119,13 +119,13 @@ def _password_route(path: str):
 
 
 @pytest.fixture
-def password_console(monkeypatch):
+def password_console(monkeypatch, request):
     """A signed-in admin on the password pages, with every write watched."""
     admin = _account(9, "admin")
     admin.has_admin_access = lambda: True
     admin.is_platform_admin = True
     admin.hashed_password = "stored-hash"
-    owner = _account(2, "superuser")
+    owner = _account(2, "superuser", active=getattr(request, "param", True))
 
     async def authenticate(token=None, *args, **kwargs):
         return admin
@@ -178,6 +178,37 @@ async def test_the_password_form_is_refused_for_the_owner(password_console):
 
 async def test_the_password_write_is_refused_for_the_owner_without_writing(password_console):
     """The POST answers 403 before storage sees a new hash."""
+    request = _session_request("/admin/user/change-password/2")
+
+    with pytest.raises(HTTPException) as refused:
+        await endpoints.change_password_submit_path(
+            request,
+            user_id=2,
+            new_password="Str0ng!Pass1",
+            confirm_password="Str0ng!Pass1",
+            csrf_token="whatever",
+            current_password=None,
+        )
+
+    assert refused.value.status_code == 403
+    password_console.update.assert_not_awaited()
+
+
+# `is_superuser` folds in `is_active`, so a suspended owner loses authority but
+# not ownership: the console must still refuse both password pages for them.
+
+
+@pytest.mark.parametrize("password_console", [False], indirect=True, ids=["inactive-owner"])
+async def test_the_password_form_is_refused_for_the_inactive_owner(password_console):
+    with pytest.raises(HTTPException) as refused:
+        await endpoints.change_password_form_path(_session_request("/admin/user/change-password/2"), user_id=2)
+
+    assert refused.value.status_code == 403
+    password_console.update.assert_not_awaited()
+
+
+@pytest.mark.parametrize("password_console", [False], indirect=True, ids=["inactive-owner"])
+async def test_the_password_write_is_refused_for_the_inactive_owner_without_writing(password_console):
     request = _session_request("/admin/user/change-password/2")
 
     with pytest.raises(HTTPException) as refused:

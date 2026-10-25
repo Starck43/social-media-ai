@@ -111,7 +111,8 @@ def _patch_queries(monkeypatch: pytest.MonkeyPatch, actor: object | None, target
             return self
 
         async def get(self, id: int, **_: object) -> object | None:
-            if id == getattr(self._actor, "id", None):
+            actor_id = getattr(self._actor, "id", None)
+            if (actor_id is not None and id == actor_id) or (actor_id is None and self._actor is None):
                 calls.append("actor")
                 return self._actor
             calls.append("target")
@@ -215,6 +216,155 @@ async def test_manager_writes_the_role_when_it_is_below_the_actor(monkeypatch: p
     assert recorded == [(2, "operator")]
 
 
+def _record_role_write(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, str]]:
+    """Capture the write so a refused call provably wrote nothing."""
+    recorded: list[tuple[int, str]] = []
+
+    async def _fake_apply(self, user_id: int, role_id: int) -> None:
+        recorded.append((user_id, role_id))
+
+    async def _role_row(codename) -> SimpleNamespace:
+        return SimpleNamespace(id=str(codename), codename=str(codename))
+
+    monkeypatch.setattr(UserManager, "_apply_role_change", _fake_apply, raising=False)
+    monkeypatch.setattr("app.models.PlatformRole.objects.get_by_codename", _role_row, raising=False)
+    return recorded
+
+
+@pytest.mark.asyncio
+async def test_operator_assigns_the_ordinary_role_to_a_below_account(monkeypatch: pytest.MonkeyPatch):
+    """An operator runs the client-facing part of the platform: it may demote to `user`."""
+    recorded = _record_role_write(monkeypatch)
+    _patch_queries(monkeypatch, _account(1, "operator"), _account(2, "user"))
+    await UserManager().set_platform_role(user_id=2, role_code=PlatformRoleType.USER, actor_id=1)
+    assert recorded == [(2, "user")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("role_code", "detail"),
+    [
+        (PlatformRoleType.OPERATOR, "выше своей"),
+        (PlatformRoleType.ADMIN, "выше своей"),
+        (PlatformRoleType.SUPERUSER, "миграцией"),
+    ],
+    ids=["peer-operator", "admin", "owner"],
+)
+async def test_operator_cannot_assign_at_or_above_its_own_rank(monkeypatch: pytest.MonkeyPatch, role_code, detail):
+    recorded = _record_role_write(monkeypatch)
+    calls = _patch_queries(monkeypatch, _account(1, "operator"), _account(2, "user"))
+    with pytest.raises(HTTPException) as raised:
+        await UserManager().set_platform_role(user_id=2, role_code=role_code, actor_id=1)
+    assert raised.value.status_code == 403
+    assert detail in str(raised.value.detail)
+    # Refused on the actor's rank alone: the target is never loaded.
+    assert calls == ["actor"]
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_operator_cannot_rewrite_an_account_at_its_own_rank(monkeypatch: pytest.MonkeyPatch):
+    """Assigning a lower role to a peer is still an escalation-shaped write."""
+    recorded = _record_role_write(monkeypatch)
+    _patch_queries(monkeypatch, _account(1, "operator"), _account(2, "operator"))
+    with pytest.raises(HTTPException) as raised:
+        await UserManager().set_platform_role(user_id=2, role_code=PlatformRoleType.USER, actor_id=1)
+    assert raised.value.status_code == 403
+    assert "не ниже своей" in str(raised.value.detail)
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_a_client_actor_cannot_assign_any_role(monkeypatch: pytest.MonkeyPatch):
+    """`user` has no admin access at all, so even the ordinary role is refused."""
+    recorded = _record_role_write(monkeypatch)
+    calls = _patch_queries(monkeypatch, _account(1, "user"), _account(2, "user"))
+    with pytest.raises(HTTPException) as raised:
+        await UserManager().set_platform_role(user_id=2, role_code=PlatformRoleType.USER, actor_id=1)
+    assert raised.value.status_code == 403
+    assert str(raised.value.detail) == "Platform console access required"
+    assert calls == ["actor"]
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("actor_role", ["superuser", "admin", "operator"], ids=["owner", "admin", "operator"])
+async def test_a_suspended_actor_cannot_assign_even_with_a_staff_role(monkeypatch: pytest.MonkeyPatch, actor_role):
+    """Suspension revokes authority whatever the role says; no write is attempted."""
+    recorded = _record_role_write(monkeypatch)
+    suspended = _account(1, actor_role, active=False)
+    calls = _patch_queries(monkeypatch, suspended, _account(2, "user"))
+    with pytest.raises(HTTPException) as raised:
+        await UserManager().set_platform_role(user_id=2, role_code=PlatformRoleType.USER, actor_id=1)
+    assert raised.value.status_code == 403
+    assert str(raised.value.detail) == "Platform console access required"
+    assert calls == ["actor"]
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_a_missing_actor_is_refused(monkeypatch: pytest.MonkeyPatch):
+    recorded = _record_role_write(monkeypatch)
+    calls = _patch_queries(monkeypatch, None, _account(2, "user"))
+    with pytest.raises(HTTPException) as raised:
+        await UserManager().set_platform_role(user_id=2, role_code=PlatformRoleType.USER, actor_id=1)
+    assert raised.value.status_code == 403
+    assert calls == ["actor"]
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("actor_role", ["superuser", "admin", "operator"], ids=["owner", "admin", "operator"])
+async def test_every_staff_rank_cannot_re_role_itself(monkeypatch: pytest.MonkeyPatch, actor_role):
+    """Self-edit is refused before the target is read, even for a legal role code."""
+    recorded = _record_role_write(monkeypatch)
+    actor = _account(1, actor_role)
+    calls = _patch_queries(monkeypatch, actor, actor)
+    with pytest.raises(HTTPException) as raised:
+        await UserManager().set_platform_role(user_id=1, role_code=PlatformRoleType.USER, actor_id=1)
+    assert raised.value.status_code == 403
+    assert "свою платформенную роль" in str(raised.value.detail)
+    assert calls == ["actor"]
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_a_missing_target_is_a_no_op_not_an_error(monkeypatch: pytest.MonkeyPatch):
+    recorded = _record_role_write(monkeypatch)
+    _patch_queries(monkeypatch, _account(1, "admin"), None)
+    assert await UserManager().set_platform_role(user_id=99, role_code=PlatformRoleType.USER, actor_id=1) is None
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_the_owner_account_stays_locked_when_suspended(monkeypatch: pytest.MonkeyPatch):
+    """`is_superuser` drops with `is_active`; the picker's owner lock must not.
+
+    The manager refuses a suspended owner through the same role-based owner
+    lock as an active one (pinned below and above); here the edit form is what
+    must keep showing the owner role alone, disabled.
+    """
+    target = _account(2, "superuser", active=False)
+    assert target.is_superuser is False, "the badge is gone; ownership is not"
+    admin = _account(1, "admin")
+
+    assert role_edit(admin, target)[0] == [("superuser", role_label("superuser"))]
+    assert role_edit(admin, target)[1] == "Роль собственника платформы не меняется из консоли"
+    assert target.is_superuser is False
+
+
+@pytest.mark.asyncio
+async def test_an_admin_is_refused_the_suspended_owner_by_the_owner_lock(monkeypatch: pytest.MonkeyPatch):
+    """Role-based ownership is checked before rank, so the refusal names the owner."""
+    recorded = _record_role_write(monkeypatch)
+    _patch_queries(monkeypatch, _account(1, "admin"), _account(2, "superuser", active=False))
+    with pytest.raises(HTTPException) as raised:
+        await UserManager().set_platform_role(user_id=2, role_code=PlatformRoleType.USER, actor_id=1)
+    assert raised.value.status_code == 403
+    assert "собственника" in str(raised.value.detail)
+    assert recorded == []
+
+
 @pytest.mark.asyncio
 async def test_admin_cannot_assign_a_peer_the_admin_role(monkeypatch: pytest.MonkeyPatch):
     calls = _patch_queries(monkeypatch, _account(1, "admin"), _account(2, "operator"))
@@ -274,6 +424,12 @@ def test_role_is_shown_but_not_editable_for_self_and_the_owner():
     # The owner's account: same for everybody, owner included.
     assert role_edit(admin, owner)[0] == [("superuser", role_label("superuser"))]
     assert "собственника" in role_edit(admin, owner)[1]
+
+    # A suspended owner keeps ownership though it loses authority.
+    suspended = _account(3, "superuser", active=False)
+    assert suspended.is_superuser is False
+    assert role_edit(admin, suspended)[0] == [("superuser", role_label("superuser"))]
+    assert "собственника" in role_edit(admin, suspended)[1]
 
     # Someone else, below the actor: the ordinary list.
     assert role_edit(owner, ordinary) == (role_choices(owner), None)

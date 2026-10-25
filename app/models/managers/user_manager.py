@@ -112,9 +112,9 @@ class UserManager(BaseManager):
 
         actor = await PlatformUser.objects.prefetch_related("role").get(id=actor_id)
         if actor is None or not actor.is_active:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin required")
-        if not actor.is_platform_admin:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin required")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform console access required")
+        if not actor.has_admin_access():
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform console access required")
         wanted = role_code.value if isinstance(role_code, PlatformRoleType) else str(role_code).strip().lower()
         if wanted == PlatformRoleType.SUPERUSER.value:
             raise HTTPException(
@@ -134,7 +134,7 @@ class UserManager(BaseManager):
         target = await PlatformUser.objects.prefetch_related("role").get(id=user_id)
         if target is None:
             return None
-        if target.is_superuser:
+        if self._is_platform_owner(target):
             # No console, API or CLI operation may demote or re-role the owner.
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -33,7 +33,7 @@ backend granted it a `( *, * )` wildcard (`app/admin/authorization.py`), and
 `TenantAdmin.is_accessible`, the role catalog, password/role endpoints and
 billing actions all gated on `User.is_platform_admin`; "tools for working with
 database tables" were limited by which models had a registered view in
-`app/admin/views.py`, not by the role. That ladder is now closed by P9-T02–T05:
+`app/admin/views.py`, not by the role. That ladder is now closed by P9-T02–T06:
 `superuser` exists as a distinct level, only the owner holds it, and the table
 register is a separate read-only surface.
 
@@ -48,7 +48,7 @@ register is a separate read-only surface.
   selection; owner: unassigned; status: TODO — needs the owner to name the
   first capability before it can be claimed.
 
-- [ ] P9-T02 — platform-owner role `SUPERUSER` with a guarded assignment;
+- [x] P9-T02 — platform-owner role `SUPERUSER` with a guarded assignment;
   accept: `PlatformRoleType` and the `roles` catalog gain `superuser` through an
   Alembic migration; the owner account is moved onto it; no console/API/CLI path
   can grant `superuser` to another account, and the owner account cannot be
@@ -56,51 +56,93 @@ register is a separate read-only surface.
   tests; depends: none; owns: `app/types/enums/user_types.py`, `app/models/`
   role/user layer, `app/services/user/permissions.py`, `app/admin/catalog.py`,
   `app/admin/endpoints.py`, one Alembic migration; owner: codex;
-  status: READY at local dev `5365b3c` (2026-10-24). Migration
+  status: DONE; Codex accepted 2026-10-25 at source tree
+  `8b7b340fb9d107b353492b1c9220ebf7e2d83db9` based on dev
+  `e3943f0a755118e2edf055ff87c9d66c34801032`.
+  Migration
   `0110_platform_owner_superuser` defines the role row and moves the reviewed
   owner account onto it; applying it stays a separate owner-approved deployment
   step. The owner bootstrap, rank ordering and the refusal to mint or demote
   `superuser` are pinned in `tests/permissions/test_p9_owner_role_guards.py`.
 
-- [ ] P9-T03 — owner-level gates built on the new role;
+- [x] P9-T03 — owner-level gates built on the new role;
   accept: `User.is_platform_admin` covers `admin` and `superuser` so existing
   console/workspace gating is unchanged; role/permission catalog editing and
   other owner-only operations require `superuser`; the console identifies the
   signed-in level truthfully (role label, not a generic "admin"); depends:
   P9-T02; owns: `app/models/identity/user.py`, `app/admin/authorization.py`,
   `app/admin/catalog.py`, `app/admin/endpoints.py`, `app/admin/actions.py`,
-  console layout template; owner: codex; status: READY at local dev `5365b3c`
-  (2026-10-24). `User.is_platform_admin` covers `admin` and `superuser`, so
+  console layout template; owner: codex; status: DONE, Codex accepted
+  2026-10-25 at the same source tree as P9-T02. `User.is_platform_admin`
+  covers `admin` and `superuser`, so
   existing console and workspace gating is unchanged; owner-only operations
   check `is_superuser` in `app/admin/catalog.py`; the console identity block
   names the signed-in level from `app/core/access_catalog.py`
   (`app/templates/sqladmin/layout.html`). Pinned by
   `tests/permissions/test_p9_three_level_access.py`.
 
-- [ ] P9-T04 — read-only table registry for the platform owner;
+- [x] P9-T04 — read-only table registry for the platform owner;
   accept: one console surface lists every registered model (all tables in
   `app/models/**`) with pagination, search and a detail view, gated on
   `superuser` via `is_accessible` rather than model permissions; no create,
   edit, delete, export or SQL box; every other platform role gets 403; depends:
   P9-T02, P9-T03; owns: one new admin view + template, `app/admin/setup.py`
-  registration, focused authorization tests; owner: codex; status: READY at
-  local dev `e321a7a` (2026-10-24). The register lives in
+  registration, focused authorization tests; owner: codex; status: DONE,
+  Codex accepted 2026-10-25 at the same source tree as P9-T02. The register
+  lives in
   `app/admin/table_registry.py` and is registered from `app/admin/setup.py`;
   every view is read-only and gated on `is_superuser` rather than on model
   permissions, so `operator`/`admin` receive 403.
 
-- [ ] P9-T05 — owner access documentation and regression guard;
+- [x] P9-T05 — owner access documentation and regression guard;
   accept: `docs/ADMIN.md` and `docs/ACCESS_MIGRATION.md` describe the
   three-level model and the assignment rule; tests pin that `operator`/`admin`
   cannot mint `superuser`, that the registry answers 403 for them, and that no
   self-registration path grants a platform role above `user`; depends:
   P9-T02, P9-T03, P9-T04; owns: the two docs, one permission regression test
-  file; owner: codex; status: READY at local dev `eecd30f` (2026-10-24).
+  file; owner: codex; status: DONE, Codex accepted 2026-10-25 at the same
+  source tree as P9-T02.
   `docs/ADMIN.md` and `docs/ACCESS_MIGRATION.md` describe the three-level model;
   `tests/permissions/test_p9_owner_role_guards.py` and
   `test_p9_three_level_access.py` pin that staff cannot mint `superuser`, that
   the register answers 403 for them, and that self-registration never grants a
   platform role above `user`.
+
+- [x] P9-T06 — consistent owner protection across role editing and account
+  management; accept: active and inactive owner accounts cannot be re-roled,
+  deleted or have passwords changed by staff; the role picker shows the
+  protected `superuser` role; operators can assign only lower roles and the
+  manager enforces the same rank boundary as the UI; focused tests cover
+  allowed and refused writes; depends: P9-T02, P9-T03; owns: user manager,
+  role picker, owner-guard tests; owner: codex; status: DONE, Codex accepted
+  2026-10-25 at source tree
+  `8b7b340fb9d107b353492b1c9220ebf7e2d83db9`, based on dev
+  `e3943f0a755118e2edf055ff87c9d66c34801032`. The focused test run used
+  baseline `cd7c4f3491c6c81861665777fd275961cdbfd65a` plus patch SHA-256
+  `90958a3c41772e52ab145b72371a65b17efd969a9d09d2ce08d11eedca4843ad`;
+  the P9 source and test files in that run match the accepted dev tree.
+  OpenCode `build` (`river/deepseek-ai/DeepSeek-V4.1-Flash-1017`) ran the
+  focused no-DB scope: 72 passed, 0 failed, 0 skipped across
+  `tests/permissions/test_p9_owner_role_guards.py`,
+  `tests/permissions/test_owner_protection_guards.py`,
+  `tests/admin/test_admin_user_role_picker.py`, and
+  `tests/admin/test_admin_owner_guards.py`.
+
+## Migration acceptance evidence
+
+- Migration `0110_platform_owner_superuser` ran without `-x` against
+  `test_schema`. Following explicit owner authorization, the schema was
+  cleaned after a verified private backup and seeded through existing
+  managers with one active admin. Alembic advanced `0109` to `0110` and
+  promoted that account to the sole active superuser. Postflight: 0 active
+  admins, 1 active superuser; role digest
+  `d8c5007702b2f8ac9471123a8bf83512`.
+- `public` was already at `0110`; its no-`-x` upgrade was a no-op. The
+  immediate pre/post active-role digest matched
+  `d5fe4aaa3bf263b7fa7a3cc4312acce8`.
+- Private recovery archive:
+  `/private/tmp/p9-0110-backup-20261025/test_schema.dump`, SHA-256
+  `7258bd3cba26cdd000874046c62dce12dbac00f4dbac5faf38f1ebcaabb9d694`.
 
 ## Out of scope (explicit)
 

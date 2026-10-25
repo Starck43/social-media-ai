@@ -53,6 +53,7 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "agent_tasks"
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_agent_task_tenant_name"),
+        UniqueConstraint("tenant_id", "launch_key", name="uq_agent_task_tenant_launch_key"),
         Index("ix_agent_tasks_tenant_id", "tenant_id"),
         Index("idx_agent_tasks_next_run_at", "next_run_at"),
         {"schema": settings.DB_SCHEMA},
@@ -60,6 +61,12 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
 
     id: Mapped[int] = Column(Integer, primary_key=True)
     name: Mapped[str] = Column(String(100), nullable=False)
+
+    # A one-off task can retain a launch receipt after the corresponding job
+    # is pruned. These fields are assigned only by the trusted launch service.
+    launch_key: Mapped[str | None] = Column(String(64), nullable=True)
+    launch_fingerprint: Mapped[str | None] = Column(String(64), nullable=True)
+    launch_job_id: Mapped[int | None] = Column(Integer, nullable=True)
 
     cron_expr: Mapped[str] = Column(String(100), nullable=False)  # 5-field cron expression
     # Job type to enqueue: 'collect' | 'digest' | 'prune' | 'analyze' | 'learn' | 'reflect'

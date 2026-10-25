@@ -20,7 +20,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] P2-T08 — corporate/shared accounts (owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — product-owner — TODO
 - [ ] P2-T09 — production billing verification (post-activation, owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
-- [ ] P2-T12 — preserve cache usage and version complete cache tariffs → [p2](docs/phases/p2-usage-spend.md) — codex — IN_PROGRESS
 - [ ] P3-T01 — digest send permission parity acceptance on integrated code (#176 closed) → [p3](docs/phases/p3-identity-access.md) — remote Notion agent — TODO
 - [ ] P4-T01 — staging operator-recovery evidence → [p4](docs/phases/p4-delivery.md) — unassigned — BLOCKED
 - [ ] P5-T01 — close one typed-output/hostile-input/coverage gap → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
@@ -45,7 +44,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T07 — digest scope/window/row consistency (AUD-07) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T08 — per-component home pipeline gating (AUD-08) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T09 — truthful pipeline counts/labels (AUD-09) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
-- [ ] P10-T15 — default-model deletion reports scenario resets and warnings → [p10](docs/phases/p10-audit-hardening.md) — opencode — READY
 - [ ] P10-T16 — bring the scheduling layout test back to the real model layout → [p10](docs/phases/p10-audit-hardening.md) — codex — TODO
 
 ## Questions

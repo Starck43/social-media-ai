@@ -52,11 +52,20 @@ Shared by all agents (Codex, OpenCode, Kilo, remote). Operational workflow:
   That authorization is limited to its stated test-schema scope and does not
   permit public/business-schema changes. These restrictions override any older
   automatic-reset advice. Test delegation follows R10 and these restrictions.
+  For the active P2-T12 acceptance, the owner explicitly authorized preparing
+  `test_schema` (including restoring, resetting, or seeding its reference
+  fixtures) and applying any reviewed pending P2 migration to the local
+  `public` schema after acceptance passes. Before either operation, resolve the
+  exact database/schema, verify no competing writers, and take and validate a
+  private schema-scoped backup; preserve unrelated schemas and retain the
+  backup. This `public` authorization is limited to this P2-T12 migration and
+  does not permit remote or production database changes.
   The resolved target itself is pre-approved for real ASGI/DB test execution
   (including `httpx` `ASGITransport` tests that create and clean up their own
   data); never ask the owner to reconfirm the target for such runs. This
   pre-approval covers running tests only — never reset, drop, migrate or
-  reseed — and an uncertain or interrupted state still stops under R4.
+  reseed outside an explicit owner authorization such as the P2-T12 scope
+  above — and an uncertain or interrupted state still stops under R4.
   Preserve the private environment.
 - **R9 — Delegated routine Ready/merge, safeguards retained.** The owner gives
   standing authorization to perform routine Ready/merge of agreed bounded
@@ -82,9 +91,10 @@ Shared by all agents (Codex, OpenCode, Kilo, remote). Operational workflow:
   other shared mutable state; shared PostgreSQL checks remain sequential under
   R8. Neither the coordinating Codex process nor Codex subagents execute
   pytest directly; OpenCode executes assigned pytest commands through its
-  tools (contract: `.agents/skills/test-runner/SKILL.md`). Never reset/drop/
-  stamp/migrate/seed, call live providers, or run external writes as part of
-  test delegation. Task files and evidence live in `.agents/tmp/`
+  tools (contract: `.agents/skills/test-runner/SKILL.md`). Never reset, drop,
+  stamp, migrate or seed as part of the pytest invocation, even when a
+  separately authorized preparation step applies. Never call live providers
+  or run external writes. Task files and evidence live in `.agents/tmp/`
   (`test-task*.md`, `test-report.md`); the report is human-audit evidence,
   never main-context input. Kilo's `test-orchestrator` → `test-runner` route
   is secondary and may be used only when the primary OpenCode route is

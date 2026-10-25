@@ -64,6 +64,7 @@ ask for a link only if the task does not identify one unambiguously.
 Report findings first. After acceptance: `✅ <ID>: <result>; removed from ROADMAP;
 archive: <link>; checks: <actual results>`. Mention pending integration/cleanup
 separately; neither changes an accepted task back to BLOCKED.
-After audit/review/refactoring, propose scoped commits and safe cleanup; execute
-them when already authorized. CLI adapters in `.codex/`, `.opencode/`, `.kilo/`
+At closeout, inventory worktrees and apply [cleanup rules](docs/COLLABORATION.md#git-and-cleanup).
+After audit/review/refactoring, report the result and safe cleanup; execute it
+when authorized. CLI adapters in `.codex/`, `.opencode/`, `.kilo/`
 are local ignored configuration; shared behavior belongs in `.agents/skills/`.

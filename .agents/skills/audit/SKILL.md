@@ -23,6 +23,7 @@ and remove the queue row; integration/housekeeping are separate. Findings that
 prevent acceptance return the task with concrete checks and a recommended fix.
 In this role, do not start unrelated feature implementation.
 
-Close with a brief result/checks report and propose scoped commits and cleanup
-of unused owned worktrees/merged branches. If already authorized, finish those
-steps before reporting; preserve foreign work and unmerged commits.
+At closeout, inventory worktrees under the shared cleanup rules. Report the
+result/checks and removed or retained candidates; preserve dirty, unmerged,
+foreign or unclear workspaces. Commit and clean merged owned work only when
+authorized.

@@ -115,8 +115,18 @@ conventions; no ad-hoc engines, runtime DDL or unsafe search-path assumptions.
 ## Git and cleanup
 
 Review scoped diffs before local task commits. Preserve foreign staging/edits.
-Integration/push/deployment requires applicable owner authorization. After verified
-merge (ancestry, or reviewed equivalent squash/rebase patch), remove owned temp
-files, clean task worktree and feature branch; preserve unpublished work, foreign
-branches and explicitly retained recovery backups. Never force-delete to hide loss.
-Acceptance, integration and housekeeping are separate facts in the final report.
+Integration/push/deployment requires applicable owner authorization. At closeout,
+inventory `git worktree list`; for each candidate verify task/status/owner, HEAD,
+dirty and untracked files, and whether its commits are integrated. Age or a repeated
+HEAD alone does not prove a workspace is unused.
+
+Remove an owned, clean worktree when its owner confirms no active work remains.
+If its commits are unmerged, retain the branch and record branch/HEAD in the task
+card as the resume point. After verified integration (ancestry, or reviewed
+equivalent squash/rebase patch), remove the worktree and merged task branch.
+If files are dirty/untracked, ownership or activity is unclear, or task work
+remains active, preserve the workspace and report its path, task, branch/HEAD,
+file state and next owner action. Never discard work or force-delete to hide loss.
+Preserve foreign branches and explicit recovery backups. Record removed and
+retained candidates in closeout; acceptance, integration and housekeeping remain
+separate facts.

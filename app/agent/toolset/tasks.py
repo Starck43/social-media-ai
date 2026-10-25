@@ -700,3 +700,169 @@ async def task_pause(name: str, pause: bool = True) -> dict[str, Any]:
         return {"error": f"Task {name!r} not found"}
     await AgentTask.objects.update_by_id(task.id, is_active=not pause)
     return {"status": "paused" if pause else "resumed", "name": name}
+
+
+@tool(
+    name="task_execute_once",
+    description=(
+        "Запустить одну ограниченную социальную задачу поиска и анализа сразу через общий диспетчер. "
+        "При повторе того же запроса передай тот же request_id: результат запуска будет использован повторно. "
+        "Разные намерения пользователя получают разные request_id. Не принимает произвольный payload или тип задачи."
+    ),
+    required_permission="agenttask.create",
+    parameters={
+        "type": "object",
+        "properties": {
+            "request_id": {
+                "type": "string",
+                "description": "Стабильный уникальный ключ этого намерения; сохрани его для повторной попытки",
+            },
+            "plan": {
+                "type": "object",
+                "description": (
+                    "Утверждённый task_plan для разового запуска: version, goal, platforms, "
+                    "source_scope, source_ids, collection, window, scenario_id, trigger={type: once}"
+                ),
+            },
+        },
+        "required": ["request_id", "plan"],
+    },
+)
+async def task_execute_once(request_id: str, plan: dict[str, Any]) -> dict[str, Any]:
+    """Queue one bounded analyze run through the shared admission/deduplication service."""
+    if not isinstance(request_id, str) or not 8 <= len(request_id) <= 128:
+        return {"error": "request_id должен содержать от 8 до 128 символов", "code": "request_id_invalid"}
+    try:
+        from app.services.task_launch import launch_social_task
+
+        return await launch_social_task(plan, request_id=request_id, job_type="analyze")
+    except (TypeError, ValueError) as error:
+        return {"error": str(error), "code": "task_plan_invalid"}
+
+
+@tool(
+    name="search_plan",
+    description=(
+        "Подготовить ограниченный план социального поиска по запросу пользователя. "
+        "Не запускает сбор и не создаёт источники; варианты остаются предложениями модели."
+    ),
+    required_permission="collection.source.view",
+    parameters={
+        "type": "object",
+        "properties": {
+            "goal": {"type": "string", "description": "Что пользователь хочет найти и зачем"},
+            "platform": {"type": "string", "enum": ["vk", "telegram"]},
+            "queries": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "До пяти предложенных поисковых формулировок; не утверждай, что они уже проверены API",
+            },
+            "source_scope": {"type": "string", "enum": ["selected", "discovery", "all"]},
+            "source_ids": {"type": "array", "items": {"type": "integer"}},
+            "city": {"type": "string", "description": "Необязательный географический фильтр"},
+        },
+        "required": ["goal", "platform", "source_scope"],
+    },
+)
+async def search_plan(
+    goal: str,
+    platform: str,
+    source_scope: str,
+    queries: list[str] | None = None,
+    source_ids: list[int] | None = None,
+    city: str | None = None,
+) -> dict[str, Any]:
+    """Validate and return a bounded search proposal without platform access."""
+    if not isinstance(goal, str) or not goal.strip() or len(goal) > 2_000:
+        return {"error": "Опишите цель поиска (до 2000 символов)", "code": "goal_invalid"}
+    if platform not in {"vk", "telegram"}:
+        return {"error": "Пока доступны только VK и Telegram", "code": "platform_unsupported"}
+    if source_scope not in {"selected", "discovery", "all"}:
+        return {"error": "Укажите selected, discovery или all", "code": "source_scope_invalid"}
+    ids = source_ids or []
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in ids):
+        return {
+            "error": "Идентификаторы источников должны быть положительными целыми числами",
+            "code": "source_ids_invalid",
+        }
+    if source_scope == "selected" and not ids:
+        return {"error": "Для selected укажите хотя бы один source_id", "code": "sources_required"}
+    if source_scope != "selected" and ids:
+        return {"error": "source_ids допустимы только для selected", "code": "source_ids_unexpected"}
+    if queries is None:
+        queries = []
+    if not isinstance(queries, list) or len(queries) > 5 or any(
+        not isinstance(query, str) or not query.strip() or len(query.strip()) > 200 for query in queries
+    ):
+        return {"error": "Укажите не более пяти непустых запросов длиной до 200 символов", "code": "queries_invalid"}
+    if city is not None and (not isinstance(city, str) or not city.strip() or len(city.strip()) > 120):
+        return {"error": "Некорректное название города", "code": "city_invalid"}
+    return {
+        "status": "proposal",
+        "goal": goal.strip(),
+        "platform": platform,
+        "queries": list(dict.fromkeys(query.strip() for query in queries)),
+        "source_scope": source_scope,
+        "source_ids": ids,
+        "city": city.strip() if city else None,
+        "execution": "not_started",
+        "note": (
+            "Формулировки предложены моделью; доступность и фактический охват "
+            "подтверждаются только запуском через API."
+        ),
+    }
+
+
+@tool(
+    name="task_plan",
+    description=(
+        "Проверить и показать полный план социальной задачи без сохранения или запуска. "
+        "Используй перед разовым поиском либо созданием расписания."
+    ),
+    required_permission="scheduling.task.create",
+    parameters={
+        "type": "object",
+        "properties": {
+            "plan": {
+                "type": "object",
+                "description": (
+                    "version, goal, platforms, source_scope, source_ids, collection, "
+                    "window {type: fixed|rolling, start, end, days}, scenario_id, "
+                    "trigger {type: once|schedule, cron, timezone}"
+                ),
+            }
+        },
+        "required": ["plan"],
+    },
+)
+async def task_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """Pure validation/preview; the shared plan parser also serves other surfaces."""
+    from app.services.task_plans import parse_task_plan, task_plan_block
+
+    try:
+        parsed = parse_task_plan(plan)
+    except (TypeError, ValueError) as error:
+        return {"error": str(error), "code": "task_plan_invalid"}
+    # Verify workspace-owned references before returning a preview as usable.
+    from app.models import AgentScenario, Source
+
+    normalized = task_plan_block(parsed)
+    source_ids = normalized.get("source_ids") or []
+    if source_ids:
+        found = await Source.objects.select_related("platform").filter(id__in=source_ids, is_active=True)
+        found_ids = {source.id for source in found}
+        missing = sorted(set(source_ids) - found_ids)
+        if missing:
+            return {"error": "Один или несколько источников не найдены или отключены", "code": "source_unavailable"}
+        from app.utils.enum_helpers import get_enum_value
+
+        platforms = {get_enum_value(getattr(source.platform, "platform_type", None)) for source in found}
+        requested = set(normalized.get("platforms") or [])
+        if not platforms.issubset(requested):
+            return {"error": "Платформа выбранного источника не входит в план", "code": "source_platform_mismatch"}
+    scenario_id = normalized.get("scenario_id")
+    if scenario_id is not None:
+        scenario = await AgentScenario.objects.get(id=scenario_id)
+        if scenario is None or not scenario.is_active:
+            return {"error": "Сценарий не найден или отключён в этом workspace", "code": "scenario_unavailable"}
+    return {"status": "validated_preview", "plan": normalized, "writes": False, "run_created": False}

@@ -270,7 +270,10 @@ async def test_saving_and_running_queues_the_job_instead_of_blocking(client, mon
         assert tenant_id != 1, f"registered into the bootstrap workspace: {tenant_id}"
         resp = await _create(client, task_name, source.id, run_now=True)
         assert resp.status_code == 200
-        assert "поставлена в очередь" in resp.text
+        # The live pending Job owns the queue state; the task receipt stays history.
+        assert "в очереди</span>" in resp.text
+        assert "поставлена в очередь" not in resp.text
+        assert "последний запуск ожидал очереди" not in resp.text
 
         with tenant_scope(bypass=True):
             all_tasks = await AgentTask.objects.filter(name=task_name)

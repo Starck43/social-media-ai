@@ -1386,9 +1386,9 @@ async def _lane_run_rows(job: Any) -> list[dict[str, Any]]:
 
 
 def _legacy_task_status_label(task: Any) -> str:
-	"""Translate the task's coarse schedule receipt without exposing last_error."""
+	"""Translate the task's historical schedule receipt without implying a live Job."""
 	return {
-		"queued": "поставлена в очередь",
+		"queued": "последний запуск ожидал очереди",
 		"ok": "завершилась успешно",
 		"failed": "завершилась с ошибкой",
 		"skipped": "пропущена",

@@ -218,7 +218,8 @@ def test_task_run_panel_keeps_legacy_status_and_scope_when_task_has_no_job(monke
 
     assert panel["job"] is None
     assert panel["summary"] is None
-    assert panel["legacy_status_label"] == "поставлена в очередь"
+    # A task without a live Job reports its receipt as history, never as a queue state.
+    assert panel["legacy_status_label"] == "последний запуск ожидал очереди"
     assert panel["run_scope"] == {"total": 4, "active": 3, "platforms": 2}
 
 
@@ -348,6 +349,77 @@ def test_task_run_partial_keeps_all_run_content_inside_htmx_root():
     assert "Сырые данные источников задачи" not in output
     assert "Общая очередь выбранных источников за период задачи" not in output
     assert "raw_backlog" not in output
+
+
+def test_task_list_row_reports_queue_state_only_from_a_live_job():
+    """A historical `last_status='queued'` must never read as a current queue."""
+    # The row lives in the template's content block; the shell chrome needs a
+    # full request context, so only the block that owns the badge is rendered.
+    source = (ROOT / "app/web/templates/web/tasks.html").read_text()
+    start = source.index("{% block content %}")
+    end = source.index("<!-- Add modal -->")
+    opening = len("{% block content %}")
+    # Keep the real table and badge markup; the shell chrome and the add modal
+    # below the table need the full request context this row contract excludes.
+    row_template = source[start + opening : end].rstrip() + "\n"
+
+    env = Environment(autoescape=select_autoescape(("html",)))
+    template = env.from_string("{% block content %}" + row_template + "{% endblock %}")
+    template.environment.filters["human_dt"] = lambda value, **_kwargs: "сегодня"
+
+    def render(task, running_jobs=None, unconfirmed=()):
+        return template.render(
+            tasks=[task],
+            sources=[],
+            effective_active={task.id},
+            unconfirmed_tasks=set(unconfirmed),
+            running_jobs=running_jobs or {},
+            cron_to_human=lambda *_args, **_kwargs: "@once",
+            perms=None,
+            csrf="token",
+            _tz="UTC",
+            is_superuser=False,
+            tenants=[],
+            filter_tenant_id=None,
+        )
+
+    historical = SimpleNamespace(
+        id=21,
+        name="Historical queue receipt",
+        job_type="analyze",
+        cron_expr="@once",
+        payload={},
+        sources=[],
+        tenant_id=7,
+        tenant=SimpleNamespace(name="Workspace"),
+        is_active=True,
+        last_status="queued",
+        last_error=None,
+        last_run_at=datetime.now(timezone.utc),
+        next_run_at=None,
+    )
+
+    history_only = render(historical)
+    assert "последний запуск ожидал очереди" in history_only
+    assert "поставлена в очередь" not in history_only
+    assert ">в очереди<" not in history_only
+    assert ">выполняется<" not in history_only
+
+    pending = render(historical, running_jobs={21: {"id": 31, "status": "pending"}})
+    assert ">в очереди<" in pending
+    assert ">выполняется<" not in pending
+    assert "последний запуск ожидал очереди" not in pending
+
+    running = render(historical, running_jobs={21: {"id": 31, "status": "running"}})
+    assert ">выполняется<" in running
+    assert ">в очереди<" not in running
+    assert "последний запуск ожидал очереди" not in running
+
+    # The warning and current job state are independent facts; show both.
+    unconfirmed = render(historical, running_jobs={21: {"id": 31, "status": "pending"}}, unconfirmed={21})
+    assert "результат не подтверждён" in unconfirmed
+    assert ">в очереди<" in unconfirmed
+    assert "последний запуск ожидал очереди" not in unconfirmed
 
 
 @pytest.mark.asyncio

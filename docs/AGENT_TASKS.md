@@ -86,6 +86,11 @@ payload. The task's `running` and terminal rows stay as history. A pending row
 whose previous attempt left an unconfirmed external outcome (`outcome_unconfirmed`)
 is retained for review rather than dropped.
 
+`AgentTask.last_status="queued"` is a historical trigger receipt, not proof that
+a Job remains pending. The task list and detail page show a live queue/running
+state only from a current pending/running Job; when that Job was invalidated,
+the receipt remains visible as historical context.
+
 Task definition and source-link mutations take the workspace admission gate
 before locking task rows, in stable task order for multi-task operations. This
 keeps a concurrent admission on one side of the edit and commits the task/source

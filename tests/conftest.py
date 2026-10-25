@@ -159,6 +159,7 @@ async def _test_database(request):
                 + ", ".join(f"{resource}.{action}" for resource, action in sorted(missing_permissions))
             )
         raise RuntimeError("The test schema is missing required reference rows: " + "; ".join(missing))
+    yield
 
 
 @pytest.fixture(scope="session", autouse=True)

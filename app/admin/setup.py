@@ -9,6 +9,7 @@ from app.core.database import async_engine
 from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
+from .inlines import related_inlines
 from .registry import TableRegistryAdmin
 from .related import RelatedAdmin, related_controls, related_token
 from .views import (
@@ -82,6 +83,7 @@ def setup_admin(app):
             "debug": settings.DEBUG,
             "render_analysis": _render_analysis,
             "related_controls": related_controls,
+            "related_inlines": related_inlines,
             "related_token": related_token,
         }
     )

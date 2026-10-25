@@ -417,6 +417,41 @@ class LLMClient(ABC):
             "dispatch_id": uuid4().hex,
         }
 
+    def _analyze_failure(self, request_meta: dict[str, Any], code: str) -> dict[str, Any]:
+        """Allowlisted analyze diagnostics, never provider text or request content.
+
+        Keep dispatch/model identity for journaling, but omit prompt, endpoint,
+        messages and media. Unknown accounting is explicit, never numeric zero.
+        Successful provider content is intentionally unaffected.
+        """
+        if code not in {"timeout", "http_error", "transport_error", "provider_request_failed", "invalid_structured_output"}:
+            code = "provider_request_failed"
+        log = logger.warning if code == "invalid_structured_output" else logger.error
+        log("LLM analyze failed: %s", code)
+        return {
+            "request": {
+                key: request_meta[key]
+                for key in ("model", "llm_model_id", "provider", "dispatch_id")
+                if key in request_meta
+            },
+            "response": {"error": code},
+            "parsed": {},
+            "accounting_usage": {"prompt_tokens": None, "completion_tokens": None},
+            "accounting_cost_usd": None,
+            "accounting_cost_reported": False,
+        }
+
+    @staticmethod
+    def _analyze_transport_error(error: Exception) -> str:
+        """Map by exception type only; never stringify an exception or URL."""
+        if isinstance(error, httpx.TimeoutException):
+            return "timeout"
+        if isinstance(error, httpx.HTTPStatusError):
+            return "http_error"
+        if isinstance(error, httpx.TransportError):
+            return "transport_error"
+        return "provider_request_failed"
+
     def _accounting_usage(
         self, data: Any, prompt_field: str = "prompt_tokens", completion_field: str = "completion_tokens"
     ) -> dict[str, Optional[int]]:
@@ -537,29 +572,15 @@ class OpenAICompatibleClient(LLMClient):
                     timeout=timeout,
                 )
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
             raise
-        except httpx.TimeoutException:
+        except Exception as error:
             await _observe_personal_failure(receipt)
-            logger.error(f"Timeout for {self.provider.name} after {timeout}s")
             await _record_llm_usage(self.model, success=False)
-            return {
-                "request": {**payload, **request_meta},
-                "response": {"error": "timeout"},
-                "parsed": {"analysis": "Timeout"},
-            }
-        except Exception as e:
-            await _observe_personal_failure(receipt)
-            logger.error(f"Unexpected error for {self.provider.name}: {e}")
-            await _record_llm_usage(self.model, success=False)
-            return {
-                "request": {**payload, **request_meta},
-                "response": {"error": str(e)},
-                "parsed": {"analysis": f"Error: {e}"},
-            }
+            return self._analyze_failure(request_meta, self._analyze_transport_error(error))
 
         accounting_usage = self._accounting_usage(data)
         accounting_cost = self._accounting_cost(data)
@@ -571,15 +592,23 @@ class OpenAICompatibleClient(LLMClient):
         if pydantic_model is not None:
             try:
                 parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
-            except Exception as exc:
-                logger.warning("Pydantic validation failed for %s: %s", self.provider.name, exc)
-                data["error"] = "invalid_structured_output"
+            except Exception:
+                parse_error = True
                 parsed = {}
 
+        output_failed = parse_error or (isinstance(data, dict) and bool(data.get("error")))
+        diagnostic = (
+            self._analyze_failure(request_meta, "invalid_structured_output")
+            if output_failed
+            else {
+                "request": request_meta,
+                "response": data,
+                "parsed": parsed,
+            }
+        )
+
         response = {
-            "request": request_meta,
-            "response": data,
-            "parsed": parsed,
+            **diagnostic,
             "accounting_usage": accounting_usage,
             "accounting_cache_usage": self._accounting_cache_usage(data),
             **accounting_cost,
@@ -590,10 +619,10 @@ class OpenAICompatibleClient(LLMClient):
         await _observe_personal_outcome(
             receipt,
             dispatch_state="response_received",
-            outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+            outcome="failed_output" if output_failed else "succeeded",
             accounting_envelope=response,
         )
-        await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
+        await _record_llm_usage(self.model, success=not output_failed, usage=response.get("usage"))
         return response
 
     async def chat(
@@ -816,21 +845,15 @@ class AnthropicClient(LLMClient):
             async with httpx.AsyncClient() as c:
                 r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
             raise
-        except httpx.TimeoutException:
+        except Exception as error:
             await _observe_personal_failure(receipt)
-            logger.error(f"Anthropic timeout after {timeout}s")
             await _record_llm_usage(self.model, success=False)
-            return {"request": request_meta, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
-        except Exception as e:
-            await _observe_personal_failure(receipt)
-            logger.error(f"Anthropic error: {e}")
-            await _record_llm_usage(self.model, success=False)
-            return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
+            return self._analyze_failure(request_meta, self._analyze_transport_error(error))
 
         accounting_usage = self._accounting_usage(data, "input_tokens", "output_tokens")
         accounting_cost = self._accounting_cost(data)
@@ -843,15 +866,23 @@ class AnthropicClient(LLMClient):
         if pydantic_model is not None:
             try:
                 parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
-            except Exception as exc:
-                logger.warning("Pydantic validation failed for Anthropic %s: %s", self.provider.name, exc)
-                data["error"] = "invalid_structured_output"
+            except Exception:
+                parse_error = True
                 parsed = {}
 
+        output_failed = parse_error or (isinstance(data, dict) and bool(data.get("error")))
+        diagnostic = (
+            self._analyze_failure(request_meta, "invalid_structured_output")
+            if output_failed
+            else {
+                "request": request_meta,
+                "response": data,
+                "parsed": parsed,
+            }
+        )
+
         response = {
-            "request": request_meta,
-            "response": data,
-            "parsed": parsed,
+            **diagnostic,
             "accounting_usage": accounting_usage,
             "accounting_cache_usage": self._accounting_cache_usage(data),
             **accounting_cost,
@@ -862,10 +893,10 @@ class AnthropicClient(LLMClient):
         await _observe_personal_outcome(
             receipt,
             dispatch_state="response_received",
-            outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+            outcome="failed_output" if output_failed else "succeeded",
             accounting_envelope=response,
         )
-        await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
+        await _record_llm_usage(self.model, success=not output_failed, usage=response.get("usage"))
         return response
 
     async def chat(
@@ -1014,21 +1045,15 @@ class CustomClient(LLMClient):
             async with httpx.AsyncClient() as c:
                 r = await c.post(f"{self.base_url}{endpoint}", headers=self._headers(), json=payload, timeout=timeout)
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
             raise
-        except httpx.TimeoutException:
+        except Exception as error:
             await _observe_personal_failure(receipt)
-            logger.error(f"Custom endpoint timeout for {self.provider.name} after {timeout}s")
             await _record_llm_usage(self.model, success=False)
-            return {"request": request_meta, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
-        except Exception as e:
-            await _observe_personal_failure(receipt)
-            logger.error(f"Custom endpoint error for {self.provider.name}: {e}")
-            await _record_llm_usage(self.model, success=False)
-            return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
+            return self._analyze_failure(request_meta, self._analyze_transport_error(error))
 
         accounting_usage = self._accounting_usage(data)
         accounting_cost = self._accounting_cost(data)
@@ -1041,15 +1066,23 @@ class CustomClient(LLMClient):
         if pydantic_model is not None:
             try:
                 parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
-            except Exception as exc:
-                logger.warning("Pydantic validation failed for custom %s: %s", self.provider.name, exc)
-                data["error"] = "invalid_structured_output"
+            except Exception:
+                parse_error = True
                 parsed = {}
 
+        output_failed = parse_error or (isinstance(data, dict) and bool(data.get("error")))
+        diagnostic = (
+            self._analyze_failure(request_meta, "invalid_structured_output")
+            if output_failed
+            else {
+                "request": request_meta,
+                "response": data,
+                "parsed": parsed,
+            }
+        )
+
         response = {
-            "request": request_meta,
-            "response": data,
-            "parsed": parsed,
+            **diagnostic,
             "accounting_usage": accounting_usage,
             "accounting_cache_usage": self._accounting_cache_usage(data),
             **accounting_cost,
@@ -1058,10 +1091,10 @@ class CustomClient(LLMClient):
         await _observe_personal_outcome(
             receipt,
             dispatch_state="response_received",
-            outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+            outcome="failed_output" if output_failed else "succeeded",
             accounting_envelope=response,
         )
-        await _record_llm_usage(self.model, success=not bool(data.get("error")))
+        await _record_llm_usage(self.model, success=not output_failed)
         return response
 
     async def chat(

@@ -350,6 +350,134 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   repaired layout tests 95 passed, 0 failed. Not yet reviewed by the
   coordinator; DONE is set by Codex after review at this commit.
 
+- [x] P10-T01 (AUD-01, P0) — replace unauthenticated password mutation with
+  authorized recovery; accept: account-bound, expiring, one-use recovery or
+  approved operator-only reset; no anonymous hash mutation or password logs;
+  depends: none; owner: opencode; status: DONE — accepted 2026-10-25 at dev
+  HEAD `526cfd2` (task commit `1720515`, merge `1ba6265`). Owner decision of
+  2026-10-25 selected the "approved operator-only reset" alternative: recovery
+  is the authenticated console reset (platform admin + `user.update` for
+  another account, current password for self, owner refused on both pages),
+  documented as the accepted mechanism in
+  [ADMIN password routes](../ADMIN.md#password-routes-outside-sqladmin)
+  together with the out-of-band owner-recovery procedure and its
+  token-revocation limitation (stateless JWTs: a reset does not sign live
+  sessions out). The legacy `GET/POST /admin/reset-password`, its template and
+  the login-page "Забыли пароль?" link are removed, so no route looks an
+  account up by a submitted email address; `RESET_PASSWORD_RATE_LIMIT` and the
+  `generate_temporary_password` import had no remaining consumer and are
+  dropped. Self-service one-use email recovery is deferred to Q-12 (needs a
+  verified delivery channel and email verification). Auditor re-verified on
+  dev: no `reset-password` route/template reference remains in `app/` (OpenAPI
+  shows 68 paths, none matching), and
+  `pytest tests/admin/test_p10_t01_password_recovery_contract.py
+  tests/security/test_p10_t04_login_protection.py
+  tests/admin/test_admin_owner_guards.py -q` → 19 passed at `526cfd2`.
+
+- [x] P10-T04 (AUD-04, P1) — shared, cookie-independent login protection;
+  accept: normal failures counted; shared limits across surfaces/processes;
+  valid dummy verifier and generic errors; depends: none; owner: opencode;
+  status: DONE — accepted 2026-10-25 at dev HEAD `526cfd2` (task commit
+  `dddb3b4`, merge `1108863`). Storage decision (owner): one global
+  `login_attempts` table (additive revision `0111`, applied to `test_schema`
+  first and then, on owner authorization, to `public`; both at `0111 (head)`,
+  single head) — in-process memory cannot satisfy "shared across processes"
+  and Celery/Redis stay frozen. `guard_login`/`record_login_failure`/
+  `clear_login_failures` in `app/services/user/login_protection.py` key the
+  budget by the casefolded account identifier and by the client address; the
+  console, `/app/login` and `POST /api/v1/auth/login` all call the same three
+  functions, so a cleared cookie or a second process no longer resets
+  progress. `authenticate` verifies a real placeholder bcrypt hash for unknown
+  accounts (the previous `"dummy_hash"` literal did no real work) and answers
+  one generic detail for unknown, wrong-password and inactive accounts; the
+  console's "no console access" answer stays only for a correctly
+  authenticated non-operator, which cannot be reached with a wrong password
+  and is therefore not an enumeration hint. Review findings (accepted, not
+  blocking): the API counts one failure per refused attempt exactly once; the
+  web surface also counts an unexpected server fault as a failure (bounded,
+  fail-closed); a rejected attempt does not extend `locked_until`, so the
+  window is fixed by `LOGIN_TIMEOUT_MINUTES`. The session-cookie lockout
+  methods (`track_login_attempt`/`check_login_lockout`) are removed and
+  `DEBUG` no longer disables the limit; `LOGIN_IP_MAX_ATTEMPTS` adds the
+  per-address budget. Auditor re-verified on dev: `pytest
+  tests/security/test_p10_t04_login_protection.py` → 7 passed (threshold,
+  lock-then-clear, address budget shared by different accounts, real `$2b$`
+  dummy hash, identical answers, web failures locking the same account out of
+  the API); `alembic current` → `0111 (head)`; `login_attempts` residue 0.
+  Seven pre-existing workspace/permissions test failures at base `0997534`
+  (verified by stash) are not claimed by this task.
+
+- [x] P10-T03 (AUD-03, P1) — separate self-service profile updates from
+  privilege updates; accept: profile updates cannot elevate authority; fresh
+  privileged operator policy and endpoint/manager negative controls; owner:
+  opencode; status: DONE — accepted 2026-10-25, integrated into dev `bd97589`
+  (implementation `682e22b`, claim `4bc03d0`; rebased over the P3-T01 merge
+  `f46de6e`, then fast-forward).
+  Finding source: `docs/audits/2026-10-15-dev.md#aud-03` on the audit branch.
+  The audited design (profile input forwarding `is_superuser`/`is_active` to
+  storage) was already replaced by `eb6cad6`, so the task proved the replacement
+  through the real endpoint and the real manager and pinned it.
+  `tests/security/test_p10_t03_profile_privilege_split.py` (8 cases) covers the
+  schema (`UserUpdate` is `username`/`email` only), the manager's independent
+  `400` for any other key, a hostile-body self-update and an operator update of
+  a third account (role, state, identity and password hash unchanged), a
+  cross-target self-update (`403`), a grant revoked between two requests (fails
+  closed on the next one), and platform-role changes only through
+  `PUT /users/{id}/platform-role`, never to `superuser`.
+  One real defect was found in the same area and fixed: P10-T18 had routed
+  `/api/v1/users/me` through `_resolve_tenant`, contradicting the documented
+  account-level contract (`docs/API.md`, Authorization) and leaving an API-only
+  registration — which creates no workspace — unable to read or edit its own
+  profile. `/users/me` and `/auth/change-password` are account-level again
+  (`_ACCOUNT_PATHS`); the deactivated-workspace and foreign-`X-Tenant-Id`
+  denials are proven on `GET /api/v1/sources`, and the P10-T18 entry above
+  carries the correction. The bounded policy lives in
+  `docs/ACCESS_MIGRATION.md` ("Profile updates and privilege updates are
+  separate").
+  Checks at the integrated revision: the new suite with the inactive-workspace
+  suite 11 passed; with the workspace-member-role, registration-privilege and
+  owner-guard suites 63 passed; 19 passed on the rebased branch before
+  integration. Black/isort/diff-check clean on the edited files; the two
+  pre-existing non-black-clean hunks in `api_scope.py` were left untouched. No
+  migration, schema, provider, delivery or production change.
+
+- [x] P10-T18 — repair the workspace-access contracts broken by the
+  authorization split; accept: seven pre-existing failures classified, product
+  defects fixed, stale expectations updated, neighbouring suites unchanged;
+  owner: opencode; status: DONE — accepted 2026-10-25 at dev
+  `b3c295c` (task commit and fast-forward integration; claim `609586a`).
+  Two real defects: `permission_scope(is_owner=True, member_grants=...)` only
+  used the owner preset when the argument was `None`, so a defensive empty set
+  stripped the workspace owner of every workspace right (the unused
+  `_workspace_owner` context var is gone); and the early
+  `/api/v1/users/me` bypass from `eb6cad6` skipped `_resolve_tenant`, undoing the
+  deactivated-workspace fail-closed check from `8e5fd3c` — profile routes again
+  resolve active membership and validate `X-Tenant-Id`, while
+  `/api/v1/auth/change-password` stays account-level by design. Five further
+  failures were expectations older than the `platforms` settings tab and the
+  personal LLM catalog: `tenant` is a workspace resource, and
+  `llmmodel`/`llmprovider` follow the acting user only (never a workspace role
+  or another identity). Checks on the integrated revision: the three repaired
+  suites 12 passed; `tests/web/test_web_settings.py` +
+  `test_settings_admin_entry_acceptance.py` 20 passed; whole `tests/security`
+  plus the API privacy suite compared with dev `c1069ef` — no new failures, the
+  six security cases here are the only difference. The directory still carries
+  pre-existing stale failures (`test_access_policy.py` alone: 46 failed on dev)
+  and the privacy suite 47 errors on dev; this task does not claim them.
+  Black/isort/diff-check clean on the edited files; `api_scope.py` was already
+  not black-clean at base, unrelated lines untouched. No schema, migration or
+  production change.
+  **Correction (2026-10-25, P10-T03):** the `/api/v1/users/me` part of this
+  acceptance was wrong. The route is documented as account-level
+  (`docs/API.md` Authorization: "require active authentication without
+  workspace membership"), and sending it through `_resolve_tenant` made an
+  API-only registration — which creates no workspace — unable to read or edit
+  its own profile. The workspace denial from `8e5fd3c` belongs to the endpoints
+  that read workspace data, not to the profile route; P10-T03 restored the
+  account-level routing and moved the two deactivated-workspace probes in
+  `tests/security/test_inactive_workspace_access.py` to `GET /api/v1/sources`,
+  keeping both properties pinned.
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

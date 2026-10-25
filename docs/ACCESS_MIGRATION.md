@@ -115,6 +115,33 @@ The role enums contain only string codes and work on the project's declared
 Python 3.10+ floor; display labels live in `access_catalog`. Physical `roles`
 and `users.role_id` names are retained while Python uses `PlatformRole`.
 
+## Profile updates and privilege updates are separate (AUD-03)
+
+A profile update is a self-service write of `username`/`email`; it is never a
+privilege update. The contract is enforced three times, so no single layer has
+to be trusted:
+
+- the input schema (`UserUpdate`) declares only `username` and `email`, and
+  pydantic drops every other key — `is_superuser`, `is_active`, `role`,
+  `role_id`, `hashed_password` — before the route sees the body;
+- `UserManager.update_user` refuses any other key with `400` on its own, so a
+  caller that bypasses the schema (a CLI path, a future endpoint reusing the
+  manager) is still refused;
+- authority is written by dedicated routes only: `PUT /users/{id}/platform-role`
+  for platform roles (rank rule, the owner is immovable, `superuser` exists by
+  migration alone) and the password routes for credentials.
+
+`PUT /api/v1/users/me` is an **account-level** route: it reads and writes the
+caller's own row only, so it needs no workspace membership and stays available
+while a workspace is suspended — the same rule as `/auth/change-password`. A
+deactivated workspace is denied where workspace data is read (`/sources`,
+`/tasks`, …), not by taking away the account's own profile. An operator updating
+another account through `PUT /users/{id}` gets exactly the same field set; the
+target's role, state and password hash are untouched, and the acting account is
+re-read on every request, so a revoked grant fails closed on the next call.
+
+Regression: `tests/security/test_p10_t03_profile_privilege_split.py`.
+
 ## Local development execution evidence (2026-10-15)
 
 Revision `0096` was applied to the explicitly configured local development

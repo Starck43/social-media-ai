@@ -22,6 +22,41 @@ production acceptance, real-DB pending-confirmation end-to-end run.
 
 ## Closed tasks
 
+- [x] P3-T01 — finish the digest send permission parity acceptance; accept:
+  delegated acceptance via R10 at the exact current integrated source revision;
+  preserve the digest permission parity contract already in dev (`6d16436`);
+  owner: remote Notion agent (`fix/p3-t01-digest-send-parity`); status: DONE —
+  accepted 2026-10-25, [PR #233](https://github.com/Starck43/social-media-ai/pull/233)
+  merged as `f46de6e` (ancestry verified in `origin/dev`; integration revision
+  `cf36bd4`). PR #176 stays closed and unmerged; it was not reused or rebased.
+  Remote acceptance (docs-only branch on top of `4bc03d0`, code identical to the
+  pinned `c1069ef`): parity holds on all three surfaces — the agent tool
+  `digest_send_now` requires `notifications.digest_run.create` with
+  confirmation while the preview keeps `view`, the web
+  `POST /app/digests/send-now` guards `digestrun/create` through `WebPerms.can`
+  with no superuser shortcut, and the CLI reaches the same
+  `build_and_publish` only inside the trusted operator scope. Viewer,
+  update-only, inactive, missing-identity, platform-admin-viewer and
+  revoked-grant cases fail closed; a confirmed create-holder dispatches once.
+  Checks: `tests/security/test_digest_send_permissions.py` 10/10 exit 0;
+  `tests/security/test_tool_dispatch_permissions.py` 16 ran with one
+  pre-existing `tests/security` failure (registered as P10-T19), not caused or
+  fixed here; `tests/notifications/test_digest_send_current_boundaries.py` 37 ran
+  with one stale expectation, reported and not fixed.
+  The deferred DB/ASGI acceptance was run by the local helper on the
+  integration revision `cf36bd4` (identical digest/confirmation code, exclusive
+  `test_schema`, sequential): `tests/notifications/test_digest_send_postgres_acceptance.py`
+  plus `test_digest_send_asgi_acceptance.py` → **42 passed, 1 failed** in 118 s.
+  The single failure, `test_real_cas_rejects_foreign_scope_and_stale_replaced_intent`,
+  asserts that a replaced pending intent gets a new `intent_id`; `82555f2`
+  deliberately dedupes a repeated identical intent ("a staged confirmation is a
+  visible question, never a twin"), so the assertion predates that contract. It
+  is not a permission-parity failure. Evidence:
+  [validation](../validation/p3-t01-digest-parity.md) and
+  [PR comment](https://github.com/Starck43/social-media-ai/pull/233#issuecomment-6400712714).
+  The two stale digest-confirmation expectations (unit and DB twin) are
+  registered as P10-T20.
+
 - [x] P3-T02 — reject a stale personal provider credential at dispatch;
   accept: revalidate the client's selected provider/model and API-key identity
   at the final application check immediately before outbound HTTP; a provider

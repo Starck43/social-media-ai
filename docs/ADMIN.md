@@ -89,6 +89,45 @@ from the name (`UnoRouter.AI` → `unorouter`, via `app/core/provider_uid.py`) �
 the browser previews the same slug from `app/static/js/admin-uid.js`.
 
 
+## Read-only related FK lists (P8-T30)
+
+Persisted details and edit pages append **Связанные записи** below the main
+content, including custom Source, analytics and LLM/scenario templates. Creates,
+list pages and unsaved objects do not render this footer. This is a read-only
+projection, not a new CRUD route: no add/edit/delete buttons, detail links,
+exports or foreign-record popup controls are introduced by these lists.
+
+- Discover inbound FK constraints among **registered admin model views** with a
+  registered access resource. Compound FKs stay conjunctive; multiple independent
+  FKs to the parent get separate sections. Missing ORM backrefs are supported.
+  Unregistered models and association-table/many-to-many editors are not exposed.
+- Require a fresh active console actor and parent/target list/details grants and
+  view accessibility. Parent visibility is checked before loading any child list.
+- The lists add scope constraints beyond the historical global console queries.
+  Non-owner platform operators/admins see workspace rows only through their
+  active web membership in an active workspace, and only when that membership's
+  fixed role grants VIEW on the target resource. Owning and granted workspaces
+  are both supported; authorship does not replace workspace rights. Disabled,
+  foreign, unknown-role and unresolved memberships do not grant visibility.
+- The platform owner's existing global workspace inspection exception remains.
+  It does **not** widen personal provider/model catalogs or credentials: those
+  are restricted to the signed-in user's owner/user id for every platform role.
+  Global reference catalogs still require console model rights. These new filters
+  do not change the legacy global scope of the main console pages or grant an
+  ordinary workspace member access to `/admin`.
+- Each FK section selects at most 25 visible records in primary-key order, plus
+  one sentinel for a truthful truncation notice. No unscoped total is queried.
+  Existing view query predicates are preserved. Only configured scalar list
+  columns also allowed in details are projected; sensitive names, JSON/binary
+  values, relationship labels and arbitrary/custom row formatters are excluded.
+  Cells are escaped plain text, length bounded, and never invoke ORM `__str__`.
+  Empty means **Нет доступных записей**, not that no rows exist globally.
+
+Implementation: [inlines.py](../app/admin/inlines.py). Synthetic role/scope,
+ASGI and canonical metadata checks: [P8-T30 tests](../tests/admin/test_p8_t30_related_inlines.py).
+Real PostgreSQL/session and deployed UI audit remain owner-local follow-up;
+mocked evidence does not certify the deployed console.
+
 ## Authentication and platform authority
 
 [Auth backend](../app/admin/auth.py),
@@ -470,8 +509,6 @@ delivery; it is not a per-recipient delivery report. See [NOTIFICATIONS](NOTIFIC
 
 | Method / route | Current contract |
 | --- | --- |
-| `GET /admin/reset-password` | Legacy public form still renders and issues a CSRF token; it is not a verified recovery flow |
-| `POST /admin/reset-password` | Handler raises **410 Gone** without account lookup, password mutation or temporary-password logging; limiter can reject earlier |
 | `GET /admin/user/change-password/{user_id}` | Active platform operator/admin required; self-change or platform-admin-only cross-account reset |
 | `POST /admin/user/change-password/{user_id}` | Same authority plus CSRF, confirmation and password validation; self-change verifies current password; cross-account reset also checks `user.update` |
 | `POST /admin/verify-current-password` | Uses the authenticated token subject and platform-entry gate; checks only that account's supplied `current_password`; returns `valid` Boolean |
@@ -479,15 +516,48 @@ delivery; it is not a per-recipient delivery report. See [NOTIFICATIONS](NOTIFIC
 The password action's UPDATE grant alone does **not** authorize an operator to
 reset someone else's password. An operator may change their own through the
 external form without a user UPDATE grant. A platform admin resetting another
-account does not need that account's current password. No delivered expiring,
-one-use, account-bound self-service recovery mechanism is implied by the inert
-legacy form. Historical anonymous password replacement is no longer the current
-POST implementation; this documentation change did not implement that fix.
+account does not need that account's current password.
+
+**Accepted recovery mechanism (P10-T01).** Recovery is the operator-issued reset
+above, not self-service. A platform admin resets a member account after identity
+confirmation; the owner changes their own password with their current one. The
+legacy public `/admin/reset-password` form (and its "Забыли пароль?" login-page
+link) has been removed from both routes and templates: there is no anonymous
+password-mutation route and no handler that looks an account up by a submitted
+email address. Account-bound, expiring, one-use email recovery is **not**
+implemented; it is deferred to a separate task that must also bring a verified
+delivery channel. Nothing in the current console flow mutates a hash without an
+authenticated operator, and no route logs a password or a temporary credential.
 
 Password rules come from `validate_password()` and `PASSWORD_*` settings, including
 minimum length and configured uppercase/lowercase/digit/special requirements.
-Rate-limit defaults: reset POST `3/hour`, change-password POST `5/minute`;
-`DEBUG` disables this endpoint limiter. These limits are not authorization.
+Rate limiting: the change-password POST keeps `CHANGE_PASSWORD_RATE_LIMIT`
+(`5/minute`); `DEBUG` disables this endpoint limiter. These limits are not
+authorization.
+
+### Owner recovery (out-of-band)
+
+The console refuses to reset the owner's password for *everyone*, including other
+platform admins and the owner's own reset link — the owner changes it only with
+the current password. If the owner loses that password, recovery happens on the
+deployment host with write access to the database, never through a web route:
+
+1. Generate the hash with the application's own hasher, entering the new secret
+   through a prompt so it never reaches the shell history:
+   `.venv/bin/python -c "import getpass; from app.core.hashing import get_password_hash; print(get_password_hash(getpass.getpass()))"`.
+2. Update only that account, qualified by `DB_SCHEMA` (`public` by default), and
+   check the returned row:
+   `psql "$POSTGRES_URL" -c "UPDATE public.users SET hashed_password = '<hash>' WHERE id = <owner-id> RETURNING id, username"`.
+3. Record actor, timestamp, reason and the host in the operator log. Do not paste
+   the password or the hash into chat, tickets or the log.
+4. Treat every access token issued before the reset as still valid: tokens are
+   stateless JWTs with no server-side revocation list, so a reset does not by
+   itself sign live sessions out. Rotate `SECRET_KEY` (invalidating all tokens for
+   all users) when the compromise of a session is suspected, and confirm the
+   recovery with the owner over an already trusted channel.
+
+This path is an accepted residual risk for the single-owner pilot, not a
+self-service product feature.
 
 ## Dashboard routes
 
@@ -507,9 +577,17 @@ from the web UI selector or full data-endpoint acceptance from a page GET.
   storage. It carries an access JWT; max age is 24 hours. Access JWT expiry follows
   the environment-specific token settings. HTTPS-only is false only for the
   explicit development profile.
-- `LOGIN_TIMEOUT_MINUTES` is the legacy lockout interval, not session lifetime.
-  Login counters are cookie-local; ordinary wrong-password returns do not call
-  `track_login_attempt()`. A shared cross-surface throttle is still open work.
+- `LOGIN_TIMEOUT_MINUTES` is the counting window and lockout duration, not
+  session lifetime. Failed logins are counted in the global `login_attempts`
+  table keyed by the casefolded account identifier and by the client address, so
+  the console, `/app/login` and `POST /api/v1/auth/login` share one budget across
+  cookies and processes. The account lockout is `MAX_LOGIN_ATTEMPTS`; the
+  per-address budget is `LOGIN_IP_MAX_ATTEMPTS`. A successful login clears the
+  account key, the address key decays with the window, and every refusal answers
+  the same generic credentials error. Unknown accounts verify a real placeholder
+  bcrypt hash, so the failure path does not reveal whether the account exists.
+  Losing or not migrating the table breaks login — apply the revision with the
+  deploy.
 - Login, password-change and the model-test POST handlers explicitly verify `csrf_token`. The current
   `CSRFTokenManager` constructor defaults to **30 minutes** and a signed timed
   payload. Setup passes only `secret_key`; the similarly named

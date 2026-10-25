@@ -40,6 +40,11 @@ username=<username_or_email>&password=<password>
 }
 ```
 
+Failed attempts count into the shared login budget
+([ADMIN](ADMIN.md#sessions-csrf-and-known-verification-limits)): an unknown
+account, a wrong password, an inactive account and a locked budget all answer
+`400` with the same generic detail.
+
 ### Refresh Token
 
 Get a new access token using a refresh token.
@@ -1513,12 +1518,11 @@ The sqladmin panel provides a web UI for managing all database entities.
 **Pages:** User, Role, Permission, Platform, Source, AgentScenario, BotAction,
 AIAnalytics, Notification, LLMProvider, LLMModel, UserCredential.
 
-### Password Reset
+### Password Administration
 
-```
-GET /admin/reset-password
-POST /admin/reset-password (form: email, csrf_token)
-```
+There is no anonymous password recovery route. Password changes and resets are
+authenticated platform-operator actions; see
+[ADMIN password routes](ADMIN.md#password-routes-outside-sqladmin).
 
 ### Change Password
 

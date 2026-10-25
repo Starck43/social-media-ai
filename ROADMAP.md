@@ -12,8 +12,6 @@ means not recorded; source recovery links remain in the card.
 
 ## [P3](docs/tasks/p3-identity-access.md)
 
-- [P3-T01](docs/tasks/p3-t01.md) finish the digest send permission parity acceptance — **TODO** · remote Notion agent · —
-
 ## [P4](docs/tasks/p4-delivery.md)
 
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · —
@@ -30,7 +28,6 @@ means not recorded; source recovery links remain in the card.
 
 ## [P7](docs/tasks/p7-operations.md)
 
-- [P7-T01](docs/tasks/p7-t01.md) loopback-only database binding before production release — **TODO** · product-owner · —
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · —
 
 ## [P8](docs/tasks/p8-first-value-ui.md)
@@ -43,8 +40,9 @@ means not recorded; source recovery links remain in the card.
 - [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —
 - [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks across web/chat/API/CLI/admin; VK first — **IN_PROGRESS** · codex-p8-t29 · —
-- [P8-T32](docs/tasks/p8-t32.md) Additional VK search categories — **TODO** · unassigned · —
+- [P8-T30](docs/tasks/p8-t30.md) read-only scoped admin reverse-FK lists — **READY** · Notion remote executor/custodian · [PR #234 evidence](https://github.com/Starck43/social-media-ai/pull/234#issuecomment-6401468805)
 - [P8-T31](docs/tasks/p8-t31.md) Non-social resources and connector actions — **TODO** · unassigned · —
+- [P8-T32](docs/tasks/p8-t32.md) Additional VK search categories — **TODO** · unassigned · —
 
 ## [P9](docs/tasks/p9-safe-activation.md)
 
@@ -52,14 +50,13 @@ means not recorded; source recovery links remain in the card.
 
 ## [P10](docs/tasks/p10-audit-hardening.md)
 
-- [P10-T01](docs/tasks/p10-t01.md) Authorized password recovery (P0) — **TODO** · unassigned · —
-- [P10-T03](docs/tasks/p10-t03.md) Separate profile and privilege changes — **TODO** · unassigned · —
-- [P10-T04](docs/tasks/p10-t04.md) Shared cookie-independent login protection — **TODO** · unassigned · —
-- [P10-T06](docs/tasks/p10-t06.md) Safe provider errors with accounting — **TODO** · unassigned · —
-- [P10-T07](docs/tasks/p10-t07.md) Consistent digest scope/window/rows — **TODO** · unassigned · —
+- [P10-T06](docs/tasks/p10-t06.md) Safe provider errors with accounting — **READY** · remote Notion agent (fix/p10-t06-safe-provider-errors) · [PR #236](https://github.com/Starck43/social-media-ai/pull/236)
+- [P10-T07](docs/tasks/p10-t07.md) Consistent digest scope/window/rows — **READY** · remote Notion agent (fix/p10-t07-digest-scope-consistency) · [PR #235](https://github.com/Starck43/social-media-ai/pull/235)
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
+- [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
+- [P10-T20](docs/tasks/p10-t20.md) Align the digest-confirmation suites with the deliberate intent dedup — **TODO** · unassigned · —
 
 ## Questions
 
@@ -67,5 +64,6 @@ means not recorded; source recovery links remain in the card.
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · —
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · —
 - [Q-11](docs/tasks/q-11.md) Individual and company onboarding — **OPEN** · unassigned · —
+- [Q-12](docs/tasks/q-12.md) Self-service email password recovery for the public phase — **OPEN** · product-owner · —
 
 Choose one unclaimed dependency-ready task; P10 security P0 items have priority.

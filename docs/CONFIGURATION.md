@@ -64,6 +64,7 @@ REFRESH_TOKEN_EXPIRE_DAYS=30
 LOGIN_TIMEOUT_MINUTES=15             # counting window and lockout duration, shared by all login surfaces
 MAX_LOGIN_ATTEMPTS=5                 # failed attempts per account before the lockout
 LOGIN_IP_MAX_ATTEMPTS=20             # failed attempts per client address, across accounts
+MAX_WORKSPACE_MEMBERS=2              # people one workspace may hold (owner + invited), all tiers
 
 # ─── Password Policy ──────────────────────────────────────────
 PASSWORD_MIN_LENGTH=8
@@ -185,6 +186,7 @@ LOG_LEVEL=INFO
 | `LOGIN_TIMEOUT_MINUTES` | `15` | Counting window and lockout duration for the shared login budget |
 | `MAX_LOGIN_ATTEMPTS` | `5` | Failed attempts per account before the shared lockout |
 | `LOGIN_IP_MAX_ATTEMPTS` | `20` | Failed attempts per client address, across accounts |
+| `MAX_WORKSPACE_MEMBERS` | `2` | People one workspace may hold across all tiers; the tier's `max_team_members` still applies, the tighter wins. Deployment-wide for the pilot — per-workspace settings are a later task |
 
 The console, `/app/login` and `POST /api/v1/auth/login` share one budget stored in
 the `login_attempts` table, so it survives a cleared cookie and applies to every

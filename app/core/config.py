@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     MAX_LOGIN_ATTEMPTS: int = 5  # Failed attempts per account before the shared lockout
     LOGIN_IP_MAX_ATTEMPTS: int = 20  # Failed attempts per client address, across all accounts
 
+    # People one workspace may hold (owner + invited members), across every tier.
+    # The tier's own `max_team_members` still applies; whichever is tighter wins.
+    # Deployment-wide for now; per-workspace settings tables are a later task.
+    MAX_WORKSPACE_MEMBERS: int = Field(default=2, ge=1)
+
     # Collection freshness. An active source that has not been checked for
     # longer than this is reported on the sources page. Collection runs on the
     # workspace's own schedule, so the window is a deployment decision, not a

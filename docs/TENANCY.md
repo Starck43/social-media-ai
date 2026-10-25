@@ -65,6 +65,13 @@ would charge the owner for talking to their own agent, which is the product.
 The same applies to `tenant_channels`: binding a chat your workspace already
 owns is not a second channel.
 
+**A deployment ceiling sits above the tier.** `MAX_WORKSPACE_MEMBERS`
+(`app/core/config.py`, default `2` = the owner plus one invited person) caps
+every workspace whatever its plan, and the tighter of it and the tier's
+`max_team_members` wins. Refusing an invite this way answers `no_seat` on the
+invite page and leaves the code usable. The knob is deployment-wide for the
+pilot; per-workspace settings tables are a later task.
+
 Only a platform superuser can change a tier (`POST /app/settings/plan`, or the
 admin console) — it is a billing act, not a workspace preference.
 
@@ -153,6 +160,9 @@ labels come from one presentation catalog. Role descriptions are plain text.
 Only platform admins assign platform roles or configure operator grants.
 Workspace role creation/editing is not exposed.
 
+An invited person is never a workspace owner: invitations carry at most
+`admin`, and only the workspace owner may hand out `admin`. `owner` comes
+from creating the workspace or from a workspace owner's promotion.
 Workspace owners/admins manage settings and the team. An admin may manage only
 manager/analyst/viewer members and invitations; only owners assign admins/owners.
 Team changes lock the workspace row and reload the active actor/membership.

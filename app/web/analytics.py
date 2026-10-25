@@ -1,6 +1,6 @@
 """Analytics `/app/analytics` — the workspace's full analytical view.
 
-Read-only (docs/design/ui.md §4.4): sentiment trend, top topics, engagement,
+Read-only (docs/ANALYTICS_AGGREGATION_SYSTEM.md): sentiment trend, top topics, engagement,
 content mix, per-provider LLM cost and per-day user activity. Everything is
 aggregated from stored `ai_analytics` rows by `ReportAggregator` — no LLM calls,
 so this page is cheap even over a long window.
@@ -73,7 +73,7 @@ DRILL_LABELS = {
 
 
 def _safe_analytics_return(value: str | None) -> str | None:
-    """Only local read-only analytics entry points may be used as return URLs."""
+    """Only local read-only analytics or task details may be used as return URLs."""
     if not value or len(value) > 4096 or any(ord(char) < 32 for char in value) or "\\" in value:
         return None
     try:
@@ -87,7 +87,7 @@ def _safe_analytics_return(value: str | None) -> str | None:
         return None
     static = {"/app", "/app/analytics", "/app/analytics/", "/app/analytics/group", "/app/analytics/chains"}
     if path not in static and not re.fullmatch(
-        r"/app/(?:analytics/[0-9]+|sources/[0-9]+|analytics/chains/[\w-]+)", path
+        r"/app/(?:analytics/[0-9]+|sources/[0-9]+|tasks/[0-9]+|analytics/chains/[\w-]+)", path
     ):
         return None
     return value
@@ -101,6 +101,8 @@ def _analysis_back_label(url: str, fallback: str = "К списку анализ
         return "К цепочке"
     if re.fullmatch(r"/app/sources/[0-9]+", path):
         return "К источнику"
+    if re.fullmatch(r"/app/tasks/[0-9]+", path):
+        return "К задаче"
     if path == "/app":
         return "На главную"
     return fallback
@@ -152,7 +154,7 @@ async def _scoped_analytics_rows(
     if chain_id is not None:
         qs = qs.filter(topic_chain_id=chain_id)
     user = getattr(request.state, "web_user", None)
-    if user and user.is_superuser and getattr(request.state, "tenant_id", None) is None:
+    if False:
         with tenant_scope(bypass=True):
             return list(await qs)
     return list(await qs)
@@ -325,7 +327,7 @@ def _resolve_days(request: Request) -> tuple[int | None, str]:
 async def analytics_page(request: Request):
     tenant_id = getattr(request.state, "tenant_id", None)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
 
     days, days_key = _resolve_days(request)
 
@@ -391,7 +393,7 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
         raise HTTPException(status_code=400, detail=f"Use content_type value: {', '.join(MEDIA_FILTERS)}")
     days, days_key = _resolve_days(request)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
     rows = await _scoped_analytics_rows(request, days, filter_tenant_id)
     chain_counts = Counter(row.topic_chain_id for row in rows if row.topic_chain_id)
@@ -424,6 +426,7 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
                 "source_name": names.get(row.source_id, f"Источник #{row.source_id}"),
                 "title": display["display_title"],
                 "summary_missing": not bool(display["analysis_summary"]),
+                "analysis_incomplete": display["coverage"]["incomplete"],
                 "sentiment": _extract_sentiment(row.summary_data),
                 "chain_url": (
                     _analytics_url(
@@ -581,9 +584,11 @@ async def _fetch_grouped(
         rows_by_id = {row.id: row for row in rows}
         for group in result.get("groups", []):
             for entry in group.get("entries", []):
-                entry["display_title"] = render_analysis(
+                entry_display = render_analysis(
                     rows_by_id[entry["id"]].summary_data, source_name=source_names.get(entry["source_id"])
-                )["display_title"]
+                )
+                entry["display_title"] = entry_display["display_title"]
+                entry["analysis_incomplete"] = entry_display["coverage"]["incomplete"]
                 entry["url"] = _analytics_url(
                     request,
                     f"/app/analytics/{entry['id']}",
@@ -648,7 +653,7 @@ async def analytics_chains(request: Request):
         sort = "desc"
     tenant_id = getattr(request.state, "tenant_id", None)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 
     # Get optional filters
@@ -807,7 +812,7 @@ async def analytics_chain_detail(request: Request, chain_id: str):
     days, days_key = _resolve_days(request)
     tenant_id = getattr(request.state, "tenant_id", None)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 
     rows = await _scoped_analytics_rows(request, days, filter_tenant_id, chain_id=chain_id)
@@ -951,6 +956,471 @@ async def analytics_delete(
 # Registered last so the static `/chains` routes win over the dynamic
 # `{analysis_id}` (a request to `/analytics/chains` must not be captured as an
 # analysis id — FastAPI would answer 422 instead of the chains page).
+@router.post("/{analysis_id}/retry")
+async def analytics_retry(
+    request: Request,
+    analysis_id: int,
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Retry only raw inputs still staged inside this row's stored time range."""
+    back = f"/app/analytics/{analysis_id}"
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(back, status_code=302)
+    for model, action in (("aianalytics", "view"), ("source", "analyze")):
+        denied = guard_web(request, model, action, back=back)
+        if denied is not None:
+            return denied
+
+    from app.core.database import new_session
+    from app.core.permissions import get_current_user
+    from app.core.tenant_context import tenant_scope
+    from app.jobs.source_activity import SourceJobBusy
+    from app.models import AIAnalytics, CollectedItem
+    from app.models.managers.job_manager import JobManager
+    from app.models.managers.agent_scenario_manager import AgentScenarioManager
+    from app.services.ai.analysis_retry import parse_staged_window
+    from app.web.sources import _source_has_running_job
+
+    tenant_id = action_tenant_id(request, tenant_id)
+    if type(tenant_id) is not int or tenant_id <= 0:
+        return render(request, "web/not_found.html", status_code=404)
+    with tenant_scope(tenant_id):
+        row = await AIAnalytics.objects.select_related("source").get(id=analysis_id, tenant_id=tenant_id)
+        if row is None or row.source is None or row.source.tenant_id != tenant_id:
+            return render(request, "web/not_found.html", status_code=404)
+        user = getattr(request.state, "web_user", None)
+        actor_id = getattr(user, "id", None)
+        trusted_actor_id = getattr(get_current_user(), "id", None)
+        if (
+            type(actor_id) is not int
+            or actor_id <= 0
+            or type(trusted_actor_id) is not int
+            or trusted_actor_id <= 0
+            or trusted_actor_id != actor_id
+        ):
+            return render(request, "web/not_found.html", status_code=404)
+        display = render_analysis(row.summary_data)
+        try:
+            window = parse_staged_window(
+                {"start_date": display["content_window_start"], "end_date": display["content_window_end"]}
+            )
+        except ValueError:
+            add_flash(
+                request, "info", "Период анализа не сохранён. Проверьте период задачи анализа."
+            )
+            return RedirectResponse(back, status_code=302)
+        running = await _source_has_running_job(row.source_id)
+        if running["collect"] or running["analyze"]:
+            add_flash(request, "info", "Связанный запуск уже создан. Его состояние показано на этой странице.")
+            return RedirectResponse(back, status_code=302)
+        staged = await CollectedItem.objects.for_source(row.source_id, limit=1, include_exhausted=True, **window)
+        if not staged:
+            add_flash(
+                request,
+                "info",
+                "В периоде анализа нет оставшихся сырых материалов. Проверьте сбор в настройках задачи.",
+            )
+            return RedirectResponse(back, status_code=302)
+        source_ids = [row.source_id]
+        payload = {
+            "source_ids": source_ids,
+            "staged_window": {key: value.isoformat() for key, value in window.items()},
+            "retry_analytics_id": row.id,
+        }
+        scenario_id = (display.get("scenario_metadata") or {}).get("scenario_id")
+        if type(scenario_id) is int and scenario_id > 0:
+            scenario = await AgentScenarioManager().get(id=scenario_id, tenant_id=tenant_id, is_active=True)
+            if scenario is not None:
+                payload["scenario_id"] = scenario.id
+        session = new_session()
+        try:
+            async with session.begin():
+                await JobManager.lock_source_admission(session, tenant_id)
+                await CollectedItem.objects.reset_attempts(session, row.source_id, **window)
+                job = await JobManager().admit_source_job(
+                    job_type="analyze",
+                    payload=payload,
+                    tenant_id=tenant_id,
+                    initiated_by_user_id=actor_id,
+                    session=session,
+                )
+        except SourceJobBusy:
+            add_flash(request, "info", "Связанный запуск уже создан. Его состояние показано на этой странице.")
+            return RedirectResponse(back, status_code=302)
+        finally:
+            await session.close()
+    from app.jobs.dispatcher import launch_job_background
+
+    launch_job_background(job.id, allow_retry=False)
+    add_flash(
+        request,
+        "success",
+        "Повторный анализ оставшихся материалов за сохранённый период поставлен в очередь.",
+    )
+    return RedirectResponse(f"{back}?retry_job_id={job.id}", status_code=302)
+
+
+def _retry_job_state(job, source_id: int) -> tuple[str, dict]:
+    """Pair exact Job lifecycle with the existing source progress projection."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.web.analysis_progress import project_job
+
+    progress = project_job(job, source_id)
+    if job.status == "pending":
+        state = "pending"
+    elif job.status == "running":
+        heartbeat = getattr(job, "locked_at", None)
+        if isinstance(heartbeat, datetime):
+            if heartbeat.tzinfo is None:
+                heartbeat = heartbeat.replace(tzinfo=timezone.utc)
+            fresh = datetime.now(timezone.utc) - heartbeat.astimezone(timezone.utc) <= timedelta(seconds=90)
+        else:
+            fresh = False
+        state = "running" if fresh else "unconfirmed"
+    elif job.status == "failed":
+        state = "cancelled" if progress.get("status") == "cancelled" else "failed"
+    elif job.status == "done":
+        projected = progress.get("status")
+        state = projected if projected in {"done", "partial", "failed", "cancelled", "empty", "skipped"} else "done"
+    else:
+        state = "unconfirmed"
+    labels = {
+        "pending": "В очереди",
+        "running": "Выполняется",
+        "unconfirmed": "Статус не подтверждён",
+        "done": "Завершено",
+        "partial": "Обработано частично",
+        "failed": "Ошибка",
+        "cancelled": "Остановлено",
+        "empty": "Нет данных",
+        "skipped": "Пропущено",
+    }
+    if state == "pending":
+        created_at = getattr(job, "created_at", None)
+        note = "Выполнение ещё не началось."
+        if isinstance(created_at, datetime) and created_at.tzinfo is not None:
+            if datetime.now(timezone.utc) - created_at.astimezone(timezone.utc) >= timedelta(minutes=2):
+                note = "Запуск ожидает обработчика; активное выполнение не подтверждено."
+        progress = {**progress, "note": note}
+    elif state == "unconfirmed":
+        progress = {
+            **progress,
+            "note": "Активное выполнение пока не подтверждено; статус обновится при следующей проверке.",
+        }
+    progress = {**progress, "status": state, "label": labels.get(state, progress.get("label", "Статус неизвестен"))}
+    return state, progress
+
+
+async def _analysis_retry_context(
+    request, row, display, *, retry_job_id: int | None = None, origin_url: str | None = None
+) -> dict:
+    """Build a tenant/source-scoped retry view; never infer a retry from similar history."""
+    from app.core.tenant_context import tenant_scope
+    from app.models import AgentScenario, AIAnalytics, CollectedItem, Job
+    from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.models.managers.job_manager import JobManager
+    from app.services.ai.analysis_retry import parse_staged_window
+
+    context = {
+        "needed": bool(display["coverage"]["incomplete"] or not display["analysis_summary"]),
+        "can_retry": bool(
+            row.source and row.source.tenant_id == row.tenant_id and perms_can(request, "source", "analyze")
+        ),
+        "available": False,
+        "window_known": False,
+        "job_id": None,
+        "adoptable_job_id": None,
+        "progress": None,
+        "status": None,
+        "poll_url": None,
+        "blocking": [],
+        "task_links": [],
+        "saved_analyses": [],
+        "window": None,
+        "scenario_pinned": False,
+    }
+    try:
+        window = parse_staged_window(
+            {"start_date": display["content_window_start"], "end_date": display["content_window_end"]}
+        )
+    except ValueError:
+        window = None
+    context["window_known"] = window is not None
+    if window is not None:
+        context["window"] = window
+
+    tenant_id = row.tenant_id
+    original_scenario_id = (display.get("scenario_metadata") or {}).get("scenario_id")
+    if type(original_scenario_id) is int and original_scenario_id > 0:
+        with tenant_scope(tenant_id):
+            original_scenario = await AgentScenario.objects.filter(
+                id=original_scenario_id, tenant_id=tenant_id, is_active=True
+            ).first()
+        context["scenario_pinned"] = original_scenario is not None
+    selected_job = None
+    if retry_job_id is not None:
+        if type(retry_job_id) is not int or retry_job_id <= 0 or window is None:
+            raise LookupError("retry job unavailable")
+        with tenant_scope(tenant_id):
+            selected_job = await Job.objects.filter(id=retry_job_id, tenant_id=tenant_id).first()
+        payload = selected_job.payload if selected_job is not None and isinstance(selected_job.payload, dict) else {}
+        if (
+            selected_job is None
+            or selected_job.id != retry_job_id
+            or selected_job.tenant_id != tenant_id
+            or selected_job.job_type != "analyze"
+        ):
+            raise LookupError("retry job unavailable")
+        try:
+            job_window = parse_staged_window(payload.get("staged_window"))
+        except ValueError:
+            raise LookupError("retry job unavailable") from None
+        if (
+            payload.get("retry_analytics_id") != row.id
+            or type(payload.get("retry_analytics_id")) is not int
+            or not isinstance(payload.get("source_ids"), list)
+            or len(payload["source_ids"]) != 1
+            or type(payload["source_ids"][0]) is not int
+            or payload["source_ids"][0] != row.source_id
+            or selected_job.agent_task_id is not None
+            or job_window != window
+        ):
+            raise LookupError("retry job unavailable")
+        context["job_id"] = selected_job.id
+        state, progress = _retry_job_state(selected_job, row.source_id)
+        context["status"] = state
+        context["progress"] = progress
+        if selected_job.status in ("pending", "running"):
+            context["poll_url"] = f"/app/analytics/{row.id}/retry-status?retry_job_id={selected_job.id}"
+
+    inspect_source_activity = context["needed"] or retry_job_id is not None
+    with tenant_scope(tenant_id):
+        if inspect_source_activity:
+            if window is not None and context["can_retry"]:
+                context["available"] = bool(
+                    await CollectedItem.objects.count_for_source(row.source_id, **window)
+                )
+            active_jobs = await JobManager().source_progress_jobs(row.source_id, limit=20)
+            manager = JobManager()
+            for job in active_jobs:
+                if job.status not in ("pending", "running") or (selected_job is not None and job.id == selected_job.id):
+                    continue
+                if retry_job_id is None:
+                    context["poll_url"] = f"/app/analytics/{row.id}/retry-status?watch_active=1"
+                user = getattr(request.state, "web_user", None)
+                actor_id = getattr(user, "id", None)
+                if (
+                    retry_job_id is None
+                    and window is not None
+                    and context["can_retry"]
+                    and type(actor_id) is int
+                    and actor_id > 0
+                    and manager.pending_analysis_retry_matches(
+                        job,
+                        tenant_id=tenant_id,
+                        analysis_id=row.id,
+                        source_id=row.source_id,
+                        staged_window=window,
+                        initiated_by_user_id=actor_id,
+                    )
+                ):
+                    context["adoptable_job_id"] = job.id
+                    context["status"] = "pending"
+                    context["progress"] = _retry_job_state(job, row.source_id)[1]
+                    continue
+                status, progress = _retry_job_state(job, row.source_id)
+                context["blocking"].append(
+                    {"job_id": job.id, "job_type": job.job_type, "status": status, "progress": progress}
+                )
+        if perms_can(request, "agenttask", "view"):
+            tasks = await AgentTaskManager().for_source(
+                row.source_id,
+                tenant_id,
+                source_is_active=bool(getattr(row.source, "is_active", True)),
+            )
+            origin = _safe_analytics_return(origin_url) or f"/app/analytics/{row.id}"
+            context["task_links"] = [
+                {
+                    "id": task.id,
+                    "name": task.name,
+                    "url": _analytics_url(request, f"/app/tasks/{task.id}", return_to=origin),
+                }
+                for task in tasks
+            ]
+
+    if selected_job is not None:
+        raw_result = selected_job.result if isinstance(selected_job.result, dict) else {}
+        per_source = raw_result.get("per_source")
+        ids = []
+        if isinstance(per_source, list):
+            for item in per_source:
+                if isinstance(item, dict) and type(item.get("source_id")) is int and item["source_id"] == row.source_id:
+                    values = item.get("analytics_ids")
+                    if isinstance(values, list):
+                        ids.extend(value for value in values if type(value) is int and value > 0)
+        if ids:
+            with tenant_scope(tenant_id):
+                saved = await AIAnalytics.objects.filter(
+                    id__in=list(dict.fromkeys(ids)), tenant_id=tenant_id, source_id=row.source_id
+                )
+            by_id = {entry.id: entry for entry in saved}
+            origin = _safe_analytics_return(origin_url) or f"/app/analytics/{row.id}"
+            for analytics_id in dict.fromkeys(ids):
+                entry = by_id.get(analytics_id)
+                if entry is None:
+                    continue
+                if type(original_scenario_id) is int and original_scenario_id > 0:
+                    entry_scenario_id = ((entry.summary_data or {}).get("scenario_metadata") or {}).get("scenario_id")
+                    if entry_scenario_id != original_scenario_id:
+                        continue
+                rendered = render_analysis(entry.summary_data, source_name=row.source.name)
+                try:
+                    entry_window = parse_staged_window(
+                        {
+                            "start_date": rendered["content_window_start"],
+                            "end_date": rendered["content_window_end"],
+                        }
+                    )
+                except ValueError:
+                    entry_window = None
+                context["saved_analyses"].append(
+                    {
+                        "id": entry.id,
+                        "title": rendered["display_title"],
+                        "same_identity": (
+                            entry.analysis_date == row.analysis_date
+                            and entry.period_type == row.period_type
+                            and entry_window == window
+                        ),
+                        "url": _analytics_url(
+                            request, f"/app/analytics/{entry.id}", days_key="all", return_to=origin
+                        ),
+                    }
+                )
+    return context
+
+
+@router.get("/{analysis_id}/retry-status")
+async def analytics_retry_status(request: Request, analysis_id: int, retry_job_id: int | None = None):
+    """Poll one exact retry Job or the current active source run, without side effects."""
+    from fastapi.responses import HTMLResponse
+    from app.core.tenant_context import tenant_scope
+    from app.models import AIAnalytics
+
+    if not perms_can(request, "aianalytics", "view"):
+        return HTMLResponse("", status_code=403)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if type(tenant_id) is not int or tenant_id <= 0:
+        return HTMLResponse("", status_code=404)
+    with tenant_scope(tenant_id):
+        row = await AIAnalytics.objects.select_related("source").filter(id=analysis_id, tenant_id=tenant_id).first()
+    if row is None or row.source is None or row.source.tenant_id != tenant_id:
+        return HTMLResponse("", status_code=404)
+    try:
+        retry = await _analysis_retry_context(
+            request,
+            row,
+            render_analysis(row.summary_data, source_name=row.source.name),
+            retry_job_id=retry_job_id,
+            origin_url=f"/app/analytics/{row.id}",
+        )
+    except LookupError:
+        return HTMLResponse("", status_code=404)
+    response = render(request, "web/analytics_retry_status.html", analysis=row, retry=retry)
+    active = bool(retry["poll_url"]) if retry_job_id is None else retry["status"] in (
+        "pending",
+        "running",
+        "unconfirmed",
+    )
+    if not active:
+        saved = retry.get("saved_analyses") or []
+        saved_ids = {entry.get("id") for entry in saved if type(entry.get("id")) is int}
+        if retry_job_id is not None and row.id in saved_ids:
+            response.headers["HX-Refresh"] = "true"
+        else:
+            same_identity = [entry for entry in saved if entry.get("same_identity") is True]
+            redirect = _safe_analytics_return(same_identity[0].get("url")) if len(same_identity) == 1 else None
+            if retry_job_id is not None and redirect:
+                response.headers["HX-Redirect"] = redirect
+            else:
+                response.headers["HX-Refresh"] = "true"
+    return response
+
+
+@router.post("/{analysis_id}/retry/{retry_job_id}/resume")
+async def analytics_resume_pending_retry(
+    request: Request,
+    analysis_id: int,
+    retry_job_id: int,
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Explicitly resume one exact taskless legacy retry after its transaction committed."""
+    back = f"/app/analytics/{analysis_id}"
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(back, status_code=302)
+    for model, action in (("aianalytics", "view"), ("source", "analyze")):
+        denied = guard_web(request, model, action, back=back)
+        if denied is not None:
+            return denied
+    tenant_id = action_tenant_id(request, tenant_id)
+    if type(tenant_id) is not int or tenant_id <= 0:
+        return render(request, "web/not_found.html", status_code=404)
+    from app.core.permissions import get_current_user
+    from app.core.tenant_context import is_bypass, current_tenant_id, tenant_scope
+    from app.models import AIAnalytics
+    from app.models.managers.job_manager import JobManager
+    from app.services.ai.analysis_retry import parse_staged_window
+
+    with tenant_scope(tenant_id):
+        row = await AIAnalytics.objects.select_related("source").filter(id=analysis_id, tenant_id=tenant_id).first()
+    if row is None or row.source is None or row.source.tenant_id != tenant_id:
+        return render(request, "web/not_found.html", status_code=404)
+    display = render_analysis(row.summary_data)
+    try:
+        window = parse_staged_window(
+            {"start_date": display["content_window_start"], "end_date": display["content_window_end"]}
+        )
+    except ValueError:
+        add_flash(request, "info", "Период анализа не сохранён. Проверьте период задачи анализа.")
+        return RedirectResponse(back, status_code=302)
+    user = getattr(request.state, "web_user", None)
+    actor_id = getattr(user, "id", None)
+    trusted_actor = get_current_user()
+    trusted_actor_id = getattr(trusted_actor, "id", None)
+    if (
+        type(actor_id) is not int
+        or actor_id <= 0
+        or type(trusted_actor_id) is not int
+        or trusted_actor_id <= 0
+        or trusted_actor_id != actor_id
+        or is_bypass()
+        or type(current_tenant_id()) is not int
+        or current_tenant_id() != tenant_id
+    ):
+        return render(request, "web/not_found.html", status_code=404)
+    resumed = await JobManager().adopt_pending_analysis_retry(
+        job_id=retry_job_id,
+        tenant_id=tenant_id,
+        analysis_id=row.id,
+        source_id=row.source_id,
+        staged_window=window,
+        initiated_by_user_id=actor_id,
+    )
+    if not resumed:
+        add_flash(request, "info", "Ожидающий анализ больше нельзя безопасно запустить. Обновите страницу.")
+        return RedirectResponse(back, status_code=302)
+    from app.jobs.dispatcher import launch_job_background
+
+    launch_job_background(retry_job_id, allow_retry=False)
+    add_flash(request, "success", "Ожидающий анализ поставлен на запуск.")
+    return RedirectResponse(f"{back}?retry_job_id={retry_job_id}", status_code=302)
+
+
 @router.get("/{analysis_id}")
 async def analytics_detail(request: Request, analysis_id: int):
     """One stored analysis with honest metric states and origin-aware navigation."""
@@ -963,7 +1433,7 @@ async def analytics_detail(request: Request, analysis_id: int):
     if denied is not None:
         return denied
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
     tenant_id = filter_tenant_id if filter_tenant_id is not None else getattr(request.state, "tenant_id", None)
     query = AIAnalytics.objects.select_related("source")
@@ -977,7 +1447,8 @@ async def analytics_detail(request: Request, analysis_id: int):
     # current-month session window. Navigation links carry an explicit period.
     days, days_key = _resolve_days(request) if request.query_params.get("days") is not None else (None, "all")
     origin = _analytics_origin(request, days_key)
-    back_url = _safe_analytics_return(request.query_params.get("return_to")) or _analytics_url(
+    explicit_return = _safe_analytics_return(request.query_params.get("return_to"))
+    back_url = explicit_return or _analytics_url(
         request, "/app/analytics/group", days_key=days_key, axis="sources", value=row.source_id, tenant_id=row.tenant_id
     )
     chain = []
@@ -1030,12 +1501,47 @@ async def analytics_detail(request: Request, analysis_id: int):
         }
         for topic in display["main_topics"]
     ]
+    retry_needed = display["coverage"]["incomplete"] or not display["analysis_summary"]
+    requested_retry_id = request.query_params.get("retry_job_id")
+    try:
+        requested_retry_id = int(requested_retry_id) if requested_retry_id is not None else None
+        if requested_retry_id is not None and requested_retry_id <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        requested_retry_id = None
+        invalid_retry_id = True
+    else:
+        invalid_retry_id = False
+    origin_params = {key: value for key, value in request.query_params.items() if key != "retry_job_id"}
+    origin_url = request.url.path + ("?" + urlencode(origin_params) if origin_params else "")
+    requested_job_unavailable = invalid_retry_id
+    try:
+        retry = await _analysis_retry_context(
+            request, row, display, retry_job_id=requested_retry_id, origin_url=origin_url
+        )
+    except LookupError:
+        retry = await _analysis_retry_context(request, row, display, origin_url=origin_url)
+        requested_job_unavailable = True
+    if requested_job_unavailable:
+        retry["requested_job_unavailable"] = True
+    if explicit_return is None and len(retry["task_links"]) == 1:
+        back_url = retry["task_links"][0]["url"]
+    can_retry = retry["can_retry"]
+    retry_available = retry["available"]
+    retry_running = retry["status"] in ("pending", "running", "unconfirmed") or bool(retry["blocking"])
+    retry_window_known = retry["window_known"]
     return render(
         request,
         "web/analytics_detail.html",
         section="analytics",
         analysis=row,
         display=display,
+        retry_needed=retry_needed,
+        can_retry=can_retry,
+        retry_available=retry_available,
+        retry_running=retry_running,
+        retry_window_known=retry_window_known,
+        retry=retry,
         chain=chain,
         chain_url=chain_url,
         back_url=back_url,

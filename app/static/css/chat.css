@@ -164,7 +164,7 @@
         }
     }
 
-    /* Scroll-to-bottom button */
+    /* Scroll-to-input button: fixed, centered, bottom of the screen */
     .scroll-btn {
         transition: opacity 0.2s, transform 0.2s;
     }
@@ -173,15 +173,19 @@
         transform: scale(1.1);
     }
 
-.chat-page { min-height: 0; height:calc(100dvh - 140px); }
-.chat-window { display:flex; flex-direction:column; flex:1; min-height:280px; border:1px solid var(--color-border); border-radius:16px; background:var(--color-surface); overflow:hidden; }
-.chat-messages { scrollbar-gutter:stable; }
+.chat-page { width:100%; max-width:56rem; margin-inline:auto; padding-inline:24px; padding-bottom:32px; }
+/* Open layout: no card background, no frame — messages breathe on the page. */
+.chat-window { display:flex; flex-direction:column; min-height:0; border:0; border-radius:0; background:transparent; overflow:visible; }
+.chat-messages { overflow:visible; scrollbar-gutter:auto; }
 .chat-row { display:flex; }
 .chat-row-user { justify-content:flex-end; }
 .chat-row-assistant { justify-content:flex-start; }
 .chat-message-body { max-width:85%; min-width:0; }
 .chat-row-assistant .chat-message-body { max-width:100%; }
 .chat-bubble-user { background:var(--ui-accent-soft); color:var(--color-text); border:1px solid var(--color-border); }
+/* A refused turn keeps the text visible and marks it: the user must be able to
+   tell "not sent" from "sent, no answer". */
+.chat-bubble-failed { border-color:#f43f5e; box-shadow:inset 0 0 0 1px #f43f5e; }
 /* Assistant replies render as plain text (Notion-style), no bubble */
 .chat-bubble-agent { background:none; border:0; border-radius:0; padding:0; color:var(--color-text); line-height:1.6; }
 .chat-bubble-agent .msg-prose p { margin:0.45rem 0; }
@@ -196,7 +200,7 @@
 .json-copy-btn { min-height:40px; color:var(--color-text-secondary); }
 .chat-composer { display:flex; flex-direction:column; gap:8px; margin:12px 16px 0; padding:10px; border:1px solid var(--color-border); border-radius:12px; background:var(--color-surface); transition:border-color 150ms ease; }
 .chat-composer:focus-within { border-color:var(--ui-accent); }
-.chat-input { width:100%; min-height:48px; max-height:180px; resize:none; border:0; padding:8px; color:var(--color-text); background:transparent; font-size:16px; }
+.chat-input { width:100%; min-height:48px; max-height:180px; resize:none; border:0; padding:8px; color:var(--color-text); background:transparent; font-size:14px; line-height:1.5; }
 .chat-input:focus { outline:none; }
 .chat-composer-bar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 .chat-attach { display:flex; align-items:center; justify-content:center; width:36px; min-width:36px; height:36px; padding:0; border-radius:10px; color:var(--color-text-secondary); background:transparent; transition:background 150ms ease, color 150ms ease; }
@@ -212,7 +216,38 @@
 .chat-send:disabled { opacity:.5; cursor:not-allowed; }
 .chat-hint { margin:8px 24px 12px; }
 .chat-notice { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 16px; color:var(--color-text); background:var(--color-surface-secondary); font-size:14px; }
+/* Failures (a refused turn, a limit) must not read like a passive hint. */
+.chat-notice-error { background:#fff1f2; color:#9f1239; border-top:1px solid #fecdd3; }
 .chat-notice button { padding:4px 8px; text-decoration:underline; min-height:0; }
-.chat-pending { padding:8px 24px; color:var(--color-text-secondary); font-size:14px; }
-.ui-shell .chat-input:focus-visible, .ui-shell .chat-send:focus-visible { outline:0 solid var(--ui-accent); outline-offset:2px; }
-@media(max-width:639px) { .chat-page { height:calc(100dvh - 230px); } .chat-window { min-height:240px; } .chat-composer { margin-inline:8px; } .chat-message-body { max-width:100%; } .chat-hint { margin-inline:16px; font-size:11px; } }
+.ui-shell .chat-input:focus-visible, .ui-shell .chat-send:focus-visible, .ui-shell .chat-scroll-bottom:focus-visible { outline:0 solid var(--ui-accent); outline-offset:2px; }
+/* Centered circular button fixed at the bottom of the screen. */
+/* Uses the same arrow icon as the send button (rotated to point down). */
+.chat-scroll-bottom { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(16px + env(safe-area-inset-bottom)); z-index:30; display:flex; align-items:center; justify-content:center; width:36px; height:36px; padding:0; border-radius:50%; background:#06b6d4; color:#020617; box-shadow:0 4px 12px rgba(0,0,0,.2); transition:transform 150ms ease, opacity 200ms ease; }
+.chat-scroll-bottom:hover { transform:translateX(-50%) scale(1.06); }
+.chat-scroll-bottom svg { transform:rotate(180deg); }
+/* Tablet and below: full width with standard shell gutters. */
+@media(max-width:1023px) { .chat-page { max-width:none; padding-inline:16px; } }
+@media(max-width:639px) { .chat-input { font-size:16px; } .chat-composer { margin-inline:0; } .chat-message-body { max-width:100%; } .chat-hint { margin-inline:16px; font-size:11px; } }
+
+/* Starter cards in the empty state */
+.chat-starters { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; width:100%; max-width:520px; margin-top:16px; }
+.chat-starter { display:grid; grid-template-columns:auto 1fr; column-gap:10px; align-items:center; text-align:left; padding:10px 12px; border:1px solid var(--color-border); border-radius:12px; background:var(--color-surface); transition:border-color 150ms ease, background 150ms ease, transform 150ms ease; }
+.chat-starter:hover:not(:disabled) { border-color:var(--ui-accent); background:var(--ui-accent-soft); transform:translateY(-1px); }
+.chat-starter:disabled { opacity:.5; cursor:not-allowed; }
+.chat-starter-icon { grid-row:span 2; font-size:18px; }
+.chat-starter-title { font-size:13px; font-weight:600; color:var(--color-text); }
+.chat-starter-hint { font-size:12px; color:var(--color-text-secondary); }
+/* Quick replies under the latest assistant answer */
+.chat-quick-replies { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.chat-quick-reply { padding:5px 12px; min-height:0; font-size:13px; border:1px solid var(--ui-accent); border-radius:999px; color:var(--ui-accent); background:transparent; transition:background 150ms ease, color 150ms ease; animation:msgSlideIn .2s ease-out; }
+.chat-quick-reply:hover:not(:disabled) { background:var(--ui-accent-soft); }
+.chat-quick-reply:disabled { opacity:.5; cursor:not-allowed; }
+/* Thinking indicator */
+.chat-thinking { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; background:var(--color-surface-secondary); color:var(--color-text-secondary); font-size:13px; }
+.chat-thinking-dots { display:inline-flex; gap:3px; }
+.chat-thinking-dots i { width:6px; height:6px; border-radius:50%; background:var(--ui-accent); animation:typingBounce 1.4s infinite ease-in-out both; }
+.chat-thinking-dots i:nth-child(2) { animation-delay:150ms; }
+.chat-thinking-dots i:nth-child(3) { animation-delay:300ms; }
+.chat-thinking-time { font-variant-numeric:tabular-nums; opacity:.7; }
+@media(max-width:639px) { .chat-starters { grid-template-columns:1fr; } }
+@media(prefers-reduced-motion:reduce) { .chat-thinking-dots i, .chat-quick-reply, .msg-enter { animation:none; } }

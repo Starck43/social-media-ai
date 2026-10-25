@@ -10,6 +10,10 @@
       {% block edit_form %}
       <form action="{{ model_view._build_url_for('admin:edit', request, obj) }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" method="POST"
         enctype="multipart/form-data">
+        {% if model_view.catalog_edit_notice is defined %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="alert alert-info" role="note">{{ model_view.catalog_edit_notice }}</div>
+        {% endif %}
         <div class="row">
           {% if error %}
           <div class="alert alert-danger" role="alert">{{ error }}</div>
@@ -43,6 +47,36 @@
           </div>
         </div>
       </form>
+      {% set visible_actions = model_view._visible_custom_actions(request, True) %}
+      {% if visible_actions %}
+      <div class="row mt-3">
+        <div class="col-12">
+          {% for custom_action, label in visible_actions.items() %}
+          {% if custom_action in model_view._custom_actions_confirmation %}
+          <a href="#" class="btn btn-outline-secondary me-2" data-bs-toggle="modal"
+            data-bs-target="#modal-confirmation-{{ custom_action }}">
+            {{ label }}
+          </a>
+          {% else %}
+          <a href="{{ model_view._url_for_action(request, custom_action) }}?pks={{ get_object_identifier(obj) }}"
+            class="btn btn-outline-secondary me-2">
+            {{ label }}
+          </a>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% endblock %}
+      {% block action_buttons_bottom %}
+      {% for custom_action in model_view._visible_custom_actions(request, True) %}
+      {% if custom_action in model_view._custom_actions_confirmation %}
+      {% with confirmation_message = model_view._custom_actions_confirmation[custom_action], custom_action=custom_action,
+      url=model_view._url_for_action(request, custom_action) + '?pks=' + (get_object_identifier(obj) | string) %}
+      {% include 'sqladmin/modals/details_action_confirmation.html' %}
+      {% endwith %}
+      {% endif %}
+      {% endfor %}
       {% endblock %}
     </div>
   </div>

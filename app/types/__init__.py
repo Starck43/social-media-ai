@@ -1,8 +1,8 @@
 # Import all enums for backward compatibility
 from .enums import (  # User & Permissions; Platform & Sources; Content; Analysis; Bot; LLM; Notifications
     ActionType,
-    AnalysisType,
     AgentActionType,
+    AnalysisType,
     BotActionStatus,
     BotTriggerType,
     ContentType,
@@ -12,14 +12,26 @@ from .enums import (  # User & Permissions; Platform & Sources; Content; Analysi
     MonitoringStatus,
     NotificationType,
     PeriodType,
+    PlatformRoleType,
     PlatformType,
     SentimentLabel,
     SourceType,
-    UserRoleType,
+    WorkspaceRoleType,
+)
+from .enums.user_types import (  # Role rank: who may assign what
+    PLATFORM_ROLE_RANK,
+    assignable_platform_roles,
+    can_assign_platform_role,
+    platform_role_rank,
 )
 
 __all__ = [
-    "UserRoleType",
+    "PlatformRoleType",
+    "WorkspaceRoleType",
+    "PLATFORM_ROLE_RANK",
+    "platform_role_rank",
+    "assignable_platform_roles",
+    "can_assign_platform_role",
     "ActionType",
     "PlatformType",
     "SourceType",

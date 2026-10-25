@@ -1,16 +1,19 @@
 {# Flash messages.
 
-   They stack under the header on every page, so two things matter: they must
-   announce themselves to a screen reader (the list only *appears* on render),
-   and they must get out of the way — a success message the reader has to
-   dismiss by hand is noise on the next page. Success fades on its own; an
-   error stays until dismissed, because it usually says what to fix. #}
+   They float over the top of the page right below the navbar (absolute overlay,
+   see .shell-flashes in shell.css), so revealing them never shifts the layout.
+   Two other things matter: they must announce themselves to a screen reader
+   (the list only *appears* on render), and they must get out of the way — a
+   success message the reader has to dismiss by hand is noise on the next page.
+   Success fades on its own; an error stays until dismissed, because it usually
+   says what to fix. Dismissal (auto or manual) fades out via x-transition. #}
 {% if flashes %}
-    <div class="space-y-2 p-4" role="status" aria-live="polite">
+    <div class="shell-flashes space-y-2 p-4" role="status" aria-live="polite">
         {% for f in flashes %}
             {% set auto = f.kind != 'error' %}
             <div x-data="{ show: true }"
                  x-show="show"
+                 x-transition.opacity.duration.500ms
                  {% if auto %}x-init="setTimeout(() => show = false, 5000)"{% endif %}
                  class="flex items-start justify-between gap-4 rounded-lg border px-4 py-2 text-sm
                        {% if f.kind == 'success' %}border-emerald-700 bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200

@@ -1,4 +1,4 @@
-"""Legacy AIAnalytics imports and unchanged manager-binding entry point."""
+"""Legacy imports; canonical model and manager registration live in the domain facade."""
 
 from __future__ import annotations
 
@@ -18,7 +18,4 @@ if TYPE_CHECKING:
     from . import Source
 
 from .analysis.ai_analytics import AIAnalytics
-
 from .managers.ai_analytics_manager import AIAnalyticsManager  # noqa: E402
-
-AIAnalytics.objects = AIAnalyticsManager()

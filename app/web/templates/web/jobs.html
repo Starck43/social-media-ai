@@ -1,14 +1,21 @@
 {% extends "web/base.html" %}
 {% block title %}Задания — AI Monitor{% endblock %}
+{% block page_heading %}Задания{% endblock %}
 {% block content %}
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
     <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Задания</h1>
+
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
             Очередь выполнения: что ждёт запуска, что упало и с какой ошибкой.
         </p>
     </div>
     <div class="flex items-center gap-2">
+        {% if perms and perms.is_superuser_role %}
+            <a href="/app/billing/exposure"
+               class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
+                Финансовая экспозиция
+            </a>
+        {% endif %}
         {% if is_superuser and tenants %}
             <form method="get" class="flex items-center gap-2">
                 <label for="f-tenant" class="text-xs text-slate-600 dark:text-slate-400">Пространство</label>
@@ -27,18 +34,31 @@
            Hidden while the list is empty so the destructive control is not the
            most eye-catching thing on an idle page. #}
         {% if jobs and perms and perms.can('agenttask', 'delete') %}
-            <form method="post" action="/app/jobs/clear"
-                  @submit="return confirm('Удалить все задания этого пространства? Выполняющиеся задания останутся.')">
+            <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><form method="post" action="/app/jobs/clear"
+                  data-confirm="Удалить безопасную завершённую историю? Ожидающие, выполняющиеся и требующие проверки задания останутся."
+                  data-confirm-title="Очистить историю?" data-confirm-label="Очистить историю">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {% if is_superuser and filter_tenant_id %}
                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
                 {% endif %}
                 <button class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
-                    Очистить всё
+                    Очистить историю
                 </button>
-            </form>
+            </form></div></template>
         {% endif %}
     </div>
+</div>
+
+<div class="my-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
+    <p>По умолчанию обычные завершённые запуски автоматически удаляются через 24 часа. Запуски с неподтверждённым результатом и требующие проверки сохраняются. Удаляется только запись Job: карточки задач и результаты анализа остаются.</p>
+    {% if can_manage_retention %}
+    {% if retention_policy %}
+    <p class="mt-1">Сейчас действует «{{ retention_policy.name }}»: успешные — {{ retention_policy.success_hours }} ч., ошибки — {{ retention_policy.failure_hours }} ч. Из нескольких активных настроек применяется последняя изменённая.</p>
+    {% else %}
+    <p class="mt-1">Срок можно изменить в задаче «Хранение истории Jobs». Настройка действует независимо от её расписания.</p>
+    {% endif %}
+    <a href="/app/tasks?create=1&amp;job_type=prune" class="mt-2 inline-block text-cyan-700 dark:text-cyan-400 hover:underline">Настроить срок хранения</a>
+    {% endif %}
 </div>
 
 <!-- Queue health ──────────────────────────────────────────────────────── -->
@@ -61,14 +81,35 @@
     </div>
 </div>
 
-{% if stats.failed %}
-    <div class="mt-4 rounded-xl border border-rose-300 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/20 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
-        Есть задания, которые завершились с ошибкой. Откройте их — в поле «Ошибка» причина,
-        а кнопка «Перезапустить» повторяет попытку.
+{% if signals.overdue_pending or signals.stale_running or signals.unconfirmed_failed or signals.quarantined %}
+    <div class="mt-4 space-y-1 rounded-xl border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+        {% if signals.overdue_pending %}
+            <p>Ждут запуска дольше {{ overdue_pending_minutes }} мин: {{ signals.overdue_pending }} (самое старое — {{ signals.oldest_overdue_minutes }} мин).
+            Воркер остановлен или занят долгим заданием.</p>
+        {% endif %}
+        {% if signals.stale_running %}
+            <p>«Выполняется» без продления блокировки дольше {{ stale_running_minutes }} мин: {{ signals.stale_running }}.
+            Цикл воркера не работает — проверьте процесс воркера.</p>
+        {% endif %}
+        {% if signals.unconfirmed_failed %}
+            <p>Ошибок с неподтверждённым результатом: {{ signals.unconfirmed_failed }}{% if signals.quarantined %}; в карантине: {{ signals.quarantined }}{% endif %}. Проверьте внешний эффект вручную, прежде чем повторять.</p>
+        {% endif %}
     </div>
 {% endif %}
+
+{% if stats.failed or stats.attention %}
+    <div class="mt-4 rounded-xl border border-rose-300 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/20 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+        Есть задания, которые требуют внимания. Откройте карточку запуска для безопасной подсказки.
+    </div>
+{% endif %}
+<nav class="mt-5 flex flex-wrap items-center gap-2" aria-label="Фильтр истории заданий">
+    {% for key, label in [('active', 'Активные и требуют внимания'), ('history', 'История без требующих внимания'), ('all', 'Все') ] %}
+        <a href="/app/jobs?view={{ key }}" class="rounded-lg border px-3 py-1.5 text-sm {% if view == key %}border-cyan-500 text-cyan-700 dark:text-cyan-300{% else %}border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300{% endif %}">{{ label }}</a>
+    {% endfor %}
+    <span class="ml-auto text-xs text-slate-500">{{ total_filtered }} запусков</span>
+</nav>
 <!-- Job list ──────────────────────────────────────────────────────────── -->
-<div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800" x-data="{ open: false }">
+<div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
     <table class="w-full text-sm">
         <thead class="bg-white dark:bg-slate-900/70 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
             <tr>
@@ -142,26 +183,21 @@
                 <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ job.created_at|human_dt(tz=_tz) }}</td>
                 <td class="px-4 py-3">
                     <div class="flex items-center justify-end gap-2">
-                        {% if job.error %}
-                            <button @click="open = !open" class="text-xs text-rose-700 dark:text-rose-300 hover:text-rose-200">
-                                <span x-show="!open">Причина</span>
-                                <span x-show="open" x-cloak>Скрыть</span>
-                            </button>
-                        {% endif %}
-                        {% if job.id not in unconfirmed_jobs and job.status in retryable and perms and perms.can('agenttask', 'update') %}
+                        {% if job.id in retryable and perms and perms.can('agenttask', 'update') %}
                             <form method="post" action="/app/jobs/{{ job.id }}/run">
                                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                                 {% if is_superuser and filter_tenant_id %}
                                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
                                 {% endif %}
                                 <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
-                                    Перезапустить
+                                    Повторить
                                 </button>
                             </form>
                         {% endif %}
                         {% if job.status in cancellable and perms and perms.can('agenttask', 'delete') %}
                             <form method="post" action="/app/jobs/{{ job.id }}/cancel"
-                                  @submit="return confirm('Прервать задание #{{ job.id }}?')">
+                                  data-confirm="Записать отмену задания #{{ job.id }}? Внешние действия могли продолжиться — проверьте результат вручную."
+                                  data-confirm-title="Прервать задание?" data-confirm-label="Прервать">
                                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                                 {% if is_superuser and filter_tenant_id %}
                                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
@@ -176,13 +212,14 @@
                            The confirm is what makes an icon-only control safe:
                            without it a stray click is an unrecoverable delete. #}
                         {% if job.status in deletable and perms and perms.can('agenttask', 'delete') %}
-                            <form method="post" action="/app/jobs/{{ job.id }}/delete">
+                            <form method="post" action="/app/jobs/{{ job.id }}/delete"
+                                  data-confirm="{% if job.id in unconfirmed_jobs %}Job #{{ job.id }} содержит результат, требующий ручной проверки. Удаление безвозвратно сотрёт это свидетельство. Продолжить?{% else %}Задание #{{ job.id }} будет удалено безвозвратно.{% endif %}"
+                                  data-confirm-title="Удалить задание?" data-confirm-label="Удалить">
                                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                                 {% if is_superuser and filter_tenant_id %}
                                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
                                 {% endif %}
                                 <button type="submit" title="Удалить задание" aria-label="Удалить задание #{{ job.id }}"
-                                        @click="if (!confirm('Удалить задание #{{ job.id }}?')) $event.preventDefault()"
                                         class="flex items-center justify-center rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:border-rose-300 dark:hover:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                          stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
@@ -195,10 +232,24 @@
                     </div>
                 </td>
             </tr>
-            {% if job.error %}
-                <tr x-show="open" x-cloak>
+            {% if job.id in job_diagnostics %}
+                <tr>
                     <td colspan="{{ 7 if is_superuser else 6 }}" class="px-4 pb-4">
-                        <pre class="max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">{{ job.error }}</pre>
+                        <div class="rounded-lg bg-rose-50 dark:bg-rose-950/40 px-3 py-3 text-sm text-rose-800 dark:text-rose-200">
+                            <p class="font-medium">{{ job_diagnostics[job.id].title }} · {{ job_diagnostics[job.id].code }} · этап: {{ job_diagnostics[job.id].stage }} · Job #{{ job_diagnostics[job.id].job_id }}</p>
+                            <p class="mt-1">{{ job_diagnostics[job.id].detail }}</p>
+                            {% if job_diagnostics[job.id].counts %}<p class="mt-1">Сохранённые счётчики: {{ job_diagnostics[job.id].counts }}</p>{% endif %}
+                            <p class="mt-1">Что делать: {{ job_diagnostics[job.id].action }}</p>
+                            {% if job.id in unconfirmed_jobs %}<p class="mt-1 font-medium">Автоматическая очистка и повтор отключены до ручной проверки. Удалить запись вручную можно с подтверждением.</p>{% endif %}
+                        </div>
+                    </td>
+                </tr>
+            {% endif %}
+            {% if job.id in replay_block_reasons and job.status in ('done', 'failed') %}
+                <tr>
+                    <td colspan="{{ 7 if is_superuser else 6 }}" class="px-4 pb-3 text-xs text-slate-600 dark:text-slate-400">
+                        Повтор из истории недоступен: {{ replay_block_reasons[job.id] }}
+                        {% if job.agent_task_id %}<a href="/app/tasks/{{ job.agent_task_id }}?from=jobs" class="text-cyan-700 dark:text-cyan-400 hover:underline">Открыть задачу</a>{% endif %}
                     </td>
                 </tr>
             {% endif %}
@@ -212,4 +263,13 @@
         </tbody>
     </table>
 </div>
+{% if total_pages > 1 %}
+<nav class="mt-4 flex items-center justify-between text-sm" aria-label="Страницы истории заданий">
+    <span class="text-slate-500">Страница {{ page }} из {{ total_pages }}</span>
+    <div class="flex gap-2">
+        {% if page > 1 %}<a class="rounded border border-slate-300 dark:border-slate-700 px-3 py-1.5" href="/app/jobs?view={{ view }}&amp;page={{ page - 1 }}">Назад</a>{% endif %}
+        {% if page < total_pages %}<a class="rounded border border-slate-300 dark:border-slate-700 px-3 py-1.5" href="/app/jobs?view={{ view }}&amp;page={{ page + 1 }}">Дальше</a>{% endif %}
+    </div>
+</nav>
+{% endif %}
 {% endblock %}

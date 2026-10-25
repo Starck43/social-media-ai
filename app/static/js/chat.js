@@ -7,6 +7,14 @@ function chatApp() {
             confirmation: null,
             autoScroll: true,
             messages: [],
+            thinkingSeconds: 0,
+            thinkingTimer: null,
+            starters: [
+                { icon: '📊', title: 'Сводка за неделю', hint: 'Главные темы и активность', text: 'Сводка за неделю' },
+                { icon: '🗂️', title: 'Мои источники', hint: 'Что сейчас собирается', text: 'Покажи мои источники' },
+                { icon: '⏰', title: 'Новая задача', hint: 'Регулярный сбор и анализ', text: 'Хочу создать задачу' },
+                { icon: '✨', title: 'Возможности', hint: 'Команды и примеры', text: '/help' },
+            ],
             csrf: document.querySelector('input[name="_csrf"]')?.value || '',
 
             init() {
@@ -23,10 +31,20 @@ function chatApp() {
                         }).catch(() => { this.notice = 'Не удалось скопировать. Выделите текст сообщения вручную.' })
                     }
                 })
+                // The page scrolls inside .shell-content, not window: listen there.
+                this._scroller = this.scrollContainer();
+                if (this._scroller && this._scroller.addEventListener) {
+                    this._onScrollBound = () => this.onScroll();
+                    const target = (this._scroller === document.scrollingElement || this._scroller === document.documentElement)
+                        ? window
+                        : this._scroller;
+                    target.addEventListener('scroll', this._onScrollBound, { passive: true });
+                    window.addEventListener('resize', this._onScrollBound);
+                }
                 // Initialize messages from server-rendered data
                 this.messages = this.visibleMessages(window.__chatMessages || [])
                 // Scroll to bottom on page load
-                this.$nextTick(() => this.scrollToBottom())
+                this.$nextTick(() => { this.scrollToBottom(); this.onScroll(); })
             },
 
             visibleMessages(items) {
@@ -40,6 +58,21 @@ function chatApp() {
                 const action = this.confirmation; this.confirmation = null;
                 if (action?.kind === 'clear') this.clearHistory();
                 else if (action) this.deleteMessage(action.id);
+            },
+            isLast(message) { return this.messages.at(-1)?.id === message.id },
+            thinkingLabel() {
+                if (this.thinkingSeconds >= 20) return 'Почти готово…'
+                if (this.thinkingSeconds >= 6) return 'Работаю с данными…'
+                return 'Думаю…'
+            },
+            startThinking() {
+                this.stopThinking()
+                this.thinkingSeconds = 0
+                this.thinkingTimer = setInterval(() => { this.thinkingSeconds++ }, 1000)
+            },
+            stopThinking() {
+                if (this.thinkingTimer) clearInterval(this.thinkingTimer)
+                this.thinkingTimer = null
             },
             resizeInput() { const el = this.$refs.input; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 180) + 'px'; },
             attachFile() { this.notice = 'Прикрепление файлов пока не поддерживается.'; },
@@ -135,13 +168,14 @@ function chatApp() {
 
             async sendMessage(preset = '') {
                 const textarea = this.$refs.input
-                const text = (typeof preset === 'string' ? preset : textarea.value).trim()
+                const text = (typeof preset === 'string' && preset ? preset : textarea.value).trim()
                 if (!text || this.pending) return
                 this.notice = ''
 
                 this.pending = true
                 this.sending = true
                 this.abortController = new AbortController()
+                this.startThinking()
 
                 // Optimistic: show user message immediately
                 const userMsg = {
@@ -153,6 +187,7 @@ function chatApp() {
                 this.messages.push(userMsg)
                 textarea.value = ''
                 textarea.style.height = 'auto'
+                this.$nextTick(() => this.scrollToBottom())
 
                 try {
                     const response = await fetch('/app/chat', {
@@ -169,15 +204,30 @@ function chatApp() {
                         signal: this.abortController.signal,
                     })
 
-                    const data = await response.json()
+                    let data = {}
+                    try {
+                        data = await response.json()
+                    } catch (parseError) {
+                        // A gateway/HTML error page is still an error with a
+                        // status code, not "the server said nothing".
+                        if (response.ok) throw parseError
+                    }
 
                     if (!response.ok || data.error) {
-                        throw new Error(data.error || 'Ошибка отправки')
+                        const error = new Error(data.error || `Ошибка отправки (${response.status})`)
+                        error.code = data.code || null
+                        throw error
                     }
 
                     // Replace with full transcript from server (includes user msg + assistant replies)
                     this.messages = this.visibleMessages(data.messages || [])
                     if (data.warning) this.notice = data.warning
+                    else if (data.awaiting_confirmation) {
+                        // A staged confirmation is a question, not a missing
+                        // answer: the server keeps it in the transcript now, so
+                        // the "no text" notice must not contradict it.
+                        this.notice = ''
+                    }
                     else if (this.messages.at(-1)?.role !== 'assistant') this.notice = 'Ответ без текста. Проверьте результат действия или уточните запрос.'
                     this.$nextTick(() => this.scrollToBottom())
                 } catch (err) {
@@ -187,15 +237,20 @@ function chatApp() {
                         return
                     }
                     console.error('Chat send error:', err)
-                    // Remove the optimistic user message and show error
-                    this.messages = this.messages.filter(m => m !== userMsg)
+                    // Keep the user's message visible and mark it as not sent:
+                    // removing it made a refused turn look like the text was
+                    // never typed, which is exactly how a spent daily limit
+                    // looked like a broken form.
+                    userMsg.failed = true
                     textarea.value = text
-                    this.notice = err.message || 'Не удалось отправить сообщение. Текст сохранён, попробуйте ещё раз.'
+                    this.notice = (err.code === 'daily_limit_reached' ? 'Лимит: ' : '') +
+                        (err.message || 'Не удалось отправить сообщение.')
                     this.$nextTick(() => this.scrollToBottom())
                 } finally {
                     this.pending = false
                     this.sending = false
                     this.abortController = null
+                    this.stopThinking()
                 }
             },
 
@@ -253,18 +308,44 @@ function chatApp() {
                 } finally { this.pending = false }
             },
 
+            scrollContainer() {
+                // The whole page scrolls now: .shell-content is the scroller,
+                // window/document is the fallback.
+                return document.querySelector('.shell-content') || document.scrollingElement || document.documentElement;
+            },
+
             scrollToBottom() {
-                const el = this.$refs.messages
-                if (el) {
-                    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+                const scroller = this.scrollContainer();
+                const target = this.$refs.form || this.$refs.end;
+                if (target && target.scrollIntoView) {
+                    target.scrollIntoView({ behavior: "smooth", block: "end" });
+                    return;
+                }
+                if (scroller) {
+                    const top = scroller === document.scrollingElement || scroller === document.documentElement
+                        ? document.documentElement.scrollHeight
+                        : scroller.scrollHeight;
+                    scroller.scrollTo({ top, behavior: "smooth" });
                 }
             },
 
             onScroll() {
-                const el = this.$refs.messages
-                if (!el) return
-                // Disable auto-scroll if user scrolled up more than 100px from bottom
-                this.autoScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 100
+                const scroller = this._scroller || this.scrollContainer();
+                if (!scroller) return;
+                const isDoc = scroller === document.scrollingElement || scroller === document.documentElement;
+                // Primary: is there scrollable room below (>120px)? Works even with short chats.
+                const distance = isDoc
+                    ? scroller.scrollHeight - window.innerHeight - window.scrollY
+                    : scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+                if (distance > 120) { this.autoScroll = false; return; }
+                // Secondary: input form is below the visible viewport (long page, form out of view).
+                const form = this.$refs.form;
+                if (form) {
+                    const rect = form.getBoundingClientRect();
+                    const viewport = window.innerHeight || document.documentElement.clientHeight;
+                    if (rect.top - viewport > 120) { this.autoScroll = false; return; }
+                }
+                this.autoScroll = true;
             },
 
             copyText(text, event) {

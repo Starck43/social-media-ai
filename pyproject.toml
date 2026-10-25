@@ -31,15 +31,17 @@ dependencies = [
     "slowapi>=0.1.9",
 
     # Database
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
     "alembic>=1.10.0",
     "asyncpg>=0.29.0",
     "psycopg2-binary>=2.9.6",
+    "psycopg[binary]>=3.1.0",
     
     # Authentication
-    "python-jose[cryptography]>=3.3.0",
+    "PyJWT>=2.10.0",
     "passlib[bcrypt]>=1.7.4",
     "bcrypt>=4.0.1",
+    "cryptography>=42.0.0",
     
     # CLI
     "typer[all]>=0.9.0",
@@ -64,6 +66,9 @@ dependencies = [
     # Telegram MTProto (L2 collection; imported lazily — the app boots without it)
     "telethon>=1.36.0",
 
+    # Invite QR codes (pure Python; imported lazily — the link works without it)
+    "segno>=1.6.0",
+
 ]
 
 [project.optional-dependencies]
@@ -76,15 +81,23 @@ dev = [
     "isort>=5.12.0",
     "mypy>=1.0.0",
     "flake8>=6.0.0",
-    "cryptography>=42.0.0",
 ]
 
 [project.scripts]
 cli = "cli.main:app"
 
 [tool.setuptools]
-packages = ["app", "cli"]
 package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app", "app.*", "cli", "cli.*"]
+# cli/commands has no __init__.py and is an implicit namespace package.
+namespaces = true
+exclude = ["app.static*", "app.templates*", "app.web.templates*"]
+
+[tool.setuptools.package-data]
+app = ["static/**/*", "templates/**/*", "web/templates/**/*"]
 
 [tool.black]
 line-length = 120

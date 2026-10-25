@@ -1,0 +1,68 @@
+{% from "web/_run_progress.html" import record_progress %}
+<div id="task-run-progress" data-task-busy="{{ 'true' if running_job_id else 'false' }}" data-task-status="{{ 'unconfirmed' if summary and summary.heartbeat_unconfirmed else job.status if job else 'unknown' }}" hx-get="/app/tasks/{{ task.id }}/latest-progress" hx-trigger="every {% if running_job_id %}5{% else %}15{% endif %}s" hx-swap="outerHTML">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+            <p class="font-medium text-slate-800 dark:text-slate-200">{% if summary %}{% if summary.status == 'pending' %}Запуск в очереди{% elif summary.status == 'running' %}{% if summary.heartbeat_unconfirmed %}Проверяем состояние запуска{% else %}Задача выполняется{% endif %}{% else %}{{ summary.label }}{% endif %} · Job #{{ job.id }}{% elif task.last_run_at %}Последняя отметка запуска{% else %}Ожидает первого запуска{% endif %}</p>
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{% if job %}{{ job.created_at|human_dt(tz=_tz) }}{% elif task.last_run_at %}{{ task.last_run_at|human_dt(tz=_tz) }} · {{ legacy_status_label }}{% else %}Счётчики появятся после запуска задачи.{% endif %}</p>
+        </div>
+    </div>
+    {{ record_progress(run_progress) }}
+    {% if summary and not run_progress and summary.headline %}<p class="mt-3 text-sm">{{ summary.headline.value }} {{ summary.headline.noun }} · {{ summary.headline.label }}</p>{% endif %}
+    {% if summary %}
+        {% if summary.heartbeat_unconfirmed %}<p class="mt-4 text-sm text-amber-800 dark:text-amber-300">Нет свежего подтверждения. Последний прогресс сохранён; повторный запуск остаётся недоступен.</p>{% endif %}
+        {% if summary.error %}<p class="mt-4 text-sm text-rose-700 dark:text-rose-300">{{ summary.error }}</p>{% endif %}
+        {% if summary.outcome == 'partial' %}<p class="mt-4 text-sm text-amber-800 dark:text-amber-300">Выполнено частично. Проверьте отметки у источников в настройках задачи. {% if run_progress and run_progress.dry_run %}Это проверка без сохранения данных и вызова модели.{% else %}Успешная обработка не означает полноту результата.{% endif %}</p>{% endif %}
+        {% if summary.diagnostics %}
+        <details class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3">
+            <summary class="cursor-pointer text-sm text-slate-600 dark:text-slate-400">Диагностика администратора</summary>
+            <dl class="mt-3 grid grid-cols-2 gap-3 text-sm" style="overflow-wrap:anywhere">
+                <div><dt>Job / попытка</dt><dd>{{ summary.diagnostics.job_id or '—' }} / {{ summary.diagnostics.attempt if summary.diagnostics.attempt is not none else '—' }}</dd></div>
+                <div><dt>Heartbeat UTC</dt><dd>{{ summary.diagnostics.heartbeat_at or 'не подтверждён' }}</dd></div>
+                <div><dt>Обновление прогресса UTC</dt><dd>{{ summary.diagnostics.progress_updated_at or '—' }}</dd></div>
+                <div><dt>Код ошибки</dt><dd>{{ 'есть ошибка; см. журнал Job' if summary.diagnostics.error_code else '—' }}</dd></div>
+                {% if summary.diagnostics.model %}<div><dt>Последняя модель</dt><dd>{{ summary.diagnostics.model }}</dd></div>{% endif %}
+                {% if summary.diagnostics.provider %}<div><dt>Провайдер</dt><dd>{{ summary.diagnostics.provider }}</dd></div>{% endif %}
+            </dl>
+        </details>
+        {% endif %}
+    {% endif %}
+    {% if summary.population %}
+    <div class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3">
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Кого искать</p>
+        {% if summary.population.note %}
+        <p class="mt-1 text-sm {% if summary.population.error_code %}text-amber-800 dark:text-amber-300{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ summary.population.note }}</p>
+        {% endif %}
+        {% if summary.population.queries %}
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Запрос: {{ summary.population.queries|join(', ') }}{% if summary.population.city %} · город: {{ summary.population.city }}{% endif %}</p>
+        {% endif %}
+        {% if summary.population.found %}
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Найдено: {{ summary.population.found }}{% if summary.population.created %} · создано источников: {{ summary.population.created }}{% endif %}{% if summary.population.reused %} · переиспользовано: {{ summary.population.reused }}{% endif %}</p>
+        {% endif %}
+        {% if summary.population.error_code and not summary.population.note %}
+        <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">Ошибка поиска: {{ summary.population.error_code }}{% if summary.population.error_hint %} — {{ summary.population.error_hint }}{% endif %}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if summary.lane_runs %}
+    <div class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3">
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Ветки сбора</p>
+        <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400">
+            {% for lane in summary.lane_runs %}
+            {% set post_lane = lane.lane_type in ("source_stage", "wall_posts", "post_search") %}
+            <li>
+                {{ lane.lane_type }}{% if lane.query %} · «{{ lane.query }}»{% endif %} · получено {{ lane.fetched }}{% if post_lane %} постов{% endif %}{% if lane.selected %} · отобрано {{ lane.selected }} записей{% endif %}{% if lane.rejected %} · отброшено {{ lane.rejected }} записей{% endif %}{% if lane.needs_review %} · на проверку {{ lane.needs_review }} записей{% endif %}{% if lane.limit_reached %} · {% if lane.limit_count is defined and lane.limit_count is not none %}Достигнут лимит {{ lane.limit_count }}{% if post_lane %} постов{% endif %}; выборка может быть неполной{% else %}Достигнут лимит; выборка может быть неполной{% endif %}{% endif %}{% if lane.error_code %} · ошибка {{ lane.error_code }}{% endif %}{% if lane.unsupported_reason %} · {{ lane.unsupported_reason }}{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    {% if running_job_id %}<p class="mt-4 text-sm"><a href="/app/tasks?job_id={{ running_job_id }}" class="underline">Управление запуском →</a></p>{% endif %}
+    {% if task.job_type == 'analyze' and can_retry_analysis and not running_job_id and (job or task.last_run_at) and not (run_progress and run_progress.dry_run) %}
+    <form method="post" action="/app/tasks/{{ task.id }}/retry-analysis" class="mt-4 border-t border-slate-200 dark:border-slate-800 pt-3" data-task-mutation>
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
+        <button type="submit" class="rounded-lg border border-cyan-600 px-4 py-2 text-sm font-medium text-cyan-800 dark:text-cyan-300">Повторить анализ</button>
+    </form>
+    {% endif %}
+</div>
+{% if sidebar_oob|default(false) %}<div id="task-run-sources" hx-swap-oob="innerHTML">{% include "web/_task_run_sources.html" %}</div>{% endif %}

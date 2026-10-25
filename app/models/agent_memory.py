@@ -1,4 +1,4 @@
-"""Legacy AgentMemory imports and unchanged manager-binding entry point."""
+"""Legacy imports; canonical model and manager registration live in the domain facade."""
 
 from __future__ import annotations
 
@@ -19,5 +19,3 @@ from .agent.agent_memory import AgentMemory
 
 # isort: split
 from .managers.agent_memory_manager import AgentMemoryManager  # noqa: E402
-
-AgentMemory.objects = AgentMemoryManager()

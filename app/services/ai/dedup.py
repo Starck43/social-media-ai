@@ -111,6 +111,21 @@ async def filter_analyzed(
         return content, None
 
 
+async def filter_by_context_receipts(
+    content: list[dict], source_id: int, tenant_id: int, analysis_fingerprint: str
+) -> tuple[list[dict], set[str]]:
+    """Filter only exact-context durable successes; storage errors fail closed."""
+    if not content:
+        return [], set()
+    hashes = {item_hash(item) for item in content}
+    from app.models import AnalyzedContentReceipt
+
+    covered = await AnalyzedContentReceipt.objects.covered_hashes(
+        source_id, analysis_fingerprint, list(hashes), tenant_id=tenant_id
+    )
+    return [item for item in content if item_hash(item) not in covered], covered
+
+
 # ---------------------------------------------------------------------------
 # "Have we ever fetched this?" — a separate question from "have we analysed it?"
 # ---------------------------------------------------------------------------
@@ -134,13 +149,17 @@ async def seen_hashes(source_id: int) -> set[str]:
     disagree with what the staging table holds:
       1. `ai_analytics.summary_data["content_hashes"]` — analysed;
       2. `collected_items.content_hash` — fetched and waiting for analysis;
-      3. `jobs.result["per_source"][].content_hashes` — fetched inline (analysed
-         immediately, so never staged) — this is what keeps a run that analyses
-         inline from re-reporting the same wall as new forever.
+      3. `collection_seen.content_hash` — every collection-time outcome,
+         including rejected rows whose text was never staged, so a filter
+         change can re-evaluate them without calling them new again;
+      4. `jobs.result["per_source"][].content_hashes` for collect jobs and
+         `jobs.result["per_source"][].collection.content_hashes` for unified
+         analyze jobs — fetched before analysis, so a later staging failure
+         cannot make the same fetched content look new again.
     """
     hashes: set[str] = set()
 
-    from app.models import AIAnalytics, CollectedItem, Job
+    from app.models import AIAnalytics, CollectedItem, CollectionSeen, Job
 
     try:
         rows = (
@@ -164,8 +183,13 @@ async def seen_hashes(source_id: int) -> set[str]:
         logger.warning(f"Seen lookup (staged) failed for source {source_id}: {e}")
 
     try:
+        hashes.update(await CollectionSeen.objects.hashes_for_source(source_id))
+    except Exception as e:
+        logger.warning(f"Seen lookup (selection ledger) failed for source {source_id}: {e}")
+
+    try:
         jobs = (
-            await Job.objects.filter(job_type="collect")
+            await Job.objects.filter(job_type__in=("collect", "analyze"))
             .order_by(Job.created_at.desc())
             .limit(SEEN_MAX_JOBS)
         )
@@ -173,7 +197,12 @@ async def seen_hashes(source_id: int) -> set[str]:
             result = job.result if isinstance(job.result, dict) else {}
             for entry in result.get("per_source") or []:
                 if entry.get("source_id") == source_id:
-                    hashes.update(entry.get("content_hashes") or [])
+                    if job.job_type == "collect":
+                        hashes.update(entry.get("content_hashes") or [])
+                    elif job.job_type == "analyze":
+                        collection = entry.get("collection")
+                        if isinstance(collection, dict):
+                            hashes.update(collection.get("content_hashes") or [])
     except Exception as e:
         logger.warning(f"Seen lookup (jobs) failed for source {source_id}: {e}")
 

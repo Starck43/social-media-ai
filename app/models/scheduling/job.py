@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ..managers.job_manager import JobManager
 
 
-@app_label("social")
+@app_label("scheduling")
 class Job(Base, TenantScopedMixin, TimestampMixin):
     """Queued background job claimed by the worker (DB-backed queue, no Redis)."""
 
@@ -29,6 +29,13 @@ class Job(Base, TenantScopedMixin, TimestampMixin):
     agent_task_id: Mapped[int | None] = Column(
         Integer,
         ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Trusted actor captured by the authenticated manual enqueue boundary.
+    # Scheduled jobs intentionally keep NULL; never read an actor ID from payload.
+    initiated_by_user_id: Mapped[int | None] = Column(
+        Integer,
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="RESTRICT"),
         nullable=True,
     )
     # 'collect' | 'digest' | 'prune'

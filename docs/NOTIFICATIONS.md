@@ -1,6 +1,46 @@
 # Notification delivery boundaries
 
-## Scope and status
+## Current web bell and display policy
+
+Integrated A/B/C/D: [#188](https://github.com/Starck43/social-media-ai/pull/188),
+[#189](https://github.com/Starck43/social-media-ai/pull/189),
+[#190](https://github.com/Starck43/social-media-ai/pull/190),
+[#191](https://github.com/Starck43/social-media-ai/pull/191). Audit baseline `c62f948`.
+
+- One read-time projection combines permitted unread workspace events, the
+  caller's own connection metadata and permitted failed-task signals. No second
+  home attention block or new notification table exists. GET/poll creates no rows,
+  decrypts no credentials and performs no provider probe.
+- `WebPerms` gates notification/entity/task visibility and shared read actions;
+  fresh server requests recheck tenant, membership and linked entity rights.
+  Foreign/deleted/unknown entities are excluded. Personal connections never use
+  another member's credentials. Fixed summaries avoid raw exception/secret text.
+- Default snapshot: up to 100 candidate events, 50 failed tasks and 30 displayed
+  items. Count and list use the same authorized/deduplicated projection, not a
+  raw DB total or a claim about all unseen problems. Matching task-error events
+  can coalesce with the derived failed-task signal; this is not per-job identity.
+- Reading an event is an explicit CSRF-protected POST and remains workspace-shared
+  (`Notification.is_read`), not personal acknowledgement or issue resolution.
+  Read-all affects the permitted bounded event window, not every historical row.
+  Failed-task/connection signals stay until their condition clears. Failed loads
+  report an unknown/error state, not a healthy empty list; context change clears
+  stale state. No diagnostic write or issue-resolution action runs on GET.
+- C preferences are versioned, caller-keyed browser storage only: optional personal
+  connection/task display, opt-in generic hint (default off) and device-local quiet
+  hours. Counter/list use the same display filter; persisted events cannot be
+  suppressed. Quiet hours affect hints, not the bell or shared read flag. Storage
+  failures are memory-only, not a successful durable save. Restoration is reachable
+  from Settings Account/Connections even when the bell is empty.
+- No cross-device sync, personal read/dismiss lifecycle or durable preference field
+  is implemented. Such changes require a separate reviewed storage/ACL decision.
+
+Source-pinned sandbox evidence remains in the PRs. Later owner-local bounded
+ASGI/DB A/B acceptance (77 checks at `807c0c7` plus working diff) is recorded in
+[IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md), not a full C/D or release claim.
+The transport sections below describe the older bounded delivery change, not the
+current web implementation status.
+
+## Historical transport scope and status
 
 Task branch: `ai/workspace-notification-boundaries`, based on dev
 `021105978e1777c7ef7fc813355e563f0f62e7d4`. This is a bounded notification
@@ -20,7 +60,8 @@ obsolete notification-gap statements and validates both implementations together
 
 `NotificationService.create()` remains DB-first and returns the created row.
 Writing a row does not mean it was delivered to a messenger. Web notification
-bell/read endpoints are unchanged.
+bell/read endpoints were unchanged by that transport slice; the current A–C
+web contract above supersedes its UI status.
 
 Collection failures create a notification in the source's own workspace, with
 an actionable generic message instead of the raw exception. A trusted operator

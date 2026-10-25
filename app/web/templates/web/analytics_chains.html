@@ -1,11 +1,13 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import card, empty_state, page_title, sentiment_badge, sentiment_filters %}
 {% block title %}Цепочки тем — AI Monitor{% endblock %}
+{% block page_heading %}Цепочки тем{% endblock %}
+{% block page_context %}{{ super() }} · Ретроспектива тем, источников и пользователей{% endblock %}
 {% block content %}
     <div class="mb-1">
         <a href="{{ analytics_url|e }}" class="text-sm text-slate-600 dark:text-slate-400 hover:text-cyan-700 dark:hover:text-cyan-400">← Аналитика</a>
     </div>
-    {{ page_title("Цепочки тем", "Ретроспектива: как темы/источники/пользователи развивались во времени") }}
+
 
     <div class="mb-4 flex items-center justify-end">
         <form method="get" class="flex items-center gap-2">
@@ -58,7 +60,8 @@
                                 <form method="post" action="/app/analytics/chains/{{ chain.chain_id }}/delete">
                                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                                     <button type="submit" title="Удалить цепочку" aria-label="Удалить цепочку {{ chain.name }}"
-                                            @click="if (!confirm('Удалить цепочку «{{ chain.name }}» и все её анализы?')) $event.preventDefault()"
+                                            data-confirm="Удалить цепочку «{{ chain.name }}» и все её анализы?"
+                                            data-confirm-title="Удалить цепочку?" data-confirm-label="Удалить"
                                             class="flex items-center justify-center rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:border-rose-300 dark:hover:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                              stroke-width="1.5" stroke="currentColor" class="h-4 w-4">

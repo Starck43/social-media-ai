@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 
 
 class LLMProviderCreate(BaseModel):
+    uid: str = Field(..., min_length=1, max_length=100)
+    api_key: Optional[str] = None
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     api_format: str = Field(default="openai", description="openai | anthropic | custom")
@@ -15,6 +17,8 @@ class LLMProviderCreate(BaseModel):
 
 
 class LLMProviderUpdate(BaseModel):
+    uid: Optional[str] = Field(None, min_length=1, max_length=100)
+    api_key: Optional[str] = None
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     api_format: Optional[str] = None
@@ -24,6 +28,8 @@ class LLMProviderUpdate(BaseModel):
 
 
 class LLMProviderResponse(BaseModel):
+    uid: str
+    owner_user_id: int
     id: int
     name: str
     description: Optional[str]

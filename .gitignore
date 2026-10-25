@@ -47,13 +47,16 @@ ENV/
 logs/
 *.log
 
-# Agent workspace is local-only except shared development rules.
-.agent/*
-!.agent/rules.md
-!.agent/tasks.md
-!.agent/state.json
+# Agent workspaces: local-only artifacts. Shared config is tracked:
+# AGENTS.md, docs/RULES.md, .agents/skills/, .codex/, .kilo/agents/.
+.agent/
+.agents/tmp/
 .gigacode/
-.kilo/
+# Kilo: allow traversal so agent config can be tracked; ignore runtime state.
+!.kilo/
+.kilo/*
+!.kilo/agents/
+!.kilo/.gitignore
 
 # Backup artifacts
 *.backup

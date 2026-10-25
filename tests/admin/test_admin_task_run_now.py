@@ -1,0 +1,95 @@
+"""The admin "run now" action must credit the signed-in operator, not untrusted
+input, into the manual Job admission context.
+
+`_admit_task_run` reads the trusted actor from the ambient `permission_scope`
+user and stamps `Job.initiated_by_user_id` from it. The action must run its
+dispatch inside `permission_scope(request.state.admin_user)` and fail closed
+when the operator identity is missing — never fall back to query/body/task
+payload values.
+"""
+
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+
+from app.admin.views import AgentTaskAdmin
+from app.models import AgentTask
+
+
+class _StubRequest:
+    def __init__(self, admin_user=None, pks="7"):
+        self.state = SimpleNamespace(admin_user=admin_user)
+        self.session = {}
+        self.query_params = {"pks": pks}
+
+    def url_for(self, name, **kwargs):
+        return f"/_stub/{name}"
+
+
+def _run_now_action():
+    """The action itself, without sqladmin's route wrappers.
+
+    `@action` wraps the method in `login_required` and the accessibility
+    check. Those wrappers read the *configured* admin console: once the app
+    module is imported, the authentication backend answers for the stub
+    request with "not signed in" and the action is never reached. This test
+    is about the action's own contract — the trusted operator enters the
+    admission context — so it calls the unwrapped function.
+    """
+    func = AgentTaskAdmin.run_now_action
+    while hasattr(func, "__wrapped__"):
+        func = func.__wrapped__
+    return func
+
+
+def _admin_user(active=True):
+    return SimpleNamespace(id=42, username="operator", is_active=active)
+
+
+async def _fake_task_get(**kwargs):
+    return SimpleNamespace(id=kwargs.get("id"), name="demo-task", tenant_id=3)
+
+
+def _patch_dispatch(monkeypatch, captured):
+    async def fake_run_directly(task):
+        from app.core.permissions import get_current_user
+
+        captured["task_id"] = task.id
+        captured["actor_id"] = getattr(get_current_user(), "id", None)
+        return {"status": "done"}
+
+    monkeypatch.setattr("app.jobs.dispatcher.run_task_directly", fake_run_directly)
+
+
+@pytest.mark.asyncio
+async def test_a_trusted_active_operator_reaches_the_admission_context(monkeypatch):
+    """The authenticated operator, not the query params, enters the manual Job
+    admission context (`permission_scope` -> `get_current_user`)."""
+    captured: dict = {}
+    request = _StubRequest(admin_user=_admin_user())
+    monkeypatch.setattr(AgentTask.objects, "get", _fake_task_get)
+    _patch_dispatch(monkeypatch, captured)
+
+    await _run_now_action()(AgentTaskAdmin(), request)
+
+    assert captured["task_id"] == 7
+    assert captured["actor_id"] == 42
+
+
+@pytest.mark.asyncio
+async def test_an_absent_or_inactive_operator_is_denied(monkeypatch):
+    """Fail closed: no session identity means no dispatch, whatever pks says."""
+    captured: dict = {}
+    monkeypatch.setattr(AgentTask.objects, "get", _fake_task_get)
+    _patch_dispatch(monkeypatch, captured)
+
+    with pytest.raises(HTTPException) as exc:
+        await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=None))
+    assert exc.value.status_code == 403
+    assert not captured
+
+    with pytest.raises(HTTPException) as exc:
+        await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=_admin_user(active=False)))
+    assert exc.value.status_code == 403
+    assert not captured

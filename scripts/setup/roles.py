@@ -1,84 +1,72 @@
-import sys
-from enum import Enum
-from typing import cast
+"""Seed the fixed platform role catalog through the async model manager."""
 
-from sqlalchemy import text
+import asyncio
 
-from app.core.config import settings
-from app.core.database import SessionLocal
-from app.types import UserRoleType
+from app.core.tenant_context import tenant_scope
+from app.models import PlatformRole, WorkspaceRole
+from app.types import PlatformRoleType, WorkspaceRoleType
+
+ROLE_DESCRIPTIONS = {
+    PlatformRoleType.USER: "Registered account without access to the operator console.",
+    PlatformRoleType.OPERATOR: "Platform console access limited to explicitly assigned permissions.",
+    PlatformRoleType.ADMIN: "Full platform administration, including operator grants.",
+    PlatformRoleType.SUPERUSER: "Platform owner: every table, and the only role that edits the grant catalog.",
+}
+WORKSPACE_ROLE_DESCRIPTIONS = {
+    WorkspaceRoleType.OWNER: "Workspace owner with full access inside their workspace.",
+    WorkspaceRoleType.ADMIN: "Workspace administrator with full access inside their workspace.",
+    WorkspaceRoleType.MANAGER: "Workspace manager for sources, scenarios and tasks.",
+    WorkspaceRoleType.ANALYST: "Workspace analyst for viewing and analyzing content.",
+    WorkspaceRoleType.VIEWER: "Read-only access to workspace content.",
+}
+
+
+async def _seed_roles() -> tuple[int, int]:
+    created = 0
+    existing = 0
+    for role_type in PlatformRoleType:
+        role = await PlatformRole.objects.get_by_codename(role_type)
+        if role is not None:
+            existing += 1
+            continue
+        await PlatformRole.objects.create(
+            codename=role_type.value,
+            description=ROLE_DESCRIPTIONS[role_type],
+        )
+        created += 1
+    return created, existing
+
+
+async def _seed_workspace_roles() -> tuple[int, int]:
+    created = 0
+    existing = 0
+    for role_type in WorkspaceRoleType:
+        role = await WorkspaceRole.objects.filter(codename=role_type.value).first()
+        if role is not None:
+            existing += 1
+            continue
+        await WorkspaceRole.objects.create(
+            codename=role_type.value,
+            description=WORKSPACE_ROLE_DESCRIPTIONS[role_type],
+        )
+        created += 1
+    return created, existing
+
+
+async def _seed_role_catalogs() -> tuple[tuple[int, int], tuple[int, int]]:
+    return await _seed_roles(), await _seed_workspace_roles()
+
+
+async def seed_roles_async() -> None:
+    with tenant_scope(bypass=True):
+        (platform_created, platform_existing), (workspace_created, workspace_existing) = await _seed_role_catalogs()
+    print(f"Platform roles: {platform_created} created, {platform_existing} already present")
+    print(f"Workspace roles: {workspace_created} created, {workspace_existing} already present")
 
 
 def seed_roles() -> None:
-	"""Seed the database with default roles if they don't exist."""
-	db = SessionLocal()
-
-	try:
-		print("Starting role seeding...")
-
-		# Get existing roles
-		existing_roles = db.execute(
-			text(f'SELECT id, name, codename FROM "{settings.DB_SCHEMA}".roles')
-		).fetchall()
-
-		existing_codenames = {role.codename for role in existing_roles}
-		created_count = 0
-		updated_count = 0
-
-		# Create or update each role
-		for role_enum in UserRoleType:
-			# Add type annotation to help the linter
-			role = cast(Enum, role_enum)
-			role_codename = role.name  # Use the enum name in uppercase as codename
-			description = role.value
-
-			if role_codename in existing_codenames:
-				# Update existing role
-				db.execute(
-					text(f"""
-						UPDATE "{settings.DB_SCHEMA}".roles
-						SET
-							name = :name,
-							description = :description,
-							created_at = NOW(),
-							updated_at = NOW()
-						WHERE codename = :codename
-					"""),
-					{
-						"name": role_codename.lower(),
-						"codename": role_codename,
-						"description": description,
-					}
-				)
-				updated_count += 1
-				print(f"✓ Updated role: {role_codename}")
-			else:
-				# Insert new role
-				db.execute(
-					text(
-						f"""
-						INSERT INTO "{settings.DB_SCHEMA}".roles (name, codename, description, created_at, updated_at)
-						VALUES (:name, :codename, :description, NOW(), NOW())
-					"""
-				).bindparams(
-					name=role_codename.lower(),  # Use the enum name in lowercase as the human-readable name
-					codename=role_codename,  # Use the enum name as codename in uppercase
-					description=description,
-				)
-				)
-				created_count += 1
-				print(f"✓ Created role: {role_codename}")
-
-		db.commit()
-		print(f"\n✅ Successfully seeded roles: {created_count} created, {updated_count} updated")
-
-	except Exception as e:
-		db.rollback()
-		print(f"❌ Error seeding roles: {str(e)}", file=sys.stderr)
-		raise
-	finally:
-		db.close()
+    asyncio.run(seed_roles_async())
 
 
 if __name__ == "__main__":
-	seed_roles()
+    seed_roles()

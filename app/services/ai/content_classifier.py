@@ -2,7 +2,7 @@ import logging
 from typing import Dict, List, Any
 
 from app.types.enums.llm_types import MediaType
-from app.utils.content_attachments import attachment_coverage_reason, canonical_attachment_type
+from app.utils.content_attachments import canonical_attachment_type
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,13 @@ class ContentClassifier:
 			
 			for attachment in attachments if type(attachments) is list else []:
 				media_type = canonical_attachment_type(attachment.get('type')) if type(attachment) is dict else 'unknown'
-				
+				# A staged attachment without a usable URL carries no analyzable
+				# media body (collector found none — see VK raw-content audit
+				# Q-2). Bucketing it as media would request media analysis of
+				# nothing and then withhold the parent post from text coverage
+				# forever, so such an attachment is not media for analysis.
+				if not attachment.get('url'):
+					continue
 				if media_type == 'image':
 					classified[MediaType.IMAGE.db_value].append({
 						**item,
@@ -64,18 +70,22 @@ class ContentClassifier:
 	
 	@staticmethod
 	def uncovered_attachment_items(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
-		"""Parents with concrete unsupported/missing media cannot be retired.
+		"""Parents whose attachment collection is unreadable evidence.
 
-		Missing/NULL is legacy unknown, not repaired or reinterpreted here.
-		Explicit [] means no attachments. Malformed non-NULL collections are
-		concrete unknown evidence, not silently empty. Preserve each parent once.
+		Owner-approved coverage semantics: an attachment without a usable URL
+		(collector found none, VK raw-content audit Q-2) or of an unknown type
+		is not analyzable media at all, so it neither reaches a media stage nor
+		withholds its parent post from text coverage. Only a malformed
+		non-NULL attachment collection stays concrete unknown evidence here;
+		the runtime media stages add their own per-result gaps via
+		`_uncovered_media_hashes`. Preserve each parent once.
 		"""
 		uncovered = []
 		for item in content:
 			attachments = item.get("attachments")
-			if attachments is None:
+			if attachments is None or attachments == []:
 				continue
-			if type(attachments) is not list or any(attachment_coverage_reason(entry) for entry in attachments):
+			if type(attachments) is not list:
 				uncovered.append(item)
 		return uncovered
 
@@ -106,15 +116,30 @@ class ContentClassifier:
 		for i in range(0, len(items), step):
 			if len(selected) >= sample_size:
 				break
-			text = items[i].get("text", "")
-			if text and len(text.strip()) > 10:
+			item = items[i]
+			text = item.get("text", "")
+			parent_context = item.get("parent_context")
+			is_contextual_comment = (
+				str(item.get("content_type") or "").lower() == "comment"
+				and isinstance(parent_context, dict)
+				and bool(str(parent_context.get("text") or "").strip())
+			)
+			if text and (len(text.strip()) > 10 or (is_contextual_comment and text.strip())):
 				selected.append(items[i])
 		return selected
 
 	@staticmethod
 	def prepare_text_content(items: list[dict[str, Any]], sample_size: int = 100) -> str:
 		"""Format the bounded sample without certifying omitted items as analyzed."""
-		return "\n\n".join(
-			f"[{item.get('date', '')}] {item['text']}"
-			for item in ContentClassifier.select_text_content(items, sample_size)
-		)
+		blocks = []
+		for item in ContentClassifier.select_text_content(items, sample_size):
+			parent = item.get("parent_context")
+			if str(item.get("content_type") or "").lower() == "comment" and isinstance(parent, dict):
+				parent_text = str(parent.get("text") or "").strip()
+				if parent_text:
+					parent_date = parent.get("date") or ""
+					parent_id = parent.get("external_id") or ""
+					platform = parent.get("platform") or item.get("platform") or ""
+					blocks.append(f"[CONTEXT: parent {platform}:{parent_id} {parent_date}] {parent_text}")
+			blocks.append(f"[{item.get('date', '')}] {item['text']}")
+		return "\n\n".join(blocks)

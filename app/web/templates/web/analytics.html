@@ -1,10 +1,11 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import icon, segment, sentiment_badge, sentiment_filters %}
+{% from "web/_macros.html" import icon, incomplete_analysis_badge, segment, sentiment_badge, sentiment_filters %}
 {% block title %}Аналитика — AI Monitor{% endblock %}
+{% block page_heading %}Аналитика{% endblock %}
 {% block content %}
 <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
     <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Аналитика</h1>
+
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
             {{ tenant.name if tenant else 'Все пространства' }} · агрегация по сохранённым анализам
         </p>
@@ -142,6 +143,7 @@
                                 {{ gd.source_names.get(entry.source_id, 'Источник #' ~ entry.source_id)|e }}
                                 {% if entry.main_topics %} · {{ entry.main_topics[0]|e }}{% endif %}
                             </p>
+                            {% if entry.analysis_incomplete %}<p class="mt-1">{{ incomplete_analysis_badge(true) }}</p>{% endif %}
                             {% if not entry.analysis_summary %}<p
                             class="mt-1 text-xs text-slate-600 dark:text-slate-400">Сводка для этой записи не
                             сохранена.</p>{% endif %}

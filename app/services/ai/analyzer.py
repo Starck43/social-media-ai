@@ -9,8 +9,10 @@ from app.core.analysis_constants import DEFAULT_ANALYSIS_PARAMS
 from app.core.config import settings
 from app.models import AgentScenario, AIAnalytics, LLMModel, Source
 from app.services.ai.chain_resolver import _normalize, _token_set_ratio, resolve_chain_async
+from app.services.ai.cache_pricing import CACHE_RATE_FIELDS, cache_price_usd, model_pricing_token_unit
 from app.services.ai.content_classifier import ContentClassifier
-from app.services.ai.dedup import batch_hash, filter_analyzed, hashes_hash, item_hash
+from app.services.ai.dedup import batch_hash, filter_by_context_receipts, hashes_hash, item_hash
+from app.services.ai.analysis_context import analysis_fingerprint
 from app.services.ai.json_schema_builder import build_pydantic_model, validate_with_pydantic
 from app.services.ai.scenario_schema import ScenarioOutputContract, ScenarioSchemaError, compile_scenario_output
 from app.services.ai.llm_client import LLMClientFactory
@@ -23,6 +25,32 @@ from app.utils.enum_helpers import get_enum_value
 from app.utils.translit import translit_slug
 
 logger = logging.getLogger(__name__)
+
+# Bounded failover for the text stage: the scenario's model first, then at
+# most this many other active capable models (owner decision 2026-10-19).
+TEXT_MODEL_FALLBACK_LIMIT = 2
+
+
+def _provider_cost_for_usage_entry(entry: dict[str, Any]) -> tuple[bool, Decimal | None]:
+    """Resolve client-owned or legacy raw provider cost without reading projections."""
+    from app.services.ai.attempt_journal import provider_cost_evidence
+
+    if "accounting_cost_reported" in entry:
+        if entry.get("accounting_cost_reported") is not True:
+            return False, None
+        amount = entry.get("accounting_cost_usd")
+        if amount is not None:
+            return provider_cost_evidence({"total_cost": amount})
+        return True, None
+    raw_response = entry.get("provider_response")
+    if isinstance(raw_response, dict):
+        return provider_cost_evidence(raw_response)
+    return False, None
+
+
+def _projection_token_count(value: Any) -> int:
+    """Keep valid raw counts; malformed projection values contribute zero."""
+    return value if type(value) is int and value >= 0 else 0
 
 
 def _analysis_error_kind(error: Exception) -> str:
@@ -38,6 +66,37 @@ def _analysis_error_kind(error: Exception) -> str:
     if isinstance(error, RuntimeError):
         return "runtime_error"
     return "unexpected_error"
+
+
+async def _resolve_usage_tariff(entry: dict[str, Any]):
+    """The tariff row for one usage entry, or None when it is not knowable.
+
+    `request.llm_model_id` is written before the HTTP attempt, so it names
+    exactly the row whose rates priced that call. A legacy envelope without it
+    falls back to the provider-reported model string: names are no longer unique
+    across personal catalogs, so the lookup is scoped to the acting owner and an
+    ambiguous name stays unknown instead of borrowing another owner's rates.
+    """
+    row_id = entry.get("llm_model_row_id")
+    if isinstance(row_id, int) and not isinstance(row_id, bool) and row_id > 0:
+        return await LLMModel.objects.select_related("provider").get(id=row_id)
+
+    model_id = entry.get("model_id")
+    if not model_id:
+        return None
+    try:
+        from app.core.personal_catalog_context import current_catalog_owner_id
+
+        owner_id = current_catalog_owner_id()
+    except Exception:
+        # Cost accounting can run outside a worker/actor scope. An unbound
+        # catalog keeps the legacy unique-name rule; it never guesses a row.
+        owner_id = None
+    query = LLMModel.objects.filter(model_id=model_id, is_active=True)
+    if owner_id is not None:
+        query = query.filter(owner_user_id=owner_id)
+    rows = await query
+    return rows[0] if len(rows) == 1 else None
 
 
 class AIAnalyzer:
@@ -60,6 +119,10 @@ class AIAnalyzer:
         # Cumulative diagnostics for this instance, independent of saved rows.
         # Callers may inspect a delta; no raw provider result is exposed here.
         self.reported_errors = 0
+        # Per-call durable coverage, including receipt hits whose analytics row
+        # was later deleted. Callers use this only to retire matching staged rows.
+        self.completed_hashes: set[str] = set()
+        self.current_fingerprint: str | None = None
 
     def _record_result_error(self, result: Any) -> bool:
         """Record explicit client failure envelopes, not unknown/empty results."""
@@ -74,6 +137,39 @@ class AIAnalyzer:
             self.reported_errors += 1
             return True
         return False
+
+    async def _journal_paid_attempts(
+        self,
+        analysis_results: dict[str, Any],
+        unified_summary: Optional[dict[str, Any]],
+        source: Source,
+        analysis_date: Optional[date],
+        task_payload: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Durably record provider attempts before any analytics write decision.
+
+        The daily row, job and digest cost columns and the model counters are
+        mutable projections; a paid attempt whose projection is skipped
+        (partial run colliding with an existing daily row, relevance-filtered
+        day, failed batch) must still leave evidence. Called before the skip
+        decisions so journaling never depends on them. Never breaks the
+        analysis flow.
+        """
+        try:
+            from app.services.ai.attempt_journal import record_analysis_attempts
+
+            await record_analysis_attempts(
+                analysis_results,
+                unified_summary,
+                source=source,
+                analysis_date=analysis_date,
+                task_payload=task_payload,
+            )
+        except Exception:
+            logger.warning(
+                "attempt_journal_write_failed source_id=%s",
+                getattr(source, "id", None),
+            )
 
     @staticmethod
     def _validate_stage_result(result: Any, output_contract: ScenarioOutputContract | None) -> Any:
@@ -105,6 +201,7 @@ class AIAnalyzer:
         agent_scenario=None,
         trigger_config=None,
         task_payload: Optional[dict[str, Any]] = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> list[AIAnalytics]:
         """
         Analyze content as theme clusters; report grouping is a read-path concern.
@@ -112,7 +209,7 @@ class AIAnalyzer:
         Args:
                 content: List of content items
                 source: Source being analyzed
-                force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
+                force_reanalyze: Legacy compatibility input; durable receipts remain authoritative
                 agent_scenario: Already-resolved scenario (task's own). When given,
                         the tenant-default lookup is skipped, so a task's scenario
                         actually shapes the analysis instead of being silently ignored.
@@ -121,6 +218,8 @@ class AIAnalyzer:
         Returns:
                 List of AIAnalytics records (one per theme cluster per source per run)
         """
+        self.completed_hashes = set()
+        self.current_fingerprint = None
         return await self._analyze_content_by_themes(
             content,
             source,
@@ -128,6 +227,7 @@ class AIAnalyzer:
             agent_scenario=agent_scenario,
             trigger_config=trigger_config,
             task_payload=task_payload,
+            billing_execution=billing_execution,
         )
 
     async def base_analyze_content(
@@ -142,6 +242,7 @@ class AIAnalyzer:
         agent_scenario: Optional["AgentScenario"] = None,
         trigger_config: Optional[dict[str, Any]] = None,
         task_payload: Optional[dict[str, Any]] = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[AIAnalytics]:
         """
         Comprehensive analysis of collected content using multiple LLM providers.
@@ -156,9 +257,7 @@ class AIAnalyzer:
                 topic_chain_id: Optional chain ID for ongoing topics
                 parent_analysis_id: Optional parent analysis ID for threaded analysis
                 analysis_date: Optional date to use for this analysis (defaults to today)
-                force_reanalyze: Bypass dedup and analyze everything (used by a
-                        full-cycle `--force-refresh` task run so stored rows are
-                        overwritten; costs tokens, so it is never the default).
+                force_reanalyze: Legacy compatibility input; durable receipts remain authoritative.
                 agent_scenario: Already-resolved scenario (a task's own). When
                         given, the tenant-default lookup is skipped — the caller
                         resolved the scenario, so this analysis must use it.
@@ -169,24 +268,15 @@ class AIAnalyzer:
         Returns:
                 AIAnalytics object with complete analysis results or None if failed
         """
+        # This method is also a supported direct entry point. Keep per-call
+        # outcome state isolated when callers reuse one analyzer across sources.
+        self.completed_hashes = set()
+        self.current_fingerprint = None
         if not content:
             logger.warning(f"No content to analyze for source {source.id}")
             return None
 
-        # Dedup before anything expensive: items already covered by an earlier
-        # analysis must never reach the LLM again (fail-open, see dedup.py).
-        # `force_reanalyze` is the deliberate exception: a full-cycle refresh
-        # re-analyzes the whole selected period so its rows get overwritten.
-        if not force_reanalyze:
-            content, known = await filter_analyzed(content, source.id)
-            if not content:
-                if known is not None:
-                    logger.info(f"Batch for source {source.id} fully covered by analytics {known.id}, returning as-is")
-                    return known
-                logger.warning(f"No content to analyze for source {source.id} after dedup filtering")
-                return None
-        else:
-            logger.info(f"Force re-analysis for source {source.id}: bypassing dedup ({len(content)} items)")
+        billing_execution = {"source_id": source.id, **(billing_execution or {})}
 
         # Load the scenario: the source no longer carries one. A caller that
         # resolved a scenario (a task's own) passes it in; everything else
@@ -198,8 +288,16 @@ class AIAnalyzer:
                 if default_sc:
                     agent_scenario = default_sc
                     logger.info(f"Using tenant default scenario '{agent_scenario.name}' for source {source.id}")
-            except Exception:
-                pass
+            except Exception as error:
+                logger.warning("analysis_context_resolution_failed source_id=%s error_kind=%s", source.id,
+                               _analysis_error_kind(error))
+                self.reported_errors += 1
+                return None
+
+        if agent_scenario is not None and not agent_scenario.is_active:
+            self.reported_errors += 1
+            logger.warning("analysis_context_inactive source_id=%s", source.id)
+            return None
 
         # One immutable output contract for every modality and the save boundary.
         # Unsupported stored schemas stop before model selection/provider calls;
@@ -210,6 +308,26 @@ class AIAnalyzer:
             self.reported_errors += 1
             logger.warning("analysis_schema_rejected error_code=%s", error.code)
             return None
+
+        context_fingerprint = analysis_fingerprint(
+            agent_scenario,
+            trigger_config=trigger_config,
+            task_payload=task_payload,
+            # A run without a scenario has no compiled contract: the built-in
+            # defaults are the effective schema, not an attribute of `None`.
+            output_schema=output_contract.schema if output_contract is not None else None,
+        )
+        self.current_fingerprint = context_fingerprint
+        # Resolve the exact-context receipt before any provider call. A legacy
+        # force flag cannot bypass durable protection.
+        fresh_content, previously_covered = await filter_by_context_receipts(
+            content, source.id, source.tenant_id, context_fingerprint
+        )
+        self.completed_hashes = set(previously_covered)
+        if not fresh_content:
+            logger.info("analysis_receipt_hit source_id=%s covered=%s", source.id, len(previously_covered))
+            return None
+        content = fresh_content
 
         # Prepare metadata
         content_stats = self._calculate_content_stats(content, analysis_date)
@@ -224,6 +342,12 @@ class AIAnalyzer:
             analysis_results = {}
             media_coverage_gaps = self._uncovered_media_hashes(None, ContentClassifier.uncovered_attachment_items(content))
 
+            # Media modalities follow the scenario's configured models: a
+            # modality without a configured model is deliberately ignored rather
+            # than treated as a coverage gap (owner decision 2026-10-19) — a
+            # text-only scenario analyzes text and retires its posts without
+            # waiting for media that nobody is configured to process.
+            #
             # Text analysis
             if classified[MediaType.TEXT.db_value]:
                 text_result = await self._analyze_text(
@@ -235,56 +359,107 @@ class AIAnalyzer:
                     trigger_config,
                     task_payload,
                     output_contract=output_contract,
+                    billing_execution=billing_execution,
                 )
                 if self._record_result_error(text_result):
                     # Preserve request/response usage for existing accounting;
                     # provider failure text is not a semantic analysis result.
                     text_result = {**text_result, "parsed": {}}
+                if not isinstance(text_result, dict) or not text_result:
+                    # No text model, an exception, or an empty envelope: there is
+                    # no text coverage to certify. The local empty marker means
+                    # a successful image sibling can never retire the unanalysed
+                    # text rows as complete.
+                    text_result = {"parsed": {}, "_submitted_text_hashes": []}
+                elif not isinstance(text_result.get("parsed"), dict) or not text_result.get("parsed"):
+                    # Failed or empty parsed output keeps the usage envelope but
+                    # still certifies no text rows; never trust a provider marker.
+                    text_result = {**text_result, "parsed": {}, "_submitted_text_hashes": []}
                 if text_result:
                     analysis_results["text_analysis"] = text_result
 
             # Image analysis
             if classified[MediaType.IMAGE.db_value]:
-                image_result = await self._analyze_images(
-                    classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload,
-                    output_contract=output_contract,
-                )
-                if self._record_result_error(image_result):
-                    # Preserve request/response usage for existing accounting;
-                    # provider failure text is not a semantic analysis result.
-                    image_result = {**image_result, "parsed": {}}
-                media_coverage_gaps.update(self._uncovered_media_hashes(
-                    image_result, classified[MediaType.IMAGE.db_value]
-                ))
-                if image_result:
-                    analysis_results["image_analysis"] = image_result
+                if await self._get_llm_model(agent_scenario, MediaType.IMAGE) is None:
+                    # No image model configured: per the coverage decision above,
+                    # the modality is skipped and keeps no posts unretired.
+                    logger.info(
+                        f"Image analysis ignored: no image model configured for source {source.id} "
+                        f"({len(classified[MediaType.IMAGE.db_value])} image items in batch)"
+                    )
+                else:
+                    image_result = await self._analyze_images(
+                        classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload,
+                        output_contract=output_contract,
+                        billing_execution=billing_execution,
+                    )
+                    if self._record_result_error(image_result):
+                        # Preserve request/response usage for existing accounting;
+                        # provider failure text is not a semantic analysis result.
+                        image_result = {**image_result, "parsed": {}}
+                    media_coverage_gaps.update(self._uncovered_media_hashes(
+                        image_result, classified[MediaType.IMAGE.db_value]
+                    ))
+                    if image_result:
+                        analysis_results["image_analysis"] = image_result
 
             # Video analysis
             if classified[MediaType.VIDEO.db_value]:
-                video_result = await self._analyze_videos(
-                    classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload,
-                    output_contract=output_contract,
-                )
-                if self._record_result_error(video_result):
-                    # Preserve request/response usage for existing accounting;
-                    # provider failure text is not a semantic analysis result.
-                    video_result = {**video_result, "parsed": {}}
-                media_coverage_gaps.update(self._uncovered_media_hashes(
-                    video_result, classified[MediaType.VIDEO.db_value]
-                ))
-                if video_result:
-                    analysis_results["video_analysis"] = video_result
+                if await self._get_llm_model(agent_scenario, MediaType.VIDEO) is None:
+                    logger.info(
+                        f"Video analysis ignored: no video model configured for source {source.id} "
+                        f"({len(classified[MediaType.VIDEO.db_value])} video items in batch)"
+                    )
+                else:
+                    video_result = await self._analyze_videos(
+                        classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload,
+                        output_contract=output_contract,
+                        billing_execution=billing_execution,
+                    )
+                    if self._record_result_error(video_result):
+                        # Preserve request/response usage for existing accounting;
+                        # provider failure text is not a semantic analysis result.
+                        video_result = {**video_result, "parsed": {}}
+                    media_coverage_gaps.update(self._uncovered_media_hashes(
+                        video_result, classified[MediaType.VIDEO.db_value]
+                    ))
+                    if video_result:
+                        analysis_results["video_analysis"] = video_result
 
             # Failed envelopes retain tracing/usage above, but their parsed
             # stubs must not become conclusions or influence theme matching.
             has_results = any(result and result.get("parsed") for result in analysis_results.values())
 
+            # A model may answer with a refusal instead of the scenario schema
+            # («Недостаточно данных для анализа. Контент не предоставлен.»).
+            # Saving that answer as an analysis poisons the theme grouping
+            # («без темы», no title, no coverage truth) and, via stored
+            # content_hashes, blocks the records from ever being retried. A
+            # refusal is "no results": the batch stays staged, the attempt is
+            # counted by the usual failed-batch path, and the next run — with a
+            # content-carrying prompt or a working model — analyzes it.
+            from app.services.ai.model_suitability import is_refusal_summary
+
+            if has_results and is_refusal_summary(
+                (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get("summary")
+            ):
+                logger.warning(
+                    "analyze_refusal_detected source_id=%s — the model refused to analyze; "
+                    "keeping the batch staged for a retry instead of saving the refusal",
+                    source.id,
+                )
+                has_results = False
+
             if not has_results:
                 logger.warning(f"No meaningful analysis results for source {source.id}, skipping save")
+                # Paid attempts still need evidence even when nothing is saved.
+                await self._journal_paid_attempts(analysis_results, None, source, date.today(), task_payload)
                 return None
 
             # Create unified summary if multiple analyses
-            unified_summary = await self._create_unified_summary(analysis_results, agent_scenario)
+            unified_summary = await self._create_unified_summary(
+                analysis_results, agent_scenario, billing_execution=billing_execution
+            )
             if self._record_result_error(unified_summary):
                 unified_summary = {**unified_summary, "parsed": {}}
 
@@ -317,6 +492,7 @@ class AIAnalyzer:
             # field is produced by _analyze_text, not by provider parsed output.
             content_hashes = [item_hash(item) for item in content]
             coverage_limited = False
+            text_coverage_limited = False
             text_result = analysis_results.get("text_analysis")
             if isinstance(text_result, dict) and "_submitted_text_hashes" in text_result:
                 submitted = text_result["_submitted_text_hashes"]
@@ -328,6 +504,7 @@ class AIAnalyzer:
                 omitted = text_hashes - (set(submitted) if valid else set())
                 content_hashes = [value for value in content_hashes if value not in omitted]
                 coverage_limited = bool(omitted)
+                text_coverage_limited = bool(omitted)
 
             if media_coverage_gaps:
                 # One missing attachment keeps its parent post unretired, even
@@ -352,16 +529,24 @@ class AIAnalyzer:
                 if coverage_limited else batch_hash(content),
                 content_hashes=content_hashes,
                 coverage_limited=coverage_limited,
+                text_coverage_limited=text_coverage_limited,
                 media_coverage_limited=bool(media_coverage_gaps),
                 reported_partial=self.reported_errors > errors_before,
                 task_payload=task_payload,
                 trigger_config=trigger_config,
                 output_contract=output_contract,
+                analysis_fingerprint=context_fingerprint,
             )
+            if analysis is not None:
+                persisted_hashes = (getattr(analysis, "summary_data", None) or {}).get("content_hashes") or []
+                self.completed_hashes.update(value for value in persisted_hashes if type(value) is str)
 
             return analysis
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=base error_kind=%s", _analysis_error_kind(e))
             return None
@@ -374,6 +559,7 @@ class AIAnalyzer:
         agent_scenario: "AgentScenario" = None,
         trigger_config: "dict | None" = None,
         task_payload: "dict | None" = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> list[AIAnalytics]:
         """
         Analyze content with automatic theme detection and linking.
@@ -381,7 +567,7 @@ class AIAnalyzer:
         Args:
                 content: List of content items
                 source: Source being analyzed
-                force_reanalyze: Bypass dedup and re-analyze everything
+                force_reanalyze: Legacy compatibility input; durable receipts remain authoritative
                 task_payload: Task-specific parameters (brands, competitors, etc.)
 
         Returns:
@@ -398,6 +584,7 @@ class AIAnalyzer:
             agent_scenario=agent_scenario,
             trigger_config=trigger_config,
             task_payload=task_payload,
+            billing_execution=billing_execution,
         )
         if not analysis:
             return []
@@ -480,6 +667,7 @@ class AIAnalyzer:
         task_payload: Optional[dict[str, Any]] = None,
         *,
         output_contract: ScenarioOutputContract | None = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze text content using text LLM provider."""
         try:
@@ -512,19 +700,66 @@ class AIAnalyzer:
                 source_type=stype,
                 trigger_config=trigger_config,
             )
-
-            # Create LLM client and analyze
-            client = LLMClientFactory.create(model)
-            kwargs: dict[str, Any] = {}
-            if agent_scenario and agent_scenario.max_tokens:
-                kwargs["max_tokens"] = agent_scenario.max_tokens
             pydantic_model = output_contract.model if output_contract is not None else None
             if output_contract is not None:
                 prompt += "\n\nОтвет должен соответствовать JSON Schema:\n" + json.dumps(output_contract.schema, ensure_ascii=False)
-            result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
-            result = self._validate_stage_result(result, output_contract)
+            kwargs: dict[str, Any] = {}
+            if agent_scenario and agent_scenario.max_tokens:
+                kwargs["max_tokens"] = agent_scenario.max_tokens
+            if billing_execution is not None:
+                kwargs["personal_billing_execution"] = billing_execution
+                kwargs["personal_billing_stage"] = "text_analysis"
 
-            logger.info(f"Text analysis completed using {model.name}")
+            # Create LLM client and analyze. Bounded failover: the scenario's
+            # model first, then other active capable models — a transport
+            # failure or an unusable answer on one model must not zero the
+            # whole batch when a working replacement exists (owner-approved
+            # behavior). Every attempt is journalled and priced separately.
+            candidates = [model]
+            try:
+                from app.models.managers.llm_model_manager import LLMModelManager
+
+                for extra in await LLMModelManager().capability_candidates(
+                    "text", exclude_id=model.id, limit=TEXT_MODEL_FALLBACK_LIMIT
+                ):
+                    if all(extra.id != kept.id for kept in candidates):
+                        candidates.append(extra)
+            except Exception as fallback_error:  # noqa: BLE001 — failover is best-effort
+                logger.warning("text_fallback_candidates_failed error_kind=%s", _analysis_error_kind(fallback_error))
+
+            result = None
+            last_error_kind = None
+            for candidate in candidates:
+                client = LLMClientFactory.create(candidate)
+                try:
+                    result = await client.analyze(prompt, pydantic_model=pydantic_model, **dict(kwargs))
+                    result = self._validate_stage_result(result, output_contract)
+                except Exception as e:
+                    from app.services.billing.errors import raise_personal_billing_block
+
+                    raise_personal_billing_block(e)
+                    self.reported_errors += 1
+                    last_error_kind = _analysis_error_kind(e)
+                    logger.warning(
+                        "text_analysis_attempt_failed model_id=%s error_kind=%s", candidate.id, last_error_kind
+                    )
+                    result = None
+                    continue
+                response = result.get("response") if isinstance(result, dict) else None
+                if (isinstance(result, dict) and isinstance(result.get("parsed"), dict) and result.get("parsed")
+                        and not (isinstance(response, dict) and response.get("error"))):
+                    logger.info(f"Text analysis completed using {candidate.name}")
+                    break
+                logger.warning(
+                    "text_analysis_attempt_unusable model_id=%s (trying a fallback model)",
+                    candidate.id,
+                )
+                result = None
+            if result is None:
+                if last_error_kind:
+                    logger.error("analysis_failed stage=text error_kind=%s", last_error_kind)
+                return None
+
             if isinstance(result, dict):
                 # Keep this local coverage evidence outside parsed output, and
                 # never trust a provider-supplied field with the same name.
@@ -539,6 +774,9 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=text error_kind=%s", _analysis_error_kind(e))
             return None
@@ -567,6 +805,7 @@ class AIAnalyzer:
         task_payload: Optional[dict[str, Any]] = None,
         *,
         output_contract: ScenarioOutputContract | None = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze images using image LLM provider."""
         try:
@@ -598,6 +837,9 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
+            if billing_execution is not None:
+                kwargs["personal_billing_execution"] = billing_execution
+                kwargs["personal_billing_stage"] = "image_analysis"
             pydantic_model = output_contract.model if output_contract is not None else None
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
             result = self._validate_stage_result(result, output_contract)
@@ -613,6 +855,9 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=image error_kind=%s", _analysis_error_kind(e))
             return None
@@ -626,6 +871,7 @@ class AIAnalyzer:
         task_payload: Optional[dict[str, Any]] = None,
         *,
         output_contract: ScenarioOutputContract | None = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze videos using video LLM provider."""
         try:
@@ -657,6 +903,9 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
+            if billing_execution is not None:
+                kwargs["personal_billing_execution"] = billing_execution
+                kwargs["personal_billing_stage"] = "video_analysis"
             pydantic_model = output_contract.model if output_contract is not None else None
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
             result = self._validate_stage_result(result, output_contract)
@@ -672,12 +921,19 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=video error_kind=%s", _analysis_error_kind(e))
             return None
 
     async def _create_unified_summary(
-        self, analysis_results: dict[str, Any], agent_scenario: Optional[AgentScenario]
+        self,
+        analysis_results: dict[str, Any],
+        agent_scenario: Optional[AgentScenario],
+        *,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """
         Create unified summary from multiple analysis results.
@@ -711,12 +967,18 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
+            if billing_execution is not None:
+                kwargs["personal_billing_execution"] = billing_execution
+                kwargs["personal_billing_stage"] = "unified_summary"
             result = await client.analyze(prompt, **kwargs)
 
             logger.info("Unified summary created successfully")
             return result
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=summary error_kind=%s", _analysis_error_kind(e))
             return None
@@ -732,9 +994,15 @@ class AIAnalyzer:
         2. Auto-resolve by llm_strategy (fallback)
         3. Fall back to default model for media type
 
+        Priorities 2–3 (auto-picks) never return an analysis-incapable model —
+        a classifier or a never-succeeded one would only burn a run and blame
+        the operator with "модель не ответила". An explicitly configured
+        scenario model still runs as chosen.
         Returns:
                 LLMModel instance or None
         """
+
+        from app.services.ai.model_suitability import analysis_capable
 
         # Convert string to MediaType if needed
         if isinstance(media_type, str):
@@ -755,13 +1023,23 @@ class AIAnalyzer:
             if model_id:
                 try:
                     # Load model with provider relationship to avoid session issues
+                    from app.core.personal_catalog_context import current_catalog_owner_id
+                    from app.services.ai.personal_catalog import eligible_owned_model
+
                     model = await LLMModel.objects.select_related("provider").get(id=model_id)
+                    capability = get_enum_value(media_type)
                     if (
                         model
                         and model.is_active
                         and model.provider
                         and model.provider.is_active
-                        and model.can_handle(get_enum_value(media_type))
+                        and model.can_handle(capability)
+                        # A pin survives a migration or a hand-edited scenario: it
+                        # must still own its provider key, exactly like the
+                        # fallback paths below.
+                        and eligible_owned_model(
+                            model, user_id=current_catalog_owner_id(), capabilities={capability}
+                        )
                     ):
                         logger.info(f"✅ Select model {model.name} (provider: {model.provider.name}) for {media_type}")
                         return model
@@ -773,6 +1051,11 @@ class AIAnalyzer:
         if agent_scenario and agent_scenario.llm_strategy:
             try:
                 model = await self._auto_resolve_model(agent_scenario, media_type)
+                if model and not analysis_capable(model):
+                    logger.warning(
+                        f"Auto-resolved model {model.name} is unfit for content analysis; skipping auto-fallback"
+                    )
+                    return None
                 if model:
                     return model
 
@@ -784,6 +1067,9 @@ class AIAnalyzer:
             # Use get_enum_value to ensure we pass a string, not tuple
             media_type_str = get_enum_value(media_type)
             model = await LLMModel.objects.get_model_for_capability(media_type_str)
+            if model and not analysis_capable(model):
+                logger.warning(f"Default model {model.name} is unfit for content analysis; refusing fallback")
+                return None
             if model:
                 logger.info(f"✅ Select default fallback model {model.name} for {media_type}")
                 return model
@@ -956,35 +1242,74 @@ class AIAnalyzer:
     #: Scale of AIAnalytics.estimated_cost (USD cents, 6 decimals = 1e-8 USD).
     COST_SCALE = Decimal("0.000001")
 
-    async def _price_usage(self, usage_by_result: list[dict[str, Any]]) -> Decimal:
-        """Price token usage from llm_models rates (USD per 1K tokens).
+    async def _price_usage(self, usage_by_result: list[dict[str, Any]]) -> Decimal | None:
+        """Use provider totals or known tariffs; unresolved included spend stays NULL.
 
-        Returns the estimated cost in USD cents, quantised to the scale of the
+        The tariff row is resolved by identity (`request.llm_model_id`), never by
+        "first row with this name": model rows are user-owned, so a name match
+        across catalogs would price this workspace with someone else's rates. A
+        legacy envelope without the row id stays owner-scoped, and an ambiguous
+        name is unknown cost rather than a guess.
+
+        Tariff fallback does not account for cache categories or other pricing
+        modifiers. Returns USD cents, quantised to the scale of the
         `estimated_cost` column. Decimal throughout: tariffs are USD per 1K with
         4+ decimals, so float would both drift and hide sub-cent calls that
-        cheap models produce on nearly every run. Unknown models contribute 0
-        (never hardcode rates); missing usage rows are priced at 0.
+        cheap models produce on nearly every run. Partial totals would misstate spend.
         """
         total_usd = Decimal(0)
         for entry in usage_by_result:
+            report_claimed, reported_cost = _provider_cost_for_usage_entry(entry)
+            if reported_cost is not None:
+                total_usd += reported_cost
+                continue
+            if report_claimed:
+                return None
             model_id = entry.get("model_id")
             req_tokens = entry.get("request_tokens", 0) or 0
             resp_tokens = entry.get("response_tokens", 0) or 0
             if not model_id or (req_tokens <= 0 and resp_tokens <= 0):
                 continue
             try:
-                model = await LLMModel.objects.filter(model_id=model_id, is_active=True).first()
+                model = await _resolve_usage_tariff(entry)
             except Exception as e:
                 logger.warning(f"Cost lookup failed for model {model_id}: {e}")
-                continue
+                return None
             if not model:
                 logger.warning(f"No llm_models row for {model_id}; cost contribution skipped")
-                continue
-            total_usd += Decimal(req_tokens) / 1000 * Decimal(str(model.input_cost_per_1k or 0.0)) + Decimal(
+                return None
+            cache_usage = entry.get("accounting_cache_usage")
+            if cache_usage is not None:
+                cache_input = cache_price_usd(
+                    cache_usage,
+                    {
+                        "input_cost_per_1k": model.input_cost_per_1k,
+                        **{field: getattr(model, field, None) for field in CACHE_RATE_FIELDS},
+                    },
+                    prompt_tokens=req_tokens,
+                    pricing_unit=model_pricing_token_unit(model),
+                )
+                output_rate = model.output_cost_per_1k
+                if cache_input is None or output_rate is None:
+                    return None
+                if cache_input is not None and output_rate is not None:
+                    unit = model_pricing_token_unit(model)
+                    total_usd += cache_input + Decimal(resp_tokens) / unit * Decimal(str(output_rate))
+                    continue
+            unit = model_pricing_token_unit(model)
+            total_usd += Decimal(req_tokens) / unit * Decimal(str(model.input_cost_per_1k or 0.0)) + Decimal(
                 resp_tokens
-            ) / 1000 * Decimal(str(model.output_cost_per_1k or 0.0))
+            ) / unit * Decimal(str(model.output_cost_per_1k or 0.0))
         cents = total_usd * 100
         return cents.quantize(self.COST_SCALE, rounding=ROUND_HALF_UP) if cents > 0 else Decimal(0)
+
+    @staticmethod
+    def _all_provider_costs_resolved_zero(usage_by_result: list[dict[str, Any]]) -> bool:
+        """Persist zero only when every included stage has an explicit provider zero."""
+        return bool(usage_by_result) and all(
+            (reported := _provider_cost_for_usage_entry(entry)[1]) is not None and reported == 0
+            for entry in usage_by_result
+        )
 
     def _build_trace_payload(self, analysis_results: dict[str, Any]) -> dict[str, Any]:
         """Build response_payload trace: full responses in DEBUG, metadata otherwise."""
@@ -1028,8 +1353,6 @@ class AIAnalyzer:
         canonical = json.dumps(self._make_json_serializable(config), sort_keys=True, ensure_ascii=False)
         payload_keys = {
             "cli_dates",
-            "monitored_users",
-            "excluded_users",
             "brands",
             "competitors",
             "hashtags",
@@ -1273,6 +1596,8 @@ class AIAnalyzer:
         coverage_limited: bool = False,
         media_coverage_limited: bool = False,
         output_contract: ScenarioOutputContract | None = None,
+        text_coverage_limited: bool = False,
+        analysis_fingerprint: str = "legacy",
     ) -> Any | None:
         """Save useful results without claiming new coverage after reported failures."""
         from datetime import date as date_class
@@ -1288,6 +1613,10 @@ class AIAnalyzer:
         # Use provided date or default to today
         if analysis_date is None:
             analysis_date = date_class.today()
+
+        # Attempt-level accounting happens before every projection decision
+        # below, including the partial-skip and the relevance filter.
+        await self._journal_paid_attempts(analysis_results, unified_summary, source, analysis_date, task_payload)
 
         # Relevance filtering (Phase 3): when the scenario's scope asks for it,
         # drop rows the model itself flagged as noise (`is_meaningful == false`)
@@ -1312,10 +1641,23 @@ class AIAnalyzer:
                     self.filtered_skipped += 1
                     return None
 
+            # A model's own `is_relevant: false` keeps the post out exactly
+            # like `is_meaningful == false` (owner decision 2026-10-21). No
+            # relevance_filter gate: the field only exists where a scenario
+            # declared it. Only a real boolean False filters — a missing
+            # field, None, a string or a number (untrusted model output)
+            # never does.
+            is_relevant = ((analysis_results.get("text_analysis") or {}).get("parsed", {}) or {}).get("is_relevant")
+            if type(is_relevant) is bool and not is_relevant:
+                logger.info(f"Relevance filter skipped source {source.id}: is_relevant={is_relevant}")
+                self.filtered_skipped += 1
+                return None
+
         existing_analysis = None
         if reported_partial is True or media_coverage_limited is True:
             existing_analysis = await AIAnalytics.objects.filter(
-                source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
+                source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY,
+                analysis_fingerprint=analysis_fingerprint,
             ).first()
             if existing_analysis:
                 # Do not replace A's useful body while retaining its hashes.
@@ -1323,7 +1665,25 @@ class AIAnalyzer:
                 # partial B cannot be represented separately in this daily row.
                 # Silent media gaps must not overwrite A either; bounded text
                 # sampling alone still follows its normal covered-subset path.
-                logger.info("partial_analysis_update_skipped")
+                # A fuller B (same fingerprint) must still move the queue: merge
+                # its coverage into A's daily row so the staged records retire —
+                # the text work for them is already paid for. B's own body is
+                # not persisted; its per-item coverage lives in the hashes.
+                previous_hashes = (existing_analysis.summary_data or {}).get("content_hashes") or []
+                merged_hashes = list(dict.fromkeys(
+                    [*(value for value in previous_hashes if type(value) is str),
+                     *(value for value in content_hashes if type(value) is str)]
+                ))
+                updated_summary = dict(existing_analysis.summary_data or {})
+                updated_summary["content_hashes"] = merged_hashes
+                await AIAnalytics.objects.update_by_id(
+                    existing_analysis.id, summary_data=updated_summary
+                )
+                self.completed_hashes.update(value for value in merged_hashes if type(value) is str)
+                logger.info(
+                    "partial_analysis_update_skipped — merged %s coverage hashes into analysis %s",
+                    len(merged_hashes), existing_analysis.id,
+                )
                 return None
 
         if output_contract is None:
@@ -1358,20 +1718,31 @@ class AIAnalyzer:
                 prompt_text = result.get("request", {}).get("prompt")
 
                 # Extract token usage from response
-                response = result.get("response", {})
-                usage = response.get("usage", {})
+                response = result.get("response")
+                response = response if isinstance(response, dict) else {}
+                usage = response.get("usage")
+                usage = usage if isinstance(usage, dict) else {}
 
-                req_tokens = usage.get("prompt_tokens", 0) or 0
-                resp_tokens = usage.get("completion_tokens", 0) or 0
+                req_tokens = _projection_token_count(usage.get("prompt_tokens"))
+                resp_tokens = _projection_token_count(usage.get("completion_tokens"))
                 total_request_tokens += req_tokens
                 total_response_tokens += resp_tokens
-                usage_by_result.append(
-                    {
-                        "model_id": result.get("request", {}).get("model"),
-                        "request_tokens": req_tokens,
-                        "response_tokens": resp_tokens,
-                    }
-                )
+                usage_entry = {
+                    "model_id": result.get("request", {}).get("model"),
+                    # Allocated before the HTTP attempt; identifies the exact row
+                    # whose rates priced this call, unlike a name shared by owners.
+                    "llm_model_row_id": result.get("request", {}).get("llm_model_id"),
+                    "request_tokens": req_tokens,
+                    "response_tokens": resp_tokens,
+                }
+                if "accounting_cost_reported" in result:
+                    usage_entry["accounting_cost_reported"] = result.get("accounting_cost_reported")
+                    usage_entry["accounting_cost_usd"] = result.get("accounting_cost_usd")
+                else:
+                    usage_entry["provider_response"] = response
+                if "accounting_cache_usage" in result:
+                    usage_entry["accounting_cache_usage"] = result.get("accounting_cache_usage")
+                usage_by_result.append(usage_entry)
 
                 # Extract provider from request
                 provider = result.get("request", {}).get("provider")
@@ -1469,6 +1840,18 @@ class AIAnalyzer:
 
         if reported_partial is True or coverage_limited is True:
             comprehensive_data["analysis_metadata"]["analysis_complete"] = False
+            # Display-only reasons; the boolean above stays the coverage authority.
+            coverage_limits = [
+                code
+                for code, flag in (
+                    ("text_sampled", text_coverage_limited),
+                    ("media_uncovered", media_coverage_limited),
+                    ("stage_failed", reported_partial),
+                )
+                if flag is True
+            ]
+            if coverage_limits:
+                comprehensive_data["analysis_metadata"]["coverage_limits"] = coverage_limits
         # Absence of this marker is not proof of complete media/content coverage.
 
         # Dedup ledger: hashes of the items this run analyzed (merged with the
@@ -1486,9 +1869,10 @@ class AIAnalyzer:
             }
 
         # Cost from llm_models prices (input_cost_per_1k / output_cost_per_1k, USD).
-        # estimated_cost stores USD cents with sub-cent precision; NULL is kept for
-        # "unknown or free" so a zero-cost row never looks like a pricing bug.
+        # Unified summary remains journaled but outside this analytics aggregate.
+        # Unknown zero totals stay NULL; a fully resolved provider zero is stored.
         estimated_cost_cents = await self._price_usage(usage_by_result)
+        persist_zero_cost = estimated_cost_cents == 0 and self._all_provider_costs_resolved_zero(usage_by_result)
 
         # Debug tracing only: full LLM responses go to response_payload when
         # DEBUG is on; in production keep metadata (usage + parsed keys) only,
@@ -1505,75 +1889,84 @@ class AIAnalyzer:
         # Primary provider (most used)
         primary_provider = list(providers_used)[0] if providers_used else None
 
-        # Check if analysis already exists for this date
-        if reported_partial is not True and media_coverage_limited is not True:
-            existing_analysis = await AIAnalytics.objects.filter(
-                source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
-            ).first()
+        from app.core.database import new_session
 
-        if existing_analysis:
-            # Merge dedup sets: a partial re-run must not forget (and re-pay
-            # for) items covered by earlier analyses of the same day.
-            existing_hashes = (existing_analysis.summary_data or {}).get("content_hashes") or []
-            merged_hashes = sorted(set(existing_hashes) | set(content_hashes or []))
-            if merged_hashes:
-                comprehensive_data["content_hashes"] = merged_hashes
-                content_hash = hashes_hash(merged_hashes)
-            elif content_hash is None:
-                content_hash = existing_analysis.content_hash
+        session = new_session()
+        try:
+            async with session.begin():
+                existing_analysis = await AIAnalytics.objects.filter(
+                    source_id=source.id,
+                    analysis_date=analysis_date,
+                    period_type=PeriodType.DAY,
+                    analysis_fingerprint=analysis_fingerprint,
+                    session=session,
+                ).first()
 
-            # Update existing analysis using manager
-            updated_analysis = await AIAnalytics.objects.update_by_id(
-                existing_analysis.id,
-                summary_data=comprehensive_data,
-                content_hash=content_hash,
-                llm_model=llm_model or "multi-llm",
-                prompt_text=prompt_text if settings.DEBUG else None,
-                response_payload=self._make_json_serializable(response_payload) if response_payload else None,
-                topic_chain_id=topic_chain_id or existing_analysis.topic_chain_id,
-                chain_label=chain_label or existing_analysis.chain_label,
-                normalized_label=normalized_label or existing_analysis.normalized_label,
-                # Preserve existing chain_id or set new one
-                parent_analysis_id=parent_analysis_id,
-                request_tokens=total_request_tokens if total_request_tokens > 0 else None,
-                response_tokens=total_response_tokens if total_response_tokens > 0 else None,
-                estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
-                provider_type=primary_provider,
-                media_types=list(media_types_analyzed) if media_types_analyzed else None,
-            )
+                if existing_analysis:
+                    existing_hashes = (existing_analysis.summary_data or {}).get("content_hashes") or []
+                    merged_hashes = sorted(set(existing_hashes) | set(content_hashes or []))
+                    if merged_hashes:
+                        comprehensive_data["content_hashes"] = merged_hashes
+                        content_hash = hashes_hash(merged_hashes)
+                    elif content_hash is None:
+                        content_hash = existing_analysis.content_hash
+                    analytics = await AIAnalytics.objects.update_by_id(
+                        existing_analysis.id,
+                        session=session,
+                        summary_data=comprehensive_data,
+                        content_hash=content_hash,
+                        analysis_fingerprint=analysis_fingerprint,
+                        llm_model=llm_model or "multi-llm",
+                        prompt_text=prompt_text if settings.DEBUG else None,
+                        response_payload=self._make_json_serializable(response_payload) if response_payload else None,
+                        topic_chain_id=topic_chain_id or existing_analysis.topic_chain_id,
+                        chain_label=chain_label or existing_analysis.chain_label,
+                        normalized_label=normalized_label or existing_analysis.normalized_label,
+                        parent_analysis_id=parent_analysis_id,
+                        request_tokens=total_request_tokens if total_request_tokens > 0 else None,
+                        response_tokens=total_response_tokens if total_response_tokens > 0 else None,
+                        estimated_cost=estimated_cost_cents
+                        if estimated_cost_cents is not None and (estimated_cost_cents > 0 or persist_zero_cost)
+                        else None,
+                        provider_type=primary_provider,
+                        media_types=list(media_types_analyzed) if media_types_analyzed else None,
+                    )
+                else:
+                    analytics = await AIAnalytics.objects.create(
+                        session=session,
+                        source_id=source.id,
+                        summary_data=comprehensive_data,
+                        content_hash=content_hash,
+                        analysis_fingerprint=analysis_fingerprint,
+                        llm_model=llm_model or "multi-llm",
+                        prompt_text=prompt_text if settings.DEBUG else None,
+                        response_payload=self._make_json_serializable(response_payload) if response_payload else None,
+                        analysis_date=analysis_date,
+                        period_type=PeriodType.DAY,
+                        topic_chain_id=topic_chain_id,
+                        chain_label=chain_label,
+                        normalized_label=normalized_label,
+                        parent_analysis_id=parent_analysis_id,
+                        request_tokens=total_request_tokens if total_request_tokens > 0 else None,
+                        response_tokens=total_response_tokens if total_response_tokens > 0 else None,
+                        estimated_cost=estimated_cost_cents
+                        if estimated_cost_cents is not None and (estimated_cost_cents > 0 or persist_zero_cost)
+                        else None,
+                        provider_type=primary_provider,
+                        media_types=list(media_types_analyzed) if media_types_analyzed else None,
+                    )
+                if content_hashes:
+                    from app.models import AnalyzedContentReceipt
 
-            scenario_info = f" using scenario '{agent_scenario.name}'" if agent_scenario else ""
-            logger.info(
-                f"Multi-LLM analysis updated for source {source.id}{scenario_info} "
-                f"(analytics_id: {existing_analysis.id}, providers: {len(analysis_results)})"
-            )
-            return updated_analysis
-
-        # Create analytics record
-        analytics = await AIAnalytics.objects.create(
-            source_id=source.id,
-            summary_data=comprehensive_data,
-            content_hash=content_hash,
-            llm_model=llm_model or "multi-llm",
-            prompt_text=prompt_text if settings.DEBUG else None,
-            response_payload=self._make_json_serializable(response_payload) if response_payload else None,
-            analysis_date=analysis_date,
-            period_type=PeriodType.DAY,
-            topic_chain_id=topic_chain_id,
-            chain_label=chain_label,
-            normalized_label=normalized_label,
-            parent_analysis_id=parent_analysis_id,
-            # Cost tracking fields
-            request_tokens=total_request_tokens if total_request_tokens > 0 else None,
-            response_tokens=total_response_tokens if total_response_tokens > 0 else None,
-            estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
-            provider_type=primary_provider,
-            media_types=list(media_types_analyzed) if media_types_analyzed else None,
-        )
-
-        scenario_info = f" using scenario '{agent_scenario.name}'" if agent_scenario else ""
-        logger.info(
-            f"Multi-LLM analysis saved for source {source.id}{scenario_info} "
-            f"(analytics_id: {analytics.id}, providers: {len(analysis_results)})"
-        )
-        return analytics
+                    await AnalyzedContentReceipt.objects.record_successes(
+                        session,
+                        tenant_id=source.tenant_id,
+                        source_id=source.id,
+                        analysis_fingerprint=analysis_fingerprint,
+                        hashes=content_hashes,
+                        scenario_id=agent_scenario.id if agent_scenario else None,
+                        analytics_id=analytics.id,
+                    )
+            return analytics
+        finally:
+            await session.close()

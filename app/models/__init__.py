@@ -1,62 +1,50 @@
-"""
-Application Models Package.
-
-This package contains all data models for the application, including:
-- Core models (User, SocialAccount, SocialGroup)
-— Content models (Post, Comment)
-— Analytics models (Statistics, AIAnalysisResult)
-— Notification models (Notification)
-"""
+"""Public model facade and explicit manager registration."""
 
 from __future__ import annotations
 
-# Agent runtime (import after Base: these modules do `from . import Base`)
-from .agent_feedback import AgentFeedback
-from .agent_memory import AgentMemory
-from .agent_message import AgentMessage
-from .agent_session import AgentSession
-
-# Analytics models
-from .ai_analytics import AIAnalytics
-
-# Core models
+# Base must exist before domain modules that import it through this facade.
 from .base import Base, TenantScopedMixin, TimestampMixin
-from .agent_scenario import AgentScenario
-from .bot_action import BotAction
-from .digest_run import DigestRun
-from .job import Job
-from .llm_model import LLMModel
 
-# AI models
-from .llm_provider import LLMProvider
-from .model_type import ModelType
-
-# Notification models
-from .notification import Notification
-
-# Raw collected content (staged until an analysis consumes it)
-from .collected_item import CollectedItem
-
-# Import all models to ensure they are registered with SQLAlchemy
-from .permission import Permission
-
-# Social monitoring models
-from .platform import Platform
-from .role import Role
-
-# Task runner / jobs
-from .agent_task import AgentTask
-from .source import Source
-
-# Multi-tenant core
-from .tenant import (
-    Tenant,
-    TenantChannel,
-    TenantInvite,
-    TenantUser,
+# isort: split
+from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
+from .analysis.agent_scenario import AgentScenario
+from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
+from .analysis.ai_analytics import AIAnalytics
+from .billing import (
+    PersonalBillingAccount,
+    PersonalBillingCutover,
+    PersonalLegacyAttribution,
+    PersonalLegacyAttributionConsent,
+    PersonalLLMBillingIncident,
+    PersonalLLMBoundPolicy,
+    PersonalLLMBudgetDay,
+    PersonalLLMDispatch,
+    PersonalLLMLedgerEntry,
+    PersonalLLMReservation,
+    PersonalLLMReservationState,
+    TaskBillingPayer,
 )
-from .user import User
-from .user_credential import UserCredential
+from .collection import (
+    CollectedItem,
+    CollectionCandidate,
+    CollectionLaneRun,
+    CollectionSeen,
+    Platform,
+    Source,
+)
+from .identity import ModelType, Permission, PlatformRole, Role, User, UserCredential
+from .llm import (
+    LLMAttempt,
+    LLMBudgetDay,
+    LLMBudgetReservation,
+    LLMDispatchReceipt,
+    LLMModel,
+    LLMOutcomeEvent,
+    LLMProvider,
+)
+from .notifications import DigestRun, Notification, NotificationPreference
+from .scheduling import AgentTask, BotAction, Job
+from .tenancy import Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
 __all__ = [
     # Base classes
@@ -67,6 +55,8 @@ __all__ = [
     "ModelType",
     "Permission",
     "Role",
+    "PlatformRole",
+    "WorkspaceRole",
     "User",
     # Multi-tenant
     "Tenant",
@@ -74,6 +64,18 @@ __all__ = [
     "TenantInvite",
     "TenantChannel",
     "UserCredential",
+    "PersonalBillingAccount",
+    "TaskBillingPayer",
+    "PersonalLLMDispatch",
+    "PersonalBillingCutover",
+    "PersonalLLMBoundPolicy",
+    "PersonalLLMBudgetDay",
+    "PersonalLLMBillingIncident",
+    "PersonalLLMReservation",
+    "PersonalLLMReservationState",
+    "PersonalLLMLedgerEntry",
+    "PersonalLegacyAttributionConsent",
+    "PersonalLegacyAttribution",
     # Social monitoring models
     "Platform",
     "Source",
@@ -84,6 +86,12 @@ __all__ = [
     "LLMModel",
     # Analytics models
     "AIAnalytics",
+    "AnalyzedContentReceipt",
+    "LLMAttempt",
+    "LLMBudgetDay",
+    "LLMBudgetReservation",
+    "LLMDispatchReceipt",
+    "LLMOutcomeEvent",
     # Task runner / jobs
     "AgentTask",
     "Job",
@@ -95,6 +103,17 @@ __all__ = [
     "AgentFeedback",
     # Notification models
     "Notification",
+    "NotificationPreference",
     # Raw collected content
     "CollectedItem",
+    "CollectionSeen",
+    "CollectionCandidate",
+    "CollectionLaneRun",
 ]
+
+# All canonical classes exist before any public model manager is bound.
+import sys as _sys
+
+from .bootstrap import bind_managers as _bind_managers
+
+_bind_managers(_sys.modules[__name__])

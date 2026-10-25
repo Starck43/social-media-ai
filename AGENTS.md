@@ -1,178 +1,56 @@
-# AGENTS.md — ИИ Ассистент
+# AGENTS.md — AI Assistant
 
-AI-powered social media monitoring platform (VK, Telegram, MAX): AI-анализ
-контента, автокомментирование ботом, ежедневные отчёты, персональный агент в
-личном чате мессенджера.
+## Entry points and task tracking
+- Read before work: `docs/RULES.md` (environment/DB/delegation constraints R1–R10) and `docs/COLLABORATION.md` (handoff, commits, closeout). Instructions here supersede older procedural rules on conflict.
+- Task truth: root `ROADMAP.md` is the live registry of open tasks/questions (ID + link only); `docs/phases/README.md` is the global phase list, one task file per phase (`P<n>-T<nn>`, statuses TODO/IN_PROGRESS/BLOCKED/READY/DONE/DROPPED). A phase closes only when all its tasks are DONE and Codex signs the phase approval block.
+- Claim a task in ROADMAP.md and its phase file before work; on resolution update the phase file to READY with evidence, and only the coordinating Codex then reviews the diff/evidence at the exact SHA, marks the task DONE and deletes its ROADMAP row. No subagent removes resolved ROADMAP rows or self-accepts as DONE. New questions that need separate elaboration go to ROADMAP.md `## Questions` (Q-<n>) and are deleted when resolved.
+- Docs: `docs/DOCS_INDEX.md` (index), `docs/PRODUCT_PLAN.md` (product), `docs/BUSINESS_PRODUCTION_READINESS.md` (gates), `docs/IMPLEMENTATION_STATUS.md` (delivered), `docs/design/assistant-shell.md` (shell contract).
+- Agent roles: Codex = main coordinator and approver (accepts READY tasks, closes phases; does not run pytest or commit directly). OpenCode = executor, primary pytest runner (`.agents/skills/test-runner/`), and the only local committer. Kilo = secondary test route (only when OpenCode is BLOCKED). Remote agents = GitHub PR lanes (`.agents/skills/remote/`), local relay via `.agents/skills/remote-agent-helper/`.
+- Subagents/test delegation: `.codex/agents/test-runner.toml` (OpenCode `build` agent with `river/deepseek-ai/DeepSeek-V4.1-Flash-1017`, primary), `.codex/agents/kilo-test-runner.toml` (Kilo `minimax-m3.1-flash`, secondary). Evidence in `.agents/tmp/` is human-audit only — never main-context input. All test-file creation, editing and validation is delegated wholesale to test subagents working under `tests/AGENTS.md` (directory contract; compact `TEST EDIT`/`TEST RUN` replies, evidence stays in files).
+- `.agents/tmp/` working files: agents may create, read, edit, and remove their own task files and temporary working artifacts under `.agents/tmp/` without asking the owner for per-file approval.
+- Treat those files as transient: after the task or delegated run completes, delete each own file that is no longer needed (task prompts, reports, scratch notes, logs). Retain files only while an active task/agent still needs them or when the owner explicitly requests preservation; coordinate before removing another active agent's artifact.
+- `.agents/tmp/` is never a location for durable task truth or checked-in deliverables: put durable outcomes in canonical docs/PRs and keep `.agents/tmp/` ignored/uncommitted.
+- Local IDE/CLI: `$local`; remote GitHub: `$remote`; same registry, phases and PR handoff.
+- Resume from the current handoff after verifying its SHA. Git and PRs hold detailed history; generated Codex memories are optional recall, never project policy or task truth.
 
-Currently being reshaped into a personal agent runtime: cron-driven collection,
-scheduled digests delivered to a Telegram/MAX channel, and chat with the agent
-in a private chat. Celery/Redis/RBAC are frozen, not deleted — the runtime no
-longer depends on them.
+## Collaboration workflow
+- `dev` is the integration branch. Complete authorized tasks autonomously, without routine confirmations.
+- Shared documentation: synchronize `ROADMAP.md` and owned `docs/` edits with fresh `dev` and other agents' relevant active work before claiming IDs, editing and publishing. Preserve foreign ownership, evidence and statuses; recheck unique task/question IDs and links after merging concurrent changes. Follow the shared-document synchronization procedure in `docs/COLLABORATION.md`; never publish stale full-file copies.
+- Default: work in the current `dev` checkout when one sequential task owns its changes; inspect status first, preserve unrelated edits. Separate branch/worktree only for parallel tasks, PR review, risky experiments, conflicts, or an explicit owner request — never as routine ceremony.
+- Independent implementation lanes require separate worktrees and exclusive files; one sequential delegated task may use the current `dev` checkout with explicit file ownership. Shared-DB tests always remain sequential. Never bypass HEAD, permission or ownership blockers.
+- On completion in `dev`: follow commit and closeout rules in `docs/COLLABORATION.md`. Prepare and review a scoped staged diff, then delegate every local `git commit` to OpenCode; the coordinating Codex does not commit directly. No PR for ordinary sequential work. Never push `dev`, merge, force-push, deploy, or touch production data without explicit authorization.
+- Tests: assign every pytest scope per `docs/RULES.md` R10 — primary OpenCode `test-runner`, shared test schema sequential (R8), Codex never runs pytest; remote agents use the no-DB exception in `.agents/skills/remote/`. Test-file work inside `tests/` follows the scoped contract in `tests/AGENTS.md`.
+- Keep context small: lazy reads (rg, line ranges); read only the selected phase file, subsystem doc and call sites; reuse completed evidence at its exact revision; one bounded task per session/PR; summaries in chat, evidence in files/PRs.
 
-## Stack
-- Python 3.12+, FastAPI, SQLAlchemy 2.0 + Alembic, PostgreSQL, Docker Compose.
-- Runtime: DB-backed task runner + `jobs` table queue (no broker), long
-  polling for Telegram/MAX bots (no public port needed).
-- Legacy/frozen (not exercised by the runtime): Celery + Redis, Streamlit
-  frontend, FastAPI API + sqladmin admin (optional).
+## Understand common requests
+- “Audit completed work”, “check what is done”, or “find gaps” means compare `docs/IMPLEMENTATION_STATUS.md` with current code and PR evidence. Report verified findings and a prioritized fix plan; do not change code unless asked to fix or implement.
+- For one named feature, task, or PR, inspect only that slice. Keep architectural decisions and acceptance with Codex.
+- “Take the next active task” means select one unclaimed TODO row from `ROADMAP.md` (respecting phase priority in `docs/phases/README.md`), verify current code and ownership, claim it, then implement that item. It does not mean execute the whole board.
+- “Implement/fix the audit findings” means the accepted items already live in the phase files; implement dependency-ready items, verify each before READY, and make per-item commits when the request or active Goal asks for them.
+- “Accept a READY task” (phrasing: “прими задачу N”, “проведи приёмку N”, “/review N”), or any task in `READY` status in ROADMAP/phases, means the implementing agent has completed its own test runs and recorded evidence in the phase file. The accepting agent (Codex) performs a code-quality and security review at the exact SHA: read the diff, check correctness, edge cases, and vulnerability patterns against the task's acceptance criteria. Reuse the implementing agent's test evidence — do NOT re-run the full suite. If the review finds a defect requiring a code correction, run only the focused, affected test scopes through the primary test-runner subagent (R10), not the whole suite. If the code passes review as-is, accept to DONE without any new test run. Docs-only edits need no pytest at all. Executors (OpenCode, Kilo, remote agents) report READY and never self-accept; only Codex marks DONE and deletes the ROADMAP row.
+- Run focused checks appropriate to changed behavior. Request broad suites only when warranted; all pytest commands go through the primary OpenCode test route. Docs-only edits do not need pytest.
 
-## Layout
-- `app/` — backend: `api/v1`, `models`, `schemas`, `services` (ai/monitoring/notifications/social/user/digest), `core`, `templates`, `static`
-- `app/runtime.py` — entrypoint: task runner loop + worker loop + channels listener in one process
-- `app/worker.py` — worker-only entrypoint (for a separate container/unit)
-- `app/tasks/` — cron parsing, due-schedule tick, default schedules
-- `app/jobs/` — job dispatcher (claim/retry/backoff) and handlers
-- `app/channels/` — Telegram/MAX bot channels (send + long polling); the listener also feeds channel posts into collection
-- `app/services/social/` — platform API clients; `credentials.py` resolves secrets from the personal vault (`user_credentials`, L2 tokens/sessions) with env as the application-config fallback; `owner.py` picks which user's personal token a source collects with; `tg_session.py` manages the Telegram MTProto (L2) user session. Collection layer is chosen per source via `Source.params["mode"]` — see `docs/COLLECTION.md`
-- `app/services/monitoring/` — `collector.py` (pull: VK/API) and `ingest.py` (push: Telegram Bot API updates)
-- `app/services/digest/` — digest aggregation, LLM summary, rendering
-- `app/services/llm/` — universal LLM clients (OpenAI-compatible + Anthropic)
-- `app/agent/` — agent runtime: session, tools, prompts, memory
-- `app/web/` — client UI under `/app` (Jinja2 + HTMX/Alpine/Tailwind CDN): auth,
-  base layout; `TenantUIMiddleware` resolves web memberships → tenant scope
-  (`PlatformScopeMiddleware` bypasses everything except `/app/*`)
-- `app/celery/` — frozen legacy, do not extend
-- `cli/` — Typer CLI (`cli.main:app`): `collect`, `task`, `digest`, `roles`, `credentials`, `scenarios`
-- `migrations/` — Alembic; table creation is Alembic-only, run `alembic upgrade head`
-- `scripts/` — seed-скрипты и утилиты
-- `tests/` — pytest
-- `docs/` — project documentation (committed); index: `docs/DOCS_INDEX.md`, tasks: `docs/AGENT_TASKS.md`, digest: `docs/DIGEST.md`, agent: `docs/AGENT.md`, tenancy: `docs/TENANCY.md`, collection/credentials: `docs/COLLECTION.md`
+## Project rules
+- Extensible assistant on the existing modular monolith: read `README.md`, `docs/DOCS_INDEX.md`, then relevant `docs/*.md` before changing behavior.
+- Verify current branch/code before acting on plans or boards; docs may describe proposed work — never assume a planned feature exists.
+- Active runtime (PostgreSQL schedules/jobs, worker, Telegram/MAX long-poll listener) is one process: `.venv/bin/python -m app.runtime`; do not start duplicate owners. No Celery/Redis in the active path; `app/celery/` and Streamlit are frozen without an explicit task.
 
-## Conventions
-- Formatting: black + isort, line-length 120 (config in `pyproject.toml`)
-- No plan/milestone numbers (M6.5, M7, …) in code comments, docstrings, DB column
-  comments, admin labels/titles or file names; milestone context lives in docs and
-  `.agent/` only.
-- The pre-existing code is tab-indented; new and migrated files are
-  black-formatted. Do not run a repo-wide reformat.
-- Tests: `pytest` (asyncio_mode = auto, coverage on `app/` by default via addopts)
-- Migrations: Alembic (`alembic.ini`); keep `alembic check` clean
-- Config via env vars / `.env` — never commit `.env*`
-- DB schema: `settings.DB_SCHEMA` (default `public`)
-- venv: use project .venv
-- Optional integrations (VK, Telegram, MAX, Redis) must stay startable when
-  unconfigured — the app has to boot with none of them set
-- Commit messages, code, and committed docs in English; user-facing agent
-  replies in Russian
+## Data access and migrations
+- Reuse ORM models, managers (`app/models/managers/`), service methods before adding DB access; extend a manager/service instead of duplicating queries across API/CLI/web/agent tools.
+- No ad-hoc `engine`/`Session`/`AsyncSession`/`sessionmaker`; follow existing session and transaction conventions; respect workspace scoping, authorization, validation, manager-level rules; `settings.DB_SCHEMA` only, never hardcoded schemas.
+- Alembic is the only migration path: no runtime table creation, no edits to applied migrations; review generated migrations; `alembic check` when warranted.
 
-## LLM Providers — universal approach
+## Architecture and safety
+- Small changes consistent with nearby code; reuse over new abstractions/dependencies/frameworks; no repo-wide formatting or unrelated refactors.
+- Distinct concepts: `AgentScenario` = methodology; `AgentTask` = scheduled execution (sources/targets); multi-step business workflow = separate concept.
+- Interactive access fails closed (unknown identity, missing membership/permission, revoked ⇒ deny); agent tools need explicit permissions and argument validation, re-checked at execution.
+- External writes (send/publish/update/delete) are never a side effect of unrelated work; preserve dry-run defaults and approval gates; scope recipients/credentials to the owning workspace; never expose tokens, sessions, `.env` values, secrets in logs/tests/prompts/commits.
+- Existing LLM clients and DB-managed provider/model config only; preserve usage/cost tracking and fallbacks; tests mock external APIs/LLMs — no real paid or destructive calls.
+- Optional integrations must not block startup when unconfigured; per-source access limits stay explicit; a delivery channel does not imply content collection.
 
-LLM configuration lives in the database, NOT in code. Two API formats are
-supported; adding a new provider is a row in the DB, not a code change.
-
-### Data model
-
-| Table | Scope | Purpose |
-|-------|-------|---------|
-| `llm_providers` | global (optionally per-tenant override) | Connection: `name`, `api_format` (`openai` \| `anthropic`), `base_url`, `auth_header`, `encrypted_api_key`, `is_active` |
-| `llm_models` | global | Model definition: `provider_id`, `name` (human), `model_id` (API model string), `model_type` (`text` \| `image` \| `embedding`), `input_cost_per_1k`, `output_cost_per_1k`, `max_tokens`, `default_temperature`, `is_active` |
-
-`LLMProvider` and `LLMModel` are **global** (see `TENANCY.md`) because the same
-provider fleet serves all workspaces. Per-tenant provider overrides are not
-implemented; a workspace uses the global fleet.
-
-### Two API formats, one interface
-
-`app/services/llm/client.py` exposes `LLMClient.chat(messages, model, **kwargs)`
-with two concrete backends:
-
-- **`OpenAICompatibleClient`** — `POST {base_url}/chat/completions`,
-  `Authorization: Bearer {key}`. Covers OpenAI, DeepSeek, Ollama, vLLM,
-  Together AI, Groq, OpenRouter, any vendor with an OpenAI-shaped API.
-- **`AnthropicClient`** — `POST {base_url}/messages`,
-  `x-api-key: {key}`, `anthropic-version: 2023-06-01`. Covers Claude family.
-
-Adding a new provider = adding an `llm_providers` row with the matching
-`api_format`. No code change.
-
-### Resolution order
-
-When the agent/analyzer asks for a model:
-
-1. Explicit model name passed by caller → find by `llm_models.name`.
-2. `AGENT_MODEL` env var set → use that model.
-3. Otherwise: first active `text`-capable model ordered by
-   `llm_models.is_default DESC, llm_models.id ASC` (`default_model_sort_key` in
-   `app/services/ai/llm_client.py`; `LLMModelManager.resolve_default_model`
-   filters one `model_type` with the same tuple). `is_default` is unique per
-   `model_type` fleet-wide (enforced by `LLMModelManager.create_model` /
-   `update_model`; admin/API/tools are thin callers). Only models carry a
-   default flag — the provider-level one was dropped in migration 0091 because
-   it outranked the operator's own default model and forked the fleet when two
-   providers were flagged.
-
-### Fallback
-
-A broken LLM must never break the digest, agent reply, or collection analysis.
-If a call raises a non-4xx error (timeout, 5xx, network), the client walks the
-fallback chain: active text-capable models ordered by `default_model_sort_key`
-(default provider, default model, lowest id), and retries on the next one. A 4xx (auth, quota) is raised as-is so config problems
-surface instead of silently routing to a fallback.
-
-### Encryption at rest
-
-API keys are stored in `llm_providers.encrypted_api_key` encrypted with Fernet
-using the same `CREDENTIALS_KEY` as the personal vault (`user_credentials`). The master key comes
-from the env (`CREDENTIALS_KEY`) and is **never** committed. Admin UI shows the
-key masked; the edit form accepts a new plaintext and re-encrypts on save.
-Reading the column through ORM returns the ciphertext; use
-`LLMProvider.decrypted_key()` helper when making a request.
-
-### Admin UI
-
-`sqladmin` views for `LLMProviderAdmin` and `LLMModelAdmin` live in
-`app/admin/llm.py`. Each provider has a **"Test connection"** action that
-sends a 10-token ping to the configured model and reports latency or the
-underlying error.
-
-### Cost tracking
-
-Every LLM call stores `request_tokens`, `response_tokens`, `estimated_cost`
-(USD cents, `NUMERIC(14,6)` — sub-cent precision, since cheap models price most
-calls below one cent) and `provider_type` on the `ai_analytics` row.
-`ReportAggregator` rolls this up per provider/model for the digest and the
-dashboard. See `docs/ANALYTICS_AGGREGATION_SYSTEM.md`.
-
-Agent chat, digest summaries and learning/reflect account separately for the
-**daily spend cap** (`AGENT_DAILY_COST_LIMIT` / `tenant.daily_cost_limit`): chat
-usage carries a priced `cost` (USD, from `llm_client.price_usage_usd` over
-`llm_models` tariffs) written to `agent_messages.cost`, digest summaries to
-`digest_runs.llm_cost`, `learn`/`reflect` job results to `jobs.llm_cost`; the
-checked metric is `tenancy.resolver.daily_cost_today()` (per-tenant UTC day),
-enforced in the agent loop, before the digest's LLM call and before the
-learning/reflect call.
-
-## Scripts (переиспользуйте, не пишите заново)
-
-Готовые утилиты для типовых операций — используйте их, а не ручные SQL-запросы
-(все работают с текущей схемой `settings.DB_SCHEMA`, сейчас `public`):
-
-- `scripts/setup/roles.py` — создать/обновить 7 платформенных ролей
-  (`python -m scripts.setup.roles`).
-- `scripts/setup/permissions.py` — досоздать отсутствующие `permissions` для всех
-  `model_types` и выдать дефолтные права ролям
-  (`python -m scripts.setup.permissions`).
-- `scripts/setup/assign_roles_permissions.py` — применить каноническую матрицу
-  прав ролей (`python -m scripts.setup.assign_roles_permissions`); идемпотентно,
-  шаблоны совпадают без учёта регистра. **Правьте матрицу `ROLE_PERMISSIONS`
-  здесь, а не вручную.**
-- `scripts/fix_permission_codenames.py` — починить исторически битые codename
-  (`app.Model.('view', …)` → `app.Model.view`); dry-run по умолчанию, `--apply`
-  для записи.
-- `scripts/update_permission_actions.py` — привести `.edit` codename к `.update`.
-- CLI: `python -m cli.main roles list|show|update|preset` — посмотреть/назначить
-  права роли из терминала.
-
-Схема для всех скриптов берётся из `settings.DB_SCHEMA` (не хардкодьте
-`social_manager`/`public`). Тестовую БД поднимает `scripts/setup_test_db.py`.
-
-## Commands
-- Install: `pip install -r requirements.txt`
-- Migrate: `alembic upgrade head`
-- Run runtime: `python -m app.runtime` (from repo root — `app.main` uses cwd-relative paths)
-- Run worker only: `python -m app.worker`
-- Run API (optional): `uvicorn app.main:app`
-- Agent tasks: `python -m cli.main task list|add|remove|pause`
-- Digest now: `python -m cli.main digest send-now day|week`
-- Credentials: `python -m cli.main credentials set|list|test|disable`
-- Tests: `pytest` (from project root)
+## Style and closeout triggers
+- `pyproject.toml`: Black + isort, line 120; format only changed/new files; preserve legacy style in old code.
+- Code/docs in English; user-facing responses in Russian, brief: outcome, checks actually completed, remaining issues. No milestone/PRD numbering in comments, docstrings, fields, labels, filenames.
+- Never commit `.env*`, credentials, sessions, generated data, local DB files, `.agents/tmp/`.
+- Completion summary: behavior changed, key files, exact tests run, migration implications, remaining risks; no silent scope expansion.
+- Closeout phrases — explicit authorization to commit validated task-scoped work in `dev` and run the `docs/COLLABORATION.md` handoff protocol: `закрываю чат`, `чат закрываем`, `переходим в новый чат`, `завершаем чат`, `задача завершена`, `задача с подзадачами завершена`, `подготовь новый чат`. A closeout is not permission to mark unfinished work complete.

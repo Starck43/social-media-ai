@@ -65,12 +65,14 @@ def _validate(changes: dict[str, Any]) -> dict[str, Any]:
     The model gets the error back and can correct itself, which is far cheaper
     than a scenario that fails silently at analysis time.
     """
+    from app.services.ai.scenario_builder import ScenarioBuilder
     from app.services.ai.scenario_templates import _enum_values
-    from app.types import AnalysisType, ContentType
+    from app.types import AnalysisType
 
     checked = dict(changes)
+    if "content_types" in checked:
+        checked["content_types"] = ScenarioBuilder.normalize_media_types(checked["content_types"])
     for field, enum_cls, label in (
-        ("content_types", ContentType, "тип контента"),
         ("analysis_types", AnalysisType, "тип анализа"),
     ):
         if field in checked:
@@ -169,7 +171,7 @@ def _draft_from_fields(fields: dict[str, Any]) -> Any:
         },
         "required": [],
     },
-    required_permission="agentscenario.view",
+    required_permission="analysis.scenario.view",
 )
 async def scenario_list(only_active: bool = True) -> list[dict[str, Any]]:
     from app.models import AgentScenario
@@ -190,7 +192,7 @@ async def scenario_list(only_active: bool = True) -> list[dict[str, Any]]:
         "properties": {"id": {"type": "integer", "description": "ID сценария"}},
         "required": ["id"],
     },
-    required_permission="agentscenario.view",
+    required_permission="analysis.scenario.view",
 )
 async def scenario_get(id: int) -> dict[str, Any]:
     from app.models import AgentScenario
@@ -209,7 +211,7 @@ async def scenario_get(id: int) -> dict[str, Any]:
         "собирают. Возьми подходящий шаблон, если он есть, — не изобретай поля заново."
     ),
     parameters={"type": "object", "properties": {}, "required": []},
-    required_permission="agentscenario.view",
+    required_permission="analysis.scenario.view",
 )
 async def scenario_templates() -> dict[str, Any]:
     from app.services.ai.scenario_templates import list_templates
@@ -230,7 +232,7 @@ async def scenario_templates() -> dict[str, Any]:
         },
         "required": ["description"],
     },
-    required_permission="agentscenario.view",
+    required_permission="analysis.scenario.view",
 )
 async def scenario_suggest_prompt(description: str) -> dict[str, Any]:
     from app.services.ai.scenario_builder import ScenarioBuilder
@@ -242,7 +244,14 @@ async def scenario_suggest_prompt(description: str) -> dict[str, Any]:
             "ok": False,
             "message": "Модель сейчас недоступна — предложи владельцу написать промпт вручную.",
         }
-    return {"ok": True, "prompt": prompt, "unknown_variables": ScenarioBuilder.unknown_variables(prompt)}
+    # The prompt body is not returned: the next step needs its validity, and
+    # sending thousands of characters made the model narrate its own work
+    # («сгенерирую… проверяю…») instead of showing the result once.
+    return {
+        "ok": True,
+        "unknown_variables": ScenarioBuilder.unknown_variables(prompt),
+        "preview": prompt if len(prompt) <= 400 else prompt[:400] + "…",
+    }
 
 
 @tool(
@@ -256,7 +265,7 @@ async def scenario_suggest_prompt(description: str) -> dict[str, Any]:
         "properties": {"prompt": {"type": "string", "description": "Текст промпта для проверки"}},
         "required": ["prompt"],
     },
-    required_permission="agentscenario.view",
+    required_permission="analysis.scenario.view",
 )
 async def scenario_validate_prompt(prompt: str) -> dict[str, Any]:
     from app.services.ai.scenario_builder import ScenarioBuilder
@@ -277,7 +286,7 @@ async def scenario_validate_prompt(prompt: str) -> dict[str, Any]:
         "Требует подтверждения владельца — сначала покажи ему превью, что получится."
     ),
     confirm=True,
-    required_permission="agentscenario.create",
+    required_permission="analysis.scenario.create",
     parameters={
         "type": "object",
         "properties": {
@@ -290,7 +299,7 @@ async def scenario_validate_prompt(prompt: str) -> dict[str, Any]:
             "content_types": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Что собирать: posts, comments, mentions, videos, stories, reels, reactions",
+                "description": "Какие форматы умеет анализировать: text, image, video, audio (legacy posts/comments/videos тоже принимаются)",
             },
             "analysis_types": {
                 "type": "array",
@@ -374,7 +383,13 @@ async def scenario_create(
 
     await _save_preferences(draft)
 
-    return {"status": "created", "scenario": _full(scenario), "unknown_variables": _unknown_variables(draft)}
+    # Short form only: a preview the owner actually asked to see (name, what it
+    # analyses), not every stored prompt and scope the owner did not request.
+    return {
+        "status": "created",
+        "scenario": _brief(scenario),
+        "unknown_variables": _unknown_variables(draft),
+    }
 
 
 @tool(
@@ -384,7 +399,7 @@ async def scenario_create(
         "scope сливается с текущим по типам анализа. Требует подтверждения владельца."
     ),
     confirm=True,
-    required_permission="agentscenario.update",
+    required_permission="analysis.scenario.update",
     parameters={
         "type": "object",
         "properties": {
@@ -438,9 +453,11 @@ async def scenario_update(id: int, changes: dict[str, Any]) -> dict[str, Any]:
     unknown_vars = _unknown_variables(draft)
 
     from app.services.ai.scenario_schema import ScenarioSchemaError, validate_scenario_values
+
     try:
-        validate_scenario_values({"output_schema": scenario.output_schema,
-                                  "analysis_types": draft.analysis_types, "scope": draft.scope})
+        validate_scenario_values(
+            {"output_schema": scenario.output_schema, "analysis_types": draft.analysis_types, "scope": draft.scope}
+        )
     except ScenarioSchemaError as error:
         return {"error": str(error)}
 
@@ -474,7 +491,7 @@ async def scenario_update(id: int, changes: dict[str, Any]) -> dict[str, Any]:
         "Оригинал не меняется. Требует подтверждения владельца."
     ),
     confirm=True,
-    required_permission="agentscenario.create",
+    required_permission="analysis.scenario.create",
     parameters={
         "type": "object",
         "properties": {
@@ -491,8 +508,8 @@ async def scenario_update(id: int, changes: dict[str, Any]) -> dict[str, Any]:
 async def scenario_clone(source_id: int, new_name: str, changes: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     from app.models import AgentScenario
     from app.services.ai.scenario import PlanLimitError, scenario_service
-    from app.services.ai.scenario_schema import ScenarioSchemaError
     from app.services.ai.scenario_builder import ScenarioBuilder
+    from app.services.ai.scenario_schema import ScenarioSchemaError
 
     source = await AgentScenario.objects.get(id=int(source_id))
     if source is None:
@@ -550,7 +567,7 @@ async def scenario_clone(source_id: int, new_name: str, changes: Optional[dict[s
         "Требует подтверждения."
     ),
     confirm=True,
-    required_permission="agentscenario.delete",
+    required_permission="analysis.scenario.delete",
     parameters={
         "type": "object",
         "properties": {"id": {"type": "integer", "description": "ID сценария"}},

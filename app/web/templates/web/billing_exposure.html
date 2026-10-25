@@ -1,0 +1,115 @@
+{% extends "web/base.html" %}
+{% block title %}Финансовая экспозиция — AI Monitor{% endblock %}
+{% block page_heading %}Финансовая экспозиция{% endblock %}
+{% block content %}
+<div class="mb-6">
+    <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+        Только чтение: сколько уже оплачено и потрачено в этом пространстве, и по каким моделям
+        цена попытки осталась неизвестной. Персональные данные плательщиков здесь не показываются.
+    </p>
+    <a href="/app/jobs" class="mt-2 inline-block text-sm text-cyan-700 dark:text-cyan-400 hover:underline">← Вернуться к очереди</a>
+</div>
+
+{% if exposure_unavailable %}
+    <div class="rounded-xl border border-rose-300 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/20 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+        Данные о расходах сейчас недоступны. Это не ноль: повторите позже или проверьте журнал сервера.
+    </div>
+{% else %}
+    <section aria-labelledby="spend-heading" class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <h2 id="spend-heading" class="text-sm font-semibold">Расходы пространства за сутки (UTC)</h2>
+        {% if spend and spend.dispatch_count %}
+            <div class="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <div>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">Списано</p>
+                    <p class="mt-1 text-2xl font-semibold">${{ spend.settled_usd }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">Зарезервировано</p>
+                    <p class="mt-1 text-2xl font-semibold">${{ spend.reserved_usd }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">Провайдер сообщил</p>
+                    <p class="mt-1 text-2xl font-semibold">${{ spend.provider_reported_usd }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">Восстановлено по тарифу</p>
+                    <p class="mt-1 text-2xl font-semibold">${{ spend.tariff_reconstructed_usd }}</p>
+                </div>
+            </div>
+            <p class="mt-3 text-sm {% if spend.complete %}text-slate-600 dark:text-slate-400{% else %}text-amber-800 dark:text-amber-300{% endif %}">
+                Попыток: {{ spend.dispatch_count }}. Открытых резервов: {{ spend.pending_count }}.
+                Без известной цены: {{ spend.unknown_count }}.
+                {% if spend.complete %}
+                    Итог полный для учтённых попыток.
+                {% else %}
+                    Итог неполный: есть открытые резервы или попытки без известной цены.
+                {% endif %}
+                Исторические попытки без атрибуции плательщика не входят.
+            </p>
+        {% else %}
+            <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
+                За эти сутки в пространстве нет учтённых персональных вызовов моделей.
+                Это не означает нулевую стоимость всех прошлых запусков.
+            </p>
+        {% endif %}
+    </section>
+
+    <section aria-labelledby="unpriced-heading" class="mt-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <h2 id="unpriced-heading" class="text-sm font-semibold">Модели без известной цены</h2>
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+            Попытки за последние {{ exposure_days }} дн., по которым журнал не смог установить цену.
+            Считаются запуски, а не отдельные наблюдения.
+        </p>
+        {% if unpriced %}
+            <div class="mt-3 overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                        <tr>
+                            <th class="py-2 pr-4">Провайдер</th>
+                            <th class="py-2 pr-4">Модель</th>
+                            <th class="py-2 pr-4">Запусков</th>
+                            <th class="py-2">Последняя попытка</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 dark:divide-slate-800/70">
+                        {% for row in unpriced %}
+                            <tr>
+                                <td class="py-2 pr-4">{{ row.provider }}</td>
+                                <td class="py-2 pr-4 font-mono text-xs break-words">{{ row.model_id }}</td>
+                                <td class="py-2 pr-4">{{ row.attempts }}</td>
+                                <td class="py-2">{{ row.last_observed_at|human_dt(tz=_tz) if row.last_observed_at else '—' }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
+                Нет учтённых попыток с неизвестной ценой за это окно.
+            </p>
+        {% endif %}
+    </section>
+
+    <section aria-labelledby="zero-price-heading" class="mt-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <h2 id="zero-price-heading" class="text-sm font-semibold">Активные модели с тарифом 0/0</h2>
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+            Проверка вашего личного каталога; модели других пользователей сюда не входят.
+            Явный ноль считается бесплатным тарифом, но новая модель в каталоге тоже начинается с 0.0.
+            Проверьте, что здесь нет модели с незаполненной ценой. Показано {{ zero_price.models|length }} из {{ zero_price.total }}.
+        </p>
+        {% if zero_price and zero_price.models %}
+            <ul class="mt-3 space-y-1 text-sm">
+                {% for model in zero_price.models %}
+                    <li>
+                        <span class="text-slate-800 dark:text-slate-200">{{ model.provider }}</span>
+                        <span class="font-mono text-xs text-slate-600 dark:text-slate-400">{{ model.model_id }}</span>
+                        {% if model.is_default %}<span class="ml-2 rounded bg-cyan-50 dark:bg-cyan-950 px-1.5 py-0.5 text-[11px] text-cyan-700 dark:text-cyan-300">по умолчанию</span>{% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Нулевых активных моделей нет.</p>
+        {% endif %}
+    </section>
+{% endif %}
+{% endblock %}

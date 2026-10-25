@@ -6,13 +6,17 @@ from typing import Any, Union
 from fastapi import HTTPException
 from sqladmin import action
 from sqladmin.fields import SelectField
+from sqladmin.forms import get_model_form
 from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
-from wtforms import validators, widgets
+from wtforms import FloatField, Form, validators, widgets
 
 from app.admin.actions import LLMModelActions
-from app.admin.formatters import format_date, format_usd, plan_badge
+from app.admin.formatters import format_date, format_usd, model_price, plan_badge
+from app.core.hashing import get_password_hash
+from app.core.personal_catalog_context import catalog_execution_scope
+from app.core.provider_uid import slugify_uid
 from app.models import (
     AgentScenario,
     AgentTask,
@@ -24,30 +28,34 @@ from app.models import (
     Notification,
     Permission,
     Platform,
-    Role,
+    PlatformRole,
     Source,
     Tenant,
     User,
     UserCredential,
 )
+from app.models.managers.user_manager import UserManager
 from app.tasks.cron import cron_to_human
 from app.types import (
     ActionType,
     AnalysisType,
     BotActionStatus,
-    ContentType,
     JobType,
     LLMStrategyType,
+    MediaType,
     NotificationType,
     PeriodType,
+    PlatformRoleType,
     PlatformType,
     SourceType,
-    UserRoleType,
 )
 from app.types.enums.llm_types import APIFormatType
 
 from ..services.ai.llm_client import LLMClientFactory
 from .base import BaseAdmin
+from .catalog import PermissionLabelAdmin, PlatformRoleGrantAdmin
+from .price_fields import ExactModelPriceField
+from .role_picker import RoleChoiceField, RolePickerConverter, role_choices, role_edit
 from .widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
 
 logger = logging.getLogger(__name__)
@@ -69,9 +77,8 @@ class UserAdmin(BaseAdmin, model=User):
             "id": "ID",
             "username": "Имя пользователя",
             "email": "Электронная почта",
-            "role": "Роль",
             "hashed_password": "Пароль",
-            "is_superuser": "Администратор",
+            "role": "Платформенная роль",
         },
         **BaseAdmin.column_labels,
     )
@@ -82,9 +89,16 @@ class UserAdmin(BaseAdmin, model=User):
         "social_accounts",
         "notifications",
         "role_id",
+        "hashed_password",
     ]
-    form_create_rules = ["username", "email", "hashed_password", "role", "is_active"]
-    form_edit_rules = ["username", "email", "role", "is_active"]
+    form_create_rules = ["username", "email", "hashed_password", "is_active"]
+    # The role select is edit-only: new accounts start at `user` (see below).
+    form_edit_rules = ["username", "email", "is_active", "role"]
+    form_overrides = {**BaseAdmin.form_overrides, "role": RoleChoiceField}
+    # The role select is the only field with a fixed, actor-dependent choice
+    # list; `role_picker.RolePickerConverter` reads it from `form_converter`.
+    form_converter = RolePickerConverter
+    form_excluded_columns = ["role_id"] + BaseAdmin.form_excluded_columns
 
     form_widget_args = {
         "hashed_password": {"type": "password"},
@@ -95,7 +109,7 @@ class UserAdmin(BaseAdmin, model=User):
     form_args = {
         "username": {
             "label": "Имя пользователя",
-            "description": "Логин для входа в /app и /admin",
+            "description": "Логин для входа в личный кабинет",
         },
         "email": {
             "label": "Электронная почта",
@@ -105,19 +119,20 @@ class UserAdmin(BaseAdmin, model=User):
             "label": "Пароль",
             "description": "Задаётся при создании пользователя; для смены используйте действие «Изменить пароль»",
         },
-        "role": {
-            "label": "Роль",
-            "description": "Определяет набор разрешений пользователя — см. раздел «Роли»",
-        },
-        "is_superuser": {
-            "label": "Администратор",
-            "description": "Полный доступ независимо от роли",
-        },
         **BaseAdmin.form_args,
     }
 
     async def on_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
-        """Perform actions before model is created/updated."""
+        """New accounts always start with the ordinary platform role."""
+        if is_created and not getattr(model, "role_id", None):
+            role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
+            if role is None:
+                raise HTTPException(status_code=500, detail="Platform role catalog is not configured")
+            model.role_id = role.id
+            data["role_id"] = role.id
+        if is_created and data.get("hashed_password"):
+            data["hashed_password"] = get_password_hash(data["hashed_password"])
+            model.hashed_password = data["hashed_password"]
         await super().on_model_change(data, model, is_created, request)
 
     async def insert_model(self, request, data: dict) -> Any:
@@ -125,6 +140,87 @@ class UserAdmin(BaseAdmin, model=User):
         if "hashed_password" not in data or not data["hashed_password"]:
             raise HTTPException(status_code=400, detail="Требуется заполнить поле 'Пароль'")
         return await super().insert_model(request, data)
+
+    async def update_model(self, request: Request, pk: str, data: dict) -> Any:
+        """Write identity fields generically; the role goes through its manager.
+
+        The manager is the single place that knows the assignment rules (rank,
+        self-edit, the owner account), so the console must not write `role_id`
+        itself, even with a forged payload.
+
+        The owner's account is out of reach for anyone else: the role picker
+        renders it read-only, but a hand-crafted POST never touches that form.
+        The owner keeps the right to change their own name, email and password.
+        """
+        # sqladmin hands `pk` over as a string from the URL while the column is
+        # an integer: asyncpg refuses `integer = varchar`, so cast before the read.
+        target = await User.objects.prefetch_related("role").get(id=int(pk))
+        actor = self.get_admin_user(request)
+        if UserManager._is_platform_owner(target) and (actor is None or actor.id != target.id):
+            raise HTTPException(status_code=403, detail="Нельзя изменять аккаунт собственника платформы")
+        role_name = data.pop("role", None)
+        if data.get("role_id"):
+            raise HTTPException(status_code=400, detail="Используйте отдельную операцию назначения платформенной роли")
+        if role_name:
+            await User.objects.set_platform_role(
+                user_id=int(pk),
+                role_code=PlatformRoleType(str(getattr(role_name, "codename", role_name))),
+                actor_id=actor.id,
+            )
+        return await super().update_model(request, pk, data)
+
+    async def scaffold_form(self, rules: list[str] | None = None):
+        """Build the edit form with the choices the signed-in actor may assign.
+
+        sqladmin passes no `request` here, so the actor comes from the request
+        the authorization backend bound for this task. That binding is per
+        request (`load()` runs before the view renders), so one operator's rank
+        never rides along on a class attribute shared by every request.
+
+        With nothing bound the choices are empty and the select is disabled:
+        fail closed, never "every role".
+
+        The edit form also knows *whom* it edits: the actor's own account and the
+        platform owner's account render the role read-only (`role_edit`), because
+        `UserManager.set_platform_role` refuses those writes.
+        """
+        from app.admin.authorization import bound_console_request
+
+        request = bound_console_request()
+        actor = self.get_admin_user(request) if request is not None else None
+        choices, locked = role_choices(actor), None
+        if request is not None and (pk := request.path_params.get("pk")) is not None:
+            current = await User.objects.prefetch_related("role").get(id=int(pk))
+            if current is not None:
+                choices, locked = role_edit(actor, current)
+        converter = type(
+            "_RolePicker", (RolePickerConverter,), {"choices": choices, "locked_reason": locked}
+        )
+        form = await get_model_form(
+            model=self.model,
+            session_maker=self.session_maker,
+            only=self._form_prop_names,
+            column_labels=self._column_labels,
+            form_args=self.form_args,
+            form_widget_args=self.form_widget_args,
+            form_class=self.form_base_class,
+            form_overrides=self._form_overrides,
+            form_ajax_refs=self._form_ajax_refs,
+            form_include_pk=self.form_include_pk,
+            form_converter=converter,
+        )
+        if rules is not None and "role" not in rules and hasattr(form, "role"):
+            delattr(form, "role")
+        return form
+
+    async def delete_model(self, request: Request, pk: Any) -> bool:
+        """The platform-owner account is never deleted from the console."""
+        # sqladmin hands `pk` over as a string from the URL; the column is an
+        # integer, and asyncpg refuses `integer = varchar` instead of casting.
+        target = await User.objects.prefetch_related("role").get(id=int(pk))
+        if UserManager._is_platform_owner(target):
+            raise HTTPException(status_code=403, detail="Нельзя удалить аккаунт собственника платформы")
+        return await super().delete_model(request, pk)
 
     @action(
         name="change_password",
@@ -145,121 +241,54 @@ class UserAdmin(BaseAdmin, model=User):
         )
 
 
-class RoleAdmin(BaseAdmin, model=Role):
-    name = "Роль"
+class RoleAdmin(PlatformRoleGrantAdmin, model=PlatformRole):
+    name = "Платформенная роль"
     name_plural = "Роли"
     icon = "fa fa-shield"
-    column_list = ["id", "name", "description"]
+    column_list = ["id", "codename", "description"]
+    column_searchable_list = ["codename"]
+    column_labels = dict(
+        {
+            "id": "ID",
+            "codename": "Кодовое наименование",
+            "description": "Описание",
+            "users": "Пользователи",
+            "permissions": "Разрешения роли",
+        },
+        **BaseAdmin.column_labels,
+    )
+    form_columns = ["permissions"]
+    edit_template = "sqladmin/role_edit.html"
+    form_widget_args = {"permissions": {"data-permission-transfer": "true", "size": 10}}
+    form_args = {"permissions": {"label": "Разрешения роли"}}
+    column_formatters_detail = {"codename": lambda m, a: m.label}
+
+
+class PermissionAdmin(PermissionLabelAdmin, model=Permission):
+    name = "Разрешение"
+    name_plural = "Разрешения"
+    icon = "fa fa-key"
+    column_list = ["id", "codename", "name", "action_type"]
     column_searchable_list = ["name"]
     column_labels = dict(
         {
             "id": "ID",
-            "name": "Название",
-            "codename": "Кодовое наименование",
-            "description": "Описание",
-            "users": "Пользователи",
-            "permissions": "Разрешения",
-        },
-        **BaseAdmin.column_labels,
-    )
-
-    form_overrides = {
-        # SelectField override keeps the choices from form_args below (the default
-        # enum converter would replace them with raw enum names)
-        "codename": SelectField,
-        **BaseAdmin.form_overrides,
-    }
-
-    form_args = {
-        "name": {
-            "label": "Название",
-            "description": "Отображаемое имя роли, например «Модератор сообщества»",
-        },
-        "codename": {
-            "label": "Кодовое наименование",
-            "description": "Системный уровень роли из общего enum; определяет место в иерархии прав",
-            "choices": UserRoleType.choices(),
-            "coerce": str,
-            "validators": [validators.AnyOf([value for value, _ in UserRoleType.choices()])],
-        },
-        "description": {
-            "label": "Описание",
-            "description": "Для справки: кто и зачем получает эту роль",
-        },
-        "permissions": {
-            "label": "Разрешения",
-            "description": "Набор прав роли; суперпользователь игнорирует этот список",
-        },
-        **BaseAdmin.form_args,
-    }
-
-    column_formatters_detail = {
-        "codename": lambda m, a: m.codename.label if hasattr(m.codename, "label") else "—",
-    }
-
-
-class PermissionAdmin(BaseAdmin, model=Permission):
-    name = "Разрешение"
-    name_plural = "Разрешения"
-    icon = "fa fa-key"
-    column_list = ["id", "codename", "name", "description"]
-    column_searchable_list = ["codename", "name"]
-    column_sortable_list = ["codename"]
-    column_labels = dict(
-        {
-            "id": "ID",
-            "model_type": "Приложение.Таблица",
+            "model_type": "Доменный ресурс",
             "model_type_id": "ID типа модели",
             "action_type": "Вид разрешения",
             "codename": "Кодовое имя",
             "name": "Название",
-            "description": "Описание",
             "roles": "Роли",
         },
         **BaseAdmin.column_labels,
     )
-    column_details_exclude_list = ["model_type", "model_type_id"]
-
-    form_excluded_columns = ["model_type_id", "codename"] + BaseAdmin.form_excluded_columns
-
-    form_overrides = {
-        # SelectField override keeps the choices from form_args below (the default
-        # enum converter would replace them with raw enum names)
-        "action_type": SelectField,
-        **BaseAdmin.form_overrides,
-    }
-
-    form_args = {
-        "name": {
-            "label": "Название",
-            "description": "Человекочитаемое описание права, например «Просмотр источников»",
-        },
-        "action_type": {
-            "label": "Вид разрешения",
-            "description": "Какое действие разрешает право; кодовое имя строится как приложение.таблица.действие",
-            "choices": ActionType.choices(),
-            "coerce": str,
-            "validators": [validators.AnyOf([value for value, _ in ActionType.choices()])],
-        },
-        "description": {
-            "label": "Описание",
-            "description": "Для справки: что именно разрешает право",
-        },
-        "roles": {
-            "label": "Роли",
-            "description": "Роли, которым выдано это право",
-        },
-        **BaseAdmin.form_args,
-    }
-
+    form_columns = ["name"]
+    form_args = {"name": {"label": "Название", "validators": [validators.DataRequired(), validators.Length(max=200)]}}
     column_formatters = {
         "action_type": lambda m, a: m.action_type.label if hasattr(m.action_type, "label") else "—",
         **BaseAdmin.column_formatters,
     }
-
-    column_formatters_detail = {
-        "action_type": lambda m, a: m.action_type.label if hasattr(m.action_type, "label") else "—",
-    }
+    column_formatters_detail = {"action_type": lambda m, a: m.action_type.label}
 
 
 class PlatformAdmin(BaseAdmin, model=Platform):
@@ -362,6 +391,7 @@ class SourceAdmin(BaseAdmin, model=Source):
             "platform_id": "ID платформы",
             "source_type": "Тип источника",
             "external_id": "Внешний ID источника",
+            "owner_task_id": "Поиск задачи (lane)",
             "params": "Параметры",
             "last_checked": "Последняя проверка",
             "date_from": "Дата начала сбора",
@@ -407,7 +437,10 @@ class SourceAdmin(BaseAdmin, model=Source):
         },
         "source_type": {
             "label": "Тип источника",
-            "description": "Личный профиль, сообщество, канал или чат — тип определяет доступные методы API",
+            "description": (
+                "Личный профиль, сообщество, канал или чат — тип определяет доступные методы API. "
+                "SEARCH — поисковый запрос ветки задачи (owner_task_id), технический источник"
+            ),
             "choices": SourceType.choices(),
             "coerce": str,
             "validators": [validators.AnyOf([value for value, _ in SourceType.choices()])],
@@ -420,10 +453,10 @@ class SourceAdmin(BaseAdmin, model=Source):
             "label": "Параметры",
             "description": (
                 "JSON. mode — api (Bot API, по умолчанию) | user (MTProto-сессия) | browser (план); "
-                "monitored_users — список username для отслеживания; "
                 "incremental_mode — собирать только новое; collection.count / collection.limit — размер "
                 "страницы и лимит за прогон; collection.filter — фильтр стены VK; "
-                "force_refresh и cli_dates — разовые переопределения дат"
+                "force_refresh и cli_dates — разовые переопределения дат. "
+                "Кого анализировать, задаётся в задаче (tracked_users), а не в источнике"
             ),
         },
         **BaseAdmin.form_args,
@@ -436,6 +469,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 
     column_formatters_detail = {
         "source_type": lambda m, a: m.source_type.label if m.source_type is not None else "—",
+        "owner_task_id": lambda m, a: str(m.owner_task_id) if m.owner_task_id else "—",
     }
 
     # Use custom templates for create/edit/details to inject per-view JS
@@ -574,8 +608,8 @@ class SourceAdmin(BaseAdmin, model=Source):
 
 
 class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
-    name = "Сценарий бота"
-    name_plural = "Сценарии ботов"
+    name = "Сценарий"
+    name_plural = "Сценарии"
     icon = "fa fa-robot"
 
     action_permissions = {
@@ -595,7 +629,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
             "media_overrides": "Переопределения по типам контента",
             "summary_prompt": "Промпт общего резюме",
             "analysis_types": "Типы анализа",
-            "content_types": "Типы контента",
+            "content_types": "Поддерживаемые медиа",
             "scope": "Дополнительные параметры",
             "sources": "Источники",
             "text_llm_model": "Модель для текста",
@@ -733,7 +767,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 
         form = await super().scaffold_form(rules)
 
-        form.content_types_enum = list(ContentType)
+        form.content_types_enum = list(MediaType)
         form.analysis_types_enum = list(AnalysisType)
         form.scope_hints = SCOPE_HINTS
 
@@ -1232,6 +1266,10 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
     name = "Провайдер ИИ"
     name_plural = "Провайдеры ИИ"
     icon = "fa fa-server"
+    # The stock templates have no hook for a page script; these two add the UID
+    # autofill next to them.
+    create_template = "sqladmin/llm_create.html"
+    edit_template = "sqladmin/llm_edit.html"
 
     # Проба подключения ходит в провайдера его же ключом и тратит токены —
     # это часть настройки, а не чтение.
@@ -1264,10 +1302,27 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         **BaseAdmin.column_labels,
     )
 
-    form_excluded_columns = BaseAdmin.form_excluded_columns + ["models"]
+    # Explicit order, so the two identity fields sit under the name instead of
+    # wherever the mapper happens to list them; `models` is the relationship the
+    # console never edits inline. `scaffold_form` drops the owner for an actor
+    # who does not choose it.
+    form_columns = [
+        "owner_user_id",
+        "name",
+        "uid",
+        "description",
+        "api_format",
+        "base_url",
+        "auth_header",
+        "encrypted_api_key",
+        "is_active",
+    ]
 
     form_overrides = {
         "api_format": SelectField,
+        # A plain foreign-key column is skipped by sqladmin's form builder; the
+        # owner is still a real field, so it is declared as a select.
+        "owner_user_id": SelectField,
         **BaseAdmin.form_overrides,
     }
 
@@ -1275,9 +1330,31 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         "base_url": {"placeholder": "https://api.openai.com/v1"},
         "auth_header": {"placeholder": "Authorization: Bearer {key}"},
         "encrypted_api_key": {"type": "password", "placeholder": "Enter API key"},
+        "owner_user_id": {"placeholder": "Выберите владельца"},
+        "uid": {
+            "placeholder": "unorouter",
+            # Read-only for everyone but the owner: a slug someone else's links
+            # already point at is not a value an admin edits by hand.
+            "data-uid-autofill": "name",
+            "spellcheck": "false",
+            "autocomplete": "off",
+        },
     }
 
     form_args = {
+        "owner_user_id": {
+            "label": "Владелец",
+            "description": "Чей это провайдер. Каталог, ключ и модели видны только этому пользователю.",
+            # WTForms snapshots `choices` when the form class is built, so the
+            # actor's list has to be part of the arguments, not patched after.
+            "choices": [],
+            "coerce": str,
+        },
+        "uid": {
+            "label": "UID провайдера",
+            "description": "Короткий идентификатор латиницей, например unorouter. По умолчанию берётся из названия "
+            "до точки; меняет только владелец платформы.",
+        },
         "name": {"label": "Название", "description": "Например: OpenAI, DeepSeek, Anthropic"},
         "description": {"label": "Описание", "description": "Для справки"},
         "api_format": {
@@ -1306,8 +1383,138 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         **BaseAdmin.form_args,
     }
 
+    async def scaffold_form(self, rules=None):
+        """Hide the fields the signed-in actor may not write.
+
+        The owner is the platform owner's field: an admin or operator creates
+        providers in their own catalog, so a user picker would only invite a
+        choice the server overrides. The UID stays visible to everyone — it is
+        part of the provider's identity and links point at it — but read-only
+        outside the platform owner, because renaming it breaks those links. The
+        server normalises whatever a readonly field still submits.
+
+        The owner select is built here, through `get_model_form` and
+        `_form_overrides`, the same way `UserAdmin` builds the role select.
+        `scaffold_form` caches its first form on the instance, so mutating the
+        cached one would freeze the first actor's choices for every later
+        request; a fresh form also means "no owner field for an admin" is a
+        property of the actor, not of whoever opened the page first.
+        """
+        from app.admin.authorization import bound_console_request
+
+        request = bound_console_request()
+        actor = self.get_admin_user(request) if request is not None else None
+        may_choose = bool(actor is not None and getattr(actor, "is_superuser", False))
+
+        columns = [name for name in self._form_prop_names if may_choose or name != "owner_user_id"]
+        form_args = dict(self.form_args)
+        if may_choose and "owner_user_id" in columns:
+            # The select carries usernames, not ids: a console operator who *may*
+            # assign the catalog should not read `42` and guess. The choices are
+            # frozen into the class, so they pass through `form_args`.
+            from app.models import User as PlatformUser
+
+            owners = await PlatformUser.objects.filter(is_active=True).order_by("username")
+            form_args["owner_user_id"] = {
+                **form_args.get("owner_user_id", {}),
+                "choices": [(str(user.id), user.username) for user in owners],
+                "coerce": str,
+            }
+        form = await get_model_form(
+            model=self.model,
+            session_maker=self.session_maker,
+            only=columns,
+            column_labels=self._column_labels,
+            form_args=form_args,
+            form_widget_args=self.form_widget_args,
+            form_class=self.form_base_class,
+            form_overrides=self._form_overrides,
+            form_ajax_refs=self._form_ajax_refs,
+            form_include_pk=self.form_include_pk,
+            form_converter=self.form_converter,
+        )
+        if hasattr(form, "uid"):
+            # An empty UID is "derive it from the name", not a missing field:
+            # the browser previews the slug and skips the release, so the server
+            # fills it here — from the submitted name, before validation.
+            #
+            # `form` is a class here; `meta.bind_field` is the one seam that sees
+            # both the bound field and the form data, for every instance.
+            base_meta = form.Meta if "Meta" in dir(form) else Form.Meta
+            form_meta = type("ProviderFormMeta", (base_meta,), {})
+
+            def bind_field(meta_self, form_instance, unbound_field, options):
+                field = base_meta.bind_field(meta_self, form_instance, unbound_field, options)
+                if unbound_field.name != "uid":
+                    return field
+                original = field.process
+
+                def process(formdata, data=None, **kwargs):
+                    original(formdata, data=data, **kwargs)
+                    if formdata is None:
+                        return
+                    raw = (field.raw_data or [""])[0]
+                    source = raw or formdata.get("name") or ""
+                    slug = slugify_uid(source)
+                    if not slug and not raw:
+                        return
+                    # WTForms validates `raw_data`, so the derived value has to
+                    # land there too — an empty list means "missing".
+                    field.data = slug or None
+                    if slug:
+                        field.raw_data = [slug]
+
+                field.process = process
+                return field
+
+            form_meta.bind_field = bind_field
+            form.Meta = form_meta
+        if rules:
+            self._validate_form_class(rules, form)
+        return form
+
+    async def on_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
+        """Who owns the catalog row is a rule, not a text field.
+
+        The platform owner may hand a catalog to anyone. An admin or operator
+        never picks a stranger's owner: their new provider belongs to them, and
+        the owner of an existing row stays as it is. A forged POST is refused
+        the same way, because this runs on the data the form accepted.
+        """
+        actor = self.get_admin_user(request)
+        may_choose = bool(actor is not None and getattr(actor, "is_superuser", False))
+        if not may_choose:
+            data.pop("owner_user_id", None)
+            if is_created:
+                if actor is None:
+                    raise HTTPException(status_code=403, detail="Не удалось определить владельца провайдера")
+                data["owner_user_id"] = actor.id
+                model.owner_user_id = actor.id
+        elif is_created and not data.get("owner_user_id"):
+            data["owner_user_id"] = actor.id
+        if "owner_user_id" in data and data["owner_user_id"] is not None:
+            try:
+                data["owner_user_id"] = int(data["owner_user_id"])
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="Не удалось определить владельца провайдера")
+
+        uid = data.get("uid")
+        if uid is not None:
+            slug = slugify_uid(uid)
+            if not slug:
+                raise HTTPException(status_code=400, detail="UID провайдера может содержать только a-z, 0-9, «-» и «_»")
+            data["uid"] = slug
+            model.uid = slug
+
+        with self._catalog_scope(request):
+            await super().on_model_change(data, model, is_created, request)
+
     @action(name="test-connection", label="🔌 Проверить подключение", add_in_list=True, add_in_detail=True)
     async def test_connection_action(self, request: Request):
+        with self._catalog_scope(request):
+            return await self._test_connection(request)
+
+    async def _test_connection(self, request: Request):
         pks = request.query_params.get("pks", "")
         if not pks:
             request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
@@ -1336,20 +1543,28 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
     async def after_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
-        if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
-            from app.utils.crypto import encrypt_secret
+        with self._catalog_scope(request):
+            if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
+                from app.utils.crypto import encrypt_secret
 
-            model.encrypted_api_key = encrypt_secret(model.encrypted_api_key)
-            await LLMProvider.objects.update_by_id(model.id, encrypted_api_key=model.encrypted_api_key)
-        await super().after_model_change(data, model, is_created, request)
+                model.encrypted_api_key = encrypt_secret(model.encrypted_api_key)
+                await LLMProvider.objects.update_by_id(model.id, encrypted_api_key=model.encrypted_api_key)
+            await super().after_model_change(data, model, is_created, request)
+
+
+def _catalog_rate(value, token_unit: int) -> str:
+    unit_label = "1K" if token_unit == 1000 else "1M"
+    return f"{model_price(value)} / {unit_label}"
 
 
 class LLMModelAdmin(BaseAdmin, model=LLMModel):
     name = "Модель ИИ"
     name_plural = "Модели ИИ"
     icon = "fa fa-microchip"
+    create_template = "sqladmin/llm_create.html"
+    edit_template = "sqladmin/llm_edit.html"
 
-    # Как и у провайдера: реальный вызов модели по сохранённому ключу.
+    # Local checks and an explicitly confirmed real probe require operator configuration rights.
     action_permissions = {"test-model": ActionType.CONFIGURE}
 
     column_list = [
@@ -1358,8 +1573,12 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         "provider",
         "model_id",
         "model_type",
+        "pricing_token_unit",
         "input_cost_per_1k",
         "output_cost_per_1k",
+        "cache_read_cost_per_1m",
+        "cache_write_5m_cost_per_1m",
+        "cache_write_1h_cost_per_1m",
         "is_default",
         "is_active",
     ]
@@ -1368,8 +1587,6 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         "name",
         "model_type",
         "max_tokens",
-        "input_cost_per_1k",
-        "output_cost_per_1k",
         "is_default",
         "is_active",
     ]
@@ -1384,14 +1601,20 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             "provider": "Провайдер",
             "model_type": "Тип модели",
             "custom_endpoint_path": "Кастомный endpoint",
-            "input_cost_per_1k": "Вход $/1K",
-            "output_cost_per_1k": "Выход $/1K",
+            "pricing_token_unit": "Единица обычного тарифа",
+            "input_cost_per_1k": "Входной тариф",
+            "output_cost_per_1k": "Выходной тариф",
+            "cache_read_cost_per_1m": "Чтение кэша $/1M",
+            "cache_write_5m_cost_per_1m": "Запись кэша 5 мин $/1M",
+            "cache_write_1h_cost_per_1m": "Запись кэша 1 час $/1M",
             "max_tokens": "Макс. токенов",
             "default_temperature": "Температура",
             "is_active": "Активна",
             "is_default": "По умолчанию",
             "use_count": "Вызовов всего",
             "fail_count": "Ошибок всего",
+            "last_request_cost": "Оценка последней пробы, $",
+            "last_request_cost_at": "Время последней оценки",
             "last_used_at": "Последний вызов",
             "last_success_at": "Последний успех",
             "last_error_at": "Последняя ошибка",
@@ -1399,10 +1622,50 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         **BaseAdmin.column_labels,
     )
 
-    form_excluded_columns = BaseAdmin.form_excluded_columns + ["text_scenarios", "image_scenarios", "video_scenarios"]
+    column_details_list = column_list + [
+        "description",
+        "custom_endpoint_path",
+        "max_tokens",
+        "default_temperature",
+        "last_request_cost",
+        "last_request_cost_at",
+        "use_count",
+        "fail_count",
+        "last_used_at",
+        "last_success_at",
+        "last_error_at",
+        "created_at",
+        "updated_at",
+    ]
+    form_columns = [
+        "provider",
+        "name",
+        "model_id",
+        "description",
+        "model_type",
+        "custom_endpoint_path",
+        "pricing_token_unit",
+        "input_cost_per_1k",
+        "output_cost_per_1k",
+        "cache_read_cost_per_1m",
+        "cache_write_5m_cost_per_1m",
+        "cache_write_1h_cost_per_1m",
+        "max_tokens",
+        "default_temperature",
+        "is_active",
+        "is_default",
+    ]
 
     form_overrides = {
         "model_type": CommaSeparatedSelectMultipleField,
+        "pricing_token_unit": SelectField,
+        # Parse decimal amounts exactly and store the entered raw rate unchanged.
+        "input_cost_per_1k": ExactModelPriceField,
+        "output_cost_per_1k": ExactModelPriceField,
+        "cache_read_cost_per_1m": ExactModelPriceField,
+        "cache_write_5m_cost_per_1m": ExactModelPriceField,
+        "cache_write_1h_cost_per_1m": ExactModelPriceField,
+        "default_temperature": FloatField,
         **BaseAdmin.form_overrides,
     }
 
@@ -1425,9 +1688,37 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             "widget": widgets.ListWidget(prefix_label=False),
             "option_widget": widgets.CheckboxInput(),
         },
-        "input_cost_per_1k": {"label": "Цена входа $/1K токенов", "description": "Например: 0.0015 для GPT-3.5"},
-        "output_cost_per_1k": {"label": "Цена выхода $/1K токенов", "description": "Например: 0.002"},
-        "max_tokens": {"label": "Макс. токенов", "description": "Лимит контекстного окна модели"},
+        "pricing_token_unit": {
+            "label": "Единица обычного тарифа",
+            "description": "Выбранная единица не пересчитывает цены при изменении.",
+            "choices": [(1000, "USD за 1 000 токенов"), (1000000, "USD за 1 000 000 токенов")],
+            "coerce": int,
+            "default": 1000000,
+        },
+        "input_cost_per_1k": {
+            "label": "Цена входа, USD за выбранное число токенов",
+            "description": "Введите сумму как указано в поле единицы тарифа; изменение единицы не меняет сумму.",
+        },
+        "output_cost_per_1k": {
+            "label": "Цена выхода, USD за выбранное число токенов",
+            "description": "Введите сумму как указано в поле единицы тарифа; изменение единицы не меняет сумму.",
+        },
+        "cache_read_cost_per_1m": {
+            "label": "Чтение кэша $/1M токенов",
+            "description": "Пусто означает, что тариф не настроен",
+        },
+        "cache_write_5m_cost_per_1m": {
+            "label": "Запись кэша 5 мин $/1M токенов",
+            "description": "Пусто означает, что тариф не настроен",
+        },
+        "cache_write_1h_cost_per_1m": {
+            "label": "Запись кэша 1 час $/1M токенов",
+            "description": "Пусто означает, что тариф не настроен",
+        },
+        "max_tokens": {
+            "label": "Макс. токенов",
+            "description": "Максимум токенов генерации (не размер контекстного окна)",
+        },
         "default_temperature": {
             "label": "Температура",
             "description": "Температура генерации (0.0 — максимальная точность, 1.0 — творческий ответ). По умолчанию 0.3",
@@ -1478,12 +1769,26 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     column_formatters = {
         "provider": lambda m, a: m.provider.name if m.provider else "—",
         "model_type": lambda m, a: m.model_type if m.model_type else "—",
-        "input_cost_per_1k": lambda m, a: f"${m.input_cost_per_1k:.4f}",
-        "output_cost_per_1k": lambda m, a: f"${m.output_cost_per_1k:.4f}",
+        "pricing_token_unit": lambda m, a: "1K tokens" if m.pricing_token_unit == 1000 else "1M tokens",
+        "input_cost_per_1k": lambda m, a: _catalog_rate(m.input_cost_per_1k, m.pricing_token_unit),
+        "output_cost_per_1k": lambda m, a: _catalog_rate(m.output_cost_per_1k, m.pricing_token_unit),
+        "cache_read_cost_per_1m": lambda m, a: (
+            model_price(m.cache_read_cost_per_1m) if m.cache_read_cost_per_1m is not None else "—"
+        ),
+        "cache_write_5m_cost_per_1m": lambda m, a: (
+            model_price(m.cache_write_5m_cost_per_1m) if m.cache_write_5m_cost_per_1m is not None else "—"
+        ),
+        "cache_write_1h_cost_per_1m": lambda m, a: (
+            model_price(m.cache_write_1h_cost_per_1m) if m.cache_write_1h_cost_per_1m is not None else "—"
+        ),
         **BaseAdmin.column_formatters,
     }
 
+    column_formatters_detail = column_formatters
+
     async def scaffold_form(self, rules=None):
+        from app.admin.authorization import bound_console_request
+
         form = await super().scaffold_form(rules)
 
         # Ensure SelectMultipleField for model_type uses proper multi-value coercion/processing
@@ -1492,7 +1797,10 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             # Actually WTForms SelectMultipleField handles list of strings, but model.model_type is a string.
             pass
 
-        providers = await LLMProvider.objects.all().order_by("name")
+        # The signed-in operator's own providers only: a model is filed in the
+        # catalog it belongs to, and a foreign provider is not even offered.
+        with self._catalog_scope(bound_console_request()):
+            providers = await LLMProvider.objects.all().order_by("name")
 
         if hasattr(form, "provider_id"):
             field_name = "provider_id"
@@ -1501,22 +1809,62 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         else:
             return form
 
-        getattr(form, field_name).kwargs.update(
-            {
-                "data": [(str(p.id), p) for p in providers],
-                "get_label": lambda obj: obj.name,
-            }
-        )
+        # `choices` is what validation and the widget both read; a `data` list of
+        # model instances renders the options but never validates them, and the
+        # submitted id is then rejected as "Not a valid choice".
+        field = getattr(form, field_name)
+        field.data = [(str(p.id), p.name) for p in providers]
+        field.choices = list(field.data)
+        field.coerce = str
+        field.get_label = lambda option, field=field: dict(field.choices).get(str(option), "")
 
         return form
+
+    async def insert_model(self, request: Request, data: dict) -> Any:
+        """Fill the owner before sqladmin touches the relation.
+
+        The field is out of the form (`owner_user_id` is half of the composite
+        key to the provider and NOT NULL), so the provider decides it. sqladmin
+        fills a many-to-one relation from the related row's *primary key* only,
+        while this relation carries two FK columns — a `KeyError` naming
+        `owner_user_id` is exactly that. The value is already set here, so the
+        relation is dropped and the scalar FK goes in instead.
+        """
+        provider_id = data.pop("provider_id", None) or data.pop("provider", None)
+        with self._catalog_scope(request):
+            provider = await LLMProvider.objects.get(id=int(provider_id)) if provider_id not in (None, "") else None
+        if provider is None:
+            raise HTTPException(status_code=400, detail="Выберите провайдера — от него берётся владелец модели")
+
+        # The catalog scope already answered "is this provider in *my* catalog":
+        # a foreign or unknown id is simply not found, so the case never reaches
+        # here. The owner comes from the provider — the form has no such field.
+        data["owner_user_id"] = provider.owner_user_id
+        data["provider_id"] = provider.id
+        with self._catalog_scope(request):
+            return await super().insert_model(request, data)
 
     async def on_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
         if "model_type" in data and isinstance(data["model_type"], list):
             data["model_type"] = ",".join(data["model_type"])
-        await super().on_model_change(data, model, is_created, request)
+        if is_created:
+            model.owner_user_id = data["owner_user_id"]
+            model.provider_id = data["provider_id"]
+        else:
+            # SQLAdmin resolves the `provider` relation from the provider's
+            # primary key alone, and this relation carries two FK columns — a
+            # `KeyError` on `owner_user_id`. The model stays in its provider (the
+            # pair is half of the composite key and immutable by design), so the
+            # field is dropped and the stored scalars answer for it.
+            data.pop("provider", None)
+            data.pop("provider_id", None)
+            data.pop("owner_user_id", None)
+        with self._catalog_scope(request):
+            await super().on_model_change(data, model, is_created, request)
 
     async def after_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
-        await super().after_model_change(data, model, is_created, request)
+        with self._catalog_scope(request):
+            await super().after_model_change(data, model, is_created, request)
 
         if model.is_default:
             # One default per capability fleet-wide — the same rule
@@ -1526,7 +1874,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             # request; matching on the model_type *string* left both flagged
             # and forked the fleet into a provider-priority lottery. Runs
             # after the commit, where a freshly created row already has its id.
-            await LLMModel.objects.set_default(model.id)
+            with self._catalog_scope(request):
+                await LLMModel.objects.set_default(model.id)
 
     async def delete_model(self, request: Request, pk: Union[int, str]) -> None:
         """Override default delete to use manager's reassignment logic.
@@ -1535,7 +1884,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         before forwarding to the manager which expects an integer id.
         """
         model_id = int(pk) if isinstance(pk, str) else pk
-        result = await LLMModel.objects.delete_with_default_reassignment(model_id)
+        with self._catalog_scope(request):
+            result = await LLMModel.objects.delete_with_default_reassignment(model_id)
         warnings = result.get("warnings", [])
         if warnings:
             msg = "; ".join(warnings)
@@ -1556,7 +1906,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             request.session["admin_message"] = {"type": "error", "message": "Не выбрана модель для тестирования"}
             return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
-        return await LLMModelActions.test_model(self, request, pks, self.identity)
+        with self._catalog_scope(request):
+            return await LLMModelActions.test_model(self, request, pks, self.identity)
 
 
 class TenantAdmin(BaseAdmin, model=Tenant):
@@ -1651,14 +2002,15 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     }
 
     def is_accessible(self, request: Request) -> bool:
-        """Workspaces are the owner console: platform superusers only.
+        """Workspace-wide administration is reserved for platform admins.
 
-        A model permission would be the wrong gate even here — the list spans
-        every workspace, and the owner of one of them has no business seeing or
-        editing the others.
+        The gate is the `tenancy.workspace` right, not the platform badge: the
+        owner holds every registered action, an `admin` must be granted the
+        right like any other role. A model permission is still the right
+        question rather than a per-row one — the list spans every workspace.
         """
         user = self.get_admin_user(request)
-        return user is not None and bool(user._is_superuser_role())
+        return bool(user is not None and user.has_perm_for("tenant", ActionType.VIEW))
 
 
 class UserCredentialAdmin(BaseAdmin, model=UserCredential):
@@ -1740,6 +2092,8 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
         "source_id",
         "platform",
         "external_id",
+        "content_type",
+        "selection_status",
         "text",
         "media_type",
         "published_at",
@@ -1756,6 +2110,11 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
             "run_id": "ID запуска",
             "source_id": "Источник",
             "external_id": "Внешний ID",
+            "content_type": "Тип контента",
+            "parent_external_id": "Родительская запись",
+            "lane_id": "Ветка сбора",
+            "selection_status": "Отбор",
+            "selection_reason": "Причина отбора",
             "content_hash": "Хэш контента",
             "platform": "Платформа",
             "published_at": "Дата публикации",
@@ -1768,13 +2127,27 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
         **BaseAdmin.column_labels,
     )
 
-    form_excluded_columns = BaseAdmin.form_excluded_columns + ["content_hash"]
+    form_excluded_columns = BaseAdmin.form_excluded_columns + [
+        "content_hash",
+        # Written by the collector/selector, never by an operator.
+        "lane_id",
+        "selection_status",
+        "selection_reason",
+    ]
     form_widget_args = {"text": {"rows": 8}, "metrics": {"rows": 4, "placeholder": '{"likes": 10, "comments": 3}'}}
 
     form_args = {
         "source_id": {"label": "Источник", "description": "ID источника из таблицы sources"},
         "external_id": {"label": "Внешний ID", "description": "Идентификатор на платформе"},
         "platform": {"label": "Платформа", "description": "vk, telegram и т.д."},
+        "content_type": {
+            "label": "Тип контента",
+            "description": "post — запись источника, comment — комментарий; входит в уникальный ключ",
+        },
+        "parent_external_id": {
+            "label": "Родительская запись",
+            "description": "Для комментария — внешний ID записи, под которой он оставлен",
+        },
         "published_at": {"label": "Дата публикации", "description": "Дата публикации поста на платформе"},
         "media_type": {"label": "Тип медиа", "description": "post, photo, video и т.д."},
         "text": {"label": "Текст", "description": "Текстовое содержимое"},
@@ -1892,6 +2265,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "job_type",
         "cron_expr",
         "is_active",
+        "dry_run",
         "next_run_at",
         "last_run_at",
         "last_status",
@@ -1918,8 +2292,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             "action_type": "Действие после анализа",
             "rate_limit_per_hour": "Лимит действий в час",
             "cooldown_seconds": "Пауза между действиями (сек)",
-            "blacklist": "Чёрный список",
-            "whitelist": "Белый список",
+            "dry_run": "Тестовый прогон (dry-run)",
         },
         **BaseAdmin.column_labels,
     )
@@ -1940,8 +2313,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "action_type",
         "rate_limit_per_hour",
         "cooldown_seconds",
-        "blacklist",
-        "whitelist",
+        "dry_run",
     ]
 
     form_overrides = {
@@ -1953,7 +2325,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     form_widget_args = {
         "name": {"placeholder": "Например: hourly-collect"},
         "cron_expr": {"placeholder": "0 * * * *"},
-        "payload": {"rows": 4, "placeholder": '{"period": "day"}'},
+        "payload": {"rows": 8, "placeholder": '{"period": "day", "collection": {"content_types": ["posts"]}}'},
         "trigger_config": {
             "rows": 5,
             "placeholder": '{\n  "keywords": ["жалоба", "проблема"],\n  "mode": "any"\n}',
@@ -1989,7 +2361,20 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         },
         "payload": {
             "label": "Параметры",
-            "description": 'JSON с дополнительными параметрами задачи, например {"period": "day"}',
+            "description": (
+                'JSON задачи, например {"period": "day"}. Сбор (job_type=analyze): collection — '
+                "content_types (posts|comments), engagement_types (likes|reposts), limit, queries, "
+                "city {name, mode}, discovery {people, communities, queries}, comments "
+                "{max_per_post, total}, candidates {limit, confirm}, date_window {start, end}. "
+                "Выборка (docs/design/task-selection.md): tracked_users — авторы из источников задачи, "
+                "чьи записи анализируются (пусто — записи самих источников); keywords_list + "
+                "keywords_match (any|all) — фразы, которые должны быть в записи. Что и где собирать, "
+                "задаёт задача; сценарий отвечает за методику анализа"
+            ),
+        },
+        "dry_run": {
+            "label": "Тестовый прогон (dry-run)",
+            "description": "Задача отрабатывает без записи собранных данных и без вызова модели",
         },
         "is_active": {
             "label": "Активна",
@@ -2004,6 +2389,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         # next_run_at / last_run_at inherit the shared DD.MM.YYYY HH:MM formatter
         "last_status": lambda m, a: m.last_status or "—",
         "cron_expr": lambda m, a: cron_to_human(m.cron_expr),
+        "dry_run": lambda m, a: "Да" if m.dry_run else "Нет",
         "sources": lambda m, a: ", ".join(s.name for s in m.sources) or "Все активные",
         "agent_scenario": lambda m, a: m.agent_scenario.name if m.agent_scenario is not None else "—",
         **BaseAdmin.column_formatters,
@@ -2016,6 +2402,26 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         otherwise never become due. Compute it from the cron expression so
         admin-created tasks actually fire (a @once task is scheduled ~1 min out).
         """
+        # The payload is a JSON column, so the form can hand back any JSON value
+        # (a list, a string, a number). The collection limits inside it are
+        # parsed by the shared writer on every other write surface (web, API,
+        # CLI, chat); the admin used to store them unchecked, so a malformed
+        # limit reached the runner. Validate and canonicalise before any query.
+        from collections.abc import Mapping
+
+        from app.services.collection.intent import CollectionIntentError, apply_collection, collection_error_message
+
+        job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
+        raw_payload = data["payload"] if "payload" in data else getattr(model, "payload", None)
+        if raw_payload is None:
+            raw_payload = {}
+        if not isinstance(raw_payload, Mapping):
+            raise ValueError('Параметры задачи: нужен JSON-объект, например {"period": "day"}')
+        try:
+            data["payload"] = apply_collection(dict(raw_payload), raw_payload.get("collection"), job_type=job_type)
+        except CollectionIntentError as exc:
+            raise ValueError(collection_error_message(str(exc))) from None
+
         # Guard: an active source-based task (collect/analyze) needs at least one
         # active source to operate on. Empty links fall back to "all active
         # sources", so the check is on the workspace, mirroring the web rule.
@@ -2024,7 +2430,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         from app.models.managers.agent_task_manager import AgentTaskManager
 
         active = data.get("is_active", getattr(model, "is_active", False))
-        job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
         tenant_val = data.get("tenant") or getattr(model, "tenant_id", None)
         tenant_id = tenant_val.id if hasattr(tenant_val, "id") else tenant_val
         # The form delivers the workspace as a string ("1"), and a `tenant_id`
@@ -2082,8 +2487,12 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                             + "» укажите в параметрах задачи: "
                             + ", ".join(missing)
                         )
-                        if hasattr(request, "session") and request.session:
-                            request.session.flash(msg, "warning")
+                        # Starlette's Session is dict-like and has no `flash()`
+                        # (that is Flask) — the save used to die here with
+                        # AttributeError. The admin layout renders this key as a toast.
+                        session = getattr(request, "session", None)
+                        if session is not None:
+                            session["admin_message"] = {"type": "warning", "message": msg}
 
         cron_expr = (data.get("cron_expr") or getattr(model, "cron_expr", "") or "").strip()
         if cron_expr and getattr(model, "next_run_at", None) is None:
@@ -2126,12 +2535,25 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)
         task_id = int(pks.split(",")[0])
 
+        # The manual Job admission boundary (`_admit_task_run`) credits the
+        # actor from the ambient permission_scope user into the Job row
+        # (`initiated_by_user_id`). That identity comes only from the session
+        # the admin authorization backend put on `request.state.admin_user` —
+        # never from query/path/body or the task payload. Fail closed when the
+        # trusted operator is absent or inactive.
+        admin_user = self.get_admin_user(request)
+        if admin_user is None or not getattr(admin_user, "is_active", False):
+            raise HTTPException(status_code=403, detail="Доступ запрещён: оператор не аутентифицирован")
+
         # Operator console: read the task across workspaces (bypass), then act
         # inside the task's own workspace — the shared helper does the scoping.
         with tenant_scope(bypass=True):
             task = await AgentTask.objects.get(id=task_id)
         if task:
-            outcome = await run_task_directly(task)
+            from app.core.permissions import permission_scope
+
+            with permission_scope(admin_user):
+                outcome = await run_task_directly(task)
             if outcome and outcome.get("status") == "failed":
                 request.session["admin_message"] = {
                     "type": "error",
@@ -2140,3 +2562,22 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             else:
                 request.session["admin_message"] = {"type": "success", "message": f"Задача «{task.name}» выполнена"}
         return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)
+
+
+from app.models import Job
+
+
+class JobAdmin(BaseAdmin, model=Job):
+    """Global operator inspection; mutations use the scoped queue workflow."""
+
+    name = "Выполнение"
+    name_plural = "Очередь выполнения"
+    icon = "fa fa-list"
+    can_create = False
+    can_edit = False
+    can_delete = False
+    can_export = False
+    column_list = ["id", "tenant_id", "agent_task_id", "job_type", "status", "run_at", "attempts"]
+    column_details_list = column_list + ["locked_at", "started_at", "finished_at", "created_at", "updated_at"]
+    column_sortable_list = ["id", "run_at", "status"]
+    column_searchable_list = ["job_type", "status"]

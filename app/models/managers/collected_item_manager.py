@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
-from sqlalchemy import JSON, bindparam, text as sa_text
+from sqlalchemy import JSON, and_, bindparam, case, func, or_, select, text as sa_text
 
 from app.core.config import settings
 from app.utils.content_attachments import normalize_attachments
@@ -57,6 +57,11 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             "tenant_id",
             "run_id",
             "source_id",
+            "content_type",
+            "parent_external_id",
+            "lane_id",
+            "selection_status",
+            "selection_reason",
             "external_id",
             "content_hash",
             "platform",
@@ -76,13 +81,24 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         placeholders = ", ".join(f"CAST(:{c} AS jsonb)" if c in json_columns else f":{c}" for c in columns)
         stmt = sa_text(
             f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) "
-            "ON CONFLICT (source_id, external_id) DO NOTHING"
+            "ON CONFLICT (source_id, content_type, external_id) DO NOTHING"
         )
         stmt = stmt.bindparams(*(bindparam(column, type_=JSON(none_as_null=True)) for column in json_columns))
         # Same tenant stamping the ORM path does: refuses to write rather than
         # guessing a workspace for rows collected outside a tenant context.
         params = [
-            await self._apply_tenant(session, {**row, "attachments": normalize_attachments(row.get("attachments"))})
+            await self._apply_tenant(
+                session,
+                {
+                    **row,
+                    "content_type": row.get("content_type") or "post",
+                    "parent_external_id": row.get("parent_external_id"),
+                    "lane_id": row.get("lane_id"),
+                    "selection_status": row.get("selection_status") or "selected",
+                    "selection_reason": row.get("selection_reason"),
+                    "attachments": normalize_attachments(row.get("attachments")),
+                },
+            )
             for row in rows
         ]
         result = await session.execute(stmt, params)
@@ -117,6 +133,92 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         )
         return int(stored.scalar() or 0)
 
+    async def confirm_stored_items(self, session: Any, rows: Sequence[dict[str, Any]]) -> None:
+        """Confirm a strict staging receipt inside the caller's transaction.
+
+        Unlike ``store_items``' compatibility count, this proves every identity
+        is durable before a collection run claims it. Existing rows are only
+        enriched with a missing reserved parent context; their payload and
+        processing state remain untouched.
+        """
+        if not rows:
+            return
+
+        from app.core.tenant_context import current_tenant_id, is_bypass
+
+        tenant_id = current_tenant_id()
+        if is_bypass() or type(tenant_id) is not int or tenant_id <= 0:
+            raise ValueError("content_tenant_invalid")
+        expected: dict[tuple[str, str | None, str | None], dict[str, Any]] = {}
+        source_ids = {row.get("source_id") for row in rows}
+        if len(source_ids) != 1 or any(type(value) is not int or value <= 0 for value in source_ids):
+            raise ValueError("content_source_invalid")
+        for row in rows:
+            if row.get("tenant_id", tenant_id) != tenant_id:
+                raise ValueError("content_tenant_invalid")
+            content_type = str(row.get("content_type") or "post")
+            external_id = row.get("external_id")
+            external_id = str(external_id) if external_id is not None else None
+            digest = row.get("content_hash")
+            if type(digest) is not str or len(digest) != 64:
+                raise ValueError("content_identity_invalid")
+            key = (content_type, external_id, None if external_id is not None else digest)
+            if key in expected and expected[key].get("content_hash") != digest:
+                raise ValueError("content_identity_conflict")
+            expected[key] = row
+        if not expected:
+            return
+
+        model = self.model
+        source_id = next(iter(source_ids))
+        identity_clauses = []
+        for content_type, external_id, anonymous_hash in expected:
+            clause = [model.content_type == content_type]
+            if external_id is not None:
+                clause.append(model.external_id == external_id)
+            else:
+                clause.extend((model.external_id.is_(None), model.content_hash == anonymous_hash))
+            identity_clauses.append(and_(*clause))
+        persisted = (await session.execute(
+            select(model).where(
+                model.tenant_id == tenant_id,
+                model.source_id == source_id,
+                or_(*identity_clauses),
+            ).with_for_update()
+        )).scalars().all()
+        by_identity: dict[tuple[str, str | None, str | None], Any] = {}
+        for stored in persisted:
+            key = (
+                stored.content_type or "post",
+                stored.external_id,
+                None if stored.external_id is not None else stored.content_hash,
+            )
+            by_identity.setdefault(key, stored)
+
+        matched: list[tuple[Any, dict[str, Any]]] = []
+        for key, row in expected.items():
+            stored = by_identity.get(key)
+            if stored is None:
+                raise ValueError("content_receipt_missing")
+            if stored.content_hash != row["content_hash"]:
+                raise ValueError("content_identity_conflict")
+            stored_status = stored.selection_status or "selected"
+            incoming_status = row.get("selection_status") or "selected"
+            if stored_status != incoming_status:
+                raise ValueError("content_selection_conflict")
+            matched.append((stored, row))
+
+        for stored, row in matched:
+            incoming_metrics = row.get("metrics") if isinstance(row.get("metrics"), dict) else {}
+            parent_context = incoming_metrics.get("parent_context")
+            if not isinstance(parent_context, dict):
+                continue
+            metrics = dict(stored.metrics) if isinstance(stored.metrics, dict) else {}
+            if "parent_context" not in metrics:
+                metrics["parent_context"] = dict(parent_context)
+                stored.metrics = metrics
+        await session.flush()
+
     async def admit_items(self, session: Any, rows: Sequence[dict[str, Any]]) -> int:
         """Strict borrowed-transaction receipt, not the legacy rowcount estimate.
 
@@ -129,6 +231,17 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         from app.core.tenant_context import current_tenant_id, is_bypass
         from app.models import AIAnalytics
 
+        rows = [
+            {
+                **row,
+                "content_type": row.get("content_type") or "post",
+                "parent_external_id": row.get("parent_external_id"),
+                "lane_id": row.get("lane_id"),
+                "selection_status": row.get("selection_status") or "selected",
+                "selection_reason": row.get("selection_reason"),
+            }
+            for row in rows
+        ]
         tenant_id = current_tenant_id()
         if is_bypass() or type(tenant_id) is not int or tenant_id <= 0:
             raise ValueError("content_tenant_invalid")
@@ -150,15 +263,22 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             expected[identity] = row
         model = self.model
         scope = (model.tenant_id == tenant_id, model.source_id == source_id)
-        existing = (await session.execute(select(model.external_id, model.content_hash).where(
+        existing = (await session.execute(select(
+            model.external_id, model.content_hash, model.selection_status,
+        ).where(
             *scope, model.external_id.in_(list(expected)),
         ).with_for_update())).all()
-        present = dict(existing)
+        present = {external_id: (digest, status) for external_id, digest, status in existing}
         missing = []
         for identity, row in expected.items():
             if identity in present:
-                if present[identity] != row["content_hash"]:
+                stored_hash, stored_status = present[identity]
+                if stored_hash != row["content_hash"]:
                     raise ValueError("content_identity_conflict")
+                # A locked row whose durable selection differs from this receipt
+                # is a conflicting admission, not a duplicate to swallow.
+                if (stored_status or "selected") != row["selection_status"]:
+                    raise ValueError("content_selection_conflict")
             else:
                 missing.append(row)
         if not missing:
@@ -183,15 +303,23 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         if not pending:
             return 0
         inserted = (await session.execute(insert(model).values(pending).on_conflict_do_nothing(
-            index_elements=[model.source_id, model.external_id],
+            index_elements=[model.source_id, model.content_type, model.external_id],
         ).returning(model.external_id))).scalars().all()
         # A concurrent non-admission writer must not turn a conflicting identity
         # into a successful receipt. Read every pending identity back exactly.
-        stored = dict((await session.execute(select(model.external_id, model.content_hash).where(
-            *scope, model.external_id.in_([row["external_id"] for row in pending]),
-        ).with_for_update())).all())
-        if any(stored.get(row["external_id"]) != row["content_hash"] for row in pending):
-            raise ValueError("content_receipt_missing")
+        stored = {external_id: (digest, status) for external_id, digest, status in (
+            await session.execute(select(
+                model.external_id, model.content_hash, model.selection_status,
+            ).where(
+                *scope, model.external_id.in_([row["external_id"] for row in pending]),
+            ).with_for_update())
+        ).all()}
+        for row in pending:
+            record = stored.get(row["external_id"])
+            if record is None or record[0] != row["content_hash"]:
+                raise ValueError("content_receipt_missing")
+            if (record[1] or "selected") != row["selection_status"]:
+                raise ValueError("content_selection_conflict")
         return len(inserted)
 
     async def for_source(
@@ -200,6 +328,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         limit: int = 50,
         *,
         include_exhausted: bool = False,
+        include_review: bool = False,
         start_date: Any = None,
         end_date: Any = None,
     ) -> list[CollectedItem]:
@@ -222,24 +351,103 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         query = self.filter(source_id=source_id)
         if not include_exhausted:
             query = query.filter(CollectedItem.analyze_attempts < CollectedItem.give_up_after_attempts)
+        if not include_review:
+            # Legacy rows (NULL) remain analysable; collection-time selected rows
+            # pass; needs_review waits for an operator and rejected text is absent.
+            query = query.filter(
+                or_(CollectedItem.selection_status.is_(None), CollectedItem.selection_status == "selected")
+            )
         if start_date is not None:
             query = query.filter(CollectedItem.published_at >= start_date)
         if end_date is not None:
             query = query.filter(CollectedItem.published_at <= end_date)
         return list(await query.order_by(CollectedItem.published_at.desc().nullslast()).limit(limit))
 
-    async def exhausted_count(self, source_id: int) -> int:
-        """How many staged rows for a source have burned their ceiling."""
+    async def exhausted_count(
+        self, source_id: int, *, start_date: Any = None, end_date: Any = None
+    ) -> int:
+        """How many staged rows for a source have burned their ceiling.
+
+        `start_date`/`end_date` scope the count to a content window — the same
+        bounds `count_for_source` applies, so a warning about stuck rows reads
+        against the window a run would actually process, not the whole history.
+        """
         from app.models.collected_item import CollectedItem
 
         # Both columns are read because the ceiling is per row: one workspace may
         # have widened it while another kept the default.
-        rows = (
-            await self.filter(source_id=source_id)
-            .values(CollectedItem.analyze_attempts, CollectedItem.give_up_after_attempts)
+        query = self.filter(source_id=source_id)
+        if start_date is not None:
+            query = query.filter(CollectedItem.published_at >= start_date)
+        if end_date is not None:
+            query = query.filter(CollectedItem.published_at <= end_date)
+        rows = await query.values(CollectedItem.analyze_attempts, CollectedItem.give_up_after_attempts).rows()
+        return sum(1 for r in rows if r and r[0] is not None and r[0] >= (r[1] or 0))
+
+    async def count_for_source(
+        self,
+        source_id: int,
+        *,
+        include_review: bool = False,
+        start_date: Any = None,
+        end_date: Any = None,
+    ) -> int:
+        """Count the fixed staged window, including exhausted rows."""
+        from app.models.collected_item import CollectedItem
+
+        query = self.filter(source_id=source_id)
+        if not include_review:
+            query = query.filter(
+                or_(CollectedItem.selection_status.is_(None), CollectedItem.selection_status == "selected")
+            )
+        if start_date is not None:
+            query = query.filter(CollectedItem.published_at >= start_date)
+        if end_date is not None:
+            query = query.filter(CollectedItem.published_at <= end_date)
+        return int(await query.values(func.count(CollectedItem.id)).scalar(0) or 0)
+
+    async def backlog_counts_for_sources(self, source_windows: Sequence[dict[str, Any]]) -> dict[str, int]:
+        """Aggregate staged backlog for many sources and their individual windows.
+
+        The result is a task-wide current-queue snapshot, not a run receipt. A
+        single aggregate query avoids one count round-trip per source on the
+        task progress poll. Callers must omit sources whose configured date
+        window is malformed; silently removing a bad bound would widen scope.
+        """
+        from app.models.collected_item import CollectedItem
+
+        predicates = []
+        for window in source_windows:
+            source_id = window.get("source_id")
+            if type(source_id) is not int or source_id <= 0:
+                continue
+            conditions = [CollectedItem.source_id == source_id]
+            if window.get("start_date") is not None:
+                conditions.append(CollectedItem.published_at >= window["start_date"])
+            if window.get("end_date") is not None:
+                conditions.append(CollectedItem.published_at <= window["end_date"])
+            predicates.append(and_(*conditions))
+        if not predicates:
+            return {"pending": 0, "exhausted": 0, "eligible": 0}
+
+        exhausted = CollectedItem.analyze_attempts >= CollectedItem.give_up_after_attempts
+        rows = await (
+            self.filter(or_(*predicates))
+            .values(
+                func.count(CollectedItem.id),
+                func.coalesce(func.sum(case((exhausted, 1), else_=0)), 0),
+                func.coalesce(func.sum(case((~exhausted, 1), else_=0)), 0),
+            )
             .rows()
         )
-        return sum(1 for r in rows if r and r[0] is not None and r[0] >= (r[1] or 0))
+        if not rows:
+            return {"pending": 0, "exhausted": 0, "eligible": 0}
+        pending, exhausted_count, eligible = rows[0]
+        return {
+            "pending": int(pending or 0),
+            "exhausted": int(exhausted_count or 0),
+            "eligible": int(eligible or 0),
+        }
 
     async def record_attempts(self, session: Any, source_id: int, hashes: Sequence[str]) -> int:
         """Count one failed analysis attempt against the given staged rows.
@@ -284,7 +492,15 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         rows = await self.filter(source_id=source_id).values(CollectedItem.content_hash).rows()
         return {r[0] for r in rows if r and r[0]}
 
-    async def delete_hashes(self, session: Any, source_id: int, hashes: Sequence[str]) -> int:
+    async def delete_hashes(
+        self,
+        session: Any,
+        source_id: int,
+        hashes: Sequence[str],
+        *,
+        tenant_id: int | None = None,
+        analysis_fingerprint: str | None = None,
+    ) -> int:
         """Retire the raw items whose content an analysis has actually saved.
 
         The precise counterpart to "analyse first, store the raw copy": the
@@ -302,12 +518,210 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         if not wanted:
             return 0
         tenant_clause, tenant_params = _staged_mutation_scope()
+        from app.models import Source
+
+        source_tenant_id = (await session.execute(
+            select(Source.tenant_id).where(Source.id == source_id)
+        )).scalar_one_or_none()
+        if type(source_tenant_id) is not int or source_tenant_id <= 0:
+            raise ValueError("content_source_invalid")
+        if tenant_id is None:
+            tenant_id = source_tenant_id
+        if type(tenant_id) is not int or tenant_id != source_tenant_id:
+            raise ValueError("content_tenant_invalid")
+        scoped_tenant = tenant_params.get("tenant_id")
+        if scoped_tenant is not None and scoped_tenant != source_tenant_id:
+            from app.core.tenant_context import TenantContextError
+
+            raise TenantContextError("Staged mutation source differs from the active tenant")
+        if analysis_fingerprint:
+            protected = await self._pending_other_context_hashes(
+                session, source_id, tenant_id, wanted, analysis_fingerprint
+            )
+            wanted = [value for value in wanted if value not in protected]
+            if not wanted:
+                return 0
         result = await session.execute(
             sa_text(
                 f"DELETE FROM {settings.DB_SCHEMA}.collected_items "
-                "WHERE source_id = :source_id AND content_hash = ANY(:hashes)" + tenant_clause
+                "WHERE tenant_id = :tenant_id AND source_id = :source_id "
+                "AND content_hash = ANY(:hashes)" + tenant_clause
             ),
-            {"source_id": source_id, "hashes": list(wanted), **tenant_params},
+            {"tenant_id": tenant_id, "source_id": source_id, "hashes": list(wanted), **tenant_params},
+        )
+        return int(result.rowcount or 0)
+
+    async def delete_unprocessed_for_source(self, session: Any, source_id: int, tenant_id: int) -> int:
+        """Delete only raw staged rows belonging to one source and tenant.
+
+        This is an explicit operator cleanup, not analysis retirement: analytics
+        and analysis receipts are intentionally outside this table operation.
+        The caller owns the transaction and must reject active source jobs.
+        """
+        if type(source_id) is not int or source_id <= 0 or type(tenant_id) is not int or tenant_id <= 0:
+            raise ValueError("content_scope_invalid")
+
+        tenant_clause, tenant_params = _staged_mutation_scope()
+        if tenant_params.get("tenant_id", tenant_id) != tenant_id:
+            from app.core.tenant_context import TenantContextError
+
+            raise TenantContextError("Staged mutation tenant differs from the active tenant")
+
+        from app.models import Source
+
+        source_tenant_id = (
+            await session.execute(select(Source.tenant_id).where(Source.id == source_id).with_for_update())
+        ).scalar_one_or_none()
+        if source_tenant_id != tenant_id:
+            raise ValueError("content_source_scope_invalid")
+
+        result = await session.execute(
+            sa_text(
+                f"DELETE FROM {settings.DB_SCHEMA}.collected_items "
+                "WHERE tenant_id = :tenant_id AND source_id = :source_id" + tenant_clause
+            ),
+            {"tenant_id": tenant_id, "source_id": source_id, **tenant_params},
+        )
+        return int(result.rowcount or 0)
+
+    async def _pending_other_context_hashes(
+        self, session: Any, source_id: int, tenant_id: int, hashes: Sequence[str], current_fingerprint: str
+    ) -> set[str]:
+        """Keep staged rows needed by another active or queued context in its date window."""
+        from app.models import AgentScenario, CollectedItem, Job, Source
+        from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.services.ai.analysis_context import analysis_fingerprint
+        from app.services.ai.scenario_schema import compile_scenario_output
+        from app.utils.date_parsing import universal_date_parser
+
+        rows = (await session.execute(select(CollectedItem.content_hash, CollectedItem.published_at).where(
+            CollectedItem.tenant_id == tenant_id, CollectedItem.source_id == source_id,
+            CollectedItem.content_hash.in_(list(hashes)),
+        ))).all()
+        dates = {digest: (published.date() if published is not None else None) for digest, published in rows}
+        contexts: list[tuple[Any, dict[str, Any], dict[str, Any]]] = []
+        task_manager = AgentTaskManager()
+        scheduled = await task_manager.filter(
+            tenant_id=tenant_id, is_active=True, job_type__in=["analyze", "collect"]
+        ).prefetch_related("sources", "agent_scenario")
+        jobs = await Job.objects.filter(
+            tenant_id=tenant_id, status__in=["pending", "running"], job_type__in=["analyze", "collect"]
+        ).limit(200)
+        queued_task_ids = {job.agent_task_id for job in jobs if job.agent_task_id}
+        queued_payloads = {job.agent_task_id: job.payload for job in jobs if job.agent_task_id}
+        queued = await task_manager.filter(
+            tenant_id=tenant_id, id__in=list(queued_task_ids), job_type__in=["analyze", "collect"]
+        ).prefetch_related("sources", "agent_scenario") if queued_task_ids else []
+        known_ids = set()
+        for task in scheduled:
+            if task.id in known_ids:
+                continue
+            known_ids.add(task.id)
+            contexts.append((task, task.payload if isinstance(task.payload, dict) else {}, {}))
+        for task in queued:
+            job_payload = queued_payloads.get(task.id)
+            contexts.append(
+                (
+                    task,
+                    task.payload if isinstance(task.payload, dict) else {},
+                    job_payload if isinstance(job_payload, dict) else {},
+                )
+            )
+        for job in jobs:
+            if job.agent_task_id is not None or job.job_type != "analyze":
+                continue
+            job_payload = job.payload if isinstance(job.payload, dict) else {}
+            source_ids = job_payload.get("source_ids")
+            if isinstance(source_ids, list) and source_ids and source_id not in source_ids:
+                continue
+            contexts.append((None, {}, job_payload))
+
+        default_scenario = await AgentScenario.objects.get_default_scenario(tenant_id=tenant_id)
+        source = await Source.objects.filter(id=source_id, tenant_id=tenant_id).first()
+        pending: set[str] = set()
+        context_hashes: dict[str, set[str]] = {}
+        for task, task_payload, job_payload in contexts:
+            if task is not None and task.job_type == "collect" and not task_payload.get("analyze_inline"):
+                continue
+            if task is not None and task.sources and all(item.id != source_id for item in task.sources):
+                continue
+            if task is None:
+                scenario = None
+                if job_payload.get("scenario_id"):
+                    scenario = await AgentScenario.objects.filter(
+                        id=job_payload["scenario_id"], tenant_id=tenant_id
+                    ).first()
+                if scenario is None:
+                    scenario = await AgentTaskManager().get_source_scenario(source_id)
+                task_payload = {}
+            else:
+                scenario = task.agent_scenario
+            if scenario is None and task_payload.get("scenario_id"):
+                scenario = await AgentScenario.objects.filter(
+                    id=task_payload["scenario_id"], tenant_id=tenant_id
+                ).first()
+            if scenario is None or not scenario.is_active:
+                scenario = default_scenario
+            if scenario is None or not scenario.is_active:
+                # A broken active context is still a possible future consumer.
+                pending.update(hashes)
+                continue
+            try:
+                output_contract = compile_scenario_output(scenario)
+                fingerprint = analysis_fingerprint(
+                    scenario,
+                    trigger_config=task.trigger_config if task is not None else None,
+                    task_payload=task_payload,
+                    output_schema=output_contract.schema,
+                )
+            except Exception:
+                pending.update(hashes)
+                continue
+            if fingerprint == current_fingerprint:
+                continue
+            effective_dates = job_payload.get("cli_dates") or task_payload.get("cli_dates")
+            if not effective_dates and source is not None and isinstance(source.params, dict):
+                effective_dates = source.params.get("cli_dates")
+            start = end = None
+            if isinstance(effective_dates, dict):
+                start_value = universal_date_parser(effective_dates.get("start_date"))
+                end_value = universal_date_parser(effective_dates.get("end_date"))
+                start = start_value.date() if start_value else None
+                end = end_value.date() if end_value else None
+            eligible = {
+                digest for digest in hashes
+                if dates.get(digest) is None
+                or ((start is None or dates[digest] >= start) and (end is None or dates[digest] <= end))
+            }
+            if eligible:
+                context_hashes.setdefault(fingerprint, set()).update(eligible)
+        context_hashes.pop(current_fingerprint, None)
+        if context_hashes:
+            from app.models import AnalyzedContentReceipt
+
+            fingerprints = list(context_hashes)
+            all_hashes = set().union(*(context_hashes[value] for value in fingerprints))
+            completed = await AnalyzedContentReceipt.objects.covered_by_contexts(
+                source_id, fingerprints, list(all_hashes), tenant_id=tenant_id
+            )
+            for fingerprint in fingerprints:
+                pending.update(context_hashes[fingerprint] - completed.get(fingerprint, set()))
+        return pending
+
+    @staticmethod
+    async def delete_run(session: Any, run_id: int) -> int:
+        """Discard rows first staged by one job run (operator cancellation choice).
+
+        Only rows still waiting for analysis exist here: analysed rows are already
+        retired. Rows staged earlier by another run keep that run's id (ON CONFLICT
+        DO NOTHING) and are untouched. The caller owns the transaction.
+        """
+        if type(run_id) is not int or run_id <= 0:
+            raise ValueError("A persisted run id is required")
+        tenant_clause, tenant_params = _staged_mutation_scope()
+        result = await session.execute(
+            sa_text(f"DELETE FROM {settings.DB_SCHEMA}.collected_items WHERE run_id = :run_id" + tenant_clause),
+            {"run_id": run_id, **tenant_params},
         )
         return int(result.rowcount or 0)
 
@@ -338,20 +752,30 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         )
         return int(result.rowcount or 0)
 
-    async def reset_attempts(self, session: Any, source_id: int) -> int:
-        """Reset `analyze_attempts` to 0 for all staged rows of a source.
+    async def reset_attempts(
+        self, session: Any, source_id: int, *, start_date: Any = None, end_date: Any = None
+    ) -> int:
+        """Reset attempts for staged rows of a source, optionally within a window.
 
         Used when an operator triggers a manual retry (e.g. after fixing the LLM
         model or raising `give_up_after_attempts`). Returns the number of rows
         affected.
         """
         tenant_clause, tenant_params = _staged_mutation_scope()
+        params = {"source_id": source_id, **tenant_params}
+        window_clause = ""
+        if start_date is not None:
+            window_clause += " AND published_at >= :start_date"
+            params["start_date"] = start_date
+        if end_date is not None:
+            window_clause += " AND published_at <= :end_date"
+            params["end_date"] = end_date
         result = await session.execute(
             sa_text(
                 f"UPDATE {settings.DB_SCHEMA}.collected_items "
                 "SET analyze_attempts = 0 "
-                "WHERE source_id = :source_id AND analyze_attempts > 0" + tenant_clause
+                "WHERE source_id = :source_id AND analyze_attempts > 0" + tenant_clause + window_clause
             ),
-            {"source_id": source_id, **tenant_params},
+            params,
         )
         return int(result.rowcount or 0)

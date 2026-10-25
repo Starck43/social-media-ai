@@ -1,12 +1,13 @@
 import re
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Integer, String, UniqueConstraint, ForeignKey, CheckConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.types import ActionType
-from ..base import Base, TimestampMixin
+
 from ...core.config import settings
+from ..base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from .. import ModelType
@@ -15,13 +16,11 @@ if TYPE_CHECKING:
 class Permission(Base, TimestampMixin):
     __tablename__ = "permissions"
     __table_args__ = (
-        UniqueConstraint("codename", "model_type_id", name="uq_permission_model_type"),
-        CheckConstraint("codename ~ '^[a-z_]+\\.[a-z_]+\\.[a-z]+$'", name="check_codename_format"),
+        UniqueConstraint("model_type_id", "action_type", name="uq_permission_resource_action"),
         {"schema": settings.DB_SCHEMA},
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    codename: Mapped[str] = mapped_column(String(100), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     action_type: Mapped[ActionType] = ActionType.sa_column(
         type_name="action_type", nullable=False, store_as_name=True  # Хранить как имена (VIEW, CREATE, UPDATE, etc.)
@@ -45,48 +44,39 @@ class Permission(Base, TimestampMixin):
         objects: ClassVar = None
 
     @property
+    def codename(self) -> str:
+        return f"{self.model_type.resource_key}.{self.action_type.db_value}"
+
+    @property
     def app_label(self) -> str:
-        return self.codename.split(".")[0]
+        return self.model_type.resource_key.split(".")[0]
 
     @property
     def model_name(self) -> str:
-        return self.codename.split(".")[1]
+        return self.model_type.model_name
 
     @property
     def action(self) -> ActionType:
-        return self.action_from_token(self.codename.split(".")[2])
+        return self.action_type
 
     @classmethod
     def action_from_token(cls, token: str) -> ActionType:
-        """`ActionType` members are (db_value, display name, emoji) tuples, so the
-        stored lowercase token is looked up by `db_value`, not by enum value."""
-        for action in ActionType:
-            if action.db_value == token:
-                return action
-        raise ValueError(f"Invalid action type: {token}")
+        action = ActionType.get_by_value(token)
+        if action is None:
+            raise ValueError("Unknown permission action")
+        return action
 
     @classmethod
     def validate_codename(cls, codename: str):
-        # app label: lowercase; model name: the table's class name, so CamelCase is
-        # normal (`dashboard.AIAnalytics.view`); action: the lowercase db token.
-        pattern = r"^[a-z][a-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\.[a-z][a-z0-9_]*$"
-        if not re.match(pattern, codename):
-            raise ValueError(f"Invalid codename format: {codename}")
+        from app.core.access_catalog import resolve_permission_key
 
-        try:
-            cls.action_from_token(codename.split(".")[2])
-        except ValueError:
-            raise ValueError(f"Invalid action type in codename: {codename.split('.')[2]}")
+        if resolve_permission_key(codename) is None:
+            raise ValueError("Unknown permission")
 
     @classmethod
     def split_codename(cls, codename: str) -> tuple[str, str]:
-        """Split permission codename into (app_model, action) parts."""
+        from app.core.access_catalog import resolve_permission_key
+
         cls.validate_codename(codename)
-
-        parts = codename.split(".")
-        if len(parts) < 3:  # Should be at least 'app.model.action'
-            return codename, ""
-        return ".".join(parts[:2]), parts[2]
-
-
-# Attach the manager to the Permission model
+        resource, action = resolve_permission_key(codename)
+        return resource.key, action.db_value

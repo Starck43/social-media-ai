@@ -1,0 +1,34 @@
+<p class="mt-6 text-sm ui-muted">Название и адрес используются при настройке источников. Отключение платформы не удаляет её источники и данные.</p>
+<div class="mt-6 space-y-4">
+    {% for platform in platforms %}
+    <section class="ui-card" aria-labelledby="platform-title-{{ platform.id }}">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 id="platform-title-{{ platform.id }}" class="font-semibold break-words">{{ platform.name }}</h3>
+            <span class="text-sm ui-muted">{{ platform.platform_type.label }}</span>
+        </div>
+        <form method="post" action="/app/settings/platforms" class="mt-4 settings-form">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="hidden" name="platform_id" value="{{ platform.id }}">
+            <div><label class="mb-1 block text-sm" for="platform-name-{{ platform.id }}">Название</label><input class="{{ control() }}" id="platform-name-{{ platform.id }}" name="name" value="{{ platform.name }}" required maxlength="50"></div>
+            <div><label class="mb-1 block text-sm" for="platform-url-{{ platform.id }}">Базовый URL API</label><input class="{{ control() }}" id="platform-url-{{ platform.id }}" name="base_url" type="url" value="{{ platform.base_url }}" required maxlength="255"></div>
+            <div class="settings-platform-actions">
+                <label class="flex items-center gap-2 min-h-11"><input type="checkbox" name="enabled" {% if platform.is_active %}checked{% endif %}>Активна</label>
+                <button class="ui-control" type="submit">Сохранить</button>
+            </div>
+        </form>
+    </section>
+    {% else %}
+    <section class="ui-card"><h3 class="font-semibold">Платформ пока нет</h3><p class="mt-2 text-sm ui-muted">Добавьте платформу, чтобы выбирать её при создании источников.</p></section>
+    {% endfor %}
+</div>
+<details class="mt-6 ui-card">
+    <summary class="font-semibold cursor-pointer">Добавить платформу</summary>
+    <form method="post" action="/app/settings/platforms" class="mt-4 settings-form">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <div><label class="mb-1 block text-sm" for="platform-new-name">Название</label><input class="{{ control() }}" id="platform-new-name" name="name" required maxlength="50" placeholder="Например, ВКонтакте"></div>
+        <div><label class="mb-1 block text-sm" id="platform-new-type-label">Тип платформы</label>{{ popover_select('platform_type', 'platform-new-type', platform_type_options, current=platform_type_options[0][0], allow_empty=false, label='Тип платформы') }}</div>
+        <div><label class="mb-1 block text-sm" for="platform-new-url">Базовый URL API</label><input class="{{ control() }}" id="platform-new-url" name="base_url" type="url" required maxlength="255" placeholder="https://api.example.com"></div>
+        <div class="settings-platform-actions"><label class="flex items-center gap-2 min-h-11"><input type="checkbox" name="enabled" checked>Активна</label><button class="ui-control" type="submit">Добавить</button></div>
+    </form>
+</details>
+<p class="mt-4 text-sm ui-muted">Тип существующей платформы не меняется. Личные токены настраиваются в «Моих подключениях». Удаление здесь недоступно: оно может каскадно удалить источники и результаты анализа.</p>

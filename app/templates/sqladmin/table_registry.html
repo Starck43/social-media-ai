@@ -1,0 +1,68 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12" data-table-registry>
+    <div class="card">
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col">
+                    <form method="get" action="{{ registry_url }}" role="search" class="d-flex gap-2">
+                        <input type="search" name="q" value="{{ query }}" class="form-control"
+                               placeholder="Таблица, модель или ключ ресурса" aria-label="Поиск по таблицам"
+                               data-table-registry-search>
+                        <button type="submit" class="btn btn-primary">Найти</button>
+                    </form>
+                </div>
+                {% if query %}
+                <div class="col-auto">
+                    <a class="btn btn-link" href="{{ registry_url }}" data-table-registry-reset>Сбросить</a>
+                </div>
+                {% endif %}
+            </div>
+            <p class="text-secondary mt-3 mb-0" data-table-registry-note>
+                Только чтение: структура таблиц и имена столбцов. Запросов, выгрузок и изменения данных здесь нет.
+            </p>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table" data-table-registry-table>
+                <thead>
+                    <tr>
+                        <th scope="col">Таблица</th>
+                        <th scope="col">Модель</th>
+                        <th scope="col">Ключ ресурса</th>
+                        <th scope="col">Столбцов</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in page_rows %}
+                    <tr data-table-name="{{ item.table }}">
+                        <td><a href="{{ model_view.url(table=item.table) }}">{{ item.table }}</a></td>
+                        <td>{{ item.model or '—' }}</td>
+                        <td>{{ item.resource_key or '—' }}</td>
+                        <td>{{ item.column_count }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-secondary">Таблицы не найдены.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer d-flex align-items-center">
+            <p class="m-0 text-secondary" data-table-registry-count>
+                Всего {{ page.total }} · страница {{ page.page }} из {{ page.pages }}
+            </p>
+            <ul class="pagination m-0 ms-auto">
+                <li class="page-item {{ 'disabled' if page.page <= 1 }}">
+                    <a class="page-link" href="{{ model_view.url(q=query or none, page=page.page - 1, size=page.page_size) if page.page > 1 else '#' }}">Назад</a>
+                </li>
+                <li class="page-item {{ 'disabled' if page.page >= page.pages }}">
+                    <a class="page-link" href="{{ model_view.url(q=query or none, page=page.page + 1, size=page.page_size) if page.page < page.pages else '#' }}">Вперёд</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

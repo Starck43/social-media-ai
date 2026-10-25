@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Column, Float, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import JSON, Column, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped
 
 from ...core.config import settings
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ..managers.agent_message_manager import AgentMessageManager
 
 
-@app_label("social")
+@app_label("agent")
 class AgentMessage(Base, TenantScopedMixin, TimestampMixin):
     """One turn in an agent conversation: user input, assistant reply, tool result.
 

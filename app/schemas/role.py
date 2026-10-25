@@ -1,86 +1,77 @@
 from typing import Optional
 
 from fastapi_pagination import Page
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class PermissionOut(BaseModel):
-	id: int
-	name: str
-	codename: str
+    id: int
+    name: str
+    codename: str
 
-	model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
-class RoleOut(BaseModel):
-	id: int
-	name: str
-	codename: str
-	description: Optional[str] = None
-	permissions: list[PermissionOut]
+class RoleResponse(BaseModel):
+    """Platform role DTO. `name` remains a read-only label alias for one release."""
 
-	model_config = ConfigDict(from_attributes=True)
+    id: int
+    codename: str
+    label: str
+    description: Optional[str] = None
+    permissions: list[PermissionOut] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def name(self) -> str:
+        return self.label
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoleOut(RoleResponse):
+    pass
 
 
 class UpdateRolePermissions(BaseModel):
-	permission_ids: list[int]
+    permission_ids: list[int]
 
 
 class PermissionBase(BaseModel):
-	codename: str
-	name: Optional[str] = None
+    codename: str
+    name: Optional[str] = None
 
 
 class PermissionCreate(PermissionBase):
-	pass
+    pass
 
 
 class PermissionResponse(PermissionBase):
-	id: int
+    id: int
 
-	model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RoleBase(BaseModel):
-	name: str
-	codename: str
-	description: Optional[str] = None
+    codename: str
+    label: str
+    description: Optional[str] = None
 
 
 class RoleCreate(RoleBase):
-	pass
-
-
-class RoleResponse(RoleBase):
-	id: int
-	permissions: list[PermissionResponse] = []
-
-	model_config = {
-		"from_attributes": True,
-		"json_schema_extra": {
-			"example": {
-				"id": 1,
-				"name": "viewer",
-				"codename": "VIEWER",
-				"permissions": [
-					{"id": 1, "name": "View users", "codename": "account.users.view"},
-					{"id": 2, "name": "Edit users", "codename": "account.users.edit"}
-				]
-			}
-		}
-	}
+    """Kept for import compatibility; arbitrary role creation is disabled."""
 
 
 class PermissionsRequest(BaseModel):
-	permissions: list[str] = Field(
-		...,
-		description="List of permission codenames to assign to the role"
-	)
-	strategy: str = Field(
-		default='replace',
-		description="Update strategy: 'replace' (default), 'merge', 'synchronize', or 'update_actions'"
-	)
+    permissions: list[str] = Field(
+        ...,
+        description="Exact registered permission codenames to assign to the operator role",
+    )
+    strategy: str = Field(
+        default="replace",
+        description="Update strategy: replace, merge, or synchronize",
+    )
 
 
 class PaginatedRoleResponse(Page[RoleResponse], Page):
-	pass
+    pass

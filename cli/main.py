@@ -7,7 +7,7 @@ import typer
 # Configure logging (console + file -> logs/app.log) for CLI runs.
 import app.core.logger  # noqa: F401  (configures the "app" logger handlers)
 
-from .commands import chains, collect, credentials, direct, llm, roles, scenarios
+from .commands import chains, collect, collection, credentials, direct, llm, roles, scenarios
 
 app = typer.Typer(
     name="SMM Admin CLI",
@@ -20,6 +20,7 @@ app.add_typer(credentials.app, name="credentials", help="Manage platform credent
 app.add_typer(llm.app, name="llm", help="Manage LLM providers and models")
 app.add_typer(chains.app, name="chains", help="Manage topic chains")
 app.add_typer(scenarios.app, name="scenarios", help="Manage agent scenarios")
+app.add_typer(collection.app, name="collection", help="Manage task-scoped collection lanes")
 app.command(name="collect")(collect.collect_cmd)
 
 # Direct job-type commands at top level: `cli.main analyze|prune|learn|reflect`.
@@ -46,6 +47,11 @@ def _run_platform(coro):
 
     with tenant_scope(bypass=True), operator_permission_scope():
         return asyncio.run(coro)
+
+
+def _split_phrases(raw: str | None) -> list[str]:
+    """Comma separated phrases: spaces inside a phrase are kept."""
+    return [" ".join(v.split()) for v in (raw or "").split(",") if v.strip()]
 
 
 def _split_names(raw: str | None) -> list[str]:
@@ -150,9 +156,27 @@ async def _add_task(
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
     from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.services.collection.intent import (
+        CollectionIntentError,
+        apply_collection,
+        collection_error_message,
+    )
     from app.tasks.cron import next_run_at
 
     from ._tenant import resolve_tenant_id, tenant_label
+
+    if not isinstance(parsed_payload, dict):
+        rprint("[red]Payload must be a JSON object[/red]")
+        raise typer.Exit(1)
+    try:
+        parsed_payload = apply_collection(
+            parsed_payload,
+            parsed_payload.get("collection"),
+            job_type=job_type,
+        )
+    except CollectionIntentError as error:
+        rprint(f"[red]{collection_error_message(str(error))}[/red]")
+        raise typer.Exit(1) from error
 
     tenant_id = await resolve_tenant_id(tenant)
     with tenant_scope(tenant_id) if tenant_id else nullcontext():
@@ -224,11 +248,10 @@ def task_add(
     source_ids: str = typer.Option(
         None, "--sources", "-s", help="Comma/space separated source IDs to link (empty = all active)"
     ),
-    monitored_users: str = typer.Option(
-        None, "--monitored", help="Comma/space separated usernames to collect for (collect only)"
-    ),
-    excluded_users: str = typer.Option(
-        None, "--excluded", help="Comma/space separated usernames to skip (collect/analyze)"
+    tracked_users: str = typer.Option(
+        None,
+        "--tracked",
+        help="Tracked authors, platform:id (e.g. vk:123456): only their items are analysed",
     ),
     scenario_id: int = typer.Option(None, "--scenario", help="AgentScenario ID to apply when the task runs"),
     start_date: str = typer.Option(None, "--start-date", help="Collect content from this date (DD-MM-YYYY) for collect/analyze"),
@@ -267,11 +290,25 @@ def task_add(
         rprint(f"[red]job_type must be one of: {', '.join(HANDLERS.keys())}[/red]")
         raise typer.Exit(1)
 
-    parsed_payload = _json.loads(payload)
-    if monitored_users:
-        parsed_payload["monitored_users"] = _split_names(monitored_users)
-    if excluded_users:
-        parsed_payload["excluded_users"] = _split_names(excluded_users)
+    try:
+        parsed_payload = _json.loads(payload)
+    except _json.JSONDecodeError as error:
+        rprint(f"[red]Invalid payload JSON: {error}[/red]")
+        raise typer.Exit(1) from error
+    if not isinstance(parsed_payload, dict):
+        rprint("[red]Payload must be a JSON object[/red]")
+        raise typer.Exit(1)
+    from app.services.monitoring.selection import SelectionError
+
+    try:
+        parsed_payload = AgentTaskManager.build_selection_payload(
+            tracked_users=_split_names(tracked_users) if tracked_users is not None else None,
+            keywords=_split_phrases(keywords) if keywords is not None else None,
+            existing=parsed_payload,
+        )
+    except SelectionError as error:
+        rprint(f"[red]Invalid selection: {error}[/red]")
+        raise typer.Exit(1) from error
     for raw, key in (
         (brands, "brands"),
         (competitors, "competitors"),
@@ -367,11 +404,8 @@ def task_update(
     source_ids: str = typer.Option(
         None, "--sources", "-s", help="New comma/space separated source IDs (empty = all active)"
     ),
-    monitored_users: str = typer.Option(
-        None, "--monitored", help="New comma/space separated monitored usernames (collect)"
-    ),
-    excluded_users: str = typer.Option(
-        None, "--excluded", help="New comma/space separated excluded usernames (collect/analyze)"
+    tracked_users: str = typer.Option(
+        None, "--tracked", help="New tracked authors, platform:id"
     ),
     scenario_id: int = typer.Option(None, "--scenario", help="New AgentScenario ID"),
     period: str = typer.Option(None, "--period", help="Period for digest: day | week"),
@@ -382,6 +416,12 @@ def task_update(
     ),
     force_reanalyze: bool = typer.Option(
         None, "--force-reanalyze", help="New force_reanalyze value (analyze)"
+    ),
+    payload: str = typer.Option(
+        None,
+        "--payload",
+        "-p",
+        help='JSON object merged into the task payload, e.g. \'{"collection": {"content_types": ["posts", "comments"]}}\'',
     ),
     brands: str = typer.Option(None, "--brands", help="New comma/space separated brands"),
     competitors: str = typer.Option(
@@ -396,14 +436,32 @@ def task_update(
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (for global lookup)"),
 ):
     """Update an existing task. Only provided fields are changed."""
+    import json as _json
+
     from rich import print as rprint
 
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.services.collection.intent import (
+        CollectionIntentError,
+        apply_collection,
+        collection_error_message,
+    )
     from app.tasks.cron import next_run_at, resolve_tz
 
-    from ._tenant import resolve_tenant_id
+    from ._tenant import resolve_tenant_id, tenant_label
+
+    parsed_patch: dict | None = None
+    if payload is not None:
+        try:
+            parsed_patch = _json.loads(payload)
+        except _json.JSONDecodeError as error:
+            rprint(f"[red]Invalid payload JSON: {error}[/red]")
+            raise typer.Exit(1) from error
+        if not isinstance(parsed_patch, dict):
+            rprint("[red]Payload must be a JSON object[/red]")
+            raise typer.Exit(1)
 
     async def _run():
         tenant_id = await resolve_tenant_id(tenant)
@@ -424,10 +482,16 @@ def task_update(
 
             for task in matches:
                 updated_payload = dict(task.payload) if task.payload else {}
-                if monitored_users is not None:
-                    updated_payload["monitored_users"] = _split_names(monitored_users)
-                if excluded_users is not None:
-                    updated_payload["excluded_users"] = _split_names(excluded_users)
+                if tracked_users is not None or keywords is not None:
+                    try:
+                        updated_payload = AgentTaskManager.build_selection_payload(
+                            tracked_users=_split_names(tracked_users) if tracked_users is not None else None,
+                            keywords=_split_phrases(keywords) if keywords is not None else None,
+                            existing=updated_payload,
+                        )
+                    except Exception as error:  # selection input, not a runtime fault
+                        rprint(f"[red]Invalid selection: {error}[/red]")
+                        raise typer.Exit(1)
                 if period is not None:
                     updated_payload["period"] = period
                 for raw, key in (
@@ -458,12 +522,25 @@ def task_update(
                     if force_reanalyze is not None:
                         updated_payload["force_reanalyze"] = force_reanalyze
 
+                if parsed_patch is not None:
+                    updated_payload.update(parsed_patch)
+                try:
+                    updated_payload = apply_collection(
+                        updated_payload,
+                        updated_payload.get("collection"),
+                        job_type=new_job_type,
+                    )
+                except CollectionIntentError as error:
+                    rprint(f"[red]{collection_error_message(str(error))}[/red]")
+                    raise typer.Exit(1) from error
+
                 new_cron = cron if cron is not None else task.cron_expr
                 updates: dict = {
                     "job_type": new_job_type,
                     "payload": updated_payload,
-                    "agent_scenario_id": scenario_id,
                 }
+                if scenario_id is not None:
+                    updates["agent_scenario_id"] = scenario_id
                 if cron is not None:
                     tenant_row = await Tenant.objects.get(id=task.tenant_id)
                     updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant_row))
@@ -491,8 +568,7 @@ async def _run_task(
     task: str | None,
     job_type: str,
     sources: str | None,
-    monitored: str | None,
-    excluded: str | None,
+    tracked: str | None,
     scenario: int | None,
     period: str | None,
     tenant: str | None,
@@ -526,6 +602,7 @@ async def _run_task(
     from app.jobs.dispatcher import run_job_now
     from app.jobs.enqueue import enqueue_task_run
     from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
 
     from ._tenant import resolve_tenant_id, tenant_label
 
@@ -541,10 +618,16 @@ async def _run_task(
 
         tenant_id = await resolve_tenant_id(tenant)
         payload: dict = {}
-        if monitored:
-            payload["monitored_users"] = _split_names(monitored)
-        if excluded:
-            payload["excluded_users"] = _split_names(excluded)
+        if tracked:
+            from app.services.monitoring.selection import SelectionError
+
+            try:
+                payload = AgentTaskManager.build_selection_payload(
+                    tracked_users=_split_names(tracked), keywords=_split_phrases(keywords), existing=payload
+                )
+            except SelectionError as error:
+                rprint(f"[red]Invalid selection: {error}[/red]")
+                raise typer.Exit(1) from error
         if period:
             payload["period"] = period
         if start_date or end_date:
@@ -594,7 +677,7 @@ async def _run_task(
             refresh_extra["force_reanalyze"] = True
 
     where = await tenant_label(target.tenant_id)
-    job = await enqueue_task_run(target, extra_payload=refresh_extra)
+    job = await enqueue_task_run(target, extra_payload=refresh_extra, supersede_unfinished=True)
     rprint(f"[green]Job {job.id} enqueued for task '{target.name}'[/green] in {where}")
     outcome = await run_job_now(job.id, allow_retry=False) or {}
     if outcome.get("status") == "done":  # "done" is the terminal success status
@@ -611,8 +694,10 @@ def _make_task_run_command(job_type: str) -> Callable:
     def run(
         task: str = typer.Option(None, "--task", "-t", help="Existing task by name or id to run"),
         sources: str = typer.Option(None, "--sources", "-s", help="Source IDs to link (one-off run)"),
-        monitored: str = typer.Option(None, "--monitored", help="Usernames to collect (one-off run)"),
-        excluded: str = typer.Option(None, "--excluded", help="Usernames to skip (one-off run)"),
+        tracked: str = typer.Option(
+            None, "--tracked", help="Tracked authors, platform:id (one-off run)"
+        ),
+        keywords: str = typer.Option(None, "--keywords", help="Text scope phrases (one-off run)"),
         scenario: int = typer.Option(None, "--scenario", help="AgentScenario ID (one-off run)"),
         period: str = typer.Option(None, "--period", help="Period for digest/collect: day | week | last month etc."),
         tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id for a one-off run"),
@@ -627,7 +712,6 @@ def _make_task_run_command(job_type: str) -> Callable:
         competitors: str = typer.Option(None, "--competitors", help="Competitors to analyze (one-off run)"),
         hashtags: str = typer.Option(None, "--hashtags", help="Hashtags to track (one-off run)"),
         influencers: str = typer.Option(None, "--influencers", help="Authors/influencers to analyze (one-off run)"),
-        keywords: str = typer.Option(None, "--keywords", help="Keywords to search (one-off run)"),
         topics: str = typer.Option(None, "--topics", help="Topics to analyze (one-off run)"),
     ):
         _run_platform(
@@ -635,8 +719,8 @@ def _make_task_run_command(job_type: str) -> Callable:
                 task=task,
                 job_type=job_type,
                 sources=sources,
-                monitored=monitored,
-                excluded=excluded,
+                tracked=tracked,
+                keywords=keywords,
                 scenario=scenario,
                 period=period,
                 tenant=tenant,
@@ -647,7 +731,6 @@ def _make_task_run_command(job_type: str) -> Callable:
                 competitors=competitors,
                 hashtags=hashtags,
                 influencers=influencers,
-                keywords=keywords,
                 topics=topics,
             )
         )

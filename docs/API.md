@@ -1,8 +1,9 @@
 # API Reference
 
 FastAPI application exposes REST endpoints under `/api/v1` and the sqladmin
-panel under `/admin`. All API endpoints (except health check) require
-authentication via Bearer JWT token.
+panel under `/admin`. Workspace data endpoints require an access Bearer JWT
+and an active web membership. Token acquisition, registration and the signed-state
+OAuth callback have the explicit exceptions listed below.
 
 ## Base URL
 
@@ -12,7 +13,11 @@ http://localhost:8000/api/v1
 
 ## Authentication
 
-All endpoints (except `GET /api/v1/health`) require a JWT access token.
+`ApiScopeMiddleware.PUBLIC_API_PATHS` exempts `/api/v1/auth/login`,
+`/api/v1/auth/register`, `/api/v1/auth/refresh-token`, `/api/v1/health` and
+`/api/v1/social/callback` from access-token/workspace middleware. Refresh still
+requires a valid **refresh** Bearer token; OAuth callback validates signed state.
+The root `/livez`, `/readyz` and `/health` probes are outside `/api/*`.
 
 ### Login
 
@@ -64,13 +69,16 @@ Content-Type: application/json
 {
   "username": "johndoe",
   "email": "johndoe@example.com",
-  "password": "strongpassword123",
-  "is_active": true,
-  "is_superuser": false
+  "password": "strongpassword123"
 }
 ```
 
-**Response** `201 Created`: same as login response.
+**Response** `200 OK`: same token-pair shape as login. Only username, email
+and password are accepted. Extra privilege/state keys (`role_id`, `is_superuser`,
+`is_active`) are ignored; the server assigns active, non-superuser and the Viewer
+platform role ([PR #165](https://github.com/Starck43/social-media-ai/pull/165)).
+Registration does not create a workspace/web membership, unlike `/app/register`;
+a new API-only account cannot use workspace data endpoints until a membership exists.
 
 **Errors:**
 - `400` — Username or email already registered.
@@ -85,14 +93,15 @@ do*. They are separate layers, and every surface uses the same two:
 | Surface | Authentication | Rights |
 |---|---|---|
 | `/api/*` | bearer JWT (`ApiScopeMiddleware`) | per-endpoint: `require_model_perm` (model rights) and `require_platform_role` (role ladder); most write endpoints and many read endpoints declare model rights |
-| `/app/*` | web session (`TenantUIMiddleware`) | workspace membership is the boundary; no per-model right in the client UI |
+| `/app/*` | web session (`TenantUIMiddleware`) | active membership plus effective model/action rights (`WebPerms`, `guard_web`); hidden controls do not replace server checks |
 | `/admin/*` | admin backend | per-model rights, Django-style (`docs/ADMIN.md`) |
 | CLI | none (developer tool) | runs with the tenant guard off; `--tenant` picks a workspace |
 
 ### Workspace selection
 
-Every `/api/*` request runs inside one workspace, resolved from the caller's
-`tenant_users` membership and never from the request body:
+Workspace-data `/api/*` requests run inside one workspace, resolved from the
+caller's `tenant_users` membership and never from the request body. Personal
+account and the 0109 personal LLM catalog routes below are explicit exceptions:
 
 - unauthenticated → `401`;
 - `X-Tenant-Id` / `X-Tenant-Slug` *select* among the caller's own workspaces, so
@@ -102,20 +111,29 @@ Every `/api/*` request runs inside one workspace, resolved from the caller's
 
 ### Rights
 
-The rights of a caller are the rights of their **platform role**
-(`users.role_id`), read from `role_permission` → `permissions`:
+For ordinary workspace-scoped models, a non-owner member uses the **active
+membership role**, not the account platform role. Global models/admin and the
+platform-role ladder use `users.role_id`; owner and operator overrides remain
+explicit and bounded. Both role matrices read `role_permission` → `permissions`:
 
 ```python
 require_model_perm("source", ActionType.CREATE)
 ```
 
 means "this role may create sources", checked against
-`permissions.model_type_id` + `action_type` — never against the `codename`
-column, because several seeded codenames are malformed. A superuser
-(`users.is_superuser` or the `SUPERUSER` role) passes everything.
+`permissions.model_type_id` + `action_type`; a permission's three-part codename
+is derived from its stable resource key. Workspace calls use explicit membership
+presets without platform fallback. Operator APIs (`/users` except `/users/me`,
+`/users/roles`) require active platform operator/admin entry plus their
+route-specific action checks. Personal `/users/me`, `/auth/change-password`,
+`/llm/llm-providers` and `/llm/llm-models` (including numeric-ID subpaths) require
+active authentication without workspace membership. In the 0109 candidate,
+LLM self-service is owner-scoped, not gated by operator/admin entry. The namespace
+is `/api/v1/llm/llm-*`, not `/api/v1/llm-*`; unrelated prefixes are not exempt.
 
-`User.model_permissions()` is the canonical predicate for all three surfaces, so
-the API, the console and the role editor cannot drift apart. See
+`member_decision()` selects the workspace-role answer when applicable; otherwise
+`User.has_perm_for()` supplies platform model/action rights. SQLAdmin is a global
+platform console, not the active dashboard workspace. See
 `docs/ADMIN.md` for the console's mapping of these rights onto buttons, and
 `docs/TENANCY.md` for how the workspace itself is resolved.
 
@@ -128,12 +146,12 @@ the API, the console and the role editor cannot drift apart. See
 | `GET /users/me` | — | authenticated only |
 | `GET/POST/PUT/DELETE /ai/scenarios` | `agentscenario` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
 | `GET/POST/DELETE /notifications`, `POST /notifications/{id}/mark-read`, `POST /notifications/mark-all-read`, `POST /notifications/cleanup` | `notification` | `VIEW` / `CREATE` / `DELETE` / `UPDATE` / `UPDATE` / `DELETE` |
-| `POST /monitoring/collect/{source,platform,monitored}`, `GET /monitoring/analytics/source/{id}` | `source` | `UPDATE` / `VIEW` |
+| `POST /monitoring/collect/{source,platform}`, `GET /monitoring/analytics/source/{id}` | `source` | `UPDATE` / `VIEW` |
 | `GET/POST/PATCH/DELETE /sources` | `source` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
 | `GET/POST/PATCH/DELETE /tasks`, `PATCH /tasks/{id}/pause`, `POST /tasks/{id,run,run}` | `agenttask` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` / `UPDATE` / `UPDATE` / `UPDATE` |
 | `GET/PATCH/POST/POST/GET /credentials`, `POST /credentials/login`, `POST /credentials/oauth` | `credential` | `VIEW` / `UPDATE` / `CONFIGURE` / `CONFIGURE` / `VIEW` |
-| `GET list/detail, POST, PATCH, DELETE /llm/llm-providers` | `llmprovider` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
-| `GET list/detail, POST, PATCH, DELETE /llm/llm-models` | `llmmodel` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
+| `GET list/detail, POST, PATCH, DELETE /llm/llm-providers` | `llmprovider` | Active-user personal self-service for these actions, owner-filtered (0109 candidate) |
+| `GET list/detail, POST, PATCH, DELETE /llm/llm-models` | `llmmodel` | Active-user personal self-service for these actions, owner-filtered (0109 candidate) |
 | Dashboard endpoints | `source` / `aianalytics` / `notification` | per-endpoint |
 
 ---
@@ -152,11 +170,48 @@ GET /api/v1/health
 }
 ```
 
-No authentication required.
+No authentication required. This legacy probe bounds its ORM read to two seconds
+and returns HTTP 500 with `{"detail": "Database connection error"}` for DB
+errors and timeouts, never the internal exception or DSN. Cancellation propagates;
+the timeout assumes a cooperative async driver, not a hard wall-clock deadline
+for blocking or cancellation-suppressing code.
+
+The hidden `GET /api/v1/test-db` probe keeps its Bearer authentication dependency
+and successful `{"database": "connected", "permissions": <count>}` contract,
+including zero counts. It uses the same bounded, generic HTTP 500 failure.
+`/api/v1/test-auth` and all existing router auth dependencies are unchanged.
+
+Do not use these legacy probes as the production readiness contract: root
+`/readyz` and `/health` retain generic 200/503 responses with a two-second DB
+probe; `/livez` never queries the DB. `app/core/health.py` is unchanged.
+See [isolated verification and acceptance handoff](validation/legacy-api-db-probes.md)
+for exact source revisions, commands and the remaining real-environment checks.
 
 ---
 
 ## Users
+
+**Public response contract:** list, `GET/PUT /users/me`, profile update and
+platform-role update handlers use the existing hash-free `UserInDB` response
+schema. Profiles expose only `id`, `username`, `email`, `is_active`, `created_at`
+and `updated_at`; password/hash fields and role/privilege attributes from the
+returned object are not serialized or included in response OpenAPI schemas.
+The response projection does not grant or revoke authority: `/me` keeps its
+identity dependency, operator routes keep their existing model-action or
+platform-admin guards, and manager authorization remains unchanged.
+
+The runtime schema fix is already present in `eb6cad6`; the bounded
+[HTTP/OpenAPI verification](validation/http-user-response-privacy.md) adds
+isolated router tests with explicit identity/storage doubles. Owner integration
+acceptance at PR source `987796aa` additionally exercised the full application
+OpenAPI and real ASGI/JWT/middleware/ORM list, me and profile routes: 2 passed,
+including hash-free responses and preserved authorization. See the
+[attributed integration evidence](https://github.com/Starck43/social-media-ai/pull/227#issuecomment-6300278265).
+The list request selected its synthetic record by the real skip/limit manager
+page. Existing legacy rows with invalid email strings still make an unbounded
+default page fail response validation; those rows are outside this response
+privacy acceptance. Historical privilege-update notes below are not P10-T03
+acceptance. Never copy real hashes into reports or logs.
 
 ### List Users
 
@@ -179,7 +234,6 @@ Authorization: Bearer <token>
     "username": "admin",
     "email": "admin@example.com",
     "is_active": true,
-    "is_superuser": true,
     "created_at": "2025-01-01T00:00:00",
     "updated_at": "2025-01-01T00:00:00"
   }
@@ -213,7 +267,13 @@ Content-Type: application/json
 
 **Permissions:** `user.update`
 
-Admins can update any user, users can update themselves.
+The endpoint and `UserManager.update_user` permit another target only when
+`current_user.is_superuser` is true; an ADMIN-role account without that flag is
+limited to itself despite `user.update`. `UserUpdate` still accepts `is_active`
+and `is_superuser`, and the self-update path forwards them without a separate
+privilege-field gate. This is an open escalation finding for an account holding
+`user.update`, not authority for an ordinary Viewer and not fixed by the
+registration-only protection in PR #165.
 
 ### Delete User
 
@@ -369,20 +429,13 @@ Content-Type: application/json
 
 **Permissions:** `source.update`
 
-### Collect Monitored Users
+### Collect Monitored Users — removed
 
-```
-POST /api/v1/monitoring/collect/monitored
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "source_id": 1,
-  "analyze": true
-}
-```
-
-**Permissions:** `source.update`
+`POST /api/v1/monitoring/collect/monitored` no longer exists. It collected
+"monitored users" of a source, replacing that source's own wall and requiring a
+separate `USER` source per person. A task's `tracked_users` selection over the
+task's sources replaces it ([task selection](design/task-selection.md)); author
+selection is not a collection endpoint.
 
 ### Get Source Analytics
 
@@ -620,6 +673,26 @@ Deletes read notifications older than `days` (1–365).
 ---
 
 ## Dashboard
+
+### Web home overview
+
+`GET /app/` is a compact read-only overview, not the machine dashboard below.
+The merged cleanup removes KPI/aggregation cards, quick commands, analytical
+sidebar and inline task execution. It shows up to five permitted analysis cards,
+three recent task summaries, one conditional setup step and a chat entry.
+Analysis/task loading requires the effective aianalytics.view / agenttask.view;
+source labels additionally require source.view. The operator workspace filter
+is retained. The merged shell lets home use the available width: result/task cards share a
+row from 1200px and stack below it; results fill the width when tasks are denied.
+Metadata wraps with bounded title/summary previews. Guest-workspace chat entry
+and direct web chat endpoints are denied, including for visiting operators.
+No home-request KPI aggregation, new LLM call or migration.
+
+Attention is implemented in the unified bell, not a second home block (see
+[NOTIFICATIONS](NOTIFICATIONS.md#current-web-bell-and-display-policy)). Mixed
+analysis/digest feed and truly upcoming schedules remain deferred in [the phase tasks](phases/p8-first-value-ui.md).
+The current task preview is recent-by-creation, not a nearest-run claim. This
+source change is not evidence of deployment or completed runtime validation.
 
 ### Get Dashboard Stats
 
@@ -885,6 +958,35 @@ Authorization: Bearer <token>
 
 ## LLM Providers
 
+### Personal catalog (PR #229 integrated; migration 0109 defined)
+
+Both `/api/v1/llm/llm-providers` and `/api/v1/llm/llm-models` use the
+active authenticated user's personal catalog, without workspace membership or
+an operator/admin gate. `require_model_perm` remains the endpoint guard and
+recognizes active-user self-service for these resources. IDs are owner-filtered;
+foreign IDs are not editable. `owner_user_id` is not client-assignable. These
+routes are integrated in dev. Owner-local ASGI evidence is recorded at its
+original source SHA; it is not a test rerun on final dev and does not imply a
+database migration or deployment.
+
+Provider `uid` is required at creation, mutable and unique per owner; `name` is
+a display label and numeric ID is immutable. HTTPS base URLs and bounded field
+values are validated. `api_key` is write-only: an absent/empty key preserves
+existing encrypted storage. Read responses never contain encrypted/plaintext keys;
+`auth_header` is redacted to null because historical values may contain credentials.
+
+The web UI uses CSRF-checked `POST /app/settings/models/save` for one atomic
+provider+N models bundle (provider-only save supported), and
+`POST /app/settings/models/default` for the same owner-locked default service.
+Sparse edits preserve unspecified fields/models. Defaults are per-user and
+capability, not global. Chat settings persist integer `agent_model_id`, with the
+same owner/provider/activity/tier eligibility for options, save, probe and runtime;
+image, video and audio resolution use the same gate, and the analyzer's failover
+queue never offers another owner's model;
+a chosen foreign/ineligible FK is rejected rather than resolved by name.
+
+See [evidence and outstanding real acceptance](validation/personal-llm-ownership.md).
+
 ### Create Provider
 
 ```
@@ -894,14 +996,17 @@ Content-Type: application/json
 
 {
   "name": "OpenAI",
+  "uid": "openai",
   "description": "OpenAI GPT models",
   "api_format": "openai",
   "base_url": "https://api.openai.com/v1",
   "auth_header": "Bearer",
-  "is_active": true,
-  "is_default": true
+  "is_active": true
 }
 ```
+
+Providers do not have an `is_default` field. Default selection belongs to
+`LLMModel.is_default`; migration 0091 removed the obsolete provider flag.
 
 **Permissions:** `llmprovider.create`
 
@@ -1109,6 +1214,23 @@ Authorization: Bearer <token>
 
 **Permissions:** `source.delete`
 
+**Refused** `409 Conflict` while an active task still reads the source:
+
+```json
+{
+  "detail": {
+    "error": "source_in_active_task",
+    "task_ids": [2027]
+  }
+}
+```
+
+A source an active task uses is removed inside that task, where its scope is
+visible; the web page refuses the same way. A paused task does not block the
+delete, and a task that never named sources (all-active) is untouched.
+
+Deleting a source also deletes its analytics rows.
+
 ## Tasks
 
 ### List Tasks
@@ -1125,7 +1247,7 @@ Authorization: Bearer <token>
     "id": 1,
     "name": "Daily Sentiment",
     "cron_expr": "0 9 * * *",
-    "job_type": "collect_and_analyze",
+    "job_type": "analyze",
     "payload": {},
     "is_active": true,
     "next_run_at": "2025-10-16T09:00:00",
@@ -1160,13 +1282,27 @@ Content-Type: application/json
 {
   "name": "Daily Sentiment",
   "cron_expr": "0 9 * * *",
-  "job_type": "collect_and_analyze",
-  "payload": {},
+  "job_type": "analyze",
+  "payload": {"period": "week"},
+  "collection": {
+    "content_types": ["posts", "comments"],
+    "engagement_types": ["likes"],
+    "limit": 250,
+    "queries": ["доставка"],
+    "city": {"name": "Киров", "mode": "prefer"},
+    "comments": {"max_per_post": 5, "total": 40},
+    "candidates": {"limit": 25, "confirm": "auto"}
+  },
   "agent_scenario_id": 1,
   "is_active": true,
   "source_ids": [1, 2]
 }
 ```
+
+`collection` is task-owned collection intent. It is validated by the same parser
+as the web editor and CLI, stored under `payload.collection` in canonical form,
+and kept only for `collect`/`analyze`; `digest`, `prune`, `learn` and `reflect`
+drop it. A task without the block keeps the posts-only default.
 
 **Response** `201 Created`.
 
@@ -1183,6 +1319,11 @@ Content-Type: application/json
   "is_active": false
 }
 ```
+
+The update is a partial patch. `collection` follows three explicit cases:
+omitted keeps the stored block, `null` clears it, an object replaces it and is
+validated (a malformed block returns `400`, the stored value is unchanged).
+A `job_type` change to a non-collecting type also drops the block.
 
 **Permissions:** `agenttask.update`
 
@@ -1268,9 +1409,14 @@ Returns the current user's personal credentials (secrets are encrypted, never re
 ### Disable Credential
 
 ```
-PATCH /api/v1/credentials/{credential_id}/disable
+PATCH /api/v1/credentials/credentials/{credential_id}/disable
 Authorization: Bearer <token>
 ```
+
+**Implementation discrepancy:** `entry.py` mounts the credentials router under
+`/credentials`, and this endpoint also declares `/credentials/{credential_id}/disable`.
+The composed route therefore repeats the segment. The single-segment path
+`/api/v1/credentials/{credential_id}/disable` is not registered by the current source.
 
 Deactivates a credential (row kept for audit).
 
@@ -1442,13 +1588,14 @@ GET /dashboard/topic-chains
 ```json
 {
   "id": 1,
+  "owner_user_id": 2,
+  "uid": "openai",
   "name": "OpenAI",
   "description": "string",
   "api_format": "openai",
   "base_url": "https://api.openai.com/v1",
-  "auth_header": "Bearer",
+  "auth_header": null,
   "is_active": true,
-  "is_default": true,
   "created_at": "ISO datetime",
   "updated_at": "ISO datetime"
 }
@@ -1457,3 +1604,64 @@ GET /dashboard/topic-chains
 Removed grouping values `sentiment` and `content_type` return 400, listing:
 themes, sources, entities, intent, topic_chains. Invalid sentiment/media filter
 values return 422. Filtering precedes grouping, counts and date breakdowns.
+
+### Split role catalogs and personal account operations
+
+The target schema requires migration 0096 (prepared, not automatically applied).
+Platform roles are `user`, `operator`, `admin`; workspace roles are independent
+`owner`, `admin`, `manager`, `analyst`, `viewer`. Role DTOs expose `codename`,
+`label`, text `description`, and a read-only `name` alias for one release.
+Only platform admins may update operator grants, using exact registered
+`domain.resource.action` keys. Role codenames are not freely editable.
+
+`PUT /api/v1/users/{id}/platform-role` accepts `{"role": "operator"}` (or another
+platform code) and reloads the platform admin before writing. Profile payloads
+accept only username/email and never change authority. HTTP profiles never expose
+password hashes. `POST /api/v1/auth/change-password` changes the caller's password
+using the current password and does not require a workspace.
+
+Workspace team AI access uses CSRF-protected
+`POST /app/settings/members/{id}/ai`, with `enabled=1` or `0`. It is limited to the
+current workspace and the same delegation restrictions as member-role changes.
+
+### Operator financial exposure
+
+`GET /app/billing/exposure` is a read-only platform-operator page (the same
+`guard_superuser` rule as the queue page) pinned to the active workspace. It
+renders three independent projections and shows an explicit unavailable state
+instead of a fabricated zero when a read fails:
+
+- today's payer-bound dispatches for the workspace from the personal billing
+  ledger: settled, reserved, provider-reported and receipt-tariff reconstructed
+  USD, open reservations and unknown-price attempts. `complete` is false while
+  any of the last two is non-zero;
+- provider/model pairs with `cost_certainty=undefined` dispatched attempts in the
+  last 7 days, counted once per dispatch so a reconciliation does not inflate
+  exposure;
+- active catalog models whose ordinary tariff is 0/0 — an explicit free tariff
+  and an unconfigured default are indistinguishable there, so this is a review
+  list, not a claim of unknown pricing.
+
+No payer identity, prompt, credential or provider payload is rendered. Legacy
+attempts without payer attribution stay outside the ledger projection. The page
+performs no writes and creates no billing account or reservation.
+
+### Global platform catalog in web Settings
+
+`GET /app/settings?tab=platforms` selects the actual Settings section (not an
+admin-console redirect). Only an active authenticated platform administrator
+receives this tab/data; workspace ownership and operator grants do not open it.
+The section is available without a workspace. Other workspace tabs retain their
+membership checks and do not inherit platform authority.
+
+`POST /app/settings/platforms` rechecks the platform-admin role and `_csrf` before
+any manager call. Fields: `platform_id` (0/omitted creates, positive edits), `name`
+(nonempty, max 50), `base_url` (HTTP(S), max 255, no URL username/password),
+`enabled=on` (omitted means inactive); create additionally requires
+`platform_type=vk|telegram`. Existing platform type and params are not changed.
+Uses the existing Platform manager. Handler denial is 403; missing edit target is
+404; successful save or validation/uniqueness feedback redirects to the tab with
+a flash message. No delete, sync, live API probe, personal credentials or global
+provider/model editing is exposed by this section.
+See [tenancy boundaries](TENANCY.md#web-settings-and-ownedgranted-workspace-context)
+and [deletion policy](MODEL_DELETION.md).

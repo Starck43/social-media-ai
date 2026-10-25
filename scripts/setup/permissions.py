@@ -1,88 +1,65 @@
-import sys
+"""Seed only permissions declared by the stable resource catalog."""
 
-from sqlalchemy import text
+import asyncio
 
-from app.core.config import settings
-from app.core.database import SessionLocal
-from app.services.crud import create_permissions_for_model
+from app.core.access_catalog import RESOURCES, resource_for
+from app.core.tenant_context import tenant_scope
+from app.models import ModelType, Permission
+from app.models.managers.base_manager import BaseManager
 from app.services.user.permissions import RolePermissionService
-from app.types import ActionType
 
 
-def seed_permissions():
-	"""Function to create missing permissions"""
-
-	schema = settings.DB_SCHEMA
-	db = SessionLocal()
-
-	try:
-		# Check if model_types table exists
-		table_exists = db.execute(
-			text('''
-				SELECT EXISTS (
-					SELECT FROM information_schema.tables 
-					WHERE table_schema = :schema 
-					AND table_name = 'model_types'
-				)
-			'''),
-			{"schema": schema}
-		).scalar()
-
-		if not table_exists:
-			print("❌ Error: 'model_types' table does not exist")
-			return
-
-		# Get registered tables list
-		registered_tables = db.execute(
-			text(f'SELECT id, app_name, model_name FROM "{schema}"."model_types"')
-		).fetchall()
-
-		if not registered_tables:
-			print("ℹ️ No tables found in the 'model_types' table")
-			print("Please make sure you have run the model type migrations first.")
-			return
-
-		print(f"📋 Found {len(registered_tables)} registered tables")
-
-		# Print available action types for debugging
-		print(f"🔄 Available action types: {[action.name for action in ActionType]}")
-
-		for t in registered_tables:
-			print(f"\n🔍 Processing model: {t.app_name}.{t.model_name} (ID: {t.id})")
-
-			try:
-				# Create permissions for each registered table
-				create_permissions_for_model(db.connection(), t.id, t.app_name, t.model_name)
-				db.commit()  # Commit after each model to avoid partial updates
-			except Exception as e:
-				db.rollback()
-				print(f"❌ Error creating permissions for {t.app_name}.{t.model_name}: {str(e)}")
-				# Continue with next model even if one fails
-				continue
-
-	except Exception as e:
-		db.rollback()
-		print(f"❌ Unexpected error: {str(e)}", file=sys.stderr)
-		raise
-	finally:
-		db.close()
+async def _seed_model_types() -> int:
+    manager = BaseManager(ModelType)
+    created = 0
+    for resource in RESOURCES:
+        existing = await manager.filter(resource_key=resource.key).first()
+        if existing is not None:
+            continue
+        await manager.create(
+            resource_key=resource.key,
+            model_name=resource.model_name,
+            table_name=resource.table_name,
+        )
+        created += 1
+    return created
 
 
-def assign_default_roles_permissions():
-	"""
-	Initial assignment of default permissions.
-	Must be run after roles and permissions are created.
-	"""
+async def _seed_permissions() -> tuple[int, int]:
+    model_types = await BaseManager(ModelType).all()
+    created = 0
+    skipped = 0
+    for model_type in model_types:
+        resource = resource_for(model_type.resource_key)
+        if resource is None:
+            skipped += 1
+            continue
+        before = len(await Permission.objects.get_for_model_type(model_type.id))
+        permissions = await Permission.objects.bulk_create_for_model(
+            app_name=resource.key.split(".", maxsplit=1)[0],
+            model_name=resource.key,
+            model_type_id=model_type.id,
+            action_types=list(resource.actions),
+        )
+        created += max(0, len(permissions) - before)
+    return created, skipped
 
-	print("\nDefault permissions assigning ...")
-	import asyncio
 
-	from app.core.tenant_context import tenant_scope
+def seed_permissions() -> None:
+    with tenant_scope(bypass=True):
+        model_types_created = asyncio.run(_seed_model_types())
+        created, skipped = asyncio.run(_seed_permissions())
+        asyncio.run(RolePermissionService.assign_default_permissions())
+    print(
+        f"Model types: {model_types_created} created; "
+        f"permissions: {created} created; {skipped} rows outside the catalog"
+    )
 
-	with tenant_scope(bypass=True):
-		asyncio.run(RolePermissionService.assign_default_permissions())
+
+def assign_default_roles_permissions() -> None:
+    with tenant_scope(bypass=True):
+        asyncio.run(RolePermissionService.assign_default_permissions())
 
 
 if __name__ == "__main__":
-	seed_permissions()
-	assign_default_roles_permissions()
+    seed_permissions()

@@ -8,12 +8,18 @@ we read** (one of three collection layers).
 
 | Layer | Mechanism | Status | Reaches |
 | --- | --- | --- | --- |
-| **L1 official API** | VK `wall.get`/`wall.getComments` with a service token; Telegram Bot API where the bot is a member/admin | VK done, Telegram push-only (below) | public communities; chats and channels the bot joined |
+| **L1 official API** | VK `wall.get`/`wall.getComments` with a service token; `newsfeed.search` for a query source; Telegram Bot API where the bot is a member/admin | VK done, Telegram push-only (below) | public communities; chats and channels the bot joined; VK-wide posts when search is enabled on the app |
 | **L2 user session** | VK user token (sees what the owner's account sees); Telegram MTProto user session (Telethon) | done | closed communities, walls, historical depth |
 | **L3 browser** | headless browser scraping | planned, last resort | everything without an API |
 
 The layer is picked per source (`Source.params["mode"]`), because most sources
 only need L1 while a few need L2.
+
+**A source is a wall or a channel, not a person to follow.** Whose items are
+eligible for analysis is decided by the task's `tracked_users` filter applied
+over what a source returns — see [task selection](design/task-selection.md).
+Collection never switches a task's sources for the personal walls of listed
+people.
 
 ## Credential vault
 
@@ -123,6 +129,27 @@ for Telegram, `/me` for MAX) and reports `user-vault|env -> ok|error`. It also p
 an L2 line (`telegram L2 (MTProto): ok|error|not configured`), which pings the
 authorized user session.
 
+### Credential diagnostic error privacy
+
+The API `credentials/test` error statuses and the shared MTProto `check_session`
+error verdicts use a bounded vocabulary: `authorization_error`, `rate_limited`,
+`provider_unavailable`, `provider_error`, `timeout`, `connection_error`,
+`integration_unavailable`, `invalid_response` or `integration_error`, prefixed
+with `error: `. The existing explicit MTProto expired/revoked verdict is retained.
+Provider error descriptions, echoed request parameters, exception text and
+token-bearing request URLs are never included in these error verdicts.
+Only allowlisted numeric provider codes or exception types select a category.
+
+Success identity labels, `missing`, `no_token`, `skipped` and `not_configured`
+remain unchanged. MTProto disconnect cleanup remains in `finally`, and task
+cancellation propagates rather than becoming an error or successful result.
+These changes do not alter authorization, token/session storage, resolution or
+revocation. They do not certify all credential logging or other API/CLI errors;
+the independent CLI L1 diagnostic path and login/OAuth errors remain separate
+privacy review surfaces. The isolated regression script is
+`tests/test_credential_diagnostic_privacy.py`; use the PR handoff for its exact
+revision and execution evidence. No live credential test is part of verification.
+
 `login telegram` walks the Telegram authorization flow (phone, code, optional
 2FA) and stores `api_id`/`api_hash`/`session` in the owner user's personal vault
 — the session string is a full-access credential and is **never** printed.
@@ -135,6 +162,56 @@ shared `BaseClient` paginates. Incremental collection uses `Source.last_checked`
 as `start_time`; `params["force_refresh"]` + `params["cli_dates"]` override it.
 Without any credential the client logs one error and returns no items — no
 request is spent on a call that would answer error 5.
+
+### Search sources
+
+`SourceType.SEARCH` is a phrase, not a wall. The source's `params["query"]`
+holds the text (with `external_id` as the stable slug) and the collector calls
+`newsfeed.search` with `extended=1`, `start_time`/`end_time` and the same
+1000-result ceiling VK applies. `params["owner_ids"]` is an optional list of
+wall ids (`-123` for a community, `456` for a person): results outside it are
+dropped during normalisation, because `newsfeed.search` itself has no owner
+filter. The `profiles`/`groups` arrays from the extended response are used to
+fill each item's author and name.
+
+VK only serves the first 1000 search results by `offset`; the collection limit
+below is the same number, so the two ceilings agree.
+
+### Collection plan (P5-T14; stages A–E implemented)
+
+The current contract stores a search phrase as an ordinary `SEARCH` source.
+The accepted target moves collection scope into the task and keeps the source
+row only as a technical, task-scoped lane. A task declares content types
+(posts/comments/...), mention queries, discovery by city, engagement types and
+an explicit limit; `CollectionPlanner` expands that intent into ordered lanes
+and calls several platform methods. Selected rows land in `collected_items`;
+discovered people/communities land in `collection_candidates` and require
+confirmation; comments are a dependent lane on posts; likes/reposts yield
+candidates, not text rows. Every lane reports `limit_reached` instead of
+silently truncating. Stages A–D delivered the parser/schema, adapters, staging,
+selection and comment/candidate/profile lanes; stage E delivered the task
+editor, scenario-media boundary, admin surfaces and one shared writer for web,
+CLI, API and chat. The runtime resolves each source through the parsed task
+intent. The source-level primitives below still apply inside that context. The
+full contract is in [collection plan](design/collection-plan.md).
+
+### Walls and dates
+
+`wall.get` does **not** honour `start_time`/`end_time` — VK answers with the
+newest page regardless. The lower/upper bound is therefore applied in the
+client after each page: items outside `cli_dates` are dropped, and a page that
+is entirely older than the window stops pagination. `groups.getById` (not
+`utils.resolveScreenName`, which answers error 1051 for this app profile type)
+resolves a community screen name.
+
+### Search API availability
+
+`newsfeed.search`, `groups.search`, `users.search` and `database.getCities`
+answer `1051 "Method is not available for this profile type"` on deployments
+whose VK app type is not allowed to call them. `wall.get`, `users.get` and
+`groups.getById` keep working with the same token. This is an application
+configuration limit, not something the client can bypass; the agent
+`sources_search` tool reports it as an actionable error.
 
 Collection layer per `Source.params["mode"]`:
 
@@ -190,7 +267,9 @@ MTProto with an authorized user session instead of waiting for push:
   collection the owner is resolved per source (see [Credential vault](#credential-vault)).
 - Collection is incremental by message id: `iter_messages` starts at
   `Source.last_item_id` (the same watermark the push path advances), so a
-  repeat run costs nothing until new posts arrive. Set `force_refresh` +
+  repeat run costs nothing until new posts arrive. A direct CLI `collect
+  --force-refresh` can re-fetch a date window, but it does not bypass analysis
+  receipts. Set `cli_dates` +
   `cli_dates.start_date` for a one-off backfill into the past.
 - `external_id` of a pulled item is built from the source's own Bot API chat id,
   so a post that first arrived by push and is later pulled by L2 hashes to the
@@ -268,47 +347,102 @@ reporting a bug, not a fact.
 | Key | Meaning |
 | --- | --- |
 | `mode` | `api` (L1, default) \| `user` (L2, MTProto) \| `auto` (L1 with automatic L2 fallback) \| `browser` (L3, planned) |
+| `query` | SEARCH sources: the phrase passed to `newsfeed.search` |
+| `owner_ids` | SEARCH sources: keep only posts from these walls (community ids negative) |
 | `incremental_mode` | `true` → only fetch what is newer than `last_checked` |
-| `collection.count` / `limit` | page size / max items per run |
+| `collection.count` / `limit` | page size / max items per run (default `SOCIAL_COLLECT_LIMIT`, 1000; never above the hard ceiling) |
 | `collection.filter` | VK wall filter (`all`, `owner`, `others`, `suggests`) |
-| `force_refresh`, `cli_dates` | one-off/CLI date overrides used by the VK client |
+| `force_refresh`, `cli_dates` | direct CLI collection date/refetch overrides; web jobs clear legacy force flags |
 
-> **`force_refresh` has two flavours.** `collect --force-refresh` re-fetches the
-> full window from the API but analysis stays deduped (tokens saved). A
-> `task collect --force-refresh` additionally re-analyzes the whole window
-> (bypasses dedup) and overwrites `ai_analytics` rows by `(source, date)` — see
-> `docs/CLI.md`.
+`Source.params["monitored_users"]` is **removed**, not deprecated. It was stored
+on a source but only read as a fallback for the task list, and a listed user
+could be collected only when a separate `USER` source already existed — which is
+what produced two sources for one person
+(`docs/audits/2026-10-18-vk-raw-content.md`). Whose items are analysed is now
+the task's `tracked_users`; nothing on a source selects an author
+([task selection](design/task-selection.md)). The removal migration strips the
+key from stored `params`.
+
+`Source.params["monitored_users"]` is **removed**, not deprecated. It was stored
+on a source but only ever read as a fallback for the task list, and a listed user
+could only be collected when a separate `USER` source already existed — which is
+what created two sources for one person (`docs/audits/2026-10-18-vk-raw-content.md`).
+Whose items are analysed is now the task's `tracked_users`; nothing on a source
+selects an author. The removal migration strips the key from stored `params`.
+
+> `force_refresh` is a direct collection diagnostic and may re-fetch the
+> requested API window. Web task/source force controls have been removed;
+> legacy stored force flags are ignored at web task admission. Re-fetching does
+> not bypass durable analysis receipts or trigger a paid re-analysis.
+
+## Platform rate limits
+
+`app/services/social/rate_limit.py`. A platform that refuses with "too many
+requests" has neither failed nor returned an empty source, so collection treats
+it as a third outcome:
+
+- **Short limit → bounded pause and retry.** VK code 6 (too many requests per
+  second) and HTTP / Bot API 429 with a small `retry_after` are retried on the
+  collection read path (`BaseClient._fetch_page`, both full and incremental mode)
+  up to `SOCIAL_RATE_LIMIT_RETRIES` times (default 2), pausing 1 s, 2 s, …
+  or the platform's hint, never more than `SOCIAL_RATE_LIMIT_MAX_WAIT` seconds
+  (default 10) per pause. Telethon waits out a flood limit itself; its
+  `flood_sleep_threshold` is set to the same cap for L2 pulls.
+- **Limit that does not clear → deferred.** VK code 9 (flood control) and 29
+  (method quota), a hint above the cap, an exhausted retry budget, or a
+  Telegram `FloodWaitError` longer than the cap raise `SourceRateLimited`. The
+  collect job records the source with `outcome: "rate_limited"` (and
+  `retry_after` when known), counts it in `rate_limited` /
+  `rate_limited_sources`, not in `error` or `empty`, and sends no failure alert.
+- **Nothing is acknowledged on deferral.** Items read before the limit are not
+  staged and the cursor/watermark does not advance, so the next scheduled run
+  reads the same window. The run summary reports «выполнено частично» and the
+  source history shows «отложено».
+
+`SourceRateLimited` is not a `RuntimeError`, so VK L1→L2 fallback and token
+refresh do not switch credentials into the same limit. External writes (for
+example `wall.createComment`) are never retried by this policy. The fixed 0.1 s
+pacing between pages is unchanged; there is no shared per-platform budget across
+sources or workers yet.
 
 ## Next steps (later milestones)
 
 1. **L3 browser fallback** — Playwright client for sources without an API.
-2. **Rate limits** — honour `Platform.rate_limit_remaining`/reset with backoff
-   per platform instead of per request.
+2. **Shared rate budget** — honour `Platform.rate_limit_remaining`/reset across
+   sources and workers instead of per request.
 
-## Deduplication
+## Deduplication and analysis contexts
 
-A repeated item is never analyzed (and paid for) twice —
-`app/services/ai/dedup.py`, wired into `AIAnalyzer.base_analyze_content`:
+`item_hash(item)` in `app/services/ai/dedup.py` hashes platform, external ID and
+text; engagement counters and dates do not affect the content hash. Analysis
+deduplication uses a durable success receipt keyed by workspace, source, content
+hash and a versioned fingerprint of the actual scenario and semantic analysis
+configuration. A repeated item in the same context is skipped even after its
+physical `AIAnalytics` result is deleted or pruned. Receipts have no 30-day
+cutoff and contain hashes and timestamps, not content. A different scenario,
+target set, prompt/configuration or other semantic context has a different
+fingerprint and can analyze the same source content independently.
 
-- `item_hash(item)` — sha256 over platform + external_id + text only;
-  engagement counters and dates are ignored, so refetched items still match.
-- `batch_hash(items)` — sha256 of the sorted item hashes (order-independent).
-- Batch level: `ai_analytics.content_hash` (migration `0049`); an identical
-  batch returns the existing analysis without touching an LLM.
-- Item level: every analyzed item's hash goes to
-  `summary_data["content_hashes"]` (merged, never replaced, when several
-  batches land on the same daily row); overlapping batches only pay for the
-  genuinely new items.
-- Fail-open: any lookup/matching error analyzes the full batch — a dedup bug
-  degrades to "pay twice", never to "analysis silently skipped".
-- Lookback: last 30 days, capped at 200 rows per source.
+Receipt lookup fails closed: if the receipt store cannot be checked, analysis
+stops before calling a provider. Receipts are written only for successfully
+covered hashes in the same transaction as their analytics result. Normal web
+job admission already serializes a source's ordinary runs; this does not add a
+global claim/lock for simultaneous direct CLI invocations.
+
+Migration `0104` makes daily analytics uniqueness and generated weekly/monthly
+rollups context-scoped by `analysis_fingerprint`, so distinct analyses for the
+same source and period coexist. Legacy analytics are marked as legacy context.
+Historical merged hashes cannot safely be assigned to a particular scenario,
+and deleted legacy rows cannot be reconstructed, so there is no unsafe
+historical receipt backfill. A previously analyzed legacy item without a
+surviving receipt can therefore be analyzed once under the new policy.
 
 ## Raw content (`collected_items`)
 
 Every collection writes its fetched batch here **before** anything is analysed,
 and the rows are deleted only once an analysis has actually stored the matching
 content. The table is therefore a write-ahead copy, not an archive — see
-`docs/design/vision.md` for why raw text is not kept forever.
+`docs/PRODUCT_PLAN.md` and the lifecycle gate in `docs/BUSINESS_PRODUCTION_READINESS.md` for why raw text is not kept forever.
 
 | Stage | Table state |
 | --- | --- |
@@ -321,20 +455,130 @@ Consequences worth knowing before changing this code:
 - **Write before analyse.** The rows exist for the whole LLM call, so a crashed
   worker, a timeout or an outage leaves the content on disk. An inline analysis
   no longer keeps its batch in a local variable.
-- **Retire by stored hash, not by job.** `dedup.analysed_hashes()` reads
-  `ai_analytics.summary_data["content_hashes"]` and only those rows go, so a
-  partial analysis (one day of three failed) leaves the rest staged. Keying on
-  the run instead would both sweep other sources of the same job and miss rows
-  staged by an API/CLI collection that has no job at all.
+- **Retire by successfully covered hash, not by job.** Only hashes covered and
+  persisted by the current analysis context are eligible for deletion; a
+  receipt-only skip also counts as already processed. Partial analysis leaves
+  uncovered rows staged. Rows needed by another active, scheduled or queued
+  analysis context are retained while they are inside that context's date
+  window. Once normal cleanup removes raw text, a newly introduced context
+  needs collection again: a hash receipt cannot restore the text.
 - **Retention is `handle_prune`.** It sweeps rows older than `staged_days`
   (defaults to the job-history `days`), which is the ceiling on a permanently
-  failing source.
+  failing source. `staged_days` is also capped by `DATA_RETENTION_MONTHS`, which
+  separately expires analysis results (see `docs/CONFIGURATION.md`).
 
 `analyze_inline` defaults to **false** for a `collect` job — the raw batch stays
 staged for the separate `analyze` task, which is the workspace's shipped shape
 (`daily-collect` parks, `daily-analyze` drains). Set `analyze_inline: true` to
 collect and analyse in one pass; the rows the analysis actually stored are then
-retired immediately.
+retired immediately. The direct CLI analyze command supports `--keep-raw` for
+diagnostic runs that should preserve staged text even after successful
+analysis; this option does not bypass receipts or enable paid calls by default.
+
+### Selection at collection (P5-T14 stage C)
+
+The collector applies the task's deterministic selection before staging:
+`collected_items` contains only `selected` and `needs_review` rows, with
+`content_type`, `parent_external_id` (comments), `lane_id` and the selection
+status/reason. Rejected text is not stored; `collection_lane_runs` keeps counts
+and reasons, and `collection_seen` keeps dedupe/new-item identity, including
+rejected identities so a filter change can re-evaluate them. A comment-enabled
+batch is filtered at thread level, so a post whose own text lacks the phrase is
+still selected when its comments match. New selected rows are not re-filtered
+during analysis; legacy NULL-status rows keep the old analysis-time pass once.
+See [collection plan](design/collection-plan.md).
+
+### Task collection context (P5-T14 stage D1)
+
+Each source in a collect run now gets a parsed `CollectionIntent` and that
+provider's capabilities. The handler fails a source with
+`collection_intent_invalid` when a known collection value is malformed, rather
+than collecting a guessed population. Requested operations the provider cannot
+perform (for example comments, likes, city lookup or profiles on Telegram)
+appear as bounded warnings in the per-source result; they are not an empty
+result. Older tasks without a `collection` block keep the post-only behaviour.
+
+### Comment lane (P5-T14 stage D2)
+
+A task whose `collection.content_types` includes `comments` expands that lane
+after the post batch is fetched and before selection. Only posts that pass the
+task's **author** filter are expanded: the text scope is deliberately not
+applied there, because a post whose own text lacks the phrase is exactly the
+case a comment lane exists for. Comments are read through the provider adapter
+(`fetch_comments`) in pages bounded by `collection.comments.max_per_post`, and
+the run stops at `collection.comments.total` across all parents. Hitting either
+cap sets `limit_reached` and names it (`comments_per_post_limit`,
+`comments_total_limit`) in the per-source `comments` block; a failed post is
+counted in `errors`/`error_codes` and never fails the post batch. Comment rows
+carry `content_type="comment"` and `parent_external_id`, and the thread is
+selected as a unit, so a matching comment keeps its parent post. A platform
+without comment support keeps its `comments_unsupported` warning and fetches
+nothing. Profile/city enrichment is a separate lane (stage D4).
+
+### Engagement candidates (P5-T14 stage D3)
+
+A task whose `collection.engagement_types` lists `likes` and/or `reposts` reads
+those lanes for the author-eligible posts and stores the result as candidates,
+never as `collected_items`: a candidate answers "who reacted", not "what was
+said", so it does not inflate `content_count` and never reaches the analysis.
+One task-wide `collection.candidates.limit` bounds every lane together, and an
+identity seen in both lanes (or in a re-run) is stored once. `confirm` decides
+the stored status: `manual` (default) keeps candidates `new` for an operator,
+`auto` marks them `confirmed` within the same cap and still creates no source.
+A re-collection keeps the first evidence and never resets an existing
+decision. The per-source `candidates` block reports `fetched`, `by_lane`,
+`duplicates`, `invalid`, `stored`, `limit_reached`
+(`candidates_limit_reached`) and `errors`/`error_codes`; a rehearsal reports
+the same counts with `stored: 0` and `dry_run: true`.
+
+### Profile and city enrichment (P5-T14 stage D4)
+
+A city is not a post attribute: VK post search cannot filter by it, and wall
+items carry none. With `collection.city` configured, the collector reads the
+profiles of the batch's post authors through the provider adapter
+(`fetch_profiles`) before selection, in bounded identity batches, and attaches
+the self-declared city to the author together with `city_source: "profile"` and
+`city_confidence`. The same enrichment is applied to discovered candidates
+before they are stored, so a candidate's `city`/`city_source`/`city_confidence`
+columns carry a declared value rather than a guess. Comments are not enriched:
+a commenter's city says nothing about whether the thread belongs to the task, so
+a thread is decided by its post.
+
+The city layer runs after the author and text layers, and only for an item that
+those already admitted:
+
+- `prefer` (default) and `review`: a declared match selects the item; a known
+  mismatch stays selected with reason `city_mismatch`; an unknown city becomes
+  `needs_review` with reason `city_unknown`.
+- `require`: a known mismatch is rejected (`city_mismatch`), an unknown city is
+  still `needs_review` (`city_unknown`) — an unenriched author is never
+  silently dropped.
+- For a thread the decision uses the post's author, not a matching commenter.
+- `needs_review` rows are staged but never analysed until an operator decides:
+  the analysis path reads only `selected` rows.
+
+A platform without profile support (Telegram) skips the gate instead of sending
+the whole batch to review: the per-source `profiles` block reports
+`supported: false` and `error_code: "profiles_unsupported"`. The same block
+reports `requested`/`resolved`/`unknown` identities (not rows), `errors`/
+`error_codes` for a failed batch, and the city name and mode; the `selection`
+block reports the city counters `matched`/`unknown`/`mismatch`. A rehearsal
+reports the same preview without storing rows.
+
+## Rehearsal (dry run)
+
+`CLI --dry-on` and the task's `dry_run` toggle fetch the platform, count what is
+new and return a bounded preview, but write no `collected_items`, call no model
+and do not advance `last_checked`. A rehearsal that moved the cursor would make
+the following real run skip the exact window it rehearsed. A comment-enabled
+task rehearses its comment lane too: the fetch is read-only, so the preview
+reports the same cap evidence a real run would store. An engagement lane is
+previewed the same way, with `stored: 0` and `dry_run: true` in its
+`candidates` block. In `analyze` the
+same flag stops at the deterministic task selection and reports
+`eligible`/`rejected` counts. The web toggle is shown to workspace
+administrators and owners only; a non-admin submission is ignored with a
+warning, never silently applied.
 
 ## Tests
 
@@ -346,6 +590,6 @@ newer posts, unknown chats and private messages (analyzer stubbed, no network).
 sessions, entity resolution, cross-layer `external_id` for dedup, watermark
 advance, and tenant fail-closure (Telethon network client faked).
 `tests/test_dedup.py` — hash stability/order-independence, batch and item
-filtering, fail-open, and analyzer integration (replay costs one LLM call;
-partial overlap pays only for new items).
+filtering, and analyzer integration. Durable receipt and context behavior is
+covered separately by `tests/test_analysis_receipts.py`.
 

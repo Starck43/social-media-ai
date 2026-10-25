@@ -22,7 +22,8 @@ from dateutil import parser as dateutil_parser
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from .deps import add_flash, ensure_csrf, render
+from .deps import add_flash, ensure_csrf, render, render_section_denied
+from .nav import section_of
 
 router = APIRouter(prefix="/chat")
 
@@ -100,34 +101,60 @@ def _render_assistant_content(content: str | None) -> str:
 
 
 def _enrich_message(msg) -> dict:
-    """Enrich a message with formatted fields for the template."""
+    """Enrich a message with formatted fields for the template.
+
+    Assistant replies may carry quick-reply choices; they are split off here so
+    the bubble never shows the marker and the client renders buttons instead.
+    """
+    from app.agent.quick_replies import split_quick_replies
+
+    if msg.role == "user":
+        content, options = msg.content, []
+    else:
+        content, options = split_quick_replies(msg.content)
+        content = _render_assistant_content(content)
     return {
         "id": msg.id,
         "role": msg.role,
-        "content": _render_assistant_content(msg.content) if msg.role != "user" else msg.content,
+        "content": content,
+        "options": options,
         "created_at": _format_message_time(msg.created_at),
     }
+
+
+async def _confirmation_pending(user_id: int) -> bool:
+    """Whether this user's chat is waiting for a yes/no on a staged action."""
+    from app.agent.runtime import web_session_id
+
+    session_id = await web_session_id(user_id)
+    if session_id is None:
+        return False
+    from app.models import AgentSession
+
+    row = await AgentSession.objects.get(id=session_id)
+    if row is None:
+        return False
+    state = row.state if isinstance(row.state, dict) else {}
+    return isinstance(state.get("pending_confirmation"), dict)
 
 
 def _display_transcript(messages) -> list[dict]:
     """Presentation only: tool-call placeholders stay in storage, not in bubbles."""
     return [
-        _enrich_message(msg)
-        for msg in messages
-        if msg.role in ("user", "assistant") and (msg.content or "").strip()
+        _enrich_message(msg) for msg in messages if msg.role in ("user", "assistant") and (msg.content or "").strip()
     ]
 
 
 def _membership_role(request: Request) -> str | None:
-    """The codename of the caller's platform role in the active workspace."""
+    """The caller's workspace role codename."""
     tenant_id = getattr(request.state, "tenant_id", None)
     for membership in getattr(request.state, "memberships", []) or []:
         if membership.tenant_id == tenant_id:
             if membership.role is None:
                 return None
             codename = membership.role.codename
-            name = codename.name if hasattr(codename, "name") else str(codename)
-            return name
+            value = getattr(codename, "value", None) or getattr(codename, "name", codename)
+            return str(value).lower()
     return None
 
 
@@ -149,6 +176,17 @@ def _is_owner(request: Request) -> bool:
     return False
 
 
+def _chat_denied(request: Request, is_ajax: bool):
+    """Deny before importing runtime, reading history or mutating messages."""
+    perms = getattr(request.state, "web_perms", None)
+    if perms is not None and getattr(perms, "can_open_chat", False):
+        return None
+    message = "Чат недоступен для текущего участника рабочего пространства"
+    if is_ajax:
+        return JSONResponse({"error": message}, status_code=403)
+    return render_section_denied(request, section_of("/app/chat"))
+
+
 @router.get("")
 @router.get("/")
 async def chat_page(request: Request):
@@ -156,10 +194,13 @@ async def chat_page(request: Request):
 
     For AJAX requests returns JSON so the client can update the DOM.
     """
-    is_ajax = (
-        request.headers.get("x-requested-with") == "XMLHttpRequest"
-        or "application/json" in (request.headers.get("accept") or "")
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
+        request.headers.get("accept") or ""
     )
+
+    denied = _chat_denied(request, is_ajax)
+    if denied is not None:
+        return denied
 
     from app.agent.runtime import web_session_id
 
@@ -182,7 +223,11 @@ async def chat_page(request: Request):
 
     if is_ajax:
         return JSONResponse(
-            {"messages": enriched, "is_owner": _is_owner(request)}
+            {
+                "messages": enriched,
+                "awaiting_confirmation": await _confirmation_pending(user.id),
+                "is_owner": _is_owner(request),
+            }
         )
 
     return render(
@@ -206,16 +251,17 @@ async def chat_send(
     JSON with the enriched transcript so the browser can append messages
     without a full page reload.
     """
-    is_ajax = (
-        request.headers.get("x-requested-with") == "XMLHttpRequest"
-        or "application/json" in (request.headers.get("accept") or "")
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
+        request.headers.get("accept") or ""
     )
+
+    denied = _chat_denied(request, is_ajax)
+    if denied is not None:
+        return denied
 
     if not ensure_csrf(request, token):
         if is_ajax:
-            return JSONResponse(
-                {"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403
-            )
+            return JSONResponse({"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403)
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/chat", status_code=302)
 
@@ -232,11 +278,9 @@ async def chat_send(
             return JSONResponse({"error": "Пустое сообщение"}, status_code=400)
         return RedirectResponse("/app/chat", status_code=302)
 
-    from app.agent.runtime import handle_web_message
+    from app.agent.runtime import LIMIT_REACHED_PREFIX, handle_web_message
 
-    # No permission gate here: talking to the agent is a read-ish action every
-    # workspace member may do, and the agent's own tool layer already applies
-    # `WebPerms`-equivalent rules (owner-only writes via `Resolution.is_owner`).
+    # The runtime reloads the owner membership before it admits a paid turn.
     try:
         reply = await handle_web_message(
             text,
@@ -246,6 +290,16 @@ async def chat_send(
             role_codename=_membership_role(request),
         )
 
+        # A spent daily cap is not an answer: it is a refusal. It becomes a real
+        # 429 with a code, so the browser styles it as a failure instead of
+        # showing "200 with an apology" where the message looked lost.
+        limit_reached = isinstance(reply, str) and reply.startswith(LIMIT_REACHED_PREFIX)
+        if is_ajax and limit_reached:
+            return JSONResponse(
+                {"error": reply, "code": "daily_limit_reached", "messages": []},
+                status_code=429,
+            )
+
         if reply is None:
             if is_ajax:
                 return JSONResponse({"error": "Агент не ответил — попробуйте ещё раз"}, status_code=500)
@@ -254,6 +308,13 @@ async def chat_send(
         raw_messages = await _transcript(user.id)
         enriched = _display_transcript(raw_messages)
 
+        if limit_reached:
+            add_flash(request, "error", reply)
+            return RedirectResponse("/app/chat", status_code=302)
+
+        # "A waiting confirmation" is a question the owner must answer, not a
+        # missing answer: the client must not add the "no text" notice on top.
+        awaiting = await _confirmation_pending(user.id)
         if is_ajax:
             return JSONResponse(
                 {
@@ -261,9 +322,11 @@ async def chat_send(
                     "warning": (
                         "Агент завершил обработку без текстового ответа. "
                         "Проверьте результат действия или уточните запрос."
-                        if not (reply or "").strip() else None
+                        if not (reply or "").strip() and not awaiting
+                        else None
                     ),
-                    "is_owner": _membership_role(request) == "owner",
+                    "awaiting_confirmation": awaiting,
+                    "is_owner": _is_owner(request),
                 }
             )
 
@@ -272,8 +335,12 @@ async def chat_send(
             "web/chat.html",
             section="chat",
             messages=enriched,
-            is_owner=_membership_role(request) == "owner",
+            is_owner=_is_owner(request),
         )
+    except PermissionError:
+        if is_ajax:
+            return JSONResponse({"error": "Доступ к чату отозван"}, status_code=403)
+        return render_section_denied(request, section_of("/app/chat"))
     except Exception:
         logging.getLogger(__name__).exception("Chat POST failed")
         if is_ajax:
@@ -304,10 +371,13 @@ async def chat_message_delete(
     token: str = Form("", alias="_csrf"),
 ):
     """Delete a single message from the transcript."""
-    is_ajax = (
-        request.headers.get("x-requested-with") == "XMLHttpRequest"
-        or "application/json" in (request.headers.get("accept") or "")
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
+        request.headers.get("accept") or ""
     )
+
+    denied = _chat_denied(request, is_ajax)
+    if denied is not None:
+        return denied
 
     if not ensure_csrf(request, token):
         if is_ajax:
@@ -336,8 +406,8 @@ async def chat_message_delete(
         add_flash(request, "error", "Сообщение не найдено")
         return RedirectResponse("/app/chat", status_code=302)
 
-    # Allow deleting own messages; anyone in workspace can delete assistant messages
-    if msg.role == "user" and msg.session_id != await web_session_id(user.id):
+    # A transcript and all its messages belong to one member's private chat.
+    if msg.session_id != await web_session_id(user.id):
         if is_ajax:
             return JSONResponse({"error": "Можно удалять только свои сообщения"}, status_code=403)
         add_flash(request, "error", "Можно удалять только свои сообщения")

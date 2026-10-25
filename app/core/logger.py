@@ -1,12 +1,11 @@
 import logging
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
 from app.core.config import settings
 
-# Создаем директорию для логов, если её нет
-log_dir = Path("logs")
-log_dir.mkdir(exist_ok=True)
+# Keep writable state out of the CWD and the installed package directory.
+log_dir = settings.LOG_DIR
+log_dir.mkdir(parents=True, exist_ok=True)
 
 # Формат логов
 log_format = logging.Formatter(

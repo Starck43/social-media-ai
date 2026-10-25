@@ -1,6 +1,6 @@
 """Cron helpers built on croniter (5-field expressions, tz-aware)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -56,6 +56,14 @@ def cron_to_human(cron_expr: str | None) -> str:
         return f"Еженедельно ({days}) в {_field(hour)}:{_field(minute)}"
     if day_of_month != "*" and month == "*" and dow == "*":
         return f"Ежемесячно {day_of_month}-го в {_field(hour)}:{_field(minute)}"
+    if day_of_month != "*" and month != "*" and dow == "*" and minute.isdigit() and hour.isdigit():
+        # A one-time fire (`0 9 16 6 *`) is a date, not a monthly rule. It
+        # stays a valid cron — VK limits the year — but the owner reads it as
+        # the day it will run.
+        try:
+            return f"Один раз {int(day_of_month):02d}.{int(month):02d} в {int(hour):02d}:{int(minute):02d}"
+        except ValueError:
+            return cron_expr
     return cron_expr
 
 
@@ -71,8 +79,16 @@ def validate_cron(cron_expr: str) -> bool:
 
 
 def next_run_at(cron_expr: str, tz_name: str, after: Optional[datetime] = None) -> datetime:
-    """Next fire time for cron_expr in tz_name; returns tz-aware UTC datetime."""
+    """Next fire time for cron_expr in tz_name; returns tz-aware UTC datetime.
+
+    `@once` is a valid schedule everywhere else (`validate_cron`, `cron_to_human`,
+    the runner), so it is resolved here too: when it fires next, a minute from
+    now. Rejecting it with croniter's "exactly 5 columns" error made one-off
+    tasks impossible from any caller that used this helper.
+    """
     base = after or datetime.now(timezone.utc)
+    if cron_expr == "@once":
+        return base + timedelta(minutes=1)
     tz = ZoneInfo(tz_name)
     itr = croniter(cron_expr, base.astimezone(tz))
     return itr.get_next(datetime).astimezone(timezone.utc)

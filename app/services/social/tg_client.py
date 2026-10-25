@@ -99,6 +99,12 @@ class TelegramClient(BaseClient):
 			logger.error("Telethon is not installed - L2 Telegram collection unavailable")
 			return []
 
+		# Telethon waits out a flood limit itself up to this threshold; a longer
+		# one raises FloodWaitError, which defers the source below.
+		from app.services.social.rate_limit import SourceRateLimited, telegram_flood_wait_seconds
+
+		client.flood_sleep_threshold = int(settings.SOCIAL_RATE_LIMIT_MAX_WAIT)
+
 		messages: list[Any] = []
 		try:
 			await client.connect()
@@ -119,6 +125,15 @@ class TelegramClient(BaseClient):
 			# to log and turn into an empty pull.
 			raise
 		except Exception as e:  # noqa: BLE001 - one source must not sink the job
+			flood_wait = telegram_flood_wait_seconds(e)
+			if flood_wait is not None:
+				# Not empty and not broken: Telegram asked us to wait longer than
+				# one run should. Messages read so far are dropped unadmitted, so
+				# the watermark stays and the next run reads the same window.
+				logger.warning(
+					"social_rate_limit_deferred platform=telegram source_id=%s wait=%ss", source.id, int(flood_wait)
+				)
+				raise SourceRateLimited("telegram", flood_wait) from None
 			logger.error(f"Telegram L2 collection failed for source {source.id}: {e}", exc_info=True)
 			return []
 		finally:

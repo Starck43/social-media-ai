@@ -1,0 +1,13 @@
+{% extends "sqladmin/layout.html" %}
+{% block content_header %}<h2 class="page-title">Администрирование</h2>{% endblock %}
+{% block content %}
+<div class="col-12" data-admin-entry>
+    <div class="card"><div class="card-body">
+        <h3 class="card-title">Доступ по правам аккаунта</h3>
+        <p>В меню доступны только модели, на которые вам назначены права. Каждое действие проверяется сервером.</p>
+        <p>Если список моделей пуст, права на модели не назначены. Обратитесь к администратору платформы.</p>
+        <p>Роль в пространстве не предоставляет права администратора платформы.</p>
+        <a href="/app/" class="btn btn-outline-primary">Вернуться в дашборд</a>
+    </div></div>
+</div>
+{% endblock %}

@@ -1,4 +1,4 @@
-"""Sources CRUD for `/app/sources` (docs/design/ui.md §4.3).
+"""Sources CRUD for `/app/sources` (docs/API.md).
 
 List + add + edit + toggle + delete + a per-source detail page. Sources are
 scoped to the current workspace.
@@ -18,7 +18,9 @@ first-class form fields instead of being invisible defaults:
 
 from __future__ import annotations
 
+import logging
 from contextlib import nullcontext
+from typing import Any
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
@@ -43,6 +45,7 @@ from .deps import (
 )
 
 router = APIRouter(prefix="/sources")
+logger = logging.getLogger(__name__)
 
 
 # Collection modes a source can run in. `user` is not a layer of its own — it is
@@ -57,15 +60,14 @@ COLLECTION_MODES: tuple[tuple[str, str], ...] = (
 _MODE_LABELS: dict[str, str] = {"pull": "API платформы", "push": "Бот-API", "user": "Личный аккаунт"}
 
 
-def _clean_params(raw: str, base: dict | None = None) -> dict:
-    """Merge a comma-separated `monitored_users` field into `params`."""
-    params = dict(base or {})
-    tokens = [u.strip() for u in raw.split(",") if u.strip()]
-    if tokens:
-        params["monitored_users"] = tokens
-    else:
-        params.pop("monitored_users", None)
-    return params
+def _clean_params(base: dict | None = None) -> dict:
+    """A copy of the source's collection params for editing.
+
+    Whose items are analysed is a task property (`tracked_users`), never a source
+    property (`docs/design/task-selection.md`), so nothing author-related is
+    written here.
+    """
+    return dict(base or {})
 
 
 async def _workspace_members(tenant_id: int) -> list:
@@ -133,6 +135,7 @@ def _connection_banners(sources, statuses: dict) -> list[dict]:
     cost one pass of queries between them rather than two.
     """
     from app.services.social.connections import CONNECTIONS_BY_PLATFORM
+
     blocked: dict[str, dict] = {}
     for source in sources:
         status = statuses.get(source.id)
@@ -161,11 +164,62 @@ def _connection_banners(sources, statuses: dict) -> list[dict]:
     return banners
 
 
+async def _delete_blockers(sources: list[Any], lane_tasks: dict[int, Any]) -> dict[int, str]:
+    """Why each row's delete control is disabled, keyed by source id.
+
+    Active explicit readers block deletion, as does a paused task that would
+    lose its only explicit source. A task-owned lane blocks only while its
+    owner is active; a paused owner alone leaves a deletable orphan.
+    """
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    ids_by_tenant: dict[int, list[int]] = {}
+    for source in sources:
+        ids_by_tenant.setdefault(int(source.tenant_id), []).append(int(source.id))
+
+    dependencies_by_source: dict[int, list[Any]] = {}
+    for tenant_id, ids in ids_by_tenant.items():
+        with tenant_scope(tenant_id):
+            dependencies_by_source.update(await AgentTaskManager().delete_blockers_for_sources(ids, tenant_id))
+
+    blockers: dict[int, str] = {}
+    for source in sources:
+        tasks = dependencies_by_source.get(int(source.id), [])
+        owner = lane_tasks.get(source.owner_task_id) if source.owner_task_id else None
+        active_tasks = [task for task in tasks if task.is_active]
+        paused_last_source_tasks = [task for task in tasks if not task.is_active]
+        if source.owner_task_id is not None and owner is None:
+            blockers[source.id] = (
+                "Не удалось проверить владельца и связи задачи; восстановите или удалите задачу "
+                "перед удалением источника"
+            )
+            continue
+        if owner is not None and owner.is_active:
+            active_tasks = [owner, *[task for task in active_tasks if task.id != owner.id]]
+
+        reasons = []
+        if active_tasks:
+            named = ", ".join(f"№{task.id} «{task.name}»" for task in active_tasks)
+            action = "удалите источник в настройках задачи"
+            if source.owner_task_id and owner is not None and owner.is_active:
+                action = "остановите поиск или удалите источник в задаче"
+            reasons.append(f"Используется активной задачей {named} — {action}")
+        if paused_last_source_tasks:
+            named = ", ".join(f"№{task.id} «{task.name}»" for task in paused_last_source_tasks)
+            reasons.append(
+                f"Это единственный источник приостановленной задачи {named} — назначьте ей другой источник или удалите задачу"
+            )
+        if reasons:
+            blockers[source.id] = ". ".join(reasons)
+    return blockers
+
+
 @router.get("")
 @router.get("/")
 async def sources_list(request: Request):
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
 
     from app.core.tenant_context import tenant_scope
@@ -174,22 +228,49 @@ async def sources_list(request: Request):
         # Superuser sees all tenants' sources, optionally narrowed to one.
         # Bypass the tenant guard (the middleware already set a tenant scope) so
         # the manager query isn't silently scoped to the active workspace.
+        # Task-owned lanes are listed too: hiding them made the page show fewer
+        # sources than a task actually reads.
         with tenant_scope(bypass=True):
             query = Source.objects.select_related("platform", "tenant")
             if filter_tenant_id is not None:
                 query = query.filter(tenant_id=filter_tenant_id)
             sources = await query.order_by(Source.created_at.desc())
     else:
-        query = Source.objects.filter(tenant_id=request.state.tenant_id)
-        sources = await query.select_related("platform").order_by(Source.created_at.desc())
+        sources = await (
+            Source.objects.filter(tenant_id=request.state.tenant_id)
+            .select_related("platform")
+            .order_by(Source.created_at.desc())
+        )
     # The per-row badge and the banner are per-source (whose token is used), not
     # per-caller, so both are computed from the rows actually rendered above.
     # One pass, one set of queries: `_connection_banners` reads the same mapping.
     source_connections = await source_connection_statuses(sources)
     connection_banners = _connection_banners(sources, source_connections)
+    stale_sources = await _stale_sources_summary(request, sources)
+
+    # A lane row (`owner_task_id`) names its owning task: the marker on the row
+    # explains why a source nobody added is on the page and why it is deleted
+    # in its task rather than here.
+    lane_tasks: dict[int, Any] = {}
+    lane_task_ids = sorted({source.owner_task_id for source in sources if source.owner_task_id})
+    if lane_task_ids:
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        if is_superuser:
+            with tenant_scope(bypass=True):
+                owners = await AgentTaskManager().filter(id__in=lane_task_ids)
+        else:
+            owners = await AgentTaskManager().filter(id__in=lane_task_ids, tenant_id=request.state.tenant_id)
+        lane_tasks = {task.id: task for task in owners}
+
+    delete_blockers = await _delete_blockers(sources, lane_tasks)
 
     user_sources = await (
-        Source.objects.filter(tenant_id=request.state.tenant_id, source_type=SourceType.USER)
+        Source.objects.filter(
+            tenant_id=request.state.tenant_id,
+            source_type=SourceType.USER,
+            owner_task_id__isnull=True,
+        )
         .select_related("platform")
         .order_by(Source.name, Source.id)
     )
@@ -209,6 +290,9 @@ async def sources_list(request: Request):
         user_sources_json=user_sources_data,
         source_connections=source_connections,
         connection_banners=connection_banners,
+        lane_tasks=lane_tasks,
+        delete_blockers=delete_blockers,
+        stale_sources=stale_sources,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
@@ -222,7 +306,6 @@ async def source_add(
     platform: str = Form(...),
     external_id: str = Form(...),
     source_type: str = Form(...),
-    monitored_users: str = Form(""),
     mode: str = Form("pull"),
     token_owner: str = Form(""),
     token: str = Form("", alias="_csrf"),
@@ -293,7 +376,7 @@ async def source_add(
 
         clean_name = name.strip()[:100] or f"{platform}:{external_id}"
 
-        params: dict = _clean_params(monitored_users)
+        params: dict = _clean_params()
         params["mode"] = mode
         if owner_id is not None:
             params["token_owner"] = owner_id
@@ -320,7 +403,6 @@ async def source_edit(
     external_id: str = Form(""),
     source_type: str = Form(""),
     is_active: str = Form("", alias="is_active"),
-    monitored_users: str = Form(""),
     mode: str = Form(""),
     token_owner: str = Form(""),
     token: str = Form("", alias="_csrf"),
@@ -335,6 +417,9 @@ async def source_edit(
     denied = guard_web(request, "source", "update", back="/app/sources")
     if denied is not None:
         return denied
+
+    submitted_form = await request.form()
+    token_owner_was_posted = "token_owner" in submitted_form
 
     from app.core.tenant_context import tenant_scope
 
@@ -361,9 +446,9 @@ async def source_edit(
         else:
             st = source.source_type
 
-        # Only check duplicates if external_id changed.
+        # Recheck uniqueness when either half of the platform identifier changes.
         new_external_id = external_id.strip()[:200] or source.external_id
-        if new_external_id != source.external_id:
+        if new_external_id != source.external_id or platform_row.id != source.platform_id:
             dup = await Source.objects.get(
                 tenant_id=tenant_id,
                 platform_id=platform_row.id,
@@ -373,9 +458,9 @@ async def source_edit(
                 add_flash(request, "error", "Источник с таким ID уже существует")
                 return RedirectResponse("/app/sources", status_code=302)
 
-        # Parse monitored users from comma-separated string into params.
+        # Selection is not a source property; saving drops the removed key.
         params = dict(source.params or {})
-        params = _clean_params(monitored_users, params)
+        params = _clean_params(params)
 
         # Mode: optional — keep existing if not posted.
         if mode:
@@ -386,10 +471,10 @@ async def source_edit(
 
         # An empty box means "fall back to the workspace owner", so the key is
         # removed rather than written as None.
-        if token_owner or mode or platform or source_type:
-            owner_id, owner_error = _validate_token_owner(
-                token_owner, {u.id for u in await _workspace_members(tenant_id)}
-            )
+        if token_owner_was_posted:
+            members = await _workspace_members(tenant_id)
+            member_ids = {u.id for u in members}
+            owner_id, owner_error = _validate_token_owner(token_owner, member_ids)
             if owner_error:
                 add_flash(request, "error", owner_error)
                 return RedirectResponse("/app/sources", status_code=302)
@@ -445,26 +530,16 @@ async def source_toggle(
 
 @router.get("/{source_id}")
 async def source_detail(request: Request, source_id: int):
-    """One source: how it collects, what came out of it, what runs it.
-
-    The list page answers "what do I have"; this one answers the two questions
-    that used to require the DB — *why* is nothing collected from it, and
-    *what did it produce*.
-    """
+    """Show source settings, source-level statistics, and linked tasks."""
     from app.core.tenant_context import tenant_scope
-    from app.models.agent_task import AgentTask, agent_task_sources
     from app.models.ai_analytics import AIAnalytics
+    from app.web.tasks import _diagnostics_admin
 
-    user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _tenants = await tenant_filter_context(request, is_superuser)
 
     with tenant_scope(bypass=True) if is_superuser else nullcontext():
-        source = (
-            await Source.objects.filter(id=source_id).select_related("platform", "tenant").first()
-        )
-        # A superuser browsing all workspaces may open any source; anyone else is
-        # confined to the workspace the middleware opened.
+        source = await Source.objects.filter(id=source_id).select_related("platform", "tenant").first()
         if source is not None and not is_superuser and source.tenant_id != request.state.tenant_id:
             source = None
         if source is None:
@@ -474,149 +549,205 @@ async def source_detail(request: Request, source_id: int):
                 section="sources",
                 source=None,
                 filter_tenant_id=filter_tenant_id,
-                running={"collect": False, "analyze": False},
             )
-
         analytics = await (
             AIAnalytics.objects.filter(source_id=source.id).order_by(AIAnalytics.created_at.desc()).limit(10)
         )
-        analytics_count = (
-            await AIAnalytics.objects.filter(source_id=source.id).values(func.count(AIAnalytics.id)).scalar(0)
+        analytics_count = await (
+            AIAnalytics.objects.filter(source_id=source.id).values(func.count(AIAnalytics.id)).scalar(0)
         )
         cost_cents = await (
             AIAnalytics.objects.filter(source_id=source.id)
             .values(func.coalesce(func.sum(AIAnalytics.estimated_cost), 0))
             .scalar(0)
         )
-        # Tasks that actually drive this source. The m2m row lives in
-        # `agent_task_sources`, and the manager's kwarg lookup cannot express it:
-        # `sources__id` splits on the last `__`, so `id` is parsed as a column
-        # lookup and rejected. An explicit join keeps the read on the guarded
-        # manager instead of a hand-built session, and the table is keyed by
-        # (task_id, source_id) so no row can duplicate a task.
-        # A task with no sources at all ("all active") is reported by the
-        # readiness hint below.
-        linked_tasks = AgentTask.objects.join(agent_task_sources).filter(agent_task_sources.c.source_id == source.id)
-        schedules = await linked_tasks.order_by(AgentTask.created_at.desc())
-        usage_count = (
-            await AgentTask.objects.join(agent_task_sources)
-            .filter(agent_task_sources.c.source_id == source.id)
-            .values(func.count(func.distinct(AgentTask.id)))
-            .scalar(0)
-        )
+
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    can_view_tasks = perms_can(request, "agenttask", "view")
+    schedules = []
+    task_models = []
+    effective_schedules = {}
+    if can_view_tasks:
+        task_manager = AgentTaskManager()
+        with tenant_scope(source.tenant_id):
+            task_models = await task_manager.for_source(source.id, source.tenant_id, source_is_active=source.is_active)
+            workspace_active_source_ids = await task_manager.get_workspace_active_source_ids()
+            effective_schedules = await task_manager.effective_active_map(task_models, workspace_active_source_ids)
+        schedules = [_schedule_view(task, effective_schedules.get(task.id, False)) for task in task_models]
+    # Keep detail and list deletion hints on the same batched dependency query.
+    lane_tasks = {}
+    if source.owner_task_id is not None:
+        with tenant_scope(source.tenant_id):
+            owner_task = await AgentTaskManager().get(id=source.owner_task_id, tenant_id=source.tenant_id)
+        if owner_task is not None:
+            lane_tasks[owner_task.id] = owner_task
+    delete_blocker = (await _delete_blockers([source], lane_tasks)).get(source.id)
+    is_ready, readiness_hint = await _readiness(
+        source,
+        task_models if can_view_tasks else None,
+        effective_schedules if can_view_tasks else None,
+    )
 
     mode_key = (source.params or {}).get("mode", "pull")
     if mode_key not in dict(COLLECTION_MODES):
-        # A row written before the mode existed, or by hand: show the default
-        # rather than an empty badge.
         mode_key = "pull"
-
-    recent = [_analysis_row(a) for a in analytics]
+    recent = [_analysis_row(analysis) for analysis in analytics]
     scores = [row["sentiment"] for row in recent if row["sentiment"] is not None]
     sentiment_label = f"{sum(scores) / len(scores):.2f}" if scores else "—"
 
-    members = {u.id: u for u in await _workspace_members(source.tenant_id)}
-    owner_id = (source.params or {}).get("token_owner")
-    token_owner = members.get(int(owner_id)) if str(owner_id or "").isdigit() else None
-
-    # Check whether the current user IS the workspace owner.
-    user_is_owner = False
-    if user is not None and source.tenant_id is not None:
-        from app.models.tenant import TenantUser
-
-        membership = await TenantUser.objects.filter(
-            tenant_id=source.tenant_id, user_id=user.id, is_active=True
-        ).first()
-        user_is_owner = membership is not None and membership.is_owner
-
-    if token_owner is not None:
+    members = await _workspace_members(source.tenant_id)
+    member_map = {member.id: member for member in members}
+    raw_owner_id = (source.params or {}).get("token_owner")
+    owner_id = int(raw_owner_id) if str(raw_owner_id or "").isdigit() else None
+    token_owner = member_map.get(owner_id)
+    if token_owner:
         owner_label = f"{token_owner.username} (личный токен)"
-        owner_hint = "Сбор идёт под аккаунтом для текущего пространства пользователя"
-    elif user_is_owner:
-        owner_label = "Вы (владелец workspace)"
-        owner_hint = "Токен владельца используется по умолчанию. Можно задать явно для другого участника."
-    elif members:
-        owner_label = "Владелец workspace"
-        owner_hint = "Явно не выбран — используется токен владельца. Можно задать явно."
+    elif owner_id is not None:
+        owner_label = f"Сохранённый участник #{owner_id}"
     else:
-        owner_label = "Не определён"
-        owner_hint = "В этом пространстве нет пользователя с веб-доступом."
-
-    is_ready, readiness_hint = await _readiness(source, schedules)
-
-    # The owner's own connection, shown in "Чей токен" — the exact place an
-    # operator looks when one source is silent while the rest work.
+        owner_label = "Владелец workspace"
     owner_connection = await source_connection_status(source)
 
-    platforms = await _platforms()
-    source_types_list = list(SourceType)
-
-    # What the collect jobs actually pulled from *this* source. `jobs.result`
-    # carries a per-source breakdown (`per_source`); older rows written before it
-    # existed only have the run-wide totals, so those are reported as unknown
-    # rather than as zero.
-    collections = await _recent_collections(source.id)
-
-    # Content staged for analysis that the model could not process. Rows leave
-    # the staging table only once an analysis stores them, so one that keeps
-    # failing is retried until it burns `give_up_after_attempts` and then stops
-    # being offered. Without surfacing the count, that day simply vanishes from
-    # the source with no trace — the ceiling is doing its job, but silently.
-    given_up = await CollectedItem.objects.exhausted_count(source.id)
-    given_up_label = plural(given_up, "запись", "записи", "записей")
-
-    # Check whether a collect or analyze job is currently running for this source.
-    running = await _source_has_running_job(source.id)
+    with tenant_scope(source.tenant_id):
+        pending_count = await (
+            CollectedItem.objects.filter(source_id=source.id).values(func.count(CollectedItem.id)).scalar(0)
+        )
+        given_up = await CollectedItem.objects.exhausted_count(source.id)
 
     return render(
         request,
         "web/source_detail.html",
         section="sources",
         source=source,
-        given_up=given_up,
-        given_up_label=given_up_label,
         filter_tenant_id=filter_tenant_id,
         mode=_mode_view(mode_key),
-        mode_label=dict(COLLECTION_MODES)[mode_key],
-        monitored_users=(source.params or {}).get("monitored_users") or [],
-        owner_label=owner_label,
-        owner_hint=owner_hint,
-        owner_connection=owner_connection,
+        modes=COLLECTION_MODES,
+        mode_labels=_MODE_LABELS,
+        members=members,
         token_owner=token_owner,
-        schedules=[_schedule_view(s) for s in schedules],
-        usage_count=usage_count,
+        orphaned_owner_id=owner_id if owner_id is not None and token_owner is None else None,
+        owner_label=owner_label,
+        owner_connection=owner_connection,
+        schedules=schedules,
+        can_view_tasks=can_view_tasks,
+        delete_blocker=delete_blocker,
+        can_update=perms_can(request, "source", "update"),
         can_delete=perms_can(request, "source", "delete"),
-        recent=recent,
-        analytics_count=analytics_count,
-        cost_usd=float(cost_cents) / 100,
-        sentiment_label=sentiment_label,
-        last_checked_label=_last_checked_label(source.last_checked),
-        collections=collections,
+        can_delete_unprocessed=_diagnostics_admin(request),
+        is_superuser=is_superuser,
         is_ready=is_ready,
         readiness_hint=readiness_hint,
-        platforms=platforms,
-        source_types=source_types_list,
-        running=running,
+        pending_count=pending_count,
+        given_up=given_up,
+        analytics_count=analytics_count,
+        recent_count=len(recent),
+        sentiment_label=sentiment_label,
+        cost_usd=float(cost_cents) / 100,
+        last_checked_label=_last_checked_label(source.last_checked),
+        platforms=await _platforms(),
+        source_types=list(SourceType),
     )
+
+
+@router.get("/{source_id}/analysis-progress")
+async def source_analysis_progress(request: Request, source_id: int):
+    """Small polling fragment for the existing recent-analyses table."""
+    from fastapi.responses import HTMLResponse
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.job_manager import JobManager
+
+    if not perms_can(request, "source", "view"):
+        return HTMLResponse("", status_code=403)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    source = await Source.objects.filter(id=source_id, tenant_id=tenant_id).first()
+    if source is None:
+        return HTMLResponse("", status_code=404)
+    with tenant_scope(tenant_id):
+        jobs = await JobManager().source_progress_jobs(source_id, limit=1)
+    from .analysis_progress import project_job
+    from .deps import templates
+
+    latest_progress = project_job(jobs[0], source_id) if jobs else None
+    # Admin-only allowlisted diagnostics are rendered only for a valid workspace
+    # admin membership or a platform admin; normal fragments carry nothing.
+    diagnostics = None
+    if latest_progress is not None:
+        from .tasks import _diagnostics_admin, _diagnostics_view
+
+        if _diagnostics_admin(request):
+            view = _diagnostics_view(jobs[0], source_id=source_id)
+            diagnostics = _source_run_diagnostics(view, await _run_llm_summary(source_id, jobs[0]))
+    return HTMLResponse(
+        templates.env.get_template("web/source_analysis_progress.html").render(
+            latest_progress=latest_progress, diagnostics=diagnostics
+        )
+    )
+
+
 async def _source_has_running_job(source_id: int) -> dict:
-    """Whether a collect or analyze job is currently running for this source.
+    """Whether a collect or analyze job is queued or running for this source.
 
     Returns ``{"collect": bool, "analyze": bool}`` so the template can show
     the right label — "Сбор…" vs "Анализ…" — instead of a generic "Выполняется".
     """
-    from app.models.job import Job
+    from app.models.managers.job_manager import JobManager
 
-    result = {"collect": False, "analyze": False}
-    running = await Job.objects.filter(status="running")
-    for job in running:
-        payload = job.payload or {}
-        source_ids = payload.get("source_ids", [])
-        if source_id in source_ids:
-            if job.job_type == "collect":
-                result["collect"] = True
-            elif job.job_type == "analyze":
-                result["analyze"] = True
-    return result
+    return await JobManager().source_activity(source_id)
+
+
+def _source_run_diagnostics(view: dict[str, Any], run: dict[str, Any] | None) -> dict[str, Any]:
+    """The source panel's diagnostics dict, shaped for display.
+
+    The shared job-modal diagnostics keep launch bookkeeping (job id, attempt,
+    heartbeat, progress timestamps); the panel repeats none of it. An operator
+    asked about the screenshot case wants the model that served the run and
+    the survived/failed call counts — all journal-derived, allowlisted and
+    bounded, with unknowns preserved as ``None``. The error code prefers the
+    journal outcome and falls back to the run's own per-source code: a run
+    whose dispatch died before any journal row (transport refusal) must still
+    show why.
+    """
+    summary = run if isinstance(run, dict) else {}
+    view_code = view.get("error_code")
+    code = summary.get("error_code") or (view_code if isinstance(view_code, str) and view_code.isidentifier() else None)
+    return {
+        "selected": view.get("selected"),
+        "remaining": view.get("remaining"),
+        "model": summary.get("model"),
+        "provider": summary.get("provider"),
+        "succeeded": summary.get("succeeded"),
+        "failed": summary.get("failed"),
+        "error_code": code,
+    }
+
+
+async def _run_llm_summary(source_id: int, job: Any) -> dict[str, Any] | None:
+    """Model/use counters behind one run, from the immutable attempt journal.
+
+    The window is the run itself: ``started_at`` (fallback ``created_at`` for
+    a job nobody claimed yet) through ``finished_at``, leaving an open end for
+    running jobs so counters grow live between polls. Read-only and bounded;
+    any failure stays ``None`` — diagnostics must never fail the page.
+    """
+    from datetime import datetime, timezone
+
+    started = getattr(job, "started_at", None) or getattr(job, "created_at", None)
+    if not isinstance(started, datetime):
+        return None
+    started = started if started.tzinfo else started.replace(tzinfo=timezone.utc)
+    finished = getattr(job, "finished_at", None)
+    until = finished if isinstance(finished, datetime) else None
+    from app.models.managers.llm_attempt_manager import LLMAttemptManager
+
+    try:
+        return await LLMAttemptManager().run_summary(source_id, since=started, until=until)
+    except Exception as error:  # noqa: BLE001 — diagnostics must never fail the page
+        # Bounded kind only: exception text stays out of logs and responses.
+        from app.jobs.handlers import _error_kind
+
+        logger.warning("source_run_summary_failed source_id=%s error_kind=%s", source_id, _error_kind(error))
+        return None
 
 
 def _mode_view(mode_key: str) -> dict:
@@ -632,28 +763,33 @@ def _mode_view(mode_key: str) -> dict:
 
 def _analysis_row(a) -> dict:
     """One analysis row, pre-formatted for the table."""
-    from app.web.dashboard import _extract_sentiment_score
+    from app.services.ai.analysis_render import render_analysis
 
+    display = render_analysis(a.summary_data)
     cost = a.estimated_cost
     return {
         "id": a.id,
         "analysis_date": a.analysis_date.strftime("%d.%m.%Y") if a.analysis_date else "—",
         "main_topics": a.main_topics or [],
-        "sentiment": _extract_sentiment_score(a.summary_data),
+        "sentiment": display["sentiment"]["score"],
+        "analysis_incomplete": display["coverage"]["incomplete"],
         "llm_model": a.llm_model,
         "cost_usd": float(cost) / 100 if cost is not None else None,
     }
 
 
-def _schedule_view(task) -> dict:
+def _schedule_view(task, effective_active: bool | None = None) -> dict:
     """A task as the schedule list needs it."""
     from app.tasks.cron import cron_to_human
 
+    effective = task.is_active if effective_active is None else effective_active
     return {
+        "id": task.id,
         "name": task.name,
         "is_active": task.is_active,
+        "effective_active": effective,
         "cron_label": cron_to_human(task.cron_expr),
-        "next_run_label": human_datetime(task.next_run_at),
+        "next_run_label": human_datetime(task.next_run_at) if effective else "не запланирован",
     }
 
 
@@ -676,22 +812,89 @@ async def _resolve_source_window(source) -> dict:
     source's own params — the same priority the handlers use. Returns a dict
     suitable for merging into a job payload (`{"cli_dates": {...}}` or `{}`).
     """
-    from app.models.agent_task import AgentTask, agent_task_sources
+    from app.models.managers.agent_task_manager import AgentTaskManager
 
-    linked = (
-        await AgentTask.objects.join(agent_task_sources)
-        .filter(agent_task_sources.c.source_id == source.id)
-        .order_by(AgentTask.created_at.desc())
-        .first()
+    linked = await AgentTaskManager().for_source(
+        source.id,
+        source.tenant_id,
+        source_is_active=source.is_active,
+        include_all_active=False,
     )
-    cli_dates = (linked.payload or {}).get("cli_dates") if linked else None
+    selected = linked[0] if linked else None
+    cli_dates = (selected.payload or {}).get("cli_dates") if selected else None
+    scope_label = f"по задаче «{selected.name}»" if selected and cli_dates else "по настройкам источника"
     if not cli_dates:
         cli_dates = (source.params or {}).get("cli_dates")
-    return {"cli_dates": cli_dates} if cli_dates else {}
+    if len(linked) > 1 and selected and cli_dates:
+        scope_label += " (использована наиболее новая из связанных задач)"
+    return {"cli_dates": cli_dates, "scope_label": scope_label} if cli_dates else {"scope_label": scope_label}
 
 
 def _last_checked_label(last_checked) -> str:
     return human_datetime(last_checked, empty="не проверялся")
+
+
+def _stale_window_hours() -> int:
+    """Configured freshness window for an active source, in hours."""
+    from app.core.config import settings
+
+    return int(getattr(settings, "SOURCE_STALE_HOURS", 24))
+
+
+async def _stale_sources_summary(request: Request, sources: list) -> dict | None:
+    """Stale subset of the rows this page renders, or None without `source.view`.
+
+    `SourceManager.get_sources_for_monitoring` is the one staleness predicate —
+    active, and never checked or checked before `SOURCE_STALE_HOURS` — so the
+    page cannot drift from what the rest of the system calls "needs
+    monitoring". It answers for the whole visible tenant, so its ids are
+    intersected with the rendered rows: a superuser page counts the sources it
+    actually lists, not every workspace's.
+
+    A source that was never checked is counted and named separately. Filing it
+    under "stale" would claim a check that never happened; calling it "fresh"
+    because there is no timestamp to compare is the opposite lie.
+
+    Task-owned query lanes (`owner_task_id`) are left out: their runs follow the
+    owning task's schedule, so a paused or weekly task cannot raise a 24h alert
+    here. Lanes stay visible on the page itself.
+    """
+    if not perms_can(request, "source", "view"):
+        return None
+
+    from app.models.managers.source_manager import SourceManager
+
+    hours = _stale_window_hours()
+    ordinary = [row for row in sources if getattr(row, "owner_task_id", None) is None]
+    stale_ids = {row.id for row in await SourceManager().get_sources_for_monitoring(hours_since_check=hours)}
+    rows = [row for row in ordinary if row.id in stale_ids]
+    active_total = sum(1 for row in ordinary if row.is_active)
+    never_ids = frozenset(row.id for row in rows if row.last_checked is None)
+    return {
+        "hours": hours,
+        "count": len(rows),
+        "active_total": active_total,
+        "never": len(never_ids),
+        "ids": frozenset(row.id for row in rows),
+        "never_ids": never_ids,
+    }
+
+
+def _window_kwargs(bounds: tuple) -> dict:
+    """Content-window kwargs for manager queries; Nones stay out (no bound)."""
+    return {key: value for key, value in zip(("start_date", "end_date"), bounds) if value is not None}
+
+
+def _window_human_label(bounds: tuple) -> str:
+    """«с 01.09.2026» / «с 01.09.2026 по 17.10.2026» for the window mention."""
+    start, end = bounds
+    if start is None and end is None:
+        return ""
+    if start and end:
+        return f"с {start:%d.%m.%Y} по {end:%d.%m.%Y}"
+    if start:
+        return f"с {start:%d.%m.%Y}"
+    return f"до {end:%d.%m.%Y}"
 
 
 # How many collect runs to scan for a source's history. Deep enough to show a
@@ -706,19 +909,19 @@ RAW_PREVIEW_CHARS = 160
 
 
 async def _recent_collections(source_id: int) -> list[dict]:
-    """Recent collect runs for one source, newest first, with what each yielded.
+    """Recent collection stages for one source, newest first, with what each yielded.
 
     The collect handler records a per-source breakdown in `jobs.result`
     (`per_source`), keyed by source id — that is the only place the number of
     items a *specific* source produced survives, because `result["items"]` is a
-    single total for the whole run. Jobs written before that breakdown existed
-    have no entry for this source and are skipped rather than shown as zero: "we
-    do not know" and "nothing was collected" are different answers.
+    single total for the whole run. Unified analyze jobs carry a nested
+    `collection` entry; standalone analysis jobs are ignored. Jobs written
+    before the breakdown existed are skipped rather than shown as zero.
     """
     from app.models.job import Job
 
     rows = (
-        await Job.objects.filter(job_type="collect")
+        await Job.objects.filter(job_type__in=("collect", "analyze"))
         .order_by(Job.created_at.desc())
         .limit(COLLECTION_HISTORY_LIMIT * 10)
     )
@@ -729,6 +932,10 @@ async def _recent_collections(source_id: int) -> list[dict]:
         for entry in result.get("per_source") or []:
             if entry.get("source_id") != source_id:
                 continue
+            collection = entry.get("collection") if isinstance(entry.get("collection"), dict) else None
+            if job.job_type == "analyze" and collection is None:
+                continue
+            collection = collection or entry
             out.append(
                 {
                     "job_id": job.id,
@@ -736,10 +943,10 @@ async def _recent_collections(source_id: int) -> list[dict]:
                     # `items` is what the platform returned, `new_items` what of it
                     # was unseen. Absent on jobs written before the counter existed
                     # — None renders as "—" rather than a fabricated zero.
-                    "items": int(entry.get("items") or 0),
-                    "new_items": None if entry.get("new_items") is None else int(entry["new_items"]),
-                    "analyzed": int(entry.get("analyzed") or 0),
-                    "outcome": entry.get("outcome") or "empty",
+                    "items": int(collection.get("items") or 0),
+                    "new_items": None if collection.get("new_items") is None else int(collection["new_items"]),
+                    "analyzed": int(entry.get("analyzed") or collection.get("analyzed") or 0),
+                    "outcome": collection.get("outcome") or entry.get("outcome") or "empty",
                     "failed": job.status == "failed",
                     # Filled in below, once every run id is known. Both are
                     # seeded so the template never compares an undefined value.
@@ -804,7 +1011,7 @@ def _preview(text: str | None, limit: int = RAW_PREVIEW_CHARS) -> str:
     return cut.rstrip(" .,;:!?—-") + " …"
 
 
-async def _readiness(source, schedules) -> tuple[bool, str]:
+async def _readiness(source, schedules, effective_schedules=None) -> tuple[bool, str]:
     """Why nothing is coming out of this source — or True when nothing is wrong.
 
     The reasons are ordered as an operator would hit them, so the hint names
@@ -815,10 +1022,16 @@ async def _readiness(source, schedules) -> tuple[bool, str]:
     """
     if not source.is_active:
         return False, "Источник выключен — сбор по нему не идёт."
-    if not schedules:
+    if schedules is None:
+        pass  # Task visibility is denied; still check the source and its access below.
+    elif not schedules:
         return False, "Ни одна задача не ссылается на этот источник — сбор не запускается."
-    if not any(s.is_active for s in schedules):
+    elif not any(s.is_active for s in schedules):
         return False, "Все задачи по этому источнику на паузе."
+    if schedules is not None and effective_schedules is not None and not any(
+        effective_schedules.get(task.id, False) for task in schedules
+    ):
+        return False, "Задачи не выполняются: проверьте, что назначенный сценарий активен."
     if (source.params or {}).get("mode", "pull") == "push":
         # Nothing to schedule: pushes arrive on the channel listener's own.
         return False, "Push-источник наполняет канал Telegram — проверьте, что бот подключён."
@@ -875,7 +1088,15 @@ async def source_collect_now(
         # instead of draining the whole history. Priority: linked task payload
         # cli_dates → source params cli_dates.
         window = await _resolve_source_window(source)
-        outcome = await run_job_inline("collect", {"source_ids": [source.id], **window})
+        from app.jobs.source_activity import SourceJobBusy
+
+        try:
+            outcome = await run_job_inline(
+                "collect", {"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})}
+            )
+        except SourceJobBusy:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
     name = source.name
     if not outcome:
@@ -917,6 +1138,7 @@ async def source_analyze_now(
 
     from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
+    from app.jobs.source_activity import SourceJobBusy
     from app.models.managers.job_manager import JobManager
 
     with tenant_scope(tenant_id):
@@ -925,33 +1147,115 @@ async def source_analyze_now(
             add_flash(request, "error", "Источник не найден")
             return RedirectResponse("/app/sources", status_code=302)
 
-        # Reset attempts on exhausted rows so they are offered again.
-        reset_count = 0
+        running = await _source_has_running_job(source_id)
+        if running["collect"] or running["analyze"]:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
+        # Preview, reset and worker execution must use the same configured
+        # window. Do not reset unrelated historical rows or report an empty
+        # queue as a successfully requested analysis.
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        window = await _resolve_source_window(source)
+        cli_dates = window.get("cli_dates") or {}
+        bounds = {key: AgentTaskManager.parse_date(cli_dates.get(key)) for key in ("start_date", "end_date")}
+        staged = await CollectedItem.objects.for_source(source_id, limit=1, include_exhausted=True, **bounds)
+        if not staged:
+            add_flash(
+                request, "info", "В настроенном периоде нет сырых материалов для анализа. Проверьте период и сбор."
+            )
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
         session = new_session()
+        job = None
         try:
             async with session.begin():
-                reset_count = await CollectedItem.objects.reset_attempts(session, source_id)
-        except Exception:
-            pass
+                await JobManager.lock_source_admission(session, tenant_id)
+                reset_count = await CollectedItem.objects.reset_attempts(session, source_id, **bounds)
+                job = await JobManager().admit_source_job(
+                    job_type="analyze",
+                    payload={"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})},
+                    tenant_id=tenant_id,
+                    session=session,
+                )
+        except SourceJobBusy:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
         finally:
             await session.close()
 
-        # Enqueue — the worker loop picks it up; no HTTP timeout.
-        # Resolve the content window so a forced analyze honours the task's
-        # configured dates instead of draining every staged row. Priority:
-        # linked task payload cli_dates → source params cli_dates.
-        window = await _resolve_source_window(source)
-        await JobManager().enqueue(
-            job_type="analyze",
-            payload={"source_ids": [source.id], **window},
-            tenant_id=tenant_id,
-        )
+    # Execute in this process's event loop so the job runs without app.runtime worker.
+    if job:
+        from app.jobs.dispatcher import launch_job_background
+
+        launch_job_background(job.id, allow_retry=False)
 
     name = source.name
     if reset_count:
-        add_flash(request, "info", f"Сброшено {reset_count} записей(ей) из «досрочного выхода» — будут проанализированы заново")
-    add_flash(request, "success", f"Задача анализа по источнику «{name}» поставлена в очередь")
+        add_flash(
+            request,
+            "info",
+            f"Сброшено {reset_count} записей(ей) из «досрочного выхода» — будут проанализированы заново",
+        )
+    add_flash(request, "success", f"Анализ по источнику «{name}» запущен")
     return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
+
+@router.post("/{source_id}/delete-unprocessed")
+async def source_delete_unprocessed(
+    request: Request,
+    source_id: int,
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Remove raw staged content for one source; analytics remain unchanged."""
+    back = f"/app/sources/{source_id}"
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(back, status_code=302)
+
+    from app.web.tasks import _diagnostics_admin
+
+    if not _diagnostics_admin(request):
+        add_flash(request, "error", "Удалять необработанный контент может только администратор")
+        return RedirectResponse(back, status_code=302)
+
+    active_tenant_id = action_tenant_id(request, tenant_id)
+    if type(active_tenant_id) is not int or active_tenant_id <= 0:
+        add_flash(request, "error", "Не удалось определить workspace источника")
+        return RedirectResponse("/app/sources", status_code=302)
+
+    from app.core.database import new_session
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.job_manager import JobManager
+
+    session = new_session()
+    try:
+        with tenant_scope(active_tenant_id):
+            async with session.begin():
+                # Serialize with source-job admission. The active-job check and
+                # delete share one transaction so queued work cannot race cleanup.
+                await JobManager.lock_source_admission(session, active_tenant_id)
+                source = await Source.objects.get(id=source_id, tenant_id=active_tenant_id, session=session)
+                if source is None:
+                    add_flash(request, "error", "Источник не найден")
+                    return RedirectResponse("/app/sources", status_code=302)
+                running = await _source_has_running_job(source_id)
+                if running["collect"] or running["analyze"]:
+                    add_flash(request, "info", "Нельзя удалить контент, пока сбор или анализ ожидает запуска или выполняется")
+                    return RedirectResponse(back, status_code=302)
+                deleted = await CollectedItem.objects.delete_unprocessed_for_source(
+                    session, source_id, active_tenant_id
+                )
+    finally:
+        await session.close()
+
+    if deleted:
+        add_flash(request, "success", f"Удалено необработанных записей: {deleted}")
+    else:
+        add_flash(request, "info", "Необработанного контента для удаления нет")
+    return RedirectResponse(back, status_code=302)
 
 
 @router.post("/{source_id}/delete")
@@ -971,18 +1275,65 @@ async def source_delete(
     if denied is not None:
         return denied
 
+    from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
+    from app.services.collection.source_deletion import SourceDeleteBlocked, SourceDeleteScopeError, delete_source
 
-    with tenant_scope(tenant_id):
-        source = await Source.objects.get(id=source_id, tenant_id=tenant_id)
-        if source is None:
-            add_flash(request, "error", "Источник не найден")
-            return RedirectResponse("/app/sources", status_code=302)
+    session = new_session()
+    try:
+        with tenant_scope(tenant_id):
+            async with session.begin():
+                source = await Source.objects.get(id=source_id, tenant_id=tenant_id, session=session)
+                if source is None:
+                    add_flash(request, "error", "Источник не найден")
+                    return RedirectResponse("/app/sources", status_code=302)
 
-        # `sources.analytics` is delete-orphan, so the analysis rows go with it.
-        # Say so before it happens rather than after.
-        name = source.name
-        await Source.objects.delete(id=source_id)
+                # An orphan lane may be deleted once nothing reads it. A paused
+                # task's final explicit link is not an orphan: resume would
+                # otherwise widen the task to every active workspace source.
+                # `sources.analytics` is delete-orphan, so the analysis rows go
+                # with it. The service refuses while an active task still reads
+                # the source, or while a paused task would lose its last explicit
+                # one, so the scope is removed inside the task instead.
+                removal = await delete_source(session, source_id=source_id, tenant_id=tenant_id)
+    except SourceDeleteScopeError:
+        add_flash(
+            request,
+            "error",
+            "Не удалось проверить связи задач источника; проверьте или удалите связанную задачу перед удалением источника",
+        )
+        return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+    finally:
+        await session.close()
 
-    add_flash(request, "success", f"Источник '{name}' удалён вместе с его аналитикой")
+    if isinstance(removal, SourceDeleteBlocked):
+        if removal.active_tasks:
+            ids = ", ".join(f"№{task.task_id}" for task in removal.active_tasks)
+            if len(removal.active_tasks) == 1:
+                add_flash(request, "error", f"Источник используется активной задачей {ids} — удалите его в задаче")
+            else:
+                add_flash(request, "error", f"Источник используется активными задачами {ids} — удалите их в задачах")
+        if removal.last_source_tasks:
+            names = ", ".join(f"«{task.name}»" for task in removal.last_source_tasks)
+            if len(removal.last_source_tasks) == 1:
+                add_flash(
+                    request,
+                    "error",
+                    f"Источник — единственный у задачи {names}: выберите ей другой источник "
+                    "или удалите задачу, прежде чем удалять источник",
+                )
+            else:
+                add_flash(
+                    request,
+                    "error",
+                    f"Источник — единственный у задач {names}: выберите им другие источники "
+                    "или удалите эти задачи, прежде чем удалять источник",
+                )
+        return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
+    if removal is None:
+        add_flash(request, "error", "Источник не найден")
+        return RedirectResponse("/app/sources", status_code=302)
+
+    add_flash(request, "success", f"Источник '{removal.name}' удалён вместе с его аналитикой")
     return RedirectResponse("/app/sources", status_code=302)

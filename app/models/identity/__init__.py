@@ -1,8 +1,4 @@
-"""Identity-domain exports preserving root registration and legacy bindings.
-
-The role-permission association has one canonical declaration in role.py.
-No new manager, app label, permission policy or vault tenancy is introduced.
-"""
+"""Identity models with lazy exports. Managers bind in app.models.bootstrap."""
 
 from __future__ import annotations
 
@@ -12,14 +8,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .model_type import ModelType
     from .permission import Permission
-    from .role import Role, role_permission
+    from .role import PlatformRole, Role, role_permission
     from .user import User
     from .user_credential import UserCredential
 
-__all__ = ["User", "Role", "Permission", "ModelType", "UserCredential", "role_permission"]
+__all__ = ["User", "PlatformRole", "Role", "Permission", "ModelType", "UserCredential", "role_permission"]
 _MODULES = {
     "User": "user",
     "Role": "role",
+    "PlatformRole": "role",
     "Permission": "permission",
     "ModelType": "model_type",
     "UserCredential": "user_credential",

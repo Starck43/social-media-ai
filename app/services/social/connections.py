@@ -159,9 +159,9 @@ def _human_expiry(expires_at: Optional[datetime]) -> str:
     if delta <= timedelta(0):
         return "срок истёк"
     if delta < timedelta(hours=1):
-        return f"обновляется через {int(delta.total_seconds() // 60)} мин"
+        return f"истекает через {int(delta.total_seconds() // 60)} мин"
     if delta < timedelta(days=1):
-        return f"обновляется через {int(delta.total_seconds() // 3600)} ч"
+        return f"истекает через {int(delta.total_seconds() // 3600)} ч"
     return f"действует до {moment:%d.%m.%Y}"
 
 
@@ -171,12 +171,7 @@ async def _vault_row(user_id: Optional[int], platform: str, kind: str):
         return None
     from app.models.managers.user_credential_manager import user_credentials
 
-    rows = await user_credentials.active(user_id=user_id, platform=platform)
-    candidates = [row for row in rows if row.kind == kind]
-    if not candidates:
-        return None
-    candidates.sort(key=lambda row: row.updated_at or row.created_at, reverse=True)
-    return candidates[0]
+    return await user_credentials.newest_status_metadata(user_id=user_id, platform=platform, kind=kind)
 
 
 async def connection_status(platform: str, user_id: Optional[int]) -> ConnectionStatus:

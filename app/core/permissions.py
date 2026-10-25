@@ -1,17 +1,8 @@
-"""Centralized permission enforcement for non-HTTP surfaces.
+"""Shared interactive workspace policy and explicit trusted-service contexts.
 
-The HTTP surfaces each answer "may this caller do this" through
-`User.model_permissions()` / `User.has_perm_for()` (`app/api/deps.py`,
-`app/admin/authorization.py`, `app/web/perms.py`). The chat agent, managers
-and job code run without a request, so they need the same answer without an
-HTTP layer — that is what this module provides.
-
-One predicate: everything here delegates to `User.has_perm_for()`
-(structured `permissions.model_type_id` + `action_type`, never the stored
-codename, which is not reliably parseable). The current user travels in a
-`ContextVar` set by `permission_scope()`. Only explicit
-`tenant_scope(bypass=True)` skips valid rights checks. A `None` user is denied. Trusted bookkeeping receives a narrow, tenant-bound
-service grant at the write site, not an implicit anonymous identity.
+Workspace membership grants never fall back to platform authority. Operator
+HTTP requests combine a global data scope with fresh platform action checks;
+unbound bypass contexts are reserved for guarded CLI, admin and worker entrypoints.
 """
 
 from __future__ import annotations
@@ -22,8 +13,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional, Union
 
+from app.core.access_catalog import resolve_permission_key, resource_for, workspace_grants
 from app.core.tenant_context import current_tenant_id, is_bypass
-from app.types import ActionType, UserRoleType
+from app.types import ActionType, PlatformRoleType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models import User
@@ -41,14 +33,25 @@ __all__ = [
     "service_permission_scope",
     "operator_permission_scope",
     "WORKSPACE_OWNER_MODELS",
+    "workspace_models",
+    "member_decision",
 ]
 
+_platform_request: ContextVar[bool] = ContextVar("platform_http_request", default=False)
 _operator_grant: ContextVar[bool] = ContextVar("operator_permission_grant", default=False)
 _current_user: ContextVar[Optional["User"]] = ContextVar("current_user", default=None)
 # Ownership configures workspace resources, never the global fleet or queue.
 WORKSPACE_OWNER_MODELS = frozenset({"source", "agenttask", "agentscenario"})
 _workspace_owner: ContextVar[Optional[int]] = ContextVar("workspace_owner", default=None)
 _service_grant: ContextVar[Optional[tuple[int, str, ActionType]]] = ContextVar("service_grant", default=None)
+# A non-owner member's workspace rights: (tenant_id, user_id, {(model, action)}).
+_member_grants: ContextVar[Optional[tuple[int, int, frozenset]]] = ContextVar("member_grants", default=None)
+
+
+def workspace_models() -> frozenset[str]:
+    from app.core.access_catalog import RESOURCES
+
+    return frozenset(r.model_name for r in RESOURCES if r.workspace)
 
 
 class PermissionDeniedError(PermissionError):
@@ -82,91 +85,86 @@ def _resolve_action(action: Union[ActionType, str]) -> Optional[ActionType]:
     return ActionType.get_by_value(token) or ActionType.get_by_name(action.strip().upper())
 
 
-def _resolve_role(role: Union[UserRoleType, str]) -> Optional[UserRoleType]:
-    """Accept a `UserRoleType` or its name (`"admin"`, `"ADMIN"`)."""
-    if isinstance(role, UserRoleType):
-        return role
-    if not isinstance(role, str):
-        return None
-    token = role.strip().upper()
-    if not token:
-        return None
-    return UserRoleType.get_by_name(token)
-
-
-def _role_name(codename: Any) -> str:
-    """Normalise a role codename that may be an enum member or its stored name."""
-    return codename.name if hasattr(codename, "name") else str(codename)
-
-
-def has_permission(user: Optional["User"], model_name: str, action: Union[ActionType, str]) -> bool:
-    """True when `user` may perform `action` on `model_name`.
-
-    `model_name` is the `model_types.model_name` value (`source`,
-    `agenttask`, ...); the check delegates to `User.has_perm_for()`.
-    Only explicit operator bypass skips checks. Anonymous callers are denied;
-    workspace ownership is tenant-bound and limited to configuration models.
-    """
-    resolved = _resolve_action(action)
-    if resolved is None or not isinstance(model_name, str) or not model_name.strip():
-        return False
-    model_name = model_name.strip().lower()
-    if is_bypass() or _operator_grant.get():
-        return True
-    if _service_grant.get() == (current_tenant_id(), model_name, resolved):
-        return True
-    if user is None or not getattr(user, "is_active", True):
-        return False
-    if (
-        _workspace_owner.get() is not None
-        and _workspace_owner.get() == current_tenant_id()
-        and user is get_current_user()
-        and model_name in WORKSPACE_OWNER_MODELS
-    ):
-        return True
+def _resolve_role(role):
     try:
-        return bool(user.has_perm_for(model_name, resolved))
-    except Exception:  # noqa: BLE001 - a rights check must never raise
+        return PlatformRoleType(str(role).lower())
+    except (ValueError, TypeError):
+        return None
+
+
+def has_permission(user, model_name, action) -> bool:
+    resource = resource_for(model_name)
+    resolved = _resolve_action(action)
+    if resource is None or resolved not in resource.actions:
+        return False
+    if is_bypass():
+        current = get_current_user()
+        if current is None:
+            return not _platform_request.get()  # Only non-HTTP trusted entrypoints may omit identity.
+        return bool(
+            user is not None
+            and getattr(user, "id", None) == getattr(current, "id", None)
+            and user.has_admin_access()
+            and user.has_perm_for(resource.model_name, resolved)
+        )
+    if _operator_grant.get():
+        return True
+    if _service_grant.get() == (current_tenant_id(), resource.model_name, resolved):
+        return True
+    if user is None or not getattr(user, "is_active", False):
+        return False
+    current = get_current_user()
+    if resource.model_name in {"llmmodel", "llmprovider"}:
+        return bool(current is not None and current.id == user.id and current.is_active)
+    decision = member_decision(user, resource.model_name, resolved)
+    if decision is not None:
+        return decision
+    # Interactive workspace requests can never fall back to platform grants.
+    if current_tenant_id() is not None or get_current_user() is not None:
+        return False
+    try:
+        return bool(user.has_perm_for(resource.model_name, resolved))
+    except Exception:
         return False
 
 
-def has_permission_by_codename(user: Optional["User"], codename: str) -> bool:
-    """True when `user` may perform the dotted `"model.action"` codename.
-
-    The `tool(required_permission=...)` values and the confirmation flow store
-    the codename shape (`"agenttask.create"`); `has_permission` needs model and
-    action split. Malformed input is denied even for owners/operators.
-    """
-    if not isinstance(codename, str):
+def member_decision(user, model_name, action):
+    resource = resource_for(model_name)
+    member = _member_grants.get()
+    current = get_current_user()
+    if current is None:
+        return None
+    if (
+        resource is None
+        or not resource.workspace
+        or member is None
+        or user is None
+        or member[0] != current_tenant_id()
+        or member[1] is None
+        or member[1] != getattr(current, "id", None)
+        or member[1] != getattr(user, "id", None)
+    ):
         return False
-    model_name, _, action = (codename or "").rpartition(".")
-    if not model_name or not action or "." in model_name:
-        return False
-    return has_permission(user, model_name, action)
+    return action in resource.actions and (resource.model_name, action) in member[2]
 
 
-def has_role(user: Optional["User"], role: Union[UserRoleType, str]) -> bool:
-    """True when `user` holds `role` on the platform ladder.
+def has_permission_by_codename(user, codename) -> bool:
+    pair = resolve_permission_key(codename)
+    return bool(pair and has_permission(user, pair[0].model_name, pair[1]))
 
-    Only explicit operator bypass skips a valid role check; anonymous callers
-    and workspace ownership never grant a platform role.
-    """
+
+def has_role(user, role) -> bool:
     resolved = _resolve_role(role)
     if resolved is None:
         return False
-    if is_bypass() or _operator_grant.get():
+    current = get_current_user()
+    if (is_bypass() and current is None and not _platform_request.get()) or _operator_grant.get():
         return True
-    if user is None or not getattr(user, "is_active", True):
+    if user is None or not getattr(user, "is_active", False) or (_platform_request.get() and current is None):
         return False
-    try:
-        if user._is_superuser_role():
-            return True
-        codename = user.role.codename if user.role else None
-        if codename is None:
-            return False
-        return _role_name(codename) == resolved.name
-    except Exception:  # noqa: BLE001 - a rights check must never raise
+    if current is not None and getattr(current, "id", None) != getattr(user, "id", None):
         return False
+    return bool(user.role and user.role.codename == resolved)
 
 
 def _scope_user(kwargs: dict) -> Optional["User"]:
@@ -213,7 +211,7 @@ def require_permission(
     return decorator
 
 
-def require_role(role: Union[UserRoleType, str]) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def require_role(role: Union[PlatformRoleType, str]) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Gate a function on a platform role; raises `PermissionDeniedError`."""
     resolved = _resolve_role(role)
     if resolved is None:
@@ -243,14 +241,26 @@ def require_role(role: Union[UserRoleType, str]) -> Callable[[Callable[..., Any]
 
 
 @contextmanager
-def permission_scope(user: Optional["User"], *, is_owner: bool = False) -> Iterator[Optional["User"]]:
+def permission_scope(
+    user: Optional["User"], *, is_owner: bool = False, member_grants: Optional[frozenset] = None
+) -> Iterator[Optional["User"]]:
     """Run a block as `user`; restores the previous user on exit.
 
     `is_owner=True` grants only workspace configuration rights in the tenant
-    active at entry. Nested interactive scopes clear inherited service grants.
+    active at entry. `member_grants` — the `(model, action)` pairs of a non-owner
+    member's workspace role — replaces the platform role for workspace models in
+    that tenant (an owner ignores it). Nested interactive scopes clear inherited
+    service grants.
     """
+    tenant_id = current_tenant_id()
+    member = None
+    if member_grants is None and is_owner:
+        member_grants = workspace_grants("owner")
+    if member_grants is not None and tenant_id is not None and user is not None:
+        member = (tenant_id, getattr(user, "id", None), frozenset(member_grants))
     token = set_current_user(user)
-    owner_token = _workspace_owner.set(current_tenant_id() if is_owner else None)
+    owner_token = _workspace_owner.set(tenant_id if is_owner else None)
+    member_token = _member_grants.set(member)
     service_token = _service_grant.set(None)
     operator_token = _operator_grant.set(False)
     try:
@@ -258,6 +268,7 @@ def permission_scope(user: Optional["User"], *, is_owner: bool = False) -> Itera
     finally:
         _current_user.reset(token)
         _workspace_owner.reset(owner_token)
+        _member_grants.reset(member_token)
         _service_grant.reset(service_token)
         _operator_grant.reset(operator_token)
 
@@ -292,3 +303,13 @@ def operator_permission_scope() -> Iterator[None]:
         yield
     finally:
         _operator_grant.reset(token)
+
+
+@contextmanager
+def platform_request_scope():
+    """Mark an operator HTTP dispatch independently from its ambient identity."""
+    token = _platform_request.set(True)
+    try:
+        yield
+    finally:
+        _platform_request.reset(token)

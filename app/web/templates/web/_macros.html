@@ -75,13 +75,6 @@
                placeholder="123456789, @channel или https://vk.com/club1"
                class="{{ control('font-mono') }}">
     </div>
-    <div>
-        <label for="{{ idp }}-monitored_users" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживаемые пользователи</label>
-        <input id="{{ idp }}-monitored_users" name="monitored_users"
-               placeholder="username1, username2, @durov"
-               class="{{ control() }}">
-        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую. Можно оставить пустым.</p>
-    </div>
 {%- endmacro %}
 
 
@@ -91,10 +84,10 @@
    crons. Two widgets, one field name — `tasks.task_create` reads `cron_custom`
    either way. `model` optionally binds the type select to Alpine so the rest
    of the form can show/hide fields per type. #}
-{% macro task_fields(job_types, idp, model=None) -%}
+{% macro task_fields(job_types, idp, model=None, default_name='') -%}
     <div>
         <label for="{{ idp }}-name" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
-        <input id="{{ idp }}-name" name="name" required maxlength="100" placeholder="Ежедневный мониторинг"
+        <input id="{{ idp }}-name" name="name" required maxlength="100" placeholder="Ежедневный мониторинг" value="{{ default_name }}"
                class="{{ control() }}">
     </div>
     <div>
@@ -102,157 +95,298 @@
         <select id="{{ idp }}-job_type" name="job_type" required
                 class="{{ control() }}"{% if model %} x-model="{{ model }}"{% endif %}>
             {% for value, label in job_types %}
-                <option value="{{ value }}" {% if value == "collect" %}selected{% endif %}>{{ label|ui_label }}</option>
+                <option value="{{ value }}" {% if value == "analyze" %}selected{% endif %}>{{ label|ui_label }}</option>
             {% endfor %}
         </select>
     </div>
 {%- endmacro %}
 
-{# The content window a collect/analyze task operates on. `m` is the Alpine
-   object path that holds the field values ("task" in the add modal, "editing"
-   in the edit modal); `model` is the path to the bound job_type. The whole
-   block lives in an `x-if` template, not `x-show`: its start date is
-   `required`, and a CSS-hidden required input still blocks the submit — a
-   digest save would trip over a date field it never shows. `x-if` also keeps
-   the flags out of the POST for the types that do not have them. #}
-{% macro task_dates(m, model) -%}
-    <template x-if="{{ model }} === 'collect' || {{ model }} === 'analyze'">
-        <div class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
-            <p class="text-sm text-slate-700 dark:text-slate-300">Период сбора контента</p>
+{% macro task_retention_fields(idp, model, success_hours=24, failure_hours=24) -%}
+    <template x-if="{{ model }} === 'prune'">
+        <div class="space-y-3 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3">
+            <p class="text-sm font-medium text-slate-800 dark:text-slate-200">Хранение истории заданий</p>
+            <p class="text-xs text-slate-600 dark:text-slate-400">Срок действует независимо от cron, поэтому выберите повторяемое расписание, например ежедневно. Успешные задания и ошибки по умолчанию хранятся 24 часа. Если включено несколько настроек, действует последняя изменённая активная настройка. Измените срок, если админам нужно больше времени для разбора.</p>
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата начала *</label>
-                    <input type="date" name="start_date" required x-model="{{ m }}.start_date"
-                           class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
+                    <label for="{{ idp }}-retention-success" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Успешные задания, часы</label>
+                    <input id="{{ idp }}-retention-success" type="number" name="retention_success_hours" min="1" max="8760" required value="{{ success_hours }}" class="{{ control() }}">
+                    <p class="mt-1 text-xs text-slate-500">Отсчёт начинается после завершения.</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата окончания</label>
-                    <input type="date" name="end_date" x-model="{{ m }}.end_date" class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Необязательно.</p>
+                    <label for="{{ idp }}-retention-failure" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Ошибки, часы</label>
+                    <input id="{{ idp }}-retention-failure" type="number" name="retention_failure_hours" min="1" max="8760" required value="{{ failure_hours }}" class="{{ control() }}">
+                    <p class="mt-1 text-xs text-slate-500">Неопределённые результаты и отмены сохраняются для проверки.</p>
                 </div>
             </div>
-            {# One flag per type: collect's force_refresh is the documented full
-               cycle (re-fetch + re-analyze), analyze keeps force_reanalyze.
-               Hidden + x-model rather than `:checked`, so the value survives
-               the template being torn down and rebuilt on a job_type switch. #}
-            <template x-if="{{ model }} === 'collect'">
-                {{ switch_toggle("force_refresh", "Перетирать данные за этот период", hint="заново получить записи за период и перепрогнать их анализ (иначе — только новые)", attrs='x-model="' ~ m ~ '.force_refresh"') }}
-            </template>
-            <template x-if="{{ model }} === 'analyze'">
-                {{ switch_toggle("force_reanalyze", "Принудительный повторный анализ", hint="перепрогнать модель по уже обработанным записям, игнорируя дедуп-хеши", attrs='x-model="' ~ m ~ '.force_reanalyze"') }}
-            </template>
+            <p class="text-xs text-slate-600 dark:text-slate-400">Сама карточка настройки остаётся в списке задач, пока вы её не удалите.</p>
         </div>
     </template>
 {%- endmacro %}
 
+{# The scenario-driven analysis targets (param_registry.PAYLOAD_PARAMS): the
+   scenario's analysis types say *which kinds* of target matter and hide the
+   rest through `isTargetVisibleByKey`; the inputs stay in the DOM either way,
+   so a no-JS save still carries the stored values. The selection's own text
+   scope is not rendered here — it is a selection field («Фразы в тексте
+   поста» in the templates), not a scenario target. #}
+{% macro task_targets(fields, values={}) -%}
+    <div class="grid grid-cols-2 gap-3">
+        {% for f in fields %}
+        <div x-show="isTargetVisibleByKey('{{ f.key }}')">
+            <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">{{ f.label }}</label>
+            <input type="text" name="{{ f.key }}" value="{{ values.get(f.key, '') }}" placeholder="{{ f.ph }}"
+                   class="{{ control() }}">
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ f.hint }}</p>
+        </div>
+        {% endfor %}
+    </div>
+{%- endmacro %}
 
-{# The trigger + action section, rendered only for `analyze` tasks. `m` and
-   `model` are the same paths as in `task_dates`. The per-trigger fields are
-   inside `x-if` templates so only the active type's config is submitted. #}
-{% macro task_trigger_actions(m, model, trigger_types, action_types) -%}
-    <div x-show="{{ model }} === 'analyze'" x-cloak class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
-        <p class="text-sm text-slate-700 dark:text-slate-300">Условие срабатывания</p>
+
+{# Collection intent («Период сбора», «Кто искать», «Что искать», «Лимиты»).
+
+   Plain server-rendered controls: the form still saves when JavaScript never
+   runs, so every value the POST must carry is an attribute here, not an Alpine
+   binding. The hidden `collection_configured` marker tells the handlers this
+   block was part of the submission. `v` is a flat mapping (edit context or
+   `_collection_edit({})` defaults); `model` is the job_type path.
+
+   The period dates open the block as its first fieldset: the window bounds
+   the *collect* stage, so it lives with the collection fields, not in the
+   general settings. `start`/`end` are the server values; the Alpine root is
+   derived from `model` ("editing" in the edit page, "task" in the add modal),
+   and the POST names stay `start_date`/`end_date` for both forms.
+
+   The split is by search, and every label/hint names its search: «Кто искать»
+   is the population search (сообщества и люди), «Что искать» is the mention
+   search over the found material and the task's sources. The author city is
+   deliberately not asked here: a stored block keeps its `city`, the form just
+   no longer offers it. #}
+{% macro task_collection_fields(v, idp='collection', model='editing.job_type', start='', end='') -%}
+    {% set m = model.rsplit('.', 1)[0] %}
+    {% set content_types = v.get('collection_content_types', ['posts']) %}
+    {% set engagement_types = v.get('collection_engagement_types', []) %}
+    <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
+              class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Период сбора</legend>
         <div class="grid grid-cols-2 gap-3">
             <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Тип триггера</label>
-                <select name="trigger_type" x-model="{{ m }}.trigger_type" class="{{ control() }}">
-                    <option value="">не задан</option>
-                    {% for value, label in trigger_types %}
-                        <option value="{{ value }}">{{ label|ui_label }}</option>
-                    {% endfor %}
-                </select>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата начала *</label>
+                <input type="date" name="start_date" x-model="{{ m }}.start_date" value="{{ start }}"
+                       class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
             </div>
-            <div class="flex items-end">
-                <p class="text-xs text-slate-600 dark:text-slate-400">Без триггера контент проходит без фильтрации.</p>
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата окончания</label>
+                <input type="date" name="end_date" x-model="{{ m }}.end_date" value="{{ end }}" class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Необязательно.</p>
             </div>
         </div>
+    </fieldset>
 
-        <template x-if="{{ m }}.trigger_type === 'KEYWORD_MATCH'">
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Ключевые слова</label>
-                    <input name="trigger_keywords" placeholder="жалоба, срочно" :value="{{ m }}.trigger_keywords"
-                           class="{{ control() }}">
-                </div>
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Совпадение</label>
-                    <select name="trigger_match" :value="{{ m }}.trigger_match" class="{{ control() }}">
-                        <option value="any">любое из слов</option>
-                        <option value="all">все слова</option>
-                    </select>
-                </div>
-            </div>
-        </template>
-        <template x-if="{{ m }}.trigger_type === 'USER_MENTION'">
+    <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
+              class="space-y-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Кто искать</legend>
+        <input type="hidden" name="collection_configured" value="1">
+        <div class="grid grid-cols-2 gap-3">
             <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Пользователи</label>
-                <input name="trigger_usernames" placeholder="user1, user2" :value="{{ m }}.trigger_usernames"
+                <label for="{{ idp }}-discovery-queries" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Темы для поиска</label>
+                <input id="{{ idp }}-discovery-queries" name="collection_discovery_queries"
+                       value="{{ v.get('collection_discovery_queries', '') }}" placeholder="дизайн интерьера, ремонт"
                        class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Поиск сообществ и людей: фразы через запятую описывают, кого искать.</p>
             </div>
-        </template>
-        <template x-if="{{ m }}.trigger_type === 'SENTIMENT_THRESHOLD'">
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Порог</label>
-                    <input name="trigger_threshold" type="number" min="0" max="1" step="0.05"
-                           :value="{{ m }}.trigger_threshold" class="{{ control() }}">
-                </div>
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Направление</label>
-                    <select name="trigger_direction" :value="{{ m }}.trigger_direction" class="{{ control() }}">
-                        <option value="below">ниже порога</option>
-                        <option value="above">выше порога</option>
-                    </select>
-                </div>
+            <div>
+                <label for="{{ idp }}-discovery-queries-match" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Совпадение фраз</label>
+                <select id="{{ idp }}-discovery-queries-match" name="collection_discovery_queries_match" class="{{ control() }}">
+                    <option value="any" {% if v.get('collection_discovery_queries_match', 'any') == 'any' %}selected{% endif %}>любая фраза</option>
+                    <option value="all" {% if v.get('collection_discovery_queries_match') == 'all' %}selected{% endif %}>все фразы</option>
+                </select>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Тоже про поиск сообществ и людей: «любая фраза» — хотя бы одна, «все фразы» — только полное совпадение по всем.</p>
             </div>
-        </template>
-        <template x-if="{{ m }}.trigger_type === 'ACTIVITY_SPIKE'">
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Базовый период, ч</label>
-                    <input name="trigger_baseline_hours" type="number" min="1" :value="{{ m }}.trigger_baseline_hours"
-                           class="{{ control() }}">
-                </div>
-                <div>
-                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Коэффициент всплеска</label>
-                    <input name="trigger_spike_multiplier" type="number" step="0.5" min="1"
-                           :value="{{ m }}.trigger_spike_multiplier" class="{{ control() }}">
-                </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            {{ switch_toggle("collection_communities", "Искать сообщества", checked=v.get('collection_communities', false)) }}
+            {{ switch_toggle("collection_people", "Искать людей", checked=v.get('collection_people', false)) }}
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label for="{{ idp }}-discovery-city" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Город поиска</label>
+                <input id="{{ idp }}-discovery-city" name="collection_discovery_city" maxlength="120"
+                       value="{{ v.get('collection_discovery_city', '') }}" placeholder="Киров" class="{{ control() }}">
             </div>
-        </template>
+            <div>
+                <label for="{{ idp }}-discovery-city-id" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Id города</label>
+                <input id="{{ idp }}-discovery-city-id" name="collection_discovery_city_id" type="number" min="1"
+                       value="{{ v.get('collection_discovery_city_id', '') }}" class="{{ control() }}">
+            </div>
+        </div>
+        <p class="-mt-2 text-xs text-slate-600 dark:text-slate-400">Про поиск сообществ и людей: сужает поиск кандидатов этим городом (id — код города ВКонтакте). Это не фильтр по городу автора записи.</p>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label for="{{ idp }}-candidates-limit" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит кандидатов</label>
+                <input id="{{ idp }}-candidates-limit" name="collection_candidates_limit" type="number" min="1" max="1000"
+                       value="{{ v.get('collection_candidates_limit', 100) }}" class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Находится поиском сообществ и людей; кандидаты не становятся источниками без подтверждения.</p>
+            </div>
+            <div>
+                <label for="{{ idp }}-candidates-confirm" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Подтверждение кандидатов</label>
+                <select id="{{ idp }}-candidates-confirm" name="collection_candidates_confirm" class="{{ control() }}">
+                    <option value="manual" {% if v.get('collection_candidates_confirm', 'manual') == 'manual' %}selected{% endif %}>Вручную</option>
+                    <option value="auto" {% if v.get('collection_candidates_confirm') == 'auto' %}selected{% endif %}>Автоматически</option>
+                </select>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
+              class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Что искать</legend>
+        <div>
+            <p class="mb-1 text-xs text-slate-600 dark:text-slate-400">Что собирать</p>
+            <ul class="grid grid-cols-2 gap-2">
+                {{ check_card(
+                    idp ~ "-ct-posts", "collection_content_types", "posts", "Записи (посты)",
+                    checked=('posts' in content_types), cls="content-cb"
+                ) }}
+                {{ check_card(
+                    idp ~ "-ct-comments", "collection_content_types", "comments", "Комментарии",
+                    checked=('comments' in content_types), cls="content-cb"
+                ) }}
+            </ul>
+        </div>
+        <div>
+            <p class="mb-1 text-xs text-slate-600 dark:text-slate-400">Вовлечённость (кандидаты, а не тексты)</p>
+            <ul class="grid grid-cols-2 gap-2">
+                {{ check_card(
+                    idp ~ "-eng-likes", "collection_engagement_types", "likes", "Лайки",
+                    checked=('likes' in engagement_types), cls="content-cb"
+                ) }}
+                {{ check_card(
+                    idp ~ "-eng-reposts", "collection_engagement_types", "reposts", "Репосты",
+                    checked=('reposts' in engagement_types), cls="content-cb"
+                ) }}
+            </ul>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label for="{{ idp }}-queries" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Фразы для поиска упоминаний</label>
+                <input id="{{ idp }}-queries" name="collection_queries" value="{{ v.get('collection_queries', '') }}"
+                       placeholder="Древиз, Италия поездка" class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Фразы через запятую; каждая становится отдельным поисковым запросом задачи.</p>
+            </div>
+            <div>
+                <label for="{{ idp }}-queries-match" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Совпадение фраз</label>
+                <select id="{{ idp }}-queries-match" name="collection_queries_match" class="{{ control() }}">
+                    <option value="any" {% if v.get('collection_queries_match', 'any') == 'any' %}selected{% endif %}>любая фраза</option>
+                    <option value="all" {% if v.get('collection_queries_match') == 'all' %}selected{% endif %}>все фразы</option>
+                </select>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Про поиск упоминаний в найденном и в моих источниках: «любая фраза» — хотя бы одна, «все фразы» — только все сразу.</p>
+            </div>
+        </div>
+        <div>
+            <label for="{{ idp }}-limit" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит объектов за прогон</label>
+            <input id="{{ idp }}-limit" name="collection_limit" type="number" min="1"
+                   value="{{ v.get('collection_limit', 1000) }}" class="{{ control() }}">
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Достигнутый лимит показывается в результате прогона, а не скрывается.</p>
+        </div>
+    </fieldset>
+
+    <fieldset x-show="{{ model }} === 'analyze' || {{ model }} === 'collect'"
+              class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Лимиты комментариев</legend>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label for="{{ idp }}-comments-per-post" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">На одну запись</label>
+                <input id="{{ idp }}-comments-per-post" name="collection_comments_max_per_post" type="number" min="1" max="1000"
+                       value="{{ v.get('collection_comments_max_per_post', 100) }}" class="{{ control() }}">
+            </div>
+            <div>
+                <label for="{{ idp }}-comments-total" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Всего на прогон</label>
+                <input id="{{ idp }}-comments-total" name="collection_comments_total" type="number" min="1" max="10000"
+                       value="{{ v.get('collection_comments_total', 2000) }}" class="{{ control() }}">
+            </div>
+        </div>
+    </fieldset>
+{%- endmacro %}
+
+
+{# The trigger + action section, rendered only for `analyze` tasks. `m` and
+   `model` are the same paths as in `task_collection_fields`. Every per-trigger block stays
+   in the DOM (`x-show`, not `x-if`) and carries its server value: without
+   JavaScript the POST still submits what the task is configured with, while
+   `_build_trigger_config` reads only the active type's keys. #}
+{% macro task_trigger_actions(m, model, trigger_types, action_types, current_trigger='', current_action='', values={}) -%}
+    <div x-show="{{ model }} === 'analyze'" x-cloak class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <p class="text-sm text-slate-700 dark:text-slate-300">Условие срабатывания</p>
+        <div>
+            <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Тип триггера</label>
+            {{ bound_popover_select('trigger_type', 'task-trigger-' ~ m, [('', 'не задан')] + trigger_types, m ~ '.trigger_type', current_trigger, 'не задан') }}
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Без триггера контент проходит без фильтрации.</p>
+        </div>
+
+        <div x-show="{{ m }}.trigger_type === 'KEYWORD_MATCH'" class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Ключевые слова</label>
+                <input name="trigger_keywords" placeholder="жалоба, срочно" :value="{{ m }}.trigger_keywords"
+                       value="{{ values.get('trigger_keywords', '') }}" class="{{ control() }}">
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Совпадение</label>
+                <select name="trigger_match" class="{{ control() }}">
+                    <option value="any" {% if values.get('trigger_match', 'any') == 'any' %}selected{% endif %}>любое из слов</option>
+                    <option value="all" {% if values.get('trigger_match') == 'all' %}selected{% endif %}>все слова</option>
+                </select>
+            </div>
+        </div>
+        <div x-show="{{ m }}.trigger_type === 'USER_MENTION'">
+            <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Пользователи</label>
+            <input name="trigger_usernames" placeholder="user1, user2" :value="{{ m }}.trigger_usernames"
+                   value="{{ values.get('trigger_usernames', '') }}" class="{{ control() }}">
+        </div>
+        <div x-show="{{ m }}.trigger_type === 'SENTIMENT_THRESHOLD'" class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Порог</label>
+                <input name="trigger_threshold" type="number" min="0" max="1" step="0.05"
+                       :value="{{ m }}.trigger_threshold" value="{{ values.get('trigger_threshold', 0.5) }}" class="{{ control() }}">
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Направление</label>
+                <select name="trigger_direction" class="{{ control() }}">
+                    <option value="below" {% if values.get('trigger_direction', 'below') == 'below' %}selected{% endif %}>ниже порога</option>
+                    <option value="above" {% if values.get('trigger_direction') == 'above' %}selected{% endif %}>выше порога</option>
+                </select>
+            </div>
+        </div>
+        <div x-show="{{ m }}.trigger_type === 'ACTIVITY_SPIKE'" class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Базовый период, ч</label>
+                <input name="trigger_baseline_hours" type="number" min="1" :value="{{ m }}.trigger_baseline_hours"
+                       value="{{ values.get('trigger_baseline_hours', 24) }}" class="{{ control() }}">
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Коэффициент всплеска</label>
+                <input name="trigger_spike_multiplier" type="number" step="0.5" min="1"
+                       :value="{{ m }}.trigger_spike_multiplier" value="{{ values.get('trigger_spike_multiplier', 3.0) }}" class="{{ control() }}">
+            </div>
+        </div>
 
         <p class="text-sm text-slate-700 dark:text-slate-300">Действие после анализа</p>
         <div>
             <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Тип действия</label>
-            <select name="action_type" x-model="{{ m }}.action_type" class="{{ control() }}">
-                <option value="">не выполнять</option>
-                {% for value, label in action_types %}
-                    <option value="{{ value }}">{{ label|ui_label }}</option>
-                {% endfor %}
-            </select>
+            {{ bound_popover_select('action_type', 'task-action-' ~ m, [('', 'не выполнять')] + action_types, m ~ '.action_type', current_action, 'не выполнять') }}
         </div>
 
         <div class="grid grid-cols-2 gap-3">
             <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Чёрный список</label>
-                <input name="blacklist" placeholder="user1, user2" :value="{{ m }}.blacklist" class="{{ control() }}">
-            </div>
-            <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Белый список</label>
-                <input name="whitelist" placeholder="user1, user2" :value="{{ m }}.whitelist" class="{{ control() }}">
-            </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-            <div>
                 <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит действий в час</label>
                 <input name="rate_limit_per_hour" type="number" min="0" :value="{{ m }}.rate_limit_per_hour"
-                       class="{{ control() }}">
+                       value="{{ values.get('rate_limit_per_hour', '') }}" class="{{ control() }}">
             </div>
             <div>
                 <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Пауза между действиями, сек</label>
                 <input name="cooldown_seconds" type="number" min="0" :value="{{ m }}.cooldown_seconds"
-                       class="{{ control() }}">
+                       value="{{ values.get('cooldown_seconds', '') }}" class="{{ control() }}">
             </div>
         </div>
     </div>
@@ -431,14 +565,15 @@
    accidentally render the attribute by passing the string "false". `cls` is for
    a hook class the caller needs to find the box later (`content-cb`,
    `analysis-cb`); it merges into the one class attribute rather than adding a
-   second, which the parser would drop. `attrs` carries Alpine handlers. #}
-{% macro check_card(cid, name, value, content, checked=False, cls="", attrs="") -%}
+   second, which the parser would drop. `attrs` is a mapping of template-authored Alpine handlers; xmlattr
+   escapes each value instead of accepting raw attribute fragments. #}
+{% macro check_card(cid, name, value, content, checked=False, cls="", attrs={}) -%}
     <li class="group relative flex items-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 transition
                hover:border-cyan-500 dark:hover:border-cyan-400
                has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10 has-[:checked]:text-cyan-700 dark:has-[:checked]:text-cyan-300
                has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-cyan-500/60 dark:has-[:focus-visible]:ring-cyan-400/60">
         <input type="checkbox" id="{{ cid }}" name="{{ name }}" value="{{ value }}"
-               class="{{ cls }} peer sr-only" {{ attrs }} {% if checked %}checked{% endif %}>
+               class="{{ cls }} peer sr-only" {{ attrs|xmlattr }} {% if checked %}checked{% endif %}>
         <span class="pointer-events-none flex-1 px-3 py-2 text-sm text-slate-700 dark:text-slate-300">{{ content }}</span>
         {{ check_mark("peer-checked:text-cyan-500 dark:peer-checked:text-cyan-400") }}
         <label for="{{ cid }}" class="absolute inset-0 cursor-pointer"></label>
@@ -460,11 +595,11 @@
 
    Light theme: bg-white, border-slate-300, text-slate-700.
    Dark theme: bg-slate-900, border-slate-700, text-slate-300. #}
-{% macro switch_toggle(name, content, checked=False, disabled=False, attrs="", hint="") -%}
+{% macro switch_toggle(name, content, checked=False, disabled=False, attrs={}, hint="") -%}
     <label class="group inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-slate-300 transition
                   hover:text-cyan-600 dark:hover:text-cyan-400 has-[:checked]:text-cyan-600 dark:has-[:checked]:text-cyan-400
                   {% if disabled %}pointer-events-none opacity-60{% endif %}">
-        <input type="checkbox" name="{{ name }}" class="peer sr-only" {{ attrs }}
+        <input type="checkbox" name="{{ name }}" class="peer sr-only" {{ attrs|xmlattr }}
                {% if checked %}checked{% endif %} {% if disabled %}disabled{% endif %}>
         <span aria-hidden="true"
               class="inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5
@@ -487,6 +622,60 @@
 {%- endmacro %}
 
 
+{# Popover-селект: та же механика, что у переключателя темы в сайдбаре
+   (`_shell_theme.html` + `shell.js [data-shell-popover]`): кнопка-триггер,
+   панель со списком, выбор через скрытый input. Нужен там, где классический
+   <select> неудобен — длинные списки моделей с ценами и статусами.
+   Параметры:
+     name — имя поля формы; id — базовый id; current — выбранное значение;
+     options — список (value, label, hint); placeholder — текст при пустом. #}
+{% macro popover_select(name, id, options, current='', placeholder='Автовыбор', allow_empty=true, label='') -%}
+    {# `current` arrives as an id (int), a preselected value or None; '' keeps the
+       placeholder. Normalizing here guards every caller: `None|string` would
+       otherwise post the literal "None" and fail id validation. #}
+    {% set current = '' if current is none else current|string %}
+    {% set ns = namespace(current_label=placeholder) %}
+    {% for value, label, hint in options %}
+        {% if current|string == value|string %}{% set ns.current_label = label %}{% endif %}
+    {% endfor %}
+    <div class="shell-popover" data-shell-popover data-popover-select>
+        <input type="hidden" name="{{ name }}" value="{{ current }}" data-popover-value>
+        <button id="{{ id }}-trigger" type="button" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-left outline-none focus:border-cyan-500 flex items-center justify-between gap-2" data-popover-trigger aria-expanded="false" aria-controls="{{ id }}-popover" aria-label="{{ label or placeholder }}">
+            <span data-popover-label>{{ ns.current_label }}</span>
+            <span aria-hidden="true" class="shell-select-chevron"></span>
+        </button>
+        <div id="{{ id }}-popover" class="shell-popover-panel" hidden role="listbox">
+            {% if allow_empty %}<button type="button" role="option" data-popover-option="" aria-selected="{{ 'true' if not current else 'false' }}"><span>{{ placeholder }}</span><span class="shell-theme-check" aria-hidden="true">✓</span></button>{% endif %}
+            {% for value, label, hint in options %}
+            <button type="button" role="option" data-popover-option="{{ value }}" aria-selected="{{ 'true' if current|string == value|string else 'false' }}"><span data-popover-option-label>{{ label }}</span>{% if hint %}<span data-popover-option-hint class="text-xs text-slate-600 dark:text-slate-400">{{ hint }}</span>{% endif %}<span class="shell-theme-check" aria-hidden="true">✓</span></button>
+            {% endfor %}
+        </div>
+    </div>
+{%- endmacro %}
+
+{# Compact select bound to Alpine state. Shell JS updates the hidden form value
+   and dispatches input so x-model and dependent fields stay in sync. #}
+{% macro bound_popover_select(name, id, options, model, current='', placeholder='') -%}
+    {% set current = '' if current is none else current|string %}
+    {% set ns = namespace(current_label=placeholder) %}
+    {% for value, label in options %}
+        {% if current == value|string %}{% set ns.current_label = label|ui_label %}{% endif %}
+    {% endfor %}
+    <div class="shell-popover inline-block max-w-full align-middle" data-shell-popover>
+        <input type="hidden" name="{{ name }}" x-model="{{ model }}" value="{{ current }}" data-popover-value>
+        <button type="button" class="inline-flex min-h-10 max-w-full items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900" data-popover-trigger aria-expanded="false" aria-controls="{{ id }}-popover">
+            <span class="max-w-[18rem] truncate" data-popover-label>{{ ns.current_label }}</span>
+            <span aria-hidden="true" class="shrink-0 text-slate-500 dark:text-slate-400">▾</span>
+        </button>
+        <div id="{{ id }}-popover" class="shell-popover-panel" hidden role="listbox">
+            {% for value, label in options %}
+            <button type="button" role="option" data-popover-option="{{ value }}" aria-selected="{{ 'true' if current == value|string else 'false' }}"><span>{{ label|ui_label }}</span><span class="shell-theme-check" aria-hidden="true">✓</span></button>
+            {% endfor %}
+        </div>
+    </div>
+{%- endmacro %}
+
+
 {# Stroke SVGs match the existing 24px/1.5px outline icons used by web controls. #}
 {% macro icon(name, extra="") -%}
     {% set paths = {
@@ -500,10 +689,23 @@
         'sun': 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-6v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5',
         'moon': 'M21 12.8A9 9 0 0 1 11.2 3 9 9 0 1 0 21 12.8Z',
         'monitor': 'M3 4h18v13H3zM8 21h8m-4-4v4',
-        'settings': 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2',
+        'sidebar-collapse': 'm13 5-7 7 7 7m6-14-7 7 7 7',
+        'settings': 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1 1-3Z',
+        'circle': 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z',
+        'home': 'M3 11l9-8 9 8v10h-6v-7H9v7H3z',
+        'database': 'M3 6c0-5 18-5 18 0s-18 5-18 0Zm0 0v12c0 5 18 5 18 0V6M3 12c0 5 18 5 18 0',
+        'layers': 'm12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 17l10 5 10-5',
+        'chart': 'M4 3v18h17M8 16v-4m5 4V8m5 8V5',
+        'document': 'M5 3h10l4 4v14H5zM14 3v5h5M8 12h8m-8 4h8',
+        'list': 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
+        'message': 'M3 3h18v14H8l-5 4z',
+        'menu': 'M3 6h18M3 12h18M3 18h18',
+        'close': 'm6 6 12 12M6 18 18 6',
+        'bell': 'M6 9a6 6 0 0 1 12 0c0 5 3 7 3 7H3s3-2 3-7Zm3 11a3 3 0 0 0 6 0',
+        'check': 'm4 12.5 5 5L20 6.5',
         'arrow': 'M5 12h14m-5-5 5 5-5 5'
     } %}
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="ui-icon {{ extra|e }}" aria-hidden="true" focusable="false"><path d="{{ paths.get(name, paths['topics']) }}" /></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="ui-icon {{ extra|e }}" aria-hidden="true" focusable="false"><path d="{{ paths.get(name, paths['circle']) }}" /></svg>
 {%- endmacro %}
 
 {% macro segment(href, label, active=False, count=None, icon_name=None) -%}
@@ -535,4 +737,10 @@
             <a href="{{ (url.path ~ ('?' ~ url.query if url.query else ''))|e }}" class="ui-segment ui-muted">Сбросить фильтр медиа из ссылки</a>
         {% endif %}
     </div>
+{%- endmacro %}
+
+
+{# Shown only for an explicit incomplete marker; no badge is not a "complete" claim. #}
+{% macro incomplete_analysis_badge(incomplete) -%}
+    {% if incomplete %}<span data-coverage="incomplete" title="Анализ охватил не все собранные материалы" class="inline-flex shrink-0 items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Неполный анализ</span>{% endif %}
 {%- endmacro %}

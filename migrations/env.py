@@ -95,6 +95,7 @@ def run_migrations_online():
 			compare_server_default=True,
 			process_revision_directives=process_revision_directives,
 			on_version_apply=on_version_apply,
+			version_table_schema=settings.DB_SCHEMA,
 		)
 
 		with context.begin_transaction():
@@ -122,6 +123,7 @@ def run_migrations_offline() -> None:
 		compare_type=True,
 		compare_server_default=True,
 		process_revision_directives=process_revision_directives,
+		version_table_schema=settings.DB_SCHEMA,
 	)
 
 	with context.begin_transaction():

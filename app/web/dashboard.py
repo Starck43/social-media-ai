@@ -1,184 +1,179 @@
-"""Dashboard `/app/` — the operational overview (docs/design/ui.md §4.2).
+"""Read-only workspace overview: permitted results and upcoming schedules.
 
-M2: real KPIs from SQL aggregation (no LLM calls). Sentiment is a placeholder
-until the analyzer pipeline writes it to `ai_analytics`.
+The pipeline strip shows data state only (staged items waiting, stored
+analyses, job activity) — never KPI/aggregations or LLM calls on the home
+request.
 """
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
-from sqlalchemy import func
 
 from app.models.agent_task import AgentTask
 from app.models.ai_analytics import AIAnalytics
 from app.models.source import Source
-from app.tasks.cron import cron_to_human
 
 from .deps import render, tenant_filter_context
 
 router = APIRouter()
 
 
-async def _kpis(tenant_id: int | None, is_superuser: bool = False) -> dict[str, int | float]:
-    """Aggregate KPIs for the current tenant (set by TenantUIMiddleware);
-    if is_superuser, tenant_id is None → show global aggregates.
-
-    The managers carry the tenant guard, so a normal request needs no manual
-    `tenant_id` predicate: it is applied unless the caller holds a bypass.
-    Aggregates run through `values()` + `scalar()` rather than a raw session.
-
-    A superuser without an active workspace sees global aggregates, so their
-    branch runs under an explicit bypass — never "no tenant means everything".
-    """
-    today = date.today()
-
-    if is_superuser and tenant_id is None:
-        from app.core.tenant_context import tenant_scope
-
-        with tenant_scope(bypass=True):
-            return await _kpis_in_scope(today)
-
-    return await _kpis_in_scope(today)
-
-
-async def _kpis_in_scope(today: date) -> dict[str, int | float]:
-    """KPI aggregates for the ambient scope (tenant context or superuser bypass)."""
-    active_sources = await Source.objects.filter(is_active=True).values(func.count(Source.id)).scalar(0)
-
-    posts_today = await AIAnalytics.objects.filter(analysis_date=today).values(func.count(AIAnalytics.id)).scalar(0)
-
-    # LLM cost today (cents → dollars)
-    cost_cents = await (
-        AIAnalytics.objects.filter(analysis_date=today)
-        .values(func.coalesce(func.sum(AIAnalytics.estimated_cost), 0))
-        .scalar(0)
-    )
-    # SUM() over NUMERIC comes back as Decimal — keep the KPI a plain float
-    cost_usd = float(cost_cents) / 100
-
-    # Sentiment: average of recent sentiment scores across the tenant's analyses
-    avg_sentiment = 0.0
-    sentiment_analyzed = False
-    recent = await (
-        AIAnalytics.objects.filter(analysis_date__gte=today - timedelta(days=7))
-        .select_related("source")
-        .order_by(AIAnalytics.created_at.desc())
-    )
-    scores: list[float] = []
-    for a in recent:
-        sent = _extract_sentiment_score(a.summary_data)
-        if sent is not None:
-            scores.append(sent)
-    if scores:
-        avg_sentiment = sum(scores) / len(scores)
-        sentiment_analyzed = True
-
-    active_tasks = 0
-    due_tasks = await AgentTask.objects.filter(is_active=True).prefetch_related("sources", "agent_scenario")
-    if due_tasks:
-        from app.models.managers.agent_task_manager import AgentTaskManager
-
-        active_source_ids = await AgentTaskManager().get_workspace_active_source_ids()
-        active_tasks = sum(1 for t in due_tasks if AgentTaskManager._task_effectively_active(t, active_source_ids))
-
-    return {
-        "active_sources": active_sources,
-        "posts_today": posts_today,
-        "avg_sentiment": avg_sentiment,
-        "sentiment_analyzed": sentiment_analyzed,
-        "cost_today_usd": cost_usd,
-        "active_tasks": active_tasks,
-    }
-
-
-def _extract_sentiment_score(summary_data: dict | None) -> float | None:
-    """Pull a 0.0–1.0 sentiment score from summary_data (v3.0 multi-llm first)."""
-    if not summary_data:
-        return None
-    multi_llm = summary_data.get("multi_llm_analysis", {})
-    text_analysis = multi_llm.get("text_analysis", {}) or {}
-    score = text_analysis.get("sentiment_score")
-    if isinstance(score, (int, float)):
-        return max(0.0, min(1.0, float(score)))
-    ai = summary_data.get("ai_analysis", {})
-    sentiment = ai.get("sentiment_analysis", {}) or {}
-    overall = sentiment.get("overall_sentiment", {})
-    if isinstance(overall, dict) and isinstance(overall.get("score"), (int, float)):
-        return max(0.0, min(1.0, float(overall["score"])))
-    return None
-
-
-async def _analytics(tenant_id: int | None, is_superuser: bool = False) -> dict:
-    """Aggregated analytics widgets for the dashboard (ReportAggregator, no LLM)."""
-    if is_superuser and tenant_id is None:
-        from app.core.tenant_context import tenant_scope
-
-        with tenant_scope(bypass=True):
-            return await _analytics_in_scope(None)
-
-    return await _analytics_in_scope(tenant_id)
-
-
-async def _analytics_in_scope(tenant_filter: int | None) -> dict:
-    """Report widgets for the ambient scope; `tenant_filter` narrows explicitly."""
-    from app.services.ai.analysis_render import render_analysis
-    from app.services.ai.reporting import ReportAggregator
-
-    agg = ReportAggregator()
-    top_topics = await agg.get_top_topics(days=7, limit=6, tenant_id=tenant_filter)
-    content_mix = await agg.get_content_mix(days=7, tenant_id=tenant_filter)
-    toxicity = await agg.get_toxicity_summary(days=7, tenant_id=tenant_filter)
-    hashtags = await agg.get_top_hashtags(days=7, limit=8, tenant_id=tenant_filter)
-
-    recent = []
-    rows = await AIAnalytics.objects.select_related("source").order_by(AIAnalytics.created_at.desc()).limit(8)
-    for a in rows:
-        sd = a.summary_data or {}
-        display = render_analysis(sd, source_name=a.source.name if a.source else None)
-        recent.append(
-            {
-                "id": a.id,
-                "source_name": a.source.name if a.source else f"#{a.source_id}",
-                "analysis_date": a.analysis_date,
-                "title": display["display_title"],
-                "summary": (display["analysis_summary"] or "")[:220],
-                "topics": display["main_topics"][:4],
-                "cost_usd": float(a.estimated_cost or 0) / 100,
-            }
-        )
-
-    return {
-        "top_topics": top_topics,
-        "content_mix": content_mix,
-        "toxicity": toxicity,
-        "hashtags": hashtags,
-        "recent": recent,
-    }
-
-
-async def _recent_tasks(tenant_id: int | None, is_superuser: bool = False, filter_tenant_id: int | None = None):
-    """Fetch few most recent tasks.
-
-    Superuser sees all tasks (optionally narrowed to one tenant via
-    `filter_tenant_id`); regular users see their own tenant's tasks.
-    """
+async def _recent_results(tenant_id: int | None, is_superuser: bool, show_sources: bool) -> list[dict]:
+    """Existing analysis results only; callers must hold aianalytics.view."""
     if is_superuser:
         from app.core.tenant_context import tenant_scope
 
         with tenant_scope(bypass=True):
-            query = AgentTask.objects.prefetch_related("tenant", "sources", "agent_scenario")
-            if filter_tenant_id is not None:
-                query = query.filter(tenant_id=filter_tenant_id)
-            return await query.order_by(AgentTask.created_at.desc()).limit(20)
+            return await _recent_results_in_scope(tenant_id, show_sources)
+    return await _recent_results_in_scope(tenant_id, show_sources)
 
-    return await (
-        AgentTask.objects.filter(tenant_id=tenant_id)
-        .prefetch_related("sources", "agent_scenario")
-        .order_by(AgentTask.created_at.desc())
-        .limit(5)
-    )
+
+async def _recent_results_in_scope(tenant_id: int | None, show_sources: bool) -> list[dict]:
+    from app.services.ai.analysis_render import render_analysis
+
+    query = AIAnalytics.objects.filter()
+    if tenant_id is not None:
+        query = query.filter(tenant_id=tenant_id)
+    if show_sources:
+        query = query.select_related("source")
+    rows = await query.order_by(AIAnalytics.created_at.desc(), AIAnalytics.id.desc()).limit(5)
+    recent = []
+    for analysis in rows:
+        source_name = analysis.source.name if show_sources and analysis.source else None
+        display = render_analysis(analysis.summary_data or {}, source_name=source_name)
+        recent.append(
+            {
+                "id": analysis.id,
+                "kind": "analysis",
+                "href": f"/app/analytics/{analysis.id}",
+                "source_name": source_name,
+                "created_at": analysis.created_at,
+                "title": display["display_title"],
+                "summary": (display["analysis_summary"] or "")[:220],
+                "analysis_incomplete": display["coverage"]["incomplete"],
+                "period_label": None,
+                "delivery_status": None,
+            }
+        )
+    return recent
+
+
+def _digest_delivery_status(run) -> str:
+    """Return a safe summary of delivery evidence without exposing destinations."""
+    error = getattr(run, "error", None) or ""
+    state = getattr(run, "delivery_state", None)
+    if isinstance(state, dict):
+        try:
+            from app.services.digest.checkpoints import validate_checkpoint
+            from app.services.digest.delivery_outcomes import summarize_delivery
+
+            checkpoint = validate_checkpoint(state)
+            if checkpoint["run_id"] != getattr(run, "id", None) or checkpoint["tenant_id"] != getattr(
+                run, "tenant_id", None
+            ):
+                return "unknown"
+            if "partial_delivery_requires_review" in error:
+                return "partial"
+            outcome = summarize_delivery(checkpoint)
+            if outcome["pending_parts"] == outcome["total_parts"] and getattr(run, "status", None) == "pending":
+                return "pending"
+            return outcome["status"]
+        except (KeyError, TypeError, ValueError):
+            return "unknown"
+
+    if "partial_delivery_requires_review" in error:
+        return "partial"
+    status = getattr(run, "status", None)
+    return status if status in {"sent", "failed", "skipped", "pending"} else "unknown"
+
+
+async def _recent_digests_in_scope(tenant_id: int | None) -> list[dict]:
+    from app.models.digest_run import DigestRun
+
+    query = DigestRun.objects.filter()
+    if tenant_id is not None:
+        query = query.filter(tenant_id=tenant_id)
+    rows = await query.order_by(DigestRun.created_at.desc(), DigestRun.id.desc()).limit(5)
+    labels = {
+        "sent": "Доставлен",
+        "partial": "Доставлен частично",
+        "uncertain": "Доставка не подтверждена",
+        "blocked": "Доставка заблокирована",
+        "failed": "Ошибка доставки",
+        "skipped": "Пропущен",
+        "pending": "Ожидает доставки",
+        "unknown": "Статус доставки неизвестен",
+    }
+    return [
+        {
+            "id": run.id,
+            "kind": "digest",
+            "href": "/app/digests",
+            "source_name": None,
+            "created_at": run.created_at,
+            "title": f"Дайджест за период {run.period_start:%d.%m.%Y} — {run.period_end:%d.%m.%Y}",
+            "summary": (run.content or "")[:220],
+            "analysis_incomplete": False,
+            "period_label": f"Период {run.period_start:%d.%m.%Y} — {run.period_end:%d.%m.%Y}",
+            "delivery_status": labels[_digest_delivery_status(run)],
+        }
+        for run in rows
+    ]
+
+
+async def _recent_digests(tenant_id: int | None, is_superuser: bool = False) -> list[dict]:
+    if is_superuser:
+        from app.core.tenant_context import tenant_scope
+
+        with tenant_scope(bypass=True):
+            return await _recent_digests_in_scope(tenant_id)
+    return await _recent_digests_in_scope(tenant_id)
+
+
+def _merge_result_feed(analyses: list[dict], digests: list[dict]) -> list[dict]:
+    """Merge independently authorized, bounded result sets into one stable feed."""
+    return sorted(
+        (*analyses, *digests),
+        key=lambda row: (row["created_at"], row["kind"], row["id"]),
+        reverse=True,
+    )[:5]
+
+
+async def _recent_tasks(
+    tenant_id: int | None,
+    is_superuser: bool = False,
+    filter_tenant_id: int | None = None,
+    *,
+    show_sources: bool = True,
+):
+    """Fetch the next three schedules that remain effectively runnable.
+
+    Source based schedules are excluded before querying source state when the
+    caller lacks source.view. The manager applies all other effective activity
+    rules in SQL before its limit, so paused or stale rows cannot crowd out the
+    actual next runs.
+    """
+    if tenant_id is None:
+        return []
+
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    now = datetime.now(timezone.utc)
+    with tenant_scope(tenant_id):
+        tasks = await AgentTaskManager().upcoming_effective(now=now, include_source_based=show_sources, limit=3)
+    return [
+        {
+            "id": task.id,
+            "name": task.name,
+            "next_run_at": task.next_run_at,
+            "is_due": task.next_run_at <= now,
+            "last_status": task.last_status,
+        }
+        for task in tasks
+    ]
 
 
 async def _effective_active_ids(recent_tasks) -> set[int]:
@@ -210,46 +205,119 @@ async def _effective_active_ids(recent_tasks) -> set[int]:
 # A path of "" is rejected by FastAPI when the router is included, so the index
 # is registered as "/" only. Requests to "/app" (no slash) are redirected here
 # by Starlette's redirect_slashes.
+async def _pipeline(tenant_id: int | None, is_superuser: bool, offer: dict) -> dict | None:
+    """Data-state strip: staged items, stored analyses, running collect/analyze jobs.
+
+    Shown only when the caller already sees analytics or tasks — no new rights
+    are implied by this strip. Superusers without an active workspace see the
+    global queue instead of a meaningless workspace count.
+    """
+    if not (offer.get("analytics") or offer.get("tasks")):
+        return None
+    if is_superuser and tenant_id is None:
+        return {"scope_all": True}
+
+    from app.models.ai_analytics import AIAnalytics
+    from app.models.collected_item import CollectedItem
+    from app.models.job import Job
+
+    staged = await CollectedItem.objects.filter(tenant_id=tenant_id).count()
+    analyzed = await AIAnalytics.objects.filter(tenant_id=tenant_id).count()
+    active_jobs = (
+        await Job.objects.filter(tenant_id=tenant_id, status__in=["pending", "running"])
+        .order_by(Job.created_at.desc())
+        .limit(3)
+    )
+
+    running = [
+        {"job_type": j.job_type, "collect": j.job_type == "collect"}
+        for j in active_jobs
+        if getattr(j, "status", None) == "running"
+    ]
+    queued = sum(1 for j in active_jobs if getattr(j, "status", None) == "pending")
+    return {
+        "scope_all": False,
+        "staged": staged,
+        "analyzed": analyzed,
+        "running": running,
+        "queued_count": queued,
+        "job_count": len(active_jobs),
+    }
+
+
+def _offers(perms) -> dict[str, bool]:
+    """What the dashboard may point at: a link only where the caller's level opens the page.
+
+    Each entry is "may open the target page" (its section's view right) plus,
+    for a call to create something, the right to create it — the section gate
+    in `TenantUIMiddleware` would refuse the page anyway, the dashboard just
+    does not lead there.
+    """
+
+    def can(model_name: str, *actions: str) -> bool:
+        return perms is not None and all(perms.can(model_name, action) for action in actions)
+
+    return {
+        "sources": can("source", "view"),
+        "add_source": can("source", "view", "create"),
+        "add_scenario": can("agentscenario", "view", "create"),
+        "tasks": can("agenttask", "view"),
+        "add_task": can("agenttask", "view", "create"),
+        "digests": can("digestrun", "view"),
+        "analytics": can("aianalytics", "view"),
+    }
+
+
 @router.get("/")
 async def dashboard(request: Request):
     tenant_id = getattr(request.state, "tenant_id", None)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
 
     filter_tenant_id = None
     tenants = []
     if is_superuser:
         filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
 
-    kpis = await _kpis(tenant_id, is_superuser)
-    recent_tasks = await _recent_tasks(tenant_id, is_superuser, filter_tenant_id)
-    effective_active = await _effective_active_ids(recent_tasks)
-    analytics = await _analytics(tenant_id, is_superuser)
-
-    # The welcome walkthrough is a workspace concern: a fresh workspace gets the
-    # step-through, a superuser's global dashboard never does. It needs to know
-    # whether the scenario step is already done, which the KPI set does not carry.
-    from app.models.agent_scenario import AgentScenario
-
-    show_welcome = not is_superuser and (kpis["active_sources"] == 0 or kpis["active_tasks"] == 0)
-    scenarios_count = (
-        await AgentScenario.objects.filter(tenant_id=tenant_id).values(func.count(AgentScenario.id)).scalar(0)
-        if show_welcome
-        else 0
+    offer = _offers(getattr(request.state, "web_perms", None))
+    analyses = (
+        await _recent_results(filter_tenant_id if is_superuser else tenant_id, is_superuser, offer["sources"])
+        if offer["analytics"]
+        else []
     )
+    digests = (
+        await _recent_digests(filter_tenant_id if is_superuser else tenant_id, is_superuser) if offer["digests"] else []
+    )
+    recent_results = _merge_result_feed(analyses, digests)
+    recent_tasks = (
+        await _recent_tasks(tenant_id, is_superuser, filter_tenant_id, show_sources=offer["sources"])
+        if offer["tasks"]
+        else []
+    )
+
+    pipeline = await _pipeline(filter_tenant_id if is_superuser else tenant_id, is_superuser, offer)
+
+    # A single first-value step, never a permanent command panel. Only query a
+    # model when the caller can both view and create it in the active workspace.
+    next_step = None
+    if not is_superuser and tenant_id is not None:
+        if offer["add_source"] and await Source.objects.filter(tenant_id=tenant_id).count() == 0:
+            next_step = {"label": "Подключите первый источник", "href": "/app/sources"}
+        elif offer["add_task"] and await AgentTask.objects.filter(tenant_id=tenant_id).count() == 0:
+            next_step = {"label": "Настройте первую задачу", "href": "/app/tasks"}
 
     return render(
         request,
         "web/dashboard.html",
         section="dashboard",
-        kpis=kpis,
+        recent_results=recent_results,
         recent_tasks=recent_tasks,
-        effective_active=effective_active,
-        analytics=analytics,
-        cron_to_human=cron_to_human,
+        source_schedule_status_unknown=bool(offer["tasks"] and not offer["sources"]),
+        pipeline=pipeline,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
-        show_welcome=show_welcome,
-        scenarios_count=scenarios_count,
+        offer=offer,
+        next_step=next_step,
+        can_open_chat=bool(getattr(getattr(request.state, "web_perms", None), "can_open_chat", False)),
     )

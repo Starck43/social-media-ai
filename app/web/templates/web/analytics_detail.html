@@ -1,86 +1,86 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import card, page_title, sentiment_badge %}
+{% from "web/_macros.html" import card, sentiment_badge %}
 {% macro metric(value, decimals=0) -%}
     {% if value is none %}—{% elif decimals %}{{ "%.1f"|format(value) }}{% else %}{{ "%.0f"|format(value) }}{% endif %}
 {%- endmacro %}
-{% block title %}{{ display.display_title|e }} — AI Monitor{% endblock %}
+{% block title %}{{ display.display_title }} — AI Monitor{% endblock %}
+{% block page_heading %}{{ display.display_title }}{% endblock %}
+{% block page_context %}{{ super() }} · {{ analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id) }}{% endblock %}
+{% block page_actions %}
+{% if retry is defined and retry.task_links|length == 1 %}<a href="{{ retry.task_links[0].url }}" class="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Задача · {{ retry.task_links[0].name }}</a>{% endif %}
+{% endblock %}
 {% block content %}
-    {{ page_title(display.display_title|e, (analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id))|e) }}
-    <nav aria-label="Навигация анализа" class="mb-5 flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
-        <a href="{{ back_url|e }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-cyan-700 dark:text-cyan-400 hover:border-cyan-500">← {{ back_label|e }}</a>
-        {% if analysis.source %}<a href="/app/sources/{{ analysis.source_id }}" class="text-cyan-700 dark:text-cyan-400 hover:underline">Карточка источника</a>{% endif %}
-        {% if chain_url %}<a href="{{ chain_url|e }}" class="text-cyan-700 dark:text-cyan-400 hover:underline">Цепочка · {{ chain|length }} анализ(ов)</a>{% endif %}
-    </nav>
-    {% set stats = display.content_statistics %}
-    <section aria-label="Контекст анализа" class="mb-6 rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4 text-sm text-slate-600 dark:text-slate-400">
-        <p>Одна сохранённая запись анализа, не полный отчёт по источнику.</p>
-        <div class="mt-2 flex flex-wrap gap-x-5 gap-y-2">
-            <span>Платформа: {{ platform_name|e }}</span>
-            <span>Дата записи: {{ analysis.analysis_date|human_dt(tz=_tz) }}</span>
-            <span>Период публикаций: {% if window_start %}{{ window_start|human_dt(tz=_tz) }}{% if window_end and window_end != window_start %} — {{ window_end|human_dt(tz=_tz) }}{% endif %}{% else %}не сохранён{% endif %}</span>
-            <span>Объём: {{ metric(stats.total_posts) }} материалов</span>
-            <span>Время анализа: {{ analyzed_at|human_dt(tz=_tz) if analyzed_at else 'не сохранено' }}</span>
-        </div>
-        {% if display.original_links %}
-        <div class="mt-3 flex flex-wrap gap-3">
-            {% for url in display.original_links %}<a href="{{ url|e }}" target="_blank" rel="noopener noreferrer" class="text-cyan-700 dark:text-cyan-400 hover:underline">{% if display.original_links|length == 1 %}Открыть исходный материал ↗{% else %}Исходный материал {{ loop.index }} ↗{% endif %}</a>{% endfor %}
-        </div>
-        {% endif %}
-    </section>
-    <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        {% for key, label in [('total_posts','Материалов'),('total_reactions','Реакций — метрика платформы'),('total_comments','Комментариев'),('active_users','Авторов / аккаунтов')] %}
-        <div class="ui-card" data-metric="{{ key }}" data-state="{{ 'unknown' if stats[key] is none else 'available' }}">
-            <p class="text-sm text-slate-500 dark:text-slate-400">{{ label }}</p>
-            <p class="mt-2 text-3xl font-semibold">{{ metric(stats[key]) }}</p>
-        </div>
-        {% endfor %}
+{% set stats = display.content_statistics %}
+<nav aria-label="Навигация анализа" class="mb-4 flex flex-wrap items-center gap-4 text-sm">
+    <a href="{{ back_url }}" class="text-cyan-700 hover:underline dark:text-cyan-400">← {{ back_label }}</a>
+    {% if chain_url %}<a href="{{ chain_url }}" class="text-cyan-700 hover:underline dark:text-cyan-400">Цепочка · {{ chain|length }} анализ(ов)</a>{% endif %}
+</nav>
+<section aria-label="Контекст анализа" class="ui-card mb-4 text-sm text-slate-600 dark:text-slate-400">
+    <div class="flex flex-wrap gap-x-5 gap-y-2">
+        <span>{{ platform_name }}</span>
+        <span>Публикации: {% if window_start %}{{ window_start|human_dt(tz=_tz) }}{% if window_end and window_end != window_start %} — {{ window_end|human_dt(tz=_tz) }}{% endif %}{% else %}период не сохранён{% endif %}</span>
+        {% if analyzed_at %}<span>Анализ: {{ analyzed_at|human_dt(tz=_tz) }}</span>{% endif %}
     </div>
-    <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">— означает, что значение не получено, неполно или не подтверждено. 0 показывается только при подтверждённой доступности метрики. Авторы / аккаунты — идентификаторы авторов материалов, не число читателей.</p>
-    {% if display.metrics_legacy %}<p class="mt-1 text-xs text-amber-700 dark:text-amber-300">Полнота сбора для этой записи не сохранена. Сохранённые ненулевые значения показаны как есть; неподтверждённые нули скрыты.</p>{% endif %}
-    {% if vk_reactions %}<p class="mt-1 text-xs text-slate-600 dark:text-slate-400">В сохранённой метрике реакций VK учитываются лайки, комментарии и репосты. Комментарии отдельно показаны для детализации; эти показатели не складываются.</p>{% endif %}
-    <div class="mt-6 grid gap-4 lg:grid-cols-2">
-        {% call card() %}
-            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Сводка</h2>
-            {% if display.analysis_summary %}<p class="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-700 dark:text-slate-300">{{ display.analysis_summary|e }}</p>
-            {% else %}<p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Сводка для этой записи не сохранена. Это не означает, что анализ не выполнялся.</p>{% endif %}
-        {% endcall %}
-        {% call card() %}
-            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Тональность текста</h2>
-            {% if display.sentiment.score is not none %}
-                <div class="mt-3">{{ sentiment_badge(display.sentiment.score) }}</div>
-                <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" aria-hidden="true"><div class="h-2 {% if display.sentiment.score > 0.6 %}bg-emerald-400{% elif display.sentiment.score < 0.4 %}bg-rose-400{% else %}bg-amber-300{% endif %}" style="width: {{ display.sentiment.score * 100 }}%"></div></div>
-                <p class="mt-2 text-xs text-slate-600 dark:text-slate-400">Шкала: 0 — негативная, 0,5 — нейтральная, 1 — позитивная. Это оценка тональности, не вероятность и не доля позитивных пользователей.</p>
-            {% else %}<p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Оценка тональности не сохранена или некорректна.</p>{% endif %}
-            {% if display.overall_mood %}<p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Общее настроение: {{ display.overall_mood|e }}</p>{% endif %}
-        {% endcall %}
-    </div>
-    <div class="mt-6 grid gap-4 lg:grid-cols-2">
-        {% call card() %}
-            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Главные темы</h2>
-            {% if topics %}<div class="mt-3 flex flex-wrap gap-2">{% for topic in topics %}<a href="{{ topic.url|e }}" class="rounded-full bg-cyan-50 dark:bg-cyan-950 px-2.5 py-1 text-xs text-cyan-700 dark:text-cyan-400 hover:bg-cyan-900">{{ topic.label|e }} →</a>{% endfor %}</div>
-            <p class="mt-2 text-xs text-slate-600 dark:text-slate-400">Открыть список анализов по теме с текущими фильтрами.</p>
-            {% else %}<p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Темы в сохранённом результате отсутствуют.</p>{% endif %}
-        {% endcall %}
-        {% call card() %}
-            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Выделяющиеся моменты</h2>
-            {% if display.highlights %}<ul class="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-300">{% for highlight in display.highlights %}<li>• {{ highlight|e }}</li>{% endfor %}</ul>
-            {% elif display.highlights_available %}<p class="mt-3 text-sm text-slate-600 dark:text-slate-400">В сохранённом анализе не выделены.</p>
-            {% else %}<p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Не рассчитаны или не сохранены.</p>{% endif %}
-        {% endcall %}
-    </div>
-    {% call card(extra="mt-6") %}
-        <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Метрики на материал</h2>
-        <div class="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-            {% for key, label, decimals in [('avg_reactions_per_post','Реакций / материал',1),('avg_comments_per_post','Комментариев / материал',1),('avg_views_per_post','Просмотров / материал',1),('total_views','Всего просмотров',0)] %}
-            <div data-metric="{{ key }}" data-state="{{ 'unknown' if stats[key] is none else 'available' }}"><p class="text-slate-600 dark:text-slate-400">{{ label }}</p><p class="mt-1 text-lg text-slate-800 dark:text-slate-200">{{ metric(stats[key],decimals) }}</p></div>
-            {% endfor %}
-        </div>
-        <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">Средние значения = сохранённое количество / число материалов. Просмотры не складываются с реакциями и комментариями; процент ER здесь не рассчитывается.</p>
+    {% if display.original_links %}<div class="mt-3 flex flex-wrap gap-3">
+        {% for url in display.original_links %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer" class="text-cyan-700 hover:underline dark:text-cyan-400">{% if display.original_links|length == 1 %}Исходный материал ↗{% else %}Материал {{ loop.index }} ↗{% endif %}</a>{% endfor %}
+    </div>{% endif %}
+    {% if retry is defined and retry.task_links|length > 1 %}<div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>{{ 'Задача:' if retry.task_links|length == 1 else 'Связанные задачи:' }}</span>
+        {% for task in retry.task_links %}<a href="{{ task.url }}" class="text-cyan-700 hover:underline dark:text-cyan-400">{{ task.name }}</a>{% endfor %}
+    </div>{% endif %}
+</section>
+{% if display.coverage.incomplete %}
+<section data-coverage="incomplete" role="note" class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+    <h2 class="font-medium">Неполный анализ</h2>
+    {% if display.coverage.reasons %}<ul class="mt-1 list-inside list-disc">{% for reason in display.coverage.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+    {% else %}<p class="mt-1">Обработана часть материалов. Причина ограничения не сохранена.</p>{% endif %}
+</section>
+{% endif %}
+{% if retry is defined %}{% include "web/analytics_retry_status.html" %}{% endif %}
+<div class="mt-4 grid gap-4 {% if display.sentiment.score is not none or display.overall_mood %}lg:grid-cols-3{% endif %}">
+    {% call card(extra='lg:col-span-2' if display.sentiment.score is not none or display.overall_mood else '') %}
+        <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Сводка</h2>
+        {% if display.analysis_summary %}<p class="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-700 dark:text-slate-300">{{ display.analysis_summary }}</p>
+        {% else %}<p class="mt-3 text-sm text-slate-500 dark:text-slate-400">Сводка не сохранена.</p>{% endif %}
+        {% if topics %}<div class="mt-4 flex flex-wrap gap-2" aria-label="Темы анализа">{% for topic in topics %}<a href="{{ topic.url }}" class="rounded-full bg-cyan-50 px-3 py-1 text-xs text-cyan-800 hover:underline dark:bg-cyan-950 dark:text-cyan-300">{{ topic.label }}</a>{% endfor %}</div>{% endif %}
     {% endcall %}
-    {% if chain_url %}
-        {% call card(extra="mt-6") %}
-            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Хронология цепочки ({{ chain|length }})</h2>
-            <ol class="mt-4 space-y-2">{% for entry in chain %}<li>{% if entry.id == analysis.id %}<span class="text-sm font-medium text-cyan-700 dark:text-cyan-400">{{ entry.analysis_date|human_dt(tz=_tz) }} — {{ entry.title|e }} · текущий анализ</span>{% else %}<a href="{{ entry.url|e }}" class="text-sm text-slate-600 dark:text-slate-400 hover:text-cyan-700 dark:hover:text-cyan-300">{{ entry.analysis_date|human_dt(tz=_tz) }} — {{ entry.title|e }}</a>{% endif %}</li>{% endfor %}</ol>
-        {% endcall %}
+    {% if display.sentiment.score is not none or display.overall_mood %}
+    {% call card() %}
+        <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Тональность текста</h2>
+        {% if display.sentiment.score is not none %}<div class="mt-3">{{ sentiment_badge(display.sentiment.score) }}</div>
+        <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">0 — негативная · 0,5 — нейтральная · 1 — позитивная</p>{% endif %}
+        {% if display.overall_mood %}<p class="mt-3 text-sm text-slate-600 dark:text-slate-400">{{ display.overall_mood }}</p>{% endif %}
+    {% endcall %}
     {% endif %}
+</div>
+{% if display.highlights %}{% call card(extra='mt-4') %}
+    <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Выделяющиеся моменты</h2>
+    <ul class="mt-3 list-inside list-disc space-y-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">{% for highlight in display.highlights %}<li>{{ highlight }}</li>{% endfor %}</ul>
+{% endcall %}{% endif %}
+{% set metrics = namespace(count=0) %}
+{% for key in ['total_posts','total_reactions','total_comments','active_users'] %}{% if stats[key] is not none %}{% set metrics.count = metrics.count + 1 %}{% endif %}{% endfor %}
+{% if metrics.count %}
+<section aria-label="Метрики публикаций" class="mt-4">
+    <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
+    {% for key, label in [('total_posts','Материалов'),('total_reactions','Реакций'),('total_comments','Комментариев'),('active_users','Авторов / аккаунтов')] %}
+        {% if stats[key] is not none %}<div class="ui-card" data-metric="{{ key }}" data-state="available"><p class="text-sm text-slate-500 dark:text-slate-400">{{ label }}</p><p class="mt-2 text-2xl font-semibold">{{ metric(stats[key]) }}</p></div>{% endif %}
+    {% endfor %}
+    </div>
+    {% if vk_reactions %}<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Реакции VK включают лайки, комментарии и репосты; число комментариев отдельно не прибавляется.</p>{% endif %}
+</section>
+{% endif %}
+<details class="ui-card mt-4 text-sm text-slate-600 dark:text-slate-400">
+    <summary class="cursor-pointer font-medium">О сохранённом результате</summary>
+    <p class="mt-3">Дата записи: {{ analysis.analysis_date|human_dt(tz=_tz) }}{% if analysis.llm_model %} · Модель: {{ analysis.llm_model }}{% endif %}</p>
+    {% if display.metrics_legacy %}<p class="mt-2 text-xs">Полнота метрик для этой записи не сохранена. Неподтверждённые значения скрыты.</p>{% endif %}
+    <dl class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+    {% for key, label, decimals in [('avg_reactions_per_post','Реакций / материал',1),('avg_comments_per_post','Комментариев / материал',1),('avg_views_per_post','Просмотров / материал',1),('total_views','Всего просмотров',0)] %}
+        {% if stats[key] is not none %}<div data-metric="{{ key }}" data-state="available"><dt class="text-xs">{{ label }}</dt><dd class="mt-1 text-slate-800 dark:text-slate-200">{{ metric(stats[key],decimals) }}</dd></div>{% endif %}
+    {% endfor %}
+    </dl>
+</details>
+{% if chain_url %}<details class="ui-card mt-4">
+    <summary class="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300">Хронология цепочки ({{ chain|length }})</summary>
+    <ol class="mt-3 space-y-2">{% for entry in chain %}<li>{% if entry.id == analysis.id %}<span class="text-sm text-cyan-700 dark:text-cyan-400">{{ entry.analysis_date|human_dt(tz=_tz) }} — текущий анализ</span>{% else %}<a href="{{ entry.url }}" class="text-sm text-slate-600 hover:underline dark:text-slate-400">{{ entry.analysis_date|human_dt(tz=_tz) }} — {{ entry.title }}</a>{% endif %}</li>{% endfor %}</ol>
+</details>{% endif %}
 {% endblock %}

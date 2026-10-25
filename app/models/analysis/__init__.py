@@ -1,8 +1,4 @@
-"""Analysis-domain exports without changing legacy registration/binding order.
-
-Canonical leaves declare models. Legacy modules retain manager bindings;
-lazy exports avoid importing this entire domain at the first root-model import.
-"""
+"""Analysis exports, including legacy LLM aliases. Managers bind in app.models.bootstrap."""
 
 from __future__ import annotations
 
@@ -11,15 +7,37 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .agent_scenario import AgentScenario
+    from .analyzed_content_receipt import AnalyzedContentReceipt
     from .ai_analytics import AIAnalytics
+    from .llm_attempt import LLMAttempt
+    from .llm_budget import LLMBudgetDay, LLMBudgetReservation
+    from .llm_dispatch_receipt import LLMDispatchReceipt
     from .llm_model import LLMModel
+    from .llm_outcome_event import LLMOutcomeEvent
     from .llm_provider import LLMProvider
 
-__all__ = ["AgentScenario", "AIAnalytics", "LLMModel", "LLMProvider"]
+__all__ = [
+    "AgentScenario",
+    "AnalyzedContentReceipt",
+    "AIAnalytics",
+    "LLMAttempt",
+    "LLMBudgetDay",
+    "LLMBudgetReservation",
+    "LLMDispatchReceipt",
+    "LLMModel",
+    "LLMOutcomeEvent",
+    "LLMProvider",
+]
 _MODULES = {
     "AgentScenario": "agent_scenario",
+    "AnalyzedContentReceipt": "analyzed_content_receipt",
     "AIAnalytics": "ai_analytics",
+    "LLMAttempt": "llm_attempt",
+    "LLMBudgetDay": "llm_budget",
+    "LLMBudgetReservation": "llm_budget",
+    "LLMDispatchReceipt": "llm_dispatch_receipt",
     "LLMModel": "llm_model",
+    "LLMOutcomeEvent": "llm_outcome_event",
     "LLMProvider": "llm_provider",
 }
 

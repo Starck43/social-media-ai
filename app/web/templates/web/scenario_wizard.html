@@ -1,6 +1,7 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import check_card, switch_toggle, icon %}
+{% from "web/_macros.html" import check_card, switch_toggle, icon, popover_select %}
 {% block title %}{% if create %}Новый сценарий{% else %}{{ draft.name }} | Сценарии{% endif %}{% endblock %}
+{% block page_heading %}{% if create %}Новый сценарий{% else %}{{ draft.name }}{% endif %}{% endblock %}
 {% block content %}
 {% set editable = perms and perms.can('agentscenario', 'create' if create else 'update') %}
 {% set action_url = '/app/scenarios/new' if create else '/app/scenarios/' ~ scenario_id %}
@@ -14,24 +15,16 @@
     <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
             <a href="/app/scenarios" class="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">← Все сценарии</a>
-            <h1 class="mt-1 text-2xl font-semibold tracking-tight">
-                {% if create %}Новый сценарий{% else %}{{ draft.name }}{% endif %}
-            </h1>
+
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                {% if not create %}
-                    {% if draft.is_default %}
-                        Сценарий по умолчанию для новых источников.
-                    {% else %}
-                        Назначен тем источникам, которые его выбрали.
-                    {% endif %}
-                {% endif %}
+                Методика анализа; её выбирают в задаче. Если задача не задаёт сценарий, используется сценарий workspace по умолчанию.
             </p>
         </div>
         {% if editable %}
-            <button type="submit" form="scenario-form"
+            <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><button type="submit" form="scenario-form"
                     class="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                 Сохранить
-            </button>
+            </button></div></template>
         {% endif %}
     </div>
 
@@ -39,6 +32,29 @@
         <div class="mb-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4 text-sm text-slate-600 dark:text-slate-400">
             {% if create %}У вас нет прав создавать сценарии.{% else %}Вы можете читать сценарий, но не менять его — правомочие требуется ролью.{% endif %}
         </div>
+    {% endif %}
+
+    {% if usage is not none %}
+    <section class="ui-card mb-5" aria-labelledby="scenario-usage-title">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 id="scenario-usage-title" class="text-sm font-medium text-slate-800 dark:text-slate-200">Использование сценария</h2>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Задач: {{ usage.total }} · активных: {{ usage.active }} · приостановлено: {{ usage.paused }} · последний запуск: {{ usage.last_status or 'ещё не запускался' }} · следующий: {{ usage.next_run }}</p>
+            </div>
+            {% if can_create_tasks and draft.is_active %}
+            <a href="/app/tasks?create=1&amp;scenario_id={{ scenario_id }}" class="rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400">Создать задачу с этим сценарием</a>
+            {% elif can_create_tasks %}
+            <span class="text-xs text-amber-800 dark:text-amber-300">Активируйте сценарий, чтобы создать задачу по нему.</span>
+            {% endif %}
+        </div>
+        {% if usage.tasks %}
+        <ul class="mt-3 grid gap-2 sm:grid-cols-2">
+            {% for task in usage.tasks %}
+            <li><a href="/app/tasks/{{ task.id }}" class="text-sm text-cyan-700 dark:text-cyan-400 hover:underline">{{ task.name }}</a><span class="ml-2 text-xs text-slate-600 dark:text-slate-400">{% if task.is_active %}активна{% else %}на паузе{% endif %}</span></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
     {% endif %}
 
     {% set ro = '' if editable else 'pointer-events-none opacity-60' %}
@@ -78,7 +94,7 @@
                         <div class="flex flex-wrap gap-6">
                             {{ switch_toggle("is_active", "Активен", checked=draft.is_active, disabled=not editable) }}
                             {% if not create %}
-                            {{ switch_toggle("is_default", "По умолчанию для новых источников", checked=draft.is_default, disabled=not editable) }}
+                            {{ switch_toggle("is_default", "Сценарий workspace по умолчанию", checked=draft.is_default, disabled=not editable) }}
                             {% endif %}
                         </div>
                     </div>
@@ -86,15 +102,15 @@
                 </div>
 
                 <div>
-                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Что мониторим</h2>
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Поддерживаемые медиа</h2>
                     <fieldset class="ui-card {{ ro }}">
-                    <p class="mb-3 text-xs text-slate-600 dark:text-slate-400">Типы контента, которые будут собираться и попадать в анализ.</p>
+                    <p class="mb-3 text-xs text-slate-600 dark:text-slate-400">Какие форматы сценарий умеет анализировать. Что и где собирать — задаётся в задаче.</p>
                     <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {% for ct in content_types %}
                             {{ check_card(
                                 "sc-ct-" ~ ct.db_value, "content_types", ct.db_value,
                                 icon("source") ~ " " ~ ct.display_name,
-                                checked=(draft.content_types and ct.db_value in draft.content_types),
+                                checked=(selected_media and ct.db_value in selected_media),
                                 cls="content-cb"
                             ) }}
                         {% endfor %}
@@ -116,7 +132,7 @@
                                 icon("topics") ~ " " ~ at.display_name,
                                 checked=(draft.analysis_types and at.db_value in draft.analysis_types),
                                 cls="analysis-cb",
-                                attrs='@change="rebuildScope()"'
+                                attrs={'@change': 'rebuildScope()'}
                             ) }}
                         {% endfor %}
                     </ul>
@@ -245,13 +261,14 @@
                             ] %}
                                 <div>
                                     <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">{{ label }}</label>
-                                    <select id="sc-{{ field }}" name="{{ field }}"
-                                            class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                                        <option value="">Автовыбор</option>
-                                        {% for m in llm_models if m.model_type == field.split('_')[0] %}
-                                            <option value="{{ m.id }}" {% if current == m.id %}selected{% endif %}>{{ m.name }}</option>
-                                        {% endfor %}
-                                    </select>
+                                    {% set model_options = [] %}
+                                    {% for m in llm_models if field.split('_')[0] in m.model_type.split(',') %}
+                                        {% set provider = m.provider.name if m.provider else '?' %}
+                                        {% set status = 'активна' if m.is_active else 'неактивна' %}
+                                        {% set last_used = m.last_used_at.strftime('%d.%m %H:%M') if m.last_used_at else 'никогда' %}
+                                        {% do model_options.append((m.id, m.name ~ ' / ' ~ m.model_id, provider ~ ' · ' ~ m.model_type ~ ' · ' ~ status ~ ' · ' ~ last_used ~ ' · ' ~ m.use_count ~ '/' ~ m.fail_count ~ ' тестов')) %}
+                                    {% endfor %}
+                                    {{ popover_select(field, 'sc-' ~ loop.index0, model_options, current=current, placeholder='Модель') }}
                                 </div>
                             {% endfor %}
                         </div>

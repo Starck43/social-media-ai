@@ -17,11 +17,10 @@ platform role, and every model in the console is treated the same way:
   in `BaseAdmin.action_permissions` (running a task, re-analysing, sending a
   notification are `update`; probing an LLM provider is `configure`).
 
-The source of truth is the same for the whole app: `role_permission` ->
-`permissions.model_type_id` + `action_type`, read through
-`User.model_permissions()`. Superusers — the `is_superuser` flag or the
-SUPERUSER role, the developer whose surface is this console and the CLI — are
-granted the wildcard pair and pass everything.
+Only active platform operators and administrators may enter. Operator grants
+come from `role_permission` -> `permissions.model_type_id` + `action_type`,
+read through `User.model_permissions()`. A platform administrator bypasses
+individual grants; workspace roles never grant console access.
 
 sqladmin asks `has_permission` many times while rendering one page (once per
 row), so it must not do I/O. Everything is read once per request in
@@ -32,6 +31,7 @@ a set of `(identity, action)` pairs that later calls only match against.
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -48,6 +48,22 @@ from app.models import User
 from app.types import ActionType
 
 logger = logging.getLogger(__name__)
+
+# The console request currently being served. sqladmin hands `scaffold_form`
+# the rules but not the request, so the actor it needs is published here by
+# `AdminAuthorizationBackend.load()`. A context var, not an attribute: two
+# operators can render forms at the same time and each must see their own.
+_console_request: ContextVar[Optional[Request]] = ContextVar("console_request", default=None)
+
+
+def bind_console_request(request: Request) -> None:
+    """Publish `request` to console code that sqladmin calls without it."""
+    _console_request.set(request)
+
+
+def bound_console_request() -> Optional[Request]:
+    """The request bound by `load()`, or None outside a console request."""
+    return _console_request.get()
 
 # sqladmin action -> the `ActionType` a role must carry for it. `Action` is a
 # `str` enum, so these keys match the plain strings sqladmin passes in.
@@ -93,16 +109,31 @@ class AdminAuthorizationBackend(GrantsAuthorizationBackend):
 
     # --- per-request state -------------------------------------------------
 
+    async def load(self, request: Request) -> None:
+        """Prepare the request, and publish it to code sqladmin calls later.
+
+        `scaffold_form` gets no request argument, and `BaseAdmin._form_request`
+        only covers the routes of one view — so the request is bound here, once,
+        where sqladmin already guarantees "authentication done, nothing rendered
+        yet". The context var is task-local: two operators browsing at the same
+        time each see their own.
+        """
+        bind_console_request(request)
+        await super().load(request)
+
     async def get_grants(self, request: Request) -> set[tuple[str, str]]:
         """The `(identity, action)` pairs the signed-in operator may use.
 
-        Empty for an anonymous request, the wildcard pair for a superuser, and
-        the role's rights translated into console actions otherwise.
+        Empty for an anonymous/non-operator request, the wildcard pair for the
+        platform owner, and the role's rights translated into console actions
+        otherwise. An `admin` is not a wildcard holder: its console is exactly
+        what `role_permission` grants the `admin` role, which is what lets the
+        owner narrow one admin's reach without touching the owner's own.
         """
         user = await self.resolve_user(request)
-        if user is None:
+        if user is None or not user.has_admin_access():
             return set()
-        if user._is_superuser_role():
+        if user.is_superuser:
             return {(WILDCARD, WILDCARD)}
 
         model_by_identity, custom_rights = self._catalog(request)
@@ -139,20 +170,19 @@ class AdminAuthorizationBackend(GrantsAuthorizationBackend):
             return cached
 
         user: Optional[User] = None
-        user_id = request.session.get("user_id")
-        if user_id:
+        token = request.session.get("token")
+        if token:
             try:
-                # `select_related("role")` + `prefetch_related("role.permissions")`
-                # conflict on the same path, and the prefetch alone loads both
-                # (nested selectinload) — the same trick as `AdminAuthBackend`.
-                user = await User.objects.prefetch_related("role.permissions").get(id=int(user_id))
-            except (TypeError, ValueError):
-                logger.warning("Admin session carries a malformed user_id: %r", user_id)
+                from app.services.user.auth import get_authenticated_user
+
+                authenticated = await get_authenticated_user(token=token)
+                if authenticated is not None and authenticated.is_active:
+                    user = await User.objects.prefetch_related("role.permissions").get(id=authenticated.id)
+                    if user is not None and (not user.is_active or not user.has_admin_access()):
+                        user = None
             except Exception:
-                # The account was deleted (or the database blinked) between login
-                # and this request: treat the session as signed out rather than
-                # handing a half-loaded user to the permission checks.
-                logger.warning("Admin user %s could not be loaded", user_id, exc_info=True)
+                # Revoked/invalid identity or unavailable DB must grant nothing.
+                logger.warning("Admin identity could not be resolved", exc_info=True)
 
         request.state.admin_user = user
         return user
@@ -225,11 +255,14 @@ async def require_admin_perm(request: Request, model_name: str, action: ActionTy
     go through the same `User.model_permissions()` the rest of the console uses,
     which keeps one answer to "may this operator do this" instead of two.
     """
-    user = await _console_backend(request).resolve_user(request)
-    if user is None or not user.has_perm_for(model_name, action):
+    backend = _console_backend(request)
+    # Plain FastAPI routes do not run SQLAdmin's login_required wrapper.
+    # Load the same request-bound grants before rendering its shared menu.
+    await backend.load(request)
+    user = await backend.resolve_user(request)
+    if user is None or not user.has_admin_access() or not user.has_perm_for(model_name, action):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Missing permission: {model_name}.{action.db_value}",
         )
     return user
-

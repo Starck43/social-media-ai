@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -10,6 +12,29 @@ from typing import Any
 from app.core.tenant_context import current_tenant_id, is_bypass
 
 logger = logging.getLogger(__name__)
+
+_memory_actor: ContextVar[tuple[int, bool, int] | None] = ContextVar("agent_memory_actor", default=None)
+
+
+@contextmanager
+def memory_actor_scope(user_id: int, is_owner: bool):
+    """Bind memory access to the authenticated workspace member for this turn."""
+    tenant_id = current_tenant_id()
+    if not _positive_id(user_id) or type(is_owner) is not bool or not _positive_id(tenant_id) or is_bypass():
+        raise ValueError("Agent memory requires a valid actor and workspace binding")
+    token = _memory_actor.set((user_id, is_owner, tenant_id))
+    try:
+        yield
+    finally:
+        _memory_actor.reset(token)
+
+
+def current_memory_actor() -> tuple[int, bool] | None:
+    """Actor permitted to read/write personal memory in this execution context."""
+    actor = _memory_actor.get()
+    if actor is None or actor[2] != current_tenant_id() or is_bypass():
+        return None
+    return actor[0], actor[1]
 
 
 def _positive_id(value: Any) -> bool:
@@ -28,6 +53,10 @@ class RuntimeIdentity:
     user_role_id: int | None
     is_owner: bool
     user: Any = field(repr=False, compare=False)
+    workspace_role_codename: str | None = None
+    ai_chat_enabled: bool = False
+    # Resolved workspace-role rights for this membership.
+    member_grants: frozenset | None = field(default=None, repr=False, compare=False)
 
     def actor_binding(self) -> dict[str, Any]:
         return {
@@ -43,6 +72,8 @@ class RuntimeIdentity:
         return {
             **self.actor_binding(),
             "membership_role_id": self.membership_role_id,
+            "workspace_role_codename": self.workspace_role_codename,
+            "ai_chat_enabled": self.ai_chat_enabled,
             "user_role_id": self.user_role_id,
         }
 
@@ -88,9 +119,7 @@ async def resolve_runtime_identity(resolution: Any) -> RuntimeIdentity | None:
             if external_id != str(membership.user_id) or chat_id != external_id:
                 return None
         else:
-            binding = await tenant_channels.get(
-                tenant_id=tenant_id, channel=channel, chat_id=chat_id, is_active=True
-            )
+            binding = await tenant_channels.get(tenant_id=tenant_id, channel=channel, chat_id=chat_id, is_active=True)
             if (
                 binding is None
                 or not binding.is_active
@@ -103,23 +132,42 @@ async def resolve_runtime_identity(resolution: Any) -> RuntimeIdentity | None:
             id=membership.user_id, is_active=True
         )
         if (
-            user is None or user.id != membership.user_id or not user.is_active
-            or not _positive_id(user.role_id) or user.role is None or user.role.id != user.role_id
+            user is None
+            or user.id != membership.user_id
+            or not user.is_active
+            or not _positive_id(user.role_id)
+            or user.role is None
+            or user.role.id != user.role_id
         ):
             return None
         role = membership.role if membership.role_id is not None else None
-        if membership.role_id is not None and (
-            not _positive_id(membership.role_id) or role is None or role.id != membership.role_id
-        ):
+        if not _positive_id(membership.role_id) or role is None or role.id != membership.role_id:
             return None
         codename = getattr(role, "codename", None)
-        role_name = getattr(codename, "name", codename)
-        owner = role is not None and role_name == "SUPERUSER"
+        role_name = getattr(codename, "value", None) or getattr(codename, "name", codename)
+        role_name = str(role_name).lower() if role_name is not None else None
+        from app.types import WorkspaceRoleType
+
+        if role_name not in {role.value for role in WorkspaceRoleType}:
+            return None
+        owner = role_name == "owner"
+        ai_chat_enabled = owner or bool(getattr(membership, "ai_chat_enabled", False))
+        # No NULL-role elevation here either: a role-less member has no workspace rights.
+        grants = await tenant_users.member_grants(membership)
         return RuntimeIdentity(
-            tenant_id=tenant_id, user_id=user.id, membership_id=membership.id,
-            channel=channel, chat_id=chat_id, external_user_id=external_id,
-            membership_role_id=membership.role_id, user_role_id=user.role_id,
-            is_owner=owner, user=user,
+            tenant_id=tenant_id,
+            user_id=user.id,
+            membership_id=membership.id,
+            channel=channel,
+            chat_id=chat_id,
+            external_user_id=external_id,
+            membership_role_id=membership.role_id,
+            user_role_id=user.role_id,
+            is_owner=owner,
+            workspace_role_codename=role_name,
+            ai_chat_enabled=ai_chat_enabled,
+            user=user,
+            member_grants=grants,
         )
     except Exception:  # closed/detached/failed identity loads must never authorize
         logger.warning("runtime_identity_load_failed")
@@ -128,10 +176,14 @@ async def resolve_runtime_identity(resolution: Any) -> RuntimeIdentity | None:
 
 async def refresh_runtime_identity(identity: RuntimeIdentity) -> RuntimeIdentity | None:
     """Refresh rights; an identity rebind requires a new turn/approval."""
-    fresh = await resolve_runtime_identity(SimpleNamespace(
-        tenant_id=identity.tenant_id, channel=identity.channel,
-        chat_id=identity.chat_id, user_id=identity.external_user_id,
-    ))
+    fresh = await resolve_runtime_identity(
+        SimpleNamespace(
+            tenant_id=identity.tenant_id,
+            channel=identity.channel,
+            chat_id=identity.chat_id,
+            user_id=identity.external_user_id,
+        )
+    )
     if fresh is None or fresh.actor_binding() != identity.actor_binding():
         return None
     return fresh

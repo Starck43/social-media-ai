@@ -1,12 +1,12 @@
-"""Legacy ModelType imports with unchanged runtime binding semantics."""
+"""Legacy imports; canonical model and manager registration live in the domain facade."""
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Integer, String, Text, Boolean
+from sqlalchemy import Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, TimestampMixin
 from ..core.config import settings
+from .base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from . import Permission

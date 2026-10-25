@@ -1,12 +1,6 @@
 # Project map: current runtime and planned expansion
 
-Baseline: dev `234a23dd7d1d2ce8dd3813f1ed63c7c7ef748669`, inspected 2026-10-09. Diagrams are explanatory views, not deployed-state evidence or complete dependency/FK graphs. Current views and separately labeled planned views prevent a roadmap being mistaken for shipped features. See [documentation index](DOCS_INDEX.md) and [status rules](DOCUMENTATION_GUIDE.md).
-
-Navigation note (dev `eb49d1d`, 2026-10-09): diagrams retain their stated original
-baseline. PR #12 integration and later bounded follow-ups are merged; section 5
-is a **historical baseline view**, not today's assignment or activation status.
-For work now, read [stages](ROADMAP_INTEGRATED.md) → [current tasks](design/README.md)
-and current dev/PR evidence. No new diagram/runtime validation is claimed here.
+Source baseline: dev `84ee16d284a6355006dd71c7157a0744ab203ddd`, inspected 2026-10-12. Diagrams are explanatory views, not deployed-state evidence or complete dependency/FK graphs. Current views and separately labeled planned views prevent a roadmap being mistaken for shipped features. For active work, read [business readiness](BUSINESS_PRODUCTION_READINESS.md) → [current tasks](phases/README.md); delivered foundations are indexed in [implementation status](IMPLEMENTATION_STATUS.md).
 
 ## 1. Current system context
 
@@ -47,12 +41,10 @@ MAX transport is not MAX collection. Recipients must be owned/authorized; operat
 | `app/services/tenancy/`, `app/core/` | Workspace context, configuration, DB/security foundations | [Tenancy](TENANCY.md) |
 | `app/models/`, `app/schemas/` | ORM, managers and typed contracts | [Models](MODELS.md) |
 | `app/services/notifications/` | Workspace notifications and operator alert separation | [Notifications](NOTIFICATIONS.md) |
-| `app/templates/`, `app/static/` | Web assets and templates | [UI design](design/ui.md) |
+| `app/templates/`, `app/static/` | Web assets and templates | [API](API.md) and [analytics](ANALYTICS_AGGREGATION_SYSTEM.md) |
 | `cli/`, `scripts/` | Operator commands and setup/test utilities | [CLI](CLI.md) |
 | `migrations/`, `tests/`, `docker/` | Schema history, regression checks and deployment assets | [Deployment](DEPLOYMENT.md) |
 | `app/celery/` | Frozen legacy; not the active runtime architecture | Root guidance |
-
-No nonexistent `app/services/llm/` directory is introduced in this map: the inspected services directory contains `ai`, not a dedicated `llm` directory. Recheck older guidance against actual source paths before navigating or editing.
 
 ```mermaid
 flowchart TB
@@ -117,30 +109,7 @@ sequenceDiagram
 
 Conceptual happy path, not proof of complete fail-closed identity or actor/TTL-bound approval. Those remain readiness work; rejected operations must not execute.
 
-## 5. Historical delivery baseline — not current work status
-
-```mermaid
-flowchart TB
-    Builder[Current builder / broadcast path] --> Existing[Existing delivery behavior]
-    subgraph Foundation[MERGED foundation - not end-to-end activation]
-        Schema[0087 checkpoint storage]
-        Contract[Versioned state contract]
-        Parts[Deterministic HTML parts]
-        Transport[Opt-in one-part transport]
-        Store[Locked checkpoint store]
-        Schema --> Contract --> Store
-        Parts --> Store
-        Transport --> Store
-    end
-    Snapshot[PR 12: atomic fresh snapshot - IN REVIEW] -.-> Foundation
-    Binding[Original job / run / window binding - OPEN] -.-> Snapshot
-    Activation[Coordinated builder activation - OPEN] -.-> Store
-    Recovery[Truthful outcomes / uncertainty recovery - OPEN] -.-> Activation
-```
-
-At the inspected baseline PR #12 is draft/open (`91a4ab1`), not merged. Its reported 250 focused passes are the other task's evidence, not checks rerun by this documentation task. Merged foundation does not mean deployed migration or active retries. Latest work-in-review checklist is on that PR branch; merged status is [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md). Do not duplicate receipt fields into a future general-purpose outbox without a separate design.
-
-## 6. Proposed cloud/hybrid topology - NOT IMPLEMENTED
+## 5. Proposed cloud/hybrid topology - NOT IMPLEMENTED
 
 ```mermaid
 flowchart TB
@@ -161,7 +130,7 @@ flowchart TB
     Connector -->|Outbound authenticated connection / allowed results| Core
 ```
 
-One connector engine, personal/server profiles; no customer server required for direct cloud use. Local-only content, including prompts/results, must not pass through cloud chat. There is no automatic external model fallback. Autonomous core placement is a later stage. Detailed policies and acceptance: [DEPLOYMENT_ARCHITECTURE](DEPLOYMENT_ARCHITECTURE.md).
+One connector engine, personal/server profiles; no customer server required for direct cloud use. Local-only content, including prompts/results, must not pass through cloud chat. There is no automatic external model fallback. Autonomous core placement is a later stage. Supported operation is documented in [DEPLOYMENT](DEPLOYMENT.md); target boundaries remain in [ASSISTANT_ARCHITECTURE](ASSISTANT_ARCHITECTURE.md).
 
 ## Maintenance
 

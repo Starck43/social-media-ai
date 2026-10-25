@@ -1,6 +1,8 @@
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -36,6 +38,12 @@ class Settings(BaseSettings):
     LOGIN_TIMEOUT_MINUTES: int = 15  # Lockout duration after max attempts
     MAX_LOGIN_ATTEMPTS: int = 5
 
+    # Collection freshness. An active source that has not been checked for
+    # longer than this is reported on the sources page. Collection runs on the
+    # workspace's own schedule, so the window is a deployment decision, not a
+    # constant buried in a template.
+    SOURCE_STALE_HOURS: int = Field(default=24, ge=1)
+
     # Password settings
     PASSWORD_MIN_LENGTH: int = 6 if ENVIRONMENT == "development" else 8
     PASSWORD_REQUIRE_UPPERCASE: bool = True
@@ -47,8 +55,17 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     TOKEN_URL: str = f"{API_V1_STR}/auth/login"
 
-    # JWT настройки
+    # JWT настройки: only HMAC with SECRET_KEY; asymmetric algorithms are refused
+    # so a public key can never be accepted as an HMAC secret.
     ALGORITHM: str = "HS256"
+
+    @field_validator("ALGORITHM")
+    @classmethod
+    def _hmac_algorithm_only(cls, value: str) -> str:
+        if value not in ("HS256", "HS384", "HS512"):
+            raise ValueError("ALGORITHM must be HS256, HS384 or HS512")
+        return value
+
     # Токен доступа истекает через 30 дней в development и 1 час в production
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30
     # Refresh токен истекает через 30 дней
@@ -68,6 +85,15 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"  # Optional: only needed by frozen Celery/sqladmin storage
     DB_SCHEMA: str = "public"
     DB_TEST_SCHEMA: str = "test_schema"
+    # Connection pool for the async engine: `pool` (default) reuses
+    # connections, `null` opens a new one per session.
+    #
+    # A pooled asyncpg connection belongs to the event loop that created it.
+    # The test suite runs several unittest-style cases in their own loop per
+    # test, so a reused connection would cross a loop boundary and fail with
+    # "got Future attached to a different loop". There, `null` is the only
+    # correct setting: no connection is ever carried into another loop.
+    DB_POOL: str = "pool"
 
     # External platform credentials (optional — integrations are enabled based on presence).
     # Application/infrastructure config, one-per-deployment: read from here. Personal
@@ -94,7 +120,17 @@ class Settings(BaseSettings):
     # Common social collection defaults
     SOCIAL_PAGE_SIZE: int = 50
     SOCIAL_MAX_PAGES: int = 20
+    # Hard ceiling on rows fetched per source in one run. A typo in a date
+    # window or an accidental "all history" must not park a wall's full archive
+    # in `collected_items`; an operator can raise it per source with
+    # `params.collection.limit`, never above `SOCIAL_COLLECT_HARD_LIMIT`.
+    SOCIAL_COLLECT_LIMIT: int = 1000
+    SOCIAL_COLLECT_HARD_LIMIT: int = 1000
     SOCIAL_REQUEST_TIMEOUT: float = 30.0
+    # Platform rate limits during collection: retries of a short limit and the cap
+    # on one pause (seconds). A limit that does not clear defers the source.
+    SOCIAL_RATE_LIMIT_RETRIES: int = 2
+    SOCIAL_RATE_LIMIT_MAX_WAIT: float = 10.0
 
     # --- Channels / owner allowlist ---
     TELEGRAM_OWNER_IDS: str = ""  # comma-separated Telegram user ids allowed to talk to the agent
@@ -115,6 +151,8 @@ class Settings(BaseSettings):
     # --- Task runner ---
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_POLL_SECONDS: int = 30
+    # Personal budget admission is opt-in until schema and real acceptance pass.
+    PERSONAL_BILLING_ENABLED: bool = False
     SCHEDULER_TIMEZONE: str = "Europe/Moscow"
 
     # --- Agent ---
@@ -130,7 +168,22 @@ class Settings(BaseSettings):
     JOB_MAX_ATTEMPTS: int = 3
     JOB_RETRY_BACKOFF_SECONDS: int = 300
 
+    # --- Data retention ---
+    # Calendar months to keep analysis results and unanalysed raw content. The
+    # daily prune removes older rows, measured by their last write, not by the
+    # publication date. Minimum 1; deleted rows are not recoverable from the app.
+    DATA_RETENTION_MONTHS: int = Field(default=1, ge=1)
+
     LOG_LEVEL: str = "WARNING"
+    LOG_DIR: Path = Field(default_factory=lambda: Path.home() / ".social-media-ai" / "logs")
+
+    @field_validator("LOG_DIR")
+    @classmethod
+    def _absolute_log_dir(cls, value: Path) -> Path:
+        value = value.expanduser()
+        if not value.is_absolute():
+            raise ValueError("LOG_DIR must be an absolute path")
+        return value
 
     def telegram_owner_ids(self) -> list[int]:
         """Parse TELEGRAM_OWNER_IDS ('1, 2, 3') into a list of ints."""

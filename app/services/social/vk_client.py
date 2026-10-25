@@ -43,6 +43,16 @@ class VKClient(BaseClient):
 	# Web user (users.id) whose L2 token this source collects with, from
 	# Source.params["token_owner"]; None falls back to the workspace vault/env.
 	_token_owner: int | None = None
+	# Extended data from a `newsfeed.search` page (extended=1 returns profiles
+	# and groups separately from items). Written per page and read while the
+	# aggregated batch is normalised, so an author keeps its display name even
+	# though `_build_paginated_response` only carries items.
+	_profile_names: dict[int, str] | None = None
+	_group_names: dict[int, str] | None = None
+	# Optional owner whitelist for a SEARCH source: only posts whose wall is one
+	# of these communities are kept. Applied during normalisation because
+	# `newsfeed.search` has no owner parameter.
+	_owner_ids_filter: set[str] | None = None
 
 	# Source.params["mode"] values (see docs/COLLECTION.md).
 	MODE_API = "api"  # L1: service token only
@@ -53,6 +63,13 @@ class VKClient(BaseClient):
 	# 15 — access denied (hidden wall/community), 5 — auth failed. These trigger
 	# the automatic L1->L2 (service->user token) fallback in `auto` mode.
 	L1_UNAVAILABLE_CODES = {15, 5}
+
+	# VK error codes that mean "there is no such object" for the identity
+	# resolvers (`groups.getById`, `users.get`): 100 — unknown id, 770 —
+	# "cannot define the group by this id". Their answer reads as None
+	# ("not found"); every other error propagates so a broken token is never
+	# mistaken for a missing community.
+	RESOLVE_NOT_FOUND_CODES = frozenset({100, 770})
 
 	async def collect_data(self, source: Source, content_type: str = "posts") -> list[dict]:
 		"""
@@ -75,6 +92,14 @@ class VKClient(BaseClient):
 		if mode not in (self.MODE_API, self.MODE_USER, self.MODE_AUTO):
 			logger.warning(f"Unknown VK mode {mode!r} for source {source.id} - treating as {self.MODE_AUTO}")
 
+		# A search source carries its phrase and filters in params, not a wall.
+		# Extended maps and the owner filter are per-run state, so a previous
+		# source's response can never leak into this one.
+		self._profile_names = {}
+		self._group_names = {}
+		owner_ids = (source.params or {}).get("owner_ids")
+		self._owner_ids_filter = {str(value) for value in owner_ids} if isinstance(owner_ids, list) and owner_ids else None
+
 		# Which web user's L2 (user) token this source collects with.
 		# `resolve_source_owner` honours an explicit `Source.params["token_owner"]`
 		# (validated as a member of this workspace) and otherwise defaults to the
@@ -83,7 +108,11 @@ class VKClient(BaseClient):
 		if mode in (self.MODE_USER, self.MODE_AUTO):
 			self._token_owner = await resolve_source_owner(source)
 
-		self._resolved_external_id = await self._resolve_external_id(source.external_id)
+		self._resolved_external_id = (
+			source.external_id
+			if getattr(source, "source_type", None) == SourceType.SEARCH
+			else await self._resolve_external_id(source.external_id)
+		)
 
 		if mode == self.MODE_USER:
 			return await self._collect_with_kinds(source, content_type, ("user_token",))
@@ -206,6 +235,12 @@ class VKClient(BaseClient):
 			"info": "groups.getById",
 		}
 
+		# A SEARCH source is a phrase, not a wall: VK's global post search.
+		search_methods = {
+			"posts": "newsfeed.search",
+			"comments": "newsfeed.search",
+		}
+
 		# User-like methods
 		user_methods = {
 			"posts": "wall.get",
@@ -225,6 +260,8 @@ class VKClient(BaseClient):
 			SourceType.PAGE: group_methods,
 			SourceType.EVENT: group_methods,
 			SourceType.SUPERGROUP: group_methods,
+			# A global query: newsfeed.search (posts only).
+			SourceType.SEARCH: search_methods,
 			# Specialized types
 			SourceType.MARKET: {
 				"posts": "wall.get",
@@ -267,18 +304,45 @@ class VKClient(BaseClient):
 		if external_id.lstrip("-").isdigit():
 			return external_id
 
-		# Resolve screen_name via VK API
+		# Resolve screen_name via VK API. A nick is tried as a person first
+		# (`users.get`), then as a community: `utils.resolveScreenName` answers
+		# error 1051 ("method is not available for this profile type") for a
+		# service key, yet `users.get` still maps the same nick to its id.
 		logger.info(f"Resolving screen_name: {external_id}")
 		platform_params = self.platform.params or {}
 		api_base = platform_params.get("api_base_url") or settings.VK_API_BASE_URL
 		api_version = platform_params.get("api_version") or settings.VK_API_VERSION
-		url = f"{api_base}/utils.resolveScreenName"
-		params = {"screen_name": external_id, "access_token": self._token(), "v": api_version}
+		auth = {"access_token": self._token(), "v": api_version}
 
 		import httpx
 
 		async with httpx.AsyncClient() as client:
-			response = await client.get(url, params=params)
+			user_id = await self._resolve_user_id(client, api_base, auth, external_id)
+			if user_id is not None:
+				logger.info(f"Resolved {external_id} → {user_id} (type: user)")
+				return user_id
+
+			# A community nick. `utils.resolveScreenName` answers error 1051 for
+			# this app profile type, while `groups.getById` resolves the same
+			# screen name and is allowed — so the community is tried first and
+			# the generic resolver stays only as a last resort.
+			try:
+				group_response = await client.get(
+					f"{api_base}/groups.getById", params={"group_id": external_id, **auth}
+				)
+				group_data = group_response.json()
+				groups = group_data.get("response", {}).get("groups") if isinstance(group_data, dict) else None
+				group = groups[0] if isinstance(groups, list) and groups else None
+				if isinstance(group, dict) and group.get("id"):
+					resolved_id = f"-{group['id']}"
+					logger.info(f"Resolved {external_id} → {resolved_id} (type: {group.get('type') or 'group'})")
+					return resolved_id
+			except Exception:  # noqa: BLE001 — resolution is best-effort; collection decides
+				logger.debug("VK groups.getById probe failed for %s", external_id, exc_info=True)
+
+			response = await client.get(
+				f"{api_base}/utils.resolveScreenName", params={"screen_name": external_id, **auth}
+			)
 			data = response.json()
 
 			if "response" in data and data["response"]:
@@ -296,6 +360,31 @@ class VKClient(BaseClient):
 
 			logger.warning(f"Cannot resolve screen_name: {external_id}, using as-is")
 			return external_id
+
+	async def _resolve_user_id(self, client: Any, api_base: str, auth: dict, screen_name: str) -> str | None:
+		"""Numeric id of the person with this nick, or None when it is not a person.
+
+		`users.get` accepts a screen_name in `user_ids` and returns an empty list
+		for a community nick — that empty answer is how "not a person" is told
+		apart from "the call failed". A failed call returns None too and lets the
+		next resolution step decide; nothing here turns a transport error into a
+		wrong id.
+		"""
+		try:
+			response = await client.get(
+				f"{api_base}/users.get", params={"user_ids": screen_name, **auth}
+			)
+			data = response.json()
+		except Exception:  # noqa: BLE001 — resolution is best-effort; collection decides
+			logger.debug("VK users.get probe failed for %s", screen_name, exc_info=True)
+			return None
+		rows = data.get("response") if isinstance(data, dict) else None
+		if isinstance(rows, list) and rows:
+			row = rows[0]
+			user_id = row.get("id") if isinstance(row, dict) else None
+			if user_id:
+				return str(user_id)
+		return None
 
 	def _build_params(self, source: Source, method: str) -> dict:
 		"""
@@ -379,6 +468,31 @@ class VKClient(BaseClient):
 
 			base_params.update(params_dict)
 
+		elif method == "newsfeed.search":
+			# Global post search. `q` is the phrase; `owner_ids` is applied
+			# client-side in `_normalize_response` because the method has no
+			# owner parameter. Date bounds come from the same window as wall.get.
+			query = (source.external_id or "").strip()
+			source_params_full = (source.params or {}).get("collection", {}) if source.params else {}
+			params_dict = {
+				"q": (source.params or {}).get("query") or query,
+				"count": source_params_full.get("count", source_params.get("count", 50)),
+				"offset": source_params_full.get("offset", source_params.get("offset", 0)),
+				"extended": 1,
+				"fields": "screen_name,is_closed,type,members_count",
+			}
+			if date_from:
+				date_from_dt = universal_date_parser(date_from)
+				start_time = to_unix_timestamp(date_from_dt)
+				if start_time:
+					params_dict["start_time"] = start_time
+			if date_to:
+				date_to_dt = universal_date_parser(date_to)
+				end_time = to_unix_timestamp(date_to_dt)
+				if end_time:
+					params_dict["end_time"] = end_time
+			base_params.update(params_dict)
+
 		elif method == "users.get":
 			# User info request - typically doesn't need date filters
 			user_ids = self._parse_owner_id(source.external_id, SourceType.USER)
@@ -459,16 +573,44 @@ class VKClient(BaseClient):
 		return {**base_params, **source_params}
 
 	def _extract_items_from_response(self, response: dict) -> list:
-		"""Extract items from VK API response"""
-		return response.get("response", {}).get("items", [])
+		"""Extract items from VK API response.
+
+		`newsfeed.search` with `extended=1` returns `profiles` and `groups`
+		beside `items`; the authors are resolved from those maps later, when the
+		aggregated batch is normalised, so the names are kept on the client.
+		"""
+		data = response.get("response") if isinstance(response, dict) else None
+		if not isinstance(data, dict):
+			return []
+		for profile in data.get("profiles") or []:
+			if isinstance(profile, dict) and profile.get("id") is not None:
+				name = " ".join(part for part in (profile.get("first_name"), profile.get("last_name")) if part)
+				if name:
+					self._profile_names = {**(self._profile_names or {}), int(profile["id"]): name}
+		for group in data.get("groups") or []:
+			if isinstance(group, dict) and group.get("id") is not None and group.get("name"):
+				self._group_names = {**(self._group_names or {}), -int(group["id"]): group["name"]}
+		return data.get("items", [])
+
 
 	def _should_stop_pagination(self, response: dict, items: list, page_size: int, total_collected: int) -> bool:
-		"""Determine if VK pagination should stop"""
+		"""Determine if VK pagination should stop.
+
+		`wall.get` reports the wall size as `count`; `newsfeed.search` reports
+		the returned page as `count` and the whole result set as `total_count`,
+		so the latter wins when present. VK only serves the first 1000 search
+		results by `offset`, which is the same ceiling our collection limit
+		enforces.
+		"""
 		if not items:
 			return True
 
-		total_count = response.get("response", {}).get("count", 0)
-		return len(items) < page_size or total_collected >= total_count
+		data = response.get("response", {}) if isinstance(response, dict) else {}
+		total_count = data.get("total_count")
+		if total_count is None:
+			total_count = data.get("count", 0)
+		return len(items) < page_size or total_collected >= total_count or total_collected >= 1000
+
 
 	def _build_paginated_response(self, all_items: list) -> dict:
 		"""Build VK response structure for normalization"""
@@ -503,9 +645,10 @@ class VKClient(BaseClient):
 			# back to returning the raw screen_name (the API will reject it).
 			resolved = self._resolved_external_id or external_id
 			if resolved != external_id and resolved.lstrip("-").isdigit():
-				logger.warning(f"Invalid VK ID format: {external_id}, using resolved {resolved}")
+				# The expected path, not a fault: the nick was mapped to its id.
+				logger.debug(f"Owner id: screen_name {external_id} → {resolved}")
 				return self._parse_owner_id(resolved, source_type)
-			logger.warning(f"Invalid VK ID format: {external_id}, using as-is")
+			logger.warning(f"Cannot determine VK owner id for {external_id}, using as-is")
 			return external_id
 
 		# Apply negative for all community types
@@ -605,11 +748,30 @@ class VKClient(BaseClient):
 		normalized = []
 		for item in items:
 			try:
+				# A search source may be narrowed to specific communities:
+				# `newsfeed.search` has no owner parameter, so the wall is
+				# filtered here instead of pretending the API did it.
+				if self._owner_ids_filter is not None and str(item.get("owner_id")) not in self._owner_ids_filter:
+					continue
 				# Extract engagement metrics
 				likes = item.get("likes", {}).get("count", 0)
 				comments = item.get("comments", {}).get("count", 0)
 				reposts = item.get("reposts", {}).get("count", 0)
 				views = item.get("views", {}).get("count", 0)
+
+				# The author of the item, in the shape task selection reads.
+				# `from_id` is who wrote it; on a community wall it is the group
+				# itself (negative). A missing id leaves the author out rather
+				# than guessing one.
+				owner_id = item.get("owner_id")
+				post_id = item.get("id")
+				author_id = item.get("from_id") if item.get("from_id") is not None else owner_id
+				author = None
+				if author_id is not None:
+					author = {"platform": "vk", "external_id": str(author_id), "id": author_id}
+					name = (self._group_names or {}).get(author_id) if author_id < 0 else (self._profile_names or {}).get(author_id)
+					if name:
+						author["name"] = name
 
 				# Build normalized item
 				normalized_item = {
@@ -638,6 +800,8 @@ class VKClient(BaseClient):
 					# Additional VK-specific fields
 					"from_id": item.get("from_id"),
 					"owner_id": item.get("owner_id"),
+					"author": author,
+					"permalink": f"https://vk.com/wall{owner_id}_{post_id}" if owner_id is not None and post_id is not None else None,
 					"is_pinned": item.get("is_pinned", False),
 					"marked_as_ads": item.get("marked_as_ads", False),
 				}
@@ -660,6 +824,213 @@ class VKClient(BaseClient):
 
 		logger.info(f"Normalized {len(normalized)} VK items from {len(items)} raw items")
 		return normalized
+
+	async def _search_token(
+		self, owner_user_id: int | None, *, require_user: bool = True, kinds: tuple[str, ...] | None = None
+	) -> str:
+		"""Token for a search method, with a user-facing error when missing.
+
+		`groups.search` and `users.search` only accept a user token; a
+		deployment with just `VK_SERVICE_KEY` can still run `newsfeed.search`.
+		`database.getCities` is the opposite case: a user token answers error
+		1051, so its caller asks for the service key first.
+		"""
+		wanted = kinds or (("user_token",) if require_user else ("user_token", "service_token"))
+		token = await resolve_token("vk", kinds=wanted, owner_user_id=owner_user_id)
+		if not token:
+			raise AuthorizationRequired(
+				"Для поиска по ВКонтакте нужен личный токен",
+				platform="vk",
+				hint="Подключите ВКонтакте в настройках — поиск сообществ и людей работает от имени аккаунта.",
+			)
+		return token
+
+	async def _search_response(
+		self,
+		method: str,
+		params: dict,
+		owner_user_id: int | None,
+		*,
+		require_user: bool = True,
+		kinds: tuple[str, ...] | None = None,
+	) -> dict:
+		token = await self._search_token(owner_user_id, require_user=require_user, kinds=kinds)
+		platform_params = self.platform.params or {}
+		payload = {
+			**params,
+			"access_token": token,
+			"v": platform_params.get("api_version") or settings.VK_API_VERSION,
+		}
+		response = await self._fetch_page(method, payload)
+		return response.get("response") if isinstance(response, dict) else {}
+
+	async def search_groups(
+		self,
+		query: str,
+		*,
+		owner_user_id: int | None = None,
+		group_type: str | None = None,
+		city_id: int | None = None,
+		country_id: int | None = None,
+		sort: int = 0,
+		offset: int = 0,
+		count: int = 20,
+	) -> list[dict]:
+		"""`groups.search`: communities matching a substring, like vk.ru search."""
+		params: dict[str, Any] = {"q": query, "sort": sort, "offset": offset, "count": max(1, min(count, 1000))}
+		if group_type in ("group", "page", "event"):
+			params["type"] = group_type
+		if city_id:
+			params["city_id"] = city_id
+		elif country_id:
+			params["country_id"] = country_id
+		data = await self._search_response("groups.search", params, owner_user_id)
+		return [
+			{
+				"platform": "vk",
+				"source_type": "group",
+				"external_id": str(-abs(int(group["id"]))),
+				"name": group.get("name"),
+				"screen_name": group.get("screen_name"),
+				"members_count": group.get("members_count"),
+				"is_closed": group.get("is_closed"),
+				"type": group.get("type"),
+			}
+			for group in data.get("items") or []
+			if isinstance(group, dict) and group.get("id") is not None
+		]
+
+	async def search_users(
+		self,
+		query: str,
+		*,
+		owner_user_id: int | None = None,
+		city_id: int | None = None,
+		country_id: int | None = None,
+		offset: int = 0,
+		count: int = 20,
+	) -> list[dict]:
+		"""`users.search`: people matching a query (city/age filters optional)."""
+		params: dict[str, Any] = {
+			"q": query,
+			"offset": offset,
+			"count": max(1, min(count, 1000)),
+			"fields": "screen_name,city,verified,followers_count,occupation",
+		}
+		if city_id:
+			params["city"] = city_id
+		elif country_id:
+			params["country"] = country_id
+		data = await self._search_response("users.search", params, owner_user_id)
+		return [
+			{
+				"platform": "vk",
+				"source_type": "user",
+				"external_id": str(user["id"]),
+				"name": " ".join(part for part in (user.get("first_name"), user.get("last_name")) if part) or None,
+				"screen_name": user.get("screen_name"),
+				"city": (user.get("city") or {}).get("title") if isinstance(user.get("city"), dict) else None,
+				"followers_count": user.get("followers_count"),
+				"verified": user.get("verified"),
+			}
+			for user in data.get("items") or []
+			if isinstance(user, dict) and user.get("id") is not None
+		]
+
+	async def get_cities(
+		self, query: str, *, owner_user_id: int | None = None, country_id: int = 1, count: int = 20
+	) -> list[dict]:
+		"""`database.getCities`: resolve a city name to the id filters require."""
+		params = {"q": query, "country_id": country_id, "count": max(1, min(count, 1000))}
+		data = await self._search_response(
+			"database.getCities", params, owner_user_id,
+			kinds=("service_token", "user_token"),
+		)
+		return [
+			{
+				"id": city.get("id"),
+				"title": city.get("title"),
+				"region": city.get("region"),
+				"country": city.get("country"),
+			}
+			for city in data.get("items") or []
+			if isinstance(city, dict) and city.get("id") is not None
+		]
+
+	async def _identity_response(self, method: str, params: dict[str, Any]) -> Any:
+		"""The `response` body of one identity read (users.get / groups.getById).
+
+		Both methods accept the service key and the personal token, so both
+		kinds are offered, and the request stays on the shared `_make_request`
+		path. A VK "no such object" answer (RESOLVE_NOT_FOUND_CODES) reads as
+		an empty dict — the caller decides "not found"; any other API error
+		goes through `_raise_api_error`, so an auth or transport error
+		propagates instead of reading as a missing entry.
+		"""
+		token = await resolve_token("vk", kinds=("service_token", "user_token"))
+		if not token:
+			raise AuthorizationRequired(
+				"Нужен токен ВКонтакте, чтобы распознать сообщество или человека",
+				platform="vk",
+				hint="Подключите ВКонтакте в настройках — импорт читает только профиль, ничего не публикует.",
+			)
+		platform_params = self.platform.params or {}
+		payload = {
+			**params,
+			"access_token": token,
+			"v": platform_params.get("api_version") or settings.VK_API_VERSION,
+		}
+		response = await self._make_request(method, payload)
+		if not isinstance(response, dict):
+			return {}
+		error = response.get("error")
+		if isinstance(error, dict):
+			if error.get("error_code") in VKClient.RESOLVE_NOT_FOUND_CODES:
+				return {}
+			self._raise_api_error(response)
+			return {}
+		return response.get("response")
+
+	async def resolve_group(self, identifier: str) -> dict | None:
+		"""The community behind a screen name or numeric id, None when absent.
+
+		`groups.getById` answers for both forms (unlike `groups.search`, which
+		is refused for this app profile type). Community walls are
+		`owner_id=-<id>` in our model, so the id comes back negative.
+		"""
+		data = await self._identity_response("groups.getById", {"group_id": identifier})
+		rows = data.get("groups") if isinstance(data, dict) else data
+		row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+		if row is None or not row.get("id"):
+			return None
+		is_closed = row.get("is_closed")
+		return {
+			"id": -int(row["id"]),
+			"screen_name": row.get("screen_name"),
+			"name": row.get("name"),
+			"is_closed": None if is_closed is None else bool(is_closed),
+		}
+
+	async def resolve_user(self, identifier: str) -> dict | None:
+		"""The person behind a screen name or numeric id, None when absent.
+
+		`users.get` answers "no such person" with an empty list (also for a
+		community nick), not with an error — that empty answer is the None case.
+		"""
+		# `screen_name` is asked for explicitly: without it the answer carries
+		# only the numeric id, and an existing source that stores the nick
+		# (a legacy row) can no longer be recognised as the same person.
+		data = await self._identity_response("users.get", {"user_ids": identifier, "fields": "screen_name"})
+		rows = data if isinstance(data, list) else []
+		row = rows[0] if rows and isinstance(rows[0], dict) else None
+		if row is None or not row.get("id"):
+			return None
+		name = " ".join(part for part in (row.get("first_name"), row.get("last_name")) if part)
+		return {
+			"id": int(row["id"]),
+			"screen_name": row.get("screen_name"),
+			"name": name or None,
+		}
 
 	async def post_comment(
 			self,

@@ -1,30 +1,14 @@
-"""Rights of the current web user in the active workspace (docs/design/ui.md §7).
+"""Request-bound workspace capabilities, independent of platform role.
 
-One question — "may this caller do this to this model?" — answered exactly the
-way the sqladmin console and the machine API answer it (`User.has_perm_for`,
-structured `permissions.model_type_id` + `action_type`, never the stored
-codename), with the one exception the product needs: whoever *owns* a workspace
-may configure source/task/scenario resources, whatever their platform role is.
-Ownership grants no global fleet/role/queue right. Settings use a separate
-User/membership/target-bound ``can_manage_workspace()`` capability, not a
-global tenant-model grant. Superusers always pass valid model checks.
-
-Built once per request by `TenantUIMiddleware` and handed to templates as
-`perms` (to hide write affordances) and to route handlers through
-`guard_web()` in `app/web/deps.py` (to reject the mutation itself — hiding a
-button is not a check).
-
-Requires a user whose `role.permissions` are eager-loaded; the middleware does
-that (`User.objects.prefetch_related("role.permissions")`), so `can()` never
-walks a closed session.
+Active membership grants and the shared resource catalog gate both navigation
+and handlers. Personal-resource handlers additionally constrain the actor ID.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterable
 
-from app.core.permissions import WORKSPACE_OWNER_MODELS
-from app.types import ActionType
+from app.types import ActionType, PlatformRoleType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models import TenantUser, User
@@ -45,17 +29,20 @@ def _resolve_action(action: ActionType | str) -> ActionType | None:
 class WebPerms:
     """What the caller may do in the workspace this request runs for."""
 
-    __slots__ = ("_user", "_memberships", "_tenant_id")
+    __slots__ = ("_user", "_memberships", "_tenant_id", "_member_grants")
 
     def __init__(
         self,
         user: "User | None" = None,
         memberships: Iterable["TenantUser"] | None = None,
         tenant_id: int | None = None,
+        member_grants: frozenset | None = None,
     ) -> None:
         self._user = user
         self._memberships = list(memberships or [])
         self._tenant_id = tenant_id
+        # `TenantUserManager.member_grants()` of the active membership; None = unresolved.
+        self._member_grants = member_grants
 
     # --- who ---------------------------------------------------------------
 
@@ -65,28 +52,35 @@ class WebPerms:
 
     @property
     def is_superuser(self) -> bool:
-        return bool(self._user is not None and self._user.is_superuser)
+        """Legacy template flag: global mode is never available in /app."""
+        return False
 
     @property
     def is_superuser_role(self) -> bool:
-        """A platform role above `UserRoleType.ADMIN`: the operator's own
-        `is_superuser` flag or the SUPERUSER role (`User._is_superuser_role`).
+        """Whether the caller holds a platform operator or admin platform role.
 
-        Sections that expose infrastructure (the job queue) gate on this, not on
-        `can()` — a workspace owner passes every model right they have anyway,
-        and the queue is still not theirs to see. Fail-closed: no user, no answer.
+        Whole-section gates (`guard_superuser`) ask *who* the caller is, not
+        what the active workspace grants: owning a workspace is never an
+        operator role. Reads the platform role the request carries
+        (`User.objects.prefetch_related("role.permissions")`); callers whose
+        platform role is absent fail closed.
         """
-        return self._user is not None and bool(self._user._is_superuser_role())
+        user = self._user
+        if user is None or not getattr(user, "is_active", False):
+            return False
+        role = getattr(user, "role", None)
+        codename = getattr(role, "codename", None)
+        return codename in (PlatformRoleType.OPERATOR, PlatformRoleType.ADMIN)
 
     @property
     def workspace_role(self) -> str | None:
-        """Codename of the platform role in the active workspace, or None."""
+        """Codename of the workspace role in the active workspace, or None."""
         for membership in self._memberships:
             if membership.tenant_id == self._tenant_id:
                 if membership.role is None:
                     return None
                 codename = membership.role.codename
-                name = codename.name if hasattr(codename, "name") else str(codename)
+                name = str(codename)
                 return name
         return None
 
@@ -94,60 +88,69 @@ class WebPerms:
     def is_owner(self) -> bool:
         for membership in self._memberships:
             if membership.tenant_id == self._tenant_id:
-                return membership.is_owner
+                return bool(self._membership() and membership.is_owner)
         return False
+
+    @property
+    def can_open_chat(self) -> bool:
+        """Active members need the separate AI grant; owners have it by default."""
+        member = self._membership()
+        return bool(member and (member.is_owner or getattr(member, "ai_chat_enabled", False)))
 
     # --- what they may do --------------------------------------------------
 
     def can(self, model_name: str, action: ActionType | str) -> bool:
-        """True when the caller may perform `action` on `model_name`.
+        from app.core.access_catalog import resource_for
 
-        `model_name` is the `model_types.model_name` value, lower-cased — the
-        same string the sqladmin console and `app/api/deps.py` use (`source`,
-        `agenttask`, `agentscenario`, `digestrun`, ...).
-        """
+        resource = resource_for(model_name)
         resolved = _resolve_action(action)
-        if resolved is None or not isinstance(model_name, str) or not model_name.strip():
+        user = self._user
+        if (
+            user is None
+            or not getattr(user, "is_active", False)
+            or self._tenant_id is None
+            or resource is None
+            or not resource.workspace
+            or resolved not in resource.actions
+        ):
             return False
-        model_name = model_name.strip().lower()
-        if self._user is None or not getattr(self._user, "is_active", False):
-            return False
-        if self._user.is_superuser:
-            return True
-        if self._tenant_id is not None and self.is_owner and model_name in WORKSPACE_OWNER_MODELS:
-            return True
-        try:
-            return bool(self._user.has_perm_for(model_name, resolved))
-        except Exception:  # noqa: BLE001 - a rights check must never 500 a page
-            return False
+        membership = self._membership()
+        return bool(
+            membership and self._member_grants is not None and (resource.model_name, resolved) in self._member_grants
+        )
 
-    def can_manage_workspace(self, tenant_id: int | None) -> bool:
-        """Manage settings of a concrete workspace, not the global tenant model.
-
-        Interactive owners need an active web membership bound to this User
-        in the request's active workspace. Ordinary role grants are likewise
-        limited to that workspace here; only a platform superuser may target
-        another workspace. This capability does not change ``can()`` or the
-        core owner-model allowlist.
-        """
+    def _membership(self):
         user = self._user
         if user is None or not getattr(user, "is_active", False):
+            return None
+        return next(
+            (
+                m
+                for m in self._memberships
+                if m.tenant_id == self._tenant_id
+                and getattr(m, "user_id", None) == user.id
+                and getattr(m, "channel", None) == "web"
+                and getattr(m, "is_active", False)
+                and getattr(m, "role", None) is not None
+            ),
+            None,
+        )
+
+    def can_manage_workspace(self, tenant_id: int | None) -> bool:
+        if isinstance(tenant_id, bool) or not isinstance(tenant_id, int) or tenant_id != self._tenant_id:
             return False
-        if isinstance(tenant_id, bool) or not isinstance(tenant_id, int) or tenant_id <= 0:
+        membership = self._membership()
+        return bool(membership and membership.role.codename in ("owner", "admin"))
+
+    def can_manage_member(self, target_role: str | None, new_role: str | None = None) -> bool:
+        membership = self._membership()
+        if membership is None:
             return False
-        if user.is_superuser:
+        actor = membership.role.codename
+        if actor == "owner":
             return True
-        if tenant_id != self._tenant_id or getattr(user, "id", None) is None:
-            return False
-        for membership in self._memberships:
-            if (
-                membership.tenant_id == tenant_id
-                and getattr(membership, "user_id", None) == user.id
-                and getattr(membership, "channel", None) == "web"
-                and getattr(membership, "is_active", False)
-            ):
-                return bool(membership.is_owner or self.can("tenant", "update"))
-        return False
+        protected = {"owner", "admin", None}
+        return actor == "admin" and target_role not in protected and (new_role is None or new_role not in protected)
 
     def can_any(self, model_name: str, *actions: ActionType | str) -> bool:
         """True when at least one of the actions is allowed (toolbar buttons)."""

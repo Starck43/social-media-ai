@@ -1,0 +1,45 @@
+{# Task-owned collection intent on the detail page. The editor writes the
+   canonical block; this summary only reads the flat view the handler builds,
+   so a task with no block still shows the parser defaults. #}
+{% if collection and task.job_type in ('collect', 'analyze') %}
+<div>
+    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Сбор</dt>
+    <dd class="mt-1 space-y-1 text-slate-700 dark:text-slate-300">
+        <div>
+            Что:
+            {% for ct in collection.collection_content_types %}{% if not loop.first %} + {% endif %}{% if ct == 'comments' %}комментарии{% else %}записи{% endif %}{% endfor %}
+            · лимит {{ collection.collection_limit }}
+            {% if collection.collection_engagement_types %}
+            · вовлечённость: {% for et in collection.collection_engagement_types %}{% if not loop.first %}, {% endif %}{% if et == 'likes' %}лайки{% else %}репосты{% endif %}{% endfor %}
+            {% endif %}
+        </div>
+        {% if collection.collection_city %}
+        <div>
+            Город: {{ collection.collection_city }}
+            ({% if collection.collection_city_mode == 'require' %}требовать{% elif collection.collection_city_mode == 'review' %}на проверку{% else %}предпочитать{% endif %})
+        </div>
+        {% endif %}
+        {% if collection.collection_queries %}
+        <div>Фразы: {{ collection.collection_queries }}</div>
+        {% endif %}
+        {% if collection.collection_people or collection.collection_communities or collection.collection_discovery_queries %}
+        <div>
+            Кого искать:
+            {% if collection.collection_people %}люди{% endif %}
+            {% if collection.collection_people and collection.collection_communities %}, {% endif %}
+            {% if collection.collection_communities %}сообщества{% endif %}
+            {% if collection.collection_discovery_queries %} · {{ collection.collection_discovery_queries }}{% endif %}
+        </div>
+        {% endif %}
+        {% if collection.collection_content_types and 'comments' in collection.collection_content_types %}
+        <div>Комментарии: до {{ collection.collection_comments_max_per_post }} на запись, всего {{ collection.collection_comments_total }}</div>
+        {% endif %}
+        {% if collection.collection_people or collection.collection_communities or collection.collection_discovery_queries %}
+        <div>Кандидаты: {{ collection.collection_candidates_limit }} · {% if collection.collection_candidates_confirm == 'auto' %}подтверждать автоматически{% else %}подтверждать вручную{% endif %}</div>
+        {% endif %}
+        {% if collection.start_date or collection.end_date %}
+        <div>Период: {{ collection.start_date or '…' }} — {{ collection.end_date or '…' }}</div>
+        {% endif %}
+    </dd>
+</div>
+{% endif %}

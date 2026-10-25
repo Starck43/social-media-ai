@@ -20,7 +20,6 @@ tasks = AgentTaskManager()
 # name -> (cron, job_type, payload)
 DEFAULT_TASKS = {
     "hourly-collect": ("0 * * * *", "collect", {}),
-    "daily-prune": ("0 4 * * *", "prune", {"days": 7}),
     "daily-analyze": ("0 9 * * *", "analyze", {}),
     # Learning loop: learn fires only after enough new chat turns;
     # reflect keeps memory clean once a week (both cheap when idle).

@@ -117,7 +117,7 @@ SCHEDULER_POLL_SECONDS=30
 SCHEDULER_TIMEZONE=Europe/Moscow
 
 # ─── Agent ────────────────────────────────────────────────────
-AGENT_MODEL=              # explicit LLMModel name; empty = auto-resolve first active text model
+AGENT_MODEL=              # explicit LLMModel name inside the acting personal catalog; empty = auto-resolve
 AGENT_HISTORY_LIMIT=20    # messages kept in agent context per session
 AGENT_MAX_ITERATIONS=6    # max tool-call rounds per user message
 AGENT_DAILY_COST_LIMIT=5.0  # USD cap (agent + digests combined) per UTC day
@@ -127,6 +127,12 @@ AGENT_TEMPERATURE=0.4
 # ─── Background Jobs ──────────────────────────────────────────
 JOB_MAX_ATTEMPTS=3
 JOB_RETRY_BACKOFF_SECONDS=300
+
+# ─── Data retention ───────────────────────────────────────────
+DATA_RETENTION_MONTHS=1        # calendar months; minimum 1; deletion is irreversible
+
+# ─── Collection freshness ─────────────────────────────────────
+SOURCE_STALE_HOURS=24          # hours; an active source unchecked longer is reported stale
 
 # ─── LLM ──────────────────────────────────────────────────────
 LLM_REQUEST_DELAY=3000         # ms between requests (rate limit)
@@ -152,7 +158,8 @@ LOG_LEVEL=INFO
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8000` | Bind port |
 | `SECRET_KEY` | *(required)* | Pydantic JWT signing key |
-| `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:8000` | CORS allowed origins (comma-separated) |
+| `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:8000,http://localhost:8501` | Compatibility setting; not read by the active CORS middleware |
+| `BACKEND_CORS_ORIGINS` | `["http://localhost:3000", "http://localhost:8000"]` | Active CORS allowlist; set as a JSON list in the environment |
 
 ### Database
 
@@ -160,6 +167,7 @@ LOG_LEVEL=INFO
 |---|---|---|
 | `POSTGRES_URL` | *(required)* | Async PostgreSQL connection string (`postgresql+asyncpg://user:pass@host:port/db`) |
 | `DB_SCHEMA` | `public` | PostgreSQL schema name |
+| `DB_POOL` | `pool` | Async engine connection reuse: `pool` reuses connections, `null` opens one per session. A pooled asyncpg connection belongs to the event loop that opened it, so a process that runs parts of its work in another loop (the test suite runs several unittest-style cases in a loop of their own) must use `null`. |
 
 ### Redis
 
@@ -174,8 +182,12 @@ LOG_LEVEL=INFO
 | `ALGORITHM` | `HS256` | JWT signing algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `43200` (30 days) | Overridden to `60` (1 hour) in production |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token lifetime |
-| `LOGIN_TIMEOUT_MINUTES` | `15` | Lockout duration after max failed attempts |
-| `MAX_LOGIN_ATTEMPTS` | `5` | Max failed login attempts before lockout |
+| `LOGIN_TIMEOUT_MINUTES` | `15` | Legacy admin cookie-local lockout interval, not session lifetime |
+| `MAX_LOGIN_ATTEMPTS` | `5` | Legacy admin threshold; ordinary wrong-password failures currently do not increment it |
+
+API and `/app/login` have no shared login throttle. These settings are not proof
+of brute-force protection; the audit tracks shared attempt accounting, ordinary
+failure tracking and cookie-independent limits as a separate implementation task.
 
 ### Password Policy
 
@@ -246,7 +258,7 @@ LOG_LEVEL=INFO
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENT_MODEL` | `None` | Explicit LLMModel name. Empty = auto-resolve first active text-capable model. |
+| `AGENT_MODEL` | `None` | Explicit LLMModel name, resolved inside the acting user's personal catalog: the row must be text-capable, active, on an active provider and owned by that user. A foreign or unknown name falls back to auto-resolution in the same catalog, never to another owner's model. Empty = auto-resolve. |
 | `AGENT_HISTORY_LIMIT` | `20` | Number of messages kept in agent context per session |
 | `AGENT_MAX_ITERATIONS` | `6` | Max tool-call rounds per user message |
 | `AGENT_DAILY_COST_LIMIT` | `5.0` | USD cap for agent + digests combined per UTC day |
@@ -259,6 +271,25 @@ LOG_LEVEL=INFO
 |---|---|---|
 | `JOB_MAX_ATTEMPTS` | `3` | Max retry attempts for a job |
 | `JOB_RETRY_BACKOFF_SECONDS` | `300` | Base backoff in seconds; actual = `backoff * 2^(attempts-1)` |
+
+### Data retention
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATA_RETENTION_MONTHS` | `1` | Calendar months to keep analysis results (`ai_analytics`) and unanalysed raw content (`collected_items`). The daily `prune` task deletes older rows in each workspace, measured by last write, not publication date. Minimum `1`; startup fails on `0` or a non-integer. |
+
+### Collection freshness
+
+| Variable | Default | Description |
+|---|---|---|
+| `SOURCE_STALE_HOURS` | `24` | Hours after which an **active** source whose `last_checked` is older (or absent) is reported as stale on `/app/sources`: a banner counts them and each row is marked «устарел» or «не проверялся». Read-only — it never triggers a collection or changes a source. The same window is used by `SourceManager.get_sources_for_monitoring`. Minimum `1`; startup fails on a non-positive value. A source that was never checked is counted separately, so "older than N hours" is never claimed for it. |
+
+Kept regardless of age: analyses referenced by a bot action, the LLM attempt
+journal (`llm_attempts`, accounting evidence), and job rows with an operational
+budget stop or unconfirmed outcome. Finished job history keeps its own `days`
+budget (default 7). Deleted rows cannot be restored from the application; there
+is no export or offboarding flow yet. Lowering the value takes effect at the next
+`prune` run, so back up first if older history matters.
 
 ### LLM
 
@@ -275,6 +306,16 @@ LOG_LEVEL=INFO
 | Variable | Default | Description |
 |---|---|---|
 | `LOG_LEVEL` | `INFO` | Python logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+| `LOG_DIR` | `~/.social-media-ai/logs` | Writable directory for rotating `app.log`; absolute path required (`~` is expanded) |
+
+File logging remains enabled. Importing the application logger creates `LOG_DIR`
+and opens `app.log` (10 MiB rotation, five backups), but never creates `./logs`
+or writes into the installed package. The service user's home directory is used
+by default on every platform. Containers/services that previously collected
+`./logs` must set `LOG_DIR` to an absolute writable mounted directory and update
+their log collection configuration. An unwritable directory fails explicitly;
+there is no silent fallback to CWD. Static files and both template roots resolve
+relative to the installed Python modules, not the process working directory.
 
 ---
 

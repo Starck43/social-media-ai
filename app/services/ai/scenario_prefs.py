@@ -13,13 +13,16 @@ so a preference learned from a chat is visible to the model without another
 plumbing path. Values are stored as JSON text — `value` is a `Text` column, and
 a list must survive the round-trip as a list.
 
-See `docs/CHAT_BOT_SCENARIOS.md#agent-memory-for-preferences`.
+See `docs/AI_PIPELINE_AND_PROMPTS.md#scenario-creation`.
 """
 
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from typing import Any
+
+from app.agent.identity import current_memory_actor, memory_actor_scope
 
 #: `agent_memory.scope` that groups the scenario preferences.
 SCOPE = "scenario_prefs"
@@ -34,7 +37,21 @@ KEYS: tuple[str, ...] = ("default_language", "brands")
 DRAFT_KEYS: tuple[str, ...] = ("brands",)
 
 
-async def remember(**prefs: Any) -> dict[str, Any]:
+@contextmanager
+def _actor_scope(actor_user_id: int | None, is_owner: bool):
+    if actor_user_id is None:
+        yield
+    else:
+        with memory_actor_scope(actor_user_id, is_owner):
+            yield
+
+
+async def remember(
+    *,
+    actor_user_id: int | None = None,
+    is_owner: bool = False,
+    **prefs: Any,
+) -> dict[str, Any]:
     """Store the given preferences; `None` values are skipped, not deleted.
 
     Only keys from `KEYS` are accepted, and only strings, lists of strings and
@@ -43,39 +60,52 @@ async def remember(**prefs: Any) -> dict[str, Any]:
     """
     from app.models.managers.agent_memory_manager import agent_memory
 
+    if actor_user_id is None and current_memory_actor() is None:
+        return {}
+
     written: dict[str, Any] = {}
-    for key, value in prefs.items():
-        if key not in KEYS:
-            continue
-        if value in (None, "", [], {}):
-            continue
-        if not isinstance(value, (str, int, float, list)):
-            continue
-        payload = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-        await agent_memory.write(key, payload, scope=SCOPE, source="manual")
-        written[key] = value
+    with _actor_scope(actor_user_id, is_owner):
+        for key, value in prefs.items():
+            if key not in KEYS:
+                continue
+            if value in (None, "", [], {}):
+                continue
+            if not isinstance(value, (str, int, float, list)):
+                continue
+            payload = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            await agent_memory.write(key, payload, scope=SCOPE, source="manual")
+            written[key] = value
     return written
 
 
-async def load() -> dict[str, Any]:
+async def load(*, actor_user_id: int | None = None, is_owner: bool = False) -> dict[str, Any]:
     """Every stored preference, JSON-decoded back to its original shape."""
     from app.models.managers.agent_memory_manager import agent_memory
 
-    stored = await agent_memory.as_dict(scope=SCOPE)
+    if actor_user_id is None and current_memory_actor() is None:
+        return {}
+
+    with _actor_scope(actor_user_id, is_owner):
+        stored = await agent_memory.as_dict(scope=SCOPE)
     prefs: dict[str, Any] = {}
     for key, raw in stored.items():
         prefs[key] = _decode(raw)
     return prefs
 
 
-async def apply_to_draft(draft: Any) -> Any:
+async def apply_to_draft(
+    draft: Any,
+    *,
+    actor_user_id: int | None = None,
+    is_owner: bool = False,
+) -> Any:
     """Fill a draft's empty fields from remembered preferences.
 
     Only empty fields are filled: an explicit choice from this conversation
     always outranks a remembered one, or re-opening the wizard would silently
     undo what the person just picked. Returns the same draft for chaining.
     """
-    prefs = await load()
+    prefs = await load(actor_user_id=actor_user_id, is_owner=is_owner)
     brands = prefs.get("brands")
     if brands:
         competitor = dict((draft.scope or {}).get("competitor") or {})

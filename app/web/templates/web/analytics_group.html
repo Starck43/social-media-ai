@@ -1,6 +1,7 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import sentiment_badge, sentiment_filters %}
+{% from "web/_macros.html" import incomplete_analysis_badge, sentiment_badge, sentiment_filters %}
 {% block title %}{{ value|e }} — Аналитика — AI Monitor{% endblock %}
+{% block page_heading %}{{ value }}{% endblock %}
 {% block content %}
     <nav aria-label="Навигация группы" class="mb-6 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
         <a href="{{ back_url|e }}" class="text-cyan-700 dark:text-cyan-400 hover:underline">Аналитика</a>
@@ -16,6 +17,7 @@
                 <div>
                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ item.date|human_dt }} · {{ item.source_name|e }}</p>
                     <a href="{{ item.url|e }}" class="mt-1 block font-medium text-slate-900 dark:text-slate-200 hover:text-cyan-500">{{ item.title|e }}</a>
+                    {% if item.analysis_incomplete %}<p class="mt-1">{{ incomplete_analysis_badge(true) }}</p>{% endif %}
                     {% if item.summary_missing %}<p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Сводка для этой записи не сохранена.</p>{% endif %}
                 </div>
                 {% if item.sentiment %}{{ sentiment_badge(item.sentiment.score) }}{% endif %}

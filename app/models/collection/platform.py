@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .. import Source
 
 
-@app_label("social")
+@app_label("collection")
 class Platform(Base):
     __tablename__ = "platforms"
     __table_args__ = {"schema": settings.DB_SCHEMA}

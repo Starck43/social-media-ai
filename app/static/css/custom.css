@@ -28,70 +28,48 @@ main {
     display: flex;
 }
 
-/* ── Sidebar / navbar ─────────────────────────────────────────────────────── */
-aside {
-    padding: calc(var(--tblr-content-padding) * .5);
-    box-shadow: var(--box-shadow-lg) !important;
-    background-color: var(--tblr-navbar-bg, var(--tblr-bg-surface));
-    border-right: 1px solid var(--tblr-navbar-border-color, var(--tblr-border-color));
+/* Scoped shell: navigation must not distribute links over the viewport. */
+.admin-console { margin: 0; background: var(--tblr-body-bg) !important; }
+.admin-shell { display: grid; grid-template-columns: 16.5rem minmax(0, 1fr); min-height: 100dvh; }
+.admin-shell > .page-wrapper { margin-left: 0; min-width: 0; overflow: visible; }
+.admin-sidebar {
+    position: sticky; top: 0; height: 100dvh; min-height: 0;
+    display: flex; flex-direction: column; gap: 1rem; padding: 1rem;
+    background: var(--tblr-navbar-bg, var(--tblr-bg-surface));
+    border-right: 1px solid var(--tblr-border-color); overflow: auto;
 }
-
-aside .container-fluid {
-    margin: 0 calc(var(--tblr-content-padding) * .5);
-    height: 100%;
+.admin-brand { display: flex; align-items: center; gap: .65rem; color: var(--tblr-body-color); font-weight: 700; }
+.admin-brand img { flex: 0 0 32px; }
+.admin-brand small, .admin-caption { display: block; font-size: .75rem; color: var(--color-text-secondary); }
+.admin-brand small { font-weight: 400; }
+.admin-identity { display: grid; gap: .2rem; padding: .75rem; border: 1px solid var(--tblr-border-color); border-radius: .75rem; overflow-wrap: anywhere; }
+.admin-identity small { color: var(--color-text-secondary); }
+.admin-navigation { flex: 1 1 auto; min-height: 4rem; overflow: auto; }
+.admin-navigation > summary { cursor: pointer; padding: .5rem; font-weight: 600; }
+.admin-menu { height: auto; overflow: visible; }
+.admin-menu .navbar-nav { display: flex; flex-direction: column; gap: .125rem; margin: 0; padding: 0; }
+.admin-menu .nav-item { list-style: none; }
+.admin-menu .nav-link {
+    display: flex; align-items: center; gap: .6rem; padding: .5rem .65rem;
+    min-height: 2.5rem; border-radius: .5rem; color: var(--tblr-navbar-color);
 }
-
-nav {
-    height: 100%;
-    overflow-x: hidden;
-}
-
-.navbar-nav:last-child {
-    flex-grow: 0 !important;
-}
-
-.navbar .navbar-nav .nav-link {
-    color: var(--tblr-navbar-color);
-}
-
-.navbar .navbar-nav .nav-link.active {
-    background-color: var(--tblr-navbar-active-bg, rgba(var(--tblr-primary-rgb), 0.15));
-    color: var(--tblr-navbar-active-color, var(--tblr-primary)) !important;
-    font-weight: 600;
-}
-
-.navbar .navbar-nav .nav-link:hover:not(.active) {
-    background-color: var(--tblr-bg-surface-tertiary);
-}
-
-/* Vertical sidebar responsive */
+.admin-sidebar i { color: var(--tblr-primary) !important; }
+.admin-menu .nav-link-icon { flex: 0 0 1.25rem; text-align: center; }
+.admin-menu .nav-link-title { min-width: 0; overflow-wrap: anywhere; }
+.admin-menu .nav-link.active { background: var(--tblr-navbar-active-bg); color: var(--tblr-navbar-active-color); font-weight: 600; }
+.admin-menu .nav-link:hover, .admin-sidebar-link:hover { background: var(--tblr-bg-surface-secondary); }
+.admin-sidebar-footer { display: grid; gap: .5rem; border-top: 1px solid var(--tblr-border-color); padding-top: .75rem; }
+.admin-sidebar-link { display: flex; align-items: center; gap: .65rem; padding: .45rem .5rem; border-radius: .5rem; color: var(--tblr-navbar-color); }
+.admin-sidebar :focus-visible { outline: 2px solid var(--tblr-primary); outline-offset: 2px; }
 @media (min-width: 768px) {
-    .navbar-vertical.navbar-expand-md {
-        max-width: 12rem;
-    }
-
-    .navbar-expand-md.navbar-vertical ~ .navbar,
-    .navbar-expand-md.navbar-vertical ~ .page-wrapper {
-        margin-left: 12rem;
-    }
+    .admin-navigation > summary { display: none; }
+    .admin-navigation:not([open]) > .admin-menu { display: block; }
 }
-
-@media (min-width: 992px) {
-    .navbar-vertical.navbar-expand-md {
-        max-width: unset;
-    }
-
-    .navbar-expand-md.navbar-vertical ~ .navbar,
-    .navbar-expand-md.navbar-vertical ~ .page-wrapper {
-        margin-left: 15rem;
-    }
-}
-
 @media (max-width: 767.98px) {
-    .navbar-expand-lg .navbar-collapse .navbar-nav {
-        flex-wrap: wrap;
-        justify-content: space-between;
-    }
+    .admin-shell { grid-template-columns: minmax(0, 1fr); }
+    .admin-sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--tblr-border-color); }
+    .admin-navigation { flex: none; max-height: 45dvh; }
+    .admin-shell > .page-wrapper { padding: .75rem; }
 }
 
 .d-flex > div {
@@ -305,7 +283,7 @@ label {
     background-color: var(--tblr-bg-forms) !important;
 }
 
-.input-group .btn {
+main[data-ui-theme-surface] .input-group .btn:not(.btn-primary, .btn-secondary, .btn-success, .btn-danger, .btn-warning, .btn-info, .btn-light, .btn-dark, .btn-link, .btn-outline-primary, .btn-outline-secondary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning, .btn-outline-info, .btn-outline-light, .btn-outline-dark, .btn-outline-link) {
     --tblr-btn-bg: var(--tblr-bg-surface-tertiary);
 }
 
@@ -385,6 +363,136 @@ label {
 /* Card footer buttons */
 .card-footer .btn {
     min-width: auto;
+}
+
+/* SQLAdmin sets white text on every .btn by default; neutral buttons use the
+   theme's body text on their neutral surface in both light and dark modes.
+   Exclude every semantic variant so their own foreground and state colors win. */
+main[data-ui-theme-surface] .btn:not(.btn-primary, .btn-secondary, .btn-success, .btn-danger, .btn-warning, .btn-info, .btn-light, .btn-dark, .btn-link, .btn-outline-primary, .btn-outline-secondary, .btn-outline-success, .btn-outline-danger, .btn-outline-warning, .btn-outline-info, .btn-outline-light, .btn-outline-dark, .btn-outline-link),
+main[data-ui-theme-surface] .btn-light {
+    --tblr-btn-color: var(--tblr-body-color);
+    --tblr-btn-hover-color: var(--tblr-body-color);
+    --tblr-btn-active-color: var(--tblr-body-color);
+    --tblr-btn-disabled-color: var(--tblr-body-color);
+}
+
+main[data-ui-theme-surface] .btn-primary,
+main[data-ui-theme-surface] .btn-success,
+main[data-ui-theme-surface] .btn-info {
+    --tblr-btn-color: var(--color-slate-950);
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+/* Light primary hover/active fill is cyan-700; slate-950 text there is 3.77:1. */
+main[data-ui-theme-surface]:not([data-theme="dark"]) .btn-primary {
+    --tblr-btn-hover-color: var(--tblr-btn-fg, #ffffff);
+    --tblr-btn-active-color: var(--tblr-btn-fg, #ffffff);
+}
+
+main[data-ui-theme-surface] .btn-outline-primary {
+    --tblr-btn-color: var(--tblr-body-color);
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+/* Keep semantic button states readable on the Tabler hover/active mixes. */
+main[data-ui-theme-surface]:not([data-theme="dark"]) .btn-secondary {
+    --tblr-secondary-darken: var(--color-slate-700);
+}
+
+main[data-ui-theme-surface][data-theme="dark"] .btn-secondary,
+main[data-ui-theme-surface][data-theme="dark"] .btn-danger,
+main[data-ui-theme-surface][data-theme="dark"] .btn-outline-secondary,
+main[data-ui-theme-surface][data-theme="dark"] .btn-light {
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+main[data-ui-theme-surface] .btn-warning {
+    --tblr-btn-color: var(--color-slate-950);
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+main[data-ui-theme-surface] .btn-danger {
+    --tblr-btn-hover-color: var(--color-slate-950);
+    --tblr-btn-active-color: var(--color-slate-950);
+}
+
+/* Preserve each button's own token when it is the footer's first child. */
+main[data-ui-theme-surface] .card-footer > .btn:first-child {
+    color: var(--tblr-btn-color) !important;
+}
+
+main[data-ui-theme-surface] .card-footer > .btn:first-child:hover {
+    color: var(--tblr-btn-hover-color) !important;
+}
+
+main[data-ui-theme-surface] .card-footer > .btn:first-child:active,
+main[data-ui-theme-surface] .card-footer > .btn:first-child.active {
+    color: var(--tblr-btn-active-color) !important;
+}
+
+/* Form styling also matches <input type="submit" class="btn">. Restore the
+   Tabler variant's state backgrounds for those admin controls. */
+main[data-ui-theme-surface] .form-group input.btn:not(:focus) {
+    background-color: var(--tblr-btn-bg);
+}
+
+main[data-ui-theme-surface] .form-group input.btn:hover:not(:focus) {
+    background-color: var(--tblr-btn-hover-bg);
+}
+
+main[data-ui-theme-surface] .form-group input.btn:active:not(:focus) {
+    background-color: var(--tblr-btn-active-bg);
+}
+
+/* The light action menu uses a pale cyan active fill; keep its label dark. */
+main[data-ui-theme-surface]:not([data-theme="dark"]) .dropdown-menu .dropdown-item:active {
+    color: var(--color-slate-950);
+}
+
+/* The dark input rule is !important; submit buttons still need their variant
+   fill in the form's normal, hover and active states. */
+main[data-ui-theme-surface][data-theme="dark"] .form-group input.btn:not(:focus) {
+    background-color: var(--tblr-btn-bg) !important;
+}
+
+main[data-ui-theme-surface][data-theme="dark"] .form-group input.btn:hover:not(:focus) {
+    background-color: var(--tblr-btn-hover-bg) !important;
+}
+
+main[data-ui-theme-surface][data-theme="dark"] .form-group input.btn:active:not(:focus) {
+    background-color: var(--tblr-btn-active-bg) !important;
+}
+
+/* SQLAdmin bulk-delete confirmation: keep the full selection readable and
+   scrollable; the selected values and DELETE request are never rewritten. */
+#modal-delete .modal-content,
+[id^="modal-confirmation-"] .modal-content {
+    min-width: 0;
+    max-width: 100%;
+    background-color: var(--tblr-bg-surface);
+    color: var(--tblr-body-color);
+}
+
+#modal-delete .modal-body,
+#modal-delete .modal-footer,
+#modal-delete .modal-footer .row > .col,
+[id^="modal-confirmation-"] .modal-body {
+    min-width: 0;
+}
+
+#modal-delete-text, [id^="modal-confirmation-"] .modal-body {
+    overflow-wrap: anywhere;
+    white-space: normal;
+    max-height: min(40vh, 18rem);
+    overflow-y: auto;
+}
+
+#modal-delete .text-muted, [id^="modal-confirmation-"] .text-muted {
+    color: var(--color-text-secondary) !important;
 }
 
 /* ── Password input ───────────────────────────────────────────────────────── */

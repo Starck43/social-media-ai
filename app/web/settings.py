@@ -1,7 +1,7 @@
-"""Workspace settings `/app/settings` (docs/design/ui.md §4.8).
+"""Workspace settings `/app/settings` (docs/API.md).
 
-Four tabs, one page. What belongs here and what stays in `/admin` is not a
-preference — it follows `docs/TENANCY.md`:
+Scoped sections on one page. What belongs here and what stays in `/admin` is not
+a preference — it follows `docs/TENANCY.md`:
 
 * **workspace** — the profile of the current workspace, and of nothing else.
 * **team** — memberships in `tenant_users`; a personal secret is only usable by
@@ -14,29 +14,44 @@ preference — it follows `docs/TENANCY.md`:
   fallback for platforms without an OAuth flow (and for anyone who prefers it).
   A user only ever sees and writes their own secrets, never another member's.
 * **channels** — where digests and the agent are delivered.
+* **platforms** — the global catalog, active platform administrators only.
 
-Deliberately absent: `llm_providers` / `llm_models`. The fleet is global and
-one-per-deployment, so it stays in the sqladmin console with its connection
-tests — a workspace must not be able to repoint the model the runtime uses.
+Personal providers/models are managed on the models tab. Workspace chat
+configuration references a numeric model ID in the current user's catalog.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.models.tenant import Tenant
+from app.services.tenancy import member_roles
 from app.types import ActionType
 
+from ..models import LLMModel
 from .deps import action_tenant_id, add_flash, ensure_csrf, render
 
 router = APIRouter(prefix="/settings")
 
 BACK = "/app/settings"
 
-TABS: tuple[str, ...] = ("workspace", "team", "connections", "agent", "channels")
+TABS: tuple[str, ...] = (
+    "account",
+    "connections",
+    "models",
+    "workspace",
+    "team",
+    "agent",
+    "channels",
+    "platforms",
+)
+#: Tabs that only configure the workspace; a member who cannot manage it does
+#: not get them (their forms are refused anyway by `_guard_workspace_settings`).
+MANAGER_TABS: frozenset[str] = frozenset({"agent", "channels"})
 
 # Personal kinds a user may store themselves, per platform. `bot_token`,
 # `app_id` and `client_secret` are per-deployment config, so they are not here:
@@ -49,12 +64,10 @@ SELF_SERVICE_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
     "telegram": (("session", "Telegram: файл сессии MTProto"),),
 }
 
-ROLE_LABELS = {
-    "owner": "Владелец",
-    "admin": "Администратор",
-    "member": "Участник",
-    "viewer": "Наблюдатель",
-}
+#: Access levels an owner gives a member (see `app/services/tenancy/member_roles.py`).
+ROLE_LABELS = {role.key: role.label for role in member_roles.MEMBER_ROLES}
+#: Invite validity choices, days.
+INVITE_DAYS: tuple[int, ...] = (1, 7, 30)
 
 #: The comparison table's rows: what each tier is compared on.
 #:
@@ -76,6 +89,7 @@ PLAN_ROWS: tuple[dict[str, Any], ...] = (
     {"key": "allow_learning", "label": "Обучение агента", "unit": ""},
     {"key": "allow_reflection", "label": "Рефлексия", "unit": ""},
 )
+
 
 #: Plan -> the value shown in its column for each row. Built from
 #: `PLAN_LIMITS` so a new tier appears without touching the template, and a
@@ -119,136 +133,259 @@ def _tab_of(request: Request) -> str:
     # would look like the credentials tab had been deleted.
     if tab == "credentials":
         tab = "connections"
-    return tab if tab in TABS else TABS[0]
+    return tab if tab in TABS else "workspace"
+
+
+def _personal_access(request: Request) -> bool:
+    user = getattr(request.state, "web_user", None)
+    user_id = getattr(user, "id", None)
+    return bool(user is not None and getattr(user, "is_active", False) and type(user_id) is int and user_id > 0)
+
+
+def _workspace_access(request: Request, tenant_id: int | None) -> bool:
+    """Read name/timezone only for this authenticated active workspace context."""
+    if not _personal_access(request) or type(tenant_id) is not int or tenant_id <= 0:
+        return False
+    tenant = getattr(request.state, "tenant", None)
+    if tenant is None or tenant.id != tenant_id or not getattr(tenant, "is_active", False):
+        return False
+    user = request.state.web_user
+    return bool(
+        False
+        or any(
+            m.tenant_id == tenant_id
+            and m.user_id == user.id
+            and getattr(m, "channel", None) == "web"
+            and getattr(m, "is_active", False)
+            for m in getattr(request.state, "memberships", ())
+        )
+    )
+
+
+def _platform_access(request: Request) -> bool:
+    """Global catalog access is a fresh active platform-admin property, not a workspace grant."""
+    user = getattr(request.state, "web_user", None)
+    return bool(_personal_access(request) and getattr(user, "is_platform_admin", False))
+
+
+def _visible_tabs(request: Request, tenant_id: int | None) -> tuple[str, ...]:
+    """Personal data is caller-owned; concrete workspace capabilities gate shared data."""
+    if not _personal_access(request):
+        return ()
+    global_tabs = ("platforms",) if _platform_access(request) else ()
+    workspace_tabs = tuple(tab for tab in TABS if tab != "platforms")
+    if not _workspace_access(request, tenant_id):
+        # Existing personal connection write/OAuth routes still require onboarding.
+        return ("account", "models") + global_tabs
+    perms = getattr(request.state, "web_perms", None)
+    if perms is not None and perms.can_manage_workspace(tenant_id):
+        return workspace_tabs + global_tabs
+    return tuple(tab for tab in workspace_tabs if tab not in MANAGER_TABS) + global_tabs
+
+
+def _visible_tab(request: Request, tenant_id: int | None, visible: tuple[str, ...]) -> str:
+    tab = _tab_of(request)
+    return tab if tab in visible else visible[0]
 
 
 @router.get("")
 @router.get("/")
 async def settings_page(request: Request):
-    """One page, four tabs; the query string carries the active tab."""
-    from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager, tenants
-
+    """Resolve access/tab first; load only the selected scope, never hidden-tab data."""
     tenant_id = request.state.tenant_id
-    user = getattr(request.state, "web_user", None)
-    user_id = getattr(user, "id", None)
-
-    tenant = await tenants.get(id=tenant_id)
-    memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
-    member_names = {}
-    member_ids = [m.user_id for m in memberships if m.user_id is not None]
-    if member_ids:
-        from app.models.user import User
-
-        rows = await User.objects.filter(id__in=member_ids)
-        member_names = {row.id: row.username for row in rows}
-
-    # Only the caller's own vault rows. `user_credentials` is not tenant-scoped,
-    # so the filter is by user id — never "the workspace's credentials".
-    credentials = []
-    if user_id is not None:
-        from app.models.managers.user_credential_manager import user_credentials
-
-        credentials = sorted(
-            await user_credentials.filter(user_id=user_id),
-            key=lambda row: (row.platform, row.kind),
-        )
-
-    # One card per platform, each carrying its own state, its action and — for
-    # a manual platform or someone without OAuth — the fallback form.
-    from app.services.social.connections import CONNECTIONS, connection_statuses
-
-    statuses = {status.platform: status for status in await connection_statuses(user_id)}
-    cards = []
-    for spec in CONNECTIONS:
-        status = statuses.get(spec.platform)
-        card = {
-            "platform": spec.platform,
-            "title": spec.title,
-            "purpose": spec.purpose,
-            "is_oauth": spec.is_oauth,
-            "manual_hint": spec.manual_hint,
-            "status": status,
-            "manual_kinds": SELF_SERVICE_KINDS.get(spec.platform, ()),
-            "rows": [row for row in credentials if row.platform == spec.platform],
-        }
-        cards.append(card)
-
-    channels = await TenantChannelManager().filter(tenant_id=tenant_id)
-
-    # Active LLM models for the agent dropdown
-    from app.models.llm_model import LLMModel
-    from app.services.ai.llm_client import default_model_sort_key
-
-    active_models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.id)
-    active_models = sorted(active_models, key=default_model_sort_key)
-    model_options = []
-    for m in active_models:
-        provider_name = m.provider.name if m.provider else "?"
-        cost = f"${m.input_cost_per_1k:.4f}/${m.output_cost_per_1k:.4f}/1K"
-        label = f"{provider_name}/{m.model_id} ({cost})"
-        if m.is_default:
-            label += " ★"
-        model_options.append({"id": m.name, "label": label})
-
-    # What this workspace has already consumed, so the plan column can show
-    # "3 / 3" instead of a bare ceiling the reader has to count rows to match.
-    usage = await _plan_usage(tenant_id, channels, memberships)
-
-    return render(
-        request,
-        "web/settings.html",
-        section="settings",
-        tab=_tab_of(request),
-        tenant=tenant,
-        memberships=memberships,
-        member_names=member_names,
-        connections=cards,
-        credentials=credentials,
-        channels=channels,
-        self_service_kinds=SELF_SERVICE_KINDS,
-        role_labels=ROLE_LABELS,
-        action_types=ActionType.choices(),
-        plans=list(Tenant.PLANS),
-        plan_labels=_plan_labels(),
-        plan_rows=_plan_table(),
-        plan_usage=usage,
-        agent_model_options=model_options,
-    )
-
-
-async def _plan_usage(
-    tenant_id: int,
-    channels: list[Any],
-    memberships: list[Any],
-) -> dict[str, str]:
-    """Current usage per quota row, as "used/limit" for the plan's column.
-
-    Only rows that are countable get an entry. A row with no counter (a feature
-    flag) simply has no usage to show, which is why the template treats a
-    missing key as "nothing to annotate".
-    """
-    from app.models.agent_scenario import AgentScenario
-    from app.models.agent_task import AgentTask
-    from app.models.source import Source
-
-    tenant = await Tenant.objects.get(id=tenant_id)
-    limits = tenant.effective_limits() if tenant else {}
-
-    counts = {
-        "max_sources": await Source.objects.filter(tenant_id=tenant_id).count(),
-        "max_channels": len(channels),
-        "max_scenarios": await AgentScenario.objects.filter(tenant_id=tenant_id).count(),
-        "max_team_members": len([m for m in memberships if m.user_id is not None]),
-        "max_tasks": await AgentTask.objects.filter(tenant_id=tenant_id).count(),
+    visible_tabs = _visible_tabs(request, tenant_id)
+    if not visible_tabs:
+        return HTMLResponse("Недостаточно прав", status_code=403)
+    tab = _visible_tab(request, tenant_id, visible_tabs)
+    user = request.state.web_user
+    perms = getattr(request.state, "web_perms", None)
+    manage = bool(_workspace_access(request, tenant_id) and perms and perms.can_manage_workspace(tenant_id))
+    context: dict[str, Any] = {
+        "tab": tab,
+        "visible_tabs": visible_tabs,
+        "settings_manage": manage,
+        "settings_team_visible": manage,
+        "is_superuser": False,
+        "settings_scope": (
+            "global"
+            if tab == "platforms"
+            else ("personal" if tab in ("account", "connections", "models") else "workspace")
+        ),
     }
 
-    usage: dict[str, str] = {}
+    if tab == "platforms":
+        from app.models.platform import Platform
+        from app.types import PlatformType
+
+        context.update(
+            platforms=await Platform.objects.filter().order_by(Platform.id),
+            platform_type_options=[(kind.db_value, kind.label, "") for kind in PlatformType],
+        )
+    elif tab == "workspace":
+        tenant = request.state.tenant
+        if manage:
+            # Full configuration and quota projections require concrete-target capability.
+            tenant_id = request.state.tenant_id
+            context.update(
+                tenant=tenant,
+                plans=list(Tenant.PLANS),
+                plan_labels=_plan_labels(),
+                plan_rows=_plan_table(),
+                plan_usage=await _plan_usage(tenant, perms),
+            )
+        else:
+            # Explicit member read contract: no budget/prompt/channel/plan configuration.
+            context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
+    elif tab == "agent" and manage:
+        from app.services.ai.personal_catalog import chat_model_options
+        context["agent_model_options"] = await chat_model_options(user_id=user.id, tenant_id=tenant_id)
+
+        # Read the last probe result from session (set by /agent/model-probe).
+        probe_result = request.session.get("agent_model_probe_result")
+        if probe_result is not None and isinstance(probe_result, dict):
+            context["probe_result"] = probe_result
+        else:
+            context["probe_result"] = None
+
+        tenant = request.state.tenant
+        if manage:
+            # Full configuration and quota projections require concrete-target capability.
+            context.update(
+                tenant=tenant,
+                plans=list(Tenant.PLANS),
+                plan_labels=_plan_labels(),
+                plan_rows=_plan_table(),
+                plan_usage=await _plan_usage(tenant, perms),
+            )
+        else:
+            # Explicit member read contract: no budget/prompt/channel/plan configuration.
+            context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
+    elif tab == "team" and manage:
+        from app.models.managers.tenant_manager import TenantUserManager
+        from app.models.user import User
+
+        memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
+        member_ids = [m.user_id for m in memberships if m.user_id is not None]
+        rows = await User.objects.filter(id__in=member_ids) if member_ids else []
+        context.update(
+            memberships=memberships,
+            member_names={row.id: row.username for row in rows},
+            role_labels=ROLE_LABELS,
+            member_role_keys={m.id: member_roles.key_of(m) for m in memberships},
+        )
+    elif tab == "models":
+        from .settings_llm import settings_llm_context
+        context.update(await settings_llm_context(request))
+    elif tab == "connections":
+        from app.models.managers.user_credential_manager import user_credentials
+        from app.services.social.connections import CONNECTIONS, connection_statuses
+
+        credentials = await user_credentials.web_metadata_for_user(user_id=user.id)
+        statuses = {status.platform: status for status in await connection_statuses(user.id)}
+        context["connections"] = [
+            {
+                "platform": spec.platform,
+                "title": spec.title,
+                "purpose": spec.purpose,
+                "is_oauth": spec.is_oauth,
+                "manual_hint": spec.manual_hint,
+                "status": statuses.get(spec.platform),
+                "manual_kinds": SELF_SERVICE_KINDS.get(spec.platform, ()),
+                "rows": [row for row in credentials if row.platform == spec.platform],
+            }
+            for spec in CONNECTIONS
+        ]
+    elif tab == "channels" and manage:
+        from app.models.managers.tenant_manager import TenantChannelManager
+
+        context.update(
+            channels=await TenantChannelManager().filter(tenant_id=tenant_id), action_types=ActionType.choices()
+        )
+
+    response = render(request, "web/settings.html", section="settings", **context)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/platforms")
+async def platform_save(
+    request: Request,
+    name: str = Form(...),
+    base_url: str = Form(...),
+    platform_type: str = Form(""),
+    platform_id: int = Form(0),
+    enabled: str = Form(""),
+    token: str = Form("", alias="_csrf"),
+):
+    """Edit the global catalog without exposing destructive cascades or personal secrets."""
+    if not _platform_access(request):
+        return HTMLResponse("Недостаточно прав", status_code=403)
+    if not ensure_csrf(request, token):
+        return HTMLResponse("Неверный CSRF-токен", status_code=403)
+    from urllib.parse import urlsplit
+
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.platform import Platform
+    from app.types import PlatformType
+
+    name, base_url = name.strip(), base_url.strip()
+    try:
+        url = urlsplit(base_url)
+        valid_url = url.scheme in ("http", "https") and bool(url.hostname) and not url.username and not url.password
+        # Accessing port rejects malformed authorities without making a network request.
+        url.port
+    except ValueError:
+        valid_url = False
+    if not name or len(name) > 50 or len(base_url) > 255 or not valid_url or not 0 <= platform_id <= 2_147_483_647:
+        add_flash(request, "error", "Укажите название до 50 символов и корректный HTTP(S) URL без логина и пароля")
+        return RedirectResponse(BACK + "?tab=platforms", status_code=302)
+    try:
+        if platform_id:
+            result = await Platform.objects.update_by_id(
+                platform_id, name=name, base_url=base_url, is_active=enabled == "on"
+            )
+            if result is None:
+                return HTMLResponse("Платформа не найдена", status_code=404)
+        else:
+            kind = PlatformType.get_by_value(platform_type)
+            if kind is None:
+                raise ValueError("Unknown platform type")
+            await Platform.objects.create_platform(
+                name=name, platform_type=kind, base_url=base_url, is_active=enabled == "on"
+            )
+    except (ValueError, IntegrityError):
+        add_flash(request, "error", "Не удалось сохранить: проверьте тип и уникальность названия платформы")
+    else:
+        add_flash(request, "success", "Платформа сохранена")
+    return RedirectResponse(BACK + "?tab=platforms", status_code=302)
+
+
+async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:
+    """Manager-only quota projections; resource counts additionally require VIEW."""
+    from app.models.agent_scenario import AgentScenario
+    from app.models.agent_task import AgentTask
+    from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager
+    from app.models.source import Source
+
+    counts = {}
+    for key, model, model_name in (
+        ("max_sources", Source, "source"),
+        ("max_scenarios", AgentScenario, "agentscenario"),
+        ("max_tasks", AgentTask, "agenttask"),
+    ):
+        if perms.can(model_name, "view"):
+            counts[key] = await model.objects.filter(tenant_id=tenant.id).count()
+    # Workspace capability includes team and delivery administration, not global rights.
+    counts["max_channels"] = await TenantChannelManager().filter(tenant_id=tenant.id).count()
+    counts["max_team_members"] = len(
+        [m for m in await TenantUserManager().web_memberships_for_tenant(tenant.id) if m.user_id is not None]
+    )
+    usage = {}
     for key, used in counts.items():
-        limit = limits.get(key)
-        if limit is None:
-            continue
-        over = " ⚠" if used > limit else ""
-        usage[key] = f"{used}/{int(limit)}{over}"
+        limit = tenant.effective_limits().get(key)
+        if limit is not None:
+            usage[key] = f"{used}/{int(limit)}" + (" ⚠" if used > limit else "")
     return usage
 
 
@@ -310,7 +447,7 @@ async def workspace_update(
 @router.post("/agent")
 async def agent_settings_update(
     request: Request,
-    agent_model: str = Form(""),
+    agent_model_id: str = Form(""),
     agent_max_tokens: str = Form(""),
     agent_temperature: str = Form(""),
     agent_system_prompt: str = Form(""),
@@ -350,7 +487,7 @@ async def agent_settings_update(
     if agent_temperature.strip():
         try:
             temperature = float(agent_temperature)
-            if temperature < 0 or temperature > 2:
+            if not math.isfinite(temperature) or temperature < 0 or temperature > 2:
                 add_flash(request, "error", "Temperature должно быть от 0 до 2")
                 return RedirectResponse(BACK, status_code=302)
         except ValueError:
@@ -358,17 +495,74 @@ async def agent_settings_update(
             return RedirectResponse(BACK, status_code=302)
 
     # Clean string fields
-    model = agent_model.strip() or None
+    try:
+        selected_id = int(agent_model_id) if agent_model_id.strip() else None
+        from app.services.ai.personal_catalog import validate_chat_model
+        selected = await validate_chat_model(
+            user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=selected_id
+        )
+    except (ValueError, PermissionError):
+        add_flash(request, "error", "Модель недоступна для пользователя или пространства")
+        return RedirectResponse(BACK + "?tab=agent", status_code=302)
     prompt = agent_system_prompt.strip() or None
 
     await tenants.update_by_id(
         tenant_id,
-        agent_model=model,
+        agent_model_id=selected.id if selected is not None else None,
         agent_max_tokens=max_tokens,
         agent_temperature=temperature,
         agent_system_prompt=prompt,
     )
     add_flash(request, "success", "Настройки агента сохранены")
+    # A save without a response body ends the request with an empty document
+    # (HTTP `null`): the operator sees no confirmation and cannot tell whether
+    # the click landed. Every other settings write redirects back to its tab,
+    # where the flash is rendered; this one used to just stop.
+    return RedirectResponse(BACK, status_code=302)
+
+
+@router.post("/agent/model-probe")
+async def agent_model_probe(
+    request: Request,
+    agent_model_id: str = Form(""),
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Run the shared prompt-free local check; never silently call a provider."""
+    tenant_id = action_tenant_id(request, tenant_id)
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(BACK, status_code=302)
+
+    from app.models.managers.tenant_manager import tenants
+    from app.services.ai.model_probe import probe_short
+
+    if await tenants.get(id=tenant_id) is None:
+        add_flash(request, "error", "Пространство не найдено")
+        return RedirectResponse(BACK, status_code=302)
+
+    tenant = await tenants.get(id=tenant_id)
+    model = None
+    if agent_model_id.strip():
+        try:
+            from app.services.ai.personal_catalog import validate_chat_model
+            model = await validate_chat_model(
+                user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=int(agent_model_id)
+            )
+        except (ValueError, PermissionError):
+            add_flash(request, "error", "Выбранная модель недоступна")
+            return RedirectResponse(BACK + "?tab=agent", status_code=302)
+
+    else:
+        model = await LLMModel.objects.resolve_default_model("text")
+    result = probe_short(model)
+
+    # Save probe result in session and redirect back to the settings page so
+    # the template shows it from `context["probe_result"]`.
+    request.session["agent_model_probe_result"] = result
     return RedirectResponse(f"{BACK}?tab=agent", status_code=302)
 
 
@@ -392,7 +586,7 @@ async def credential_store(
     """
     user = getattr(request.state, "web_user", None)
     user_id = getattr(user, "id", None)
-    if user_id is None:
+    if not _personal_access(request):
         add_flash(request, "error", "Только для вошедшего пользователя")
         return RedirectResponse(BACK, status_code=302)
 
@@ -436,6 +630,10 @@ async def credential_disable(
     user = getattr(request.state, "web_user", None)
     user_id = getattr(user, "id", None)
 
+    if not _personal_access(request):
+        add_flash(request, "error", "Только для вошедшего пользователя")
+        return RedirectResponse(BACK, status_code=302)
+
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse(BACK, status_code=302)
@@ -463,12 +661,12 @@ async def membership_role(
 ):
     """Change a member's workspace role.
 
-    Two invariants the admin console cannot enforce for us: the caller must
-    belong to this workspace, and the last owner cannot be demoted — a
+    The caller must belong to this workspace and cannot edit their own role.
+    When editing another member, the last owner cannot be demoted — a
     workspace with no owner has nobody who may manage it at all, so it would
     be unreachable rather than merely restricted.
     """
-    from app.models.role import Role
+    from app.models import WorkspaceRole as Role
 
     tenant_id = request.state.tenant_id
 
@@ -488,29 +686,211 @@ async def membership_role(
         add_flash(request, "error", "Участник не найден")
         return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
-    new_role = role.strip().lower()
-    if new_role not in ROLE_LABELS:
-        add_flash(request, "error", f"Неизвестная роль: {role}")
+    if membership.user_id == request.state.web_user.id:
+        add_flash(request, "error", "Нельзя менять собственную роль в пространстве")
         return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
-    # Resolve role string → role_id
-    codename_map = {"owner": "SUPERUSER", "admin": "ADMIN", "member": "VIEWER", "viewer": "VIEWER"}
-    codename = codename_map.get(new_role)
-    new_role_id: int | None = None
-    if codename is not None:
-        r = await Role.objects.filter(codename=codename).first()
-        if r is not None:
-            new_role_id = r.id
+    level = member_roles.resolve(role)
+    if level is None:
+        add_flash(request, "error", f"Неизвестная роль: {role}")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    new_role = level.key
 
-    if membership.is_owner and new_role != "owner":
-        owners = [m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.is_owner]
-        if len(owners) <= 1:
-            add_flash(request, "error", "Владелец должен остаться хотя бы один")
-            return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    r = await Role.objects.filter(codename=level.codename).first()
+    if r is None:
+        add_flash(request, "error", "Роль не настроена — обратитесь к оператору")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    new_role_id = r.id
 
-    await tenant_users.update_by_id(membership.id, role_id=new_role_id)
+    changed = await tenant_users.change_member_role(
+        tenant_id=tenant_id, membership_id=membership.id, role_id=new_role_id
+    )
+    if not changed:
+        add_flash(request, "error", "Недостаточно прав или нельзя снять последнего владельца")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
     add_flash(request, "success", f"Роль изменена на «{ROLE_LABELS[new_role]}»")
     return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
+@router.post("/members/{membership_id}/ai")
+async def membership_ai_access(
+    request: Request, membership_id: int, enabled: str = Form(""), token: str = Form("", alias="_csrf")
+):
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        return HTMLResponse("Сессия истекла", status_code=403)
+    from app.models.managers.tenant_manager import tenant_users
+
+    changed = await tenant_users.set_ai_access(tenant_id=tenant_id, membership_id=membership_id, enabled=enabled == "1")
+    add_flash(
+        request, "success" if changed else "error", "Доступ к AI изменён" if changed else "Изменение доступа запрещено"
+    )
+    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
+@router.post("/members/{membership_id}/disable")
+async def membership_disable(request: Request, membership_id: int, token: str = Form("", alias="_csrf")):
+    """Disable web access, retaining the membership and its audit identity."""
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    from app.models.managers.tenant_manager import tenant_users
+
+    changed = await tenant_users.disable_web_member(tenant_id=tenant_id, membership_id=membership_id)
+    add_flash(
+        request,
+        "success" if changed else "error",
+        "Доступ участника отключён" if changed else "Участник не найден или защищён как владелец",
+    )
+    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
+_ISSUED_INVITE_KEY = "_issued_invite"
+
+
+def _pop_issued_invite(request: Request) -> dict[str, Any] | None:
+    """The invite issued by the previous POST, shown exactly once."""
+    issued = request.session.pop(_ISSUED_INVITE_KEY, None)
+    if not isinstance(issued, dict) or not isinstance(issued.get("code"), str):
+        return None
+    if issued.get("tenant_id") != request.state.tenant_id:
+        return None
+    link = f"{str(request.base_url).rstrip('/')}/app/invite?code={issued['code']}"
+    return {**issued, "link": link, "qr_svg": invite_qr_svg(link)}
+
+
+def invite_qr_svg(link: str) -> str | None:
+    """Inline SVG QR code for the invite link, or None when `segno` is missing."""
+    try:
+        import segno
+    except ImportError:  # optional: the link and the code still work without it
+        return None
+    return segno.make(link, error="m").svg_inline(scale=4, border=2, dark="#0f172a", light="#ffffff")
+
+
+async def _open_invites(request: Request, tenant_id: int | None, visible_tabs: tuple[str, ...]) -> list[dict]:
+    """Redeemable invites for the team tab — only for someone who manages the workspace."""
+    from app.models import WorkspaceRole as Role
+    from app.models.managers.tenant_manager import TenantInviteManager
+
+    perms = getattr(request.state, "web_perms", None)
+    if tenant_id is None or perms is None or not perms.can_manage_workspace(tenant_id):
+        return []
+    rows = await TenantInviteManager().open_for_tenant(tenant_id)
+    if not rows:
+        return []
+    by_codename = {level.codename: level for level in member_roles.MEMBER_ROLES}
+    labels: dict[int, str] = {}
+    for role in await Role.objects.filter(id__in=list({r.role_id for r in rows if r.role_id is not None})):
+        codename = getattr(role.codename, "name", role.codename)
+        if not isinstance(codename, str):
+            codename = str(codename) if codename is not None else ""
+        level = by_codename.get(codename)
+        labels[role.id] = level.label if level is not None else str(codename)
+    return [
+        {
+            "id": row.id,
+            "role": labels.get(row.role_id, "Владелец" if row.role_id is None else "—"),
+            "created": row.created_at.strftime("%d.%m.%Y %H:%M") if row.created_at else "—",
+            "expires": row.expires_at.strftime("%d.%m.%Y %H:%M UTC") if row.expires_at else "бессрочно",
+            "uses": f"{row.used_count} из {row.max_uses}",
+        }
+        for row in rows
+    ]
+
+
+@router.get("/invites")
+async def invite_dialog(request: Request):
+    """Load only the permitted workspace's invitation UI, on explicit demand."""
+    tenant_id = request.state.tenant_id
+    perms = getattr(request.state, "web_perms", None)
+    if perms is None or not perms.can_manage_workspace(tenant_id):
+        return HTMLResponse("Недостаточно прав", status_code=403)
+    response = render(
+        request,
+        "web/_invite_dialog.html",
+        invite_roles=tuple(level for level in member_roles.INVITABLE if perms.can_manage_member("viewer", level.key)),
+        invite_default=member_roles.DEFAULT_INVITE_KEY,
+        invite_days=INVITE_DAYS,
+        issued_invite=_pop_issued_invite(request),
+        open_invites=await _open_invites(request, tenant_id, ("team",)),
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/invites/{invite_id}/revoke")
+async def invite_revoke(request: Request, invite_id: int, token: str = Form("", alias="_csrf")):
+    """Revoke one open invite of this workspace; its code stops working at once."""
+    from app.models.managers.tenant_manager import TenantInviteManager
+
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
+    if await TenantInviteManager().revoke(tenant_id=tenant_id, invite_id=invite_id):
+        add_flash(request, "success", "Приглашение отозвано")
+    else:
+        add_flash(request, "error", "Приглашение не найдено или уже недействительно")
+    return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
+
+
+@router.post("/invites")
+async def invite_issue(
+    request: Request,
+    role: str = Form(member_roles.DEFAULT_INVITE_KEY),
+    days: int = Form(7),
+    token: str = Form("", alias="_csrf"),
+):
+    """Issue a single-use invite link for this workspace with a chosen access level.
+
+    Only someone who manages this workspace may invite; the owner level is not
+    invitable (promote an existing member on this tab instead). The plaintext
+    code exists only in this response cycle — the database keeps its hash.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.managers.tenant_manager import TenantInviteManager
+
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
+    level = member_roles.resolve(role, invitable_only=True)
+    if level is None or days not in INVITE_DAYS:
+        add_flash(request, "error", "Выберите уровень доступа и срок действия из списка")
+        return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
+
+    perms = request.state.web_perms
+    if not perms.is_owner and level.key == "admin":
+        return HTMLResponse("Назначать администратора может только владелец", status_code=403)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+    invite, code = await TenantInviteManager().issue(
+        tenant_id=tenant_id, role=level.codename, max_uses=1, expires_at=expires_at
+    )
+    if invite is None or invite.role_id is None:
+        add_flash(request, "error", "Роль не настроена — обратитесь к оператору")
+        return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
+    request.session[_ISSUED_INVITE_KEY] = {
+        "code": code,
+        "tenant_id": tenant_id,
+        "role": level.label,
+        "expires": expires_at.strftime("%d.%m.%Y %H:%M UTC"),
+    }
+    return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
 
 
 @router.post("/plan")
@@ -536,7 +916,7 @@ async def plan_update(
         return RedirectResponse(back, status_code=302)
 
     user = getattr(request.state, "web_user", None)
-    if user is None or not getattr(user, "is_superuser", False):
+    if user is None or not False:
         add_flash(request, "error", "Менять тариф может только оператор платформы")
         return RedirectResponse(back, status_code=302)
 
@@ -569,8 +949,7 @@ async def plan_update(
         add_flash(
             request,
             "warning",
-            f"Тариф изменён на «{label}». Придётся сократить: {'; '.join(over)} — "
-            f"до этого добавлять нельзя.",
+            f"Тариф изменён на «{label}». Придётся сократить: {'; '.join(over)} — " f"до этого добавлять нельзя.",
         )
     else:
         add_flash(request, "success", f"Тариф изменён на «{label}»")

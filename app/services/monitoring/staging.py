@@ -29,7 +29,14 @@ def cursor_value(value) -> int:
     return parsed
 
 
-async def admit_telegram_items(content: list[dict], source, *, run_id=None, wake_analysis=False) -> int:
+async def admit_telegram_items(
+    content: list[dict],
+    source,
+    *,
+    run_id=None,
+    wake_analysis=False,
+    selection: dict[str, tuple[str, str | None]] | None = None,
+) -> int:
     """Own one commit: raw receipt + monotonic cursors + optional replay wakeup.
 
     This returns measured new raw identities ONLY after the transaction commits.
@@ -49,7 +56,11 @@ async def admit_telegram_items(content: list[dict], source, *, run_id=None, wake
     new_cursor = message_cursor(content)
     if any(item.get("external_id") != f"{source.external_id}_{item['id']}" for item in content):
         raise ContentAdmissionError("content_identity_invalid")
-    rows = build_staged_rows(content, source, run_id)
+    rows = [
+        row
+        for row in build_staged_rows(content, source, run_id, selection=selection)
+        if row.get("selection_status") in ("selected", "needs_review")
+    ]
     session = new_session()
     try:
         async with session.begin():

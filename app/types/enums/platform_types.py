@@ -80,6 +80,9 @@ class SourceType(DatabaseEnum, Enum):
     EVENT = ("event", "Мероприятие", "🎉")
     MARKET = ("market", "Магазин", "🛒")
     ALBUM = ("album", "Альбом", "📸")
+    # A global search query (VK `newsfeed.search`), not a wall: the source's
+    # params carry the phrase and optional owner/date filters.
+    SEARCH = ("search", "Поисковый запрос", "🔎")
 
     # Telegram specific
     SUPERGROUP = ("supergroup", "Супергруппа", "👥+")

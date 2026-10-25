@@ -17,6 +17,7 @@ from dataclasses import replace
 from typing import Any, Callable, NoReturn, Optional
 
 from app.core.tenant_context import tenant_scope
+from app.jobs import progress as job_progress
 from app.jobs.claim_outcomes import JobClaim, JobClaimLostError, JobNotAcquiredError, JobOutcomeReceipt, OutcomeAck
 from app.jobs.handlers import HANDLERS
 from app.jobs.result_outcomes import reported_llm_cost, returned_failure
@@ -166,12 +167,15 @@ def _job_success_message(job: Any, result: dict | None) -> str:
         # `new_items` is absent on jobs written before it existed — say "not counted",
         # never "0 new", which would be a claim about data we simply did not measure.
         new_items = result.get("new_items")
+        rate_limited = _result_count(result, "rate_limited") or 0
 
-        parts = [
-            f"Задача «{label}» завершена с ошибками. Данные могут быть неполными."
-            if error
-            else f"Задача «{label}» успешно завершена."
-        ]
+        if error:
+            headline = f"Задача «{label}» завершена с ошибками. Данные могут быть неполными."
+        elif rate_limited:
+            headline = f"Задача «{label}» выполнена частично: платформа ограничила частоту запросов."
+        else:
+            headline = f"Задача «{label}» успешно завершена."
+        parts = [headline]
 
         if collected:
             names = _format_name_list(result.get("collected_sources") or [])
@@ -192,6 +196,12 @@ def _job_success_message(job: Any, result: dict | None) -> str:
             names = _format_name_list(result.get("error_sources") or [])
             names_detail = f" ({names})" if names else ""
             parts.append(f"Ошибки при сборе: {error}{names_detail}.")
+        if rate_limited:
+            names = _format_name_list(result.get("rate_limited_sources") or [])
+            names_detail = f" ({names})" if names else ""
+            parts.append(
+                f"Отложено из-за лимита запросов платформы: {rate_limited}{names_detail} — соберём при следующем запуске."
+            )
         if empty:
             parts.append(f"Без контента: {empty} (источники опрошены, но постов нет).")
         if excluded:
@@ -351,10 +361,21 @@ async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, pa
         if claim.job_type == "digest":
             from app.services.digest.job_delivery import execute_digest_job
 
-            return await execute_digest_job(job, payload, handler)
-        return await handler(payload)
+            from app.services.ai.catalog_execution import run_with_job_catalog
+            async def scoped_digest(digest_payload):
+                return await run_with_job_catalog(job, handler, digest_payload)
+            return await execute_digest_job(job, payload, scoped_digest)
+        from app.services.ai.catalog_execution import run_with_job_catalog
+        return await run_with_job_catalog(job, handler, payload)
 
-    handler_task = asyncio.create_task(invoke())
+    # The handler task copies the bound context; per-source progress uses this claim.
+    progress = job_progress.ProgressSession(claim)
+    token = job_progress.bind(progress)
+    try:
+        handler_task = asyncio.create_task(invoke())
+    finally:
+        job_progress.unbind(token)
+    claim_lost = False
     state = _OrdinaryHeartbeatState()
     heartbeat_task = asyncio.create_task(_ordinary_heartbeat(claim, state))
     try:
@@ -366,14 +387,22 @@ async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, pa
         if heartbeat_task.done():
             try:
                 heartbeat_task.result()
-            except (JobClaimLostError, JobClaimRenewalError) as error:
+            except JobClaimLostError as error:
+                claim_lost = True
+                raise _OrdinaryHeartbeatStopped(error) from None
+            except JobClaimRenewalError as error:
                 raise _OrdinaryHeartbeatStopped(error) from None
             except asyncio.CancelledError:
                 raise _OrdinaryHeartbeatStopped(JobClaimRenewalError(claim)) from None
             except Exception:
                 raise _OrdinaryHeartbeatStopped(JobClaimRenewalError(claim)) from None
             raise _OrdinaryHeartbeatStopped(JobClaimRenewalError(claim)) from None
-        return handler_task.result()
+        try:
+            return handler_task.result()
+        except job_progress.ProgressStopped:
+            # A progress write found no running claim: same meaning as heartbeat loss.
+            claim_lost = True
+            raise _OrdinaryHeartbeatStopped(JobClaimLostError(claim)) from None
     finally:
         # Do not return a receipt while a cancelled handler can still run locally.
         for task in (handler_task, heartbeat_task):
@@ -388,6 +417,10 @@ async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, pa
                 interrupted = True
         if interrupted:
             raise asyncio.CancelledError
+        if claim_lost or progress.lost:
+            # Rows staged after an operator's "discard" cancellation are removed only
+            # once the handler has drained; never raises.
+            await progress.settle()
 
 
 async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow_retry: bool) -> JobOutcomeReceipt:
@@ -411,7 +444,7 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
 
         known_delivery_failure = isinstance(error, DeliveryFailure)
         retry = allow_retry and known_delivery_failure and error.retryable is True
-        stored_error = str(error) if known_delivery_failure else OUTCOME_UNCONFIRMED_PREFIX
+        stored_error = str(error) if known_delivery_failure else f"{OUTCOME_UNCONFIRMED_PREFIX}{_error_kind(error)}"
         try:
             receipt = await jobs.mark_failed(claim.job_id, error=stored_error, allow_retry=retry, claim=claim)
             receipt = _require_outcome_receipt(receipt, claim)
@@ -454,6 +487,7 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
     payload = dict(job.payload or {})
     payload["agent_task_id"] = job.agent_task_id
     payload["job_id"] = job.id
+    payload["_trusted_initiated_by_user_id"] = job.initiated_by_user_id
     with tenant_scope(job.tenant_id):
         checkpoint_mode = False
         if job.job_type == "digest":
@@ -466,7 +500,10 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
         try:
             from app.services.digest.job_delivery import execute_digest_job, finalize_digest_job
 
-            result = await execute_digest_job(job, payload, handler)
+            from app.services.ai.catalog_execution import run_with_job_catalog
+            async def scoped_digest(digest_payload):
+                return await run_with_job_catalog(job, handler, digest_payload)
+            result = await execute_digest_job(job, payload, scoped_digest)
             if await finalize_digest_job(job, result=result) is None:
                 _log_job(logging.WARNING, "job_completion_claim_lost", job, error_code="claim_lost")
                 return None
@@ -502,13 +539,15 @@ async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, A
     """Return ordinary committed receipts, never a newer attempt's current row."""
     handler = HANDLERS.get(job.job_type)
     if not handler:
+        # A missing handler is not a transient execution failure. Stop this row
+        # for operator inspection instead of spending its remaining attempts.
         claim = JobClaim.capture(job)
         with tenant_scope(claim.tenant_id):
             try:
                 receipt = await jobs.mark_failed(
                     claim.job_id,
                     error=f"Unknown job type: {claim.job_type}",
-                    allow_retry=allow_retry,
+                    allow_retry=False,
                     claim=claim,
                 )
                 receipt = _require_outcome_receipt(receipt, claim)
@@ -525,6 +564,38 @@ async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, A
     if finished is None:
         return {"status": "unknown", "error": "Job row not found after execution"}
     return {"status": finished.status, "result": finished.result, "error": finished.error}
+
+
+# Background tasks launched by web buttons (manual run without app.runtime worker).
+# Strong references prevent GC; done callback removes completed tasks.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def launch_job_background(job_id: int, *, allow_retry: bool = False) -> asyncio.Task:
+    """Run one admitted job in this process's event loop (web manual-run buttons).
+
+    The task runs like a worker would — claim (atomic) + execute with heartbeat
+    and progress binding — but in the same process as the web app (uvicorn),
+    so jobs execute even when `app.runtime` is not running (dev: uvicorn alone).
+    Progress snapshots land in `jobs.result.progress`; the run-status modal and
+    source analysis-progress poll already render them.
+
+    A competing real worker may claim first; our task then returns None (no
+    double execution — claim is atomic SKIP LOCKED). Closing the browser window
+    does not cancel the task (it runs server-side until the process stops).
+    """
+    task = asyncio.create_task(_run_job_background(job_id, allow_retry=allow_retry))
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
+
+
+async def _run_job_background(job_id: int, *, allow_retry: bool) -> Optional[dict]:
+    try:
+        return await run_job_now(job_id, allow_retry=allow_retry)
+    except Exception as error:
+        logger.error("job_background_failed job_id=%s error=%s", job_id, error)
+        return None
 
 
 async def run_job_now(job_id: int, *, allow_retry: bool = True) -> Optional[dict]:
@@ -560,7 +631,7 @@ async def run_task_directly(task: Any) -> Optional[dict]:
     from app.models.managers.job_manager import JobManager
 
     with tenant_scope(task.tenant_id):
-        job = await enqueue_task_run(task)
+        job = await enqueue_task_run(task, supersede_unfinished=True)
         claimed = await JobManager.claim_job(job.id)
     if claimed is None:
         raise JobNotAcquiredError(job.id, job.tenant_id) from None
@@ -569,9 +640,12 @@ async def run_task_directly(task: Any) -> Optional[dict]:
 
 async def run_job_inline(job_type: str, payload: dict | None = None, **enqueue_kwargs: Any) -> Optional[dict]:
     """Execute a one-off job immediately; enqueue kwargs require tenant scope."""
+    from app.jobs.source_activity import SOURCE_JOB_TYPES
     from app.models.managers.job_manager import JobManager
 
-    job = await JobManager().enqueue(job_type=job_type, payload=payload or {}, **enqueue_kwargs)
+    jobs = JobManager()
+    enqueue = jobs.admit_source_job if job_type in SOURCE_JOB_TYPES else jobs.enqueue
+    job = await enqueue(job_type=job_type, payload=payload or {}, **enqueue_kwargs)
     claimed = await JobManager.claim_job(job.id)
     if claimed is None:
         raise JobNotAcquiredError(job.id, job.tenant_id) from None
@@ -581,8 +655,9 @@ async def run_job_inline(job_type: str, payload: dict | None = None, **enqueue_k
 async def run_pending_once() -> int:
     """Claim and execute one due job. Returns number processed (0 or 1)."""
     with tenant_scope(bypass=True):
-        await jobs.reap_stale()
-        await jobs.cleanup_done()
+        quarantined = await jobs.reap_stale()
+        if type(quarantined) is int and quarantined > 0:
+            logger.warning("job_stale_quarantined count=%s", quarantined)
     job = await jobs.claim_next()
     if not job:
         return 0
@@ -605,8 +680,19 @@ async def drain(max_jobs: int | None = None) -> int:
 async def worker_forever(poll_seconds: int = 5) -> None:
     """Worker loop: poll the jobs table and process due jobs."""
     logger.info("worker_started")
+    last_maintenance = 0.0
     while True:
         try:
+            now = asyncio.get_running_loop().time()
+            if now - last_maintenance >= 300:
+                from app.jobs.lifecycle import cleanup_terminal_job_history
+
+                try:
+                    with tenant_scope(bypass=True):
+                        await cleanup_terminal_job_history()
+                except Exception as error:  # noqa: BLE001 — keep queue processing available
+                    logger.warning("job_maintenance_failed error_code=%s", _error_kind(error))
+                last_maintenance = now
             processed = await drain(max_jobs=10)
             await asyncio.sleep(0 if processed else poll_seconds)
         except asyncio.CancelledError:

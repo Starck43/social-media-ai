@@ -1,8 +1,4 @@
-"""Scheduling persistence exports with stable legacy registration/bindings.
-
-Grouping does not implement queue claims, leases, task transactions or outbox.
-The task/source association is declared once in the canonical task leaf.
-"""
+"""Scheduling models with lazy exports and the legacy DigestRun alias."""
 
 from __future__ import annotations
 

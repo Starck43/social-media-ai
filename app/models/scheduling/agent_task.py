@@ -20,8 +20,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, relationship
 
 from ...core.config import settings
-from ...types import AgentActionType, BotTriggerType
 from ...core.decorators import app_label
+from ...types import AgentActionType, BotTriggerType
 from ..base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
@@ -46,7 +46,7 @@ agent_task_sources = Table(
 )
 
 
-@app_label("social")
+@app_label("scheduling")
 class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     """Cron-based task that enqueues background jobs (collect/prune/digest/analyze/learn/reflect)."""
 
@@ -64,7 +64,9 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     cron_expr: Mapped[str] = Column(String(100), nullable=False)  # 5-field cron expression
     # Job type to enqueue: 'collect' | 'digest' | 'prune' | 'analyze' | 'learn' | 'reflect'
     job_type: Mapped[str] = Column(String(20), nullable=False)
-    # Job payload: {"period": "week", "monitored_users": [...], "excluded_users": [...], ...}
+    # Job payload: {"period": "week", "tracked_users": ["vk:1"], "keywords_list": [...], ...}
+    # Selection (tracked users, text scope) lives here, not on a source or a
+    # scenario: docs/design/task-selection.md.
     payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False, server_default=text("'{}'::json"))
     is_active: Mapped[bool] = Column(Boolean, default=True, nullable=False, server_default="true")
     next_run_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
@@ -93,10 +95,11 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
         Integer, nullable=True, comment="Max actions per hour for this task"
     )
     cooldown_seconds: Mapped[int | None] = Column(Integer, nullable=True, comment="Min seconds between actions")
-    blacklist: Mapped[list[str] | None] = Column(JSON, nullable=True, comment="Usernames/IDs to never act on")
-    whitelist: Mapped[list[str] | None] = Column(
-        JSON, nullable=True, comment="Usernames/IDs to always act on (if set, only these)"
-    )
+    # Whether this task only rehearses: collect/analyze report what would happen
+    # without staging raw rows or calling a model. Set by an admin on the task
+    # form, and available as `--dry-on` in the CLI. Never a side effect of an
+    # unrelated run.
+    dry_run: Mapped[bool] = Column(Boolean, nullable=False, default=False, server_default="false")
 
     # Owning workspace (tenant);
     tenant: Mapped["Tenant"] = relationship("Tenant")

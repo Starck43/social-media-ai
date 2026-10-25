@@ -18,6 +18,9 @@ SAFE_FAILURE_CODES = frozenset(
         "invalid_memory_reference",
         "incomplete_structured_output",
         "llm_call_failed",
+        # Legacy digest stops that require operator review (see DigestRunManager).
+        "digest_run_in_progress_requires_review",
+        "partial_delivery_requires_review",
     }
 )
 

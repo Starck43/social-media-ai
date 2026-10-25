@@ -58,7 +58,7 @@ python -m cli.main <job_type> [options]
 **Job-type specific options:**
 | Command | Extra options |
 |---|---|
-| `analyze` | `--scenario <id>`, `--excluded <users>` |
+| `analyze` | `--scenario <id>`, `--excluded <users>`, `--keep-raw` |
 | `prune` | `--days <n>` (default `7`) |
 | `learn` | `--min-messages <n>` (default `8`), `--window <n>` (default `200`) |
 | `reflect` | `--dedup/--no-dedup` (default on) |
@@ -67,6 +67,9 @@ python -m cli.main <job_type> [options]
 ```bash
 # Analyze sources 739 and 740 with a scenario
 python -m cli.main analyze --src 739,740 --scenario 3
+
+# Preserve staged raw content after successful analysis
+python -m cli.main analyze --src 739 --scenario 3 --keep-raw
 
 # Prune jobs older than 14 days
 python -m cli.main prune --src 739 --days 14
@@ -92,11 +95,12 @@ python -m cli.main collect [options]
 |---|---|---|
 | `--src`, `-s` | all active | Source ids, urls or platform keyword (`vk`/`telegram`/`max`), comma/space separated |
 | `--tenant` | — | Workspace slug or id |
-| `--monitored` | — | Usernames to collect for instead of source defaults |
-| `--excluded` | — | Usernames to skip |
-| `--start-date` | — | Start date `DD-MM-YYYY` (re-fetch window, with `--force-refresh`) |
-| `--end-date` | — | End date `DD-MM-YYYY` (re-fetch window, with `--force-refresh`) |
+| `--tracked` | — | Tracked authors (`platform:external_id`): analysis keeps only items they wrote |
+| `--keywords` | — | Text scope: phrases an item must contain to be analysed (inflection-aware) |
+| `--start-date` | — | Lower bound `DD-MM-YYYY`; enforced client-side (VK ignores `wall.get` dates) |
+| `--end-date` | — | Upper bound `DD-MM-YYYY` |
 | `--force-refresh` | `false` | Re-fetch the full date range from the API (default: only what is new since the last check) |
+| `--dry-on` | `false` | Rehearsal: fetch and print a bounded preview; no raw rows, no model, cursor unchanged |
 | `--verbose`, `-v` | `false` | Show detailed collection output |
 
 **Examples:**
@@ -110,18 +114,23 @@ python -m cli.main collect --src 739,740 --verbose
 # Collect all active sources on VK
 python -m cli.main collect --src vk --verbose
 
-# Collect by source url with monitored/excluded users
-python -m cli.main collect --src https://vk.com/russkikh_natalia --monitored user_a --excluded spam
+# Collect by source url, keeping only tracked authors and matching phrases
+python -m cli.main collect --src https://vk.com/russkikh_natalia --tracked vk:123456 --keywords "Киров"
+
+# Rehearse a window: see the items and relevance without writing anything or
+# calling a model
+python -m cli.main collect --src 3160 --start-date 01-10-2026 --dry-on --verbose
 
 # Re-fetch the full date range from the API (analysis still deduped, so tokens
 # are only spent on genuinely new/changed content)
 python -m cli.main collect --src 739 --force-refresh --start-date 01-05-2025
 ```
 
-> `collect --force-refresh` re-fetches via the API only. Deduplication (by
-> content hash) stays on, so already-seen posts are not re-analyzed — this is
-> the token-saving behaviour. For a full re-analysis that overwrites rows, use
-> `task collect --force-refresh` (below).
+> `collect --force-refresh` re-fetches via the API only. Durable analysis
+> receipts remain in force, so already-covered content in the same analysis
+> context is not re-analyzed. Web task force controls are removed and legacy
+> stored force flags are ignored; the task CLI options below are legacy and do
+> not authorize web/API dedup bypass.
 
 ---
 
@@ -156,19 +165,19 @@ python -m cli.main task add <name> <cron_expr> <job_type> [options]
 | Option | Default | Description |
 |---|---|---|
 | `--sources`, `-s` | — | Comma/space separated source IDs to link via the `agent_task_sources` m2m table (empty = all active) |
-| `--monitored` | — | Usernames to collect for (collect only) |
+| `--tracked` | — | Authors whose items are analysed (`platform:external_id`), filtered over the task's own sources |
+| `--keywords` | — | Text scope: phrases an item must contain (collect/analyze) |
 | `--excluded` | — | Usernames to skip (collect/analyze) |
 | `--scenario` | — | `AgentScenario` ID to apply when the task runs |
 | `--start-date` | — | Content start date `DD-MM-YYYY` (collect/analyze) — stored on the task as `cli_dates.start_date` |
 | `--end-date` | — | Content end date `DD-MM-YYYY` — stored on the task as `cli_dates.end_date` |
-| `--force-refresh` | `false` | Overwrite the window on every run (collect) — stored on the task as `payload.force_refresh` |
+| `--force-refresh` | `false` | Legacy collection option; does not bypass analysis receipts |
 | `--brands` | — | Comma/space separated brands to track (brand_mentions scenario) |
 | `--competitors` | — | Comma/space separated competitors to analyze (competitor scenario) |
 | `--hashtags` | — | Comma/space separated hashtags to track (hashtag_analysis scenario) |
 | `--influencers` | — | Comma/space separated authors/influencers (influencer scenario) |
-| `--keywords` | — | Comma/space separated keywords (keywords scenario) |
 | `--topics` | — | Comma/space separated topics (topics scenario) |
-| `--payload`, `-p` | `{}` | Extra JSON payload, e.g. `'{"period": "week"}'` (flat keys; sources/scenario are set separately) |
+| `--payload`, `-p` | `{}` | Extra JSON payload, e.g. `'{"period": "week"}'` (flat keys; sources/scenario are set separately). `collection` is validated through the shared parser; a malformed block stops the command before a task is created. |
 
 **Examples:**
 ```bash
@@ -181,12 +190,16 @@ python -m cli.main task add daily-digest "0 9 * * *" digest
 # Weekly digest on Mondays
 python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
 
-# Collect from specific sources with monitored/excluded users
+# Collect from specific sources, keeping only tracked authors and matching phrases
 python -m cli.main task add hourly-collect "0 * * * *" collect \
-  --sources "1 2" --monitored "user_a" --excluded "spam"
+  --sources "1 2" --tracked "vk:123456" --keywords "Киров, дизайн" --excluded "spam"
 
 # Analyze with a scenario
 python -m cli.main task add daily-analyze "0 2 * * *" analyze --sources "1" --scenario 5
+
+# Collect posts and comments, with a page limit and a mention phrase
+python -m cli.main task add kirov-monitor "0 9 * * *" analyze --sources "3" \
+  -p '{"collection": {"content_types": ["posts", "comments"], "limit": 250, "queries": ["доставка"]}}'
 ```
 
 ### Remove Task
@@ -210,20 +223,20 @@ Only provided options are changed; all others keep their current values.
 | `--job-type` | New job type: `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` |
 | `--cron` | New cron expression (5 fields) or `@once` |
 | `--sources` | New comma/space separated source IDs (empty = all active) |
-| `--monitored` | New comma/space separated monitored usernames (collect) |
+| `--tracked` | New tracked authors (`platform:external_id`) |
 | `--excluded` | New comma/space separated excluded usernames (collect/analyze) |
 | `--scenario` | New `AgentScenario` ID |
 | `--period` | Period for digest: `day`, `week` |
 | `--start-date` | New start date `YYYY-MM-DD` (collect/analyze) |
 | `--end-date` | New end date `YYYY-MM-DD` |
-| `--force-refresh` | New `force_refresh` value (collect) |
-| `--force-reanalyze` | New `force_reanalyze` value (analyze) |
+| `--force-refresh` | Legacy option; web task execution ignores stored force flags |
+| `--force-reanalyze` | Legacy option; web task execution ignores stored force flags |
 | `--brands` | New comma/space separated brands (brand_mentions scenario) |
 | `--competitors` | New comma/space separated competitors (competitor scenario) |
 | `--hashtags` | New comma/space separated hashtags (hashtag_analysis) |
 | `--influencers` | New comma/space separated authors/influencers (influencer scenario) |
-| `--keywords` | New comma/space separated keywords (keywords scenario) |
 | `--topics` | New comma/space separated topics (topics scenario) |
+| `--payload`, `-p` | JSON object merged into the task payload. `collection` is validated by the shared parser; omit it to keep the stored block, `null` clears it, an object replaces it. |
 
 **Example:**
 
@@ -233,6 +246,9 @@ python -m cli.main task update nightly-analyze --cron "0 3 * * *" --brands "Coca
 
 # Switch scenario and add competitors
 python -m cli.main task update brand-watch --scenario 7 --competitors "Pepsi, Fanta"
+
+# Narrow collection to comments and drop the stored mention phrase
+python -m cli.main task update kirov-monitor -p '{"collection": {"content_types": ["comments"], "limit": 100}}'
 ```
 
 ### Run Task
@@ -252,26 +268,28 @@ where `<job_type>` is `collect`, `digest`, `analyze`, `prune`, `learn` or
 |---|---|---|
 | `--task`, `-t` | — | Existing task by name or id to run (source already lives on the task) |
 | `--sources`, `-s` | — | Source IDs to link (one-off run) |
-| `--monitored` | — | Usernames to collect (one-off run) |
+| `--tracked` | — | Tracked authors for a one-off run (`platform:external_id`) |
+| `--keywords` | — | Text scope for a one-off run |
 | `--excluded` | — | Usernames to skip (one-off run) |
 | `--scenario` | — | `AgentScenario` ID (one-off run) |
 | `--period` | — | Period for digest/collect: `day`, `week`, `month` etc. |
 | `--tenant` | — | Workspace slug or id for a one-off run |
-| `--force-refresh` | `false` | Full-cycle refresh (per job type, below); applied to this job only, never persisted on the task row |
+| `--force-refresh` | `false` | Direct CLI collection may re-fetch a window; it does not bypass analysis receipts |
 | `--start-date` | — | Content start date `DD-MM-YYYY` (one-off only) |
 | `--end-date` | — | Content end date `DD-MM-YYYY` (one-off only) |
 
 A task's own workspace always wins over `--tenant`. Running a task executes
 *its own* job — it never drains an unrelated pending job.
 
-**`--force-refresh` per job type** — what gets updated:
-
-| Job type | Effect |
-|---|---|
-| `collect` | Re-fetch the whole selected period **and** re-analyze it (bypasses dedup), overwriting `ai_analytics` rows by `(source, date)`. Costs tokens — use deliberately. |
-| `digest` | Re-sends the digest even when it was already sent for this task + period (skips the idempotency check). |
-| `analyze` | No extra effect: it already re-evaluates triggers over stored analytics. |
-| `prune`, `learn`, `reflect` | No extra effect beyond a normal run. |
+For direct collection, `--force-refresh` can re-fetch the requested window but
+does not bypass durable analysis receipts. Web task force controls were removed;
+legacy stored force values are ignored by web task admission. Analysis re-runs
+when its semantic context changes (for example, scenario or targets), not
+through a force flag. The task-run `--force-refresh` still forces digest
+resending, while it does not bypass analysis receipts for collect/analyze.
+Prune, learn and reflect retain their normal behavior. Direct
+`analyze --keep-raw` changes retention only: staged rows are preserved after a
+successful save, while normal receipt and provider rules still apply.
 
 **Examples:**
 ```bash
@@ -284,8 +302,8 @@ python -m cli.main task digest --task 524 --period week
 # One-off analyze run
 python -m cli.main task analyze --sources 739 --scenario 3
 
-# Full-cycle refresh: re-fetch + re-analyze the whole period, overwriting rows
-python -m cli.main task collect --task 524 --force-refresh
+# Direct collect command: re-fetch a collection window; receipts still apply
+python -m cli.main collect --src 739 --force-refresh --start-date 01-05-2025
 ```
 
 ### Pause / Resume Task
@@ -293,6 +311,115 @@ python -m cli.main task collect --task 524 --force-refresh
 ```bash
 python -m cli.main task pause <name>       # pause
 python -m cli.main task pause <name> --resume  # resume
+```
+
+---
+
+## Collection lanes
+
+Move a task that still collects from workspace-level search sources onto its
+own **task-scoped lanes**: one `Source` row per search phrase that only this
+task may read (`sources.owner_task_id`). The task payload receives the
+canonical `collection` block, written through the same writer the web editor
+and the API use.
+
+```bash
+python -m cli.main collection lanes <task_id> [options]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|---|---|---|
+| `--query` | — | Search phrase of one lane (repeatable); at least one is required |
+| `--content-types` | `posts` | Comma separated content types (`posts`, `comments`) |
+| `--limit` | `1000` | Collection limit of the task |
+| `--city` | — | City of the collection (`--city-mode` says how strict it is) |
+| `--city-mode` | `prefer` | City mode: `prefer`, `require`, `review` |
+| `--date-from` / `--date-to` | — | Collection window (`YYYY-MM-DD`) |
+| `--retire-source` | — | Legacy workspace-level search source to deactivate and unlink (repeatable) |
+| `--platform` | inferred | Platform of the lanes; inferred from the task's sources when they agree |
+| `--tenant` | — | Workspace slug or id; must match the task's workspace |
+| `--apply` | off | Write the plan. Without it the command only prints it |
+
+Without `--apply` nothing is written: the command prints the lanes it would
+create (`external_id`, name, phrase), the resulting `collection` block, the
+sources it would retire and the sources that stay linked.
+
+The migration is idempotent: a lane is looked up by
+(workspace, platform, `external_id`) and reused, so a second run creates no
+duplicates. A retired source is deactivated and unlinked, never deleted — the
+row keeps the trail of what it collected. A source that belongs to another
+task is never linked or retired.
+
+**Example:**
+```bash
+# Give task 2027 its own search lanes and retire the legacy search source
+python -m cli.main collection lanes 2027 --tenant owner \
+  --query "Древиз" --query "Вревиз" --query "Кабанов" --query "Италия поездка" \
+  --content-types posts,comments --limit 1000 --city "Киров" --city-mode prefer \
+  --date-from 2026-10-01 --retire-source 3174 --apply
+```
+
+### Import Communities and People
+
+Feed a pasted list of VK communities and people into a task as **task-owned
+wall lanes**. VK's global search is unavailable for this deployment's app
+profile (it answers error 1051), so the operator finds the groups in the
+vk.ru web UI and hands the list to this command: every entry is resolved with
+the methods that still work (`groups.getById`, `users.get` — read-only) and
+turns into a wall the task collects without any search. The command performs
+**identity resolution only**: it never collects content and never writes
+to VK.
+
+```bash
+python -m cli.main collection import <task_id> [options]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|---|---|---|
+| `--community` | — | One community: a vk.com URL, `club113`/`public113`/`event123` id, negative id (`-113`) or screen name (repeatable) |
+| `--person` | — | One person: a vk.com URL, `id12345` or positive id (repeatable) |
+| `--file` | — | Path with entries, one per line; `#` comments and blank lines are ignored |
+| `--tenant` | — | Workspace slug or id; must match the task's workspace |
+| `--apply` | off | Write the plan. Without it the command only prints it |
+
+Accepted entry forms: `https://vk.com/club113075242`, `vk.com/dreviz2000`
+(with or without scheme, with query/fragment), `club113075242`,
+`public113075242`, `event123`, `id12345`, a negative id (`-113075242` is a
+community) and a bare screen name. A `club`/`public`/`event` prefix implies a
+community, `id` implies a person; a plain screen name resolves as a community
+first, then as a person. A negative id is always a community — forcing
+`--person` on one is refused.
+
+Without `--apply` nothing is written: the command prints a table per entry
+(requested → resolved kind, id and name → action), the lanes the task will be
+linked to, and a footer with the workspace. An entry VK does not know is
+reported as `skip: vk has no such …` and the rest of the batch goes on; a
+missing VK token or an API error stops the command instead of reading as
+"nothing found".
+
+The import is idempotent. A workspace source with the same screen name or
+numeric id (a `club113`-style legacy id counts) is **reused**: linked to the
+task as-is, its type, params and name are never changed. A source a task
+already owns is reused too. A source owned by **another task** is refused and
+reported — a lane is never taken from its task. Everything else is
+**created** as a task-owned lane (`source_type` `GROUP`/`USER`, negative
+`external_id` for communities, positive for people, `params`
+`{"mode": "auto"}`, active), linked through the same writer the web form and
+the API use. Nothing is ever deleted, so a second run creates nothing.
+
+**Examples:**
+```bash
+# See what would happen, without touching anything
+python -m cli.main collection import 2027 --tenant owner \
+  --community "https://vk.com/dreviz2000" --community public113075242 \
+  --person id19149862
+
+# Read the rest from a file and apply
+python -m cli.main collection import 2027 --tenant owner --file lanes.txt --apply
 ```
 
 ---
@@ -559,20 +686,180 @@ python -m cli.main scenarios seed-default --tenant owner
 python -m cli.main scenarios seed-default --tenant owner --force
 ```
 
+### Set Output Schema
+
+```bash
+python -m cli.main scenarios output-schema <scenario_id> [options]
+```
+
+Writes an explicit `output_schema` for a scenario. A scenario without one gets
+its contract derived from `analysis_types` + `scope` at run time, so the fields
+its prompt asks for are never validated. This command extends the derived
+contract with the named fields — the derived properties and their requirements
+stay untouched — and stores it per row through the guarded write path.
+
+**Options:**
+
+| Option | Default | Description |
+|---|---|---|
+| `--add-field` | — | Extra output field as `name:type` (repeatable); types: `string`, `number`, `integer`, `boolean`, `array`, `object`, `null` |
+| `--require` | — | Field name to add to `required` (repeatable); a name that is not a property is skipped with a warning |
+| `--base-prompt-file` | — | UTF-8 file with a new `base_prompt`, stored in the same reviewed operation |
+| `--tenant` | `owner` | Workspace slug or id |
+| `--apply` | off | Write the schema. Without it the command only prints the schema and the diff |
+
+A field that already exists in the contract is not overwritten: the existing
+definition is kept and reported as a warning. The candidate schema is checked
+against the scenario contract before it can reach the database.
+
+**Example:**
+```bash
+# Show what would be stored for scenario 1695 (dry run)
+python -m cli.main scenarios output-schema 1695 --tenant owner \
+  --add-field is_relevant:boolean --add-field author_role:string \
+  --add-field author_city:string --add-field is_interior_designer:boolean \
+  --add-field participants:array --add-field cities:array --add-field dates:array \
+  --add-field quote:string --add-field url:string --require is_relevant
+
+# Store it together with a reviewed prompt
+python -m cli.main scenarios output-schema 1695 --tenant owner \
+  --add-field is_relevant:boolean --add-field author_role:string \
+  --base-prompt-file ./prompt-1695.txt --require is_relevant --apply
+```
+
+---
+
+## LLM catalog and local model tests
+
+The CLI has no standalone sign-in flow. `llm provider-list`, `llm model-list`
+and `llm model-test --mock` operate only inside the personal catalog of an
+already-authenticated, active actor supplied by the existing permission
+context. The commands use the personal-catalog service and owner-scoped model
+manager queries.
+
+Tenant bypass, workspace ownership, an admin role, an environment/default
+value, an ID flag or the first catalog row never selects the catalog owner.
+There is no impersonation flag or user/owner option; the embedding surface
+owns establishing permission scope. In an ordinary terminal these commands
+fail closed with exit 1 and a fixed redacted message without reading a catalog.
+
+`llm provider-list` displays provider ID, name, API format, base URL, active
+flag and model count for the actor's catalog. Defaults belong to models;
+providers have no default flag after migration 0091. Model lifecycle commands
+continue using the existing model manager; this package does not change
+capability filtering or API/tool schemas. `model-list --type` remains an exact
+stored-value filter.
+
+A standalone shell invocation cannot supply that actor. Each
+`python -m cli.main …` call starts a fresh process with an empty permission
+context, so it cannot inherit `contextvars` from a caller:
+
+```bash
+# Standalone process, no inherited actor: exits 1 by design.
+python -m cli.main llm provider-list
+```
+
+An authenticated embedding can invoke the handlers in-process inside its
+established permission scope. The handler then reads only that actor's catalog:
+
+```python
+from cli.commands.llm import model_list, model_test, provider_list
+
+provider_list()
+model_list(provider=None, active=None, model_type=None)
+model_test(model_id=7, prompt="Local check", mock=True)
+```
+
+`model-test --mock` in that in-process call performs an actor-scoped catalog
+lookup with no provider request or key decryption. Running the same command
+from a shell never authenticates anything.
+
+`model-test` accepts a positive PostgreSQL INTEGER ID (1–2147483647) and a
+nonblank prompt of at most 8000 characters. The mock lookup is restricted to
+the actor's own model and provider; a foreign, missing or providerless row
+fails generically. `--mock` explicitly selects the shared
+`model_probe.probe_mock` service. It reads the model/provider from the
+catalog but never constructs a provider client, decrypts a key, reserves
+billing, journals a provider attempt or sends a request. Inactive models and
+providers can be mocked: success is **not** a readiness, authorization or
+provider-reachability verdict. The prompt is not echoed in the report.
+
+Mock success prints one JSON report with `ok`, `mode`, `is_real_response`,
+`content`, `tokens_spent`, `simulated_usage` and `estimated_cost_usd`. Simulated
+usage and tariff estimates are not observed usage or charges; `tokens_spent`
+is zero because nothing was dispatched. The shared pricing helper's zero
+estimate does not establish a known-free provider tariff. Rich markup is
+literal and control characters are JSON-escaped.
+
+Without `--mock`, the command exits **1 before any catalog access or dispatch**.
+The trusted CLI tenant bypass does not establish an authenticated payer. Use
+the authenticated admin model-test surface for an explicitly authorized paid
+probe; its current admission, permission, CSRF, capping and accounting rules
+remain unchanged. No automatic fallback or CLI impersonation flag is added.
+Do not grant global catalog tools to workspace chat as a workaround.
+
+Exit codes: **0** for a successful mock; **1** for semantic validation, no
+authenticated catalog actor, foreign/missing model or provider, failed or
+malformed probe, catalog/lookup/service error, or the blocked real path; **2**
+for Typer parsing errors. Failed catalog reads and probes print fixed generic
+messages, never raw exceptions, prompts, keys, DSNs, tracebacks or provider
+diagnostics. No retries.
+
+### LLM CLI validation handoff
+
+The remote results below are historical evidence for the earlier CLI baseline
+at dev `be07e515c4fa86e856af04faf2233c0680a57acd`; they predate personal
+catalog scoping and do not validate this candidate. At that revision, remote
+execution used Python 3.13.14 in a separate sandbox venv, Typer 0.27.3
+and Rich 15.0.0 from `requirements.txt`; Black 26.10.1 and isort 9.0.2 were
+also pinned there. Direct unittest commands, without pytest/conftest:
+
+```bash
+python tests/test_llm_cli_contracts.py -v
+python tests/test_llm_cli_parser.py -v
+python -m isort --check-only cli/commands/llm.py tests/test_llm_cli_contracts.py tests/test_llm_cli_parser.py
+python -m black --check cli/commands/llm.py tests/test_llm_cli_contracts.py tests/test_llm_cli_parser.py
+git diff --check
+```
+
+Historical results: 17 whole-source handler/shared-mock tests and 8 real Typer/Rich parser
+checks passed (exit 0, no skips/expected failures). On a separate clean archive
+of the same dev SHA, the new tests fail as expected: handler suite 17 tests,
+5 failures/5 errors; parser suite 8 tests, 5 failures (both exit 1). All model
+queries, tenant context and provider boundaries were explicit doubles; no app,
+settings, real DB, secrets or providers were loaded. Actual shared mock source
+ran with an isolated pricing double; this is not full pricing acceptance.
+
+Current candidate acceptance remains pending. Review the exact integrated SHA
+and validate authenticated actor enforcement, existing-catalog ORM behavior,
+foreign/missing/providerless rows, mock zero writes/dispatch/key access, and
+exit codes in the approved local environment. The examples above are
+acceptance guidance, not execution evidence or permission to start a runtime
+or use a real DB. No schema, paid probe or deployment is required.
+
+P10-T11 retains its pinned historical audit evidence in
+`docs/audits/2026-10-18-cli-api-chat.md`; its probes must be reconciled against
+current source. P10-T12 owns chat task-tool fixes; no task-tool/API/billing
+files are changed here.
+
 ---
 
 ## Architecture Notes
 
 ### How CLI Commands Run
 
-Every CLI command goes through `_run_platform()`, which wraps execution in
-`tenant_scope(bypass=True)`. This means:
+CLI entrypoints use `_run_platform()`, command-local `_run()`/`_platform()`
+wrappers or the direct-job runner; they are not all calls to one wrapper. The
+trusted operator lane starts with `tenant_scope(bypass=True)` and selected
+operations re-enter a concrete workspace scope. This means:
 
-1. The CLI always has superuser-level access to all tenant data.
-2. Tenant-scoped operations (credentials, agent tasks, etc.) work without
-   explicitly setting a tenant context.
+1. Unscoped developer operations can access data across workspaces.
+2. Workspace-specific commands resolve a tenant and retain their service,
+   validation and accounting boundaries; bypass is not end-user authorization.
 3. The `--tenant` option is used to scope operations to a specific workspace
    when needed.
+4. The personal LLM catalog commands also require an authenticated actor from
+   the permission context; tenant bypass never supplies a catalog owner.
 
 ### Async Execution
 
@@ -588,7 +875,8 @@ def _run(coro):
 ### Rich Output
 
 The CLI uses the `rich` library for formatted tables and colored output.
-No JSON output — the CLI is operator-facing, not machine-facing.
+Most commands are operator-facing tables/messages. `llm model-test --mock`
+prints the explicit JSON report described above, with Rich markup disabled.
 
 
 ### Digest grouping values

@@ -24,7 +24,12 @@ logger = logging.getLogger(__name__)
 
 
 class DigestDeliveryError(RuntimeError):
-    """Raised when a digest was built but could not be delivered to a channel."""
+    """Raised when a digest was built but no recipient received any part of it."""
+
+
+def _delivered_any(result: dict[str, Any]) -> bool:
+    """True if the transport reports that at least one message part reached this recipient."""
+    return bool(result.get("success")) or bool(result.get("message_ids"))
 
 
 DIGEST_PROMPT_TEMPLATE = """Ты — персональный аналитик. На основе брифа (агрегированные данные за период) составь краткую связную сводку-нарратив.
@@ -78,6 +83,15 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
     except Exception:
         logger.error("Digest LLM summary call failed")
         return None, {"model": getattr(model, "name", None), "cost": None, "error": "llm_call_failed"}
+
+    # The returned envelope is a dispatched attempt; journal it before any
+    # decision about the summary, independently of `digest_runs.llm_cost`.
+    try:
+        from app.services.ai.attempt_journal import PURPOSE_DIGEST, STAGE_DIGEST_SUMMARY, journal_scoped_attempts
+
+        await journal_scoped_attempts({STAGE_DIGEST_SUMMARY: result}, purpose=PURPOSE_DIGEST)
+    except Exception:
+        logger.warning("attempt_journal_write_failed purpose=digest")
 
     info = {"model": model.name, "cost": known_cost_usd(result)}
     if not isinstance(result, dict):
@@ -195,7 +209,12 @@ async def _build_and_publish_scoped(
     scenario_id: int | None,
 ) -> dict[str, Any]:
     from app.channels.registry import broadcast_digest
-    from app.models.managers.digest_run_manager import DigestRunManager
+    from app.models.managers.digest_run_manager import (
+        DIGEST_RUN_IN_PROGRESS,
+        PARTIAL_DELIVERY_REVIEW,
+        DigestRunInProgress,
+        DigestRunManager,
+    )
     from app.services.digest.delivery_outcomes import DeliveryFailure
     from app.services.digest.job_delivery import assert_legacy_allowed, enabled
 
@@ -211,9 +230,21 @@ async def _build_and_publish_scoped(
         logger.info(f"Digest for task {agent_task_id} period {start}..{end} already sent — skipping")
         return {"status": "skipped", "reason": "already_sent"}
 
-    run = await runs.start_run(
-        agent_task_id=agent_task_id, period=period, period_start=start, period_end=end, channel=channel
-    )
+    if agent_task_id is not None and not force and await runs.delivery_requires_review(agent_task_id, start, end):
+        # Some recipients already have this period's digest: neither rebuild (paid summary)
+        # nor re-broadcast it automatically. An explicit force run is the operator decision.
+        logger.warning(f"Digest for task {agent_task_id} period {start}..{end} partially delivered; review required")
+        return {"status": "failed", "error": PARTIAL_DELIVERY_REVIEW}
+
+    try:
+        run = await runs.start_run(
+            agent_task_id=agent_task_id, period=period, period_start=start, period_end=end, channel=channel, force=force
+        )
+    except DigestRunInProgress:
+        # Another attempt owns this period (or stopped mid-flight with unknown delivery):
+        # building would pay for a summary and sending could duplicate the digest.
+        logger.warning(f"Digest for task {agent_task_id} period {start}..{end} already in progress; review required")
+        return {"status": "failed", "error": DIGEST_RUN_IN_PROGRESS}
     if run is None:
         return {"status": "failed", "error": "Could not create digest run"}
 
@@ -232,8 +263,13 @@ async def _build_and_publish_scoped(
             return {"status": "skipped", "reason": "no_channels", "text": text}
 
         ok = all(r.get("success") for r in results.values())
+        # A failed recipient that still received earlier parts counts as delivered:
+        # resending would duplicate those parts.
+        partial = not ok and any(_delivered_any(r) for r in results.values())
         message_id = next((str(r.get("message_id")) for r in results.values() if r.get("message_id")), None)
         errors = [f"{k}: {r.get('error')}" for k, r in results.items() if not r.get("success")]
+        if partial:
+            errors.insert(0, PARTIAL_DELIVERY_REVIEW)
 
         updated = await runs.update_by_id(
             run.id,
@@ -251,6 +287,12 @@ async def _build_and_publish_scoped(
         await runs.update_by_id(run.id, status="failed", error=str(e)[:2000])
         logger.exception("Digest build/publish failed")
         return {"status": "failed", "error": str(e)}
+
+    if partial:
+        # Terminal, not retryable: a queue retry would rebuild and resend to every
+        # recipient, including those that already received the digest.
+        logger.error(f"Digest {period} partially delivered; review required: {errors}")
+        return {"status": "failed", "error": PARTIAL_DELIVERY_REVIEW}
 
     if not ok:
         logger.error(f"Digest {period} delivery failed: {errors}")

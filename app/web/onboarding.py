@@ -17,9 +17,9 @@ from sqlalchemy import func
 
 from app.models import AgentTask, Source
 from app.tasks.cron import cron_to_human
-from app.types import JobType
 
 from .deps import render
+from .tasks import _web_job_type_choices
 
 router = APIRouter(prefix="/onboarding")
 
@@ -55,7 +55,7 @@ async def onboarding(request: Request):
         has_task=bool(tasks_count),
         platforms=await Platform.objects.order_by(Platform.id),
         source_types=list(SourceType),
-        job_types=JobType.choices(),
+        job_types=_web_job_type_choices(),
         presets=SCHEDULE_PRESETS,
         cron_to_human=cron_to_human,
         # A collect/analyze task needs a content start date; the wizard defaults

@@ -1,10 +1,10 @@
-"""Legacy AgentMessage imports and unchanged manager-binding entry point."""
+"""Legacy imports; canonical model and manager registration live in the domain facade."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Column, Float, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import JSON, Column, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
@@ -19,5 +19,3 @@ from .agent.agent_message import AgentMessage
 
 # isort: split
 from .managers.agent_message_manager import AgentMessageManager  # noqa: E402
-
-AgentMessage.objects = AgentMessageManager()

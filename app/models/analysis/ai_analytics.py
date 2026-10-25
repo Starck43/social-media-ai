@@ -16,11 +16,14 @@ if TYPE_CHECKING:
     from .. import Source
 
 
-@app_label("dashboard")
+@app_label("analysis")
 class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "ai_analytics"
     __table_args__ = (
-        UniqueConstraint("source_id", "analysis_date", "period_type", name="uq_analytics_source_date_period"),
+        UniqueConstraint(
+            "source_id", "analysis_date", "period_type", "analysis_fingerprint",
+            name="uq_analytics_source_date_period_context",
+        ),
         Index("ix_ai_analytics_tenant_id", "tenant_id"),
         Index("idx_ai_analytics_source", "source_id"),
         Index("idx_ai_analytics_date", "analysis_date"),
@@ -42,6 +45,10 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
         String(64),
         nullable=True,
         comment="SHA256 hex digest of the analyzed content payload for deduplication",
+    )
+    analysis_fingerprint: Mapped[str] = Column(
+        String(64), nullable=False, default="legacy", server_default="legacy",
+        comment="Versioned semantic identity of the analysis context; legacy rows are unattributed",
     )
 
     # Chain tracking for ongoing topics/threads

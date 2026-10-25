@@ -10,7 +10,8 @@ Alembic version table alone. Schema separation is not a privilege sandbox.
 Fresh tables come from Base.metadata.create_all because the early migration
 chain expects existing tables. Reference roles, permissions, platforms and the
 bootstrap tenant are seeded with the canonical setup scripts. Existing drift
-is reported, not automatically migrated.
+is checked before schema creation, reset or seeding and is never automatically
+repaired. A branch missing live table metadata must stop, not remove evidence.
 
     python -m scripts.setup_test_db            # create + seed if absent
     python -m scripts.setup_test_db --reset    # truncate, then re-seed (destructive)
@@ -32,6 +33,9 @@ WORKING_URL_ENV = "POSTGRES_URL"
 TEST_URL_ENV = "TEST_POSTGRES_URL"
 WORKING_SCHEMA_ENV = "DB_SCHEMA"
 TEST_SCHEMA_ENV = "DB_TEST_SCHEMA"
+# The pre-redirect working target, captured by the first `resolve_and_redirect`
+# call so a second caller can never compare the test schema against itself.
+_REDIRECTED_WORKING: list[str] = []
 # Keep aligned with Settings without importing app before the redirect.
 DEFAULT_WORKING_SCHEMA = "public"
 DEFAULT_TEST_SCHEMA = "test_schema"
@@ -142,7 +146,7 @@ async def _create_tables() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def _missing_columns(conn, metadata, schema: str) -> list[str]:
+async def _missing_columns(conn, metadata, schema: str, *, existing_tables: set[str] | None = None) -> list[str]:
     """Model columns missing in the schema; create_all only adds tables."""
     result = await conn.execute(
         text("select table_name, column_name from information_schema.columns " "where table_schema = :schema"),
@@ -153,6 +157,8 @@ async def _missing_columns(conn, metadata, schema: str) -> list[str]:
     missing: list[str] = []
     for table in metadata.sorted_tables:
         if table.schema not in (None, schema):
+            continue
+        if existing_tables is not None and table.name not in existing_tables:
             continue
         for column in table.columns:
             if (table.name, column.name) not in present:
@@ -188,6 +194,7 @@ async def _db_uniques(conn, schema: str) -> dict:
             "from information_schema.table_constraints tc "
             "join information_schema.key_column_usage kcu "
             "  on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema "
+            "  and kcu.table_name = tc.table_name "
             "where tc.table_schema = :schema and tc.constraint_type = 'UNIQUE' "
             "group by tc.table_name, tc.constraint_name"
         ),
@@ -210,7 +217,7 @@ def unique_constraint_drift(model_uniques: dict, db_uniques: dict) -> tuple[list
     — a regression can then pass or fail against a schema nobody chose (a
     session constraint that was never widened to
     (tenant_id, channel, chat_id) still rejects the second workspace's row).
-    The test schema is model-driven, so it must follow the models exactly.
+    Drift is diagnostic only: bootstrap must never apply this diff as DDL.
 
     Column sets, not names, decide staleness: `Column(unique=True)` declares no
     name, and the database calls it `<table>_<column>_key`.
@@ -225,27 +232,62 @@ def unique_constraint_drift(model_uniques: dict, db_uniques: dict) -> tuple[list
             if frozenset(columns) not in model_columns:
                 stale.append((table, name))
         for name, columns in sorted(model.items()):
-            if name in db:
-                continue
             if any(frozenset(db[k]) == frozenset(columns) for k in db):
                 continue
             missing.append((table, columns, name))
     return stale, missing
 
 
-async def repair_unique_constraints(conn, metadata, schema: str) -> list[str]:
-    """Align live UNIQUE constraints with the models; returns what it did."""
-    stale, missing = unique_constraint_drift(_model_uniques(metadata, schema), await _db_uniques(conn, schema))
+async def check_existing_schema(conn, metadata, schema: str, *, require_all_tables: bool = False) -> None:
+    """Refuse incompatible existing tables using catalog reads only."""
+    result = await conn.execute(
+        text(
+            "select table_name from information_schema.tables "
+            "where table_schema = :schema and table_type = 'BASE TABLE'"
+        ),
+        {"schema": schema},
+    )
+    existing_tables = {row[0] for row in result}
+    model_tables = {table.name for table in metadata.sorted_tables if table.schema in (None, schema)}
+    # Alembic owns its version table, not ORM metadata. It is never altered here.
+    unknown = existing_tables - model_tables - {"alembic_version"}
+    if unknown:
+        raise RuntimeError(
+            "Test bootstrap refused: live tables absent from this branch's model metadata: "
+            + ", ".join(sorted(unknown))
+            + ". Preserve their constraints and evidence; coordinate with the schema owner. "
+            "Do not reset, drop or repair the schema to make this branch pass."
+        )
 
-    actions: list[str] = []
-    for table, name in stale:
-        await conn.execute(text(f'alter table "{schema}"."{table}" drop constraint "{name}"'))
-        actions.append(f"dropped {table} {name}")
-    for table, columns, name in missing:
-        columns_sql = ", ".join(f'"{column}"' for column in columns)
-        await conn.execute(text(f'alter table "{schema}"."{table}" add constraint "{name}" unique ({columns_sql})'))
-        actions.append(f"created {table} {name} ({columns_sql})")
-    return actions
+    if require_all_tables and model_tables - existing_tables:
+        raise RuntimeError(
+            "Test bootstrap refused: model tables still absent after table creation: "
+            + ", ".join(sorted(model_tables - existing_tables))
+            + ". Stop; no reference rows were seeded."
+        )
+
+    missing_columns = await _missing_columns(conn, metadata, schema, existing_tables=existing_tables)
+    if missing_columns:
+        raise RuntimeError(
+            "Test bootstrap refused: existing tables have missing model columns: "
+            + ", ".join(sorted(missing_columns))
+            + ". Stop and request separately approved, schema-qualified reconciliation; no automatic rebuild."
+        )
+
+    # Absent model tables may be created by the existing fresh-table path.
+    model_uniques = {
+        name: uniques for name, uniques in _model_uniques(metadata, schema).items() if name in existing_tables
+    }
+    stale, missing = unique_constraint_drift(model_uniques, await _db_uniques(conn, schema))
+    if stale or missing:
+        details = [f"unexpected {table}.{name}" for table, name in stale]
+        details.extend(f"missing {table}.{name}" for table, _, name in missing)
+        raise RuntimeError(
+            "Test bootstrap refused: UNIQUE constraint drift: "
+            + ", ".join(details)
+            + ". No constraints were changed. Coordinate a separately approved reconciliation; "
+            "do not reset, drop or repair the schema automatically."
+        )
 
 
 def _stamp_head(url: str) -> None:
@@ -282,15 +324,16 @@ async def _seed_reference_rows() -> None:
     """Insert canonical reference rows the suite reads."""
     from app.core.tenant_context import tenant_scope
     from scripts.setup.assign_roles_permissions import assign_roles_permissions
-    from scripts.setup.roles import seed_roles
+    from scripts.setup.roles import seed_roles_async
 
-    seed_roles()
+    await seed_roles_async()
     with tenant_scope(bypass=True):
         await assign_roles_permissions()
 
     await _seed_platforms()
     await _seed_bootstrap_tenant()
     await _seed_permissions()
+    await _seed_role_grants()
 
 
 async def _seed_platforms() -> None:
@@ -325,13 +368,85 @@ async def _seed_permissions() -> None:
         register_model_types(conn, is_upgrade=True)
 
 
+def _insert_ignoring_conflicts(table):
+    """An insert that leaves existing links alone (the link tables have a key)."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    return pg_insert(table).on_conflict_do_nothing()
+
+
+async def _seed_role_grants() -> None:
+    """Give the roles their canonical grants.
+
+    The platform administrator holds every registered permission, and each
+    workspace role holds the grants its preset defines. A test schema created
+    from the model metadata never runs the migrations, so without this step
+    the administrator holds nothing — and every administrator-gated request
+    answers 403 for a role that is supposed to pass.
+    """
+    from app.core.access_catalog import workspace_grants
+    from app.core.database import engine
+    from app.models import ModelType, Permission, PlatformRole, WorkspaceRole
+    from app.models.identity.role import role_permission
+    from app.models.tenancy.workspace_role import workspace_role_permission
+    from sqlalchemy import select
+
+    with engine.begin() as conn:
+        permission_rows = conn.execute(
+            select(Permission.id, ModelType.resource_key, ModelType.model_name, Permission.action_type)
+            .join(ModelType, Permission.model_type_id == ModelType.id)
+        ).all()
+        by_resource = {
+            (resource_key, str(action).lower()): permission_id
+            for permission_id, resource_key, _model_name, action in permission_rows
+        }
+        # The workspace presets name the model ("source"), the platform
+        # catalogue names the resource ("collection.source"); both point at the
+        # same permission rows.
+        by_model = {
+            (model_name, str(action).lower()): permission_id
+            for permission_id, _resource_key, model_name, action in permission_rows
+        }
+        admin_id = conn.execute(
+            select(PlatformRole.id).where(PlatformRole.codename == "admin")
+        ).scalar_one_or_none()
+        if admin_id is not None:
+            conn.execute(
+                _insert_ignoring_conflicts(role_permission),
+                [
+                    {"role_id": admin_id, "permission_id": permission_id}
+                    for permission_id in sorted(set(by_resource.values()))
+                ],
+            )
+        for role_id, codename in conn.execute(select(WorkspaceRole.id, WorkspaceRole.codename)).all():
+            pairs = {
+                (model_name, str(action).lower())
+                for model_name, action in workspace_grants(codename)
+            }
+            rows = [
+                {"role_id": role_id, "permission_id": by_model[pair]}
+                for pair in sorted(pairs)
+                if pair in by_model
+            ]
+            if rows:
+                conn.execute(_insert_ignoring_conflicts(workspace_role_permission), rows)
+
+
 def resolve_and_redirect() -> tuple[str, str, str]:
     """Validate isolation before app imports or changing URL/schema variables.
 
     Return (working_url, test_url, test_schema). Common POSTGRES_URL is allowed
     only with a different test schema. Database-name comparison is deliberately
     conservative; this is not live endpoint/alias identity verification.
+
+    Idempotent on purpose: `tests/conftest.py` and the DB suites' fixtures both
+    call this before importing app modules, and the first call has already
+    repointed `DB_SCHEMA` at the test schema. Reading that redirected value
+    back would make the second call compare the test schema against itself and
+    refuse a target the first call had just approved, so the pre-redirect
+    values are remembered and reused.
     """
+    remembered = _REDIRECTED_WORKING
     test_url = resolve_test_url()
     if not test_url:
         raise RuntimeError(
@@ -340,9 +455,9 @@ def resolve_and_redirect() -> tuple[str, str, str]:
             f"{TEST_URL_ENV} is optional."
         )
 
-    working_url = os.environ.get(WORKING_URL_ENV, "").strip()
+    working_url = remembered[0] if remembered else os.environ.get(WORKING_URL_ENV, "").strip()
     test_schema = resolve_test_schema()
-    working_schema = resolve_working_schema()
+    working_schema = remembered[1] if remembered else resolve_working_schema()
 
     same_database = bool(working_url) and database_name(working_url) == database_name(test_url)
     same_schema = test_schema == working_schema
@@ -353,6 +468,7 @@ def resolve_and_redirect() -> tuple[str, str, str]:
             f"the working data — point {TEST_SCHEMA_ENV} at a separate schema."
         )
 
+    _REDIRECTED_WORKING[:] = [working_url, working_schema]
     os.environ[WORKING_URL_ENV] = test_url
     os.environ[TEST_URL_ENV] = test_url
     os.environ[WORKING_SCHEMA_ENV] = test_schema
@@ -361,7 +477,9 @@ def resolve_and_redirect() -> tuple[str, str, str]:
 
 async def ensure_test_database(test_url: str, *, shares_working_database: bool = False, reset: bool = False) -> None:
     """Ensure redirected test tables/reference rows; reset is explicitly destructive."""
+    from app.core.config import settings
     from app.core.database import async_engine
+    from app.models import Base
 
     def say(message: str) -> None:
         print(f"[test-db] {message}")
@@ -380,6 +498,12 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
 
     say(f"database {database_name(test_url)}: {state}")
 
+    # Check before create_all, reset or reference writes. Read-only preflight is
+    # not a writer-exclusion lock: shared-schema coordination is still required.
+    async with async_engine.connect() as conn:
+        await conn.execute(text("set transaction isolation level repeatable read, read only"))
+        await check_existing_schema(conn, Base.metadata, settings.DB_SCHEMA)
+
     if state == "created" or await _table_count() == 0:
         await _create_schema()
         await _create_tables()
@@ -396,26 +520,10 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
     await _create_schema()
     await _create_tables()
 
-    from app.core.config import settings
-    from app.models import Base
-
-    # create_all cannot change an existing table's constraints, so a model that
-    # rewrites a UNIQUE leaves the previous one in place for every later run.
-    # Align them with the models before anything reads the schema.
-    async with async_engine.begin() as conn:
-        repairs = await repair_unique_constraints(conn, Base.metadata, settings.DB_SCHEMA)
-    for action in repairs:
-        say(f"schema repaired: {action}")
-
+    # Verify the resulting catalog before seeding; never repair it in bootstrap.
     async with async_engine.connect() as conn:
-        missing = await _missing_columns(conn, Base.metadata, settings.DB_SCHEMA)
-    if missing:
-        raise RuntimeError(
-            "The test schema is behind the models (missing columns): "
-            + ", ".join(sorted(missing))
-            + ". `create_all` only adds tables, never columns — rebuild the schema, e.g.:\n"
-            f"    psql -c 'drop schema \"{settings.DB_SCHEMA}\" cascade' && pytest"
-        )
+        await conn.execute(text("set transaction isolation level repeatable read, read only"))
+        await check_existing_schema(conn, Base.metadata, settings.DB_SCHEMA, require_all_tables=True)
 
     await _seed_reference_rows()
     say("reference rows seeded (roles, permissions, platforms, bootstrap tenant)")

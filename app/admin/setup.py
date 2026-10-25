@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from sqladmin import Admin
 from starlette.staticfiles import StaticFiles
 
 from app.admin.authorization import AdminAuthorizationBackend
@@ -10,12 +9,15 @@ from app.core.database import async_engine
 from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
+from .registry import TableRegistryAdmin
+from .related import RelatedAdmin, related_controls, related_token
 from .views import (
+    AgentScenarioAdmin,
+    AgentTaskAdmin,
     AIAnalyticsAdmin,
     BotActionAdmin,
     CollectedItemAdmin,
-    AgentScenarioAdmin,
-    AgentTaskAdmin,
+    JobAdmin,
     LLMModelAdmin,
     LLMProviderAdmin,
     NotificationAdmin,
@@ -62,7 +64,7 @@ def setup_admin(app):
     authentication_backend = AdminAuthBackend(secret_key=settings.SECRET_KEY, csrf_manager=app.state.csrf_manager)
 
     # --- SQLAdmin instance ---
-    admin = Admin(
+    admin = RelatedAdmin(
         app=app,
         engine=async_engine,
         authentication_backend=authentication_backend,
@@ -79,13 +81,15 @@ def setup_admin(app):
             "settings": settings,
             "debug": settings.DEBUG,
             "render_analysis": _render_analysis,
+            "related_controls": related_controls,
+            "related_token": related_token,
         }
     )
 
     if admin.templates.env is not None:
         register_template_filters(admin.templates.env)
 
-    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parents[1] / "static")), name="static")
     app.state.admin = admin
     if not hasattr(app, "extra"):
         app.extra = {}
@@ -103,6 +107,7 @@ def setup_admin(app):
         AgentTaskAdmin,
         BotActionAdmin,
         AIAnalyticsAdmin,
+        JobAdmin,
         NotificationAdmin,
         LLMProviderAdmin,
         LLMModelAdmin,
@@ -110,6 +115,9 @@ def setup_admin(app):
         UserCredentialAdmin,
     ]
 
+    # The owner's read-only map of every table, first in the menu so the widest
+    # surface is not buried under the model pages it summarises.
+    admin.add_view(TableRegistryAdmin)
     for view_class in view_configs:
         admin.add_view(view_class)
 

@@ -1,12 +1,10 @@
-"""Notifications model domain package.
-
-Canonical home of the Notification declaration. The legacy module
-`app.models.notification` remains the compatibility facade and the
-manager-binding entry point; it is not removed in this package.
-"""
+"""Notification and digest persistence. Managers bind in app.models.bootstrap."""
 
 from __future__ import annotations
 
 from .notification import Notification
+from .notification_preference import NotificationPreference
 
-__all__ = ["Notification"]
+__all__ = ["Notification", "NotificationPreference", "DigestRun"]
+
+from .digest_run import DigestRun

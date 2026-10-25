@@ -1,9 +1,4 @@
-"""Collection-domain models with lazy exports preserving root import order.
-
-The original root imports CollectedItem, Platform and Source at different
-points. Eagerly importing all three here would change mapper registration order.
-Legacy modules retain manager binding; canonical leaves only declare models.
-"""
+"""Collection models with lazy exports. Managers bind in app.models.bootstrap."""
 
 from __future__ import annotations
 
@@ -12,11 +7,28 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .collected_item import CollectedItem
+    from .collection_candidate import CollectionCandidate
+    from .collection_lane_run import CollectionLaneRun
+    from .collection_seen import CollectionSeen
     from .platform import Platform
     from .source import Source
 
-__all__ = ["Platform", "Source", "CollectedItem"]
-_MODULES = {"Platform": "platform", "Source": "source", "CollectedItem": "collected_item"}
+__all__ = [
+    "Platform",
+    "Source",
+    "CollectedItem",
+    "CollectionSeen",
+    "CollectionCandidate",
+    "CollectionLaneRun",
+]
+_MODULES = {
+    "Platform": "platform",
+    "Source": "source",
+    "CollectedItem": "collected_item",
+    "CollectionSeen": "collection_seen",
+    "CollectionCandidate": "collection_candidate",
+    "CollectionLaneRun": "collection_lane_run",
+}
 
 
 def __getattr__(name: str):

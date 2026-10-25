@@ -13,7 +13,7 @@ import logging
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import func
+from sqlalchemy import and_, func
 
 from app.models.agent_scenario import AgentScenario
 from app.services.ai.scenario_schema import ScenarioSchemaError, validate_scenario_values
@@ -28,13 +28,21 @@ router = APIRouter(prefix="/scenarios")
 @router.get("")
 @router.get("/")
 async def scenarios_list(request: Request):
-    """Scenarios with their task counts (LEFT JOIN — a scenario may have none)."""
-    # No `tenant_id` predicate: the manager's guard already scopes the rows.
-    from app.models import AgentTask
+    """List methodologies; task metadata is queried only for permitted viewers."""
+    from app.types import AnalysisType, ContentType, MediaType
 
-    rows = await (
-        AgentScenario.objects.outerjoin(AgentTask, AgentScenario.id == AgentTask.agent_scenario_id)
-        .values(
+    can_view_tasks = getattr(request.state, "web_perms", None) is not None and request.state.web_perms.can(
+        "agenttask", "view"
+    )
+    query = AgentScenario.objects.filter(tenant_id=request.state.tenant_id)
+    if can_view_tasks:
+        from app.models import AgentTask
+
+        query = query.outerjoin(
+            AgentTask,
+            and_(AgentScenario.id == AgentTask.agent_scenario_id, AgentScenario.tenant_id == AgentTask.tenant_id),
+        )
+    fields = [
             AgentScenario.id,
             AgentScenario.name,
             AgentScenario.description,
@@ -42,12 +50,21 @@ async def scenarios_list(request: Request):
             AgentScenario.is_active,
             AgentScenario.analysis_types,
             AgentScenario.content_types,
-            func.count(AgentTask.id).label("task_count"),
-        )
-        .group_by(AgentScenario.id)
-        .order_by(AgentScenario.is_default.desc(), AgentScenario.name)
-        .rows()
-    )
+        ]
+    if can_view_tasks:
+        fields.append(func.count(AgentTask.id).label("task_count"))
+    query = query.values(*fields).order_by(AgentScenario.is_default.desc(), AgentScenario.name)
+    if can_view_tasks:
+        query = query.group_by(AgentScenario.id)
+    rows = await query.rows()
+    analysis_labels = {item.db_value: item.display_name for item in AnalysisType}
+    # New rows store media values; rows saved before the collection intent
+    # became task-owned still carry content-type values, so label those with
+    # the medium they need instead of showing a stale medium-less name.
+    content_labels = {item.db_value: item.display_name for item in MediaType}
+    for legacy in ContentType:
+        media = MediaType.get_by_value(legacy.required_media_type)
+        content_labels.setdefault(legacy.db_value, media.display_name if media else legacy.display_name)
 
     scenarios = [
         {
@@ -56,13 +73,15 @@ async def scenarios_list(request: Request):
             "description": r.description or "",
             "is_default": r.is_default,
             "is_active": r.is_active,
-            "analysis_types": r.analysis_types or [],
-            "content_types": r.content_types or [],
-            "task_count": r.task_count,
+            "analysis_types": [analysis_labels.get(value, value) for value in (r.analysis_types or [])],
+            "content_types": [content_labels.get(value, value) for value in (r.content_types or [])],
+            "task_count": r.task_count if can_view_tasks else None,
         }
         for r in rows
     ]
-    return render(request, "web/scenarios.html", section="scenarios", scenarios=scenarios)
+    return render(
+        request, "web/scenarios.html", section="scenarios", scenarios=scenarios, can_view_tasks=can_view_tasks
+    )
 
 
 @router.post("/set-default")
@@ -214,7 +233,12 @@ async def scenario_new(request: Request):
     from app.services.ai import scenario_prefs
     from app.services.ai.scenario_builder import ScenarioDraft
 
-    draft = await scenario_prefs.apply_to_draft(ScenarioDraft(name="", is_active=True))
+    actor = _request_memory_actor(request)
+    draft = await scenario_prefs.apply_to_draft(
+        ScenarioDraft(name="", is_active=True),
+        actor_user_id=actor[0] if actor else None,
+        is_owner=actor[1] if actor else False,
+    )
     return await _wizard_page(request, draft=draft, create=True)
 
 
@@ -338,16 +362,15 @@ def _draft_from_form(form) -> "ScenarioDraft":
     unknown enum values.
     """
     from app.services.ai.scenario_builder import ScenarioBuilder, ScenarioDraft
-    from app.types import AnalysisType, ContentType
+    from app.types import AnalysisType
 
     def _getlist(key: str) -> list[str]:
         return form.getlist(key) if hasattr(form, "getlist") else (form.get(key) or [])
 
-    content_types = [v for v in _getlist("content_types") if v]
+    content_types = ScenarioBuilder.normalize_media_types([v for v in _getlist("content_types") if v])
     analysis_types = [v for v in _getlist("analysis_types") if v]
 
     for raw, enum_cls, label in (
-        (content_types, ContentType, "тип контента"),
         (analysis_types, AnalysisType, "тип анализа"),
     ):
         unknown = [v for v in raw if _enum_by_value(enum_cls, v) is None]
@@ -441,7 +464,24 @@ def _prompt_warnings(draft: "ScenarioDraft") -> list[str]:
     return messages
 
 
-async def _remember_preferences(scenario) -> None:
+def _request_memory_actor(request: Request) -> tuple[int, bool] | None:
+    """Return the active workspace member allowed to see personal preferences."""
+    user = getattr(request.state, "web_user", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if user is None or not isinstance(getattr(user, "id", None), int) or tenant_id is None:
+        return None
+    for membership in getattr(request.state, "memberships", []) or []:
+        if (
+            membership.tenant_id == tenant_id
+            and membership.user_id == user.id
+            and membership.channel == "web"
+            and membership.is_active
+        ):
+            return user.id, bool(membership.is_owner)
+    return None
+
+
+async def _remember_preferences(request: Request, scenario) -> None:
     """Store what this scenario was saved with as defaults for the next one.
 
     Same source the chat tools write, so a scenario made in the browser and one
@@ -454,7 +494,10 @@ async def _remember_preferences(scenario) -> None:
 
     try:
         draft = ScenarioBuilder.draft_from_scenario(scenario)
+        actor = _request_memory_actor(request)
         await scenario_prefs.remember(
+            actor_user_id=actor[0] if actor else None,
+            is_owner=actor[1] if actor else False,
             brands=(draft.scope or {}).get("competitor", {}).get("competitor_list") or [],
         )
     except Exception:  # noqa: BLE001 — preferences are a convenience, not the work
@@ -466,12 +509,81 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     from app.core.analysis_constants import ANALYSIS_TYPE_DEFAULTS
     from app.models.llm_model import LLMModel
     from app.services.ai.scenario_builder import ScenarioBuilder
-    from app.types import AnalysisType, ContentType, LLMStrategyType
+    from app.types import AnalysisType, LLMStrategyType, MediaType
+    from app.web.deps import human_datetime
 
     perms = getattr(request.state, "web_perms", None)
     llm_models = [
-        {"id": m.id, "name": m.name, "model_type": m.model_type}
-        for m in await LLMModel.objects.filter(is_active=True).order_by(LLMModel.name)
+        {
+            "id": m.id,
+            "name": m.name,
+            "model_id": m.model_id,
+            "model_type": m.model_type,
+            "is_active": m.is_active,
+            "use_count": m.use_count,
+            "fail_count": m.fail_count,
+            "last_used_at": m.last_used_at,
+            "provider": m.provider,
+        }
+        for m in await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.name)
+    ]
+    usage = None
+    can_view_tasks = perms is not None and perms.can("agenttask", "view")
+    if not create and scenario_id is not None and can_view_tasks:
+        from app.core.tenant_context import tenant_scope
+        from app.models.job import Job
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        manager = AgentTaskManager()
+        with tenant_scope(request.state.tenant_id):
+            tasks = await manager.filter(
+                tenant_id=request.state.tenant_id, agent_scenario_id=scenario_id
+            ).prefetch_related("agent_scenario", "sources")
+            active_sources = await manager.get_workspace_active_source_ids()
+            effective = await manager.effective_active_map(tasks, active_sources)
+            task_ids = [task.id for task in tasks]
+            last_job = (
+                await Job.objects.filter(tenant_id=request.state.tenant_id, agent_task_id__in=task_ids)
+                .order_by(Job.created_at.desc())
+                .first()
+                if task_ids
+                else None
+            )
+        usage = {
+            "total": len(tasks),
+            "active": sum(1 for task in tasks if effective.get(task.id)),
+            "paused": sum(1 for task in tasks if not effective.get(task.id)),
+            "last_status": {
+                "done": "завершён",
+                "failed": "ошибка",
+                "pending": "в очереди",
+                "running": "выполняется",
+            }.get(str(last_job.status), str(last_job.status)) if last_job else None,
+            "next_run": human_datetime(min((t.next_run_at for t in tasks if effective.get(t.id) and t.next_run_at), default=None), empty="не запланирован"),
+            "tasks": [
+                {"id": task.id, "name": task.name, "is_active": effective.get(task.id, False)}
+                for task in tasks[:5]
+            ],
+        }
+    # Scenario pickers must not offer models that only burn runs: safety
+    # classifiers answer with a verdict (analysis reads that as `failed_output`)
+    # and fleets that never once succeeded end runs in "модель не ответила".
+    # A model already wired into this draft stays listed — the operator has to
+    # see what is set to be able to judge it and switch away.
+    from app.services.ai.model_suitability import is_classifier_like, never_succeeded
+
+    wired_ids = {
+        model_id
+        for model_id in (draft.text_llm_model_id, draft.image_llm_model_id, draft.video_llm_model_id)
+        if model_id
+    }
+    llm_models = [
+        model
+        for model in llm_models
+        if model["id"] in wired_ids
+        or not (
+            is_classifier_like(model["model_id"], model["name"]) or never_succeeded(model["use_count"], model["fail_count"])
+        )
     ]
     return render(
         request,
@@ -481,11 +593,14 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
         show_preview_step=perms is not None and perms.is_superuser_role,
         create=create,
         scenario_id=scenario_id,
+        usage=usage,
+        can_create_tasks=perms is not None and perms.can("agenttask", "create"),
         draft=draft,
-        content_types=list(ContentType),
+        content_types=list(MediaType),
         analysis_types=list(AnalysisType),
         llm_strategies=LLMStrategyType.choices(),
         llm_models=llm_models,
+        selected_media=ScenarioBuilder.media_types_for(draft.content_types),
         media_types=ScenarioBuilder.media_types_for(draft.content_types),
         available_variables=ScenarioBuilder.base_variables(),
         analysis_defaults=ANALYSIS_TYPE_DEFAULTS,
@@ -550,7 +665,7 @@ async def scenario_create(
         return RedirectResponse(back, status_code=302)
 
     add_flash(request, "success", f"Сценарий «{scenario.name}» создан")
-    await _remember_preferences(scenario)
+    await _remember_preferences(request, scenario)
     return RedirectResponse(f"/app/scenarios/{scenario.id}", status_code=302)
 
 
@@ -598,8 +713,9 @@ async def scenario_save(
         add_flash(request, "warning", warning)
 
     try:
-        validate_scenario_values({"output_schema": scenario.output_schema,
-                                  "analysis_types": draft.analysis_types, "scope": draft.scope})
+        validate_scenario_values(
+            {"output_schema": scenario.output_schema, "analysis_types": draft.analysis_types, "scope": draft.scope}
+        )
     except ScenarioSchemaError as error:
         add_flash(request, "error", str(error))
         return RedirectResponse(back, status_code=302)
@@ -631,7 +747,7 @@ async def scenario_save(
         video_llm_model_id=scenario.video_llm_model_id,
     )
     add_flash(request, "success", f"Сценарий «{draft.name}» сохранён")
-    await _remember_preferences(scenario)
+    await _remember_preferences(request, scenario)
     return RedirectResponse(back, status_code=302)
 
 

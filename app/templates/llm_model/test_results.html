@@ -1,400 +1,136 @@
 {% extends "sqladmin/layout.html" %}
-
-{% block content %}
-<div class="col-12">
-    <div class="card">
-        <div class="card-header">
-            <h2 class="card-title m-auto font-weight-bold">
-                <i class="fa fa-vial"></i>
-                Тестирование модели: {{ model.name }}
-            </h2>
-        </div>
-        <div class="card-body">
-
-            <!-- Информация о модели и подключении -->
-            <div class="row mb-4 g-3">
-                <div class="col-md-4">
-                    <div class="card h-100">
-                        <div class="card-header"><i class="fa fa-cube me-2"></i>Модель</div>
-                        <div class="card-body py-3">
-                            <div class="mb-2"><strong>Название:</strong> {{ model.name }}</div>
-                            <div class="mb-2"><strong>API модель:</strong> <code>{{ model.model_id }}</code></div>
-                            <div class="mb-2"><strong>Тип:</strong> {{ model.model_type }}</div>
-                            <div class="mb-0"><strong>Max токенов:</strong> {{ model.max_tokens }}</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card h-100">
-                        <div class="card-header"><i class="fa fa-server me-2"></i>Провайдер</div>
-                        <div class="card-body py-3">
-                            <div class="mb-2"><strong>Название:</strong> {{ provider.name }}</div>
-                            <div class="mb-2"><strong>Формат API:</strong>
-                                <span class="badge api-format-badge">{{ provider.api_format }}</span>
-                            </div>
-                            <div class="mb-2"><strong>Base URL:</strong>
-                                <small class="text-muted">{{ provider.base_url }}</small>
-                            </div>
-                            <div class="mb-0"><strong>API ключ:</strong>
-                                {% if provider.get_api_key() %}
-                                <span class="badge bg-success">✅ Настроен</span>
-                                {% else %}
-                                <span class="badge bg-danger">❌ Отсутствует</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card h-100">
-                        <div class="card-header"><i class="fa fa-calculator me-2"></i>Стоимость</div>
-                        <div class="card-body py-3">
-                            <div class="mb-2"><strong>Вход:</strong> ${{ "%.4f"|format(model.input_cost_per_1k) }}/1K токенов</div>
-                            <div class="mb-2"><strong>Выход:</strong> ${{ "%.4f"|format(model.output_cost_per_1k) }}/1K токенов</div>
-                            <div class="mb-0"><strong>Статус:</strong>
-                                {% if model.is_active %}
-                                <span class="badge bg-success">Активна</span>
-                                {% else %}
-                                <span class="badge bg-danger">Неактивна</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Форма для тестирования -->
-            <div class="card border-info mb-4">
-                <div class="card-header bg-info text-white">
-                    <i class="fa fa-edit me-2"></i>Тестирование модели
-                </div>
-                <div class="card-body">
-                    <form method="get" action="/admin/llm-model/action/test-model/" id="test_form">
-                        <input type="hidden" name="pks" value="{{ model.id }}">
-                        <input type="hidden" name="test_type" id="test_type_field" value="mock">
-                        <input type="hidden" id="image_data_hidden" name="image_data" value="">
-
-                        <div class="row">
-                            <div class="col-12 col-md-8">
-                                <label for="real_prompt" class="form-label">Запрос</label>
-                                <textarea id="real_prompt" name="prompt" class="form-control" rows="4"
-                                    placeholder="Введите запрос для тестирования модели...">{{ prompt }}</textarea>
-
-                                {% if 'image' in model.capabilities %}
-                                <div class="form-group mb-3 mt-3">
-                                    <label class="form-label"><i class="fa fa-image"></i> Изображение (опционально)</label>
-                                    <div class="input-group">
-                                        <input type="file" id="image_input" class="form-control" accept="image/*"
-                                            onchange="handleImageSelect(event)">
-                                        <button type="button" class="btn btn-outline-secondary" onclick="clearImage()">
-                                            <i class="fa fa-times"></i>
-                                        </button>
-                                    </div>
-                                    <div id="image_preview" class="mt-2" style="display: none;">
-                                        <img id="preview_img" src="#" alt="Preview" class="img-thumbnail"
-                                            style="max-height: 150px;">
-                                        <small class="d-block mt-1 text-muted" id="image_info"></small>
-                                    </div>
-                                </div>
-                                {% endif %}
-                            </div>
-                            <div class="col-12 col-md-4 d-flex flex-column">
-                                <label class="form-label">&nbsp;</label>
-                                <div class="d-grid gap-2 h-100">
-                                    <button type="submit" id="btn_real" class="btn btn-light" onclick="this.form.test_type_field.value = 'real'">
-                                        <i class="fa fa-rocket me-2"></i>Реальный запрос
-                                    </button>
-                                    <button type="submit" class="btn btn-info" onclick="this.form.test_type_field.value = 'mock'">
-                                        <i class="fa fa-sync-alt me-2"></i>Mock тест
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Результаты теста -->
-            {% if raw_response.response_received.status != "ready_for_testing" %}
-            <div class="card mb-4 {% if is_real_response %}border-success{% else %}border-info{% endif %}">
-                <div class="card-header {% if is_real_response %}bg-success{% else %}bg-info{% endif %} text-white">
-                    <span class="mb-0">
-                        {% if is_real_response %}<i class="fa fa-rocket me-2"></i>Ответ модели{% else %}
-                        <i class="fa fa-sync-alt me-2"></i>Тестовые данные (Mock){% endif %}
-                        <span class="badge bg-light text-dark ms-2 float-end">
-                            {{ raw_response.response_received.status }}
-                            {% if raw_response.response_received.duration_seconds %}
-                            · {{ "%.2f"|format(raw_response.response_received.duration_seconds) }} сек
-                            {% endif %}
-                        </span>
-                    </span>
-                </div>
-                <div class="card-body">
-                    {% if raw_response.response_received.raw_content %}
-                    <pre class="response-content mb-3">{{ raw_response.response_received.raw_content }}</pre>
-                    {% elif raw_response.response_received.content %}
-                    <pre class="response-content mb-3">{{ raw_response.response_received.content }}</pre>
-                    {% else %}
-                    <div class="alert alert-warning mb-3">Ответ не содержит текстового контента.</div>
-                    {% endif %}
-
-                    {% if raw_response.response_received.parsed_fields and raw_response.response_received.parsed_fields is mapping %}
-                    <div class="table-responsive">
-                        <table class="table table-sm table-striped mb-0 parsed-fields-table">
-                            <tbody>
-                            {% for key, value in raw_response.response_received.parsed_fields.items() %}
-                                <tr>
-                                    <th class="w-25 text-nowrap">{{ key }}</th>
-                                    <td><code>{{ value }}</code></td>
-                                </tr>
-                            {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Расход токенов и стоимость -->
-            {% if cost_info and (cost_info.tokens.total > 0 or cost_info.has_cost_report) %}
-            <div class="card mb-4 border-warning">
-                <div class="card-header bg-warning text-white">
-                    <i class="fa fa-coins me-2"></i>Расход токенов и стоимость
-                    {% if price_updated %}
-                    <span class="badge bg-light text-dark ms-2">Цены модели обновлены из ответа</span>
-                    {% endif %}
-                </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <strong>Токены:</strong>
-                            <ul class="mb-0 ps-3">
-                                <li>Вход: {{ cost_info.tokens.input }}</li>
-                                <li>Выход: {{ cost_info.tokens.output }}</li>
-                                <li>Всего: {{ cost_info.tokens.total }}</li>
-                            </ul>
-                        </div>
-                        <div class="col-md-4">
-                            <strong>Стоимость:</strong>
-                            {% if cost_info.has_cost_report %}
-                            <ul class="mb-0 ps-3">
-                                {% set c_in = cost_info.cost.input if cost_info.cost is defined and cost_info.cost.input is not none else none %}
-                                {% set c_out = cost_info.cost.output if cost_info.cost is defined and cost_info.cost.output is not none else none %}
-                                {% set c_tot = cost_info.cost.total if cost_info.cost is defined and cost_info.cost.total is not none else none %}
-                                {% if c_in is not none %}<li>Вход: ${{ "%.6f"|format(c_in) }}</li>{% endif %}
-                                {% if c_out is not none %}<li>Выход: ${{ "%.6f"|format(c_out) }}</li>{% endif %}
-                                {% if c_tot is not none %}<li>Всего: ${{ "%.6f"|format(c_tot) }}</li>{% endif %}
-                            </ul>
-                            {% elif cost_info.estimated_cost is not none %}
-                            <ul class="mb-0 ps-3">
-                                <li>Оценка: <strong>${{ "%.6f"|format(cost_info.estimated_cost) }}</strong>
-                                    <span class="text-muted">(рассчитана по ценам модели)</span></li>
-                                <li class="text-muted small">провайдер не вернул стоимость</li>
-                            </ul>
-                            {% else %}
-                            <div class="text-muted">провайдер не вернул стоимость</div>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-4">
-                            <strong>Пересчитанные цены $/1K:</strong>
-                            <ul class="mb-0 ps-3">
-                                {% set price_in = cost_info.price_per_1k.input if cost_info.price_per_1k is defined and cost_info.price_per_1k.input is not none else none %}
-                                {% set price_out = cost_info.price_per_1k.output if cost_info.price_per_1k is defined and cost_info.price_per_1k.output is not none else none %}
-                                <li>Вход: <code>{{ "%.6f"|format(price_in) if price_in is not none else "—" }}</code></li>
-                                <li>Выход: <code>{{ "%.6f"|format(price_out) if price_out is not none else "—" }}</code></li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Служебные JSON (свёрнуты) -->
-            <div class="row">
-                <div class="col-12">
-                    <details>
-                        <summary class="btn btn-outline-secondary">📦 Показать сырые данные</summary>
-                        <div class="mt-2">
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <h6 class="text-primary">📤 Request Payload</h6>
-                                    <pre class="p-3 rounded border small" style="max-height: 300px; overflow: auto;"><code>{{ request_payload }}</code></pre>
-                                </div>
-                                <div class="col-md-6">
-                                    <h6 class="text-success">📋 Full Response</h6>
-                                    <pre class="p-3 rounded border small" style="max-height: 300px; overflow: auto;"><code>{{ full_response_json }}</code></pre>
-                                </div>
-                            </div>
-                        </div>
-                    </details>
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Навигация -->
-            <div class="row mt-4">
-                <div class="col-12">
-                    <div class="d-flex gap-2 flex-wrap">
-                        <form method="get" action="/admin/llm-model/action/test-model/">
-                            <input type="hidden" name="pks" value="{{ model.id }}">
-                            <input type="hidden" name="prompt" value="{{ prompt }}">
-                            <button type="submit" class="btn btn-info">
-                                <i class="fa fa-rocket me-2"></i>Попробовать ещё раз
-                            </button>
-                        </form>
-                        <a href="{{ url_for('admin:details', identity='llm-model', pk=model.id) }}" class="btn btn-primary">
-                            <i class="fa fa-arrow-left me-2"></i>Назад к модели
-                        </a>
-                        <a href="{{ url_for('admin:list', identity='llm-model') }}" class="btn btn-secondary">
-                            <i class="fa fa-list me-2"></i>К списку моделей
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Модальное окно подтверждения реального запроса -->
-            <div class="modal fade" id="realTestModal" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content">
-                        <div class="modal-header bg-warning text-dark">
-                            <h5 class="modal-title">
-                                <i class="fa fa-exclamation-triangle me-2"></i>Подтверждение реального запроса
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
-                        </div>
-                        <div class="modal-body">
-                            <p class="mb-2">Отправить реальный запрос к API? Это может списать средства.</p>
-                            <p class="mb-0 text-muted small" id="real_test_modal_image_note" style="display: none;">
-                                <i class="fa fa-image me-1"></i>Запрос включает анализ изображения.
-                            </p>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                            <button type="button" class="btn btn-warning" id="real_test_modal_confirm">Подтвердить</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+{% block title %}Тестирование модели · {{ model.name }}{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/admin-model-test.css') }}">
+{% endblock %}
+{% block content_header %}
+<div class="llm-test llm-test-heading">
+    <div><p class="llm-eyebrow">Платформа / Модели ИИ</p><h1>Тестирование модели</h1>
+    <p class="llm-muted">Проверка конфигурации и подключения — без изменения тарифов модели.</p></div>
+    <a class="llm-button" href="{{ url_for('admin:details', identity='llm-model', pk=model.id) }}">К модели</a>
 </div>
 {% endblock %}
+{% block content %}
+{% macro state(value, tone='neutral') -%}<span class="llm-state llm-state-{{ tone }}">{{ value }}</span>{%- endmacro %}
+{% macro http(value) -%}{{ state(value if value is number else 'Нет подтверждённого HTTP-ответа', 'success' if value is number and 200 <= value < 300 else 'danger' if value is number and value >= 400 else 'warning' if value is number else 'neutral') }}{%- endmacro %}
 
-{% block extra_css %}
-<style>
-    .response-content {
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        border-left: 3px solid var(--tblr-primary, #307fdd);
-        padding: 0.5rem 0.75rem;
-        color: var(--tblr-body-color);
-    }
+<div class="col-12"><div class="llm-test">
+    <section class="llm-panel" aria-labelledby="llm-model-title">
+        <div class="llm-section-heading"><h2 id="llm-model-title">{{ model.name }}</h2>
+            <span class="llm-tag">{{ 'Активна' if model.is_active else 'Неактивна' }}</span></div>
+        <dl class="llm-meta">
+            <div><dt>API модель</dt><dd><code>{{ model.model_id }}</code></dd></div>
+            <div><dt>Провайдер</dt><dd>{{ provider.name }} · {{ provider.api_format }}</dd></div>
+            <div><dt>Возможности</dt><dd>{{ model.model_type or '—' }}</dd></div>
+            <div><dt>Максимум ответа</dt><dd>{{ model.max_tokens }} токенов · t = {{ model.default_temperature }}</dd></div>
+            <div><dt>Единица входного и выходного тарифа</dt><dd>{{ '1 000 токенов' if model.pricing_token_unit == 1000 else '1 000 000 токенов' }}</dd></div>
+            <div><dt>Вход, USD</dt><dd>{{ model.input_cost_per_1k }}</dd></div>
+            <div><dt>Выход, USD</dt><dd>{{ model.output_cost_per_1k }}</dd></div>
+            <div><dt>Чтение кэша, USD за 1M</dt><dd>{{ model.cache_read_cost_per_1m if model.cache_read_cost_per_1m is not none else 'Не настроено' }}</dd></div>
+            <div><dt>Запись кэша 5 мин, USD за 1M</dt><dd>{{ model.cache_write_5m_cost_per_1m if model.cache_write_5m_cost_per_1m is not none else 'Не настроено' }}</dd></div>
+            <div><dt>Запись кэша 1 час, USD за 1M</dt><dd>{{ model.cache_write_1h_cost_per_1m if model.cache_write_1h_cost_per_1m is not none else 'Не настроено' }}</dd></div>
+        </dl>
+        <details class="llm-checks"><summary>Локальный статус конфигурации</summary>
+            <ul>{% for label, passed in status_checks %}<li><span class="llm-check {{ 'llm-pass' if passed else 'llm-fail' }}">{{ 'OK' if passed else 'Нет' }}</span> {{ label }}</li>{% endfor %}</ul>
+            <p class="llm-muted">{{ status_hint }} Это локальная оценка, а не проверка доступности API.</p>
+        </details>
+    </section>
 
-    .api-format-badge {
-        background-color: rgba(48, 127, 221, 0.12);
-        color: var(--tblr-primary, #307fdd);
-        font-weight: 600;
-        padding: 0.3em 0.7em;
-        border: 1px solid rgba(48, 127, 221, 0.35);
-    }
+    <section class="llm-panel" aria-labelledby="llm-modes-title">
+        <h2 id="llm-modes-title">Выберите проверку</h2>
+        <p class="llm-muted">Короткая проверка обращается к API без генерации. Mock работает локально. Реальный запрос получает ответ модели.</p>
+        <form method="post" action="/admin/llm-model/test" id="llm-test-form">
+            <input type="hidden" name="model_id" value="{{ model.id }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="llm-mode-grid">
+                <div class="llm-mode"><span class="llm-step">01 / API</span><h3>Короткая проверка</h3>
+                    <p>Авторизованный GET /models, без вопроса и генерации текста. Проверяет доступ к API, но не качество ответа модели.</p>
+                    <button class="llm-button llm-primary" type="submit" name="test_type" value="short" formnovalidate>Короткий тест</button></div>
+                <div class="llm-mode"><span class="llm-step">02 / Локально</span><h3>Mock-тест</h3>
+                    <p>Тестовый ответ и имитация usage. Реальная модель не вызывается.</p>
+                    <button class="llm-button" type="submit" name="test_type" value="mock">Mock-тест</button></div>
+                <div class="llm-mode"><span class="llm-step">03 / API</span><h3>Реальный запрос</h3>
+                    <p>Ваш вопрос: до {{ request_max_tokens | default(512) }} токенов ответа (не выше лимита модели). Пустое поле: короткий вопрос по умолчанию, до 8 токенов. Таймаут 20 секунд. Может списать средства.</p>
+                    <button class="llm-button" type="submit" name="test_type" value="real">Реальный запрос</button>
+                    {% if billing_block_reason %}<p class="llm-warning" role="status">{{ billing_block_reason }}</p>{% endif %}</div>
+            </div>
+            <p id="llm-submit-status" role="status" class="llm-muted" aria-live="polite" tabindex="-1"></p>
+            <div class="llm-prompt">
+                <label for="llm-prompt">Сообщение для модели или mock-теста</label>
+                <textarea id="llm-prompt" name="prompt" rows="3" maxlength="8000" placeholder="Напишите вопрос или оставьте пустым для короткого реального ответа…" aria-describedby="llm-prompt-help">{{ prompt }}</textarea>
+                <p id="llm-prompt-help" class="llm-muted">Реальный запрос отправляет этот текст модели. Если поле пустое, отправится «{{ probe_prompt }}». Mock требует текст; короткая API-проверка его не использует. Загрузка изображений здесь не поддерживается.</p>
+            </div>
+            {% if billing_ready %}
+            <div class="llm-prompt">
+                <label for="llm-billing-tenant">Рабочее пространство для платного запроса</label>
+                <select id="llm-billing-tenant" name="tenant_id" aria-describedby="llm-billing-help">
+                    <option value="">Выберите рабочее пространство</option>
+                    {% for tenant in billing_tenants %}<option value="{{ tenant.id }}"{% if tenant.id == billing_tenant_id %} selected{% endif %}>{{ tenant.name }} ({{ tenant.id }})</option>{% endfor %}
+                </select>
+                <p id="llm-billing-help" class="llm-muted">Запрос учитывается на личном счёте запускающего администратора, не владельца рабочего пространства. Нужны настроенный счёт, лимит и разрешённая политика модели. Короткий API-тест и локальный mock не используют этот выбор.</p>
+            </div>
+            {% endif %}
+            <p class="llm-muted">Нажатие «Реальный запрос» запускает один вызов API, который может быть платным. Автоматического повтора нет.</p>
+        </form>
+    </section>
 
-    #btn_real:hover {
-        color: var(--tblr-body-color) !important;
-        background-color: var(--tblr-bg-surface-secondary, #f1f3f7) !important;
-    }
-
-    .parsed-fields-table {
-        border-collapse: collapse;
-    }
-    .parsed-fields-table th,
-    .parsed-fields-table td {
-        border: none;
-        padding: 0.45rem 0.6rem;
-        vertical-align: top;
-    }
-    .parsed-fields-table tbody tr:nth-child(odd) {
-        background-color: rgba(128, 128, 128, 0.10);
-    }
-    .parsed-fields-table tbody tr:nth-child(even) {
-        background-color: transparent;
-    }
-</style>
+    {% if result %}
+    <section class="llm-panel llm-result {{ 'llm-result-ok' if result.ok else 'llm-result-error' }}" id="llm-result" tabindex="-1" aria-labelledby="llm-result-title" role="status">
+        <div class="llm-section-heading"><h2 id="llm-result-title" class="llm-state-{{ 'success' if result.ok else 'danger' }}">{{ 'Проверка завершена' if result.ok else 'Проверка не пройдена' }}</h2>
+            <span class="llm-tag">{{ 'Реальный запрос · API' if result.tier == 'real' else 'Короткая проверка · API' if result.tier == 'connectivity' else 'Mock · без API' }}</span></div>
+        <p>{{ result.text }}</p>
+        {% if result.save_warning %}<p class="llm-warning">{{ result.save_warning }}</p>{% endif %}
+        {% if result.tier == 'connectivity' %}
+        <dl class="llm-meta">
+            <div><dt>Метод</dt><dd>{{ result.method }}</dd></div>
+            <div><dt>HTTP-статус</dt><dd>{{ http(result.http_status) }}</dd></div>
+            {% if result.models_count is defined %}<div><dt>Моделей в списке</dt><dd>{{ result.models_count }}</dd></div>{% endif %}
+            {% if result.model_available is defined %}<div><dt>Выбранная модель в списке</dt><dd>{{ state('Да' if result.model_available else 'Нет — возможность генерации не подтверждена', 'success' if result.model_available else 'warning') }}</dd></div>{% endif %}
+        </dl>
+        {% endif %}
+        {% if result.request_prompt %}<details open><summary>{{ ('Подготовленное сообщение (не отправлено)' if result.dispatch_state == 'not_dispatched' else 'Отправленное сообщение' if result.dispatch_state == 'response_received' else 'Сообщение запроса') if result.tier == 'real' else 'Вопрос для имитации' }}</summary><pre class="llm-response">{{ result.request_prompt }}</pre></details>{% endif %}
+        {% if result.max_tokens is defined %}<p class="llm-muted">Лимит ответа: {{ result.max_tokens }} токенов · таймаут 20 секунд.</p>{% endif %}
+        {% if result.content %}<section class="llm-answer" aria-labelledby="llm-answer-title"><h3 id="llm-answer-title">Ответ модели{{ ' (имитация)' if result.tier == 'mock' else '' }}</h3><div class="llm-answer-text">{{ result.content }}</div></section>{% endif %}
+        {% if result.tier == 'real' %}
+        <dl class="llm-meta llm-diagnostics">
+            <div><dt>Доставка запроса</dt><dd>{{ state({'not_dispatched': 'Не отправлен', 'possible': 'Отправка возможна; не подтверждена', 'response_received': 'Ответ API получен'}.get(result.dispatch_state, 'Не подтверждена'), 'success' if result.dispatch_state == 'response_received' else 'warning') }}</dd></div>
+            <div><dt>HTTP-статус API</dt><dd>{{ http(result.http_status) }}</dd></div>
+            <div><dt>Этап</dt><dd>{{ state({'preflight': 'До отправки', 'admission': 'Допуск по бюджету', 'transport': 'Соединение с API', 'response': 'Разбор ответа API', 'accounting': 'Учёт расходов', 'complete': 'Завершён'}.get(result.stage, 'Не подтверждён'), 'success' if result.stage == 'complete' and result.ok else 'warning') }}</dd></div>
+            <div><dt>Учёт расходов</dt><dd>{{ state({'not_started': 'Не запускался', 'confirmed': 'Подтверждён', 'standard': 'Обычный учёт модели, без личного списания', 'journal_unconfirmed': 'Журнал не подтверждён'}.get(result.accounting_status, 'Не подтверждён'), 'success' if result.accounting_status == 'confirmed' else 'neutral' if result.accounting_status == 'standard' else 'warning') }}</dd></div>
+            <div><dt>finish_reason</dt><dd>{{ state(result.finish_reason | default('Не сообщён', true), 'success' if result.finish_reason == 'stop' else 'warning' if result.finish_reason == 'length' else 'danger' if result.finish_reason == 'content_filter' else 'neutral') }}</dd></div>
+            <div><dt>Код результата</dt><dd>{{ state(result.error_code | default('ok' if result.ok else 'unconfirmed'), 'success' if result.ok else 'warning' if result.error_code in ['empty_content', 'timeout', 'unconfirmed'] else 'danger') }}</dd></div>
+        </dl>
+        <details class="llm-json-panel" open><summary>JSON ответа провайдера</summary>
+            {% if result.response_json is defined and result.response_json is not none %}
+            <div class="llm-json-code">
+                <button type="button" class="llm-button llm-copy" data-copy-target="llm-response-json" aria-label="Копировать JSON" title="Копировать JSON" hidden>
+                    <svg class="llm-copy-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
+                    <svg class="llm-copy-done" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12 4 4L19 6"/></svg>
+                    <svg class="llm-copy-error" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v4m0 4h.01"/></svg>
+                </button>
+                <pre id="llm-response-json" class="llm-json" tabindex="0">{{ result.response_json_text if result.response_json_text is defined else result.response_json | tojson(indent=2) }}</pre>
+            </div>
+            <p class="llm-muted">JSON фактического ответа API, не локальная имитация. Секреты скрыты; слишком большой ответ сокращается с отметкой [truncated].</p>
+            {% elif result.response_body %}<p class="llm-warning">API вернул не JSON. Безопасный фрагмент тела ответа:</p><pre>{{ result.response_body }}</pre>
+            {% else %}<p class="llm-muted">{{ 'Ответ API отсутствует: запрос не отправлен.' if result.dispatch_state == 'not_dispatched' else 'JSON ответа API не получен или не подтверждён.' }}</p>{% endif %}
+            <span class="llm-sr-only" id="llm-copy-status" role="status" aria-live="polite"></span>
+            <p class="llm-state-warning" id="llm-copy-fallback" hidden></p>
+        </details>
+        {% endif %}
+        <dl class="llm-meta llm-result-meta">
+            {% if result.elapsed_ms is defined %}<div><dt>Время проверки</dt><dd>{{ result.elapsed_ms }} мс</dd></div>{% endif %}
+            <div><dt>Реально использовано токенов</dt><dd>{{ result.tokens_spent if result.tokens_spent is defined and result.tokens_spent is not none else 'Неизвестно' }}</dd></div>
+            {% if result.tier == 'real' %}
+            <div><dt>Цена провайдера, USD</dt><dd>{{ state(result.provider_cost_usd, 'success') if result.provider_cost_state == 'resolved' else state('Не определена (цена не в USD или вне диапазона)', 'warning') if result.provider_cost_state == 'unresolved' else state('Не сообщена', 'neutral') }}</dd></div>
+            {% endif %}
+            <div><dt>Оценка по тарифу, USD</dt><dd>{% if result.tier != 'real' %}Нет платного вызова{% elif result.estimated_cost is defined and result.estimated_cost is not none %}{{ result.estimated_cost }}{% else %}Неизвестно{% endif %}</dd></div>
+        </dl>
+        <p class="llm-muted">{% if result.tier == 'real' %}Запрос проверяет текстовый ответ, но не мультимодальность. Оценка — не подтверждённый счёт провайдера. Не повторяйте вызов автоматически при неизвестном ответе или ошибке учёта.{% elif result.tier == 'connectivity' %}Проверяется только GET /models. Успех не доказывает доступ к генерации; отсутствие маршрута не доказывает, что генерация сломана. Платного fallback нет.{% else %}Это локальная имитация: usage ниже вымышленный, реальных токенов не потрачено. Доступность провайдера и качество ответа не проверялись.{% endif %}</p>
+        {% if result.usage %}<details><summary>Usage {{ '(имитация)' if result.tier != 'real' else '(данные ответа)' }}</summary><pre>{{ result.usage | tojson(indent=2) }}</pre></details>{% endif %}
+    </section>
+    {% endif %}
+    <nav class="llm-footer" aria-label="Навигация по моделям"><a href="{{ url_for('admin:list', identity='llm-model') }}">← Список моделей</a>
+        <span class="llm-muted">Глобальная конфигурация платформы</span></nav>
+</div></div>
 {% endblock %}
-
-{% block scripts %}
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const testForm = document.getElementById("test_form")
-        if (!testForm) return
-
-        const realModalEl = document.getElementById("realTestModal")
-        const realModalConfirm = document.getElementById("real_test_modal_confirm")
-        const realModalImageNote = document.getElementById("real_test_modal_image_note")
-        const bsBootstrap = window.tabler && window.tabler.bootstrap ? window.tabler.bootstrap : window.bootstrap
-        const bsModal = realModalEl && bsBootstrap ? bsBootstrap.Modal.getOrCreateInstance(realModalEl) : null
-
-        let skipRealConfirm = false
-
-        testForm.addEventListener("submit", function (e) {
-            const prompt = document.getElementById("real_prompt").value
-            if (!prompt.trim()) {
-                uiNotice("Введите запрос для тестирования")
-                e.preventDefault()
-                return
-            }
-
-            const testType = document.getElementById("test_type_field").value
-            const hasImage = document.getElementById("image_data_hidden").value !== ""
-
-            if (testType === "real" && !skipRealConfirm && bsModal) {
-                e.preventDefault()
-                if (hasImage) {
-                    realModalImageNote.style.display = "block"
-                } else {
-                    realModalImageNote.style.display = "none"
-                }
-                bsModal.show()
-            }
-
-            skipRealConfirm = false
-        })
-
-        if (realModalConfirm && bsModal) {
-            realModalConfirm.addEventListener("click", function () {
-                bsModal.hide()
-                skipRealConfirm = true
-                testForm.requestSubmit()
-            })
-        }
-    })
-
-    function handleImageSelect(event) {
-        const file = event.target.files[0]
-        if (!file) return
-        if (!file.type.startsWith("image/")) {
-            uiNotice("Пожалуйста, выберите файл изображения")
-            event.target.value = ""
-            return
-        }
-        if (file.size > 5 * 1024 * 1024) {
-            uiNotice("Размер файла не должен превышать 5MB")
-            event.target.value = ""
-            return
-        }
-        const reader = new FileReader()
-        reader.onload = function (e) {
-            document.getElementById("preview_img").src = e.target.result
-            document.getElementById("image_info").textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`
-            document.getElementById("image_preview").style.display = "block"
-            document.getElementById("image_data_hidden").value = e.target.result
-        }
-        reader.readAsDataURL(file)
-    }
-
-    function clearImage() {
-        document.getElementById("image_input").value = ""
-        document.getElementById("image_preview").style.display = "none"
-        document.getElementById("image_data_hidden").value = ""
-    }
-</script>
-{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='js/admin-model-test.js') }}" defer></script>{% endblock %}

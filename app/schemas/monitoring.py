@@ -36,14 +36,3 @@ class CollectPlatformRequest(BaseModel):
         description="Optional filter by source types (USER, GROUP, CHANNEL)"
     )
     analyze: bool = Field(True, description="Whether to run AI analysis on collected content")
-
-
-class CollectMonitoredRequest(BaseModel):
-    """
-    Request schema for collecting content from monitored users.
-    
-    Used for GROUP/CHANNEL sources that track specific USER accounts.
-    """
-    
-    source_id: int = Field(..., gt=0, description="ID of the source with monitored users")
-    analyze: bool = Field(True, description="Whether to run AI analysis on collected content")

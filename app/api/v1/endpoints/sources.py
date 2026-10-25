@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.deps import require_model_perm
 from app.models import Source, Platform
 from app.schemas.source import SourceCreate, SourceUpdate, SourceResponse
-from app.types import ActionType
+from app.types import ActionType, SourceType
 
 router = APIRouter(tags=["sources"])
 
@@ -70,10 +70,17 @@ async def create_source(
     if not platform:
         raise HTTPException(status_code=404, detail=f"Платформа {request.platform_id} не найдена")
 
+    # `source_type` arrives as a name ("GROUP"). The enum column passes an
+    # unknown string through to PostgreSQL, so without this check a typo is a
+    # 500 at flush instead of a named client error.
+    source_type = SourceType.get_by_name(request.source_type.strip().upper() if request.source_type else "")
+    if source_type is None:
+        raise HTTPException(status_code=422, detail=f"Неизвестный source_type: {request.source_type}")
+
     source = await Source.objects.create(
         platform_id=request.platform_id,
         name=request.name.strip()[:255],
-        source_type=request.source_type,
+        source_type=source_type,
         external_id=request.external_id.strip()[:100],
         params=request.params or {},
     )
@@ -105,14 +112,20 @@ async def update_source(
         raise HTTPException(status_code=404, detail="Source not found")
 
     updates = request.model_dump(exclude_unset=True)
+    # An explicit `null` is a provided field, and every column here is
+    # non-nullable: writing it is an integrity error at flush, stripping it is
+    # a 500 on `None.strip()`. Refuse it by name instead.
+    nulls = sorted(key for key, value in updates.items() if value is None)
+    if nulls:
+        raise HTTPException(status_code=422, detail=f"Поля не могут быть null: {', '.join(nulls)}")
     if "name" in updates:
         updates["name"] = updates["name"].strip()[:255]
-    if "external_id" in updates:
-        updates["external_id"] = updates["external_id"].strip()[:100]
 
     await Source.objects.update_by_id(source_id, **updates)
 
     source = await Source.objects.get(id=source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
     return SourceResponse(
         id=source.id,
         name=source.name,
@@ -133,9 +146,43 @@ async def delete_source(
     source_id: int,
     _user = Depends(require_model_perm("source", ActionType.DELETE)),
 ):
-    """Delete a source."""
+    """Delete a source; refused while a linked task still depends on it."""
+    from app.core.database import new_session
+    from app.core.tenant_context import tenant_scope
+    from app.services.collection.source_deletion import (
+        SourceDeleteBlocked,
+        SourceDeleteScopeError,
+        delete_source as delete_workspace_source,
+    )
+
     source = await Source.objects.get(id=source_id)
-    if not source:
+    if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    await Source.objects.delete(id=source_id)
+    session = new_session()
+    try:
+        # The row is read through the tenant-guarded queryset, so its workspace
+        # *is* the caller's. Re-entering that workspace keeps the deletion
+        # admission lock and the linked-task decision on the owning tenant
+        # instead of relying on an ambient scope the caller may not have.
+        with tenant_scope(source.tenant_id):
+            async with session.begin():
+                removal = await delete_workspace_source(session, source_id=source_id, tenant_id=source.tenant_id)
+    except SourceDeleteScopeError:
+        raise HTTPException(status_code=409, detail={"error": SourceDeleteScopeError.code}) from None
+    finally:
+        await session.close()
+    if isinstance(removal, SourceDeleteBlocked):
+        # The source is still a task's scope: the same rule the web enforces, so
+        # a client cannot delete what the operator's page refuses. An active
+        # reader wins the reason; a paused task argues `source_is_last_task_source`
+        # because resuming it would widen the task to every active source.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": removal.reason,
+                "task_ids": [task.task_id for task in removal.blocking_tasks],
+            },
+        )
+    if removal is None:
+        raise HTTPException(status_code=404, detail="Source not found")

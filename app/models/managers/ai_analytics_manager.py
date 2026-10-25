@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Optional, Sequence
 
 from sqlalchemy import select
@@ -24,6 +24,80 @@ class AIAnalyticsManager(BaseManager):
         from ..ai_analytics import AIAnalytics
 
         super().__init__(AIAnalytics)
+
+    async def most_similar_by_topics(
+        self, source_id: int, topics: list[str], *, threshold: float = 0.3
+    ) -> Optional[Any]:
+        """Closest prior analysis for this source by main_topics Jaccard similarity.
+
+        Raw SQL is unavoidable here: `main_topics` is a json column and
+        PostgreSQL defines no ranked similarity for it. The topic array is
+        expanded per row (`json_array_elements_text` with a json_typeof array
+        guard — older rows may hold scalars), the ratio compares unnest
+        INTERSECT/UNION with the candidate list, and only the overlap operator
+        `&&` filters, since no intersection/union operators exist for arrays.
+        Parameters bind through explicit CAST(... AS text[]): a `:name::text[]`
+        form breaks SQLAlchemy text() parsing. Schema is interpolated (raw SQL
+        bypasses the metadata layer); the matched id is loaded back through the
+        ordinary queryset so the tenant guard applies to the returned record.
+        """
+        from sqlalchemy import text
+
+        from ...core.config import settings
+
+        if type(topics) is not list or not topics:
+            return None
+        statement = text(f"""
+            WITH topics AS (
+                SELECT b.id,
+                       COALESCE((SELECT array_agg(x) FROM json_array_elements_text(
+                           CASE WHEN json_typeof(b.main_topics) = 'array' THEN b.main_topics ELSE '[]'::json END
+                       ) AS x), ARRAY[]::text[]) AS topics_arr
+                FROM {settings.DB_SCHEMA}.ai_analytics b
+                WHERE b.source_id = :source_id AND b.main_topics IS NOT NULL
+            ),
+            ranked_analytics AS (
+                SELECT id,
+                       (SELECT count(*) FROM (SELECT unnest(topics_arr) INTERSECT SELECT unnest(CAST(:topics AS text[]))) s)::float /
+                       GREATEST((SELECT count(*) FROM (SELECT unnest(topics_arr) UNION SELECT unnest(CAST(:topics AS text[]))) s), 1) as similarity
+                FROM topics
+                WHERE topics_arr && CAST(:topics AS text[])
+            )
+            SELECT id, similarity FROM ranked_analytics
+            WHERE similarity >= :threshold
+            ORDER BY similarity DESC
+            LIMIT 1
+        """)
+        async with self._get_owned_session() as session:
+            row = (
+                await session.execute(
+                    statement,
+                    {"source_id": source_id, "topics": topics, "threshold": threshold},
+                )
+            ).first()
+        if row is None:
+            return None
+        return await self.filter(id=int(row[0])).first()
+
+    async def delete_expired(self, cutoff: datetime) -> int:
+        """Retention sweep: delete rows whose last write is before `cutoff`.
+
+        Runs through the scoped queryset, so it touches only the current tenant
+        (or the explicit platform bypass). A row referenced by a bot action is
+        kept as evidence for that action. Attempt-journal rows are separate and
+        reference analyses by plain integers, so accounting is not deleted here.
+        """
+        from sqlalchemy import select
+
+        from app.models import AIAnalytics, BotAction
+
+        if cutoff.tzinfo is None:
+            raise ValueError("Retention cutoff must be timezone-aware")
+        # Correlated to the deleted row; never an uncorrelated "any action exists".
+        referenced = (
+            select(BotAction.id).where(BotAction.analytics_id == AIAnalytics.id).correlate(AIAnalytics).exists()
+        )
+        return await self.filter(AIAnalytics.updated_at < cutoff, ~referenced).delete()
 
     async def get_by_source_id(self, source_id: int, skip: int = 0, limit: int = 100) -> Sequence[Any]:
         """Retrieve analytics by source ID with pagination."""
@@ -78,18 +152,24 @@ class AIAnalyticsManager(BaseManager):
         llm_model: Optional[str] = None,
         prompt_text: Optional[str] = None,
         response_payload: Optional[dict] = None,
+        analysis_fingerprint: str = "legacy",
     ) -> Any:
         """
         Save AI analysis results with full LLM tracing.
 
-        Upserts on (source, date, period): an existing row is updated in place,
+        Upserts on (source, date, period, context): an existing row is updated in place,
         otherwise a new one is created. `create()` stamps `tenant_id` from the
         ambient scope, so callers must run inside `tenant_scope(...)`.
 
         Returns:
                 The created or updated AIAnalytics object
         """
-        existing = await self.get(source_id=source_id, analysis_date=analysis_date, period_type=period_type)
+        existing = await self.get(
+            source_id=source_id,
+            analysis_date=analysis_date,
+            period_type=period_type,
+            analysis_fingerprint=analysis_fingerprint,
+        )
 
         updates: dict[str, Any] = {"summary_data": summary_data}
         if topic_chain_id:
@@ -110,6 +190,7 @@ class AIAnalyticsManager(BaseManager):
             source_id=source_id,
             analysis_date=analysis_date,
             period_type=period_type,
+            analysis_fingerprint=analysis_fingerprint,
             **updates,
         )
 
@@ -324,11 +405,11 @@ class AIAnalyticsManager(BaseManager):
         return base
 
     async def build_period_rollups(self, period_type: PeriodType, start: date, end: date) -> int:
-        """Aggregate the daily analytics of a period into one rollup row per source.
+        """Aggregate daily analytics per source and analysis context.
 
         Gives `period_type` its real meaning: a WEEKLY/MONTHLY run folds the
         period's DAILY rows for each source into a single row (upserted by
-        `(source_id, start, period_type)`). Engagement and LLM cost are summed;
+        `(source_id, start, period_type, analysis_fingerprint)`). Engagement and LLM cost are summed;
         the summary_data carries a period_rollup marker plus the rolled-up
         content statistics.
 
@@ -349,12 +430,13 @@ class AIAnalyticsManager(BaseManager):
             period_type=PeriodType.DAY,
         )
 
-        by_source: dict[int, list[Any]] = {}
+        by_source_context: dict[tuple[int, str], list[Any]] = {}
         for row in daily:
-            by_source.setdefault(row.source_id, []).append(row)
+            fingerprint = getattr(row, "analysis_fingerprint", "legacy") or "legacy"
+            by_source_context.setdefault((row.source_id, fingerprint), []).append(row)
 
         written = 0
-        for source_id, rows in by_source.items():
+        for (source_id, analysis_fingerprint), rows in by_source_context.items():
             total_posts = sum((r.summary_data or {}).get("content_statistics", {}).get("total_posts", 0) for r in rows)
             messages = sum((r.summary_data or {}).get("content_statistics", {}).get("messages_count", 0) for r in rows)
             active_users = sum(
@@ -389,11 +471,17 @@ class AIAnalyticsManager(BaseManager):
                 "content_statistics": content_statistics,
             }
 
-            existing = await self.filter(source_id=source_id, analysis_date=start, period_type=period_type).first()
+            existing = await self.filter(
+                source_id=source_id,
+                analysis_date=start,
+                period_type=period_type,
+                analysis_fingerprint=analysis_fingerprint,
+            ).first()
             if existing:
                 await self.update_by_id(
                     existing.id,
                     summary_data=summary,
+                    analysis_fingerprint=analysis_fingerprint,
                     request_tokens=request_tokens or None,
                     response_tokens=response_tokens or None,
                     estimated_cost=estimated_cost or None,
@@ -403,6 +491,7 @@ class AIAnalyticsManager(BaseManager):
                     source_id=source_id,
                     analysis_date=start,
                     period_type=period_type,
+                    analysis_fingerprint=analysis_fingerprint,
                     summary_data=summary,
                     request_tokens=request_tokens or None,
                     response_tokens=response_tokens or None,

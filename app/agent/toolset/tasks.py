@@ -74,6 +74,8 @@ async def task_list() -> list[dict[str, Any]]:
     return [
         {
             "name": t.name,
+            "id": t.id,
+            "task_url": f"/app/tasks/{t.id}",
             "cron": t.cron_expr,
             "job_type": t.job_type,
             "active": t.is_active,
@@ -198,6 +200,14 @@ async def task_list() -> list[dict[str, Any]]:
                     "candidates {limit, confirm}, date_window {start, end}"
                 ),
             },
+            "task_plan": {
+                "type": "object",
+                "description": (
+                    "Универсальный план соцзадачи: goal, platforms, source_scope/source_ids, collection, "
+                    "window (fixed с start/end или rolling с days), scenario_id и trigger (once либо schedule "
+                    "с cron/timezone). План задаёт источники, сценарий, сбор, окно и расписание."
+                ),
+            },
         },
         "required": ["name", "cron", "job_type"],
     },
@@ -223,6 +233,7 @@ async def task_add(
     influencer_names: list[str] | None = None,
     topic_list: list[str] | None = None,
     collection: dict[str, Any] | None = None,
+    task_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from zoneinfo import ZoneInfo
 
@@ -231,7 +242,37 @@ async def task_add(
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.tasks.cron import next_run_at, resolve_tz
 
+    plan_block = None
+    if task_plan is not None:
+        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+
+        try:
+            parsed_plan = parse_task_plan(task_plan)
+            plan_block = dict(task_plan)
+            expected_cron = parsed_plan.trigger.cron if parsed_plan.trigger.type == "schedule" else "@once"
+            if cron != expected_cron:
+                return {"error": "cron conflicts with task_plan.trigger; provide matching values"}
+            if source_ids is not None and source_ids != list(parsed_plan.source_ids):
+                return {"error": "source_ids conflicts with task_plan.source_ids"}
+            if scenario_id is not None and scenario_id != parsed_plan.scenario_id:
+                return {"error": "scenario_id conflicts with task_plan.scenario_id"}
+            if collection is not None:
+                return {"error": "collection is defined by task_plan; omit the legacy collection field"}
+            if start_date is not None or end_date is not None:
+                return {"error": "date fields are defined by task_plan.window; omit legacy date fields"}
+            cron = expected_cron
+            source_ids = list(parsed_plan.source_ids) if parsed_plan.source_scope == "selected" else []
+            scenario_id = parsed_plan.scenario_id
+            collection = dict(task_plan.get("collection") or {})
+            if parsed_plan.window and parsed_plan.window.type == "fixed":
+                start_date = parsed_plan.window.start.isoformat()
+                end_date = parsed_plan.window.end.isoformat() if parsed_plan.window.end else None
+        except TaskPlanError as error:
+            return {"error": str(error)}
+
     missing = _missing_task_fields(cron=cron, job_type=job_type, start_date=start_date)
+    if plan_block is not None and parsed_plan.window and parsed_plan.window.type == "rolling":
+        missing = [item for item in missing if not item.startswith("start_date ")]
     if missing:
         # Refused before anything is written: the same turn asks the owner for
         # what is missing instead of leaving a scheduled task nobody can run.
@@ -279,7 +320,7 @@ async def task_add(
 
     # collect/analyze need a content start date — without it a fresh source
     # drains the whole history from the first post (same rule as the web form).
-    if AgentTaskManager.requires_content_dates(job_type):
+    if AgentTaskManager.requires_content_dates(job_type) and plan_block is None:
         start = AgentTaskManager.parse_date(start_date)
         if start is None:
             return {"error": "Для задачи этого типа укажите start_date (с какой даты собирать контент, YYYY-MM-DD)"}
@@ -299,10 +340,25 @@ async def task_add(
     except CollectionIntentError as error:
         return {"error": collection_error_message(str(error))}
 
+    if plan_block is not None:
+        from app.services.task_plans import apply_task_plan
+
+        try:
+            payload = apply_task_plan(payload, plan_block, job_type=job_type)
+        except ValueError as error:
+            return {"error": str(error)}
+
     # The workspace zone, same rule as the web form and the runner: a task
     # created here in the global zone would shift by the offset on its first fire.
     tenant = await Tenant.objects.get(id=current_tenant_id())
     tz = resolve_tz(tenant)
+    if plan_block is not None:
+        from app.services.task_plans import task_plan_timezone
+
+        try:
+            tz = task_plan_timezone(plan_block, tz)
+        except ValueError as error:
+            return {"error": str(error)}
     from app.core.database import new_session
 
     session = new_session()
@@ -322,7 +378,7 @@ async def task_add(
                 job_type=job_type,
                 payload=payload,
                 agent_scenario_id=scenario_id,
-                is_active=True,
+                is_active=plan_block is None,
                 next_run_at=next_run_at(cron, tz),
             )
             if source_ids is not None:
@@ -339,6 +395,20 @@ async def task_add(
             task.next_run_at.astimezone(ZoneInfo(tz)).strftime("%d.%m.%Y %H:%M") if task.next_run_at else None
         ),
     }
+
+    if plan_block is not None:
+        try:
+            from app.services.billing.payer import consent_current_user_as_task_payer
+
+            await consent_current_user_as_task_payer(task.id)
+            await AgentTask.objects.update_by_id(task.id, is_active=True)
+            result["active"] = True
+        except Exception as error:
+            # Keep the task available for explicit setup, but never activate an
+            # AI plan until the authenticated owner has consented to its payer.
+            result["active"] = False
+            result["billing_consent_required"] = True
+            result["billing_error"] = str(error)
 
     # Hint when the bound scenario wants specific targets the task does not
     # carry — the analysis would otherwise have nothing to aim at. Surfaced as
@@ -485,6 +555,14 @@ async def task_remove(name: str) -> dict[str, Any]:
                     "comments, candidates, date_window). Не передавайте, чтобы сохранить текущий; {} убирает сбор"
                 ),
             },
+            "task_plan": {
+                "type": "object",
+                "description": (
+                    "Полная замена универсального плана соцзадачи (goal, platforms, source_scope/source_ids, "
+                    "collection, window, scenario_id, trigger). При передаче omit legacy source_ids, "
+                    "scenario_id, cron, collection и даты. Без task_plan существующий план сохраняется."
+                ),
+            },
         },
         "required": ["name"],
     },
@@ -511,6 +589,7 @@ async def task_update(
     topic_list: list[str] | None = None,
     deactivate_after_success: bool | None = None,
     collection: dict[str, Any] | None = None,
+    task_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from app.core.tenant_context import current_tenant_id
     from app.models import AgentTask, Tenant
@@ -531,6 +610,39 @@ async def task_update(
                 return {"error": f"Task {name!r} not found"}
             original_job_type = task.job_type
             original_cron = task.cron_expr
+            existing_plan = (task.payload or {}).get("task_plan")
+            parsed_plan = None
+            clearing_existing_plan = False
+            if task_plan is not None:
+                from app.services.task_plans import TaskPlanError, parse_task_plan
+
+                try:
+                    parsed_plan = parse_task_plan(task_plan)
+                except TaskPlanError as error:
+                    return {"error": str(error)}
+                if any(
+                    value is not None for value in (source_ids, scenario_id, cron, start_date, end_date, collection)
+                ):
+                    return {"error": "task_plan is a complete replacement; omit conflicting legacy fields"}
+                expected_cron = parsed_plan.trigger.cron if parsed_plan.trigger.type == "schedule" else "@once"
+                cron = expected_cron
+                source_ids = list(parsed_plan.source_ids) if parsed_plan.source_scope == "selected" else []
+                scenario_id = parsed_plan.scenario_id
+                collection = dict(task_plan.get("collection") or {})
+                if parsed_plan.window and parsed_plan.window.type == "fixed":
+                    start_date = parsed_plan.window.start.isoformat()
+                    end_date = parsed_plan.window.end.isoformat() if parsed_plan.window.end else None
+            elif existing_plan is not None:
+                new_requested_type = job_type if job_type is not None else task.job_type
+                if new_requested_type in {"digest", "prune", "learn", "reflect"}:
+                    # Moving a social plan to a non-collection task ends the plan
+                    # contract while preserving digest-specific payload values.
+                    existing_plan = None
+                    clearing_existing_plan = True
+                elif any(
+                    value is not None for value in (source_ids, scenario_id, cron, start_date, end_date, collection)
+                ):
+                    return {"error": "This task has task_plan; provide a complete task_plan to change its owned fields"}
             if source_ids is not None and any(
                 type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
             ):
@@ -575,7 +687,7 @@ async def task_update(
                     return {"error": f"Некорректная {field}: {value!r} (ожидается YYYY-MM-DD)"}
             new_job_type = job_type if job_type is not None else task.job_type
             existing_dates = (task.payload or {}).get("cli_dates") or {}
-            if AgentTaskManager.requires_content_dates(new_job_type):
+            if AgentTaskManager.requires_content_dates(new_job_type) and parsed_plan is None and existing_plan is None:
                 start = (
                     AgentTaskManager.parse_date(start_date)
                     if start_date is not None
@@ -630,6 +742,20 @@ async def task_update(
                 except CollectionIntentError as error:
                     return {"error": collection_error_message(str(error))}
 
+            if task_plan is not None:
+                from app.services.task_plans import apply_task_plan
+
+                try:
+                    updated_payload = apply_task_plan(updated_payload, task_plan, job_type=new_job_type)
+                except ValueError as error:
+                    return {"error": str(error)}
+            elif (task.payload or {}).get("task_plan") is not None and existing_plan is None:
+                from app.services.task_plans import apply_task_plan
+
+                # Explicitly clear the plan block and its collection/date
+                # projection when the task becomes a digest or another legacy type.
+                updated_payload = apply_task_plan(updated_payload, None, job_type=new_job_type)
+
             # Compute next_run_at if cron changed
             tenant = await Tenant.objects.get(id=current_tenant_id(), session=session)
             updates: dict[str, Any] = {
@@ -641,13 +767,22 @@ async def task_update(
             # scenario — the analysis then ran without its methodology. The same
             # happened to the trial flag, which was set after the payload was written
             # and therefore never saved at all.
-            if clear_scenario:
+            if clear_scenario or clearing_existing_plan:
                 updates["agent_scenario_id"] = None
             elif scenario_id is not None:
                 updates["agent_scenario_id"] = scenario_id
-            if cron is not None and cron != task.cron_expr:
+            elif task_plan is not None:
+                # A complete plan replaces the relationship too, including an
+                # explicit empty scenario choice.
+                updates["agent_scenario_id"] = parsed_plan.scenario_id
+            if cron is not None and (cron != task.cron_expr or task_plan is not None):
                 updates["cron_expr"] = cron
-                updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
+                tz = resolve_tz(tenant)
+                if task_plan is not None:
+                    from app.services.task_plans import task_plan_timezone
+
+                    tz = task_plan_timezone(task_plan, tz)
+                updates["next_run_at"] = next_run_at(new_cron, tz)
             if deactivate_after_success is not None:
                 # A trial task gets a live schedule back: it had been switched off
                 # after its success, so re-arming means the next run must be planned.

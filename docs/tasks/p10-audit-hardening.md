@@ -350,6 +350,63 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   repaired layout tests 95 passed, 0 failed. Not yet reviewed by the
   coordinator; DONE is set by Codex after review at this commit.
 
+- [x] P10-T01 (AUD-01, P0) — replace unauthenticated password mutation with
+  authorized recovery; accept: account-bound, expiring, one-use recovery or
+  approved operator-only reset; no anonymous hash mutation or password logs;
+  depends: none; owner: opencode; status: DONE — accepted 2026-10-25 at dev
+  HEAD `526cfd2` (task commit `1720515`, merge `1ba6265`). Owner decision of
+  2026-10-25 selected the "approved operator-only reset" alternative: recovery
+  is the authenticated console reset (platform admin + `user.update` for
+  another account, current password for self, owner refused on both pages),
+  documented as the accepted mechanism in
+  [ADMIN password routes](../ADMIN.md#password-routes-outside-sqladmin)
+  together with the out-of-band owner-recovery procedure and its
+  token-revocation limitation (stateless JWTs: a reset does not sign live
+  sessions out). The legacy `GET/POST /admin/reset-password`, its template and
+  the login-page "Забыли пароль?" link are removed, so no route looks an
+  account up by a submitted email address; `RESET_PASSWORD_RATE_LIMIT` and the
+  `generate_temporary_password` import had no remaining consumer and are
+  dropped. Self-service one-use email recovery is deferred to Q-12 (needs a
+  verified delivery channel and email verification). Auditor re-verified on
+  dev: no `reset-password` route/template reference remains in `app/` (OpenAPI
+  shows 68 paths, none matching), and
+  `pytest tests/admin/test_p10_t01_password_recovery_contract.py
+  tests/security/test_p10_t04_login_protection.py
+  tests/admin/test_admin_owner_guards.py -q` → 19 passed at `526cfd2`.
+
+- [x] P10-T04 (AUD-04, P1) — shared, cookie-independent login protection;
+  accept: normal failures counted; shared limits across surfaces/processes;
+  valid dummy verifier and generic errors; depends: none; owner: opencode;
+  status: DONE — accepted 2026-10-25 at dev HEAD `526cfd2` (task commit
+  `dddb3b4`, merge `1108863`). Storage decision (owner): one global
+  `login_attempts` table (additive revision `0111`, applied to `test_schema`
+  first and then, on owner authorization, to `public`; both at `0111 (head)`,
+  single head) — in-process memory cannot satisfy "shared across processes"
+  and Celery/Redis stay frozen. `guard_login`/`record_login_failure`/
+  `clear_login_failures` in `app/services/user/login_protection.py` key the
+  budget by the casefolded account identifier and by the client address; the
+  console, `/app/login` and `POST /api/v1/auth/login` all call the same three
+  functions, so a cleared cookie or a second process no longer resets
+  progress. `authenticate` verifies a real placeholder bcrypt hash for unknown
+  accounts (the previous `"dummy_hash"` literal did no real work) and answers
+  one generic detail for unknown, wrong-password and inactive accounts; the
+  console's "no console access" answer stays only for a correctly
+  authenticated non-operator, which cannot be reached with a wrong password
+  and is therefore not an enumeration hint. Review findings (accepted, not
+  blocking): the API counts one failure per refused attempt exactly once; the
+  web surface also counts an unexpected server fault as a failure (bounded,
+  fail-closed); a rejected attempt does not extend `locked_until`, so the
+  window is fixed by `LOGIN_TIMEOUT_MINUTES`. The session-cookie lockout
+  methods (`track_login_attempt`/`check_login_lockout`) are removed and
+  `DEBUG` no longer disables the limit; `LOGIN_IP_MAX_ATTEMPTS` adds the
+  per-address budget. Auditor re-verified on dev: `pytest
+  tests/security/test_p10_t04_login_protection.py` → 7 passed (threshold,
+  lock-then-clear, address budget shared by different accounts, real `$2b$`
+  dummy hash, identical answers, web failures locking the same account out of
+  the API); `alembic current` → `0111 (head)`; `login_attempts` residue 0.
+  Seven pre-existing workspace/permissions test failures at base `0997534`
+  (verified by stash) are not claimed by this task.
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

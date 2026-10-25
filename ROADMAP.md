@@ -30,7 +30,6 @@ means not recorded; source recovery links remain in the card.
 
 ## [P7](docs/tasks/p7-operations.md)
 
-- [P7-T01](docs/tasks/p7-t01.md) loopback-only database binding before production release — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · —
 
 ## [P8](docs/tasks/p8-first-value-ui.md)
@@ -50,9 +49,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P10](docs/tasks/p10-audit-hardening.md)
 
-- [P10-T01](docs/tasks/p10-t01.md) Authorized password recovery (P0) — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
 - [P10-T03](docs/tasks/p10-t03.md) Separate profile and privilege changes — **TODO** · unassigned · —
-- [P10-T04](docs/tasks/p10-t04.md) Shared cookie-independent login protection — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
 - [P10-T06](docs/tasks/p10-t06.md) Safe provider errors with accounting — **TODO** · unassigned · —
 - [P10-T07](docs/tasks/p10-t07.md) Consistent digest scope/window/rows — **TODO** · unassigned · —
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —

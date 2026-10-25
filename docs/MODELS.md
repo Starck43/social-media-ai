@@ -21,7 +21,7 @@ did not upgrade a working/deployment schema; prior isolated migration
 acceptance remains in the evidence ledger. PostgreSQL/ASGI and browser evidence
 remains pinned to the original execution SHAs; none is attributed as a rerun on
 final dev. See
-[implementation evidence](validation/personal-llm-ownership.md).
+[implementation evidence](audit/personal-llm-ownership.md).
 
 The public facade is [app.models](../app/models/__init__.py); canonical definitions
 live in domain packages. [bootstrap](../app/models/bootstrap.py) binds managers
@@ -427,7 +427,7 @@ replay returns false: **not permission to dispatch again**. There is no terminal
 settlement/release, automatic baseline provisioning or all-client HTTP wiring in
 this merged slice. Baseline/bound production and activation remain open. See
 [delivered scope](IMPLEMENTATION_STATUS.md) and
-[budget validation attribution](validation/llm-budget-pg-runner.md).
+[budget validation attribution](audit/llm-budget-pg-runner.md).
 
 ## Tenant-scoped scheduling and delivery
 

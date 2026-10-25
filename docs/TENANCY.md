@@ -85,7 +85,7 @@ marker. Social `Platform` is a system-wide catalog, including across users;
 `UserCredential` remains personal. In the 0109 candidate, `LLMProvider` and
 `LLMModel` are also personal, filtered by `owner_user_id`, with a composite
 model/provider owner FK. They are shared only across their user's workspaces,
-not among different users. See [the 0109 contract](#personal-llm-catalog-0109-source-contract-deployment-pending).
+not among different users. See [the 0109 contract](#personal-llm-catalog-0109-source-contract-code-integrated-rollout-pending).
 
 ## Routing
 
@@ -251,7 +251,7 @@ the revision of any running database. Check a target explicitly before upgrade o
 rollback, and use the schema resolved from `settings.DB_SCHEMA`.
 
 Tests default to the shared `DB_TEST_SCHEMA=test_schema` on the configured test
-database. Follow `docs/RULES.md`: run at most one database test owner at a time
+database. Follow `docs/COLLABORATION.md`: run at most one database test owner at a time
 and never create, reset, drop, stamp or migrate a schema without explicit owner
 authorization. A historical test count is not current evidence.
 
@@ -343,4 +343,4 @@ does not grant another user's key use.
 Pre-0109 dev used a global LLM fleet; current source integration is recorded in
 dev `b34353645fe37de53c97c4d022c05af0044dc8ba`. This does not prove that a
 running database has been migrated. Migration definition, source-pinned
-acceptance evidence and rollout boundary: [personal ownership evidence](validation/personal-llm-ownership.md).
+acceptance evidence and rollout boundary: [personal ownership evidence](audit/personal-llm-ownership.md).

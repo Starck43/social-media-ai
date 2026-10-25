@@ -358,7 +358,7 @@ reporting a bug, not a fact.
 on a source but only read as a fallback for the task list, and a listed user
 could be collected only when a separate `USER` source already existed — which is
 what produced two sources for one person
-(`docs/audits/2026-10-18-vk-raw-content.md`). Whose items are analysed is now
+(`docs/audit/2026-10-18-vk-raw-content.md`). Whose items are analysed is now
 the task's `tracked_users`; nothing on a source selects an author
 ([task selection](design/task-selection.md)). The removal migration strips the
 key from stored `params`.
@@ -366,7 +366,7 @@ key from stored `params`.
 `Source.params["monitored_users"]` is **removed**, not deprecated. It was stored
 on a source but only ever read as a fallback for the task list, and a listed user
 could only be collected when a separate `USER` source already existed — which is
-what created two sources for one person (`docs/audits/2026-10-18-vk-raw-content.md`).
+what created two sources for one person (`docs/audit/2026-10-18-vk-raw-content.md`).
 Whose items are analysed is now the task's `tracked_users`; nothing on a source
 selects an author. The removal migration strips the key from stored `params`.
 

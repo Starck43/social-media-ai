@@ -838,7 +838,7 @@ acceptance guidance, not execution evidence or permission to start a runtime
 or use a real DB. No schema, paid probe or deployment is required.
 
 P10-T11 retains its pinned historical audit evidence in
-`docs/audits/2026-10-18-cli-api-chat.md`; its probes must be reconciled against
+`docs/audit/2026-10-18-cli-api-chat.md`; its probes must be reconciled against
 current source. P10-T12 owns chat task-tool fixes; no task-tool/API/billing
 files are changed here.
 

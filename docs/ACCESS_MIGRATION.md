@@ -21,7 +21,7 @@ or when several exist; it never guesses between candidates. No console, API or
 CLI path grants `superuser` afterwards: it cannot be assigned to another
 account, and the owner account cannot be demoted or deleted from the console.
 Owner-only surfaces are the role/permission catalog and the read-only table
-registry; see [ADMIN.md](ADMIN.md#additional-restrictions).
+registry; see [ADMIN.md](ADMIN.md#authentication-and-platform-authority).
 
 ### Bootstrapping the owner without the migration (P9-T06)
 
@@ -169,7 +169,7 @@ The test catalog contains three platform roles, five workspace roles and 31
 resource identities, with no unmapped or retired resource metadata. Ordinary
 pytest startup now validates schema/reference completeness read-only and does
 not create, migrate or seed the shared target. Exceptional future schema changes
-follow the explicit authorization and backup requirements in `docs/RULES.md`.
+follow the explicit authorization and backup requirements in `docs/COLLABORATION.md`.
 
 ## Acceptance before cutover
 

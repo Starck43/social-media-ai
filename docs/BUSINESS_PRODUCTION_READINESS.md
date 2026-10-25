@@ -2,19 +2,18 @@
 
 This document owns the stable engineering and release gates. It does not claim
 that a deployment, database revision or security review has passed. Current
-priority and ownership live in [the work board](phases/README.md); delivered
+priority and ownership live in [ROADMAP](../ROADMAP.md); delivered
 foundations are indexed in [implementation status](IMPLEMENTATION_STATUS.md).
 
 Recommended first release: a managed, invite-only B2B monitoring service with
 explicitly supported collection paths, human-controlled external actions and
 operator-owned provider configuration.
 
-## Gate status
+## Use
 
-All nine areas remain open at dev checkpoint
-`84ee16d284a6355006dd71c7157a0744ab203ddd` (2026-10-12). Merged slices reduce
-risk but do not close a whole gate. Before implementing a gap, verify it in current
-code and define one bounded acceptance condition in the board/PR.
+Open only the gate selected by the task or release. These are stable acceptance
+criteria, not a list of current statuses. Bounded deliveries do not close an
+entire gate; a release candidate must supply the evidence packet below.
 
 ## PRD-01 — Tenant-safe, retry-safe delivery
 

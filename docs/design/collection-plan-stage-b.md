@@ -2,7 +2,7 @@
 
 Status: stage B implementation is complete and committed as `c6bd826`; 49
 no-DB tests passed through the primary OpenCode test-runner at that commit.
-Stage A is `e8e8693`. Parent task: [P5-T14](../phases/p5-ai-boundaries.md).
+Stage A is `e8e8693`. Parent task: [P5-T14](../tasks/p5-ai-boundaries.md).
 Target contract: [collection plan](collection-plan.md).
 
 ## Current state (verify before work)
@@ -46,7 +46,7 @@ New/owned:
 - `tests/test_collection_pages.py`
 - `tests/test_telegram_collection_adapter.py`
 - `docs/design/collection-plan-stage-b.md` (this file; update evidence only)
-- `docs/phases/p5-ai-boundaries.md` (Stage B evidence only)
+- `docs/tasks/p5-ai-boundaries.md` (Stage B evidence only)
 
 Reuse without changing behaviour:
 
@@ -294,9 +294,9 @@ mostly no-DB. Do not run a migration.
 
 1. `git rev-parse HEAD`, `git status --short`, `pgrep -fl pytest`; verify no
    conflicting active lane.
-2. Read `AGENTS.md`, `docs/RULES.md`, `docs/COLLABORATION.md`,
+2. Read `AGENTS.md`, `docs/COLLABORATION.md`, `docs/COLLABORATION.md`,
    `docs/design/collection-plan.md`, this file, and P5-T14 in
-   `docs/phases/p5-ai-boundaries.md`.
+   `docs/tasks/p5-ai-boundaries.md`.
 3. Inspect `app/services/social/vk_client.py` search/cities methods and
    `app/services/collection/intent.py`; do not reread unrelated docs.
 4. Claim stage B in the phase file/ROADMAP ownership if needed; keep P5-T14

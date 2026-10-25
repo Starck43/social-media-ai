@@ -173,7 +173,7 @@ The separate Settings Platforms implementation was verified through the primary
 OpenCode route: 94 isolated settings checks, 15 PostgreSQL/ASGI acceptance cases
 and 32 offline browser cases passed. The browser checks preserve the full
 200-ID selection and DELETE URL, wrapping and scrolling in both themes.
-See the [phase acceptance record](phases/p8-first-value-ui.md) for source pins
+See the [phase acceptance record](tasks/p8-first-value-ui.md) for source pins
 and limitations. These results do not validate destructive SQLAdmin/FK paths.
 
 Before changing deletion policy, the sequential owner-local route must verify:

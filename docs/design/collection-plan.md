@@ -1,7 +1,7 @@
 # Collection plan: task-owned typed collection
 
 Status: design accepted by the owner on 2026-10-21; implementation is tracked
-by [P5-T14](../phases/p5-ai-boundaries.md). Stage A delivered the payload
+by [P5-T14](../tasks/p5-ai-boundaries.md). Stage A delivered the payload
 parser, schema and migration 0108. Stage B delivered the `Page[T]` contract,
 planner, VK/Telegram adapters and no-DB tests, committed as `c6bd826`. Stage C
 delivered collection-time selection/staging, lane-run/`seen` evidence and

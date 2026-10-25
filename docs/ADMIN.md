@@ -45,14 +45,14 @@ actions cannot rely on CONFIGURE alone: personal owner/active provider/model and
 fresh dispatch checks still apply. No foreign-catalog probe is authorized by a
 platform override. Owner-local ASGI and PostgreSQL evidence is recorded
 at its original source SHAs in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md)
-and the [ownership evidence ledger](validation/personal-llm-ownership.md). It was
+and the [ownership evidence ledger](audit/personal-llm-ownership.md). It was
 not rerun on final dev `b343536`; full SQLAdmin acceptance is not inferred.
 
 Code is integrated in dev `b34353645fe37de53c97c4d022c05af0044dc8ba` with the
 stacked UI router. This integration did not upgrade a working/deployment
 schema; prior isolated migration/backfill acceptance remains in the evidence
 ledger. No deployment is claimed. See
-[ownership evidence and rollout boundary](validation/personal-llm-ownership.md).
+[ownership evidence and rollout boundary](audit/personal-llm-ownership.md).
 
 ### Who sees which rows, and who writes the owner
 

@@ -1,6 +1,6 @@
 # Assistant shell implementation notes
 
-Scope: original shell package A in [the canonical board](README.md), followed by
+Scope: original shell package A in [the active notebook](../../ROADMAP.md), followed by
 merged B/C/D boundaries below. This is guidance, not another queue or whole-gate
 acceptance. Mixed home results/upcoming schedules remain open. Owner-local bounded
 home and A/B acceptance is recorded separately in the delivered index.

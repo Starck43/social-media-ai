@@ -7,7 +7,7 @@ ownership blocked collection-time selection. Keep this document as historical
 guidance; re-open as a new task only if measured volume/truncation demand
 returns.
 
-Design for P5-T05 ([phase file](../phases/p5-ai-boundaries.md)). Problem,
+Design for P5-T05 ([phase file](../tasks/p5-ai-boundaries.md)). Problem,
 verified evidence and acceptance live in the phase task; this doc is the
 implementation guidance. It follows PRD-07 invariants: typed output cannot gain
 authority, partial coverage is explicit, failed outputs stay persisted safely.

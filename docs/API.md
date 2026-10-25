@@ -184,7 +184,7 @@ including zero counts. It uses the same bounded, generic HTTP 500 failure.
 Do not use these legacy probes as the production readiness contract: root
 `/readyz` and `/health` retain generic 200/503 responses with a two-second DB
 probe; `/livez` never queries the DB. `app/core/health.py` is unchanged.
-See [isolated verification and acceptance handoff](validation/legacy-api-db-probes.md)
+See [isolated verification and acceptance handoff](audit/legacy-api-db-probes.md)
 for exact source revisions, commands and the remaining real-environment checks.
 
 ---
@@ -201,7 +201,7 @@ identity dependency, operator routes keep their existing model-action or
 platform-admin guards, and manager authorization remains unchanged.
 
 The runtime schema fix is already present in `eb6cad6`; the bounded
-[HTTP/OpenAPI verification](validation/http-user-response-privacy.md) adds
+[HTTP/OpenAPI verification](audit/http-user-response-privacy.md) adds
 isolated router tests with explicit identity/storage doubles. Owner integration
 acceptance at PR source `987796aa` additionally exercised the full application
 OpenAPI and real ASGI/JWT/middleware/ORM list, me and profile routes: 2 passed,
@@ -690,7 +690,7 @@ No home-request KPI aggregation, new LLM call or migration.
 
 Attention is implemented in the unified bell, not a second home block (see
 [NOTIFICATIONS](NOTIFICATIONS.md#current-web-bell-and-display-policy)). Mixed
-analysis/digest feed and truly upcoming schedules remain deferred in [the phase tasks](phases/p8-first-value-ui.md).
+analysis/digest feed and truly upcoming schedules remain deferred in [the phase tasks](tasks/p8-first-value-ui.md).
 The current task preview is recent-by-creation, not a nearest-run claim. This
 source change is not evidence of deployment or completed runtime validation.
 
@@ -985,7 +985,7 @@ image, video and audio resolution use the same gate, and the analyzer's failover
 queue never offers another owner's model;
 a chosen foreign/ineligible FK is rejected rather than resolved by name.
 
-See [evidence and outstanding real acceptance](validation/personal-llm-ownership.md).
+See [evidence and outstanding real acceptance](audit/personal-llm-ownership.md).
 
 ### Create Provider
 

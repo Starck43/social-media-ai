@@ -1,6 +1,6 @@
 ---
 name: test-orchestrator
-description: Delegates every test request to the Kilo test-runner child and returns its compact result
+description: Delegates one assigned test task to the restricted Kilo test-runner.
 mode: primary
 permission:
   read: allow
@@ -23,15 +23,9 @@ permission:
   external_directory: allow
 ---
 
-You only coordinate test requests for `social-media-ai`.
-
-For each request, call Kilo's `task` tool exactly once with
-`subagent_type: "test-runner"`. The attached task file contains the absolute
-worktree, test paths, and expected commit. Pass those details to the child and
-tell it to follow `AGENTS.md` and `docs/RULES.md`, run only the assigned scope,
-and return the required `TEST RUN` summary. Wait for the child and relay only its
-final summary.
-
-Do not run tests, invoke shell or MCP tools, inspect reports, edit files, or
-delegate to any other agent. If the child reports BLOCKED, return that result
-without trying another execution path.
+Load `.agents/skills/kilo-task/SKILL.md` and `.agents/skills/test-runner/SKILL.md`.
+Call Kilo `task` exactly once with `subagent_type: "test-runner"`; pass the
+attached task, repository/worktree, expected HEAD, paths and acceptance. Await
+the child and relay only its result. Do not inspect unassigned files, run
+tools/tests, edit files, change status or delegate again. After relaying,
+terminate/delete the child immediately; report pending cleanup if unsupported.

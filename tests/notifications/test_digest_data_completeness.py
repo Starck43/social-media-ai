@@ -42,7 +42,7 @@ class Query:
         async def resolve():
             if self.failure:
                 raise self.failure
-            return self.rows[:self.limit_value]
+            return self.rows[: self.limit_value]
 
         return resolve().__await__()
 
@@ -82,6 +82,7 @@ class DigestCompletenessTests(unittest.IsolatedAsyncioTestCase):
         )
         self.splitter = load("_digest_coverage_splitter", "app/services/digest/html_parts.py")
         self.aggregator = SimpleNamespace(
+            scoped_rows=AsyncMock(return_value=[]),
             get_sentiment_trends=AsyncMock(return_value=[]),
             get_top_topics=AsyncMock(return_value=[]),
             get_content_mix=AsyncMock(return_value={"total": 0}),
@@ -102,7 +103,9 @@ class DigestCompletenessTests(unittest.IsolatedAsyncioTestCase):
                     LLMClientFactory=SimpleNamespace(create=Mock(return_value=self.client))
                 ),
                 "app.services.ai.reporting": SimpleNamespace(
-                    ReportAggregator=Mock(return_value=self.aggregator), normalize_digest_axis=lambda value: value
+                    ReportAggregator=Mock(return_value=self.aggregator),
+                    ReportScope=lambda **kwargs: SimpleNamespace(**kwargs),
+                    normalize_digest_axis=lambda value: value,
                 ),
                 "app.services.ai.output_contracts": contracts,
                 "app.services.ai.prompt_sanitizer": sanitizer,

@@ -26,6 +26,14 @@ does not require one new SQL table per concept or another workflow engine.
 Future local gateways expose explicitly granted resources, not arbitrary shell
 or network access. No non-social connector is implemented in this package.
 
+Implemented interface names: `parse_task_plan`/`apply_task_plan` normalize the
+version-1 `payload.task_plan`; existing collection intent and jobs execute it.
+`POST /api/v1/tasks/plan` previews; `POST /api/v1/tasks/run/plan` admits a keyed
+one-off; `GET /api/v1/tasks/{id}/result` reads bounded permitted outcomes.
+CLI exposes `task plan`, `task result` and `--task-plan` for task writes; chat
+adds `search_plan`, `task_plan`, `task_execute_once` and `task_result`.
+Implementation status and exact checks remain in the task card.
+
 ## User input and surfaces
 
 Six input groups: goal, data, processing, result, timing and limits. Sources,
@@ -78,8 +86,11 @@ No additional platform/category implementation or browser collection.
 Use existing L1/L2 paths according to actual method permissions. "As me" pins
 personal access. Keep authorization-code/PKCE; login alone does not prove social
 API access. Do not request unrelated audio/market scopes for post research.
-Bound queries, discovery, pages, total items, work and spend; rate-limit all
-lanes together. Deduplicate native post identities and preserve provenance.
+New plans cap five queries in each family and 500 explicit source IDs.
+`collection.limit` caps inspected parent posts across the run; comments and
+candidates retain their separate configured caps. An empty provider response
+reports a known zero; an unknown count stops further collection conservatively.
+Bound discovery, pages, work and spend; rate-limit all lanes together. Deduplicate native post identities and preserve provenance.
 Distinguish empty, partial, limit-reached, authorization and unsupported results.
 Return readable walls even when search is unavailable.
 
@@ -93,8 +104,8 @@ analysed merely because its URL is present.
 Use additive contracts/migrations. Retain working routes, commands and old task
 semantics through explicit compatibility. Cover all five surfaces with the same
 supported social fields and read/create/edit/preview/run/state operations.
-P10-T07 owns consistent digest data windows/scopes; P3-T01 retains its assigned
-delivery-permission acceptance. Do not duplicate their claims.
+P10-T07 and P3-T01 have separately accepted digest scope/permission work in
+the current base. Preserve those contracts and evidence without reopening them.
 
 Acceptance: cross-surface round trips, explicit scope, fixed/rolling windows,
 once/recurring triggers, fresh rights/payer checks, duplicate launch protection,
@@ -102,3 +113,36 @@ honest failures/coverage, result links and digest scope. Record exact checks and
 source SHA. Review/general refactoring are later; no production activation.
 
 Additional VK categories: P8-T32. File/network/business connectors: P8-T31.
+
+## Version-1 example
+
+```json
+{
+  "goal": "Find renovation requests and exclude advertisements",
+  "platforms": ["vk"],
+  "source_scope": "discovery",
+  "source_ids": [],
+  "scenario_id": 1,
+  "window": {"type": "rolling", "days": 1},
+  "collection": {
+    "content_types": ["posts"],
+    "queries": ["нужен ремонт квартиры"],
+    "limit": 100
+  },
+  "trigger": {"type": "once"}
+}
+```
+
+The scenario ID is an existing active methodology in the current workspace,
+not a deployment-wide constant. Replace it before execution. A keyed run body
+is `{ "job_type": "analyze", "request_id": "<stable-request-key>",
+"task_plan": <plan> }`. Keys are scoped to actor/workspace and arguments;
+a retry returns the original admission even after job pruning. Deleting the
+task explicitly removes that receipt. Queued is not completed; inspect results.
+
+An omitted data window means one calendar day including today (UTC). Fixed
+windows carry ISO dates. Recurring triggers use a validated IANA timezone,
+falling back to the workspace timezone when absent. A new paid task is first
+saved inactive; existing personal-payer consent must succeed before activation.
+The explicit launch fixes its goal in the admitted analysis prompt even when
+the reusable scenario template omits the payload placeholder.

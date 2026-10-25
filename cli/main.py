@@ -103,6 +103,32 @@ async def _set_task_sources(task_id: int, source_ids: list[int], tenant_id: int)
 task_app = typer.Typer(help="Manage agent tasks")
 
 
+@task_app.command("plan")
+def task_plan_cmd(
+    plan_json: str = typer.Argument(..., help="Canonical social task plan as JSON"),
+    job_type: str = typer.Option("analyze", "--job-type", help="collect or analyze"),
+):
+    """Validate and print a social task plan without database or API access."""
+    import json as _json
+
+    from rich import print as rprint
+
+    from app.services.task_plans import apply_task_plan
+
+    try:
+        if len(plan_json) > 65_536:
+            raise ValueError("Task plan JSON exceeds 64 KiB")
+        raw = _json.loads(plan_json)
+        if not isinstance(raw, dict):
+            raise ValueError("Task plan must be a JSON object")
+        payload = apply_task_plan({}, raw, job_type=job_type)
+    except (TypeError, ValueError) as error:
+        rprint(f"[red]Invalid task plan: {error}[/red]")
+        raise typer.Exit(1) from None
+    rprint(_json.dumps(payload["task_plan"], ensure_ascii=False, indent=2))
+    rprint("[dim]Preview only. Access, payer eligibility and platform coverage are checked at execution.[/dim]")
+
+
 @task_app.command("list")
 def task_list():
     """List all tasks."""

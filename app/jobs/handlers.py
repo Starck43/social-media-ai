@@ -1273,6 +1273,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                 # the local context below is only for the run summary.
                 collection_context=collection_context if has_task_context else None,
                 seen_items=seen_items,
+                **({"report_empty": True} if task_budget_enabled else {}),
             )
             parent_count = (result or {}).get("parent_count")
             if task_budget_enabled and type(parent_count) is int and parent_count >= 0:

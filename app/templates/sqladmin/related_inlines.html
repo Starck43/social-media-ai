@@ -8,16 +8,24 @@
     <p class="small">Сохраните изменения формы перед переходом: пагинация обновляет страницу.</p>
     {% endif %}
     {% for section in inline_sections %}
-    <div class="card mb-3 admin-related-inline" id="{{ section.id }}">
-      <div class="card-header">
+    <details class="card mb-3 admin-related-inline" id="{{ section.id }}">
+      <summary class="card-header gap-2">
         <h4 class="card-title">{{ section.title }} <small>({{ section.relation_label }})</small></h4>
-      </div>
+        <svg class="inline-toggle-icon ms-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="m9 6 6 6-6 6" /></svg>
+      </summary>
       <div class="table-responsive">
         <table class="table card-table table-vcenter">
           <thead><tr>{% for label in section.columns %}<th scope="col">{{ label }}</th>{% endfor %}</tr></thead>
           <tbody>
             {% for row in section.rows %}
-            <tr>{% for value in row %}<td class="text-break{% if section.column_names[loop.index0] == 'id' %} text-nowrap{% endif %}">{{ value }}</td>{% endfor %}</tr>
+            {% set row_url = section.row_links[loop.index0] %}
+            <tr>
+              {% for value in row %}
+              <td class="text-break{% if section.column_names[loop.index0] == 'id' %} text-nowrap{% endif %}">
+                {% if row_url and section.column_names[loop.index0] in section.link_columns and value != '—' %}<a href="{{ row_url }}">{{ value }}</a>{% else %}{{ value }}{% endif %}
+              </td>
+              {% endfor %}
+            </tr>
             {% else %}
             <tr><td colspan="{{ section.columns|length }}" class="text-muted">Нет доступных записей</td></tr>
             {% endfor %}
@@ -25,7 +33,7 @@
         </table>
       </div>
       {% include 'sqladmin/inline_pagination.html' %}
-    </div>
+    </details>
     {% endfor %}
   </div>
 </section>

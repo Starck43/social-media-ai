@@ -89,13 +89,25 @@ from the name (`UnoRouter.AI` → `unorouter`, via `app/core/provider_uid.py`) �
 the browser previews the same slug from `app/static/js/admin-uid.js`.
 
 
-## Read-only related FK lists (P8-T30 / P8-T31)
+## Read-only related FK lists (P8-T30 / P8-T31 / P8-T32)
 
 Persisted details and edit pages append **Связанные записи** below the main
 content, including custom Source, analytics and LLM/scenario templates. Creates,
 list pages and unsaved objects do not render this footer. This is a read-only
-projection, not a new CRUD route: no add/edit/delete buttons, detail links,
-exports or foreign-record popup controls are introduced by these lists.
+projection, not a new CRUD route: no add/edit/delete buttons, inline mutation,
+exports or foreign-record popup controls are introduced by these lists. Each
+section is a native `details` disclosure, collapsed by default; click its heading
+or decorative SVG chevron (or use the keyboard) to expand/collapse. Open state is
+not persisted; page navigation reloads sections collapsed. Collapse is visual,
+not lazy loading: the existing scoped count/page queries remain unchanged.
+
+ID and name/title/user-label cells link to the existing edit route when
+SQLAdmin's per-row `check_can_edit` allows it; otherwise to details when
+`check_can_view_details` allows it. If neither allows navigation, cells remain
+plain text. Both checks use a detached shell of the already scoped scalar row,
+never a relationship read. Destination routes recheck authority themselves;
+links do not grant access or perform writes. Pagination stays aligned right;
+the visible-row count remains on the left.
 
 - Discover inbound FK constraints among **registered admin model views** with a
   registered access resource. Compound FKs stay conjunctive; multiple independent
@@ -149,7 +161,9 @@ class SourceAdmin(BaseAdmin, model=Source):
 ```
 
 `inline_columns = None` reuses the safe scalar subset of `column_list`;
-`[]` omits the inline. `column_labels` supplies Russian column/relation headings,
+`[]` omits the inline. `inline_link_columns` defaults to ID, name, title, username and label cells;
+it only selects which displayed cells may receive a permission-gated link.
+`column_labels` supplies Russian column/relation headings,
 using shared BaseAdmin labels for common identifiers. Target-level exclusion
 skips even count/page queries. Page-size options are bounded to 1–200.
 

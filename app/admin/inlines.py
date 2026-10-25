@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Any
 
 import anyio
+from sqladmin.helpers import get_object_identifier
 from sqladmin.pagination import Pagination
 from sqlalchemy import JSON, LargeBinary, and_, false, func, inspect, select, true
 
@@ -205,6 +206,22 @@ def inline_pagination(view: Any, request: Any, section_id: str, count: int):
     return pagination, sizes
 
 
+async def row_link(view: Any, row: dict, request: Any) -> str | None:
+    """Navigation only: reuse SQLAdmin's row checks and composite-PK encoding.
+
+    The detached shell contains only the already scoped scalar projection; it
+    cannot lazy-load relationships. Destination routes recheck their own rights.
+    """
+    obj = view.model(**row)
+    if await view.check_can_edit(request, obj):
+        action = "edit"
+    elif await view.check_can_view_details(request, obj):
+        action = "details"
+    else:
+        return None
+    return str(request.url_for(f"admin:{action}", identity=view.identity, pk=get_object_identifier(obj)))
+
+
 async def related_inlines(view: Any, obj: Any, request: Any) -> list[dict]:
     """Called only on persisted details/edit pages, with no new HTTP endpoint."""
     actor = getattr(request.state, "admin_user", None)
@@ -261,6 +278,8 @@ async def related_inlines(view: Any, obj: Any, request: Any) -> list[dict]:
                     "column_names": columns,
                     "columns": [target._column_labels.get(name, name) for name in columns],
                     "rows": pagination.rows,
+                    "row_links": [await row_link(target, row, request) for row in rows],
+                    "link_columns": getattr(target, "inline_link_columns", ("id", "name")),
                     "pagination": pagination,
                     "sizes": sizes,
                 }

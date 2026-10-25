@@ -1,11 +1,11 @@
 {# SQLAdmin's Pagination supplies the window/URLs; markup uses its native classes. #}
 {% set pagination = section.pagination %}
-<div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
-  <p class="m-0 text-muted small" aria-live="polite">
+<div class="card-footer d-flex flex-wrap justify-content-end align-items-center gap-2">
+  <p class="m-0 me-auto text-muted small" aria-live="polite">
     {% if pagination.count %}Записи {{ (pagination.page - 1) * pagination.page_size + 1 }}–{{ [pagination.page * pagination.page_size, pagination.count]|min }} из {{ pagination.count }}{% else %}Доступных записей: 0{% endif %}
   </p>
-  <nav aria-label="Страницы: {{ section.title }} — {{ section.relation_label }}">
-    <ul class="pagination pagination-sm m-0 flex-wrap">
+  <nav class="ms-auto" aria-label="Страницы: {{ section.title }} — {{ section.relation_label }}">
+    <ul class="pagination pagination-sm m-0 flex-wrap justify-content-end">
       <li class="page-item{% if not pagination.has_previous %} disabled{% endif %}">
         {% if pagination.has_previous %}<a class="page-link" href="{{ pagination.previous_page.url }}" aria-label="Предыдущая страница">‹ Назад</a>{% else %}<span class="page-link" aria-disabled="true">‹ Назад</span>{% endif %}
       </li>

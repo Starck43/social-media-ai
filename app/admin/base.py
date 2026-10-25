@@ -61,6 +61,7 @@ class BaseAdmin(ModelView):
     # Target-view defaults for every reverse-FK inline. Columns remain subject
     # to the shared scalar/list/detail safety rules, never an access override.
     inline_columns: ClassVar[list[str] | None] = None
+    inline_link_columns = ("id", "name", "title", "username", "label")
     inline_page_size = 25
     inline_page_size_options = (10, 25, 50, 100)
     inline_exclude = False

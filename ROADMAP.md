@@ -30,7 +30,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P7](docs/tasks/p7-operations.md)
 
-- [P7-T01](docs/tasks/p7-t01.md) loopback-only database binding before production release — **TODO** · product-owner · —
+- [P7-T01](docs/tasks/p7-t01.md) loopback-only database binding before production release — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · —
 
 ## [P8](docs/tasks/p8-first-value-ui.md)

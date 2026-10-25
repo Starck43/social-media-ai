@@ -18,7 +18,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P5](docs/tasks/p5-ai-boundaries.md)
 
-- [P5-T01](docs/tasks/p5-t01.md) One typed-output or hostile-input gap — **TODO** · unassigned · —
+- [P5-T01](docs/tasks/p5-t01.md) One typed-output or hostile-input gap — **IN_PROGRESS** · remote Notion agent (fix/p5-t01-typed-output-boundary) · —
 - [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **BLOCKED** · codex-analysis-receipts · —
 
 ## [P6](docs/tasks/p6-lifecycle-privacy.md)

@@ -855,3 +855,30 @@ ul#model_type li label {
         width: 100%;
     }
 }
+
+/* Read-only related tables: local scrolling, native SQLAdmin controls. */
+.admin-related-inline { scroll-margin-top: 1rem; }
+.admin-related-inline .table-responsive {
+    max-height: 28rem;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+.admin-related-inline thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--tblr-bg-surface, var(--tblr-body-bg, #fff));
+}
+.admin-related-inline td { max-width: 24rem; overflow-wrap: anywhere; }
+.admin-related-inline .page-link { white-space: nowrap; color: var(--tblr-body-color); }
+
+.admin-related-inline .page-item.active .page-link {
+    color: var(--tblr-btn-fg, #fff);
+    background-color: var(--tblr-primary-darken, var(--tblr-primary));
+    border-color: var(--tblr-primary-darken, var(--tblr-primary));
+}
+.admin-related-inline .card-footer > p {
+    color: var(--tblr-body-color) !important;
+    flex: 0 1 auto;
+}

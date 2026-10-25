@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from app.api.v1.endpoints.tasks import preview_task_plan, run_task_plan
 from app.jobs.source_activity import SourceJobBusy
+from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
 from app.schemas.task import TaskPlanPreviewRequest, TaskPlanRunRequest
 
 
@@ -79,6 +80,7 @@ async def test_one_off_plan_forwards_request_id_and_returns_launch_receipt(monke
         (ValueError("invalid plan"), 400),
         (PermissionError("not permitted"), 403),
         (SourceJobBusy(SimpleNamespace(id=4)), 409),
+        (PersonalBillingUnavailable("account not configured"), 409),
     ],
 )
 async def test_one_off_plan_maps_launch_rejections_to_http(failure, status_code, monkeypatch) -> None:

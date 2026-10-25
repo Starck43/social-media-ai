@@ -42,7 +42,6 @@ _operator_grant: ContextVar[bool] = ContextVar("operator_permission_grant", defa
 _current_user: ContextVar[Optional["User"]] = ContextVar("current_user", default=None)
 # Ownership configures workspace resources, never the global fleet or queue.
 WORKSPACE_OWNER_MODELS = frozenset({"source", "agenttask", "agentscenario"})
-_workspace_owner: ContextVar[Optional[int]] = ContextVar("workspace_owner", default=None)
 _service_grant: ContextVar[Optional[tuple[int, str, ActionType]]] = ContextVar("service_grant", default=None)
 # A non-owner member's workspace rights: (tenant_id, user_id, {(model, action)}).
 _member_grants: ContextVar[Optional[tuple[int, int, frozenset]]] = ContextVar("member_grants", default=None)
@@ -254,12 +253,13 @@ def permission_scope(
     """
     tenant_id = current_tenant_id()
     member = None
-    if member_grants is None and is_owner:
+    if is_owner:
+        # An owner's preset is fixed: a caller-supplied collection must never be
+        # able to strip the owner of the workspace rights the membership implies.
         member_grants = workspace_grants("owner")
     if member_grants is not None and tenant_id is not None and user is not None:
         member = (tenant_id, getattr(user, "id", None), frozenset(member_grants))
     token = set_current_user(user)
-    owner_token = _workspace_owner.set(tenant_id if is_owner else None)
     member_token = _member_grants.set(member)
     service_token = _service_grant.set(None)
     operator_token = _operator_grant.set(False)
@@ -267,7 +267,6 @@ def permission_scope(
         yield user
     finally:
         _current_user.reset(token)
-        _workspace_owner.reset(owner_token)
         _member_grants.reset(member_token)
         _service_grant.reset(service_token)
         _operator_grant.reset(operator_token)

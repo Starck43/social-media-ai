@@ -75,7 +75,12 @@ class ApiScopeMiddleware:
             await self._unauthorized(scope, receive, send)
             return
 
-        if path.rstrip("/") in {"/api/v1/users/me", "/api/v1/auth/change-password"}:
+        if path.rstrip("/") == "/api/v1/auth/change-password":
+            # Account-level, not workspace-level: a user whose workspace was
+            # suspended must still be able to rotate their own password. Profile
+            # reads/writes (`/api/v1/users/me`) are not account-level here: they
+            # resolve the caller's active membership like every other API route,
+            # so a deactivated workspace cannot keep API access alive.
             request.state.api_user = user
             with tenant_scope(), permission_scope(user):
                 await self.app(scope, receive, send)

@@ -44,6 +44,12 @@ PUBLIC_API_PATHS = frozenset(
 TENANT_ID_HEADER = "x-tenant-id"
 TENANT_SLUG_HEADER = "x-tenant-slug"
 
+#: Routes that belong to the account, not to a workspace: they read and write
+#: only the caller's own row, so they stay reachable without a membership and
+#: after a workspace is suspended. Anything that reads workspace data must go
+#: through `_resolve_tenant`.
+_ACCOUNT_PATHS = frozenset({"/api/v1/users/me", "/api/v1/auth/change-password"})
+
 
 def _is_public(path: str) -> bool:
     return path.rstrip("/") in PUBLIC_API_PATHS
@@ -75,12 +81,13 @@ class ApiScopeMiddleware:
             await self._unauthorized(scope, receive, send)
             return
 
-        if path.rstrip("/") == "/api/v1/auth/change-password":
-            # Account-level, not workspace-level: a user whose workspace was
-            # suspended must still be able to rotate their own password. Profile
-            # reads/writes (`/api/v1/users/me`) are not account-level here: they
-            # resolve the caller's active membership like every other API route,
-            # so a deactivated workspace cannot keep API access alive.
+        if path.rstrip("/") in _ACCOUNT_PATHS:
+            # Account-level, not workspace-level (`docs/API.md`, Authorization):
+            # the caller's own profile and password follow the account, so an
+            # API-only registration without a membership can still use them, and
+            # a suspended workspace cannot take away self-service that never
+            # reads workspace data. Workspace denial is enforced where workspace
+            # data is read, not here — see `_resolve_tenant`.
             request.state.api_user = user
             with tenant_scope(), permission_scope(user):
                 await self.app(scope, receive, send)

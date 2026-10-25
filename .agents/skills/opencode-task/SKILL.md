@@ -5,8 +5,9 @@ description: "Execute a bounded OpenCode task or coordinate its configured nativ
 
 # OpenCode executor
 
-Read AGENTS and the attached task card; load only needed COLLABORATION sections
-and linked contracts. Record documents consulted and checks in the task evidence.
+Resolve the task card from its ID; read AGENTS and that card. Load only needed
+COLLABORATION sections and linked contracts. Record documents consulted and
+checks in the task evidence.
 Implement only owned files. For tests load test-runner: build owns target preflight
 and cleanup, then calls configured `tester` via V2 `subagent`, not V1 `task` or
 `--agent tester`. Keep the River model/subagent mode in the user's opencode.jsonc.

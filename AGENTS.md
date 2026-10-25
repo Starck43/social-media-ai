@@ -26,15 +26,20 @@ Record documents actually consulted in the task card, with sections and purpose.
 - ROADMAP owns open status/owner/dialogue links; task cards own scope, acceptance,
   documents read and checks. Claim before edits; use a task-ID branch/worktree,
   never integration `dev`. Preserve foreign files, claims and evidence.
-- Executor reports READY; auditor reviews the exact SHA. Accepted work is DONE:
+- Start requests need only a task ID and action (for example, `P8-T12 audit` or
+  `P8-T12 implement`). Agents resolve the card, repository/PR and current source
+  revision from project context; ask only for information they cannot resolve.
+- Executor reports READY; auditor identifies and reviews the proposed exact SHA.
+  The owner need not find or provide a SHA. Accepted work is DONE:
   append result/evidence to its parent phase and remove the queue row. Record
   pending integration separately. BLOCKED means the task's solution/required
   acceptance cannot proceed; session/branch housekeeping never causes BLOCKED.
 - Stop/delete owned child sessions after dialogue; report unsupported/already
   unavailable cleanup separately. Only Codex invokes third-party agents;
   unavailable routes fall back to native children. Others use native children only.
-- Remote tasks require repo/PR links. PR body holds solution/evidence; all remote
-  coordination uses PR comments. One custodian updates shared registry state.
+- Remote work publishes direct repo/PR links in its handoff. The agent resolves
+  or creates them; PR body holds solution/evidence, and coordination uses PR
+  comments. One custodian updates shared registry state.
 - Resolve DB target/schema before access. Test-schema preparation/migrations are
   authorized under [database rules](docs/COLLABORATION.md#database); shared DB work
   is sequential and all synthetic records are cleaned afterward. No public test
@@ -53,7 +58,12 @@ Record documents actually consulted in the task card, with sections and purpose.
 
 ## Review and close
 
-`/review` follows [audit](.agents/skills/audit/SKILL.md); `$audit` selects that role.
+`/review P8-T12` follows [audit](.agents/skills/audit/SKILL.md); `$audit P8-T12`
+selects the same role. Resolve the candidate revision from the task branch/PR;
+ask for a link only if the task does not identify one unambiguously.
 Report findings first. After acceptance: `✅ <ID>: <result>; removed from ROADMAP;
 archive: <link>; checks: <actual results>`. Mention pending integration/cleanup
 separately; neither changes an accepted task back to BLOCKED.
+After audit/review/refactoring, propose scoped commits and safe cleanup; execute
+them when already authorized. CLI adapters in `.codex/`, `.opencode/`, `.kilo/`
+are local ignored configuration; shared behavior belongs in `.agents/skills/`.

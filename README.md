@@ -22,6 +22,7 @@ Do not preload all overview or subsystem files.
 
 | Need | Read only when relevant |
 | --- | --- |
+| Short prompts: remote work, local DB help and PR audit | [PROMPT_EXAMPLES](docs/PROMPT_EXAMPLES.md) |
 | Find code and runtime responsibilities | [PROJECT_MAP](docs/PROJECT_MAP.md) |
 | Product scope / proposed extension contracts | [PRODUCT_PLAN](docs/PRODUCT_PLAN.md) |
 | Claim, evidence, acceptance, delegation, DB or cleanup procedure | [COLLABORATION](docs/COLLABORATION.md), selected section |

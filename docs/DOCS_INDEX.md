@@ -7,6 +7,7 @@ this index only to find a relevant contract. Record actual reads in that card.
 
 | Purpose | Document / section |
 | --- | --- |
+| Choose a skill / copy a short task prompt | [PROMPT_EXAMPLES](PROMPT_EXAMPLES.md) |
 | Product directions → phase → task | [PRODUCT_PLAN](PRODUCT_PLAN.md) → [ROADMAP](../ROADMAP.md) → `tasks/<id>.md` |
 | Locate implementation | [PROJECT_MAP](PROJECT_MAP.md) |
 | Claim/evidence/acceptance or delegation | [COLLABORATION](COLLABORATION.md), corresponding heading |

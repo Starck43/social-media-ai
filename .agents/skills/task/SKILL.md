@@ -5,7 +5,9 @@ description: "Execute one assigned project task, using its card and only linked 
 
 # Task executor
 
-Declare this skill. Read AGENTS, the selected ROADMAP row and its task card.
+Declare this skill. A task ID is sufficient. Resolve its ROADMAP row, card,
+repository and current task branch from workspace context; ask only for a
+missing detail that cannot be resolved. Read AGENTS, the row and card.
 For claims/evidence use only COLLABORATION sections Tasks/Evidence. Open the
 subsystem/design sections the task needs; record actual paths/sections and why
 they mattered in the card. Implement only owned paths on the task branch.

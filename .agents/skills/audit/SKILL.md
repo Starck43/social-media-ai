@@ -5,11 +5,16 @@ description: "Audit a task, commit or PR; review, authorized refactoring and doc
 
 # Auditor
 
-Declare this skill. Read AGENTS, the selected task card (or parent archive for
-closed work), exact diff and its recorded documentation/check links. Consult
+Declare this skill. A task ID is sufficient: resolve its card and candidate
+branch/PR from ROADMAP, the card and repository context; do not ask the owner
+for a SHA they have not supplied. If multiple candidates remain, ask for the
+PR/link once. Read AGENTS, the card, exact diff and recorded documentation/check
+links. Consult
 COLLABORATION Acceptance/Evidence only when needed; do not scan every overview.
 For remote work, start with the PR body's solution/evidence. Record additional
 documents actually consulted. Prioritize correctness, edge cases and security.
+Resolve and record the current PR head; evidence must match the reviewed revision.
+If the PR changes during review, assess the new diff before accepting it.
 
 Reuse exact-SHA executor evidence. Tests require your own code edit AND a
 non-obvious/security-critical outcome; full suites need explicit owner request.
@@ -17,3 +22,7 @@ Docs-only changes need no pytest. Accept successful work into its parent phase
 and remove the queue row; integration/housekeeping are separate. Findings that
 prevent acceptance return the task with concrete checks and a recommended fix.
 In this role, do not start unrelated feature implementation.
+
+Close with a brief result/checks report and propose scoped commits and cleanup
+of unused owned worktrees/merged branches. If already authorized, finish those
+steps before reporting; preserve foreign work and unmerged commits.

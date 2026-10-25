@@ -69,6 +69,11 @@ and evidence; all instructions, feedback and questions go through PR comments.
 One custodian applies those status comments to fresh ROADMAP/task cards; remote
 branches do not publish competing registry copies.
 
+For a task-ID assignment, the remote agent resolves its repository from the
+checkout/card and creates or locates the PR. Ask the owner for a repository or PR
+link only when project context cannot resolve it; never require the owner to find
+the source SHA. Reviewer/executor records the resolved SHA as evidence.
+
 ## Tests
 
 Read [test-runner](../.agents/skills/test-runner/SKILL.md) and

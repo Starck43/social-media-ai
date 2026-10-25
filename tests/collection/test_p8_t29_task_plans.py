@@ -1,6 +1,7 @@
 """Shared social task-plan validation; pure tests with no database/provider calls."""
 
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -159,3 +160,59 @@ def test_per_run_plan_override_normalizes_window_but_cannot_change_scope():
     assert overridden["cli_dates"] == {"start_date": "2026-10-20", "end_date": "2026-10-25"}
     with pytest.raises(TaskPlanError, match="task_plan_override_changes_persisted_scope"):
         apply_task_plan_override(persisted, _plan(source_scope="all"), job_type="collect")
+
+
+def test_remaining_plan_collection_context_narrows_parent_post_budget_only():
+    from app.jobs.handlers import _consume_task_parent_budget, _remaining_collection_context
+    from app.services.collection.context import build_collection_context
+
+    context = build_collection_context({"collection": {"limit": 80}}, platform="vk")
+    narrowed = _remaining_collection_context(context, 17)
+
+    assert context.intent.limit == 80
+    assert narrowed.intent.limit == 17
+    assert narrowed.intent.comments.total == context.intent.comments.total
+    assert narrowed.intent.candidates.limit == context.intent.candidates.limit
+    budget = {"limit": 10, "parent_posts_inspected": 0, "limit_reached": False}
+    assert _consume_task_parent_budget(budget, 4) is False
+    assert _consume_task_parent_budget(budget, 6) is True
+    assert budget["parent_posts_inspected"] == 10
+
+
+def test_task_generated_l2_mode_is_per_run_and_selected_source_mode_is_preserved():
+    from app.jobs.handlers import _runtime_source
+
+    generated = SimpleNamespace(
+        id=1,
+        tenant_id=3,
+        name="Generated wall",
+        source_type="GROUP",
+        external_id="-10",
+        platform_id=1,
+        platform="vk",
+        params={"mode": "auto"},
+        owner_task_id=7,
+    )
+    selected = SimpleNamespace(**{**generated.__dict__, "id": 2, "owner_task_id": None, "params": {"mode": "api"}})
+
+    runtime_generated = _runtime_source(
+        generated,
+        task_id=7,
+        task_plan_enabled=True,
+        owner_user_id=42,
+        cli_dates=None,
+        force_refresh=False,
+    )
+    runtime_selected = _runtime_source(
+        selected,
+        task_id=7,
+        task_plan_enabled=True,
+        owner_user_id=42,
+        cli_dates=None,
+        force_refresh=False,
+    )
+
+    assert runtime_generated.params == {"mode": "user", "token_owner": 42}
+    assert runtime_selected.params == {"mode": "api"}
+    assert generated.params == {"mode": "auto"}
+    assert selected.params == {"mode": "api"}

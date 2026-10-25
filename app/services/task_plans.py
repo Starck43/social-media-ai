@@ -282,7 +282,9 @@ def _parse_trigger(raw: Any) -> TaskTrigger:
     if kind != "schedule":
         raise TaskPlanError("task_plan_trigger_invalid")
     cron = raw.get("cron")
-    if not isinstance(cron, str) or not cron.strip() or cron.strip() == "@once":
+    if isinstance(cron, str) and cron.strip() == "@once":
+        raise TaskPlanError("task_plan_schedule_requires_recurring_cron")
+    if not isinstance(cron, str) or not cron.strip():
         raise TaskPlanError("task_plan_schedule_cron_invalid")
     timezone = raw.get("timezone")
     if timezone is not None and (not isinstance(timezone, str) or not timezone.strip()):

@@ -1251,7 +1251,11 @@ class AgentTaskManager(BaseManager):
                         action_type = getattr(row.action_type, "name", None)
                         payload["_effective_snapshot"] = {
                             "version": 1,
+                            "task_id": row.id,
                             "task_payload": dict(payload),
+                            "generated_source_ids": [
+                                source.id for source in source_rows if source.owner_task_id == row.id
+                            ],
                             "scenario_id": row.agent_scenario_id or payload.get("scenario_id"),
                             "trigger_type": trigger_type,
                             "trigger_config": dict(row.trigger_config or {}) if row.trigger_config else None,

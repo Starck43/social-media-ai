@@ -15,6 +15,7 @@ import anyio
 from sqladmin.helpers import get_object_identifier
 from sqladmin.pagination import Pagination
 from sqlalchemy import JSON, LargeBinary, and_, false, func, inspect, select, true
+from starlette.routing import NoMatchFound
 
 from app.core.access_catalog import WORKSPACE_LABELS, resource_for, workspace_grants
 from app.types import ActionType
@@ -211,6 +212,9 @@ async def row_link(view: Any, row: dict, request: Any) -> str | None:
 
     The detached shell contains only the already scoped scalar projection; it
     cannot lazy-load relationships. Destination routes recheck their own rights.
+    `request.url_for` raises `NoMatchFound` when the target view has no route (a
+    narrowed console or a view outside this router), and a missing navigation
+    must degrade to plain text, never break the parent page.
     """
     obj = view.model(**row)
     if await view.check_can_edit(request, obj):
@@ -219,7 +223,10 @@ async def row_link(view: Any, row: dict, request: Any) -> str | None:
         action = "details"
     else:
         return None
-    return str(request.url_for(f"admin:{action}", identity=view.identity, pk=get_object_identifier(obj)))
+    try:
+        return str(request.url_for(f"admin:{action}", identity=view.identity, pk=get_object_identifier(obj)))
+    except NoMatchFound:
+        return None
 
 
 async def related_inlines(view: Any, obj: Any, request: Any) -> list[dict]:

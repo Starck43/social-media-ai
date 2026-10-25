@@ -469,6 +469,10 @@ async def test_limit_after_scope_and_no_unfiltered_total_or_write_controls(harne
         "column_names",
         "columns",
         "rows",
+        # P8-T32 navigation contract: one permission-gated link per row plus the
+        # scalar columns that may carry it. No new query, mutation or endpoint.
+        "row_links",
+        "link_columns",
         "pagination",
         "sizes",
     }

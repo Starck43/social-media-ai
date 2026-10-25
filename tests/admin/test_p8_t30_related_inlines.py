@@ -402,6 +402,53 @@ async def test_unknown_resource_is_not_implicitly_global(harness):
 
 
 @pytest.mark.asyncio
+async def test_high_volume_collections_are_not_listed_inline(harness):
+    """The workspace form must not repeat the newest collected rows.
+
+    `collected_items` is the largest table and its rows are long texts and
+    media, so the section only duplicated the collection pages and made the
+    edit form heavy. The deny-list is by table, never by parent, so the section
+    is skipped for every console reader, the platform owner included, while a
+    regular child of the same parent stays visible.
+    """
+    assert INLINE.INLINE_EXCLUDED_TABLES == frozenset({"collected_items"})
+
+    class TenantView(ModelView, model=Tenant):
+        column_list = ["id", "is_active"]
+
+    class CollectedItem(Base):
+        # The harness store materialised Base.metadata before this test, so the
+        # fabricated high-volume table is declared and then created here.
+        __tablename__ = "collected_items"
+        id = Column(Integer, primary_key=True)
+        tenant_id = Column(ForeignKey(Tenant.__tablename__ + ".id"))
+        text = Column(String)
+
+    class CollectedItemView(ModelView, model=CollectedItem):
+        column_list = ["id", "text"]
+
+    admin = harness.views[Source]._admin_ref
+    for cls in (TenantView, CollectedItemView):
+        admin.add_view(cls)
+        view = admin._views[-1]
+        view.is_async = True
+        view.session_maker = harness.store.session
+        harness.views[view.model] = view
+    harness.store.db.execute(str(CreateTable(CollectedItem.__table__).compile(dialect=sqlite.dialect())))
+    harness.store.add(Tenant, id=1, is_active=True)
+    harness.store.add(CollectedItem, id=1, tenant_id=1, text="HEAVY-COLLECTED-ROW")
+
+    await grant(harness, actor("superuser"))
+    result = await INLINE.related_inlines(harness.views[Tenant], Tenant(id=1), harness.request)
+
+    assert "HEAVY-COLLECTED-ROW" not in str(result)
+    assert all("collected_items" not in section["foreign_key"] for section in result)
+    # The exclusion is targeted: the ordinary child of the same workspace still
+    # renders, so the guard is not silently switching the footer off.
+    assert any(section["foreign_key"] == "tenant_id" for section in result)
+
+
+@pytest.mark.asyncio
 async def test_limit_after_scope_and_no_unfiltered_total_or_write_controls(harness):
     for index in range(100, 140):
         harness.store.add(Source, id=index, tenant_id=10, platform_id=1, name=f"own-{index}")

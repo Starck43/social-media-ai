@@ -1,6 +1,6 @@
 # P8-T37 — revision-specific audit and validation
 
-Solution: [PR #245](https://github.com/Starck43/social-media-ai/pull/245), branch `fix/p8-t37-plan-execution-dry`, base `dev`. Companion review: [PR #243](https://github.com/Starck43/social-media-ai/pull/243). Neither PR is merged or accepted by this report.
+Solution: [PR #245](https://github.com/Starck43/social-media-ai/pull/245), branch `fix/p8-t37-plan-execution-dry`, base `dev`. Companion review: [PR #243](https://github.com/Starck43/social-media-ai/pull/243). This report records an independent audit and required checks, not owner acceptance.
 
 ## Original findings and corrections for the next auditor
 
@@ -134,6 +134,34 @@ Prerequisites: owner-authorized isolated TEST_POSTGRES_URL; validated DB_TEST_SC
 - The P8-T37 claim/READY row exists on the task branch only. Registry publication to dev was blocked before execution. Local designated custodian must synchronize only the owned row/card into fresh dev, not a stale whole registry.
 
 READY here means implementation/evidence handed off under the owner's explicit local-check deferral, **not independent acceptance**, all tests green, or authorization to merge. PR body/comments record final documentation-only head verification. Retain both unmerged PR branches for the auditor; remove only this task's temporary baseline overlays/worktree. No DB residue exists because no DB was accessed.
+
+## Independent audit and local validation handoff
+
+The independent source review found no concrete remaining defect in discovery-to-analysis scope, shared API/CLI/chat mutation policy, retired projection cleanup, or parse/serialization/platform-predicate deduplication. Existing permission, tenant, active/platform, admission, transaction, scheduling, and execution guards remain at their respective boundaries.
+
+The exact code candidate was `f695e6478537733b92973f1ba50ed9cc51bf2fba` (PR #245 head `9169f23063fd946ade42960bd86678779edf116f` as its second parent). Focused P8 source tests: **60 passed, 0 failed, 0 skipped**; collection: **60 collected**. Scoped static/compile/diff and five changed-line Black checks exited `0`.
+
+```bash
+PYTHONPATH=tests:. /Users/admin/Projects/social-media-ai/.venv/bin/python -m pytest --noconftest -c /dev/null --rootdir=. -p no:cacheprovider -q tests/unit_services/test_p8_t37_task_mutation_policy.py tests/jobs/test_p8_t37_analysis_scope.py tests/unit_services/test_p8_t37_plan_reuse.py
+```
+
+Collection used the same command with `--collect-only -q`. P10-T25 source checks on this candidate were `python -m unittest discover -s tests/unit_services -p test_p10_t23_utility_cleanup.py -v` (**14 passed**) and `PYTHONPATH=tests:. .../python -m pytest -c /dev/null --rootdir=. --noconftest -p no:cacheprovider -q tests/unit_services/test_p10_t23_utility_cleanup.py` (**14 passed + 505 subtests**). P10-T19 permission declaration check was `/Users/admin/Projects/social-media-ai/.venv/bin/python tests/security/test_tool_dispatch_permissions.py` (**16 passed**). Static command details and exit codes are in the P10-T25 audit.
+
+With root conftest and DB guards enabled, the focused six-file command below exited `0` on candidate `261ef966dccccdadf2511b8230dd39f8e22d0be1`: **70 passed, 0 failed, 0 skipped** (8 warnings, 42.08s). The refreshed candidate `f695e6478537733b92973f1ba50ed9cc51bf2fba` has an identical `app/`, `tests/`, and `cli/` tree to that DB-tested candidate; its only intervening committed changes are ROADMAP/docs updates. Target was isolated `localhost:5432/social_manager`, schema `test_schema`, Alembic `0112`; no public database was accessed. All 53 table row counts and primary-key hashes matched before/after; `jobs` and `ai_analytics` remained at 0 and no synthetic residue or active DB sessions remained. A repeated DB run on `f695e647` was not started because a foreign P9-T07 DB writer remained active; it is **UNRUN on that exact SHA**.
+
+```bash
+.venv/bin/python -m pytest -o addopts="" -p no:cacheprovider -q tests/api/test_p8_t29_task_plan_persistence.py tests/jobs/test_p8_t29_social_launch.py tests/api/test_p8_t29_task_plan_interfaces.py tests/agent/test_p8_t29_chat_plan_mutations.py tests/cli/test_cli_task_run.py tests/jobs/test_task_pending_occurrence.py
+```
+
+The advisory suite `tests/collection/test_source_job_admission.py` has a recorded no-dotenv invocation that is **NOT PASS**: candidate `f695e647` exited `1` with **33 passed, 3 failed, 0 skipped**, with failures `test_busy_task_keeps_schedule_trigger_and_once_state[False-True]`, `test_scheduler_does_not_count_busy_occurrence_as_enqueued`, and `test_web_queue_reports_existing_job_without_claiming_it`. They arise when deployment settings are absent. For a comparable rerun, baseline `dc694f6d` and candidate `f695e647` both passed **36 tests, 0 failed, 0 skipped**, exit `0`, when the candidate process silently loaded the same root `.env` values into memory; no values were printed, `--noconftest` remained in effect, and no DB connection was used. The no-dotenv failure is retained as a limitation, not relabeled PASS; no tests were weakened.
+
+```bash
+PYTHONPATH=tests:. /Users/admin/Projects/social-media-ai/.venv/bin/python -m pytest --noconftest -c /dev/null --rootdir=. -p no:cacheprovider -o asyncio_mode=auto -q tests/collection/test_source_job_admission.py
+```
+
+The comparable candidate rerun used the same pytest arguments in a short Python wrapper that called `dotenv.load_dotenv('/Users/admin/Projects/social-media-ai/.env')` before `pytest.main`; it did not print environment values. Baseline ran the command above from the main repository root, where pytest loaded that same local `.env` automatically.
+
+Integration status: The integration candidate is based on fresh dev `dc694f6dd5cde498869824e2f9f447bdebb8321c`, with PR #245 head as its second parent; integration is pending. PR #243 head `9b51c3a681cc59039b67aedab6589e17fc6522ef` was already an ancestor of dev, integrated through merge `2fe129cc92579228c87e1ab6b6902b1cec73fbab`; the PR itself was closed without merge and is not described as separately merged. P10-T25 evidence is recorded in its audit file. The owner's conditional authorization to integrate after successful audit/checks is recorded as authorization only; it does not constitute owner acceptance or DONE. P8-T37 remains READY and P8 remains active pending owner acceptance; P8-T29 remains BLOCKED on its separate VK live-evidence gate.
 
 ## Registry publication update
 

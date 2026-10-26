@@ -46,8 +46,11 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 - [P8-T36](../tasks/p8-t36.md) — reusable horizontal relationship picker
 - [P8-T37](../tasks/p8-t37.md) — task plan execution scope and shared mutation
   policy; [PR #245](https://github.com/Starck43/social-media-ai/pull/245),
-  independent local acceptance pending. The new P8-T39 journey reuses this
-  work after its separate review; it does not duplicate the mutation policy.
+  independently reviewed with required checks passed at candidate
+  `f695e6478537733b92973f1ba50ed9cc51bf2fba`; code integration is pending.
+  Owner acceptance and parent-phase closure remain pending. The new P8-T39
+  journey reuses this work after its separate review; it does not duplicate the
+  mutation policy.
 
 **Deferred beyond the social milestone:** [P8-T34](../tasks/p8-t34.md) keeps the
 future non-social connector direction. It is not a current P8 social release

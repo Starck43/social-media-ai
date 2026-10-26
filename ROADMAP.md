@@ -18,7 +18,6 @@ means not recorded; source recovery links remain in the card.
 ## [P5](docs/phases/p5-ai-boundaries.md)
 
 - [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **BLOCKED** · codex-analysis-receipts · —
-- [P5-T15](docs/tasks/p5-t15.md) Derived output-contract error envelopes — **TODO** · unassigned · `codex resume 01a1726d-96c3-7083-8828-2a2a1558676b`
 
 ## [P6](docs/phases/p6-lifecycle-privacy.md)
 
@@ -63,7 +62,6 @@ means not recorded; source recovery links remain in the card.
 - [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **READY** · opencode (fix/p10-t19-stale-security-suites, `b8eddfd`) · [merge `f838333`](https://github.com/Starck43/social-media-ai/pull/241#issuecomment-6409463751)
 - [P10-T22](docs/tasks/p10-t22.md) Reconcile the dispatch-identity suite with the tariff receipt contract — **TODO** · unassigned · —
 
-- [P10-T25](docs/tasks/p10-t25.md) Unused utility cleanup and slug transliteration (PR #243; former conflicting ID P10-T23) — **READY** · notion-ai (refactor/p10-t23-unused-utils) · [PR #243; local acceptance pending](https://github.com/Starck43/social-media-ai/pull/243)
 - [P10-T26](docs/tasks/p10-t26.md) Notification/bot-action/agent-session model and manager layout — **IN_PROGRESS** · notion-ai (refactor/p10-t26-notification-action-session-models) · [PR #246; local validation pending](https://github.com/Starck43/social-media-ai/pull/246)
 - [P10-T27](docs/tasks/p10-t27.md) Legacy notification API correctness — **TODO** · unassigned · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
 - [P10-T28](docs/tasks/p10-t28.md) Retire root-level model compatibility modules — **TODO** · unassigned · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)

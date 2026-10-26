@@ -88,6 +88,7 @@ def test_legacy_and_current_class_serialization_resolve(name):
 
 def test_task_source_association_has_single_identity_and_unchanged_contract():
     from sqlalchemy.orm import configure_mappers
+
     from app.models import AgentScenario, AgentTask, Base, Source, Tenant
     from app.models.agent_task import agent_task_sources as legacy
     from app.models.scheduling import agent_task_sources as domain
@@ -112,7 +113,7 @@ def test_task_source_association_has_single_identity_and_unchanged_contract():
 
 
 def test_action_relationships_and_guard_defaults_preserved():
-    from app.models import AIAnalytics, AgentScenario, AgentTask, BotAction, Source
+    from app.models import AgentScenario, AgentTask, AIAnalytics, BotAction, Source
 
     for field, target in [
         ("scenario", AgentScenario),
@@ -129,6 +130,7 @@ def test_action_relationships_and_guard_defaults_preserved():
 def test_existing_status_and_cost_types_and_checkpoint_unknown_state_preserved():
     from sqlalchemy import Float, String
     from sqlalchemy.dialects import postgresql
+
     from app.models import BotAction, DigestRun, Job
     from app.types import BotActionStatus
 
@@ -148,6 +150,7 @@ def test_existing_status_and_cost_types_and_checkpoint_unknown_state_preserved()
 
 def test_named_uniqueness_and_nullable_task_foreign_keys_preserved():
     from sqlalchemy import UniqueConstraint
+
     from app.models import AgentTask, DigestRun, Job
 
     for model, name, expected in [

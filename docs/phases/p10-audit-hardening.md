@@ -11,7 +11,6 @@
 - [P10-T16](../tasks/p10-t16.md) — Scheduling model layout checks
 - [P10-T19](../tasks/p10-t19.md) — Reconcile the failing security suites with the current authorization model
 - [P10-T22](../tasks/p10-t22.md) — Reconcile the dispatch-identity suite with the tariff receipt contract
-- [P10-T23](../tasks/p10-t23.md) — Streamline documentation hierarchy and lifecycle
 
 **Accepted history:**
 
@@ -31,5 +30,7 @@
 - [P10-T07](../audit/p10-t07.md) — one digest scope, window and base-row set for every report section · 2026-10-25 · `fc0a4a1`
 - [P10-T21](../audit/p10-t21.md) — admin polish after P8-T30
 - [P10-T20](../audit/p10-t20.md) — align the digest-confirmation suites with the deliberate intent dedup · 2026-10-26 · `6e6dbbf`
+
+- [P10-T23](../audit/p10-t23.md) — compact documentation hierarchy and synchronized lifecycle · 2026-10-26 · `e32871e`
 
 **Phase status:** Active phase; close only after every plan item is accepted.

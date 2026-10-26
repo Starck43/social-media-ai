@@ -10,6 +10,9 @@ workspace web application and not an editor for every ORM table.
 
 ## Admin actor scope
 
+Analytics routes `/dashboard` and `/dashboard/*` use the same selected-workspace
+scope and membership action limits as SQLAdmin.
+
 `AdminScopeMiddleware` binds each `/admin/*` request to its fresh signed-in
 actor ([scope.py](../app/admin/scope.py)). Console entry itself is the login
 gate: only an active account whose **platform** role is `operator`, `admin` or

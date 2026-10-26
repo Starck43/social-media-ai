@@ -1,8 +1,6 @@
 """Isolated source/mocked handlers and real template rendering; no app, DB or provider."""
 
 import ast
-import inspect
-import json
 from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, Mock
@@ -464,6 +462,7 @@ async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_witho
         CommaSeparatedSelectMultipleField=widget.CommaSeparatedSelectMultipleField,
         widgets=widgets,
         FloatField=FloatField,
+        SelectField=SelectField,
         model_price=lambda value: "$" + format(Decimal(str(value)), "f"),
         action=action,
     )
@@ -529,7 +528,7 @@ async def test_web_handler_preserves_guards_and_calls_same_short_service(allowed
         },
     )
     request = NS(session={})
-    await handler(request, agent_model="7", token="fake-csrf", tenant_id=3)
+    await handler(request, agent_model_id="7", token="fake-csrf", tenant_id=3)
     if allowed and csrf and exists:
         probe.probe_short.assert_called_once_with(selected)
         assert request.session["agent_model_probe_result"]["ok"]
@@ -542,7 +541,14 @@ async def test_web_handler_preserves_guards_and_calls_same_short_service(allowed
 @pytest.mark.asyncio
 async def test_known_real_estimate_and_failed_save_do_not_retry_paid_request():
     probe, post = probe_module(
-        {"choices": [{"message": {"content": "да"}}], "usage": {"prompt_tokens": 2, "completion_tokens": 3}}
+        {
+            "choices": [{"message": {"content": "да"}}],
+            "usage": {
+                "prompt_tokens": 2,
+                "completion_tokens": 3,
+                "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+            },
+        }
     )
     actions, manager, view = action_module(probe)
     manager.update_by_id.side_effect = RuntimeError("PRIVATE_SENTINEL")

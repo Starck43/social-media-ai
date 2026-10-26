@@ -556,11 +556,17 @@ async def test_admin_http_personal_catalog_blocks_foreign_provider_and_model_rou
     foreign_provider = await _provider(other, "foreign-http-provider")
     with setup_scope(actor):
         own_model = await LLMModel.objects.create(
-            name=_uniq("own-model"), model_id=_uniq("own-model-id"), provider_id=own_provider.id
+            name=_uniq("own-model"),
+            model_id=_uniq("own-model-id"),
+            provider_id=own_provider.id,
+            owner_user_id=actor.id,
         )
     with setup_scope(other):
         foreign_model = await LLMModel.objects.create(
-            name=_uniq("foreign-model"), model_id=_uniq("foreign-model-id"), provider_id=foreign_provider.id
+            name=_uniq("foreign-model"),
+            model_id=_uniq("foreign-model-id"),
+            provider_id=foreign_provider.id,
+            owner_user_id=other.id,
         )
 
     async with _admin_grants("llm.provider", "llm.model"):

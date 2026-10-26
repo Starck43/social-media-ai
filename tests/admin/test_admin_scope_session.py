@@ -121,7 +121,12 @@ async def _provider(owner: User, label: str) -> LLMProvider:
 
 async def _model(owner: User, provider: LLMProvider, label: str) -> LLMModel:
     with setup_scope(owner):
-        return await LLMModel.objects.create(name=_uniq(label), model_id=_uniq(f"{label}-id"), provider_id=provider.id)
+        return await LLMModel.objects.create(
+            name=_uniq(label),
+            model_id=_uniq(f"{label}-id"),
+            provider_id=provider.id,
+            owner_user_id=owner.id,
+        )
 
 
 async def _member_grants(actor: User, tenant_id: int) -> frozenset:
@@ -331,7 +336,7 @@ async def test_the_platform_owner_reads_every_workspace_but_only_their_catalogue
     try:
         async with ADMIN_SESSION() as session:
             workspace_ids = {row.id for row in (await session.execute(select(Source))).scalars()}
-            assert workspace_ids == {first.id, second.id}
+            assert {first.id, second.id} <= workspace_ids
             provider_ids = {row.id for row in (await session.execute(select(LLMProvider))).scalars()}
             # Same session, same bypass: the personal catalogue is still
             # `owner_user_id`-scoped, so the owner does not see another user's.

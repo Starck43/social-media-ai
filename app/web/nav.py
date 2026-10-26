@@ -20,7 +20,7 @@ class NavItem(NamedTuple):
     href: str
     label: str
     ready: bool = True
-    required_permission: str | None = None  # e.g., "source.view", "agenttask.create"
+    required_permission: str | None = None  # catalog key, e.g. "collection.source.view"
     icon: str = "circle"
 
 

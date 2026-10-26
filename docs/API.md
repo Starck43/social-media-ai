@@ -17,7 +17,7 @@ http://localhost:8000/api/v1
 `/api/v1/auth/register`, `/api/v1/auth/refresh-token`, `/api/v1/health` and
 `/api/v1/social/callback` from access-token/workspace middleware. Refresh still
 requires a valid **refresh** Bearer token; OAuth callback validates signed state.
-The root `/livez`, `/readyz` and `/health` probes are outside `/api/*`.
+The root `/livez`, `/readyz`, `/health` and `/runtimez` probes are outside `/api/*`.
 
 ### Login
 
@@ -188,7 +188,12 @@ including zero counts. It uses the same bounded, generic HTTP 500 failure.
 
 Do not use these legacy probes as the production readiness contract: root
 `/readyz` and `/health` retain generic 200/503 responses with a two-second DB
-probe; `/livez` never queries the DB. `app/core/health.py` is unchanged.
+probe; `/livez` never queries the DB. `/runtimez` is a separate opt-in same-host
+runtime-presence signal (200 only for a fresh running heartbeat and held local
+owner lock; otherwise 503). It does not query the DB or assert scheduler/worker/
+listener progress. No-store responses contain only redacted infrastructure
+observation fields. See [runtime observation configuration](CONFIGURATION.md#optional-same-host-runtime-observation)
+and [probe interpretation](DEPLOYMENT.md#2-interpret-the-http-probes-correctly).
 See [isolated verification and acceptance handoff](audit/legacy-api-db-probes.md)
 for exact source revisions, commands and the remaining real-environment checks.
 
@@ -622,11 +627,25 @@ Metadata wraps with bounded title/summary previews. Guest-workspace chat entry
 and direct web chat endpoints are denied, including for visiting operators.
 No home-request KPI aggregation, new LLM call or migration.
 
+The pipeline strip gates each component independently on the active workspace's
+`collecteditem.view` (staged count), `aianalytics.view` (stored-analysis count),
+and `job.view` (job activity and `/app/jobs` link). A denied component makes no
+query and renders neither its count nor activity/link; task/source access does
+not imply these rights. With no permitted component or no selected workspace,
+Home makes no pipeline data query. Session requests resolve membership/grants
+afresh, so revocation applies on the next request, regardless of platform role.
+[P10-T08](audit/p10-t08.md) changes permission gates only; the staged-count label
+and bounded job-count semantics remain [P10-T09](tasks/p10-t09.md).
+
+
 Attention is implemented in the unified bell, not a second home block (see
 [NOTIFICATIONS](NOTIFICATIONS.md#current-web-bell-and-display-policy)). Mixed
 analysis/digest feed and truly upcoming schedules remain deferred in [the phase tasks](phases/p8-first-value-ui.md).
 The current task preview is recent-by-creation, not a nearest-run claim. This
 source change is not evidence of deployment or completed runtime validation.
+The chat-primary home/entry journey is a product target tracked in
+[P8-T39](tasks/p8-t39.md); the overview description here records the current
+route behavior.
 
 ### Get Dashboard Stats
 
@@ -1601,4 +1620,14 @@ and [deletion policy](MODEL_DELETION.md).
 
 ## Universal social task parity (P8-T29)
 
-The [universal task contract](AGENT_TASKS.md#explicit-task-plans) adds a typed plan to the existing task operations. API and web/CLI/admin/tools must preserve identical source scope, scenario and data-window semantics. Preview is read-only; execution still performs fresh authorization and budget admission. Existing task routes remain compatible. Exact implementation/checks live in [P8-T29](tasks/p8-t29.md).
+Current chat and task endpoints are part of the shared implementation described
+in [P8-T29](tasks/p8-t29.md); this documents code surfaces, not completion of the
+product journey. The target is the chat as the primary workspace for
+clarification, preview, execution, progress, results and follow-up, while the
+dedicated management pages remain directly usable. Completing that interaction
+contract is tracked in [P8-T39](tasks/p8-t39.md). Keep recurring-task creation
+and digest sending confirmation-gated.
+
+API and web/CLI/admin/agent tools preserve identical source-scope, scenario and
+data-window semantics. Preview is read-only; execution performs fresh
+authorization and budget admission; existing task routes remain compatible.

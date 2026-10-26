@@ -25,15 +25,12 @@ def _functions(*names):
     ]
     for node in nodes:
         node.decorator_list = []
+
         # Inject the result renderer in these isolated checks, never import app
         # services (which would initialize application dependencies).
-        node.body = [
-            child
-            for child in node.body
-            if not (
-                isinstance(child, ast.ImportFrom)
-                and child.module
-                in (
+        class ModelImports(ast.NodeTransformer):
+            def visit_ImportFrom(self, child):
+                if child.module in (
                     "app.services.ai.analysis_render",
                     "app.services.digest.checkpoints",
                     "app.services.digest.delivery_outcomes",
@@ -43,9 +40,11 @@ def _functions(*names):
                     "app.models.job",
                     "app.models.managers.agent_task_manager",
                     "app.core.tenant_context",
-                )
-            )
-        ]
+                ):
+                    return None
+                return child
+
+        ModelImports().visit(node)
     module = ast.Module(
         body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *nodes],
         type_ignores=[],
@@ -83,7 +82,7 @@ def _render(offer, *, real_base=False, **extra):
     env.globals["url_for"] = lambda name, path: "/static/" + path
     context = {
         "tenant": {"id": 7, "name": "Fixture workspace"},
-        "user": SimpleNamespace(username="fixture", has_admin_access=lambda: False),
+        "user": SimpleNamespace(username="fixture", role=None, has_admin_access=lambda: False),
         "section": "dashboard",
         "nav": [],
         "mobile_nav": [],
@@ -449,7 +448,7 @@ def _with_models(staged=0, analyzed=0, jobs=()):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_hidden_without_analytics_or_task_rights():
+async def test_pipeline_hidden_without_component_view_rights():
     scope = _functions("_pipeline")
     scope.update(_with_models())
     assert await scope["_pipeline"](7, False, _offer()) is None
@@ -469,7 +468,9 @@ async def test_pipeline_counts_staged_analyzed_and_running_jobs():
     stubs = _with_models(staged=4, analyzed=9, jobs=(running, queued))
     scope = _functions("_pipeline")
     scope.update(stubs)
-    result = await scope["_pipeline"](7, False, _offer(("aianalytics", "view")))
+    result = await scope["_pipeline"](
+        7, False, _offer(("aianalytics", "view"), ("collecteditem", "view"), ("job", "view"))
+    )
     assert result["staged"] == 4 and result["analyzed"] == 9
     assert result["running"] == [{"job_type": "collect", "collect": True}]
     assert result["queued_count"] == 1 and result["job_count"] == 2
@@ -479,7 +480,7 @@ async def test_pipeline_counts_staged_analyzed_and_running_jobs():
 
 def test_pipeline_strip_shows_waiting_and_model_activity():
     markup = _render(
-        _offer(("aianalytics", "view")),
+        _offer(("aianalytics", "view"), ("collecteditem", "view"), ("job", "view")),
         pipeline={
             "scope_all": False,
             "staged": 4,

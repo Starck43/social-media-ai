@@ -6,19 +6,19 @@
 
 **Plan — active task cards:**
 
-- [P10-T08](../tasks/p10-t08.md) — Home pipeline permission gates
 - [P10-T09](../tasks/p10-t09.md) — Truthful pipeline counts/labels
 - [P10-T16](../tasks/p10-t16.md) — Scheduling model layout checks
-- [P10-T19](../tasks/p10-t19.md) — Reconcile the failing security suites with the current authorization model
 - [P10-T22](../tasks/p10-t22.md) — Reconcile the dispatch-identity suite with the tariff receipt contract
 
 
 - [P10-T24](../audit/p10-t24.md) — portable handoff, owner decision before integration and migration evidence review; accepted 2026-10-26 at `1df675f`.
 
-- [P10-T25](../audit/p10-t25.md) — removal of two unused utilities and the `str.maketrans` slug rewrite; accepted 2026-10-26 at `fe04ab85`, integration pending. Historical conflicting branch ID P10-T23 reconciled. [PR #243](https://github.com/Starck43/social-media-ai/pull/243)
+- [P10-T25](../audit/p10-t25.md) — removal of two unused utilities and the `str.maketrans` slug rewrite; accepted 2026-10-26 at `fe04ab85`, integrated into dev via merge `2fe129c`. Historical conflicting branch ID P10-T23 reconciled. [PR #243](https://github.com/Starck43/social-media-ai/pull/243) was closed without merge after its head was integrated into dev.
 - [P10-T26](../tasks/p10-t26.md) — notification/bot-action/agent-session model and manager layout
 - [P10-T27](../tasks/p10-t27.md) — legacy notification API correctness
 - [P10-T28](../tasks/p10-t28.md) — retire root-level model compatibility modules
+- [P10-T29](../audit/p10-t29.md) — test-schema reset survives migration guard triggers; accepted 2026-10-26 at `3e95acc8` (owner-authorized fast-forward merge).
+- [P10-T08](../audit/p10-t08.md) — Home pipeline permission gates; accepted 2026-10-26 at `ceff3892` (independent audit, owner-choice merge `0ff9de11`, [PR #249](https://github.com/Starck43/social-media-ai/pull/249)).
 
 **P10-T26 audit follow-up order (within this audit, not a reprioritization of
 other lanes):** validate/integrate P10-T26 first; then P10-T27 API correctness.
@@ -28,6 +28,7 @@ their proposals are not approved or shipped features.
 
 **Accepted history:**
 
+- [P10-T19](../audit/p10-t19.md) — reconcile the security suites with the membership model; closed 2026-10-26 (solution `b8eddfd`, follow-up `94d99f33`). The refusal matrix was vacuous because the harness flagged every actor `is_superuser`; privacy suite 47 passed, `tests/security` 433 passed. Pre-existing Q-11 `MAX_WORKSPACE_MEMBERS` errors remain outside this row.
 - [P10-T17](../audit/p10-t17.md) — compact agent entry/workflow and lazy task documentation · 2026-10-25 · `b8dac60`
 - [P10-T02](../audit/phase-p10-history.md#p10-t02) — remove password hashes from HTTP user responses
 - [P10-T03](../audit/p10-t03.md) — separate self-service profile updates from privilege updates · 2026-10-25 · `bd97589`

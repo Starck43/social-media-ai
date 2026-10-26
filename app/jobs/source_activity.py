@@ -16,6 +16,13 @@ class SourceJobBusy(RuntimeError):
         super().__init__(f"Source work is already pending or running (job #{job.id})")
 
 
+def source_in_task_platform_scope(source: Any, platforms: set[str]) -> bool:
+    """Use the same platform identity in admission and worker revalidation."""
+    kind = getattr(getattr(source, "platform", None), "platform_type", None)
+    key = getattr(kind, "db_value", kind)
+    return isinstance(key, str) and key.lower() in platforms
+
+
 def job_source_ids(payload: Any, task_id: int | None, task_sources: dict[int, set[int]], active: set[int]) -> set[int]:
     """Match handler precedence: linked task sources, all active, then payload.
 

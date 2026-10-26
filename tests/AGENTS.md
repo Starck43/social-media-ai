@@ -19,7 +19,10 @@ relevant [test](../docs/COLLABORATION.md#tests) or
   Never create test records in public schema without explicit Superuser approval.
   Remove and verify all synthetic test-schema records after tests, including
   committed fixtures. Do not bypass `conftest` or parallelize without proving
-  isolation.
+  isolation. A suite whose own autouse guard forbids any `app` import cannot run
+  under the root conftest; it is skipped there with that reason and runs as
+  `PYTHONPATH=.:tests pytest <file> --noconftest -p no:cacheprovider -o addopts=""`
+  (today only `tests/api/test_http_user_response_privacy.py`, see its audit).
 - Strengthen observable contracts; preserve authorization and tenant checks.
   Mock paid APIs/external writes. Never weaken assertions to obtain PASS. A
   run-only tester changes no source and authors no tests. No full suite without

@@ -613,38 +613,39 @@ async def task_update(
             original_job_type = task.job_type
             original_cron = task.cron_expr
             existing_plan = (task.payload or {}).get("task_plan")
-            parsed_plan = None
-            clearing_existing_plan = False
-            if task_plan is not None:
-                from app.services.task_plans import TaskPlanError, parse_task_plan
+            from app.services.task_plans import prepare_task_plan_update
 
-                try:
-                    parsed_plan = parse_task_plan(task_plan)
-                except TaskPlanError as error:
-                    return {"error": str(error)}
-                if any(
-                    value is not None for value in (source_ids, scenario_id, cron, start_date, end_date, collection)
-                ):
-                    return {"error": "task_plan is a complete replacement; omit conflicting legacy fields"}
-                expected_cron = parsed_plan.trigger.cron if parsed_plan.trigger.type == "schedule" else "@once"
-                cron = expected_cron
-                source_ids = list(parsed_plan.source_ids) if parsed_plan.source_scope == "selected" else []
+            policy_input = {}
+            for key, value in (
+                ("source_ids", source_ids),
+                ("agent_scenario_id", scenario_id),
+                ("cron_expr", cron),
+                ("collection", collection),
+                ("start_date", start_date),
+                ("end_date", end_date),
+            ):
+                if value is not None:
+                    policy_input[key] = value
+            if clear_scenario:
+                policy_input["agent_scenario_id"] = None
+            if task_plan is not None:
+                policy_input["task_plan"] = task_plan
+            try:
+                mutation = prepare_task_plan_update(task.payload, policy_input, job_type=job_type or task.job_type)
+            except ValueError as error:
+                return {"error": str(error)}
+            parsed_plan = mutation.plan if task_plan is not None else None
+            clearing_existing_plan = mutation.cleared
+            if clearing_existing_plan:
+                existing_plan = None
+            if parsed_plan is not None:
+                cron = mutation.changes["cron_expr"]
+                source_ids = mutation.changes["source_ids"]
                 scenario_id = parsed_plan.scenario_id
-                collection = dict(task_plan.get("collection") or {})
+                collection = None
                 if parsed_plan.window and parsed_plan.window.type == "fixed":
                     start_date = parsed_plan.window.start.isoformat()
                     end_date = parsed_plan.window.end.isoformat() if parsed_plan.window.end else None
-            elif existing_plan is not None:
-                new_requested_type = job_type if job_type is not None else task.job_type
-                if new_requested_type in {"digest", "prune", "learn", "reflect"}:
-                    # Moving a social plan to a non-collection task ends the plan
-                    # contract while preserving digest-specific payload values.
-                    existing_plan = None
-                    clearing_existing_plan = True
-                elif any(
-                    value is not None for value in (source_ids, scenario_id, cron, start_date, end_date, collection)
-                ):
-                    return {"error": "This task has task_plan; provide a complete task_plan to change its owned fields"}
             if source_ids is not None and any(
                 type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
             ):
@@ -745,10 +746,10 @@ async def task_update(
                     return {"error": collection_error_message(str(error))}
 
             if task_plan is not None:
-                from app.services.task_plans import apply_task_plan
+                from app.services.task_plans import apply_parsed_task_plan
 
                 try:
-                    updated_payload = apply_task_plan(updated_payload, task_plan, job_type=new_job_type)
+                    updated_payload = apply_parsed_task_plan(updated_payload, parsed_plan, job_type=new_job_type)
                 except ValueError as error:
                     return {"error": str(error)}
             elif (task.payload or {}).get("task_plan") is not None and existing_plan is None:
@@ -769,7 +770,9 @@ async def task_update(
             # scenario — the analysis then ran without its methodology. The same
             # happened to the trial flag, which was set after the payload was written
             # and therefore never saved at all.
-            if clear_scenario or clearing_existing_plan:
+            if clearing_existing_plan:
+                updates["agent_scenario_id"] = mutation.changes["agent_scenario_id"]
+            elif clear_scenario:
                 updates["agent_scenario_id"] = None
             elif scenario_id is not None:
                 updates["agent_scenario_id"] = scenario_id

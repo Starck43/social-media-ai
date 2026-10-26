@@ -589,7 +589,7 @@ class ReportAggregator:
         rows that name an author; rows from other groupings are skipped. This is
         a report over analysed people, not a selection of whose posts were
         analysed (that is the task's `tracked_users`, see
-        `docs/design/task-selection.md`). Each user's analyses are averaged into
+        `docs/COLLECTION.md#task-selection-contract`). Each user's analyses are averaged into
         one sentiment score, sorted by volume.
         """
         try:

@@ -1,70 +1,49 @@
-# Agent entry point
+# Shared agent rules
 
-Shared rules apply equally to local/remote agents. Owner instructions override
-project procedures. No selected skill means general execution, not a special role.
+These rules apply to every local/remote agent, including chat assignments without
+a skill. Owner instructions take precedence. A skill selects a role; without one,
+use general execution. Anyone may add a question or TODO to [ROADMAP](ROADMAP.md).
 
-## Read once; then load lazily
+## Read once, then lazily
 
-1. [README](README.md): what the project does and the document hierarchy.
-2. This file: mandatory safety and routing. Declare and read one selected skill.
-3. [ROADMAP](ROADMAP.md): select one row; open only its linked task card.
+Read [README](README.md), [DESIGN](docs/DESIGN.md) and this file once per session.
+For work, open one ROADMAP row and its task card; load only relevant linked
+sections. Record documents actually read and checks in the card/PR. Shared
+[skills and prompt examples](docs/PROMPT_EXAMPLES.md) select execution/audit roles.
 
-Do not preload other docs. The skill/task selects relevant sections from
-[COLLABORATION](docs/COLLABORATION.md) or the [subsystem index](docs/DOCS_INDEX.md).
-Record documents actually consulted in the task card, with sections and purpose.
+## Mandatory boundaries
 
-| Work | Shared skill |
-| --- | --- |
-| Implementation | [task](.agents/skills/task/SKILL.md) |
-| Audit/review, authorized refactoring/docs | [audit](.agents/skills/audit/SKILL.md) |
-| Remote task / local PR helper | [remote-task](.agents/skills/remote-task/SKILL.md) / [helper](.agents/skills/remote-agent-helper/SKILL.md) |
-| OpenCode / Kilo execution | [opencode-task](.agents/skills/opencode-task/SKILL.md) / [kilo-task](.agents/skills/kilo-task/SKILL.md) |
-| Test work | [test-runner](.agents/skills/test-runner/SKILL.md), then [tests/AGENTS](tests/AGENTS.md) |
-
-## Always enforce
-
-- ROADMAP owns open status/owner/dialogue links; task cards own scope, acceptance,
-  documents read and checks. Claim before edits; use a task-ID branch/worktree,
-  never integration `dev`. Preserve foreign files, claims and evidence.
-- Start requests need only a task ID and action (for example, `P8-T12 audit` or
-  `P8-T12 implement`). Agents resolve the card, repository/PR and current source
-  revision from project context; ask only for information they cannot resolve.
-- Executor reports READY; auditor identifies and reviews the proposed exact SHA.
-  The owner need not find or provide a SHA. Accepted work is DONE:
-  append result/evidence to its parent phase and remove the queue row. Record
-  pending integration separately. BLOCKED means the task's solution/required
-  acceptance cannot proceed; session/branch housekeeping never causes BLOCKED.
-- Stop/delete owned child sessions after dialogue; report unsupported/already
-  unavailable cleanup separately. Only Codex invokes third-party agents;
-  unavailable routes fall back to native children. Others use native children only.
-- Remote work publishes direct repo/PR links in its handoff. The agent resolves
-  or creates them; PR body holds solution/evidence, and coordination uses PR
-  comments. One custodian updates shared registry state.
-- Resolve DB target/schema before access. Test-schema preparation/migrations are
-  authorized under [database rules](docs/COLLABORATION.md#database); shared DB work
-  is sequential and all synthetic records are cleaned afterward. No public test
-  records without explicit Superuser approval; no public migration before full
-  test-schema validation and separately authorized apply. Alembic only.
-- Reuse ORM managers/services and transaction conventions. Access fails closed;
-  recheck tenant/actor permissions at execution. Preserve approval/dry-run gates,
-  payer/usage evidence and secrets. Mock paid APIs and external writes in tests.
-- Auditor tests only after its own code edit AND non-obvious/security-critical
-  behavior. Reuse executor evidence; full suites need explicit owner request.
-- Active runtime: one `python -m app.runtime` owner. Celery/Redis and Streamlit
-  remain frozen. No dev push, force-push, deployment or production mutation
-  without explicit authorization; delete task branches only after verified merge.
-- Scoped edits; English code/docs, brief Russian reports; Black/isort line 120.
-  Never commit secrets, sessions, generated data or `.agents/tmp/`.
-
-## Review and close
-
-`/review P8-T12` follows [audit](.agents/skills/audit/SKILL.md); `$audit P8-T12`
-selects the same role. Resolve the candidate revision from the task branch/PR;
-ask for a link only if the task does not identify one unambiguously.
-Report findings first. After acceptance: `✅ <ID>: <result>; removed from ROADMAP;
-archive: <link>; checks: <actual results>`. Mention pending integration/cleanup
-separately; neither changes an accepted task back to BLOCKED.
-At closeout, inventory worktrees and apply [cleanup rules](docs/COLLABORATION.md#git-and-cleanup).
-After audit/review/refactoring, report the result and safe cleanup; execute it
-when authorized. CLI adapters in `.codex/`, `.opencode/`, `.kilo/`
-are local ignored configuration; shared behavior belongs in `.agents/skills/`.
+- Before task edits, claim/create its unique ID, status, owner, dialogue and card
+  link in ROADMAP. Publish scoped registry changes to `origin/dev` and reconcile
+  local `dev`; follow [claim synchronization](docs/COLLABORATION.md#tasks).
+  Work on a dedicated task-ID branch/worktree; preserve other agents' work.
+- ROADMAP owns open status; `docs/tasks` owns active detail; `docs/phases` owns
+  stage plans; `docs/audit` owns accepted results and detailed failures. Use
+  [lifecycle and evidence rules](docs/COLLABORATION.md#acceptance). Never invent
+  checks, approvals, dialogue links or completion. BLOCKED concerns the solution
+  or required acceptance, never housekeeping. READY requires required checks PASS.
+- Resolve DB target/schema before access. Test-schema setup/migrations are allowed;
+  serialize shared DB work and remove/verify all synthetic records afterward.
+  Public test records require explicit Superuser approval. Public migrations need
+  full test-schema validation and separate apply authorization. Alembic only;
+  [database safeguards](docs/COLLABORATION.md#database) apply after failed runs too.
+- Reuse ORM managers/services and transactions. Fail closed; recheck tenant/actor
+  rights at execution. Preserve confirmation/dry-run, payer/usage evidence and
+  secrets. Mock paid providers and external writes during tests.
+- One `python -m app.runtime` owner; Celery/Redis and Streamlit stay frozen.
+  Registry-only publication above does not authorize code pushes, force-push,
+  deployment, production mutation or publication of unrelated local commits.
+- Only Codex may invoke third-party agents; others use native children. Preserve
+  handoff evidence, then stop/delete owned child sessions immediately. Unsupported
+  cleanup is reported separately. Remote coordination uses PR comments; the PR
+  body carries solution/evidence and direct repository/task links.
+- Read [tests/AGENTS](tests/AGENTS.md) before test work. Run focused required checks;
+  full suites require explicit owner request. Routine docs review needs no pytest.
+- At closeout remove own temporary files; inventory worktrees and apply
+  [safe cleanup](docs/COLLABORATION.md#git-and-cleanup). Preserve dirty/active/
+  foreign/unclear work and unmerged commits; delete branches only after verified
+  integration. Report retained paths and next action. Cleanup failure cannot
+  reopen an accepted task.
+- English code/docs; brief Russian reports; Black/isort line 120. Never commit
+  secrets, sessions, generated data or `.agents/tmp/`. Provider adapters in
+  `.codex/`, `.opencode/`, `.kilo/` are local ignored configuration.

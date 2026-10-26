@@ -192,7 +192,7 @@ videos/reels to video, stories to image, and presets declare text. Collection
 scope (posts/comments, likes/reposts, queries, city, dates, limits) lives in the
 task's `payload.collection` and is validated by
 `app/services/collection/intent.py`. See
-[collection plan](design/collection-plan.md).
+[collection plan](audit/collection-plan-history.md).
 
 ## Usage and cost boundary
 

@@ -6,87 +6,26 @@ workspace web application and not an editor for every ORM table.
 - Base path: `/admin` (local development: `http://localhost:8000/admin`).
 - Registration: [setup.py](../app/admin/setup.py); views: [views.py](../app/admin/views.py).
 - Enabled by `ADMIN_ENABLED` (default true) in [app.main](../app/main.py).
-- Source baseline: `dev` `edbe0fc02e6ea2d78302129e51febfa0e87464ab`, reviewed
-  on 2026-10-15; reservation commit `916d2e18eeafdd86d4857587638b73a24bcd0891`
-  changes only the ownership board.
-
-This is a source reference, not proof of deployment or whole-console acceptance.
-The baseline above records the original documentation-only audit. The LLM model
-section was subsequently revised with the shared short-check/admin UI change
-and then combined with the personal-billing lane for code review only:
-its evidence is isolated source/mocked-handler tests, real SQLAdmin form
-scaffolding against canonical ORM metadata (no database), and offline template
-browser fixtures. Evidence from either source lane is not acceptance of the combined candidate.
-No real application startup, database inspection, migration,
-provider call or messenger send was performed remotely. Other legacy page
-mismatches remain listed below. See [MODELS](MODELS.md) for ORM definitions and
-[IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) for attributed prior acceptance.
 
 ## Personal catalog source contract (0109; PR #229 + #230 integrated)
 
-The baseline sections below retain historical console/action descriptions. In the
-0109 candidate, providers/models are **personally owned**, shared across one
-user's workspaces, not a global editable fleet.
-
-The console is a first-class write path again: `LLMProviderAdmin` and
-`LLMModelAdmin` no longer pin `can_create` / `can_edit`, so the owner and any
-role holding `llm.provider` / `llm.model` CREATE or UPDATE get the create button
-and the edit column. The `can_create`/`can_edit` freeze from `e14c395` hid the buttons while
-leaving the routes open, which made the owner open `/admin/llm-provider/create`
-by URL to see a form the list would not offer. Settings → Models stays the
-place for atomic provider+models saves and per-user defaults; the console writes
-the same rows through the same managers (API keys are encrypted in
-`after_model_change`).
-This does not assert that every existing inspection/delete/test action is disabled.
-
-Platform operator entry/model-action grants are still required for the admin
-console, but never grant another user's key use. Existing connection/model test
-actions cannot rely on CONFIGURE alone: personal owner/active provider/model and
-fresh dispatch checks still apply. No foreign-catalog probe is authorized by a
-platform override. Owner-local ASGI and PostgreSQL evidence is recorded
-at its original source SHAs in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md)
-and the [ownership evidence ledger](audit/personal-llm-ownership.md). It was
-not rerun on final dev `b343536`; full SQLAdmin acceptance is not inferred.
-
-Code is integrated in dev `b34353645fe37de53c97c4d022c05af0044dc8ba` with the
-stacked UI router. This integration did not upgrade a working/deployment
-schema; prior isolated migration/backfill acceptance remains in the evidence
-ledger. No deployment is claimed. See
-[ownership evidence and rollout boundary](audit/personal-llm-ownership.md).
+Providers and models are personal to a user and may be shared across that user's
+workspaces. Console action grants do not widen row ownership or permit another
+user's key use. Settings → Models remains the atomic provider/model/default flow;
+SQLAdmin uses the same managers. See [TENANCY](TENANCY.md#personal-llm-catalog-0109-source-contract-code-integrated-rollout-pending),
+[MODELS](MODELS.md#personal-catalog-0109-defined-operational-rollout-separate) and the
+[ownership audit](audit/personal-llm-ownership.md) for the canonical ownership,
+rollout and source-pinned evidence.
 
 ### Who sees which rows, and who writes the owner
 
-The catalog is **personal on every read path, including the platform owner**.
-A grant decides which *actions* an operator may perform; it never widens *whose*
-rows they see. An auditor should check four things:
-
-1. **Reads.** `LLMProvider` / `LLMModel` are `__personal_scoped__`; their manager
-   adds `owner_user_id == current_catalog_owner_id()` to every query and raises
-   `PermissionError` when no owner is bound (`BaseManager._personal_criterion`).
-   The platform bypass does **not** skip that filter — it only allows a write to
-   name the owner (`_personal_values`). The console therefore runs each query as
-   the signed-in operator (`BaseAdmin._catalog_scope`): list/count (`list_query`,
-   `count_query`), details, edit, and every read/write inside the two LLM views.
-   A direct URL to a foreign row is 403 on read and on write.
-2. **Provider owner.** `owner_user_id` is a real form field (`form_overrides`
-   → `SelectField`, `choices` = usernames) **only for the platform owner**
-   (`superuser`). For everyone else the field is absent from the form and
-   `LLMProviderAdmin.on_model_change` stamps the actor's id, dropping whatever
-   was posted. The owner is immutable after creation (trigger
-   `guard_personal_catalog_owner`, migration 0109), so a reassignment POST is
-   refused by the database rather than silently applied.
-3. **Model owner.** `LLMModelAdmin` has **no** `owner_user_id` and no `uid`
-   field: the model inherits the provider's owner, and the provider select lists
-   only the actor's own providers. A model filed under a foreign provider id is
-   refused, for the platform owner too.
-4. **E2E.** `tests/admin/test_admin_llm_catalog_scope.py` pins all of the above
-   on source alone (`__source_only__`, no database): scope binding per actor,
-   list/count restriction, the owner field's presence rule, forged-owner
-   dropping, and the foreign-provider refusal.
-
-Provider UID: the form field is **UID провайдера**; an empty value is derived
-from the name (`UnoRouter.AI` → `unorouter`, via `app/core/provider_uid.py`) —
-the browser previews the same slug from `app/static/js/admin-uid.js`.
+All catalog reads remain owner-scoped, including for the platform owner. In the
+provider form, only the platform owner can choose an owner at creation; other
+actors are stamped as owner, and the database prevents reassignment. Models
+inherit their provider's owner and cannot be attached to a foreign provider.
+The source-only regression is
+[`test_admin_llm_catalog_scope.py`](../tests/admin/test_admin_llm_catalog_scope.py).
+Provider UID is derived from its name when omitted; the UI previews the same slug.
 
 
 ## Read-only related FK lists (P8-T30 / P8-T31 / P8-T32)
@@ -433,7 +372,7 @@ task-scoped query source is labelled as a task lane through
 `sources.owner_task_id` (details show the owner task), and the collected-item
 list exposes `content_type`, `selection_status` and `media_type` while the
 collector-written lane/selection fields stay out of the edit form. See
-[collection plan](design/collection-plan.md).
+[collection plan](audit/collection-plan-history.md).
 
 **Deleting a source.** The web sources page and the source page carry a
 delete action (`source`/`delete` permission, workspace-scoped, with the
@@ -654,16 +593,8 @@ from the web UI selector or full data-endpoint acceptance from a page GET.
 
 ### Known view/ORM configuration drift
 
-The registered source still contains legacy configuration mismatches; this
-reference must not describe them as working schema fields:
-
-- `SourceAdmin.column_list` names `date_from` / `date_to`, while current `Source`
-  declares neither column nor property (the columns were removed in migration
-  0079). Its create/edit form no longer includes those fields.
-
-These are source observations, not a claim that startup or a particular rendered
-page was reproduced. These unrelated runtime/view fixes are outside the LLM model-test change. Real SQLAdmin/ASGI/PG role, revocation and page-render acceptance remains
-outside the checks performed here; prior C/D limits stay in the delivered index.
+The dated source observation is retained in
+[admin implementation history](audit/admin-history.md#known-vieworm-configuration-drift); verify against current source before relying on it.
 
 ## Templates and module map
 
@@ -693,12 +624,10 @@ independent template environment or URL safety.
 
 ## Access schema and rollout
 
-Source head 0096 separates platform/workspace catalogs, adds resource keys and
-personal-memory ownership, and changes membership AI access. See
-[ACCESS_MIGRATION](ACCESS_MIGRATION.md) and [MODELS](MODELS.md). Existing owner-local
-application/validation is recorded in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md);
-it is not proof of production state, universal schema parity or full admin
-acceptance. This patch applies no migrations and activates no provider or live action.
+Platform/workspace access migration procedure: [ACCESS_MIGRATION](ACCESS_MIGRATION.md).
+Canonical entity fields and migration state: [MODELS](MODELS.md). Source-pinned
+acceptance is indexed in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); it does
+not establish a deployed database revision.
 
 ## Related FK/m2m record editors
 
@@ -732,114 +661,13 @@ that record to edit it). This is a related-record window, not nested inline CRUD
 
 ### Related-editor validation and local handoff
 
-Task P8-T21. Implementation/test SHA: `6f1f695dec730396bda79043d19414fea13a2094`;
-synchronized dev: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Other active
-lanes #216/P10-T11 and #217/P10-T12 were inspected; their owners, reservations,
-statuses and evidence were not changed or imported as accepted work.
-
-Initial implementation sandbox evidence (owner remote exception; follow-up below):
-
-```sh
-/data/admin-relations-venv/bin/python -m pytest tests/test_admin_related.py \
-  --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
-NODE_PATH=/data/admin-relations-browser/node_modules node tests/admin_related_browser.cjs
-```
-
-- Pytest: exit 0, **20 passed, 0 failed/skipped**. Actual SQLAdmin routes and
-  Jinja fragments over synthetic ORM metadata and explicit storage doubles;
-  create/edit, ordinary redirects, validation/storage failures, grant and
-  object-check denials, excluded/unregistered targets, token preservation,
-  JSON escaping and custom-response preservation. No bound database engine.
-- Chromium: exit 0, **32 assertions** at 390/1440px. Actual child-completion
-  script, FK and m2m selection/rename, unsaved parent preservation, origin,
-  source-window, identity/ID rejection, cancellation and popup blocker. Every
-  request intercepted; no real application server or external requests.
-- Separate venv: Python 3.13.14; SQLAdmin 0.32.0, SQLAlchemy 2.1.5,
-  Starlette 1.9.0, WTForms 3.2.2, pytest 9.1.1, pytest-asyncio 1.4.0,
-  httpx 0.28.1, greenlet 3.5.6 (manifest-compatible versions). Browser fixture
-  uses a separate Playwright install and local Chromium; set `CHROMIUM_PATH`
-  if Chromium is elsewhere. No owner `.venv`, `.env`, secrets or providers used.
-- Earlier fixture attempts failed on an unbound synthetic read and a missing
-  request `query_string`; corrected explicit doubles/request scope, not weakened
-  assertions. These were not successful runs. Final counts above are complete.
-
-Original owner-local acceptance checklist (historical plan; final bounded owner
-acceptance is recorded below; the full checklist is not claimed as executed).
-At the exact implementation SHA, run sequentially under R8/R10 in the owner's
-prepared environment, without reset/migration/seed or real provider dispatch:
-
-1. Exercise actual `LLMModel.provider` and `Source.platform` FK forms, then
-   `AgentTask.sources` m2m with records in an existing approved test workspace.
-   Verify create/edit persistence, unchanged other selections/unsaved fields,
-   cancellation and independent child/parent transaction behavior.
-2. Verify platform admin/operator create-only/edit-only/denied roles, revoked
-   identity/grants between opening and saving, direct forged popup POSTs and
-   object-level denials. Catalog permissions and hidden user-role assignment
-   must remain restricted; workspace roles must not gain console access.
-3. Check actual Select2, application CSP/browser headers, popup opener policy,
-   specialized forms, nested windows, validation retry, back/refresh and no-JS.
-   A restrictive opener policy may require falling back to ordinary CRUD.
-4. Confirm existing workspace/source/scenario validators still reject invalid
-   cross-workspace links and actual DB write/rollback failures do not report a
-   success receipt. No new atomicity guarantee is made across two forms.
-
-No migration, schema change, real DB/ASGI integration acceptance, full-suite,
-whole-console security or deployment certification is claimed by this subset.
-
+Historical source pins, sandbox commands, test outcomes and owner handoff are in
+[admin implementation history](audit/admin-history.md#related-editor-validation-and-local-handoff).
 
 ### Related-editor follow-up: inline icons and Float forms
 
-The owner-local attempt reported HTTP 500 while opening `/admin/tenant/edit/1`
-from a related field. This is failure evidence, not successful local acceptance.
-The same failure was reproduced offline on the canonical Tenant/TenantAdmin:
-SQLAdmin 0.32.0 could not convert `daily_cost_limit` (`sqlalchemy.sql.sqltypes.Float`)
-with SQLAlchemy 2.1.5, where Float no longer inherits Numeric.
-
-`BaseAdmin` now uses a converter for Float/FLOAT/REAL/Double/DOUBLE families;
-exact Numeric/Decimal monetary fields retain SQLAdmin's DecimalField path.
-This does not alter ORM types, stored values, validation boundaries or grants.
-The regression loads the actual model and view declaration with isolated
-configuration and a storage function that raises on use; both ordinary and
-related create/edit form scaffolding therefore need no database.
-
-Plus/pencil SVG actions now share a flex row with the native input or actual
-Select2 container. Icon-only controls have 44px targets, accessible names,
-tooltips and visible keyboard focus; the status remains below the field.
-Select2 is moved with its original select and handlers, not recreated; scoped
-height/padding prevents label clipping and chips follow the existing theme.
-
-Follow-up evidence: **81 isolated pytest cases passed**, 0 failed/skipped, exit 0;
-**228 offline Chromium assertions passed**, exit 0, across native + real Select2,
-light/dark and 390/1440px. Checks include canonical Tenant related GETs, required
-and nullable float parsing, unchanged precise Decimal, existing catalog grants,
-parent preservation, popup protocol, inline geometry, icon-only labels, dropdown
-operation, label bounds and no page overflow. Eight fixture screens were
-individually inspected; this is not owner-local browser or DB acceptance.
-Published source SHA is pinned in PR #219's current handoff. Initial evidence
-above stays attributed to its original SHA and does not certify this follow-up.
-
-```sh
-/data/admin-relations-venv/bin/python -m pytest \
-  tests/test_admin_form_compatibility.py tests/test_admin_related.py \
-  tests/test_admin_shell_catalog.py tests/test_admin_all_role_records.py \
-  --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
-SQLADMIN_STATIC_DIR=/data/admin-relations-venv/lib/python3.13/site-packages/sqladmin/statics \
-NODE_PATH=/data/admin-relations-browser/node_modules node tests/admin_related_browser.cjs
-```
-
-Same Python/SQLAdmin/SQLAlchemy/Starlette/WTForms versions as the initial run;
-FastAPI 0.146.0 and itsdangerous 2.2.0 added to the separate sandbox environment
-for the existing isolated catalog tests. Python 3.14 was not available/tested
-remotely. No application/runtime, real DB, environment secrets, providers,
-schema operation, dependency manifest change or delegated test execution.
-Owner subsequently reported that the updated local UI works and explicitly
-requested task closure and Ready/merge into dev. Accepted implementation:
-`aec048db192bfc9842883502065646d5650f43d9`. This is owner-reported functional
-smoke, not a remotely verified PostgreSQL/revocation/rollback/full-suite result.
-The coordinator reviewed the exact implementation and reused the completed
-81-test/228-assertion evidence; no runtime source changed for closeout. P8-T21
-is accepted as a bounded feature; no whole-phase, security-gate, schema or
-deployment acceptance is implied. Detailed original test limitations remain above.
+Follow-up failure diagnosis, source pins, validation counts and owner-reported
+closeout are in [admin implementation history](audit/admin-history.md#related-editor-follow-up-inline-icons-and-float-forms).
 
 ### Bulk-delete confirmation readability
 
@@ -858,3 +686,9 @@ DELETE URL are not truncated or rewritten. Buttons remain outside that scrolling
 region. Custom confirmation bodies use the same wrapping boundary.
 See [deletion audit](MODEL_DELETION.md) before changing cascade policies or treating
 multi-select deletion as one atomic transaction.
+
+## Universal social task parity (P8-T29)
+
+Task plans follow the shared [task contract](AGENT_TASKS.md#explicit-task-plans).
+Console forms do not edit collector/runtime evidence or secrets; Run now uses the
+standard admission path. Implementation evidence belongs to the task record.

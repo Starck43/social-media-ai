@@ -2,57 +2,32 @@
 
 ## Current web bell and display policy
 
-Integrated A/B/C/D: [#188](https://github.com/Starck43/social-media-ai/pull/188),
-[#189](https://github.com/Starck43/social-media-ai/pull/189),
-[#190](https://github.com/Starck43/social-media-ai/pull/190),
-[#191](https://github.com/Starck43/social-media-ai/pull/191). Audit baseline `c62f948`.
-
 - One read-time projection combines permitted unread workspace events, the
-  caller's own connection metadata and permitted failed-task signals. No second
-  home attention block or new notification table exists. GET/poll creates no rows,
-  decrypts no credentials and performs no provider probe.
+  caller's own connection metadata and permitted failed-task signals. GET/poll
+  creates no rows, decrypts no credentials and performs no provider probe.
 - `WebPerms` gates notification/entity/task visibility and shared read actions;
-  fresh server requests recheck tenant, membership and linked entity rights.
-  Foreign/deleted/unknown entities are excluded. Personal connections never use
-  another member's credentials. Fixed summaries avoid raw exception/secret text.
-- Default snapshot: up to 100 candidate events, 50 failed tasks and 30 displayed
-  items. Count and list use the same authorized/deduplicated projection, not a
-  raw DB total or a claim about all unseen problems. Matching task-error events
-  can coalesce with the derived failed-task signal; this is not per-job identity.
-- Reading an event is an explicit CSRF-protected POST and remains workspace-shared
-  (`Notification.is_read`), not personal acknowledgement or issue resolution.
-  Read-all affects the permitted bounded event window, not every historical row.
-  Failed-task/connection signals stay until their condition clears. Failed loads
-  report an unknown/error state, not a healthy empty list; context change clears
-  stale state. No diagnostic write or issue-resolution action runs on GET.
-- C preferences are versioned, caller-keyed browser storage only: optional personal
-  connection/task display, opt-in generic hint (default off) and device-local quiet
-  hours. Counter/list use the same display filter; persisted events cannot be
-  suppressed. Quiet hours affect hints, not the bell or shared read flag. Storage
-  failures are memory-only, not a successful durable save. Restoration is reachable
-  from Settings Account/Connections even when the bell is empty.
-- No cross-device sync, personal read/dismiss lifecycle or durable preference field
-  is implemented. Such changes require a separate reviewed storage/ACL decision.
+  fresh requests recheck tenant, membership and linked entity rights. Foreign,
+  deleted and unknown entities are excluded. Messages use fixed summaries.
+- Snapshot bounds: 100 candidate events, 50 failed tasks and 30 displayed items.
+  Counts use the authorized/deduplicated projection. Matching task-error events
+  may coalesce with failed-task signals; this is not per-job identity.
+- Marking read is a CSRF-protected POST and changes shared `Notification.is_read`.
+  Read-all covers the permitted bounded window. Failed-task/connection signals
+  remain until their condition clears. Failed loads are errors, not healthy empty
+  state; context change clears stale state. GET does not mutate.
+- Display preferences are caller-keyed browser storage: optional connection/task
+  signals, opt-in generic hints (off by default), and device-local quiet hours.
+  They do not suppress persisted events or change the shared read flag. Storage
+  failure is memory-only. There is no cross-device sync or durable preference
+  field.
 
-Source-pinned sandbox evidence remains in the PRs. Later owner-local bounded
-ASGI/DB A/B acceptance (77 checks at `807c0c7` plus working diff) is recorded in
-[IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md), not a full C/D or release claim.
-The transport sections below describe the older bounded delivery change, not the
-current web implementation status.
+Historical check counts and integration handoffs are in the
+[notification audit record](audit/notifications-history.md).
 
 ## Historical transport scope and status
 
-Task branch: `ai/workspace-notification-boundaries`, based on dev
-`021105978e1777c7ef7fc813355e563f0f62e7d4`. This is a bounded notification
-routing change, not a production-readiness certification. No table, migration,
-production configuration or credential value changes are included.
-
-Digest isolation was delivered separately in PR #3 and merged into dev as
-`7f1d8c18e54fb93c811951dd781e542684d07c42`. This branch is now synchronized
-with that dev, so it includes the DB-only digest recipient/build isolation and
-the missing-identifier guard. The notification implementation does not change
-digest retries or the general Telegram/MAX channel adapter. Integration removes
-obsolete notification-gap statements and validates both implementations together.
+The source-pinned history for this bounded delivery change is retained in the
+[notification audit record](audit/notifications-history.md).
 
 ## Three distinct paths
 
@@ -180,76 +155,11 @@ for fixed operator templates only. No automatic binding/data migration occurs.
 
 ## Verification
 
-### Standalone notification validation on dev `0211059`
-
-Completed on the dev baseline above plus this change, with Python 3.13,
-PostgreSQL 15.18, the project `.venv`, pinned dependencies plus the existing
-`httpx==0.28.1` pyproject dependency. Only sandbox database `digest_tests` and
-schema `digest_test` were used; no deployment DB, user credentials or real
-Telegram/VK/MAX send.
-
-- Collection: **1055 tests collected** (3.80 s).
-- Notification delivery + existing ASGI admin authorization + web notification
-  regressions: **79 passed, 5 warnings** (12.94 s).
-- Includes **57 new tenancy-marked notification regressions**, real workspace/
-  binding/notification queries and mocked HTTP. Covers missing/foreign/inactive/
-  ownerless recipients, trusted operator selection, helper/service/admin callers,
-  exact transport/recipient backstops, catalog-only alerts, legacy content discard,
-  transport errors/HTML/size, source ownership and failure independence.
-- Full suite on a freshly reset isolated test schema, coverage disabled:
-  **1054 passed, 1 skipped, 10 warnings** (284.55 s). Existing deprecation warnings
-  remain. No unrelated scheduler code/test assertion changes were made.
-- Alembic heads/current on the local test schema: **0086**;
-  check: **No new upgrade operations detected**. No new migration.
-- Targeted Black/isort, compileall, whitespace and documentation-link checks passed;
-  no repository-wide formatting.
-
-Initial new-test failures were corrected in test setup/assertions: a log
-substring also matched the honest failure message, and the dummy admin request
-lacked authorization-wrapper state. The action-body test now explicitly unwraps
-that wrapper; the unchanged ASGI admin permission suite is run alongside it.
-Application authorization was not bypassed or weakened to repair those tests.
-
-These are local regression results, not live delivery/deployment certification.
-Recheck fresh dev and the published source before handoff/merge.
-
-### Combined integration validation before the second merge
-
-PR #3 was merged into dev as `7f1d8c18e54fb93c811951dd781e542684d07c42`.
-PR #4 was synchronized in `81d483a89101ab1ec45ddf9d16cc28165b53e97c`.
-The merged digest sender includes the reviewed missing-identifier guard; its
-public builder signature remains unchanged. This follow-up reconciles the
-operator-alert setting comment and removes obsolete notification-gap text in
-CONFIGURATION/readiness/digest review documentation.
-
-Completed on the combined source snapshot, with mocked external transports:
-
-- Collection: **1076 tests collected** (3.59 s).
-- Digest/channel/builder/e2e + notifications + admin authorization + web
-  notifications: **130 passed, 5 warnings** (18.06 s).
-- Full suite on a freshly reset isolated schema, coverage disabled:
-  **1075 passed, 1 skipped, 10 warnings** (278.12 s).
-- Local test-schema Alembic heads/current **0086**;
-  **No new upgrade operations detected**. No schema/env/deployment changes.
-- Targeted Black/isort, compileall, whitespace and documentation-link checks
-  pass. The user's analysis/mention-axis changes remain preserved.
-- Notification automated review found no issues on the implementation. The
-  digest None guard was fixed; the claimed removal of a tenant_id argument
-  was disproved by comparison with dev and documented in PR #3.
-
-These results validate the integration locally, not a production deployment or
-all remaining release gates. Per-target retries/concurrent publication and the
-historically observed scheduler-test instability are not declared solved.
+Historical test scopes, counts and integration results are in the
+[notification audit record](audit/notifications-history.md#verification).
+They are not current checkout or release evidence.
 
 ## Deliberate remaining work
 
-- Recipient picker and visible success/failure feedback for operator notification UI.
-- Persisted per-recipient delivery status, retries, acknowledgement policy and rate limits.
-- Complete process-wide secret/PII logging audit: collector/worker diagnostics
-  and third-party HTTP logging are outside this bounded transport change. Raw
-  collector exceptions are still re-raised to the job system; restrict logs and
-  do not expose them as customer-facing notification content.
-- General interactive identity/role checks and notification retention gates.
-- General digest/channel-adapter isolation and retries remain in their own PRs.
-
-Before merging, recheck fresh dev and preserve the user's parallel changes.
+Open notification work and ownership are tracked in [ROADMAP](../ROADMAP.md).
+This document records the delivered subsystem contract, not a second task queue.

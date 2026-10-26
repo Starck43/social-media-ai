@@ -64,7 +64,7 @@ def _clean_params(base: dict | None = None) -> dict:
     """A copy of the source's collection params for editing.
 
     Whose items are analysed is a task property (`tracked_users`), never a source
-    property (`docs/design/task-selection.md`), so nothing author-related is
+    property (`docs/COLLECTION.md#task-selection-contract`), so nothing author-related is
     written here.
     """
     return dict(base or {})

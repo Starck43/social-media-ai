@@ -1,12 +1,13 @@
 # Audit evidence
 
-Optional, task-linked reviews and detailed failure/test records. Start in
-[ROADMAP](../../ROADMAP.md), open one [task card](../tasks/), then only its linked
-evidence. Current status belongs to the queue; context/docs read/checks belong
-to the card. Routine tasks need no separate audit report.
+Load a report through its task, phase or PR link, never this entire directory.
+`<id>.md` owns accepted summaries or detailed blocked diagnostics. A closed summary
+records verdict/date, source SHA, corrections, affected files/tests, actual checks,
+limitations and dialogue; the parent phase links it and ROADMAP drops the row.
+Active blocked work keeps its task card. Orphan completion leaves only its audit.
 
-Dated reports are historical snapshots, not current permissions or validation.
-PR descriptions contain the remote solution/evidence; dialogue uses PR comments.
-Parent phase history now lives in `docs/tasks/`, not under this folder.
-The former audit/validation narratives are consolidated here; machine fixture
-JSON remains at its original `docs/validation/` paths for compatibility.
+`phase-pN-history.md` preserves pre-compaction evidence; recorded instructions,
+READY claims and pending integration notes are historical. The current phase plan
+and final acceptance section determine disposition. Subsystem/design histories
+preserve source-specific rationale; current contracts remain in top-level docs.
+Do not duplicate PR transcripts; link exact comments/revisions instead.

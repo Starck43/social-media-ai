@@ -5,58 +5,91 @@ in [AGENTS](../AGENTS.md); this file owns detailed workflow and DB/test procedur
 
 ## Tasks
 
-- ROADMAP is a short open-task index: ID/title, status, owner, card and last
-  status-changing dialogue/PR-comment link. Use `—` for unknown legacy dialogue.
-- `docs/tasks/<id>.md` owns scope, acceptance, dependencies, owned paths, branch,
-  source revision, documents read, checks and outcome. Link its parent phase.
-  Do not repeat current status in the card; link back to the queue.
-- Reserve unique `P<n>-T<nn>` / `Q-<n>` IDs against queue and parent history.
-  Read status/HEAD/worktrees/fresh base refs, then claim one unassigned ready
-  item on `type/<task-id>-<topic>`. Independent writers need exclusive files
-  and separate worktrees. Never overwrite foreign work or stale registry copies.
-- On a status change, update only that row and the card's actual evidence;
-  record actor, timestamp and real dialogue/comment link. Local session IDs and
-  supported resume commands are valid; never invent a session URL.
-- Parent phase files in `docs/tasks/` hold direction/gate links and closed task
-  history; active tasks are linked via ROADMAP, not copied into phase files.
-  Whole closed phases alone move to `docs/phases/` after auditor approval.
+ROADMAP owns one line per open item: ID/title linked to its card, status, owner,
+and last status-changing dialogue or PR-comment link. Use `—` only for unknown
+legacy links; a real session ID/resume command is valid when no URL exists.
+Anyone may add a TODO/question. Reserve the next unused phase/task or question ID
+against ROADMAP and phase/audit history; insert in numeric order. Do not recycle IDs.
+
+Before editing a solution, fetch `origin`, claim/create the row as IN_PROGRESS
+with owner/dialogue, and add its card/parent-plan link. Publish only these registry
+paths in a small commit based on current `origin/dev`; synchronize local `dev`
+without overwriting other changes. If local dev is ahead, use a separate registry
+worktree based on origin rather than pushing unrelated commits. A non-fast-forward
+push requires fetch/reconcile and rechecking the claim; never force-push. Claim
+publication to `origin/dev` is authorized by this workflow; solution publication
+and merge still require their own authorization. An offline/unpublishable claim
+is local only: report the coordination limitation, never pretend it is visible.
+Remote agents request the same update via PR comments; one custodian publishes
+registry changes. The custodian refreshes both directions before each transition.
+
+Create `type/<task-id>-<topic>` from the agreed source revision. Independent
+writers use exclusive paths and separate worktrees. Keep task implementation out
+of integration `dev`; registry-only synchronization is the exception above.
+
+`docs/tasks/<id>.md` contains scope/acceptance, parent phase (or explicit orphan),
+related task links, owned paths/dependencies, branch/PR, documents read and checks.
+It links ROADMAP instead of copying current status. Phases live in `docs/phases/`:
+product-parent backlink, goal, numbered plan, active-card links and accepted audit
+links. Plan substantial work by creating/revising a numbered phase with continuity
+and reasons; keep short standalone tasks as cards, not artificial stages.
 
 ## Evidence
 
-Before READY, the task card or linked PR records:
+Before READY, record in the card or linked PR body:
 
-- Source SHA and owned paths; branch/worktree and dependencies.
-- **Documentation read:** actual `path#section` references and why each mattered.
-  Context suggestions are not proof that a document was read.
-- **Checks:** exact command/scope, execution route, tested SHA, exit code,
-  passed/failed/skipped counts, unrun checks and their reasons; DB cleanup result.
-- **Result:** behavior, limitations and handoff. Remote PR body carries the same
-  compact evidence; the card links it instead of duplicating transcripts.
+- **Solution:** behavior, affected files, source SHA, branch and dependencies.
+- **Documentation read:** actual `path#section` and purpose, not suggested reading.
+- **Checks:** exact commands, route, tested SHA, exit code and passed/failed/skipped
+  counts; required unrun checks and reason; DB target/cleanup when applicable.
+- **Handoff:** direct repository/PR links, remaining limits and review request.
 
-No tests for mechanical/docs-only edits. Preserve historical evidence at its
-original revision; unknown counts are unknown. Put long failure diagnostics in
-`docs/audit/` only when needed, linked from the card. Temporary logs/prompts live
-in ignored `.agents/tmp/`; retain useful evidence before removing them.
+READY means every required acceptance check passed. Docs/mechanical work records
+applicable static checks and explains why application tests are not applicable.
+A required test not run is not PASS; use BLOCKED only if necessary acceptance
+cannot proceed, otherwise continue IN_PROGRESS. A waived check requires an explicit
+owner waiver and remains labelled unrun. Remote PR body is the solution/evidence
+entry point; the card links it instead of duplicating it. Preserve original
+revision attribution; old greens never certify new code. Long failures belong
+in `docs/audit/<id>.md`; temporary logs in ignored `.agents/tmp/`.
 
 ## Acceptance
 
-Executor reports READY; auditor reviews the recorded diff for correctness,
-edge cases, security and acceptance, using the card's documentation/check links.
-On success, mark DONE in the parent phase archive and remove the ROADMAP row
-in the same scoped update. Record accepted SHA, checks and dialogue; integration
-SHA/state is separate and must not be invented. No executor self-acceptance.
+The auditor skill resolves a READY row → card → PR solution/diff and recorded
+checks. Findings may require focused tests; auditors decide based on corrections
+and risk. No routine retest for a docs-only review; full suites need owner request.
+No executor self-acceptance. `audit <ID>` / skill selection is enough; `/audit`
+works only if an interface explicitly maps it to the skill.
 
-BLOCKED is only for an unresolved solution, missing required acceptance evidence
-or a dependency preventing this task. Record the concrete reason, passed/failed/
-unrun checks and recommended next action in the card, with optional audit detail.
-Tool unavailability blocks only if it prevents necessary task work. An already
-completed task is not BLOCKED for session deletion, cleanup reporting, commit
-administration or pending merge; report these separately. Data residue is a
-validation defect when clean test data is a required acceptance condition.
+On success, in one registry update:
+
+1. Write `docs/audit/<id>.md`: verdict, completion date, accepted source SHA,
+   key corrections, affected files (including tests), checks/limitations and dialogue.
+   Consolidate useful card evidence here; do not retain redundant active cards.
+2. Replace the parent plan's task link with that audit link and brief DONE/date
+   summary. Remove the ROADMAP row and task card; repair inbound active references.
+   For an orphan, only the audit remains. Keep historical references as history.
+3. When every phase item is accepted, mark PHASE DONE/date; replace detailed plan
+   with a short outcome per task/audit link, history pointer, accepted SHA and its
+   actual commit date. Do not invent missing historical metadata.
+4. Synchronize the scoped registry update with local/origin dev as under Tasks.
+   Record pending solution integration separately from audit acceptance.
+
+If unresolved acceptance cannot proceed, change IN_PROGRESS/READY to BLOCKED;
+record concrete reason, passed/failed/unrun checks and recommended fix in the
+linked audit diagnostic. Correctable findings return to IN_PROGRESS when work
+can continue. Cleanup/session failures never cause BLOCKED or reopen accepted work.
+Data residue is an acceptance defect if test cleanup is required.
+
+Report briefly: `✅ <ID>: <result>; removed from ROADMAP; archive: <link>;
+checks: <actual results>`. State pending integration/cleanup separately.
 
 ## Delegation
 
-Assign one outcome, exact HEAD, file ownership and checks; require a compact
+Delegate bounded routine edits/inventories/test commands to a cheaper agent when
+its narrow input saves more cost/context than setup and result review. Keep
+judgment and final acceptance with the auditor; do not relay whole documentation
+trees. Assign one outcome, exact HEAD, file ownership and checks; require a compact
 verdict, file refs and counts. Only Codex calls third-party agents; if unavailable,
 use native children under the same scope/guards. Other agents use native children.
 Persist results, then stop/delete owned child sessions immediately. Never delete
@@ -88,7 +121,7 @@ If unavailable, use Kilo, then a native Codex child; permission/HEAD/ownership
 failures are not bypass permissions. Other agents use native test children.
 Collect affected paths after enum/import/layout changes. DB scopes use root
 conftest; disable it only for proven no-DB isolation. No broad suite without
-explicit owner request; auditor retest condition is defined once in AGENTS.
+explicit owner request; auditor retest decisions follow Acceptance above.
 
 ## Database
 

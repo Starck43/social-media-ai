@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from app.services.social.credentials import AuthorizationRequired
 
 # Selection is a task property applied to staged content; `handlers` owns when
-# it runs, `selection` owns what it means (docs/design/task-selection.md).
+# it runs, `selection` owns what it means (docs/COLLECTION.md#task-selection-contract).
 from app.services.monitoring import selection
 
 if TYPE_CHECKING:
@@ -736,7 +736,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     Per-task overrides live in the task payload:
         tracked_users:  list[str] — provider:external_id authors whose items are
                         eligible; a filter over each source's own content, never
-                        a collection target (docs/design/task-selection.md)
+                        a collection target (docs/COLLECTION.md#task-selection-contract)
 
     Before the sources are resolved the runtime provisions the task's own
     collection intent: the population search (see `_run_population_step`) and
@@ -871,7 +871,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     if stage_only:
         await job_progress.begin_phase("collection")
 
-    # `docs/design/task-selection.md`: whose items are eligible is the task's
+    # `docs/COLLECTION.md#task-selection-contract`: whose items are eligible is the task's
     # `tracked_users` filter applied over what each source returns. Selection is
     # not a reason to read someone else's wall, and it cannot decide what is
     # collected — the task's `payload["collection"]` owns that.

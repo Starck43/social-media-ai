@@ -3,7 +3,7 @@
 Owner command:
 `.venv/bin/python -m pytest tests/test_cli_selection_flags.py -q --noconftest -o addopts=`
 
-Контракт из `docs/design/task-selection.md`: автор выбирается ключом задачи
+Контракт из `docs/COLLECTION.md#task-selection-contract`: автор выбирается ключом задачи
 `tracked_users` (`platform:external_id`), текстовый скоуп — `keywords_list`, а
 payload пишет единственный писатель `AgentTaskManager.build_selection_payload`.
 `--monitored` удаляется без совместимого флага.

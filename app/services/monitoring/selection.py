@@ -2,7 +2,7 @@
 
 Pure functions only — no database, no platform client, no provider call — so the
 scope can be tested and reasoned about in isolation. The task, not a source and
-not a scenario, owns the selection (see `docs/design/task-selection.md`):
+not a scenario, owns the selection (see `docs/COLLECTION.md#task-selection-contract`):
 
 1. sources — applied by the caller when it reads staged rows;
 2. tracked users — an author filter, `platform:external_id`, never a collection

@@ -3,7 +3,7 @@
 Never run remotely, with --noconftest, or against a newly repaired schema.
 Normal conftest validates the existing target read-only before fixture DML.
 Synthetic financial evidence and its dependencies are deliberately retained.
-See docs/validation/admin-llm-billing-acceptance.md for permissions and gates.
+See docs/audit/admin-llm-billing-acceptance.md for permissions and gates.
 """
 
 from __future__ import annotations

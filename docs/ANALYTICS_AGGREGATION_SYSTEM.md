@@ -30,7 +30,7 @@ analytics filter narrows the report, never the spend.
 Selection is declared on the task, in three layers applied before the provider
 call — sources, tracked users, text scope. The contract, matching rules and the
 removal of `monitored_users` live in
-[task selection](design/task-selection.md). This document keeps only what the
+[task selection](COLLECTION.md#task-selection-contract). This document keeps only what the
 analytics layer depends on:
 
 - items rejected by a selection layer stay staged until normal retention, are
@@ -49,25 +49,13 @@ comments). Analysis reads the stored decision for new rows and does not
 re-filter; legacy NULL-status rows keep the old analysis-time pass once.
 Collection types come from the task's `collection` block; scenario
 `content_types` is supported media only. See
-[collection plan](design/collection-plan.md).
+[collection plan](audit/collection-plan-history.md).
 
 ## Subject scope (concept, not implemented)
 
-For questions of the form "who X, according to platform Y", the graph is
-*selected author → item → wall/carrier → text*. A chain is currently anchored on
-`(workspace, source, topic_hint)`; the source is the carrier wall, so the same
-story across several walls becomes several chains. Proposed, pending a separate
-design:
-
-- a chain may be aggregated across sources in one workspace when the hint is
-  identical — the resolver compares within a workspace, not per source;
-- a task (or scenario) may fix a stable `chain_hint` instead of letting each
-  model response name the chain freely, so the story that recurs keeps one
-  identity;
-- a recurring subject (a person, an event, a company) is an **entity**, not a
-  chain. Any "who took part in the trip" / "designers of the city" answer is a
-  set of entity rows requiring evidence, not a free-text summary; today the
-  analytics schema has no entity-evidence table, so such answers stay prose.
+Topic chains group model-supplied hints within one workspace/source. They do not
+provide cross-source subject identity or structured entity evidence; names in
+analytics remain model-extracted labels, not verified identities or directories.
 
 ## Grouping contract
 
@@ -264,9 +252,9 @@ link to the detail; they remain read-only. Missing summary/sentiment/topics,
 legacy metrics, missing timestamps and unknown coverage are not reclassified as
 complete or failed. Digest and sqladmin presentation are unchanged.
 
-Validation for this slice is remote pure/mocked/template evidence only. Real
-ASGI/DB permissions, transaction rollback, worker execution and owner localhost
-records require local sequential Kilo validation; no schema migration is needed.
+Historical validation boundaries and evidence for this slice are in the
+[analytics audit record](audit/analytics-history.md). They are not current
+checkout or release evidence.
 
 ## Validation focus
 

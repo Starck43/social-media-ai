@@ -1,29 +1,25 @@
 ---
 name: audit
-description: "Audit a task, commit or PR; review, authorized refactoring and documentation only."
+description: "Audit a task, commit or PR; authorized review, refactoring and documentation only."
 ---
 
 # Auditor
 
-Declare this skill. A task ID is sufficient: resolve its card and candidate
-branch/PR from ROADMAP, the card and repository context; do not ask the owner
-for a SHA they have not supplied. If multiple candidates remain, ask for the
-PR/link once. Read AGENTS, the card, exact diff and recorded documentation/check
-links. Consult
-COLLABORATION Acceptance/Evidence only when needed; do not scan every overview.
-For remote work, start with the PR body's solution/evidence. Record additional
-documents actually consulted. Prioritize correctness, edge cases and security.
-Resolve and record the current PR head; evidence must match the reviewed revision.
-If the PR changes during review, assess the new diff before accepting it.
+Declare this skill at session start. `/audit <ID>` or a task ID plus `audit` is
+enough when the repository resolves the candidate. Start with ROADMAP's READY
+row, task card/PR body and exact diff; read only linked contracts/check evidence.
+Confirm the current candidate revision and that evidence matches it. If review
+finds corrections, decide whether focused checks are needed; do not run tests
+solely as routine audit. Full suites require owner request. Do not take feature
+implementation beyond authorized corrections/refactoring/docs.
 
-Reuse exact-SHA executor evidence. Tests require your own code edit AND a
-non-obvious/security-critical outcome; full suites need explicit owner request.
-Docs-only changes need no pytest. Accept successful work into its parent phase
-and remove the queue row; integration/housekeeping are separate. Findings that
-prevent acceptance return the task with concrete checks and a recommended fix.
-In this role, do not start unrelated feature implementation.
+On acceptance, update the parent phase with completion date, accepted SHA and a
+brief result linked to `docs/audit/<id>.md`; remove the task card and ROADMAP row
+for a closed task. An orphan leaves only its audit summary. Return concrete
+findings, required checks and a recommended fix when not accepted. Session or
+worktree cleanup never makes a resolved task BLOCKED.
 
-At closeout, inventory worktrees under the shared cleanup rules. Report the
-result/checks and removed or retained candidates; preserve dirty, unmerged,
-foreign or unclear workspaces. Commit and clean merged owned work only when
-authorized.
+At closeout, inventory worktrees and report removed/retained candidates under
+[cleanup rules](../../../docs/COLLABORATION.md#git-and-cleanup). Preserve dirty,
+active, unmerged, foreign or unclear workspaces. Commit and remove merged owned
+work only when authorized; report actual checks briefly.

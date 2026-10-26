@@ -2,7 +2,7 @@
 
 Verifies that `handle_collect` correctly applies the task's m2m sources,
 tracked-user selection is a filter over the source's own content, and the
-the retired excluded_users key has no reader (docs/design/task-selection.md).
+the retired excluded_users key has no reader (docs/COLLECTION.md#task-selection-contract).
 """
 
 import uuid

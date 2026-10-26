@@ -47,7 +47,8 @@ _LATIN = (
     "yu",
     "ya",
 )
-_LEGACY_MAPPING = dict(zip(_RUSSIAN, _LATIN, strict=True))
+_LEGACY_MAPPING = dict(zip(_RUSSIAN, _LATIN))
+assert len(_RUSSIAN) == len(_LATIN) and len(_LEGACY_MAPPING) == len(_RUSSIAN)
 
 
 def _legacy_slug(text):
@@ -66,7 +67,7 @@ class SlugCompatibilityTests(unittest.TestCase):
         self.assertEqual(translit_slug(_RUSSIAN.upper()), "".join(_LATIN))
 
     def test_each_russian_letter(self):
-        for letter, expected in zip(_RUSSIAN, _LATIN, strict=True):
+        for letter, expected in zip(_RUSSIAN, _LATIN):
             with self.subTest(letter=letter):
                 self.assertEqual(translit_slug(letter), expected)
 

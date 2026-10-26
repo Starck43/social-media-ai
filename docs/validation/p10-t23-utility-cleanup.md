@@ -10,6 +10,12 @@
 - Environment: Linux, CPython 3.13.15; isolated tools in `/data/p10-t23-tools`: pytest 9.1.1, Black 26.10.1, isort 9.0.2. Not a Python 3.12 or production-environment validation.
 - Requested native test-runner session could not start: `The tool capability failed unexpectedly`; no child URL/result. The executor then followed `.agents/skills/test-runner/SKILL.md` / current `COLLABORATION#Tests` (R10 workflow). This is executor evidence, not independent acceptance. No source edits between frozen-SHA checks.
 - A subsequent evidence/registry-only commit may have a different HEAD; application/test blobs remain pinned above. The PR body records the exact final-HEAD rerun.
+- **Audit correction (opencode, 2026-10-26):** the delivered test used
+  `zip(..., strict=True)`, so the documented `python -m unittest discover`
+  command failed on CPython 3.9 before any assertion ran. The keyword was
+  removed and the equal-length invariant is now asserted explicitly. Re-ran the
+  documented command: CPython 3.9.6 14 passed, CPython 3.12.6 14 passed,
+  CPython 3.14.0 14 passed / 505 subtests. See [audit](../audit/p10-t25.md).
 
 ## Audit and change boundaries
 

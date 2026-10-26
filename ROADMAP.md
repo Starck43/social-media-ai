@@ -18,7 +18,6 @@ means not recorded; source recovery links remain in the card.
 ## [P5](docs/phases/p5-ai-boundaries.md)
 
 - [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **BLOCKED** · codex-analysis-receipts · —
-- [P5-T15](docs/tasks/p5-t15.md) Derived output-contract error envelopes — **IN_PROGRESS** · opencode (audit) · [PR #247](https://github.com/Starck43/social-media-ai/pull/247)
 
 ## [P6](docs/phases/p6-lifecycle-privacy.md)
 

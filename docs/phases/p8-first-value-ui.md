@@ -16,6 +16,7 @@
 - [P8-T29](../tasks/p8-t29.md) — Universal social tasks, VK first
 - [P8-T33](../tasks/p8-t33.md) — Additional VK search categories
 - [P8-T34](../tasks/p8-t34.md) — Non-social resources and connector actions
+- [P8-T35](../tasks/p8-t35.md) — Reconcile universal social task delivery plan
 
 **Accepted history:**
 

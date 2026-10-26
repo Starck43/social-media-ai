@@ -41,6 +41,7 @@ means not recorded; source recovery links remain in the card.
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · —
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · —
 - [P8-T34](docs/tasks/p8-t34.md) Non-social resources and connector actions — **TODO** · unassigned · —
+- [P8-T35](docs/tasks/p8-t35.md) Reconcile universal social task delivery plan — **IN_PROGRESS** · codex-p8-plan · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 
 ## [P9](docs/phases/p9-safe-activation.md)
 

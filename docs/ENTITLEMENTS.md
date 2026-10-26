@@ -31,9 +31,14 @@ The expiry boundary is inclusive: `now >= plan_expires_at` denies the operation.
 
 ## Persistence and execution
 
-Alembic revision 0113 adds nullable `tenants.plan_expires_at` and
+Alembic revision 0117 adds nullable `tenants.plan_expires_at` and
 `entitlement_usage`. It does not set expiry or change existing plan names.
 P2-T16 can populate expiry through a separately verified subscription flow.
+Revision 0117 is based directly on integrated 0112. Open PR #246 independently
+reserves revisions 0113–0116; this task neither reuses their IDs nor depends on
+that unmerged branch. Before integrating both streams, reconcile Alembic heads
+with the owner/custodian (rebase the unapplied revision or add a reviewed merge
+revision) and validate the resulting chain. Do not apply both blindly.
 Do not start code requiring these columns before the separately approved and
 validated migration rollout. Downgrade drops usage evidence; preserve/export
 needed audit data before an authorized rollback.

@@ -82,7 +82,7 @@ contract: versioned namespaced grants, workspace expiry, shared decisions and
 durable per-job usage. Catalog v1 grants `*` without capability quotas to all
 three plans; existing `PLAN_LIMITS` and the deployment member ceiling are not
 changed. Provider credentials/scopes and LLM payer consent remain independent.
-Alembic 0113 is required before using the new fields; its application and all
+Alembic 0117 is required before using the new fields; its application and all
 application/database tests are deferred by the owner, not verified here.
 
 ## Tables

@@ -20,8 +20,10 @@ push requires fetch/reconcile and rechecking the claim; never force-push. Claim
 publication to `origin/dev` is authorized by this workflow; solution publication
 and merge still require the owner’s explicit choice. An offline/unpublishable claim
 is local only: report the coordination limitation, never pretend it is visible.
-Remote agents request the same update via PR comments; one custodian publishes
-registry changes. The custodian refreshes both directions before each transition.
+Remote agents do not write the registry: they request the claim via PR comments
+and one custodian publishes it. The claim reaches `origin/dev` through that
+custodian, not later with the solution. The custodian refreshes both directions
+before each transition.
 
 Create `type/<task-id>-<topic>` from the agreed source revision. Independent
 writers use exclusive paths and separate worktrees. Keep task implementation out

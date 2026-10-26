@@ -38,7 +38,7 @@ means not recorded; source recovery links remain in the card.
 - [P8-T17](docs/tasks/p8-t17.md) Model response diagnostics and consent — **BLOCKED** · codex · —
 - [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —
 - [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
-- [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · [Q-5](docs/tasks/q-5.md)
+- [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · —
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · —
 - [P8-T34](docs/tasks/p8-t34.md) Non-social resources and connector actions — **TODO** · unassigned · —
 

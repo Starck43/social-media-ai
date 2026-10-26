@@ -54,6 +54,7 @@ from app.types.enums.llm_types import APIFormatType
 from ..services.ai.llm_client import LLMClientFactory
 from .base import BaseAdmin
 from .catalog import PermissionLabelAdmin, PlatformRoleGrantAdmin
+from .filtered_select import FilteredSelectMultipleField
 from .price_fields import ExactModelPriceField
 from .role_picker import RoleChoiceField, RolePickerConverter, role_choices, role_edit
 from .widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
@@ -259,8 +260,8 @@ class RoleAdmin(PlatformRoleGrantAdmin, model=PlatformRole):
     )
     form_columns = ["permissions"]
     edit_template = "sqladmin/role_edit.html"
-    form_widget_args = {"permissions": {"data-permission-transfer": "true", "size": 10}}
-    form_args = {"permissions": {"label": "Разрешения роли"}}
+    form_overrides = {"permissions": FilteredSelectMultipleField}
+    form_args = {"permissions": {"label": "Разрешения роли", "transfer_mode": "permissions"}}
     column_formatters_detail = {"codename": lambda m, a: m.label}
 
 
@@ -2331,6 +2332,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     ]
 
     form_overrides = {
+        "sources": FilteredSelectMultipleField,
         "is_active": SelectField,
         "job_type": SelectField,
         **BaseAdmin.form_overrides,

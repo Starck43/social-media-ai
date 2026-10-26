@@ -7,7 +7,7 @@ from importlib.metadata import distribution
 from pathlib import Path
 
 import httpx
-from test_admin_shell_catalog import ROOT, TYPES, console, source
+from test_admin_shell_catalog import ROOT, TYPES, actor, console, source
 
 PACKAGE = distribution("sqladmin").locate_file("sqladmin")
 
@@ -23,7 +23,7 @@ async def render(destination):
         ("large-empty", 206, []),
         ("large-full", 206, range(1, 207)),
     ]:
-        ctx = console(loaded)
+        ctx = console(loaded, actor("superuser"))
         choices = []
         for number in range(1, count + 1):
             domain = ["agent", "platform", "tenancy"][(number - 1) // 72] if count > 30 else "mock"
@@ -54,7 +54,8 @@ async def render(destination):
         ) as client:
             response = await client.get("/admin/platform-role/edit/2")
         assert response.status_code == 200, response.text
-        html = response.text.replace("https://fixture.invalid/static/", (ROOT / "app/static").as_uri() + "/")
+        html = response.text.replace('"/static/', '"' + (ROOT / "app/static").as_uri() + "/")
+        html = html.replace("https://fixture.invalid/static/", (ROOT / "app/static").as_uri() + "/")
         html = html.replace("https://fixture.invalid/admin/statics/", (PACKAGE / "statics").as_uri() + "/")
         html = re.sub(r'<script\b[^>]*src="https?://[^"]+"[^>]*>\s*</script>', "", html)
         (destination / f"{state}.html").write_text(html)

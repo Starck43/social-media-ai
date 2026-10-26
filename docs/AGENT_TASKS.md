@@ -422,10 +422,13 @@ any entrypoint.
 
 ## Explicit task plans
 
-Owner-approved direction (2026-10-25), tracked by [P8-T29](tasks/p8-t29.md).
-This is a target contract, not evidence of completed implementation or live VK
-availability. Keep the existing design and standalone management pages. Chat is
-an additional interface to the same persisted configuration.
+Owner-approved direction (2026-10-25), tracked by [P8-T29](tasks/p8-t29.md) and
+the sequenced follow-ups in [P8](phases/p8-first-value-ui.md). This is a target
+contract, not evidence of completed implementation or live VK availability.
+The AI chat is the primary workspace across request, clarification, preview,
+execution, status, results and follow-up. Dedicated source, scenario, task,
+schedule and digest pages remain first-class, directly accessible settings and
+management surfaces over the same persisted state. Preserve the existing design.
 
 ### Model
 
@@ -433,13 +436,16 @@ an additional interface to the same persisted configuration.
 | --- | --- |
 | Workspace | Tasks, data, results and membership rights |
 | Conversation | Requests/discussion and references to tasks/results |
-| Task | Goal, resources, scenario, data window, trigger, limits and output |
-| Resource | Input/output object; social sources are the first resource type |
-| Connection | Credential owner, permissions and reachable environment |
-| Platform/connector | Typed available operations and input/output contracts |
-| Scenario | Reusable methodology and result requirements |
-| Execution plan | Concrete bounded operations using the existing runtime |
-| Run | Effective configuration snapshot, progress, payer, cost and outcomes |
+| Platform | Provider ecosystem/type, such as VK or Telegram |
+| Connector | Implemented adapter and its typed operations/capabilities |
+| Connection | Credential/grant owner, scopes, selected account and health state |
+| Gateway | Authorized execution route/environment; future local/private gateways are explicitly paired and scoped |
+| Resource | General input/output object; social Sources are the first input type |
+| Source | Concrete social input target or query lane |
+| Scenario | Reusable analysis methodology and result requirements |
+| Task | Declarative goal, sources, scenario, window, trigger, limits and output |
+| Execution plan | Concrete bounded operations reusing the existing runtime/jobs |
+| Run | One task occurrence with effective configuration snapshot, progress, payer, cost and outcomes; may use multiple jobs |
 | Result | Evidence-backed output, source identity, dates and links |
 | Digest | Period report over analytics; generation and delivery are separate |
 
@@ -458,10 +464,14 @@ Implementation status and exact checks remain in the task card.
 
 ### User input and surfaces
 
-Six input groups: goal, data, processing, result, timing and limits. Sources,
-scenarios, tasks/schedules and digests remain independently editable pages.
-Web forms, API, CLI, admin and agent tools use shared validation/services.
-Existing components and navigation remain; no redesign.
+Six input groups: goal, data, processing, result, timing and limits. Chat should
+carry the user through the full task lifecycle; it must not route the main work
+through management forms. Source, scenario, task, schedule and digest pages stay
+independently accessible for setup, review and direct editing. Web forms, API,
+CLI, admin and agent tools use shared validation/services and the same persisted
+definitions. Existing components and navigation remain; no redesign. The
+remaining chat-first journey and standalone management checks are tracked in
+[P8-T37](tasks/p8-t37.md).
 
 - Sources: platform, external identity, connection/mode, collection settings,
   health and related tasks. Label temporary task-owned discovery sources.

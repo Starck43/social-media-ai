@@ -311,4 +311,11 @@ or whole-gate acceptance claim.
 
 ## Universal social task interface (P8-T29)
 
-Target contract: [universal tasks](AGENT_TASKS.md#explicit-task-plans). Chat edits the same source/scenario/task configuration as the dedicated pages. Add bounded plan previews and a separate one-off research launch; do not remove confirmation from recurring task creation or digest sends. Implementation/evidence are tracked in [P8-T29](tasks/p8-t29.md).
+Target contract: [universal tasks](AGENT_TASKS.md#explicit-task-plans). Chat is
+the primary workspace for the task lifecycle; dedicated pages remain directly
+accessible for source, scenario, task, schedule and digest management. Current
+chat task tools edit the same configuration as those pages, but the full
+chat-first journey is not yet accepted; see [P8-T37](tasks/p8-t37.md). Bounded
+plan previews and one-off research keep recurring-task and digest-send
+confirmation gates intact. The integrated foundation and its evidence are in
+[P8-T29](tasks/p8-t29.md).

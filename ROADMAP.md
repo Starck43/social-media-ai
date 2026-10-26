@@ -7,8 +7,10 @@ means not recorded; source recovery links remain in the card.
 
 ## [P2](docs/phases/p2-usage-spend.md)
 
-- [P2-T08](docs/tasks/p2-t08.md) corporate/shared billing accounts — **TODO** · product-owner · —
+- [P2-T08](docs/tasks/p2-t08.md) corporate/shared billing accounts — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · —
+- [P2-T15](docs/tasks/p2-t15.md) plan entitlements for connector operations — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
+- [P2-T16](docs/tasks/p2-t16.md) self-service subscription activation — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 
 ## [P4](docs/phases/p4-delivery.md)
 
@@ -40,8 +42,12 @@ means not recorded; source recovery links remain in the card.
 - [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · —
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · —
-- [P8-T34](docs/tasks/p8-t34.md) Non-social resources and connector actions — **TODO** · unassigned · —
-- [P8-T35](docs/tasks/p8-t35.md) Reconcile universal social task delivery plan — **IN_PROGRESS** · codex-p8-plan · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
+- [P8-T34](docs/tasks/p8-t34.md) Non-social connector pilot — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
+- [P8-T35](docs/tasks/p8-t35.md) Reconcile universal social task delivery plan — **READY** · codex-p8-plan · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
+- [P8-T36](docs/tasks/p8-t36.md) VK connection capabilities and access selection — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
+- [P8-T37](docs/tasks/p8-t37.md) Complete chat-first and standalone task journeys — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
+- [P8-T38](docs/tasks/p8-t38.md) Compose collection, analysis and digest schedules — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
+- [P8-T39](docs/tasks/p8-t39.md) Accept the first VK research-to-digest journey — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 
 - [P8-T36](docs/tasks/p8-t36.md) Reusable horizontal relationship picker — **READY** · Notion remote executor/custodian · [PR #244 evidence](https://github.com/Starck43/social-media-ai/pull/244#issuecomment-6418461244)
 

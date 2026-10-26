@@ -56,7 +56,7 @@ to P8; first move it to a future phase or record an explicit owner cancellation.
 
 **Accepted history:**
 
-- [P8-T35](../audit/p8-t35.md) — reconcile the universal social task plan and follow-up cards · 2026-10-26 · `a0cda00`
+- [P8-T35](../audit/p8-t35.md) — reconcile the universal social task plan and follow-up cards · 2026-10-26 · `678466b`
 - [P8-T26](../audit/phase-p8-history.md#p8-t26) — implement the accepted jobs lifecycle audit: built-in cleanup independent of a scheduled prune task, default 24-hour terminal…
 - [P8-T01](../audit/phase-p8-history.md#p8-t01) — home mixed latest-results feed · 2026-10-16 · `19ce6e1`
 - [P8-T02](../audit/phase-p8-history.md#p8-t02) — home upcoming schedules · 2026-10-16 · `19ce6e1`

@@ -23,8 +23,6 @@ means not recorded; source recovery links remain in the card.
 
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · —
 - [P6-T02](docs/tasks/p6-t02.md) One retention/export/offboarding contract — **TODO** · unassigned · —
-- [P6-T05](docs/tasks/p6-t05.md) Administrator deletion and source admission — **IN_PROGRESS** · notion-ai (fix/p6-t05-admin-source-deletion) · [owner-authorized claim](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6428183682)
-
 ## [P7](docs/phases/p7-operations.md)
 
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · —
@@ -56,13 +54,13 @@ means not recorded; source recovery links remain in the card.
 
 
 
-- [P10-T31](docs/tasks/p10-t31.md) Root compat shim legacy helper symbols (layout test gap from P10-T28) — **IN_PROGRESS** · notion-ai (fix/p10-t31-legacy-shim-exports) · [owner-authorized claim](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6429030450)
-
 ## Questions
 
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · —
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · —
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · —
 - [Q-12](docs/tasks/q-12.md) Self-service email password recovery for the public phase — **DEFERRED** · product-owner · pre-production: email confirmation first, then recovery
+- P6-T05 audit follow-up: stale catalog assertion `tests/admin/test_admin_authorization.py::test_the_catalogue_reads_the_model_name_off_the_views` fails on dev (`KeyError: 'mark-read'` after the #246 notification-action removal) — **OPEN** · unassigned · [P6-T05 audit](docs/audit/p6-t05.md)
+- P6-T05 audit follow-up: `tests/models/test_llm_models_manager.py::test_delete_reports_workspace_that_lost_its_agent_model` leaks its tenant (no cleanup) — **OPEN** · unassigned · [P6-T05 audit](docs/audit/p6-t05.md)
 
 Choose one unclaimed dependency-ready task; P10 security P0 items have priority.

@@ -12,8 +12,8 @@
 - [P10-T25](../audit/p10-t25.md) — removal of two unused utilities and the `str.maketrans` slug rewrite; accepted 2026-10-26 at `fe04ab85`, integrated into dev via merge `2fe129c`. Historical conflicting branch ID P10-T23 reconciled. [PR #243](https://github.com/Starck43/social-media-ai/pull/243) was closed without merge after its head was integrated into dev.
 - [P10-T26](../audit/p10-t26.md) — notification/bot-action/agent-session model and manager layout; accepted 2026-10-27 at `898f904b`, integrated via merge `4e74318c` ([PR #246](https://github.com/Starck43/social-media-ai/pull/246)).
 - [P10-T27](../audit/p10-t27.md) — legacy notification API correctness; accepted 2026-10-27, integrated in the same PR #246.
-- [P10-T28](../audit/p10-t28.md) — retire root-level model compatibility modules (P10-T26 domains); accepted 2026-10-27; legacy-helper-symbol gap registered as [P10-T31](../tasks/p10-t31.md).
-- [P10-T31](../tasks/p10-t31.md) — root compat shim legacy helper symbols (layout test gap from P10-T28)
+- [P10-T28](../audit/p10-t28.md) — retire root-level model compatibility modules (P10-T26 domains); accepted 2026-10-27; legacy-helper-symbol gap registered as [P10-T31](../audit/p10-t31.md).
+- [P10-T31](../audit/p10-t31.md) — root compat shim legacy helper symbols (layout test gap from P10-T28); accepted 2026-10-27 at `4e4b72a8`, integrated via merge `dbf6673f` (PR #255).
 - [P10-T29](../audit/p10-t29.md) — test-schema reset survives migration guard triggers; accepted 2026-10-26 at `3e95acc8` (owner-authorized fast-forward merge).
 - [P10-T08](../audit/p10-t08.md) — Home pipeline permission gates; accepted 2026-10-26 at `ceff3892` (independent audit, owner-choice merge `0ff9de11`, [PR #249](https://github.com/Starck43/social-media-ai/pull/249)).
 - [P10-T09](../audit/p10-t09.md) — truthful Home preview counts and activity labels; accepted 2026-10-26 at `94c559e1` (independent audit, owner-choice merge `ef5d7936`, [PR #250](https://github.com/Starck43/social-media-ai/pull/250)).
@@ -26,7 +26,7 @@ integrated first; P10-T27 API correctness and the P10-T26-domain shims landed
 in the same PR #246 (2026-10-27). Product redesigns [P4-T02](../audit/p4-t02.md)
 and [P9-T08](../audit/p9-t08.md) were approved by the owner and shipped in the
 same integration. Remaining root-module cleanup and the shim legacy-symbol gap
-continue through [P10-T31](../tasks/p10-t31.md), one domain at a time.
+continue through [P10-T31](../audit/p10-t31.md), one domain at a time.
 
 **Accepted history:**
 

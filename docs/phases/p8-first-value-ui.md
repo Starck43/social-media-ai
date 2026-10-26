@@ -47,8 +47,8 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 - [P8-T37](../tasks/p8-t37.md) — task plan execution scope and shared mutation
   policy; [PR #245](https://github.com/Starck43/social-media-ai/pull/245),
   independently reviewed with required checks passed at candidate
-  `f695e6478537733b92973f1ba50ed9cc51bf2fba`; code integration is pending.
-  Owner acceptance and parent-phase closure remain pending. The new P8-T39
+  `f695e6478537733b92973f1ba50ed9cc51bf2fba`; integrated into dev by that
+  merge commit. Owner acceptance and parent-phase closure remain pending. The new P8-T39
   journey reuses this work after its separate review; it does not duplicate the
   mutation policy.
 

@@ -45,6 +45,8 @@ means not recorded; source recovery links remain in the card.
 
 - [P8-T36](docs/tasks/p8-t36.md) Reusable horizontal relationship picker — **READY** · Notion remote executor/custodian · [PR #244 evidence](https://github.com/Starck43/social-media-ai/pull/244#issuecomment-6418461244)
 
+- [P8-T37](docs/tasks/p8-t37.md) Task plan execution scope and shared mutation policy — **IN_PROGRESS** · notion-ai (fix/p8-t37-plan-execution-dry) · [owner dialogue](https://app.notion.com/chat?t=4053606b33f6806096a700a96c4570a2)
+
 ## [P9](docs/phases/p9-safe-activation.md)
 
 - [P9-T01](docs/tasks/p9-t01.md) one capability-specific activation contract — **TODO** · unassigned · —

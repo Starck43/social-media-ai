@@ -30,6 +30,7 @@ def bind_managers(models):
         "app.models.managers.llm_dispatch_receipt_manager"
     ).LLMDispatchReceiptManager()
     models.DigestRun.objects = import_module("app.models.managers.digest_run_manager").DigestRunManager()
+    models.NotificationReceipt.objects = import_module("app.models.managers.notification_receipt_manager").NotificationReceiptManager()
     models.Notification.objects = import_module("app.models.managers.notification_manager").NotificationManager()
     models.NotificationPreference.objects = import_module(
         "app.models.managers.notification_preference_manager"

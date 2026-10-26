@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING, Any, Optional
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from ..agent_message import AgentMessage
+    from ..agent.agent_message import AgentMessage
 
 
 class AgentMessageManager(BaseManager["AgentMessage"]):
     """Conversation history for the agent loop."""
 
     def __init__(self):
-        from ..agent_message import AgentMessage
+        from ..agent.agent_message import AgentMessage
 
         super().__init__(AgentMessage)
 

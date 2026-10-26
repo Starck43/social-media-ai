@@ -1,0 +1,5 @@
+{% extends "web/base.html" %}
+{% block page_heading %}Проверка доставки{% endblock %}
+{% block content %}<div class="ui-card"><h2>Доставка требует проверки</h2><p>Сигнал относится к пространству #{{ workspace_id }}. Переход заново проверит ваш доступ.</p>
+<form method="post" action="/app/notifications/delivery/{{ workspace_id }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<button class="ui-control">Перейти в пространство #{{ workspace_id }} и открыть доставку</button></form></div>{% endblock %}

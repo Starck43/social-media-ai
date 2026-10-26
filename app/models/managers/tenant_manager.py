@@ -25,7 +25,7 @@ from app.core.tenant_context import current_tenant_id, is_bypass
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from ..tenant import Tenant, TenantChannel, TenantInvite, TenantUser
+    from ..tenancy import Tenant, TenantChannel, TenantInvite, TenantUser
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ async def _channel_limit_reason(tenant_id: int) -> str | None:
 
 class TenantManager(BaseManager["Tenant"]):
     def __init__(self):
-        from ..tenant import Tenant
+        from ..tenancy import Tenant
 
         super().__init__(Tenant)
 
@@ -128,7 +128,7 @@ class TenantManager(BaseManager["Tenant"]):
 
 class TenantUserManager(BaseManager["TenantUser"]):
     def __init__(self):
-        from ..tenant import TenantUser
+        from ..tenancy import TenantUser
 
         super().__init__(TenantUser)
 
@@ -181,7 +181,7 @@ class TenantUserManager(BaseManager["TenantUser"]):
     async def add_web_member(self, *, tenant_id, user_id, role_id=None, role=None):
         """Serialize seat admission; an active membership never changes role here."""
         from ..tenancy.workspace_role import WorkspaceRole
-        from ..tenant import Tenant
+        from ..tenancy import Tenant
 
         if role_id is None and role is not None:
             resolved = await WorkspaceRole.objects.get(codename=_resolve_role_codename(role))
@@ -227,7 +227,7 @@ class TenantUserManager(BaseManager["TenantUser"]):
         workspace must not stay reachable through a membership row that is still
         active, matching the chat identity resolver and invite redemption.
         """
-        from ..tenant import Tenant, TenantUser
+        from ..tenancy import Tenant, TenantUser
 
         active_tenants = select(Tenant.id).where(Tenant.is_active.is_(True))
         rows = await self.filter(
@@ -246,8 +246,8 @@ class TenantUserManager(BaseManager["TenantUser"]):
     async def _change_team(self, *, tenant_id, membership_id, role_id=None, disable=False, ai_chat_enabled=None):
         """Serialize every privilege change on the workspace row, then recheck authority."""
         from ..tenancy.workspace_role import WorkspaceRole
-        from ..tenant import Tenant
-        from ..user import User
+        from ..tenancy import Tenant
+        from ..identity.user import User
 
         actor = get_current_user()
         if actor is None or current_tenant_id() != tenant_id or is_bypass():
@@ -355,7 +355,7 @@ class TenantUserManager(BaseManager["TenantUser"]):
 
 class TenantInviteManager(BaseManager["TenantInvite"]):
     def __init__(self):
-        from ..tenant import TenantInvite
+        from ..tenancy import TenantInvite
 
         super().__init__(TenantInvite)
 
@@ -466,8 +466,8 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
     async def redeem_web(self, *, code: str, user_id: int) -> dict[str, Any]:
         """Atomically consume a live invitation and admit one workspace seat."""
         from ..tenancy.workspace_role import WorkspaceRole
-        from ..tenant import Tenant, TenantUser
-        from ..user import User
+        from ..tenancy import Tenant, TenantUser
+        from ..identity.user import User
 
         candidate = await self.get(code_hash=hash_invite_code(code))
         invalid = {"status": "invalid", "reason": "unknown, expired or exhausted code"}
@@ -537,7 +537,7 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
 
 class TenantChannelManager(BaseManager["TenantChannel"]):
     def __init__(self):
-        from ..tenant import TenantChannel
+        from ..tenancy import TenantChannel
 
         super().__init__(TenantChannel)
 

@@ -24,8 +24,8 @@ def role_manager(source, ctx, target):
             "app.models.managers.base_manager": NS(BaseManager=StorageBoundary),
             "app.core.permissions": source.contexts,
             "app.core.tenant_context": NS(is_bypass=lambda: False),
-            "app.models.role": NS(role_permission=source.role_module.role_permission),
-            "app.models.user": NS(User=source.models.User),
+            **dict.fromkeys(('app.models.role', 'app.models.identity.role'), NS(role_permission=source.role_module.role_permission)),
+            **dict.fromkeys(('app.models.user', 'app.models.identity.user'), NS(User=source.models.User)),
         },
     )
     manager = module.RoleManager(source.PlatformRole)

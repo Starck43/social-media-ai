@@ -7,7 +7,7 @@ from .base_manager import BaseManager
 from app.utils.enum_helpers import get_enum_value
 
 if TYPE_CHECKING:
-	from ..platform import Platform
+	from ..collection.platform import Platform
 	from app.types import PlatformType
 
 
@@ -25,7 +25,7 @@ class PlatformManager(BaseManager['Platform']):
 	"""
 
 	def __init__(self):
-		from ..platform import Platform
+		from ..collection.platform import Platform
 		super().__init__(Platform)
 
 	async def get_by_name(
@@ -180,7 +180,7 @@ class PlatformManager(BaseManager['Platform']):
 		Returns:
 			Dictionary with platform statistics
 		"""
-		from ..source import Source
+		from ..collection.source import Source
 		
 		# Get all platforms (including inactive for complete stats)
 		all_platforms = await self.filter()

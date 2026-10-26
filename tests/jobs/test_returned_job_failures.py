@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock
 
 from source_import_isolation import load_isolated_source
 
+from tests.shared.job_catalog_double import run_with_job_catalog
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -48,7 +50,9 @@ class ManagerDouble:
 class PolicyTests(unittest.TestCase):
     def test_explicit_failure(self):
         failure = OUTCOMES.returned_failure({"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.2})
-        self.assertEqual(failure.audit_result(), {"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.2})
+        self.assertEqual(
+            failure.audit_result(), {"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.2}
+        )
 
     def test_raw_provider_text_and_extra_payload_not_audited(self):
         result = {"status": "failed", "error": "PRIVATE-PROVIDER-TEXT", "response": {"customer": "PRIVATE"}}
@@ -56,7 +60,9 @@ class PolicyTests(unittest.TestCase):
 
     def test_unknown_error_shapes_use_static_code(self):
         for error in (None, {}, [], True, "other_code"):
-            self.assertEqual(OUTCOMES.returned_failure({"status": "failed", "error": error}).code, "handler_returned_failure")
+            self.assertEqual(
+                OUTCOMES.returned_failure({"status": "failed", "error": error}).code, "handler_returned_failure"
+            )
 
     def test_legacy_error_counters_are_not_terminal_failure(self):
         for value in ({"error": 2}, {"status": "ok"}, {"status": "skipped"}, None, []):
@@ -67,7 +73,7 @@ class PolicyTests(unittest.TestCase):
             self.assertEqual(OUTCOMES.reported_llm_cost({"llm_cost": cost}), float(cost))
 
     def test_invalid_cost_is_unknown_not_coerced(self):
-        for cost in (None, True, "0.2", -1, float("nan"), float("inf"), 10 ** 1000):
+        for cost in (None, True, "0.2", -1, float("nan"), float("inf"), 10**1000):
             self.assertIsNone(OUTCOMES.reported_llm_cost({"llm_cost": cost}))
 
 
@@ -101,12 +107,15 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
             renew_claim=AsyncMock(return_value=True),
         )
         self.claim = CLAIMS.JobClaim.capture(self.job)
+
         async def done(job_id, *, claim, result=None, **kwargs):
             return CLAIMS.JobOutcomeReceipt(claim, CLAIMS.OutcomeAck.DONE, result=result)
+
         async def failed(job_id, *, claim, error, result=None, **kwargs):
             return CLAIMS.JobOutcomeReceipt(
                 claim, self.jobs.mark_failed.return_value.acknowledgement, result=result, error=error
             )
+
         self.jobs.mark_done.side_effect = done
         self.jobs.mark_failed.side_effect = failed
         self.jobs.mark_done.return_value = CLAIMS.JobOutcomeReceipt(self.claim, CLAIMS.OutcomeAck.DONE)
@@ -126,18 +135,24 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
             "app.jobs.enqueue": module_with(enqueue_task_run=AsyncMock(return_value=self.job)),
             "app.jobs.handlers": module_with(HANDLERS={}),
             "app.jobs.result_outcomes": OUTCOMES,
+            "app.services.ai.catalog_execution": module_with(run_with_job_catalog=run_with_job_catalog),
             "app.jobs.claim_outcomes": CLAIMS,
             "app.models.managers.job_manager": module_with(JobManager=ManagerDouble(self.jobs)),
             "app.services.digest.delivery_outcomes": module_with(DeliveryFailure=DeliveryFailure),
             "app.services.digest.job_delivery": module_with(
-                REFERENCE_KEY="digest_delivery", enabled=lambda: self.flag,
-                execute_digest_job=self.digest_execute, finalize_digest_job=self.finalize),
+                REFERENCE_KEY="digest_delivery",
+                enabled=lambda: self.flag,
+                execute_digest_job=self.digest_execute,
+                finalize_digest_job=self.finalize,
+            ),
         }
         # Late imports stay local to this actual-source module as well.
         self.imports = modules
         self.dispatcher = load_source("_dispatcher_failure_test", "app/jobs/dispatcher.py", imports=modules)
         self.notify = self.dispatcher._notify_job_result = AsyncMock()
-        self.handler = AsyncMock(return_value={"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.12})
+        self.handler = AsyncMock(
+            return_value={"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.12}
+        )
 
     async def test_failed_result_not_done_not_retried_and_retains_cost(self):
         await self.dispatcher.execute_job(self.job, self.handler)
@@ -172,7 +187,9 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.handler.return_value = {"status": "failed", "error": "PRIVATE-TEXT", "response": "PRIVATE"}
         with self.assertLogs(self.dispatcher.logger, level="ERROR") as logs:
             await self.dispatcher.execute_job(self.job, self.handler)
-        self.assertNotIn("PRIVATE", str(logs.output) + str(self.notify.await_args) + str(self.jobs.mark_failed.await_args))
+        self.assertNotIn(
+            "PRIVATE", str(logs.output) + str(self.notify.await_args) + str(self.jobs.mark_failed.await_args)
+        )
 
     async def test_result_persistence_failure_does_not_enable_retry(self):
         self.jobs.mark_failed.side_effect = [RuntimeError("write_failed"), False]
@@ -251,6 +268,7 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
             return CLAIMS.JobOutcomeReceipt(
                 kwargs["claim"], CLAIMS.OutcomeAck.FAILED, result=kwargs["result"], error=kwargs["error"]
             )
+
         self.jobs.mark_failed.side_effect = fail
         self.dispatcher.HANDLERS["learn"] = self.handler
         result = await self.dispatcher._run_claimed_inline(self.job)
@@ -272,12 +290,15 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
         class BaseManager:
             def __class_getitem__(cls, item):
                 return cls
+
         modules = {
             "app.models.managers.base_manager": module_with(BaseManager=BaseManager),
             "app.core.config": module_with(settings=SimpleNamespace(JOB_RETRY_BACKOFF_SECONDS=300)),
         }
         module = load_source(
-            "app.models.managers._failure_manager_test", "app/models/managers/job_manager.py", imports=modules,
+            "app.models.managers._failure_manager_test",
+            "app/models/managers/job_manager.py",
+            imports=modules,
         )
         self.manager = module.JobManager.__new__(module.JobManager)
         self.job = SimpleNamespace(id=7, attempts=1, max_attempts=3)
@@ -292,7 +313,9 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
         update = self.manager.update_by_id.await_args.kwargs
         self.assertEqual((update["status"], update["result"], update["llm_cost"]), ("failed", result, 0.12))
         self.assertIn("finished_at", update)
-        self.manager._record_task_result.assert_awaited_once_with(self.job, status="failed", error="invalid_structured_output")
+        self.manager._record_task_result.assert_awaited_once_with(
+            self.job, status="failed", error="invalid_structured_output"
+        )
 
     async def test_zero_cost_written_and_unknown_not_invented(self):
         await self.manager.mark_failed(7, "failed", False, llm_cost=0)

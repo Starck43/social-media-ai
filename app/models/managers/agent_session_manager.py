@@ -13,7 +13,7 @@ from app.core.database import with_db_session
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from ..agent_session import AgentSession
+    from ..agent.agent_session import AgentSession
 
 
 def _is_session_chat_conflict(error: IntegrityError) -> bool:
@@ -45,7 +45,7 @@ class AgentSessionManager(BaseManager["AgentSession"]):
     """Sessions of the agent: one row per (tenant, channel, chat_id)."""
 
     def __init__(self):
-        from ..agent_session import AgentSession
+        from ..agent.agent_session import AgentSession
 
         super().__init__(AgentSession)
 

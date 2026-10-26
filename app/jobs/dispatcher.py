@@ -20,8 +20,8 @@ from app.core.tenant_context import tenant_scope
 from app.jobs import progress as job_progress
 from app.jobs.claim_outcomes import JobClaim, JobClaimLostError, JobNotAcquiredError, JobOutcomeReceipt, OutcomeAck
 from app.jobs.handlers import HANDLERS
-from app.jobs.result_outcomes import reported_llm_cost, returned_failure
 from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX, outcome_unconfirmed
+from app.jobs.result_outcomes import reported_llm_cost, returned_failure
 from app.models.managers.job_manager import JobManager
 
 logger = logging.getLogger(__name__)
@@ -257,8 +257,11 @@ async def _notify_job_result(job: Any, *, success: bool, error: str | None = Non
                 title=f"Ошибка задачи «{label}»",
                 message=f"Задача «{label}» не выполнена. {_FAILURE_MESSAGE}",
                 ntype=NotificationType.API_ERROR,
-                entity_type="task",
+                entity_type="task" if job.agent_task_id else None,
                 entity_id=job.agent_task_id,
+                recipient_user_ids=[job.initiated_by_user_id] if getattr(job, "initiated_by_user_id", None) else [],
+                severity="action_required",
+                dedup_key=f"job-outcome:{job.id}:attempt:{getattr(job, 'attempts', 0)}:{success}",
             )
         except Exception:  # noqa: BLE001 — a failing notification must never break the worker
             _log_job(logging.ERROR, "job_error_notification_failed", job, error_code="notification_write_failed")
@@ -272,8 +275,11 @@ async def _notify_job_result(job: Any, *, success: bool, error: str | None = Non
             title=f"Задача «{label}» завершена с ошибками" if source_errors else f"Задача «{label}» выполнена",
             message=_job_success_message(job, result),
             ntype=NotificationType.API_ERROR if source_errors else NotificationType.REPORT_READY,
-            entity_type="task",
+            entity_type="task" if job.agent_task_id else None,
             entity_id=job.agent_task_id,
+            recipient_user_ids=[job.initiated_by_user_id] if getattr(job, "initiated_by_user_id", None) else [],
+            severity="warning" if source_errors else "info",
+            dedup_key=f"job-outcome:{job.id}:attempt:{getattr(job, 'attempts', 0)}:{success}",
         )
     except Exception:  # noqa: BLE001
         _log_job(logging.ERROR, "job_success_notification_failed", job, error_code="notification_write_failed")
@@ -308,9 +314,14 @@ async def _post_ordinary_outcome(receipt: JobOutcomeReceipt) -> JobOutcomeReceip
             claim,
             success=success,
             result=receipt.result if success else None,
-            error=None if success else (
-                "Результат выполнения не подтверждён. Проверьте задание перед повторным запуском."
-                if outcome_unconfirmed(receipt.error) else _FAILURE_MESSAGE
+            error=(
+                None
+                if success
+                else (
+                    "Результат выполнения не подтверждён. Проверьте задание перед повторным запуском."
+                    if outcome_unconfirmed(receipt.error)
+                    else _FAILURE_MESSAGE
+                )
             ),
         )
     except Exception:
@@ -359,13 +370,15 @@ async def _ordinary_heartbeat(claim: JobClaim, state: _OrdinaryHeartbeatState) -
 async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, payload: dict) -> Any:
     async def invoke():
         if claim.job_type == "digest":
+            from app.services.ai.catalog_execution import run_with_job_catalog
             from app.services.digest.job_delivery import execute_digest_job
 
-            from app.services.ai.catalog_execution import run_with_job_catalog
             async def scoped_digest(digest_payload):
                 return await run_with_job_catalog(job, handler, digest_payload)
+
             return await execute_digest_job(job, payload, scoped_digest)
         from app.services.ai.catalog_execution import run_with_job_catalog
+
         return await run_with_job_catalog(job, handler, payload)
 
     # The handler task copies the bound context; per-source progress uses this claim.
@@ -505,11 +518,12 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
             return await _execute_ordinary(job, handler, payload, allow_retry=allow_retry)
         # Keep checkpoint dispatch/finalization, including persisted-reference routing.
         try:
+            from app.services.ai.catalog_execution import run_with_job_catalog
             from app.services.digest.job_delivery import execute_digest_job, finalize_digest_job
 
-            from app.services.ai.catalog_execution import run_with_job_catalog
             async def scoped_digest(digest_payload):
                 return await run_with_job_catalog(job, handler, digest_payload)
+
             result = await execute_digest_job(job, payload, scoped_digest)
             if await finalize_digest_job(job, result=result) is None:
                 _log_job(logging.WARNING, "job_completion_claim_lost", job, error_code="claim_lost")

@@ -308,10 +308,10 @@ business-workflow execution.
 | `CollectedItemAdmin` | `CollectedItem` | `/admin/collected-item/list` | Raw staged content |
 | `AgentScenarioAdmin` | `AgentScenario` | `/admin/agent-scenario/list` | Analysis methodology, prompt preview and active flag |
 | `AgentTaskAdmin` | `AgentTask` | `/admin/agent-task/list` | Scheduled tasks and inline run action |
-| `BotActionAdmin` | `BotAction` | `/admin/bot-action/list` | Create disabled; edit form contains only `status` |
+| `BotActionAdmin` | `BotAction` | `/admin/bot-action/list` | Read-only general proposal ledger; no arbitrary status edits or deletion |
 | `AIAnalyticsAdmin` | `AIAnalytics` | `/admin/ai-analytics/list` | Create disabled; stored analysis view |
 | `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection: create/edit/delete/export disabled |
-| `NotificationAdmin` | `Notification` | `/admin/notification/list` | Shared workspace read state; guarded hidden send action |
+| `NotificationAdmin` | `Notification` | `/admin/notification/list` | Read-only event archive, not a personal inbox; guarded hidden legacy send action |
 | `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Personal catalog: create/edit for roles holding `llm.provider` CREATE/UPDATE (the owner always), connection test, owner-only credential use |
 | `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Personal models: create/edit for roles holding `llm.model` CREATE/UPDATE (the owner always), short/mock/real checks |
 | `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Global workspace settings; platform-admin-only visibility |
@@ -327,7 +327,7 @@ The existence of a model or permission resource never creates an admin view.
 
 ## Custom actions and side effects
 
-These are the **10 declared actions** in `views.py`. Default UI placement and
+These are the **9 declared actions** in `views.py`. Default UI placement and
 required model right are shown separately from implementation behavior.
 
 | View / action slug | Right | UI placement | Current behavior |
@@ -338,15 +338,17 @@ required model right are shown separately from implementation behavior.
 | `AgentScenarioAdmin` / `toggle-active` | UPDATE | List + detail | Toggles selected scenarios' `is_active` |
 | `AgentTaskAdmin` / `run-now` | UPDATE | List + detail | Admits/enqueues the task run, claims that exact Job and executes inline in the request process; not merely a queue submission |
 | `AIAnalyticsAdmin` / `view-analysis` | VIEW | List + detail | Redirects to the stored analysis detail route |
-| `NotificationAdmin` / `mark-read` | UPDATE | List + detail | Sets selected rows' shared `is_read`; not personal acknowledgement or issue resolution |
 | `NotificationAdmin` / `send-to-messenger` | UPDATE | Hidden in list + detail | Endpoint remains registered; first selected notification requires explicit `recipient_id` for an active owned workspace binding |
 | `LLMProviderAdmin` / `test-connection` | CONFIGURE | List + detail | Uses the first active model found for that provider; real `client.analyze()` call with a fixed short prompt and `max_tokens=10` |
 | `LLMModelAdmin` / `test-model` | CONFIGURE | List + detail | Read-only GET opens the UI; POST checks fresh CONFIGURE/CSRF; explicit real POST is the paid action |
 
 `PlatformAdmin` declares no custom action; there is no implemented or placeholder
 sync button in the current class. `JobAdmin` has no run/cancel/retry button.
-Changing a `BotAction.status` through its form is not evidence that full
-actor-bound approval, replay safety or external execution is implemented.
+BotAction/AgentAction status is no longer editable through an admin form. Use the
+CSRF-protected workspace review page `/app/actions/{id}` for approve/reject/cancel;
+it rechecks the actor, membership, grant and reviewed payload hash. This does not
+enable external execution. Notification read state is personal and can only be
+acknowledged in the user's inbox, not by the old shared admin mark-read action.
 
 ### Run task now
 

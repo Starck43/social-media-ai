@@ -177,7 +177,7 @@ class Fixture:
         class LocalBase(Base):pass
         LocalBase.fixture=self
         imports={'app.models.managers.base_manager':SimpleNamespace(BaseManager=LocalBase),
-            'app.models.job':SimpleNamespace(Job=Job),'app.core.config':config,
+            **dict.fromkeys(('app.models.job', 'app.models.scheduling.job'), SimpleNamespace(Job=Job)),'app.core.config':config,
             'app.core.tenant_context':context,'app.jobs.attempt_budget':BUDGET,
             'app.jobs.recovery_policy':POLICY,'sqlalchemy':SA}
         self.job_module=load('app.models.managers._closure_jobs','app/models/managers/job_manager.py',imports)
@@ -194,8 +194,8 @@ class Fixture:
         imports=imports|{'croniter':SimpleNamespace(croniter=lambda *a:None),
             'app.core.permissions':SimpleNamespace(require_permission=lambda *a:lambda f:f,get_current_user=lambda:None),
             'app.types':SimpleNamespace(ActionType=SimpleNamespace(CREATE='create',UPDATE='update',DELETE='delete')),
-            'app.models.agent_task':SimpleNamespace(AgentTask=Task),
-            'app.models.source':SimpleNamespace(Source=Source),
+            **dict.fromkeys(('app.models.agent_task', 'app.models.scheduling.agent_task'), SimpleNamespace(AgentTask=Task)),
+            **dict.fromkeys(('app.models.source', 'app.models.collection.source'), SimpleNamespace(Source=Source)),
             'app.jobs.source_activity':SimpleNamespace(SOURCE_JOB_TYPES={'collect','analyze'},SourceJobBusy=SourceJobBusy),
             'app.models.managers.job_manager':SimpleNamespace(JobManager=self.job_module.JobManager),
             'app.core.database':SimpleNamespace(async_session_maker=lambda:Session(self),

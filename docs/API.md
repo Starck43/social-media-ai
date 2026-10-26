@@ -571,116 +571,83 @@ keep the FK with `ondelete=SET NULL` and fall back to the workspace default.
 
 ## Notifications
 
-### List Notifications
+Authenticated global User inbox (P4-T02/P10-T27, PR #246 candidate), independent
+of `X-Tenant-ID`. An operator cannot select another user's inbox. Canonical
+prefix: `/api/v1/notifications`; the old doubled `/notifications/notifications`
+paths remain hidden compatibility aliases with the **same personal semantics**.
 
-```
-GET /api/v1/notifications?is_read=false&notification_type=alert&since=2025-01-01&limit=50&offset=0
-Authorization: Bearer <token>
-```
+| Method / suffix | Behavior |
+| --- | --- |
+| GET empty suffix | Personal list; `is_read`, `notification_type` (enum name or db value), timezone-aware `since`, `limit` 1–100 and `offset` |
+| GET `/stats` | SQL counts grouped by type/read state for owned receipts with an active origin membership; excludes expired/dismissed/snoozed entries |
+| GET `/{id}` | One owned, currently authorized notification; hidden/foreign IDs return 404 |
+| POST `/{id}/mark-read` | Idempotently reads only the caller's receipt |
+| POST `/mark-all-read` | Reads the authorized candidate window, at most 100; response includes `windowed: true` |
+| DELETE `/{id}` | Dismisses only the caller's receipt, not the shared event |
+| POST `/cleanup?days=30` | Removes only caller-owned receipts read longer than `days` ago (1–365) |
+| POST empty suffix | Existing active-workspace `notification.create` permission required; creates **only for the authenticated user**, no recipient ID/transport override accepted |
 
-**Query params:**
-| Param | Type | Description |
-|---|---|---|
-| `is_read` | bool | Filter by read status |
-| `notification_type` | string | Filter by type |
-| `since` | datetime | Show notifications after this date |
-| `limit` | int | Max 100 |
-| `offset` | int | Pagination offset |
+Personal reads/acknowledgements need authentication, not another workspace's
+notification.view/update grant. Linked objects still require current destination
+membership and model permission. Counts are owned active-origin receipt totals;
+the bell count is the smaller authorized/deduplicated display window.
 
-**Permissions:** `notification.view`
+Response fields retain id/title/message/type/is_read/entity/created_at and add
+`origin_workspace_id`, `severity`, and a user-bound expiring `destination` link.
+`is_read` is projected from the caller's receipt, never Notification.is_read.
+Type statistics use enum names such as REPORT_READY/API_ERROR. Personal API
+responses are no-store. See [personal inbox and navigation](NOTIFICATIONS.md).
 
-### Get Notification Stats
+Create body (title max 200, message max 4000; unknown fields rejected):
 
-```
-GET /api/v1/notifications/stats?since=2025-01-01
-Authorization: Bearer <token>
-```
-
-**Permissions:** `notification.view`
-
-**Response:**
 ```json
-{
-  "total": 42,
-  "unread": 5,
-  "by_type": {"alert": 20, "info": 22}
-}
+{"title":"Report ready","message":"Open the result","notification_type":"REPORT_READY","severity":"info","related_entity_type":"task","related_entity_id":3}
 ```
 
-### Get Notification
+Web: GET `/app/notifications` is the personal bell snapshot; GET
+`/app/notifications/inbox` is the paginated personal page. CSRF POST
+`/app/notifications/open/{id}` switches to the server-validated origin workspace
+and redirects to its object. A signed `destination` link permits immediate
+navigation after reauthorization; a plain unsigned GET requires the open button.
+Neither navigating nor reading approves or executes a business action.
 
-```
-GET /api/v1/notifications/{notification_id}
-Authorization: Bearer <token>
-```
+### Incomplete-delivery signal (P8-T11)
 
-**Permissions:** `notification.view`
+The personal bell also contains a read-time `kind: delivery` aggregate per
+authorized workspace, with no Notification/receipt creation or acknowledgement.
+Owner/admin see workspace DigestRun evidence, plus digest Job evidence only with
+`job.view`. Other roles see **only** digest Jobs with their trusted
+`initiated_by_user_id`; scheduled/unattributed and other users' Jobs are excluded.
+Both paths require active web membership and fresh `digestrun.view`; platform
+operator privileges do not widen the signal.
 
-### Create Notification
+Sources are existing DigestRun status/validated delivery ledger and committed
+digest Job outcomes: failed/partial/blocked delivery → undelivered;
+uncertain/unknown ledger or attempt-budget stop → unconfirmed; pending Job with
+an error and a positive attempt count → retrying; outcome-unconfirmed failed
+Job → quarantined. Deliberate cancellations are excluded. No provider probing,
+send/retry, queue transition or new delivery semantics are introduced.
 
-```
-POST /api/v1/notifications
-Authorization: Bearer <token>
-Content-Type: application/json
+The window is seven days by `created_at`, newest first, at most 200 candidates
+per source and 20 displayed samples per source. Overflow is explicitly incomplete
+(counts are lower bounds). Counts are evidence records, **not unique sends**:
+Job and DigestRun can describe the same delivery. A later done Job for the same
+schedule is not sufficient evidence to hide an earlier failure. Current row
+state is re-read; evidence also ages out of the window.
 
-{
-  "title": "System Alert",
-  "message": "High toxicity detected in source #3",
-  "notification_type": "alert",
-  "related_entity_type": "source",
-  "related_entity_id": 3
-}
-```
+Only counts, row IDs, period/attempt counters, safe status labels and timestamps
+are projected. Destination/chat identifiers, content, provider errors and payload
+are not returned. A source failure is reported as unavailable, not zero problems.
+Existing personal display preference `tasks` controls delivery signals;
+mandatory personal notifications remain visible. This is not role configuration.
 
-**Permissions:** `notification.create`
-
-### Mark as Read
-
-```
-POST /api/v1/notifications/{notification_id}/mark-read
-Authorization: Bearer <token>
-```
-
-**Permissions:** `notification.update`
-
-### Mark All as Read
-
-```
-POST /api/v1/notifications/mark-all-read
-Authorization: Bearer <token>
-```
-
-**Permissions:** `notification.update`
-
-**Response:**
-```json
-{
-  "status": "success",
-  "marked_count": 5
-}
-```
-
-### Delete Notification
-
-```
-DELETE /api/v1/notifications/{notification_id}
-Authorization: Bearer <token>
-```
-
-**Permissions:** `notification.delete`
-
-### Cleanup Old Notifications
-
-```
-POST /api/v1/notifications/cleanup?days=30
-Authorization: Bearer <token>
-```
-
-Deletes read notifications older than `days` (1–365).
-
-**Permissions:** `notification.delete`
-
----
+GET `/app/notifications/delivery/{workspace_id}` freshly authorizes and either
+redirects within the current workspace or shows a POST confirmation; GET does
+not switch workspace. CSRF POST to the same route rechecks membership/grants,
+switches to that workspace and redirects to `/app/digests#delivery`. Both are
+no-store. Foreign/revoked workspace IDs are rejected. The read-only delivery
+panel on `/app/digests` uses the same scope and displays unavailable/empty/bounded
+states; it does not expose other users' personal notifications.
 
 ## Dashboard
 

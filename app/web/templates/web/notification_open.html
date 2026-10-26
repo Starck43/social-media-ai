@@ -1,0 +1,5 @@
+{% extends "web/base.html" %}
+{% block page_heading %}Открыть уведомление{% endblock %}
+{% block content %}<div class="ui-card"><h2>{{ entry.event.title }}</h2><p>{{ entry.event.message }}</p>
+<form method="post" action="/app/notifications/open/{{ entry.event.id }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<button class="ui-control">Перейти в пространство #{{ entry.event.tenant_id }} и открыть</button></form></div>{% endblock %}

@@ -7,6 +7,7 @@ web memberships (`tenant_users.user_id`, see `app/web/middleware.py`).
 
 from fastapi import APIRouter
 
+from .actions import router as actions_router
 from .analytics import router as analytics_router
 from .auth import router as auth_router
 from .billing import router as billing_router
@@ -26,6 +27,7 @@ from .vk import router as vk_router
 
 web_router = APIRouter(prefix="/app", tags=["web"])
 web_router.include_router(auth_router)
+web_router.include_router(actions_router)
 web_router.include_router(billing_router)
 web_router.include_router(analytics_router)
 web_router.include_router(dashboard_router)

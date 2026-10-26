@@ -1,39 +1,22 @@
-"""Workspace-bound attention snapshot and explicit shared event-read actions."""
+"""Global User inbox with origin-aware, freshly authorized workspace navigation."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Form, Query, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.models import NotificationPreference
 from app.models.managers.notification_preference_manager import NotificationPreferenceUserInactive
-from app.services.notifications.attention import AttentionContext, AttentionFeed, positive_id
+from app.services.notifications.attention import positive_id
+from app.services.notifications.delivery_signal import navigation_allowed
+from app.services.notifications.inbox import PersonalInbox
+from app.services.notifications.links import valid_intent
 from app.services.notifications.preferences import DEFAULTS as PREFERENCE_DEFAULTS
 from app.services.notifications.preferences import validate as validate_preferences
 
-from .deps import ensure_csrf
+from .deps import ensure_csrf, render
 
 router = APIRouter(prefix="/notifications")
-
-
-def _context(request):
-    user = getattr(request.state, "web_user", None)
-    workspace = getattr(request.state, "tenant_id", None)
-    if user is None or not user.is_active or not positive_id(user.id) or not positive_id(workspace):
-        return None
-    # Membership is refreshed by middleware on every GET and POST. Operator
-    # status does not turn this bell into the operator's fleet-wide filter.
-    if not any(
-        m.tenant_id == workspace and m.user_id == user.id and m.channel == "web" and m.is_active
-        for m in getattr(request.state, "memberships", [])
-    ):
-        return None
-    context = AttentionContext(workspace, user.id)
-    for header, value in (("X-App-Workspace", workspace), ("X-App-User", user.id)):
-        expected = request.headers.get(header)
-        if expected is not None and expected != str(value):
-            return None
-    return context
 
 
 def _unavailable(status=409):
@@ -131,35 +114,41 @@ async def notification_preferences_reset(request: Request):
 
 @router.get("")
 @router.get("/")
-async def notifications_list(request: Request, limit: int = 30):
-    context = _context(request)
-    if context is None:
-        return _unavailable()
-    feed = AttentionFeed(context, getattr(request.state, "web_perms", None))
-    return JSONResponse(await feed.snapshot(limit), headers={"Cache-Control": "no-store"})
+async def notifications_list(request: Request, limit: int = Query(30, ge=1, le=100)):
+    user = _active_user(request)
+    if user is None:
+        return _unavailable(401)
+    try:
+        data = await PersonalInbox(user).snapshot(getattr(request.state, "tenant_id", None), limit)
+    except Exception:
+        return _unavailable(503)
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
 
-def _read_context(request, token, workspace_id):
-    if not ensure_csrf(request, token):
-        return None
-    context = _context(request)
-    if context is None or str(context.workspace_id) != workspace_id:
-        return None
-    return context
+@router.get("/inbox")
+async def notification_inbox_page(request: Request, page: int = Query(1, ge=1)):
+    user = _active_user(request)
+    if user is None:
+        return _unavailable(401)
+    entries = await PersonalInbox(user).entries(limit=50, offset=(page - 1) * 50)
+    response = render(request, "web/notification_inbox.html", entries=entries, page=page)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.post("/read-all")
 async def notifications_read_all(request: Request, token: str = Form("", alias="_csrf"), workspace_id: str = Form("")):
-    """Read permitted persisted messages in the bounded window, never signals."""
-    context = _read_context(request, token, workspace_id)
-    if context is None:
+    user = _active_user(request)
+    if user is None or not ensure_csrf(request, token):
         return _unavailable(403)
-    feed = AttentionFeed(context, getattr(request.state, "web_perms", None))
-    count = await feed.read_window()
-    if count is None:
-        return _unavailable(403)
+    count = await PersonalInbox(user).read_window()
     return JSONResponse(
-        {"marked": count, "windowed": True, "context": context.payload()}, headers={"Cache-Control": "no-store"}
+        {
+            "marked": count,
+            "windowed": True,
+            "context": {"user_id": user.id, "workspace_id": getattr(request.state, "tenant_id", None)},
+        },
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -167,9 +156,84 @@ async def notifications_read_all(request: Request, token: str = Form("", alias="
 async def notification_read_one(
     request: Request, notification_id: int, token: str = Form("", alias="_csrf"), workspace_id: str = Form("")
 ):
-    context = _read_context(request, token, workspace_id)
-    if context is None:
+    user = _active_user(request)
+    if user is None or not ensure_csrf(request, token):
         return _unavailable(403)
-    feed = AttentionFeed(context, getattr(request.state, "web_perms", None))
-    ok = positive_id(notification_id) and await feed.read_one(notification_id)
-    return JSONResponse({"ok": bool(ok), "context": context.payload()}, headers={"Cache-Control": "no-store"})
+    ok = positive_id(notification_id) and await PersonalInbox(user).read(notification_id)
+    if "text/html" in request.headers.get("accept", "") and ok:
+        return RedirectResponse("/app/notifications/inbox", status_code=303)
+    return JSONResponse(
+        {"ok": bool(ok), "context": {"user_id": user.id, "workspace_id": getattr(request.state, "tenant_id", None)}},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/open/{notification_id}")
+async def notification_open_landing(request: Request, notification_id: int, intent: str | None = None):
+    """Only a valid user-bound navigation intent permits one-click context switching.
+
+    Unsigned links require the normal CSRF POST. Receipt and action state never
+    change on GET; the signed intent authorizes only the browser's navigation.
+    """
+    user = _active_user(request)
+    if user is None:
+        return _unavailable(401)
+    entries = await PersonalInbox(user).entries(notification_id=notification_id)
+    if not entries:
+        return _unavailable(404)
+    if intent is not None:
+        if not valid_intent(intent, notification_id, user.id):
+            return _unavailable(403)
+        entry = entries[0]
+        request.session["app_tenant_id"] = entry.event.tenant_id
+        return RedirectResponse(
+            entry.destination, status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+        )
+    response = render(request, "web/notification_open.html", entry=entries[0])
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/open/{notification_id}")
+async def notification_open(request: Request, notification_id: int, token: str = Form("", alias="_csrf")):
+    user = _active_user(request)
+    if user is None or not ensure_csrf(request, token):
+        return _unavailable(403)
+    # New service instance: membership, grant, receipt ownership, expiry and target
+    # are re-read on this request. No posted workspace ID or redirect is trusted.
+    entries = await PersonalInbox(user).entries(notification_id=notification_id)
+    if not entries:
+        return _unavailable(404)
+    entry = entries[0]
+    request.session["app_tenant_id"] = entry.event.tenant_id
+    return RedirectResponse(entry.destination, status_code=303, headers={"Cache-Control": "no-store"})
+
+
+DELIVERY_DESTINATION = "/app/digests#delivery"
+
+
+@router.get("/delivery/{workspace_id}")
+async def delivery_signal_landing(request: Request, workspace_id: int):
+    """Bell link for the read-time delivery signal; GET never switches workspace."""
+    user = _active_user(request)
+    if user is None:
+        return _unavailable(401)
+    if not await navigation_allowed(user, workspace_id):
+        return _unavailable(404)
+    if getattr(request.state, "tenant_id", None) == workspace_id:
+        return RedirectResponse(DELIVERY_DESTINATION, status_code=303, headers={"Cache-Control": "no-store"})
+    response = render(request, "web/delivery_signal_open.html", workspace_id=workspace_id)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/delivery/{workspace_id}")
+async def delivery_signal_open(request: Request, workspace_id: int, token: str = Form("", alias="_csrf")):
+    user = _active_user(request)
+    if user is None or not ensure_csrf(request, token):
+        return _unavailable(403)
+    # Membership and grant are re-read on this request; the path ID alone is not trusted.
+    if not await navigation_allowed(user, workspace_id):
+        return _unavailable(404)
+    request.session["app_tenant_id"] = workspace_id
+    return RedirectResponse(DELIVERY_DESTINATION, status_code=303, headers={"Cache-Control": "no-store"})

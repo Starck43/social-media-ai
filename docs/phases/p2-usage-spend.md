@@ -6,8 +6,19 @@
 
 **Plan — active task cards:**
 
-- [P2-T08](../tasks/p2-t08.md) — corporate/shared billing accounts
-- [P2-T09](../tasks/p2-t09.md) — production billing verification
+1. [P2-T15](../tasks/p2-t15.md) — define and enforce plan entitlements for
+   connector operations. Existing tenant tier quotas and personal LLM payer
+   consent remain separate contracts.
+2. [P2-T16](../tasks/p2-t16.md) — add sandbox-tested, self-service subscription
+   checkout and lifecycle on top of the T15 entitlement contract. Live purchase
+   activation needs a separately authorized rollout gate.
+3. [P2-T09](../tasks/p2-t09.md) — verify real LLM/provider usage admission and
+   settlement after its production activation/cutover prerequisites. This lane
+   is independent of subscription checkout in T16.
+
+**Deferred:** [P2-T08](../tasks/p2-t08.md) — corporate/shared billing accounts;
+keep the owner's prior deferral. Service-plan entitlements and checkout in T15/T16
+do not implement shared/corporate payer accounts.
 
 **Accepted history:**
 

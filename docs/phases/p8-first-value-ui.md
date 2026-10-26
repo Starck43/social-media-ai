@@ -4,7 +4,37 @@
 
 **Goal:** A first-time owner reaches value and support can diagnose what happened.
 
-**Plan — active task cards:**
+The universal-task product direction is chat-first across the complete user
+journey, with directly accessible pages for source, scenario, task, schedule and
+digest management. The current code foundation and the remaining acceptance
+work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
+
+**Plan — universal social milestone (ordered):**
+
+1. [P8-T29](../tasks/p8-t29.md) — shared task foundation and bounded VK collection;
+   its open method/profile evidence gate is recorded in Q-5 and its own card.
+2. [P8-T38](../tasks/p8-t38.md) — visible VK connection/access capabilities.
+   Mocked work can proceed while Q-5 is open; live capability claims cannot.
+3. [P8-T39](../tasks/p8-t39.md) — primary chat lifecycle and independently usable
+   source/scenario/task/schedule/digest management journeys. It may complete
+   before composition in T40.
+4. [P8-T40](../tasks/p8-t40.md) — compose collect, analyze and digest generation
+   for one-off and scheduled runs, reusing existing jobs and digest services.
+5. [P8-T41](../tasks/p8-t41.md) — accept one bounded, evidence-linked
+   VK research-to-digest journey at the exact integrated revision.
+6. [P8-T33](../tasks/p8-t33.md) — optional extension beyond the minimum pilot:
+   select a bounded set of verified VK result categories, with explicit cards
+   for any other requested categories before T33 closes.
+
+T38 can proceed from the integrated T29 foundation without waiting for the
+live VK gate. T39 reuses the shared execution-scope/mutation policy in existing
+P8-T37 after its independent review and integration. T40 depends on T39, uses
+existing payer/quota controls, applies P2-T15 entitlements if available, and
+can build against mocked VK data while Q-5 is open. T41's live method evidence
+waits on Q-5. T41 is the integrated
+journey gate, not a way to rename or retroactively accept P8-T29.
+
+**Other active P8 cards:**
 
 - [P8-T10](../tasks/p8-t10.md) — runtime freshness identity
 - [P8-T11](../tasks/p8-t11.md) — incomplete-delivery aggregate signal
@@ -13,17 +43,20 @@
 - [P8-T17](../tasks/p8-t17.md) — Model response diagnostics and consent
 - [P8-T18](../tasks/p8-t18.md) — Model tests in single-owner mode
 - [P8-T20](../tasks/p8-t20.md) — Provider cost evidence and diagnostic controls
-- [P8-T29](../tasks/p8-t29.md) — Universal social tasks, VK first
-- [P8-T33](../tasks/p8-t33.md) — Additional VK search categories
-- [P8-T34](../tasks/p8-t34.md) — Non-social resources and connector actions
-- [P8-T35](../tasks/p8-t35.md) — Reconcile universal social task delivery plan
+- [P8-T36](../tasks/p8-t36.md) — reusable horizontal relationship picker
+- [P8-T37](../tasks/p8-t37.md) — task plan execution scope and shared mutation
+  policy; [PR #245](https://github.com/Starck43/social-media-ai/pull/245),
+  independent local acceptance pending. The new P8-T39 journey reuses this
+  work after its separate review; it does not duplicate the mutation policy.
 
-- [P8-T36](../tasks/p8-t36.md) — Reusable horizontal relationship picker
-
-- [P8-T37](../tasks/p8-t37.md) — Task plan execution scope and shared mutation policy; [PR #245](https://github.com/Starck43/social-media-ai/pull/245), independent local acceptance pending
+**Deferred beyond the social milestone:** [P8-T34](../tasks/p8-t34.md) keeps the
+future non-social connector direction. It is not a current P8 social release
+gate. P8 cannot be marked fully closed while this deferred item remains attached
+to P8; first move it to a future phase or record an explicit owner cancellation.
 
 **Accepted history:**
 
+- [P8-T35](../audit/p8-t35.md) — reconcile the universal social task plan and follow-up cards · 2026-10-26 · `678466b`
 - [P8-T26](../audit/phase-p8-history.md#p8-t26) — implement the accepted jobs lifecycle audit: built-in cleanup independent of a scheduled prune task, default 24-hour terminal…
 - [P8-T01](../audit/phase-p8-history.md#p8-t01) — home mixed latest-results feed · 2026-10-16 · `19ce6e1`
 - [P8-T02](../audit/phase-p8-history.md#p8-t02) — home upcoming schedules · 2026-10-16 · `19ce6e1`
@@ -50,4 +83,6 @@
 
 - [P8-T32](../audit/p8-t32.md) — collapsed related rows and permission-aware links; accepted; date not recorded; source `9534f9a`.
 
-**Phase status:** Active phase; close only after every plan item is accepted.
+**Phase status:** Active phase; close only after active plan items are accepted
+and the deferred P8-T34 item has been transferred to a future phase or explicitly
+cancelled by the owner. Existing diagnostic/support tasks remain independent.

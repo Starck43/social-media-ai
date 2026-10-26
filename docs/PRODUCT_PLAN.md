@@ -9,7 +9,21 @@ propose → approve when required → deliver/execute → follow up.
 
 ## Universal social tasks
 
-The owner-approved first vertical and cross-surface contract are in [universal tasks](AGENT_TASKS.md#explicit-task-plans). Preserve independent management pages and the existing design; chat is supplementary. Current delivery is P8-T29; future categories/connectors are P8-T33/P8-T34.
+The owner-approved first vertical and cross-surface contract are in
+[universal tasks](AGENT_TASKS.md#explicit-task-plans). The AI chat is the primary
+workspace for the full task lifecycle: request, clarification, preview,
+execution, progress, results and follow-up. Dedicated source, scenario, task,
+schedule and digest pages remain first-class, directly accessible management
+surfaces. Preserve the existing design. P8-T29 delivered a shared task foundation
+and VK collection slice; its remaining evidence gates are open. Follow-up work is
+P8-T38–P8-T41, additional VK categories are P8-T33, and non-social connectors
+P8-T34 are deferred beyond the social milestone.
+
+Registered-user purchase of service plans and plan-based connector entitlements
+are future work in [P2-T15](tasks/p2-t15.md) and
+[P2-T16](tasks/p2-t16.md). Existing personal LLM payer consent, balances and
+spend caps do not constitute self-service subscription purchase or connector
+entitlements.
 
 ## Foundation directions
 

@@ -61,7 +61,7 @@ means not recorded; source recovery links remain in the card.
 ## [P10](docs/phases/p10-audit-hardening.md)
 
 
-- [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **IN_PROGRESS** · notion-ai (remote executor / owner-authorized custodian) · [owner assignment](https://app.notion.com/chat?t=405ddbde02368102880c00a967f1cd5c)
+- [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **READY** · notion-ai (remote executor / owner-authorized custodian) · [PR #249 evidence; independent audit / owner choice pending](https://github.com/Starck43/social-media-ai/pull/249#issuecomment-6423177475)
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
 - [P10-T22](docs/tasks/p10-t22.md) Reconcile the dispatch-identity suite with the tariff receipt contract — **TODO** · unassigned · —

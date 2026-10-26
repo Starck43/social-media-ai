@@ -121,18 +121,30 @@ def _pending_confirmation(session: Any) -> Optional[dict]:
 
 
 def _same_pending_intent(existing: Optional[dict], name: str, args: Any) -> bool:
-    """Whether `existing` already asks for exactly this tool call.
+    """Whether `existing` already asks for exactly this tool call, and can still be answered.
 
     Compared by the stored `arguments_digest` (the same canonical form the
     confirmation consumes), so a reworded request that resolves to the same
     action does not create a second pending intent.
+
+    The comparison is only sound while the stored intent is still answerable:
+    an expired intent would otherwise be reported as "already waiting for your
+    reply", and the owner's «да» would then be rejected by `pending_rejection`
+    — the silent dead end `82555f2` set out to remove. An expired intent is
+    simply not "the same pending intent", so a fresh one replaces it.
     """
     if not isinstance(existing, dict) or existing.get("name") != name:
         return False
     from app.agent.confirmation import arguments_digest
 
     stored = existing.get("arguments_digest")
-    return isinstance(stored, str) and bool(stored) and stored == arguments_digest(args)
+    if not (isinstance(stored, str) and stored and stored == arguments_digest(args)):
+        return False
+    try:
+        expiry = datetime.fromisoformat(existing["expires_at"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return expiry.tzinfo is not None and expiry > datetime.now(timezone.utc)
 
 
 async def _write_staged_reply(row: Any, text: str) -> None:

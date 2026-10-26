@@ -31,7 +31,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P8](docs/phases/p8-first-value-ui.md)
 
-- [P8-T10](docs/tasks/p8-t10.md) runtime freshness identity — **TODO** · unassigned · —
+- [P8-T10](docs/tasks/p8-t10.md) runtime freshness identity — **IN_PROGRESS** · notion-ai (remote executor / owner-authorized custodian) · [owner assignment](https://app.notion.com/chat?t=405ddbde02368102880c00a967f1cd5c)
 - [P8-T11](docs/tasks/p8-t11.md) incomplete-delivery aggregate signal — **TODO** · unassigned · —
 - [P8-T13](docs/tasks/p8-t13.md) named support/escalation + pilot measures — **TODO** · unassigned · —
 - [P8-T15](docs/tasks/p8-t15.md) Admin API connectivity, mock and real checks — **BLOCKED** · codex · —

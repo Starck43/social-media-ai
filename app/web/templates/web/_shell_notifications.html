@@ -34,14 +34,18 @@
                         <div class="shell-attention-item rounded-xl border border-slate-200 dark:border-slate-700 p-3" :data-attention-kind="n.kind">
                             <div class="flex items-start justify-between gap-2">
                                 <div class="min-w-0">
-                                    <p class="text-xs ui-muted" x-text="n.kind === 'notification' ? 'Личное уведомление · пространство #' + n.workspace_id : 'Личное подключение'"></p>
+                                    <p class="text-xs ui-muted" x-text="n.kind === 'notification' ? 'Личное уведомление · пространство #' + n.workspace_id : n.kind === 'delivery' ? 'Сигнал доставки · пространство #' + n.workspace_id : 'Личное подключение'"></p>
                                     <p class="text-sm font-medium" x-text="n.title"></p>
                                     <p class="mt-1 text-sm ui-muted" x-text="n.message"></p>
                                     <p class="mt-1 text-xs ui-muted" x-text="n.created_at"></p>
-                                    <a x-show="n.destination && n.kind !== 'notification'" :href="n.destination || null" class="mt-2 inline-flex min-h-[44px] items-center text-sm underline" x-text="linkLabel(n)"></a>
+                                    <a x-show="n.destination && n.kind === 'connection'" :href="n.destination || null" class="mt-2 inline-flex min-h-[44px] items-center text-sm underline" x-text="linkLabel(n)"></a>
                                     <form x-show="n.kind === 'notification' && n.destination && n.action !== 'none'" method="post" :action="n.destination">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                                         <button type="submit" class="ui-control mt-2">Открыть в нужном пространстве</button>
+                                    </form>
+                                    <form x-show="n.kind === 'delivery' && n.destination && n.action === 'open'" method="post" :action="n.destination">
+                                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        <button type="submit" class="ui-control mt-2" x-text="linkLabel(n)"></button>
                                     </form>
                                 </div>
                                 <button type="button" x-show="n.read_id" @click="readOne(n)" :disabled="pending || loading || contextChanged" class="shell-icon-button shrink-0 text-slate-400 hover:text-emerald-600 dark:text-slate-500 dark:hover:text-emerald-400"

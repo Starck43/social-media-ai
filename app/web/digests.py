@@ -105,8 +105,25 @@ async def _page(
     else:
         runs = await _runs_for(filter_tenant_id if is_superuser else tenant_id)
 
+    delivery, delivery_unavailable = None, False
+    if tenant_id is not None and user is not None:
+        # P8-T11: fresh role grants of the active workspace; no operator bypass.
+        try:
+            from app.core.access_catalog import workspace_grants
+            from app.services.notifications.delivery_signal import delivery_scope, workspace_signal
+
+            web_perms = getattr(request.state, "web_perms", None)
+            codename = web_perms.workspace_role if web_perms is not None else None
+            scope = delivery_scope(tenant_id, user.id, codename, workspace_grants(codename))
+            if scope is not None:
+                delivery = await workspace_signal(scope)
+        except Exception:
+            delivery_unavailable = True
+
     context: dict = {
         "section": "digests",
+        "delivery": delivery,
+        "delivery_unavailable": delivery_unavailable,
         "runs": runs,
         "stats": _stats(runs),
         "periods": PERIODS,

@@ -216,7 +216,8 @@ const AttentionPreferences = {
     },
     visible(item, preferences) {
         // Persisted messages cannot be suppressed until mandatory notice kinds have a contract.
-        return item.kind === 'notification' || (item.kind === 'connection' && preferences.connections) || (item.kind === 'task' && preferences.tasks);
+        return item.kind === 'notification' || (item.kind === 'connection' && preferences.connections) ||
+            ((item.kind === 'task' || item.kind === 'delivery') && preferences.tasks);
     },
     quietNow(preferences, now = new Date()) {
         if (!preferences.quiet) return false;
@@ -392,28 +393,32 @@ function notificationsBell(csrf, workspaceId, userId) {
                 Number.isSafeInteger(item.workspace_id) && item.workspace_id > 0 &&
                 Number.isSafeInteger(item.id) && item.id > 0 && item.read_id === item.id && item.action === 'read' &&
                 item.key === `notification:user:${userId}:${item.id}` && item.destination === `/app/notifications/open/${item.id}`;
+            if (item.kind === 'delivery') return item.user_id === userId &&
+                Number.isSafeInteger(item.workspace_id) && item.workspace_id > 0 && item.read_id === null && item.action === 'open' &&
+                item.key.startsWith(`delivery:${item.workspace_id}:${userId}:`) &&
+                item.destination === `/app/notifications/delivery/${item.workspace_id}`;
             return item.kind === 'connection' && item.workspace_id === workspaceId && item.read_id === null &&
                 item.action === 'open' && item.destination === '/app/settings?tab=connections';
         },
         reconcile(data) {
             const unavailable = data.unavailable ?? [];
-            if (!Array.isArray(unavailable) || unavailable.some(source => !['connections', 'messages'].includes(source)) ||
+            if (!Array.isArray(unavailable) || unavailable.some(source => !['connections', 'deliveries', 'messages'].includes(source)) ||
                 data.complete !== (unavailable.length === 0)) throw new Error('sources');
-            const kinds = { connections: 'connection', messages: 'notification' };
+            const kinds = { connections: 'connection', deliveries: 'delivery', messages: 'notification' };
             const failedKinds = new Set(unavailable.map(source => kinds[source]));
             // Keep failed categories visible as stale, never actionable. A successful
             // refresh drops revoked receipts; no workspace task signals are synthesized.
             const retained = this.items.filter(item => failedKinds.has(item.kind))
                 .map(item => ({ ...item, read_id: null, action: 'none' }));
             const merged = new Map([...retained, ...data.notifications].map(item => [item.key, item]));
-            const rank = { connection: 0, notification: 1 };
+            const rank = { connection: 0, delivery: 1, notification: 2 };
             const items = [...merged.values()].sort((a, b) => rank[a.kind] - rank[b.kind] ||
                 b.created_at.localeCompare(a.created_at) || b.key.localeCompare(a.key));
             this.hasMore = data.has_more || items.length > 100 || (retained.length > 0 && this.hasMore);
             this.items = items.slice(0, 100); this.complete = data.complete;
         },
         visibleItems() { return this.items.filter(item => AttentionPreferences.visible(item, this.preferences)); },
-        filtered() { return !this.preferences.connections; },
+        filtered() { return !this.preferences.connections || !this.preferences.tasks; },
         showDock() { return this.visibleItems().length > 0 || this.error || this.openModal; },
         showPopup() { return this.popupVisible && !this.openModal && !this.error && this.preferences.popup && !AttentionPreferences.quietNow(this.preferences) && this.visibleItems().length > 0; },
         badge() { const count = this.visibleItems().length; return this.error ? (count ? count + ' · ?' : '?') : String(count) + (this.hasMore && !this.filtered() ? '+' : ''); },
@@ -483,6 +488,7 @@ function notificationsBell(csrf, workspaceId, userId) {
         },
         linkLabel(item) {
             if (item.kind === 'connection') return 'Открыть мои подключения';
+            if (item.kind === 'delivery') return 'Открыть доставку';
             return 'Открыть раздел';
         },
         hasUnread() { return this.visibleItems().some(n => n.read_id); },

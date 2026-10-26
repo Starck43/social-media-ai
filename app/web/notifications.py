@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from app.models import NotificationPreference
 from app.models.managers.notification_preference_manager import NotificationPreferenceUserInactive
 from app.services.notifications.attention import positive_id
+from app.services.notifications.delivery_signal import navigation_allowed
 from app.services.notifications.inbox import PersonalInbox
 from app.services.notifications.links import valid_intent
 from app.services.notifications.preferences import DEFAULTS as PREFERENCE_DEFAULTS
@@ -206,3 +207,33 @@ async def notification_open(request: Request, notification_id: int, token: str =
     entry = entries[0]
     request.session["app_tenant_id"] = entry.event.tenant_id
     return RedirectResponse(entry.destination, status_code=303, headers={"Cache-Control": "no-store"})
+
+
+DELIVERY_DESTINATION = "/app/digests#delivery"
+
+
+@router.get("/delivery/{workspace_id}")
+async def delivery_signal_landing(request: Request, workspace_id: int):
+    """Bell link for the read-time delivery signal; GET never switches workspace."""
+    user = _active_user(request)
+    if user is None:
+        return _unavailable(401)
+    if not await navigation_allowed(user, workspace_id):
+        return _unavailable(404)
+    if getattr(request.state, "tenant_id", None) == workspace_id:
+        return RedirectResponse(DELIVERY_DESTINATION, status_code=303, headers={"Cache-Control": "no-store"})
+    response = render(request, "web/delivery_signal_open.html", workspace_id=workspace_id)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/delivery/{workspace_id}")
+async def delivery_signal_open(request: Request, workspace_id: int, token: str = Form("", alias="_csrf")):
+    user = _active_user(request)
+    if user is None or not ensure_csrf(request, token):
+        return _unavailable(403)
+    # Membership and grant are re-read on this request; the path ID alone is not trusted.
+    if not await navigation_allowed(user, workspace_id):
+        return _unavailable(404)
+    request.session["app_tenant_id"] = workspace_id
+    return RedirectResponse(DELIVERY_DESTINATION, status_code=303, headers={"Cache-Control": "no-store"})

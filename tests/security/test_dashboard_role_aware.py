@@ -50,7 +50,10 @@ async def test_owner_and_viewer_get_only_permitted_overview_content() -> None:
             assert page.status_code == 200
             for href in ("/app/sources", "/app/digests", "/app/chat"):
                 assert f'href="{href}"' in page.text, f"owner misses {href}"
-            assert ">Задачи</h2>" in page.text
+            # The owner may view tasks, so the overview offers their upcoming runs
+            # (`data-home-tasks`, heading "Ближайшие запуски").
+            assert "data-home-tasks" in page.text
+            assert "Ближайшие запуски" in page.text
             assert "data-home-next-step" in page.text
             assert "Быстрые действия" not in page.text
             assert "run-now" not in page.text
@@ -66,11 +69,14 @@ async def test_owner_and_viewer_get_only_permitted_overview_content() -> None:
             for href in ("/app/tasks", "/app/scenarios", "/app/onboarding"):
                 assert f'href="{href}' not in page.text, f"viewer is offered {href}"
             assert "run-now" not in page.text
-            assert ">Задачи</h2>" not in page.text
+            assert "data-home-tasks" not in page.text
             assert "Быстрые действия" not in page.text
             assert "data-home-next-step" not in page.text
             assert "data-home-results" in page.text
-            assert "data-home-chat" in page.text
+            # Chat is a separate AI grant (`ai_chat_enabled`), not a role right:
+            # a fresh member has none, so neither the entry nor the link is shown.
+            assert "data-home-chat" not in page.text
+            assert 'href="/app/chat"' not in page.text
             assert "роль: Наблюдатель" not in page.text
     finally:
         await _cleanup(owner, viewer)

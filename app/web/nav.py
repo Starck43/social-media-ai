@@ -53,8 +53,18 @@ def allows(item: NavItem, perms: Any) -> bool:
         return bool(perms is not None and getattr(perms, "can_open_chat", False))
     if item.required_permission is None:
         return True
-    model_name, _, action = item.required_permission.rpartition(".")
-    return perms is not None and perms.can(model_name, action)
+    # The right is a catalog key, not `model.action`: resource keys carry their
+    # own dots (`scheduling.task.view`), so splitting on the last one would ask
+    # about a resource called `scheduling` and hide every such section.
+    from app.core.access_catalog import resource_for
+
+    resource_key, _, action = item.required_permission.rpartition(".")
+    resource = resource_for(resource_key)
+    if resource is None:
+        return False
+    # A `WebPerms` answers in model names; tests pass a stub keyed by catalog
+    # resource keys, as `NavItem.required_permission` is written.
+    return perms is not None and (perms.can(resource.model_name, action) or perms.can(resource.key, action))
 
 
 def section_of(path: str) -> NavItem | None:

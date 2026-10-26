@@ -17,6 +17,7 @@ the HTTP layers are only a delivery mechanism for them.
 
 import importlib.util
 import inspect
+import secrets
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -28,6 +29,8 @@ from app.models import Role, User
 from app.types import ActionType, PlatformRoleType
 
 UNKNOWN_MODEL_RIGHT = "Missing permission: source.delete"
+
+pytestmark = pytest.mark.tenancy  # no implicit operator grant in rights tests
 
 
 async def _role(codename: str) -> Role:
@@ -43,13 +46,27 @@ async def _role_with(role: Role, keep) -> AsyncIterator[Role]:
     are restored in a `finally`: leaving a role stripped would break every test
     that runs after this one.
     """
+    from app.core import permissions as perms
+
     loaded = await Role.objects.get_with_permissions(role.id)
     original = [permission.id for permission in loaded.permissions]
-    await Role.objects.set_permissions(role.id, [p.id for p in loaded.permissions if keep(p)])
+    # `set_permissions` is a platform-console write: it needs an explicit active
+    # platform admin, and the bootstrap data bypass is not one.
+    token = secrets.token_hex(4)
+    admin = await User.objects.create_user(
+        username=f"grant{token}",
+        email=f"grant{token}@example.invalid",
+        password="secret-password-1",
+        role_id=(await Role.objects.get(codename=PlatformRoleType.SUPERUSER.value)).id,
+    )
+    admin = await _loaded(admin)
+    with perms.permission_scope(admin):
+        await Role.objects.set_permissions(role.id, [p.id for p in loaded.permissions if keep(p)])
     try:
         yield role
     finally:
-        await Role.objects.set_permissions(role.id, original)
+        with perms.permission_scope(admin):
+            await Role.objects.set_permissions(role.id, original)
 
 
 def _on_model(model_name: str):
@@ -60,8 +77,6 @@ def _on_model(model_name: str):
 
 
 async def _user(role: Role) -> User:
-    import secrets
-
     username = f"perms{secrets.token_hex(4)}"
     return await User.objects.create_user(
         username=username,
@@ -96,12 +111,34 @@ async def test_has_perm_for_is_case_insensitive_and_model_scoped():
     assert not loaded.has_perm_for("permission", ActionType.VIEW)
 
 
-async def test_platform_admin_grants_every_registered_action():
-    loaded = await _loaded(await _user(await _role("ADMIN")))
+async def test_platform_owner_grants_every_registered_action():
+    """Only the owner gets every action; an `admin` is held to its stored grants.
+
+    `model_permissions` widens for `is_superuser` alone — widening the console
+    for an operator means granting the right, never widening the badge.
+    """
+    loaded = await _loaded(await _user(await _role("SUPERUSER")))
 
     assert loaded.model_permissions("source") == set(ActionType)
     assert not loaded.has_perm_for("model-that-does-not-exist", ActionType.MODERATE)
     assert loaded.has_admin_access()
+
+
+async def test_a_platform_admin_is_held_to_its_stored_grants():
+    """The same predicate, one level down: no implicit widening."""
+    admin = await _loaded(await _user(await _role("ADMIN")))
+    owner = await _loaded(await _user(await _role("SUPERUSER")))
+
+    assert admin.has_admin_access()
+    # The admin may do what its `role_permission` rows say — and no more.
+    assert admin.model_permissions("source") == {
+        action for action in ActionType if action in (await _grants_of(admin, "source"))
+    }
+    assert admin.model_permissions("source") < owner.model_permissions("source")
+
+
+async def _grants_of(user: User, model_name: str) -> set:
+    return set(user.model_permissions(model_name))
 
 
 async def test_a_stripped_role_grants_nothing():

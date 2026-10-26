@@ -18,7 +18,7 @@ means not recorded; source recovery links remain in the card.
 ## [P5](docs/phases/p5-ai-boundaries.md)
 
 - [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **BLOCKED** · codex-analysis-receipts · —
-- [P5-T15](docs/tasks/p5-t15.md) Derived output-contract error envelopes — **TODO** · unassigned · `codex resume 01a1726d-96c3-7083-8828-2a2a1558676b`
+- [P5-T15](docs/tasks/p5-t15.md) Derived output-contract error envelopes — **IN_PROGRESS** · notion-ai (remote executor / owner-authorized custodian) · [owner assignment](https://app.notion.com/chat?t=405ddbde02368102880c00a967f1cd5c)
 
 ## [P6](docs/phases/p6-lifecycle-privacy.md)
 

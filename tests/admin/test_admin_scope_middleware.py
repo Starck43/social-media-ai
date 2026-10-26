@@ -1,10 +1,14 @@
-"""Admin console scope: the owner sees everything, everyone else only their own.
+"""Admin console scope: one request, one selected workspace, one personal catalogue.
 
 `AdminScopeMiddleware` replaced the console-wide platform bypass. These tests pin
-the decision it makes per request — which tenant the request runs in, which
-workspaces are readable, and whose personal catalogue is bound — without a
+the decision it makes per request — which workspace the request runs in, which
+membership role caps it, and whose personal catalogue is bound — without a
 database: the identity, the membership list and the contexts are all explicit
 doubles.
+
+The owner keeps platform-level workspace inspection (every workspace row), but
+that bypass never widens a personal catalogue: providers and models stay
+`owner_user_id`-scoped for every platform role, the owner included.
 """
 
 from pathlib import Path
@@ -13,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.admin.scope import AdminScopeMiddleware
-from app.core.permissions import get_current_user
+from app.core.permissions import get_current_user, has_permission
 from app.core.personal_catalog_context import current_catalog_owner_id
 from app.core.tenant_context import (
     PlatformScopeMiddleware,
@@ -25,12 +29,21 @@ from app.core.tenant_context import (
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# The questions the probe answers about the live scope, by name. `has_permission`
+# needs the actor *and* the membership grants the middleware entered, so they are
+# evaluated inside the app call and kept under the same keys as the scope facts.
+CAPABILITIES = {
+    "can_view_source": ("source", "view"),
+    "can_update_source": ("source", "update"),
+}
+
 
 class _Probe:
     """Records the ambient scope an admin request actually runs in."""
 
     def __init__(self):
         self.seen: dict = {}
+        self.capabilities: dict = {}
 
     async def __call__(self, scope, receive, send):
         actor = get_current_user()
@@ -40,6 +53,13 @@ class _Probe:
             "tenants": current_tenant_ids(),
             "actor": getattr(actor, "id", None),
             "catalog_owner": current_catalog_owner_id() if actor is not None else None,
+        }
+        # Asked here, inside the scope the middleware entered: `has_permission`
+        # reads the actor *and* the selected membership from these same context
+        # vars, so this is the role the request really runs under.
+        self.capabilities = {
+            key: bool(actor is not None and has_permission(actor, model_name, action))
+            for key, (model_name, action) in CAPABILITIES.items()
         }
 
 
@@ -85,7 +105,7 @@ class _Recorder:
 
 
 async def _run(monkeypatch, *, user, rows=(), path="/admin/source/list", tenant_id=None):
-    """Drive one console request; returns `(scope seen by the app, recorder)`."""
+    """Drive one console request; returns `(scope seen, capabilities, recorder)`."""
     probe = _Probe()
 
     async def resolve(request):
@@ -95,19 +115,29 @@ async def _run(monkeypatch, *, user, rows=(), path="/admin/source/list", tenant_
     _memberships(monkeypatch, rows)
     recorder = _Recorder()
     await AdminScopeMiddleware(probe)(_request(path, tenant_id), None, recorder)
-    return probe.seen, recorder
+    return probe.seen, probe.capabilities, recorder
 
 
 async def _scope(monkeypatch, **kwargs):
-    seen, _ = await _run(monkeypatch, **kwargs)
+    seen, _, _ = await _run(monkeypatch, **kwargs)
     return seen
 
 
+async def _decision(monkeypatch, **kwargs):
+    """`(scope, capabilities)` of one request — the scope and the rights it grants."""
+    seen, capabilities, _ = await _run(monkeypatch, **kwargs)
+    return seen, capabilities
+
+
 @pytest.mark.asyncio
-async def test_the_platform_owner_keeps_the_full_bypass(monkeypatch):
-    """Everything, exactly as before — the owner's console is not narrowed."""
-    seen = await _scope(monkeypatch, user=_user(2, superuser=True))
+async def test_the_platform_owner_keeps_global_workspace_inspection(monkeypatch):
+    """The owner still reaches every workspace row, and their own catalogue only."""
+    seen, capabilities = await _decision(monkeypatch, user=_user(2, superuser=True))
     assert seen == {"bypass": True, "tenant": None, "tenants": (), "actor": 2, "catalog_owner": 2}
+    # The bypass is workspace data access; it never widens the personal catalogue,
+    # so the bound owner is the actor's own id — not "everybody".
+    assert seen["catalog_owner"] == seen["actor"] == 2
+    assert capabilities == {"can_view_source": True, "can_update_source": True}
 
 
 @pytest.mark.asyncio
@@ -124,13 +154,34 @@ async def test_an_invited_member_runs_in_the_workspace_that_invited_them(monkeyp
 
 @pytest.mark.asyncio
 async def test_selected_workspace_is_validated_against_memberships(monkeypatch):
-    """A strong membership cannot lend its role to a selected weak workspace."""
-    strong = frozenset({("source", "update")})
+    """A strong membership cannot lend its role to a selected weak workspace.
+
+    The stronger membership comes first, so a fixed "the first membership is
+    active" rule would silently run the request under `source.update` while the
+    operator believes they are in the workspace where they may only view.
+    """
+    strong = frozenset({("source", "view"), ("source", "update")})
     weak = frozenset({("source", "view")})
-    seen = await _scope(monkeypatch, user=_user(7), rows=[(3, strong), (9, weak)], tenant_id=9)
+    seen, capabilities = await _decision(monkeypatch, user=_user(7), rows=[(3, strong), (9, weak)], tenant_id=9)
     assert seen["tenant"] == 9 and seen["tenants"] == (9,)
-    seen = await _scope(monkeypatch, user=_user(7), rows=[(3, strong), (9, weak)], tenant_id=404)
-    assert seen["tenant"] == 3 and seen["tenants"] == (3,)
+    # The selected (weaker) membership, not the stronger first one, is the role
+    # the request runs under.
+    assert capabilities == {"can_view_source": True, "can_update_source": False}
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_workspace_selection_falls_back_to_a_real_membership(monkeypatch):
+    """A stale `app_tenant_id` never becomes an unverified workspace."""
+    strong = frozenset({("source", "view"), ("source", "update")})
+    weak = frozenset({("source", "view")})
+    for stale in (404, "not-a-number", None):
+        seen, capabilities = await _decision(monkeypatch, user=_user(7), rows=[(3, strong), (9, weak)], tenant_id=stale)
+        # Back to the oldest *verified* membership — never the typed value.
+        assert seen["tenant"] == 3 and seen["tenants"] == (3,), stale
+        assert capabilities["can_update_source"] is True, stale
+    # A stranger's workspace id is exactly the same case as a missing one.
+    seen, _ = await _decision(monkeypatch, user=_user(7), rows=[(3, strong), (9, weak)], tenant_id=10**9)
+    assert seen["tenant"] == 3
 
 
 @pytest.mark.asyncio
@@ -141,7 +192,7 @@ async def test_a_workspace_page_without_a_membership_is_a_refusal(monkeypatch):
     workspace is refused up front (403, the same answer `/api` gives) instead of
     being run against an empty tenant context and crashing the manager.
     """
-    seen, recorder = await _run(monkeypatch, user=_user(7), path="/admin/source/list")
+    seen, _, recorder = await _run(monkeypatch, user=_user(7), path="/admin/source/list")
     assert recorder.status == 403
     # The request never reached the view: nothing was read under the wrong scope.
     assert seen == {}
@@ -150,7 +201,7 @@ async def test_a_workspace_page_without_a_membership_is_a_refusal(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_personal_catalog_page_still_works_without_a_workspace(monkeypatch):
     """Providers/models are personal, not workspace rows: the actor's own catalogue."""
-    seen, recorder = await _run(monkeypatch, user=_user(7), path="/admin/llm-provider/list")
+    seen, _, recorder = await _run(monkeypatch, user=_user(7), path="/admin/llm-provider/list")
     assert recorder.status is None
     assert seen["bypass"] is False
     assert seen["tenant"] is None and seen["tenants"] == ()

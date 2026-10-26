@@ -442,8 +442,13 @@ async def test_the_dashboard_outside_the_console_asks_the_same_question():
     assert dashboard.status_code == 403
 
 
+@pytest.mark.tenancy
 async def test_workspace_membership_caps_platform_admin_console_actions():
-    """A platform ADMIN who is a workspace viewer cannot edit its rows."""
+    """A platform ADMIN who is a workspace viewer cannot edit its rows.
+
+    `tenancy`-marked: the autouse fixture otherwise leaves the operator grant on,
+    and `has_permission` would answer before the membership guard is consulted.
+    """
     user = _StubUser({"source": set(ActionType)})
     user.id = 7
     user.is_active = True

@@ -65,6 +65,7 @@ def bound_console_request() -> Optional[Request]:
     """The request bound by `load()`, or None outside a console request."""
     return _console_request.get()
 
+
 # sqladmin action -> the `ActionType` a role must carry for it. `Action` is a
 # `str` enum, so these keys match the plain strings sqladmin passes in.
 BUILTIN_ACTION_TYPES: dict[str, ActionType] = {

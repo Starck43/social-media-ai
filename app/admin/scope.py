@@ -1,25 +1,28 @@
-"""Admin console scope: the owner sees everything, everyone else sees their own.
+"""Admin console scope: one fixed actor, one selected workspace, one personal catalogue.
 
-The console binds every request to its fresh signed-in actor and selected
-workspace membership. Platform bypass remains available only to the owner. That made the whole console one undifferentiated surface: every
-operator listed every row, personal LLM catalogs leaked across users, and the
-views that decrypt a provider key had to switch create/edit off for everybody
-because no owner was ever bound. This middleware replaces that bypass with the
-same rule the client surfaces already use:
+The console binds every request to its fresh signed-in actor and to a single
+selected workspace membership. Platform bypass remains the owner's workspace
+inspection, nothing more. Handing the whole console one undifferentiated surface
+is what this middleware replaced: every operator listed every row, personal LLM
+catalogs leaked across users, and the views that decrypt a provider key had to
+switch create/edit off for everybody because no owner was ever bound. This
+middleware replaces that bypass with the same rule the client surfaces already
+use:
 
-- **platform owner** (`superuser`) — everything, exactly as before;
+- **platform owner** (`superuser`) — every workspace row (`tenant_scope(bypass=True)`),
+  and only their own personal catalogue: providers/models stay filtered by
+  `owner_user_id` for every platform role, the owner included;
 - **everyone else** — their personal rows and the one selected workspace:
-  - rows linked to a person (`users.is_superuser` is the only link this console
-    reads at the account level, `owner_user_id` for personal catalogs) are
-    filtered by `BaseManager` through `permission_scope(actor)`;
+  - personal catalogs are filtered by `BaseManager` on `owner_user_id`, bound by
+    `catalog_execution_scope(actor.id)` — never from the request body or path;
   - workspace rows are filtered to the selected `app_tenant_id`; only that
-    membership's role grants workspace actions for this request;
+    membership's role grants workspace actions for this request. A stronger
+    membership held elsewhere lends nothing;
   - rows with no personal or workspace link stay visible only while the actor's
     platform role grants them.
 
 `catalog_execution_scope(actor.id)` binds the personal catalog owner so
-`LLMProvider.get_api_key()` has an identity to check against; it is never taken
-from the request body or the path.
+`LLMProvider.get_api_key()` has an identity to check against.
 
 Registration order matters: this middleware is added last in `app/main.py`, which
 makes it the outermost wrapper. It must run *before* `PlatformScopeMiddleware`
@@ -29,7 +32,7 @@ opens the bypass — it replaces the incoming scope instead of inheriting it.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
@@ -38,6 +41,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.core.permissions import permission_scope
 from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.tenant_context import tenant_scope
+
+if TYPE_CHECKING:
+    from app.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +133,7 @@ class AdminScopeMiddleware:
             authenticated = await get_authenticated_user(token=token)
             if authenticated is None or not authenticated.is_active:
                 return None
-            return await User.objects.prefetch_related("role.permissions").get(id=authenticated.id)
+            return await User.objects.prefetch_related("role.permissions").get(id=authenticated.id, is_active=True)
         except Exception:
             logger.warning("Admin scope identity could not be resolved", exc_info=True)
             return None
@@ -185,20 +191,22 @@ class AdminScopeMiddleware:
     async def _memberships(user) -> list[tuple[int, frozenset]]:
         """`(tenant_id, member_grants)` for every active workspace, oldest first.
 
-        The first entry becomes the request's active workspace; the member check
-        in `has_permission` compares against `current_tenant_id()`, so it applies
-        to that workspace's role only.
+        One of them becomes the request's active workspace: the one named by the
+        session's `app_tenant_id` when it matches a membership, otherwise the
+        oldest. The member check in `has_permission` compares against
+        `current_tenant_id()`, so it applies to that workspace's role only — the
+        others' roles are carried but never consulted.
         """
         from app.models.managers.tenant_manager import TenantUserManager
 
         manager = TenantUserManager()
         try:
             memberships = await manager.web_memberships(user.id)
+            resolved: list[tuple[int, frozenset]] = []
+            for membership in memberships:
+                grants = await manager.member_grants(membership)
+                resolved.append((membership.tenant_id, grants))
+            return resolved
         except Exception:
             logger.warning("Admin scope memberships could not be read", exc_info=True)
             return []
-        scope: list[tuple[int, frozenset]] = []
-        for membership in memberships:
-            grants = await manager.member_grants(membership)
-            scope.append((membership.tenant_id, grants))
-        return scope

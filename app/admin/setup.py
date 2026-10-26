@@ -1,12 +1,11 @@
 from pathlib import Path
 
-from starlette.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import async_sessionmaker
-
-from app.admin.session import AdminAsyncSession
+from starlette.staticfiles import StaticFiles
 
 from app.admin.authorization import AdminAuthorizationBackend
 from app.admin.csrf import CSRFTokenManager
+from app.admin.session import AdminAsyncSession
 from app.core.config import settings
 from app.core.database import async_engine
 from app.templates.filters import register_template_filters

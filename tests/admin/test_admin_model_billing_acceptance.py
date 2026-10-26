@@ -2,6 +2,9 @@
 
 Never run remotely, with --noconftest, or against a newly repaired schema.
 Normal conftest validates the existing target read-only before fixture DML.
+The target guard accepts `test_schema` and the user-authorized isolated schema
+`test_p9_t07_20261026` only, always under the root conftest and the local
+`social_manager` database.
 Synthetic financial evidence and its dependencies are deliberately retained.
 See docs/audit/admin-llm-billing-acceptance.md for permissions and gates.
 """
@@ -30,8 +33,13 @@ _conftest = next(
     (module for module in tuple(sys.modules.values()) if getattr(module, "__file__", None) == str(_expected_conftest)),
     None,
 )
-if _conftest is None or getattr(_conftest, "TEST_SCHEMA", None) != "test_schema":
-    raise RuntimeError("STOP: current root conftest and test_schema redirect required; never use --noconftest")
+# The default suite schema and the one user-authorized isolated schema P9-T07
+# owns. Nothing else is allowed: a typo here must stop before any fixture DML.
+_APPROVED_SCHEMAS = ("test_schema", "test_p9_t07_20261026")
+if _conftest is None or getattr(_conftest, "TEST_SCHEMA", None) not in _APPROVED_SCHEMAS:
+    raise RuntimeError(
+        "STOP: current root conftest and an approved test schema redirect required; never use --noconftest"
+    )
 _target = urlsplit(getattr(_conftest, "TEST_DATABASE_URL", ""))
 if (
     _target.hostname not in ("localhost", "127.0.0.1")
@@ -321,7 +329,7 @@ async def case(monkeypatch, record_property):
     monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", True)
     from app.main import create_application
 
-    assert settings.DB_SCHEMA == "test_schema", "STOP: application schema was not redirected"
+    assert settings.DB_SCHEMA == _conftest.TEST_SCHEMA, "STOP: application schema was not redirected"
     owned = Case(create_application())
     forbidden = []
     setup_complete = False

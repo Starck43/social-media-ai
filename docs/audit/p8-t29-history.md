@@ -151,7 +151,7 @@ Q-5 remains open. Required live VK availability evidence is still missing, so
 this task remains **BLOCKED on that acceptance gate**, not accepted/READY/DONE.
 No browser, token refresh or data write was used.
 
-Future scope is now sequenced across P8-T33 and P8-T36–P8-T39; P8-T34
+Future scope is now sequenced across P8-T33 and P8-T38–P8-T41; P8-T34
 (non-social connectors) is deferred beyond the social milestone. P10-T08 (home
 component permission gates) and P10-T22
 (dispatch-identity/tariff receipt contract) are independent queue candidates;

@@ -16,7 +16,7 @@ execution, progress, results and follow-up. Dedicated source, scenario, task,
 schedule and digest pages remain first-class, directly accessible management
 surfaces. Preserve the existing design. P8-T29 delivered a shared task foundation
 and VK collection slice; its remaining evidence gates are open. Follow-up work is
-P8-T36–P8-T39, additional VK categories are P8-T33, and non-social connectors
+P8-T38–P8-T41, additional VK categories are P8-T33, and non-social connectors
 P8-T34 are deferred beyond the social milestone.
 
 Registered-user purchase of service plans and plan-based connector entitlements

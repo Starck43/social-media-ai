@@ -13,24 +13,25 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
 
 1. [P8-T29](../tasks/p8-t29.md) — shared task foundation and bounded VK collection;
    its open method/profile evidence gate is recorded in Q-5 and its own card.
-2. [P8-T36](../tasks/p8-t36.md) — visible VK connection/access capabilities.
+2. [P8-T38](../tasks/p8-t38.md) — visible VK connection/access capabilities.
    Mocked work can proceed while Q-5 is open; live capability claims cannot.
-3. [P8-T37](../tasks/p8-t37.md) — primary chat lifecycle and independently usable
+3. [P8-T39](../tasks/p8-t39.md) — primary chat lifecycle and independently usable
    source/scenario/task/schedule/digest management journeys. It may complete
-   before composition in T38.
-4. [P8-T38](../tasks/p8-t38.md) — compose collect, analyze and digest generation
+   before composition in T40.
+4. [P8-T40](../tasks/p8-t40.md) — compose collect, analyze and digest generation
    for one-off and scheduled runs, reusing existing jobs and digest services.
-5. [P8-T39](../tasks/p8-t39.md) — accept one bounded, evidence-linked
+5. [P8-T41](../tasks/p8-t41.md) — accept one bounded, evidence-linked
    VK research-to-digest journey at the exact integrated revision.
 6. [P8-T33](../tasks/p8-t33.md) — optional extension beyond the minimum pilot:
    select a bounded set of verified VK result categories, with explicit cards
    for any other requested categories before T33 closes.
 
-T36 and T37 can proceed from the integrated T29 foundation without waiting for
-the full T29 live acceptance gate. T38 can build against mocked data from the
-integrated foundation; it depends on T37, uses existing payer/quota controls,
-and applies P2-T15 entitlements if that separate work is available. T37 does
-not depend on T38. T39's live method evidence waits on Q-5. T39 is the integrated
+T38 can proceed from the integrated T29 foundation without waiting for the
+live VK gate. T39 reuses the shared execution-scope/mutation policy in existing
+P8-T37 after its independent review and integration. T40 depends on T39, uses
+existing payer/quota controls, applies P2-T15 entitlements if available, and
+can build against mocked VK data while Q-5 is open. T41's live method evidence
+waits on Q-5. T41 is the integrated
 journey gate, not a way to rename or retroactively accept P8-T29.
 
 **Other active P8 cards:**
@@ -42,15 +43,16 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 - [P8-T17](../tasks/p8-t17.md) — Model response diagnostics and consent
 - [P8-T18](../tasks/p8-t18.md) — Model tests in single-owner mode
 - [P8-T20](../tasks/p8-t20.md) — Provider cost evidence and diagnostic controls
+- [P8-T36](../tasks/p8-t36.md) — reusable horizontal relationship picker
+- [P8-T37](../tasks/p8-t37.md) — task plan execution scope and shared mutation
+  policy; [PR #245](https://github.com/Starck43/social-media-ai/pull/245),
+  independent local acceptance pending. The new P8-T39 journey reuses this
+  work after its separate review; it does not duplicate the mutation policy.
 
 **Deferred beyond the social milestone:** [P8-T34](../tasks/p8-t34.md) keeps the
 future non-social connector direction. It is not a current P8 social release
 gate. P8 cannot be marked fully closed while this deferred item remains attached
 to P8; first move it to a future phase or record an explicit owner cancellation.
-
-- [P8-T36](../tasks/p8-t36.md) — Reusable horizontal relationship picker
-
-- [P8-T37](../tasks/p8-t37.md) — Task plan execution scope and shared mutation policy; [PR #245](https://github.com/Starck43/social-media-ai/pull/245), independent local acceptance pending
 
 **Accepted history:**
 

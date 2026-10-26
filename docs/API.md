@@ -699,7 +699,7 @@ analysis/digest feed and truly upcoming schedules remain deferred in [the phase 
 The current task preview is recent-by-creation, not a nearest-run claim. This
 source change is not evidence of deployment or completed runtime validation.
 The chat-primary home/entry journey is a product target tracked in
-[P8-T37](tasks/p8-t37.md); the overview description here records the current
+[P8-T39](tasks/p8-t39.md); the overview description here records the current
 route behavior.
 
 ### Get Dashboard Stats
@@ -1680,7 +1680,7 @@ in [P8-T29](tasks/p8-t29.md); this documents code surfaces, not completion of th
 product journey. The target is the chat as the primary workspace for
 clarification, preview, execution, progress, results and follow-up, while the
 dedicated management pages remain directly usable. Completing that interaction
-contract is tracked in [P8-T37](tasks/p8-t37.md). Keep recurring-task creation
+contract is tracked in [P8-T39](tasks/p8-t39.md). Keep recurring-task creation
 and digest sending confirmation-gated.
 
 API and web/CLI/admin/agent tools preserve identical source-scope, scenario and

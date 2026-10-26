@@ -315,7 +315,7 @@ Target contract: [universal tasks](AGENT_TASKS.md#explicit-task-plans). Chat is
 the primary workspace for the task lifecycle; dedicated pages remain directly
 accessible for source, scenario, task, schedule and digest management. Current
 chat task tools edit the same configuration as those pages, but the full
-chat-first journey is not yet accepted; see [P8-T37](tasks/p8-t37.md). Bounded
+chat-first journey is not yet accepted; see [P8-T39](tasks/p8-t39.md). Bounded
 plan previews and one-off research keep recurring-task and digest-send
 confirmation gates intact. The integrated foundation and its evidence are in
 [P8-T29](tasks/p8-t29.md).

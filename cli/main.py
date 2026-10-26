@@ -642,14 +642,14 @@ def task_update(
 
                 # Handle date fields for collect/analyze
                 new_job_type = job_type if job_type is not None else task.job_type
-                if AgentTaskManager.requires_content_dates(new_job_type):
+                if stored_plan is None and AgentTaskManager.requires_content_dates(new_job_type):
                     start = AgentTaskManager.parse_date(start_date) if start_date else None
                     end = AgentTaskManager.parse_date(end_date) if end_date else None
                     fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
                     updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
                     if force_reanalyze is not None:
                         updated_payload["force_reanalyze"] = force_reanalyze
-                elif start_date or end_date or force_refresh is not None:
+                elif stored_plan is None and (start_date or end_date or force_refresh is not None):
                     start = AgentTaskManager.parse_date(start_date) if start_date else None
                     end = AgentTaskManager.parse_date(end_date) if end_date else None
                     fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
@@ -659,52 +659,32 @@ def task_update(
 
                 if parsed_patch is not None:
                     updated_payload.update(parsed_patch)
-                planned_sources = None
+                from app.services.task_plans import prepare_task_plan_update
+
+                policy_input = {"payload": updated_payload}
+                for key, value in (
+                    ("cron_expr", cron),
+                    ("agent_scenario_id", scenario_id),
+                    ("start_date", start_date),
+                    ("end_date", end_date),
+                ):
+                    if value is not None:
+                        policy_input[key] = value
+                if source_ids is not None:
+                    policy_input["source_ids"] = _split_ints(source_ids)
                 if parsed_plan is not None:
-                    from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
-
-                    try:
-                        plan = parse_task_plan(parsed_plan)
-                        planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
-                        if cron is not None and cron != planned_cron:
-                            raise TaskPlanError("--cron must match task_plan.trigger")
-                        if source_ids is not None and _split_ints(source_ids) != list(plan.source_ids):
-                            raise TaskPlanError("--sources must match task_plan.source_scope and source_ids")
-                        if scenario_id is not None and scenario_id != plan.scenario_id:
-                            raise TaskPlanError("--scenario must match task_plan.scenario_id")
-                        new_cron = planned_cron
-                        planned_sources = list(plan.source_ids)
-                        scenario_id_to_store = plan.scenario_id
-                        updated_payload = apply_task_plan(updated_payload, parsed_plan, job_type=new_job_type)
-                    except (ValueError, TypeError) as error:
-                        rprint(f"[red]Invalid task plan: {error}[/red]")
-                        raise typer.Exit(1) from error
-                else:
-                    new_cron = cron if cron is not None else task.cron_expr
-                    scenario_id_to_store = scenario_id if scenario_id is not None else task.agent_scenario_id
-                    if isinstance(stored_plan, dict):
-                        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
-
-                        try:
-                            stored = parse_task_plan(stored_plan)
-                            stored_cron = "@once" if stored.trigger.type == "once" else stored.trigger.cron
-                            if cron is not None and cron != stored_cron:
-                                raise TaskPlanError("Use --task-plan when changing a planned task trigger")
-                            if source_ids is not None and _split_ints(source_ids) != list(stored.source_ids):
-                                raise TaskPlanError("Use --task-plan when changing a planned task source scope")
-                            if scenario_id is not None and scenario_id != stored.scenario_id:
-                                raise TaskPlanError("Use --task-plan when changing a planned task scenario")
-                            if parsed_patch is not None:
-                                if parsed_patch.get("task_plan", stored_plan) != stored_plan:
-                                    raise TaskPlanError("Use --task-plan when changing a planned task")
-                                if parsed_patch.get("collection", stored_plan.get("collection")) != stored_plan.get(
-                                    "collection"
-                                ):
-                                    raise TaskPlanError("Use --task-plan when changing a planned task collection")
-                            updated_payload = apply_task_plan(updated_payload, stored_plan, job_type=new_job_type)
-                        except (TaskPlanError, ValueError, TypeError) as error:
-                            rprint(f"[red]Invalid task plan: {error}[/red]")
-                            raise typer.Exit(1) from error
+                    policy_input["task_plan"] = parsed_plan
+                try:
+                    mutation = prepare_task_plan_update(task.payload, policy_input, job_type=new_job_type)
+                except ValueError as error:
+                    rprint(f"[red]Invalid task plan: {error}[/red]")
+                    raise typer.Exit(1) from error
+                if mutation.cleared:
+                    stored_plan = None
+                planned_sources = mutation.changes.get("source_ids")
+                new_cron = mutation.changes.get("cron_expr", task.cron_expr)
+                scenario_id_to_store = mutation.changes.get("agent_scenario_id", task.agent_scenario_id)
+                updated_payload = mutation.changes.get("payload", updated_payload)
                 try:
                     updated_payload = apply_collection(
                         updated_payload,
@@ -719,7 +699,7 @@ def task_update(
                     "job_type": new_job_type,
                     "payload": updated_payload,
                 }
-                if scenario_id is not None or parsed_plan is not None:
+                if "agent_scenario_id" in mutation.changes:
                     updates["agent_scenario_id"] = scenario_id_to_store
                 if cron is not None or parsed_plan is not None:
                     tenant_row = await Tenant.objects.get(id=task.tenant_id)

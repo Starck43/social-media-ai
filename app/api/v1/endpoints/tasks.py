@@ -88,9 +88,10 @@ async def preview_task_plan(
         raise HTTPException(status_code=400, detail=str(error)) from None
     if request.job_type not in {"collect", "analyze"}:
         raise HTTPException(status_code=400, detail="Unsupported job type for a social task plan")
+    normalized = task_plan_block(plan)
     return TaskPlanPreviewResponse(
-        task_plan=task_plan_block(plan),
-        collection=task_plan_block(plan).get("collection", {}),
+        task_plan=normalized,
+        collection=normalized.get("collection", {}),
         warnings=["VK search availability depends on the configured application profile."],
     )
 
@@ -365,67 +366,25 @@ async def update_task(
         updates["name"] = updates["name"].strip()[:100]
 
     plan_source_ids = None
-    if task_plan_supplied:
-        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+    if task_plan_supplied or stored_plan is not None:
+        from app.services.task_plans import prepare_task_plan_update
 
-        if task_plan_raw is None:
-            raise HTTPException(status_code=400, detail="task_plan cannot be null; omit it to preserve the plan")
+        policy_input = dict(updates)
+        if task_plan_supplied:
+            policy_input["task_plan"] = task_plan_raw
+        if collection_supplied:
+            policy_input["collection"] = collection_raw
         try:
-            plan = parse_task_plan(task_plan_raw)
-            plan_source_ids = list(plan.source_ids)
-            planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
-            if "source_ids" in updates:
-                if not isinstance(updates["source_ids"], list) or list(updates["source_ids"]) != plan_source_ids:
-                    raise TaskPlanError("source_ids must match task_plan.source_scope and source_ids")
-            if "agent_scenario_id" in updates and updates["agent_scenario_id"] != plan.scenario_id:
-                raise TaskPlanError("agent_scenario_id must match task_plan.scenario_id")
-            if "cron_expr" in updates and updates["cron_expr"] != planned_cron:
-                raise TaskPlanError("cron_expr must match task_plan.trigger")
-            updates["payload"] = apply_task_plan(
-                _web_api_payload(updates.get("payload", task.payload)),
-                task_plan_raw,
-                job_type=updates.get("job_type", task.job_type),
+            mutation = prepare_task_plan_update(
+                task.payload, policy_input, job_type=updates.get("job_type", task.job_type)
             )
-            updates["cron_expr"] = planned_cron
-            updates["agent_scenario_id"] = plan.scenario_id
-        except (TaskPlanError, ValueError) as error:
+        except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
-    elif stored_plan is not None:
-        # The canonical plan owns scope, trigger, scenario, window and
-        # collection. Keep relationship/payload copies coherent when a caller
-        # edits only ordinary payload fields, and require the whole plan for
-        # any owned-field change.
-        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
-
-        try:
-            stored = parse_task_plan(stored_plan)
-            stored_cron = "@once" if stored.trigger.type == "once" else stored.trigger.cron
-            if "source_ids" in updates:
-                supplied_sources = updates["source_ids"]
-                if not isinstance(supplied_sources, list) or supplied_sources != list(stored.source_ids):
-                    raise TaskPlanError("Include task_plan when changing a planned task's source scope")
-            if "agent_scenario_id" in updates and updates["agent_scenario_id"] != stored.scenario_id:
-                raise TaskPlanError("Include task_plan when changing a planned task's scenario")
-            if "cron_expr" in updates and updates["cron_expr"] != stored_cron:
-                raise TaskPlanError("Include task_plan when changing a planned task's trigger")
-            if collection_supplied:
-                raise TaskPlanError("Include task_plan when changing a planned task's collection")
-            candidate_payload = updates.get("payload")
-            if candidate_payload is not None and isinstance(candidate_payload, dict):
-                supplied_plan = candidate_payload.get("task_plan")
-                if supplied_plan is not None and supplied_plan != stored_plan:
-                    raise TaskPlanError("Use the task_plan field to change a planned task")
-                supplied_collection = candidate_payload.get("collection")
-                if supplied_collection is not None and supplied_collection != stored_plan.get("collection"):
-                    raise TaskPlanError("Use the task_plan field to change a planned task collection")
-            if "payload" in updates or selection_fields or collection_supplied or "job_type" in updates:
-                updates["payload"] = apply_task_plan(
-                    updates.get("payload", task.payload),
-                    stored_plan,
-                    job_type=updates.get("job_type", task.job_type),
-                )
-        except (TaskPlanError, ValueError) as error:
-            raise HTTPException(status_code=400, detail=str(error)) from None
+        updates = mutation.changes
+        if mutation.cleared:
+            stored_plan = None
+        if task_plan_supplied:
+            plan_source_ids = updates.get("source_ids")
 
     # Validate cron if changing
     if "cron_expr" in updates:

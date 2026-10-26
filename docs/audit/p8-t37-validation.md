@@ -1,6 +1,6 @@
 # P8-T37 — revision-specific audit and validation
 
-Solution: [PR #245](https://github.com/Starck43/social-media-ai/pull/245), branch `fix/p8-t37-plan-execution-dry`, base `dev`. Companion review: [PR #243](https://github.com/Starck43/social-media-ai/pull/243). Neither PR is merged or accepted by this report.
+Solution: [PR #245](https://github.com/Starck43/social-media-ai/pull/245), branch `fix/p8-t37-plan-execution-dry`, base `dev`. Companion review: [PR #243](https://github.com/Starck43/social-media-ai/pull/243). This report preserves detailed audit and validation evidence; the accepted outcome is recorded in [P8-T37's canonical audit](p8-t37.md).
 
 ## Original findings and corrections for the next auditor
 
@@ -114,6 +114,10 @@ Result: **0 passed, 13 failed, 0 skipped; exit 1**: the discovery test and all 1
 
 ## Isolation limits and required local audit
 
+This section records the pre-acceptance handoff constraints; subsequent
+integrated-dev validation and the accepted outcome are recorded below and in
+[the canonical P8-T37 audit](p8-t37.md).
+
 New tests exercise actual source-local policy and worker/resolver functions. Adapter harnesses compile the unchanged API/CLI/chat function AST with local dependency/decorator doubles; this does **not** exercise real app startup, routing/auth middleware, SQL locking, transaction integration, scheduler settlement, provider availability or full ORM persistence. --noconftest is intentionally restricted to these proven source-isolated checks; do not copy it to DB tests.
 
 The owner permits heavy/environment-dependent checks to be handed to a local agent. They are **NOT RUN**, not skipped test cases and not PASS. On the exact locally checked-out PR SHA, after reviewing current AGENTS, tests/AGENTS, test-runner and DB rules, run the focused real integration checks (no broad/full suite):
@@ -131,10 +135,40 @@ Prerequisites: owner-authorized isolated TEST_POSTGRES_URL; validated DB_TEST_SC
 - Source scopes are separate, but **do not blindly merge old registry/card changes**: current dev has reused P10-T23 for a different accepted documentation task. Identify old #243 by PR/branch/head; have its custodian reconcile stale task-ID references without overwriting accepted dev documentation.
 - P8-T35 owns parent planning documents. Request its custodian to add the P8-T37 reverse link; leave active P8-T35/P8-T36/P9-T07 implementations alone.
 - P8-T29 stays **BLOCKED**: its separate bounded VK newsfeed.search/wall.get availability probes timed out. Source-only tests cannot close that live-evidence gate or migration-evidence caveats. No DONE or parent-phase acceptance here.
-- The P8-T37 claim/READY row exists on the task branch only. Registry publication to dev was blocked before execution. Local designated custodian must synchronize only the owned row/card into fresh dev, not a stale whole registry.
+- At claim time, the P8-T37 claim/READY row existed only on the task branch. The local custodian later synchronized the owned row and card to dev before the independent audit.
 
-READY here means implementation/evidence handed off under the owner's explicit local-check deferral, **not independent acceptance**, all tests green, or authorization to merge. PR body/comments record final documentation-only head verification. Retain both unmerged PR branches for the auditor; remove only this task's temporary baseline overlays/worktree. No DB residue exists because no DB was accessed.
+At the original handoff, READY meant implementation/evidence submitted under the owner's local-check deferral, not acceptance or merge authorization. The owner accepted P8-T37 after integration and guarded DB validation; see the canonical audit and evidence below. P8-T29 retains its separate VK gate.
+
+## Independent audit and local validation handoff
+
+The independent source review found no concrete remaining defect in discovery-to-analysis scope, shared API/CLI/chat mutation policy, retired projection cleanup, or parse/serialization/platform-predicate deduplication. Existing permission, tenant, active/platform, admission, transaction, scheduling, and execution guards remain at their respective boundaries.
+
+The exact code candidate was `f695e6478537733b92973f1ba50ed9cc51bf2fba` (PR #245 head `9169f23063fd946ade42960bd86678779edf116f` as its second parent). Focused P8 source tests: **60 passed, 0 failed, 0 skipped**; collection: **60 collected**. Scoped static/compile/diff and five changed-line Black checks exited `0`.
+
+```bash
+PYTHONPATH=tests:. /Users/admin/Projects/social-media-ai/.venv/bin/python -m pytest --noconftest -c /dev/null --rootdir=. -p no:cacheprovider -q tests/unit_services/test_p8_t37_task_mutation_policy.py tests/jobs/test_p8_t37_analysis_scope.py tests/unit_services/test_p8_t37_plan_reuse.py
+```
+
+Collection used the same command with `--collect-only -q`. P10-T25 source checks on this candidate were `python -m unittest discover -s tests/unit_services -p test_p10_t23_utility_cleanup.py -v` (**14 passed**) and `PYTHONPATH=tests:. .../python -m pytest -c /dev/null --rootdir=. --noconftest -p no:cacheprovider -q tests/unit_services/test_p10_t23_utility_cleanup.py` (**14 passed + 505 subtests**). P10-T19 permission declaration check was `/Users/admin/Projects/social-media-ai/.venv/bin/python tests/security/test_tool_dispatch_permissions.py` (**16 passed**). Static command details and exit codes are in the P10-T25 audit.
+
+With root conftest and DB guards enabled, the focused six-file command below exited `0` on candidate `261ef966dccccdadf2511b8230dd39f8e22d0be1`: **70 passed, 0 failed, 0 skipped** (8 warnings, 42.08s). The refreshed candidate `f695e6478537733b92973f1ba50ed9cc51bf2fba` has an identical `app/`, `tests/`, and `cli/` tree to that DB-tested candidate; its only intervening committed changes are ROADMAP/docs updates. Target was isolated `localhost:5432/social_manager`, schema `test_schema`, Alembic `0112`; no public database was accessed. All 53 table row counts and primary-key hashes matched before/after; `jobs` and `ai_analytics` remained at 0 and no synthetic residue or active DB sessions remained. A repeated DB run on `f695e647` was initially not started because a foreign P9-T07 DB writer was active.
+
+```bash
+.venv/bin/python -m pytest -o addopts="" -p no:cacheprovider -q tests/api/test_p8_t29_task_plan_persistence.py tests/jobs/test_p8_t29_social_launch.py tests/api/test_p8_t29_task_plan_interfaces.py tests/agent/test_p8_t29_chat_plan_mutations.py tests/cli/test_cli_task_run.py tests/jobs/test_task_pending_occurrence.py
+```
+
+Subsequent integrated-dev validation was recorded in `132620bad21cde8d3ddb4a4130457a2a56496a66`: the same six-suite command ran at then-current dev tip `cd1d55d869431530e189a939d935e362030a01ac` and passed **70/70**, exit `0`. The isolated `test_schema` was re-seeded on the common local PostgreSQL, the `public` schema was not targeted, and the schema was recreated with reference rows after the run. This later integrated-dev run supersedes the earlier deferred DB check; it is attributed to `cd1d55d8`, not to candidate `f695e647`.
+
+The advisory suite `tests/collection/test_source_job_admission.py` has a recorded no-dotenv invocation that is **NOT PASS**: candidate `f695e647` exited `1` with **33 passed, 3 failed, 0 skipped**, with failures `test_busy_task_keeps_schedule_trigger_and_once_state[False-True]`, `test_scheduler_does_not_count_busy_occurrence_as_enqueued`, and `test_web_queue_reports_existing_job_without_claiming_it`. They arise when deployment settings are absent. For a comparable rerun, baseline `dc694f6d` and candidate `f695e647` both passed **36 tests, 0 failed, 0 skipped**, exit `0`, when the candidate process silently loaded the same root `.env` values into memory; no values were printed, `--noconftest` remained in effect, and no DB connection was used. The no-dotenv failure is retained as a limitation, not relabeled PASS; no tests were weakened.
+
+```bash
+PYTHONPATH=tests:. /Users/admin/Projects/social-media-ai/.venv/bin/python -m pytest --noconftest -c /dev/null --rootdir=. -p no:cacheprovider -o asyncio_mode=auto -q tests/collection/test_source_job_admission.py
+```
+
+The comparable candidate rerun used the same pytest arguments in a short Python wrapper that called `dotenv.load_dotenv('/Users/admin/Projects/social-media-ai/.env')` before `pytest.main`; it did not print environment values. Baseline ran the command above from the main repository root, where pytest loaded that same local `.env` automatically.
+
+Integration completed: merge candidate `f695e6478537733b92973f1ba50ed9cc51bf2fba` was pushed to `dev` as a descendant of fresh base `dc694f6dd5cde498869824e2f9f447bdebb8321c`; evidence/documentation sync commit `759e0b267a6a6b69460b7c54fe9646fc99d12c0a` followed it. PR #245 head `9169f23063fd946ade42960bd86678779edf116f` is the merge's second parent. PR #243 head `9b51c3a681cc59039b67aedab6589e17fc6522ef` was already an ancestor of dev, integrated through merge `2fe129cc92579228c87e1ab6b6902b1cec73fbab`; the PR itself was closed without merge and is not described as separately merged. P10-T25 evidence is recorded in its audit file. The owner accepted P8-T37 after integration and guarded DB validation; its task card and ROADMAP row are now closed. P8 remains active for its other plan items, and P8-T29 remains BLOCKED on its separate VK live-evidence gate.
 
 ## Registry publication update
 
-Owner requested pre-audit visibility in dev. Canonical active card: [P8-T37](../tasks/p8-t37.md); companion PR #243 is now [P10-T25](../tasks/p10-t25.md), without modifying accepted P10-T23. This report is validation evidence, not an accepted audit verdict. A registry-only update publishes both cards/reports, own queue rows and minimal parent backlinks into dev. Prior pending-registry/ID-reconciliation statements above are historical and superseded by that update. Solution PRs remain open/unmerged. The final PR #245 HEAD `9169f23063fd946ade42960bd86678779edf116f` repeated the documented checks with the same results; app/cli/tests blobs are identical to `b08ab97c463c58eb4fa153cb298b5442695afed0`. No latest-dev combined integration test is claimed.
+Owner requested pre-audit visibility in dev. The earlier active card and registry status were removed at closeout; the accepted result is linked at the top of this report. Companion PR #243 is now P10-T25; accepted P10-T23 documentation was preserved. The earlier pending-registry, READY and open/unmerged statements describe that prior state and are superseded by the independent audit and acceptance records above. PR #245 HEAD `9169f23063fd946ade42960bd86678779edf116f` had its earlier documented checks; the latest-dev combined candidate and final acceptance validation are recorded above.

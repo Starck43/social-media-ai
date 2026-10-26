@@ -81,11 +81,7 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
             raise TaskPlanError("task_plan_goal_invalid")
 
     platforms_raw = raw.get("platforms", ["vk"])
-    if (
-        not isinstance(platforms_raw, (list, tuple))
-        or not platforms_raw
-        or len(platforms_raw) > _MAX_PLAN_PLATFORMS
-    ):
+    if not isinstance(platforms_raw, (list, tuple)) or not platforms_raw or len(platforms_raw) > _MAX_PLAN_PLATFORMS:
         raise TaskPlanError("task_plan_platforms_invalid")
     platforms: list[str] = []
     for platform in platforms_raw:
@@ -136,9 +132,7 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
         raise TaskPlanError("task_plan_query_limit_exceeded")
 
     window = _parse_window(raw.get("window"), collection)
-    if source_scope == "discovery" and not (
-        collection.discovery.queries or collection.queries
-    ):
+    if source_scope == "discovery" and not (collection.discovery.queries or collection.queries):
         raise TaskPlanError("task_plan_discovery_queries_required")
 
     scenario_id = raw.get("scenario_id")
@@ -200,15 +194,19 @@ def apply_task_plan(
     must replace those in the same existing manager transaction. ``None`` is an
     explicit clear operation for a plan created by this contract.
     """
-    result = dict(payload or {})
     if raw is None:
-        result.pop("task_plan", None)
-        result.pop("collection", None)
-        result.pop("cli_dates", None)
+        result = dict(payload or {})
+        for key in ("task_plan", "collection", "cli_dates", "scenario_id"):
+            result.pop(key, None)
         return result
+    return apply_parsed_task_plan(payload, parse_task_plan(raw), job_type=job_type)
+
+
+def apply_parsed_task_plan(payload: Mapping[str, Any] | None, plan: TaskPlan, *, job_type: str) -> dict[str, Any]:
+    """Project an already parsed plan; persistence/execution still validate it."""
     if job_type not in _COLLECTING_JOB_TYPES:
         raise TaskPlanError("task_plan_requires_collect_or_analyze")
-    plan = parse_task_plan(raw)
+    result = dict(payload or {})
     result["task_plan"] = task_plan_block(plan)
     result["collection"] = collection_block(plan.collection)
     if plan.window is not None and plan.window.type == "fixed":
@@ -223,6 +221,78 @@ def apply_task_plan(
     else:
         result.pop("scenario_id", None)
     return result
+
+
+@dataclass(frozen=True)
+class TaskPlanUpdate:
+    """Pure write policy result; adapters retain their transactions and guards."""
+
+    changes: dict[str, Any]
+    plan: TaskPlan | None
+    cleared: bool = False
+
+
+def prepare_task_plan_update(
+    existing_payload: Mapping[str, Any] | None,
+    updates: Mapping[str, Any],
+    *,
+    job_type: str,
+) -> TaskPlanUpdate:
+    """One API/CLI/chat policy for replacement, preservation and type transitions.
+
+    Inputs use persisted field names. ``task_plan`` is the explicit envelope;
+    collection/start_date/end_date are input-only conflict markers. No DB,
+    relationship mutation, actor, payer, permission or schedule execution occurs.
+    """
+    changes = dict(updates)
+    supplied = "task_plan" in changes
+    raw = changes.pop("task_plan", None)
+    existing = dict(existing_payload or {})
+    stored = existing.get("task_plan")
+    candidate_raw = changes.get("payload") if "payload" in changes else existing
+    if candidate_raw is not None and not isinstance(candidate_raw, Mapping):
+        raise TaskPlanError("task_plan_payload_invalid")
+    candidate = dict(candidate_raw or {})
+    markers = {key: changes.pop(key) for key in ("collection", "start_date", "end_date") if key in changes}
+    if not supplied and stored is None:
+        if "task_plan" in candidate:
+            raise TaskPlanError("Use the task_plan field to introduce a planned task")
+        return TaskPlanUpdate(changes, None)
+    if not supplied and job_type not in _COLLECTING_JOB_TYPES:
+        if job_type not in {"digest", "prune", "learn", "reflect"}:
+            raise TaskPlanError("task_plan_requires_collect_or_analyze")
+        # Preserve unrelated digest/settings payload; retire only plan-owned
+        # projections and the stale FK (an explicit new scenario remains explicit).
+        changes["payload"] = apply_task_plan(candidate, None, job_type=job_type)
+        changes.setdefault("agent_scenario_id", None)
+        return TaskPlanUpdate(changes, None, cleared=True)
+    if supplied and raw is None:
+        raise TaskPlanError("task_plan cannot be null; omit it to preserve the plan")
+    plan = parse_task_plan(raw if supplied else stored)
+    canonical = apply_parsed_task_plan({}, plan, job_type=job_type)
+    expected = {
+        "source_ids": list(plan.source_ids),
+        "agent_scenario_id": plan.scenario_id,
+        "cron_expr": "@once" if plan.trigger.type == "once" else plan.trigger.cron,
+    }
+    if "source_ids" in changes and (
+        not isinstance(changes["source_ids"], list)
+        or any(type(value) is not int or value <= 0 for value in changes["source_ids"])
+    ):
+        raise TaskPlanError("task_plan_source_ids_invalid")
+    for key, value in expected.items():
+        if key in changes and changes[key] != value:
+            raise TaskPlanError(f"{key} conflicts with task_plan; provide matching values or a complete task_plan")
+    if markers:
+        raise TaskPlanError("Collection and dates belong to task_plan; omit conflicting legacy fields")
+    if not supplied:
+        for key in ("task_plan", "collection", "cli_dates", "scenario_id"):
+            if key in candidate and candidate[key] != canonical.get(key):
+                raise TaskPlanError(f"Use the task_plan field to change a planned task's {key}")
+    changes["payload"] = apply_parsed_task_plan(candidate, plan, job_type=job_type)
+    if supplied:
+        changes.update(expected)
+    return TaskPlanUpdate(changes, plan)
 
 
 def _parse_window(raw: Any, collection: CollectionIntent) -> TaskWindow | None:
@@ -305,9 +375,7 @@ def task_plan_timezone(raw: Mapping[str, Any] | None, fallback: str) -> str:
     return parse_task_plan(raw).trigger.timezone or fallback
 
 
-def apply_task_plan_override(
-    payload: Mapping[str, Any], raw: Mapping[str, Any], *, job_type: str
-) -> dict[str, Any]:
+def apply_task_plan_override(payload: Mapping[str, Any], raw: Mapping[str, Any], *, job_type: str) -> dict[str, Any]:
     """Normalize a per-run plan while keeping its persisted execution identity.
 
     A run may refine its collection filters/window, but cannot change platforms,

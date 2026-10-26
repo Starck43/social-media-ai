@@ -14,7 +14,7 @@
 
 - [P10-T24](../audit/p10-t24.md) — portable handoff, owner decision before integration and migration evidence review; accepted 2026-10-26 at `1df675f`.
 
-- [P10-T25](../audit/p10-t25.md) — removal of two unused utilities and the `str.maketrans` slug rewrite; accepted 2026-10-26 at `fe04ab85`, integration pending. Historical conflicting branch ID P10-T23 reconciled. [PR #243](https://github.com/Starck43/social-media-ai/pull/243)
+- [P10-T25](../audit/p10-t25.md) — removal of two unused utilities and the `str.maketrans` slug rewrite; accepted 2026-10-26 at `fe04ab85`, integrated into dev via merge `2fe129c`. Historical conflicting branch ID P10-T23 reconciled. [PR #243](https://github.com/Starck43/social-media-ai/pull/243) was closed without merge after its head was integrated into dev.
 - [P10-T26](../tasks/p10-t26.md) — notification/bot-action/agent-session model and manager layout
 - [P10-T27](../tasks/p10-t27.md) — legacy notification API correctness
 - [P10-T28](../tasks/p10-t28.md) — retire root-level model compatibility modules

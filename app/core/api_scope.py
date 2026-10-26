@@ -57,9 +57,13 @@ def _is_public(path: str) -> bool:
 
 def _is_personal_catalog_path(path: str) -> bool:
     normalized = path.rstrip("/")
-    return any(normalized == root or normalized.startswith(root + "/") for root in (
-        "/api/v1/llm/llm-models", "/api/v1/llm/llm-providers",
-    ))
+    return any(
+        normalized == root or normalized.startswith(root + "/")
+        for root in (
+            "/api/v1/llm/llm-models",
+            "/api/v1/llm/llm-providers",
+        )
+    )
 
 
 class ApiScopeMiddleware:
@@ -81,7 +85,13 @@ class ApiScopeMiddleware:
             await self._unauthorized(scope, receive, send)
             return
 
-        if path.rstrip("/") in _ACCOUNT_PATHS:
+        personal_notifications = (
+            path == "/api/v1/notifications" or path.startswith("/api/v1/notifications/")
+        ) and not (
+            request.method == "POST"
+            and path.rstrip("/") in {"/api/v1/notifications", "/api/v1/notifications/notifications"}
+        )
+        if path.rstrip("/") in _ACCOUNT_PATHS or personal_notifications:
             # Account-level, not workspace-level (`docs/API.md`, Authorization):
             # the caller's own profile and password follow the account, so an
             # API-only registration without a membership can still use them, and
@@ -99,9 +109,8 @@ class ApiScopeMiddleware:
                 await self.app(scope, receive, send)
             return
 
-        operator_path = (
-            path.startswith("/api/v1/users/roles")
-            or (path.startswith("/api/v1/users") and path.rstrip("/") != "/api/v1/users/me")
+        operator_path = path.startswith("/api/v1/users/roles") or (
+            path.startswith("/api/v1/users") and path.rstrip("/") != "/api/v1/users/me"
         )
         if operator_path:
             if not user.has_admin_access():

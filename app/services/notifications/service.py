@@ -1,7 +1,10 @@
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
-from app.models import Notification
+from app.core.permissions import get_current_user
+from app.core.tenant_context import current_tenant_id
+from app.models import Notification, NotificationReceipt
 from app.types import NotificationType
 
 logger = logging.getLogger(__name__)
@@ -17,7 +20,7 @@ except ImportError:
 
 
 class NotificationService:
-    """High-level notification service built on top of Notification.objects.
+    """DB-first workspace-origin events with explicit global User inbox receipts.
 
     This service intentionally keeps delivery channels simple (DB-only) and
     provides helpers for common events. Extend with email/webhook if needed.
@@ -33,6 +36,10 @@ class NotificationService:
         entity_id: Optional[int] = None,
         send_to_messenger: bool = False,
         recipient_id: Optional[str] = None,
+        recipient_user_ids: Optional[list[int]] = None,
+        severity: str = "info",
+        dedup_key: Optional[str] = None,
+        expires_at=None,
     ) -> Notification:
         """
         Create a notification.
@@ -44,14 +51,42 @@ class NotificationService:
             entity_type: Related entity type
             entity_id: Related entity ID
             send_to_messenger: If True, attempt explicitly addressed workspace delivery
-            recipient_id: Active Telegram binding owned by the created row's workspace
+            recipient_id: Explicit legacy workspace Telegram binding; not inbox ownership
+            recipient_user_ids: Global User IDs, never TenantUser IDs. None derives only
+                the current actor with active origin membership; [] is archive-only.
+            severity: info, warning or action_required
+            dedup_key: Immutable logical event key, unique within its origin workspace
+            expires_at: Timezone-aware expiry; default 30 days
 
         Returns:
             Created Notification object
         """
         logger.info("Creating notification (type=%s, messenger_requested=%s)", ntype, send_to_messenger)
 
-        notification = await Notification.objects.create_notification(
+        actor = get_current_user()
+        recipients = recipient_user_ids
+        if recipients is None:
+            from app.models import TenantUser
+
+            membership = (
+                (
+                    await TenantUser.objects.filter(
+                        user_id=actor.id,
+                        tenant_id=current_tenant_id(),
+                        channel="web",
+                        is_active=True,
+                        role_id__isnull=False,
+                    ).first()
+                )
+                if actor and actor.is_active
+                else None
+            )
+            recipients = [actor.id] if membership is not None else []
+        notification = await NotificationReceipt.objects.publish(
+            recipient_user_ids=recipients,
+            severity=severity,
+            dedup_key=dedup_key,
+            expires_at=expires_at or datetime.now(UTC) + timedelta(days=30),
             title=title,
             message=message,
             notification_type=ntype,

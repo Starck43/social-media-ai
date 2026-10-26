@@ -4,11 +4,26 @@ import uuid
 
 import pytest
 
+from app.core.access_catalog import workspace_grants
+from app.core.permissions import permission_scope
+from app.core.tenant_context import tenant_scope
 from app.models import AgentScenario, AgentTask, BotAction, Platform, Source, TenantUser, WorkspaceRole
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.models.managers.bot_action_manager import BotActionManager
 from app.services.social.guards import GuardsChecker
 from app.types import AgentActionType, BotActionStatus, BotTriggerType, PlatformType, SourceType, WorkspaceRoleType
+from tests.shared.fixtures.personal_workspace import personal_world
+
+pytestmark = pytest.mark.tenancy
+
+
+@pytest.fixture(autouse=True)
+async def action_world(personal_world):
+    with (
+        tenant_scope(personal_world.tenants[0].id),
+        permission_scope(personal_world.users[0], member_grants=workspace_grants("owner")),
+    ):
+        yield personal_world
 
 
 def _make_platform() -> Platform:
@@ -21,15 +36,9 @@ def _make_platform() -> Platform:
 
 
 @pytest.fixture
-async def platform():
-    p = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type=PlatformType.VK.db_value,
-        base_url="https://vk.com",
-        params={},
-    )
-    yield p
-    await Platform.objects.delete_by_id(p.id)
+async def platform(action_world):
+    # Reference catalog is read-only; never create/delete platform reference rows.
+    return await Platform.objects.filter(platform_type=PlatformType.VK).first()
 
 
 @pytest.fixture
@@ -41,6 +50,8 @@ async def scenario(platform):
         is_active=True,
     )
     yield s
+    # Ledger origin deletion intentionally no longer cascades; fixtures own these proposals.
+    await BotAction.objects.filter(agent_scenario_id=s.id).delete()
     await AgentScenario.objects.delete_by_id(s.id)
 
 
@@ -53,7 +64,7 @@ async def task(scenario, source):
     rather than the one this test set up.
     """
     t = await AgentTask.objects.create(
-        name="Test Task",
+        name=f"p246-Test Task-{uuid.uuid4().hex[:12]}",
         cron_expr="0 * * * *",
         job_type="analyze",
         agent_scenario_id=scenario.id,
@@ -83,11 +94,12 @@ async def source(platform, scenario):
         is_active=True,
     )
     yield s
+    await BotAction.objects.filter(source_id=s.id).delete()
     await Source.objects.delete_by_id(s.id)
 
 
 @pytest.fixture
-async def approver():
+async def approver(action_world):
     """A real `tenant_users` row to confirm actions as.
 
     These tests used to hardcode `user_id=1`. That only works while the test
@@ -99,7 +111,7 @@ async def approver():
     """
     viewer_role = await WorkspaceRole.objects.get(codename=WorkspaceRoleType.VIEWER.value)
     u = await TenantUser.objects.create(
-        tenant_id=1,
+        tenant_id=action_world.tenants[0].id,
         channel="web",
         external_user_id=f"approver-{uuid.uuid4().hex[:12]}",
         role_id=viewer_role.id,
@@ -131,25 +143,25 @@ class TestBotActionModel:
         assert action.dry_run is True
         assert action.payload["text"] == "Test comment"
 
-    async def test_bot_action_status_transitions(self, scenario, source, approver):
+    async def test_legacy_membership_id_cannot_authorize_approval_or_execution(self, scenario, source, approver):
+        """A supplied TenantUser ID is not proof of an authenticated actor.
+
+        Authenticated concurrent transitions live in test_p9_t08_action_ledger.
+        """
         action = await _make_action(scenario.id, source.id)
-
         manager = BotActionManager()
+        with permission_scope(None), pytest.raises(PermissionError, match="Action actor required"):
+            await manager.approve_action(action_id=action.id, user_id=approver.id)
+        with permission_scope(None), pytest.raises(PermissionError, match="Action actor required"):
+            await manager.mark_executed(action_id=action.id, result={"comment_id": 456})
+        assert (await manager.get(id=action.id)).status == BotActionStatus.PENDING
 
-        approved = await manager.approve_action(action_id=action.id, user_id=approver.id)
-        assert approved.status == BotActionStatus.APPROVED
-        assert approved.confirmed_by == approver.id
-
-        executed = await manager.mark_executed(action_id=action.id, result={"comment_id": 456})
-        assert executed.status == BotActionStatus.EXECUTED
-        assert executed.result["comment_id"] == 456
-
-    async def test_bot_action_reject(self, scenario, source, approver):
+    async def test_legacy_membership_id_cannot_authorize_rejection(self, scenario, source, approver):
         action = await _make_action(scenario.id, source.id)
-
         manager = BotActionManager()
-        rejected = await manager.reject_action(action_id=action.id, user_id=approver.id)
-        assert rejected.status == BotActionStatus.REJECTED
+        with permission_scope(None), pytest.raises(PermissionError, match="Action actor required"):
+            await manager.reject_action(action_id=action.id, user_id=approver.id)
+        assert (await manager.get(id=action.id)).status == BotActionStatus.PENDING
 
 
 class TestGuardsChecker:
@@ -167,7 +179,7 @@ class TestGuardsChecker:
     async def test_task_without_guard_columns_is_checked_fine(self, scenario):
         """A task created without the removed columns passes the budget checks."""
         task = await AgentTask.objects.create(
-            name="Plain Task",
+            name=f"p246-Plain Task-{uuid.uuid4().hex[:12]}",
             cron_expr="0 * * * *",
             job_type="analyze",
             agent_scenario_id=scenario.id,
@@ -206,7 +218,7 @@ class TestGuardsChecker:
         the second task would have inherited the first one's exhausted budget.
         """
         other = await AgentTask.objects.create(
-            name="Second Task",
+            name=f"p246-Second Task-{uuid.uuid4().hex[:12]}",
             cron_expr="0 * * * *",
             job_type="analyze",
             agent_scenario_id=scenario.id,
@@ -275,14 +287,13 @@ class TestWriteClients:
 
 class TestAgentTools:
     async def test_actions_log_tool(self, scenario, source):
-        for i in range(3):
-            await _make_action(scenario.id, source.id, payload={"text": f"Test {i}"})
+        created = [await _make_action(scenario.id, source.id, payload={"text": f"Test {i}"}) for i in range(3)]
 
         from app.agent.toolset.actions import actions_log
 
-        result = await actions_log(limit=10)
+        result = await actions_log(limit=3)
         assert "actions" in result
-        assert len(result["actions"]) == 3
+        assert {row["id"] for row in result["actions"]} == {row.id for row in created}
 
     async def test_action_send_dry_run(self, scenario, source):
         action = await _make_action(
@@ -337,6 +348,10 @@ class TestAnalyzeHandler:
             assert actions[0].dry_run is True
             # Stamped so the task's own rate limit applies to this action later.
             assert actions[0].agent_task_id == task.id
+            # Durable idempotency spans decisions; rejecting does not recreate the intent.
+            await BotAction.objects.update_by_id(actions[0].id, status=BotActionStatus.REJECTED)
+            replay = await handle_analyze({"source_ids": [source.id], "agent_task_id": task.id})
+            assert replay["actions_created"] == 0
         finally:
             await AIAnalytics.objects.delete_by_id(analytics.id)
 
@@ -410,7 +425,7 @@ class TestBotActionManager:
     async def test_count_ignores_other_tasks_actions(self, task, scenario, source):
         """The count is the task's budget, not the scenario's."""
         other = await AgentTask.objects.create(
-            name="Other Task",
+            name=f"p246-Other Task-{uuid.uuid4().hex[:12]}",
             cron_expr="0 * * * *",
             job_type="analyze",
             agent_scenario_id=scenario.id,

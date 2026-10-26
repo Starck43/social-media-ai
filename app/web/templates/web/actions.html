@@ -1,0 +1,5 @@
+{% extends "web/base.html" %}
+{% block page_heading %}Предложения действий{% endblock %}
+{% block content %}<p class="mb-4 ui-muted">Журнал текущего пространства. Внешнее выполнение отключено; согласование само по себе ничего не отправляет.</p>
+{% for action in actions %}<div class="ui-card mb-3"><a href="/app/actions/{{ action.id }}">#{{ action.id }} · {{ action.capability }}</a><p>{{ action.status.label }} · {{ action.created_at|human_dt }}</p></div>
+{% else %}<p>Нет предложений за последние 30 дней.</p>{% endfor %}{% endblock %}

@@ -180,11 +180,11 @@ def gateway(monkeypatch):
         "app.models.managers.tenant_manager": dict(
             TenantUserManager=Members, TenantChannelManager=lambda: Query("channels")
         ),
-        "app.models.user": dict(User=fake_models["users"]),
-        "app.models.llm_model": dict(LLMModel=fake_models["models"]),
-        "app.models.agent_task": dict(AgentTask=fake_models["agenttask"]),
-        "app.models.agent_scenario": dict(AgentScenario=fake_models["agentscenario"]),
-        "app.models.source": dict(Source=fake_models["source"]),
+        "app.models.identity.user": dict(User=fake_models["users"]),
+        "app.models.llm.llm_model": dict(LLMModel=fake_models["models"]),
+        "app.models.scheduling.agent_task": dict(AgentTask=fake_models["agenttask"]),
+        "app.models.analysis.agent_scenario": dict(AgentScenario=fake_models["agentscenario"]),
+        "app.models.collection.source": dict(Source=fake_models["source"]),
         "app.models.managers.user_credential_manager": dict(user_credentials=Vault()),
         "app.services.social.connections": dict(
             CONNECTIONS=[NS(platform="vk", title="VK", purpose="Own", is_oauth=True, manual_hint="")],

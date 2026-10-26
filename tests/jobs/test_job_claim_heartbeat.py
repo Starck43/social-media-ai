@@ -132,7 +132,7 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
         ]})
         imports = {
             "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseManager),
-            "app.models.job": SimpleNamespace(Job=self.model),
+            "app.models.scheduling.job": SimpleNamespace(Job=self.model),
             "sqlalchemy": SimpleNamespace(update=Update, func=SimpleNamespace(greatest=lambda column, stamp: ("greatest", column, stamp))),
             "app.core.database": SimpleNamespace(async_session_maker=self.factory),
             "app.core.tenant_context": SimpleNamespace(TenantContextError=TenantContextError,

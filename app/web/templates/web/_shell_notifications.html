@@ -1,5 +1,5 @@
 {% from "web/_macros.html" import icon %}
-<div x-data="notificationsBell({{ csrf|tojson|forceescape }}, {{ tenant.id|tojson|forceescape }}, {{ user.id|default(none)|tojson|forceescape }})">
+<div x-data="notificationsBell({{ csrf|tojson|forceescape }}, {{ tenant.id|default(none)|tojson|forceescape }}, {{ user.id|default(none)|tojson|forceescape }})">
     <div class="shell-notification-dock" x-show="showDock()" x-cloak>
         <button type="button" @click="open()" x-ref="bell" class="shell-icon-button shell-bell" aria-label="Уведомления" title="Уведомления">
             {{ icon('bell') }}<span class="shell-bell-count" x-text="badge()"></span>
@@ -16,17 +16,17 @@
                 class="ui-notification-overlay fixed inset-0 flex items-center justify-center bg-slate-950/60 p-4">
             <div class="ui-notification-panel w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-2xl">
                 <div class="shell-dialog-heading">
-                    <h2 id="notifications-title">Уведомления</h2>
+                    <h2 id="notifications-title">Мои уведомления</h2>
                     <button type="button" @click="close()" class="shell-icon-button" aria-label="Закрыть уведомления">{{ icon('close') }}</button>
                 </div>
                 <p x-show="error" x-text="error" role="alert" class="mt-3 text-sm"></p>
                 <button type="button" x-show="error" @click="load()" :disabled="loading || pending || contextChanged">Повторить</button>
-                <div class="mt-3 flex flex-wrap gap-2">
+                <div class="mt-3 flex flex-wrap gap-2"><a href="/app/notifications/inbox" class="ui-control">Все мои уведомления</a>
                     <button type="button" @click="preferencesOpen = !preferencesOpen" :aria-expanded="preferencesOpen" class="ui-control">Настройки показа</button>
                     <button type="button" x-show="hasUnread()" @click="readAll()" :disabled="loading || pending || contextChanged" class="ui-control">Прочитать все</button>
                 </div>
                 <div x-show="preferencesOpen" class="mt-3 shell-attention-preferences">{% include 'web/_notification_preferences.html' %}</div>
-                <p x-show="filtered()" class="mt-3 text-xs ui-muted">Список и счётчик учитывают ваши настройки показа. Скрытая проблема не устранена; сообщения пространства не скрываются.</p>
+                <p x-show="filtered()" class="mt-3 text-xs ui-muted">Список и счётчик учитывают ваши настройки показа. Скрытая проблема не устранена; личные сообщения не скрываются.</p>
                 <div class="ui-notification-list mt-4 space-y-2 overflow-y-auto" :aria-busy="loading || pending">
                     <p x-show="loading" class="py-6 text-center text-sm">Загрузка…</p>
                     <p x-show="!loading && !error && visibleItems().length === 0" class="py-6 text-center text-sm">Нет показываемых уведомлений в текущем окне</p>
@@ -34,20 +34,24 @@
                         <div class="shell-attention-item rounded-xl border border-slate-200 dark:border-slate-700 p-3" :data-attention-kind="n.kind">
                             <div class="flex items-start justify-between gap-2">
                                 <div class="min-w-0">
-                                    <p class="text-xs ui-muted" x-text="n.scope === 'personal' ? 'Личное подключение' : (n.kind === 'task' ? 'Активная проблема пространства' : 'Сообщение пространства')"></p>
+                                    <p class="text-xs ui-muted" x-text="n.kind === 'notification' ? 'Личное уведомление · пространство #' + n.workspace_id : 'Личное подключение'"></p>
                                     <p class="text-sm font-medium" x-text="n.title"></p>
                                     <p class="mt-1 text-sm ui-muted" x-text="n.message"></p>
                                     <p class="mt-1 text-xs ui-muted" x-text="n.created_at"></p>
-                                    <a x-show="n.destination" :href="n.destination || null" class="mt-2 inline-flex min-h-[44px] items-center text-sm underline" x-text="linkLabel(n)"></a>
+                                    <a x-show="n.destination && n.kind !== 'notification'" :href="n.destination || null" class="mt-2 inline-flex min-h-[44px] items-center text-sm underline" x-text="linkLabel(n)"></a>
+                                    <form x-show="n.kind === 'notification' && n.destination && n.action !== 'none'" method="post" :action="n.destination">
+                                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        <button type="submit" class="ui-control mt-2">Открыть в нужном пространстве</button>
+                                    </form>
                                 </div>
                                 <button type="button" x-show="n.read_id" @click="readOne(n)" :disabled="pending || loading || contextChanged" class="shell-icon-button shrink-0 text-slate-400 hover:text-emerald-600 dark:text-slate-500 dark:hover:text-emerald-400"
-                                        title="Отметить прочитанным — для всего пространства" aria-label="Отметить прочитанным — для всего пространства">{{ icon('check') }}</button>
+                                        title="Отметить прочитанным — только для меня" aria-label="Отметить прочитанным — только для меня">{{ icon('check') }}</button>
                             </div>
                         </div>
                     </template>
                 </div>
                 <p x-show="hasMore" class="mt-3 text-xs ui-muted">Есть ещё доступные элементы за пределами показанного списка.</p>
-                <p class="mt-3 text-xs ui-muted">Показано до 30 разрешённых сообщений и активных проблем из ограниченного окна. Личные подключения видны только вам. Прочтение сообщения общее для пространства и не устраняет проблему.</p>
+                <p class="mt-3 text-xs ui-muted">Показано до 30 личных сообщений из всех доступных пространств. Личные подключения видны только вам. Прочтение лично для вас и не устраняет причину события.</p>
             </div>
         </dialog>
     </template>

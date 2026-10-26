@@ -30,6 +30,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("sources", "/app/sources", "Источники", required_permission="collection.source.view", icon="database"),
     NavItem("scenarios", "/app/scenarios", "Сценарии", required_permission="analysis.scenario.view", icon="layers"),
     NavItem("tasks", "/app/tasks", "Задачи", required_permission="scheduling.task.view", icon="calendar"),
+    NavItem("actions", "/app/actions", "Действия", required_permission="scheduling.action.view", icon="document"),
     NavItem("analytics", "/app/analytics", "Аналитика", required_permission="analysis.result.view", icon="chart"),
     NavItem(
         "digests", "/app/digests", "Дайджесты", required_permission="notifications.digest_run.view", icon="document"

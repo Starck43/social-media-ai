@@ -11,7 +11,7 @@ import pytest
 from app.admin.views import NotificationAdmin
 from app.core.config import settings
 from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
-from app.models import Notification, Tenant, TenantChannel
+from app.models import Notification, NotificationReceipt, Tenant, TenantChannel
 from app.models.managers.tenant_manager import tenant_channels
 from app.services.monitoring import collector
 from app.services.notifications import messenger
@@ -387,6 +387,7 @@ async def test_collection_failure_keeps_workspace_db_and_scrubs_operator_payload
         id=101,
         tenant_id=first.id,
         name="private-customer-source",
+        params={},
         platform_id=1,
         platform=SimpleNamespace(params={}),
         source_type=SourceType.USER,
@@ -441,7 +442,7 @@ async def test_ownerless_row_cannot_borrow_ambient_workspace(workspaces, destina
         async def create(**kwargs):
             return row
 
-        monkeypatch.setattr(Notification.objects, "create_notification", create)
+        monkeypatch.setattr(NotificationReceipt.objects, "publish", create)
         with tenant_scope(first.id):
             assert (
                 await notify.create(

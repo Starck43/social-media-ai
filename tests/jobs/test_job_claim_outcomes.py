@@ -151,7 +151,9 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.stored = row()
         self.claim = CLAIMS.JobClaim.capture(self.stored)
-        self.task = SimpleNamespace(id=9, tenant_id=31, last_status="prior", last_error="prior", last_run_at=NOW)
+        self.task = SimpleNamespace(
+            id=9, tenant_id=31, last_status="prior", last_error="prior", last_run_at=NOW, payload={}, is_active=True
+        )
         self.task_model = SimpleNamespace(id=Column("id"), tenant_id=Column("tenant_id"))
         self.tenant_id = 31
         self.bypass = False
@@ -197,8 +199,8 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
 
         modules = {
             "app.models.managers.base_manager": fixtures.module_with(BaseManager=Base),
-            "app.models.job": fixtures.module_with(Job=model),
-            "app.models.agent_task": fixtures.module_with(AgentTask=self.task_model),
+            "app.models.scheduling.job": fixtures.module_with(Job=model),
+            "app.models.scheduling.agent_task": fixtures.module_with(AgentTask=self.task_model),
             "sqlalchemy": fixtures.module_with(select=Query),
             "app.core.database": fixtures.module_with(async_session_maker=lambda: Session(self)),
             "app.core.config": fixtures.module_with(settings=SimpleNamespace(JOB_RETRY_BACKOFF_SECONDS=300)),
@@ -327,7 +329,9 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.manager._record_task_result.assert_not_awaited()
 
     async def test_missing_or_foreign_task_is_a_write_error_not_success_or_claim_loss(self):
-        foreign = SimpleNamespace(id=9, tenant_id=77, last_status="foreign", last_error=None, last_run_at=NOW)
+        foreign = SimpleNamespace(
+            id=9, tenant_id=77, last_status="foreign", last_error=None, payload={}, is_active=True, last_run_at=NOW
+        )
         for task in (None, foreign):
             with self.subTest(task=task):
                 self.task = task

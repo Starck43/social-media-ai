@@ -128,25 +128,17 @@ async def test_bot_action_ledger_reads_are_workspace_scoped(workspaces, action_r
         assert await BotAction.objects.count_actions_in_window(agent_scenario_id=action_refs[second.id][0]) == 0
 
 
-async def test_bot_action_transitions_follow_the_status_machine(workspaces, action_refs):
+async def test_bot_action_transitions_require_an_authenticated_actor(workspaces, action_refs):
     first, _second = workspaces
     with tenant_scope(first.id):
-        manager = BotAction.objects
         action = await _action(*action_refs[first.id])
-
-        # Not yet approved: execution and failure are refused without changes.
-        assert await manager.mark_executed(action_id=action.id, result={"x": 1}) is None
-        assert await manager.mark_failed(action_id=action.id, error="synthetic") is None
-
-        approved = await manager.approve_action(action_id=action.id)
-        assert approved.status == BotActionStatus.APPROVED and approved.confirmed_at is not None
-        # A decided action cannot be decided again.
-        assert await manager.approve_action(action_id=action.id) is None
-
-        executed = await manager.mark_executed(action_id=action.id, result={"x": 1})
-        assert executed.status == BotActionStatus.EXECUTED
-        assert executed.attempts == 1 and executed.result == {"x": 1}
-        assert await manager.mark_failed(action_id=action.id, error="late") is None
+        # P9-T08 supersedes the old unauthenticated state-only API. Full
+        # sequential/concurrent actor/token tests live in test_p9_t08_action_ledger.
+        with pytest.raises(PermissionError):
+            await BotAction.objects.approve_action(action_id=action.id)
+        with pytest.raises(PermissionError):
+            await BotAction.objects.mark_executed(action_id=action.id)
+        assert (await BotAction.objects.get(id=action.id)).status == BotActionStatus.PENDING
 
 
 @pytest.mark.parametrize(

@@ -10,7 +10,7 @@ from alembic import op
 from app.core.config import settings
 
 revision = "0117"
-down_revision = "0112"
+down_revision = "0116"
 branch_labels = None
 depends_on = None
 SCHEMA = settings.DB_SCHEMA

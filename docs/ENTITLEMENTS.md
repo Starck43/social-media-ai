@@ -34,14 +34,15 @@ The expiry boundary is inclusive: `now >= plan_expires_at` denies the operation.
 Alembic revision 0117 adds nullable `tenants.plan_expires_at` and
 `entitlement_usage`. It does not set expiry or change existing plan names.
 P2-T16 can populate expiry through a separately verified subscription flow.
-Revision 0117 is based directly on integrated 0112. Open PR #246 independently
-reserves revisions 0113–0116; this task neither reuses their IDs nor depends on
-that unmerged branch. Before integrating both streams, reconcile Alembic heads
-with the owner/custodian (rebase the unapplied revision or add a reviewed merge
-revision) and validate the resulting chain. Do not apply both blindly.
-Do not start code requiring these columns before the separately approved and
-validated migration rollout. Downgrade drops usage evidence; preserve/export
-needed audit data before an authorized rollback.
+Revision 0117 was created as a temporary independent branch based on 0112
+while open PR #246 reserved revisions 0113–0116. Following the
+owner-approved integration order (#246 → #252 → #253), #246 and #252 are now
+merged; after verifying that 0117 has never been applied and the revision
+number remains free, this revision is based on 0116, forming the single chain
+0112 → 0113 → 0114 → 0115 → 0116 → 0117. Do not start code requiring these
+columns before the separately approved and validated migration rollout.
+Downgrade drops usage evidence; preserve/export needed audit data before an
+authorized rollback.
 
 Preview and task admission read rights without consuming them. Admission checks
 the effective source snapshot and collection intent in the existing task-run

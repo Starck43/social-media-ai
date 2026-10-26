@@ -40,7 +40,7 @@ means not recorded; source recovery links remain in the card.
 - [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —
 - [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
 - [P8-T29](docs/tasks/p8-t29.md) Plan abstract search-and-analyse requests — **TODO** · unassigned · —
-- [P8-T32](docs/tasks/p8-t32.md) collapsed inline sections and permission-aware links — **READY** · Notion remote executor/custodian · [PR #239 follow-up](https://github.com/Starck43/social-media-ai/pull/239#issuecomment-6404431470)
+- [P8-T32](docs/tasks/p8-t32.md) collapsed inline sections and permission-aware links — **DONE** · opencode (fix/p8-t32-inline-row-links, `9534f9a`) · [PR #239 follow-up](https://github.com/Starck43/social-media-ai/pull/239#issuecomment-6404431470)
 
 ## [P9](docs/tasks/p9-safe-activation.md)
 

@@ -300,12 +300,20 @@ def _stamp_head(url: str) -> None:
     command.stamp(config, "head")
 
 
-async def _truncate_all() -> None:
-    """Destructive reset of the redirected test schema; never a normal test step."""
+async def _truncate_all(schema: str | None = None) -> None:
+    """Destructive reset of the redirected test schema; never a normal test step.
+
+    A schema aligned through migrations carries guards that refuse
+    truncation (``*_no_truncate`` on the immutable evidence tables, 0093–0100).
+    The reset is this script's own operation, so those ``BEFORE TRUNCATE``
+    triggers are disabled around the ``TRUNCATE`` and re-enabled before the
+    commit; the whole reset runs in one transaction, so a failure anywhere on
+    the path rolls back both, leaving the guards installed as found.
+    """
     from app.core.config import settings
     from app.core.database import async_engine
 
-    schema = settings.DB_SCHEMA
+    schema = schema or settings.DB_SCHEMA
     async with async_engine.begin() as conn:
         result = await conn.execute(
             text(
@@ -317,7 +325,26 @@ async def _truncate_all() -> None:
         )
         tables = [f'"{schema}"."{name}"' for name in result.scalars().all()]
         if tables:
-            await conn.execute(text(f"truncate table {', '.join(tables)} restart identity cascade"))
+            # TRUNCATE-firing user triggers (pg_trigger.tgtype bit 5); system
+            # triggers and constraints stay untouched.
+            guards = (
+                await conn.execute(
+                    text(
+                        "select c.relname, t.tgname from pg_catalog.pg_trigger t "
+                        "join pg_catalog.pg_class c on c.oid = t.tgrelid "
+                        "join pg_catalog.pg_namespace n on n.oid = c.relnamespace "
+                        "where n.nspname = :schema and not t.tgisinternal and (t.tgtype & 32) > 0"
+                    ),
+                    {"schema": schema},
+                )
+            ).all()
+            for table, trigger in guards:
+                await conn.execute(text(f'alter table "{schema}"."{table}" disable trigger "{trigger}"'))
+            try:
+                await conn.execute(text(f"truncate table {', '.join(tables)} restart identity cascade"))
+            finally:
+                for table, trigger in guards:
+                    await conn.execute(text(f'alter table "{schema}"."{table}" enable trigger "{trigger}"'))
 
 
 async def _seed_reference_rows() -> None:

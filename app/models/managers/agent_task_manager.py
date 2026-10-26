@@ -90,7 +90,7 @@ class AgentTaskManager(BaseManager):
         """Keep typed plan, persisted scenario and scheduler trigger aligned."""
         if not isinstance(payload, dict) or "task_plan" not in payload:
             return
-        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+        from app.services.task_plans import TaskPlanError, apply_parsed_task_plan, parse_task_plan
 
         try:
             plan = parse_task_plan(payload["task_plan"])
@@ -102,11 +102,9 @@ class AgentTaskManager(BaseManager):
             raise ValueError("Task schedule and task plan schedule must match")
         if plan.trigger.type == "once" and cron_expr != "@once":
             raise ValueError("A one-off task plan requires an @once task")
-        if plan.scenario_id is not None and scenario_id != plan.scenario_id:
+        if scenario_id != plan.scenario_id:
             raise ValueError("Task plan scenario must match the persisted task scenario")
-        if scenario_id is not None and plan.scenario_id != scenario_id:
-            raise ValueError("Task plan scenario must match the persisted task scenario")
-        canonical = apply_task_plan({}, payload["task_plan"], job_type=job_type)
+        canonical = apply_parsed_task_plan({}, plan, job_type=job_type)
         for key in ("collection", "cli_dates"):
             if payload.get(key) != canonical.get(key):
                 raise ValueError(f"Task plan and {key} must be stored together in canonical form")
@@ -1241,12 +1239,11 @@ class AgentTaskManager(BaseManager):
                             if not platform_keys or not platform_keys.issubset({"vk", "telegram"}):
                                 raise ValueError("Task plan platform scope is malformed")
 
-                            def _in_plan_platform(source):
-                                kind = getattr(getattr(source, "platform", None), "platform_type", None)
-                                key = getattr(kind, "db_value", kind)
-                                return isinstance(key, str) and key.lower() in platform_keys
+                            from app.jobs.source_activity import source_in_task_platform_scope
 
-                            source_rows = [source for source in source_rows if _in_plan_platform(source)]
+                            source_rows = [
+                                source for source in source_rows if source_in_task_platform_scope(source, platform_keys)
+                            ]
                             source_ids = list(dict.fromkeys(source.id for source in source_rows))
                         if not source_ids and not can_discover_without_existing_source:
                             raise ValueError("Source task has no effective sources to snapshot")

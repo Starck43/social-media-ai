@@ -4,6 +4,7 @@ import logging
 import math
 from typing import TYPE_CHECKING, Any
 
+from app.jobs.source_activity import source_in_task_platform_scope as _source_in_task_platform_scope
 from app.services.social.credentials import AuthorizationRequired
 
 # Selection is a task property applied to staged content; `handlers` owns when
@@ -91,13 +92,6 @@ def _task_plan_platforms(plan: dict[str, Any]) -> set[str] | None:
     ):
         return None
     return set(raw)
-
-
-def _source_in_task_platform_scope(source: Any, platforms: set[str]) -> bool:
-    platform = getattr(source, "platform", None)
-    kind = getattr(platform, "platform_type", None)
-    key = getattr(kind, "db_value", kind)
-    return isinstance(key, str) and key.lower() in platforms
 
 
 async def _task_personal_owner(task: Any, payload: dict[str, Any]) -> tuple[int | None, str | None]:
@@ -1679,7 +1673,13 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             stats["staged_errors"] += 1
             per["staged_error"] = True
 
-    sources = await _resolve_sources(None if snapshot else task, payload)
+    if collection_stats is not None and isinstance(task_payload.get("task_plan"), dict):
+        sources = await _resolve_sources(
+            None if snapshot else task, payload, discovered_source_ids=list(collection_by_source)
+        )
+        sources = [source for source in sources if source.id in collection_by_source]
+    else:
+        sources = await _resolve_sources(None if snapshot else task, payload)
 
     for source in sources:
         await job_progress.step(sources, stats["per_source"])

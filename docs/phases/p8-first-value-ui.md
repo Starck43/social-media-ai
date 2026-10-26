@@ -11,21 +11,20 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
 
 **Plan — universal social milestone (ordered):**
 
-1. [P8-T35](../tasks/p8-t35.md) — reconcile delivery plan and preserve scope.
-2. [P8-T29](../tasks/p8-t29.md) — shared task foundation and bounded VK collection;
+1. [P8-T29](../tasks/p8-t29.md) — shared task foundation and bounded VK collection;
    its open method/profile evidence gate is recorded in Q-5 and its own card.
-3. [P8-T36](../tasks/p8-t36.md) — visible VK connection/access capabilities.
+2. [P8-T36](../tasks/p8-t36.md) — visible VK connection/access capabilities.
    Mocked work can proceed while Q-5 is open; live capability claims cannot.
-4. [P8-T37](../tasks/p8-t37.md) — primary chat lifecycle and independently usable
+3. [P8-T37](../tasks/p8-t37.md) — primary chat lifecycle and independently usable
    source/scenario/task/schedule/digest management journeys. It may complete
    before composition in T38.
-5. [P8-T38](../tasks/p8-t38.md) — compose collect, analyze and digest generation
+4. [P8-T38](../tasks/p8-t38.md) — compose collect, analyze and digest generation
    for one-off and scheduled runs, reusing existing jobs and digest services.
-6. [P8-T39](../tasks/p8-t39.md) — accept one bounded, evidence-linked
+5. [P8-T39](../tasks/p8-t39.md) — accept one bounded, evidence-linked
    VK research-to-digest journey at the exact integrated revision.
-7. [P8-T33](../tasks/p8-t33.md) — optional extension beyond the minimum pilot:
+6. [P8-T33](../tasks/p8-t33.md) — optional extension beyond the minimum pilot:
    select a bounded set of verified VK result categories, with explicit cards
-   for any other requested categories before implementing those categories.
+   for any other requested categories before T33 closes.
 
 T36 and T37 can proceed from the integrated T29 foundation without waiting for
 the full T29 live acceptance gate. T38 can build against mocked data from the
@@ -55,6 +54,7 @@ to P8; first move it to a future phase or record an explicit owner cancellation.
 
 **Accepted history:**
 
+- [P8-T35](../audit/p8-t35.md) — reconcile the universal social task plan and follow-up cards · 2026-10-26 · `a0cda00`
 - [P8-T26](../audit/phase-p8-history.md#p8-t26) — implement the accepted jobs lifecycle audit: built-in cleanup independent of a scheduled prune task, default 24-hour terminal…
 - [P8-T01](../audit/phase-p8-history.md#p8-t01) — home mixed latest-results feed · 2026-10-16 · `19ce6e1`
 - [P8-T02](../audit/phase-p8-history.md#p8-t02) — home upcoming schedules · 2026-10-16 · `19ce6e1`

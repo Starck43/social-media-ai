@@ -43,7 +43,6 @@ means not recorded; source recovery links remain in the card.
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · —
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · —
 - [P8-T34](docs/tasks/p8-t34.md) Non-social connector pilot — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
-- [P8-T35](docs/tasks/p8-t35.md) Reconcile universal social task delivery plan — **READY** · codex-p8-plan · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 - [P8-T36](docs/tasks/p8-t36.md) VK connection capabilities and access selection — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 - [P8-T37](docs/tasks/p8-t37.md) Complete chat-first and standalone task journeys — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 - [P8-T38](docs/tasks/p8-t38.md) Compose collection, analysis and digest schedules — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`

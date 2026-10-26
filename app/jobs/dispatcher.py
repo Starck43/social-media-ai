@@ -444,7 +444,14 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
 
         known_delivery_failure = isinstance(error, DeliveryFailure)
         retry = allow_retry and known_delivery_failure and error.retryable is True
-        stored_error = str(error) if known_delivery_failure else f"{OUTCOME_UNCONFIRMED_PREFIX}{_error_kind(error)}"
+        from app.services.tenancy.entitlements import EntitlementDenied
+
+        # A policy refusal is confirmed and terminal, not uncertain provider work.
+        entitlement_denied = isinstance(error, EntitlementDenied)
+        stored_error = (
+            str(error) if known_delivery_failure or entitlement_denied
+            else f"{OUTCOME_UNCONFIRMED_PREFIX}{_error_kind(error)}"
+        )
         try:
             receipt = await jobs.mark_failed(claim.job_id, error=stored_error, allow_retry=retry, claim=claim)
             receipt = _require_outcome_receipt(receipt, claim)

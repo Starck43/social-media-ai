@@ -1019,6 +1019,18 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     if analyze_inline is None:
         analyze_inline = payload.get("analyze_inline", False)
 
+    # Subscription rights are independent of source authorization and payer consent.
+    # Reserve before any search/provider call; recheck newly discovered sources below.
+    from app.models.managers.entitlement_manager import EntitlementManager
+    from app.services.collection.entitlements import intent_capabilities, source_capabilities
+
+    entitlements = EntitlementManager()
+    initial_sources = await _resolve_sources(None if snapshot else task, payload)
+    required_capabilities = intent_capabilities(
+        task_payload, fallback_platform=_population_platform(task, task_payload)
+    ) | source_capabilities(initial_sources)
+    await entitlements.admit_execution(required_capabilities, job_id=run_id)
+
     # Population step: the task's own intent may declare a search (a phrase
     # plus the kinds to find and the city) whose results become task-owned
     # wall lanes. It runs BEFORE the sources are read, so the found walls join
@@ -1073,6 +1085,12 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         ]
     if task_plan_enabled:
         sources.sort(key=lambda source: _log_id(getattr(source, "id", None)) or 0)
+
+    # Expiry/downgrade can change while discovery is running. Existing job usage
+    # is idempotent, but never bypasses current grants or expiry.
+    await entitlements.admit_execution(
+        required_capabilities | source_capabilities(sources), job_id=run_id
+    )
 
     collector = ContentCollector()
 
@@ -1680,6 +1698,17 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
         sources = [source for source in sources if source.id in collection_by_source]
     else:
         sources = await _resolve_sources(None if snapshot else task, payload)
+
+    # Staged-only analysis must not bypass expiry/revocation of a queued task.
+    # The ledger measures per-job capability admissions, not network requests.
+    from app.models.managers.entitlement_manager import EntitlementManager
+    from app.services.collection.entitlements import intent_capabilities, source_capabilities
+
+    await EntitlementManager().admit_execution(
+        intent_capabilities(task_payload, fallback_platform=_population_platform(task, task_payload))
+        | source_capabilities(sources),
+        job_id=payload.get("job_id"),
+    )
 
     for source in sources:
         await job_progress.step(sources, stats["per_source"])

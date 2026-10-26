@@ -41,7 +41,9 @@ needed audit data before an authorized rollback.
 Preview and task admission read rights without consuming them. Admission checks
 the effective source snapshot and collection intent in the existing task-run
 transaction. Execution rechecks before discovery/search and again before reading
-the effective sources, including legacy tasks and queued work. Policy refusal
+the effective sources, including legacy tasks and queued work. Staged-only
+analysis also gates its effective scope before processing stored content; its
+capability admission is a per-job right check, not evidence of a network call. Policy refusal
 is a terminal failure, never an automatic retry or a partial successful job.
 Existing task/source authorization and personal credential checks still apply.
 

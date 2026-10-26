@@ -108,6 +108,13 @@ def _plan_table() -> list[dict[str, Any]]:
                 value = f"{value} дн."
             entry[plan] = value
         rows.append(entry)
+    from app.services.tenancy.plan_catalog import CATALOG_VERSION, PLAN_CATALOG
+
+    rows.append({
+        "key": "product_capabilities",
+        "label": f"Product capabilities (catalog v{CATALOG_VERSION})",
+        **{plan: ", ".join(PLAN_CATALOG[plan].capabilities) for plan in Tenant.PLANS},
+    })
     return rows
 
 
@@ -232,6 +239,7 @@ async def settings_page(request: Request):
                 plan_labels=_plan_labels(),
                 plan_rows=_plan_table(),
                 plan_usage=await _plan_usage(tenant, perms),
+                entitlement_policy=tenant.entitlement_policy,
             )
         else:
             # Explicit member read contract: no budget/prompt/channel/plan configuration.

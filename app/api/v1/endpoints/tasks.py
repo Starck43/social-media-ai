@@ -74,6 +74,22 @@ def _request_collection(request, payload: dict | None) -> dict | None:
 router = APIRouter(tags=["tasks"])
 
 
+@router.get("/entitlements", response_model=dict)
+async def get_task_entitlements(
+    _user = Depends(require_model_perm("agenttask", ActionType.VIEW)),
+):
+    """Inspect current workspace product grants without consuming usage."""
+    from app.models.managers.entitlement_manager import EntitlementManager
+
+    return await EntitlementManager().inspect()
+
+
+async def _preview_entitlements(plan):
+    from app.services.collection.entitlement_policy import preview_entitlements
+
+    return await preview_entitlements({"task_plan": plan, "collection": plan.get("collection", {})})
+
+
 @router.post("/plan", response_model=TaskPlanPreviewResponse)
 async def preview_task_plan(
     request: TaskPlanPreviewRequest,
@@ -93,6 +109,7 @@ async def preview_task_plan(
         task_plan=normalized,
         collection=normalized.get("collection", {}),
         warnings=["VK search availability depends on the configured application profile."],
+        entitlements=await _preview_entitlements(normalized),
     )
 
 
@@ -119,6 +136,10 @@ async def run_task_plan(
             job_type=request.job_type,
         )
     except ValueError as error:
+        from app.services.tenancy.entitlements import EntitlementDenied
+
+        if isinstance(error, EntitlementDenied):
+            raise HTTPException(status_code=403, detail=error.decision.to_dict()) from None
         raise HTTPException(status_code=400, detail=str(error)) from None
     except PermissionError as error:
         raise HTTPException(status_code=403, detail=str(error)) from None
@@ -509,6 +530,12 @@ async def run_task(
         )
     except SourceJobBusy as busy:
         raise HTTPException(status_code=409, detail={"code": "source_busy", "job_id": busy.job.id}) from None
+    except ValueError as error:
+        from app.services.tenancy.entitlements import EntitlementDenied
+
+        if isinstance(error, EntitlementDenied):
+            raise HTTPException(status_code=403, detail=error.decision.to_dict()) from None
+        raise
     outcome = await run_job_now(job.id, allow_retry=False) or {}
 
     return {
@@ -568,6 +595,12 @@ async def run_task_oneoff(
         )
     except SourceJobBusy as busy:
         raise HTTPException(status_code=409, detail={"code": "source_busy", "job_id": busy.job.id}) from None
+    except ValueError as error:
+        from app.services.tenancy.entitlements import EntitlementDenied
+
+        if isinstance(error, EntitlementDenied):
+            raise HTTPException(status_code=403, detail=error.decision.to_dict()) from None
+        raise
     outcome = await run_job_now(job.id, allow_retry=False) or {}
 
     return {

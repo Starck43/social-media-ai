@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, Column, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON, Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped
 
 from ...core.config import settings
@@ -119,6 +122,7 @@ class Tenant(Base, TimestampMixin):
         default=DEFAULT_PLAN,
         server_default=DEFAULT_PLAN,
     )
+    plan_expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     timezone: Mapped[str] = Column(String(50), nullable=False, default="Europe/Moscow", server_default="Europe/Moscow")
     is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")
     daily_cost_limit: Mapped[float] = Column(Float, nullable=False, default=5.0, server_default="5.0")
@@ -158,6 +162,15 @@ class Tenant(Base, TimestampMixin):
         objects: ClassVar[TenantManager | BaseManager]
     else:
         objects: ClassVar = None
+
+    @property
+    def entitlement_policy(self) -> str:
+        """Inspectable static policy, not a live quota/authorization decision."""
+        import json
+
+        from app.services.tenancy.entitlements import catalog_summary
+
+        return json.dumps(catalog_summary(self), ensure_ascii=False, sort_keys=True)
 
     def __str__(self) -> str:
         return f"{self.name} ({self.slug})"

@@ -25,7 +25,7 @@ means not recorded; source recovery links remain in the card.
 
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · —
 - [P6-T02](docs/tasks/p6-t02.md) One retention/export/offboarding contract — **TODO** · unassigned · —
-- [P6-T05](docs/tasks/p6-t05.md) Administrator deletion and source admission — **TODO** · unassigned · `codex resume 01a1726d-96c3-7083-8828-2a2a1558676b`
+- [P6-T05](docs/tasks/p6-t05.md) Administrator deletion and source admission — **IN_PROGRESS** · notion-ai (fix/p6-t05-admin-source-deletion) · [owner-authorized claim](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6428183682)
 
 ## [P7](docs/phases/p7-operations.md)
 

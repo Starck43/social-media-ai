@@ -164,6 +164,20 @@ Superuser approval for that scope; a DB role/agent identity does not grant appro
 Use resolved schemas/Alembic context, qualified DDL and existing manager/session
 conventions; no ad-hoc engines, runtime DDL or unsafe search-path assumptions.
 
+## State transitions
+
+A state-changing method is not safe for concurrent callers merely because it
+exists and passes a single-threaded test. Read-then-write transitions need an
+atomic compare-and-set or a row lock; a pre-check against unique columns does not
+protect concurrent creators, only a database uniqueness constraint does. Approval
+must be bound to actor and payload, not to a writable status field.
+
+When a task delivers such a mechanism, its acceptance names the atomicity and
+idempotency guarantee actually provided, and the audit records any remaining
+race or duplicate window. Do not describe a preview, helper or unreachable
+transition path as an execution mechanism. Loopholes found in a mechanism belong
+in the owning task card and its acceptance criteria, not in shared rules.
+
 ## Git and cleanup
 
 Review scoped diffs before local task commits. Preserve foreign staging/edits.

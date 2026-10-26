@@ -38,6 +38,48 @@ generic source-owned DB notification and emit only a generic operator event.
 Missing admin configuration does not redirect messages to a client workspace.
 See [notification boundaries and remaining limits](NOTIFICATIONS.md).
 
+## Workspace subscription provider (P2-T16 foundation)
+
+`SUBSCRIPTION_PAYMENT_PROVIDER=yookassa` selects YooKassa API v3 by default.
+`SUBSCRIPTION_PAYMENT_MODE=test` is the only accepted mode in this increment;
+`live` and unknown providers are rejected by configuration validation.
+`SUBSCRIPTION_CHECKOUT_ENABLED=false` is the safe default. This increment adds
+configuration only: no checkout/webhook routes, purchase persistence or entitlement
+activation are implemented by these settings. Setting the flag does not supply
+those missing paths or authorize provider calls.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `SUBSCRIPTION_PAYMENT_PROVIDER` | `yookassa` | Selected provider, not a payment authorization |
+| `SUBSCRIPTION_PAYMENT_MODE` | `test` | Test-only contract; not merchant verification |
+| `SUBSCRIPTION_CHECKOUT_ENABLED` | `false` | Reserved opt-in gate; does not enable live payments |
+| `YOOKASSA_SHOP_ID` | empty | Test merchant's ASCII numeric shop ID |
+| `YOOKASSA_SECRET_KEY` | empty | Test merchant key, redacted/excluded from settings serialization |
+| `YOOKASSA_RETURN_URL` | empty | Server-configured HTTPS browser return, never payment proof |
+| `YOOKASSA_HTTP_TIMEOUT` | `15` | Future adapter timeout, 1–30 seconds |
+
+Do not put credentials in Notion, Git or PR comments. Use the deployment secret
+store/private `.env`. Empty credentials preserve existing deployments without
+activating payment behavior. A return URL, when supplied, must be HTTPS on port
+443/8443 (or implicit 443), without embedded credentials, fragment or whitespace.
+It is not the notification URL. Configure Basic Auth notifications in the
+YooKassa Merchant Profile only after a webhook endpoint is actually implemented
+and its HTTPS URL has been approved; no webhook signature secret is invented.
+
+YooKassa test stores use the same API host as live stores. A `test` configuration
+label is not proof that credentials belong to a test store. The future adapter
+must verify retrieved payment `test=true`, merchant, amount/currency and purchase
+binding before accepting evidence; fake callbacks and browser redirects never
+grant access. The official contract and remaining work live in
+[SUBSCRIPTIONS](SUBSCRIPTIONS.md).
+
+**Migration dependency:** consume the future P2-T15 revision `0117` for
+`tenants.plan_expires_at` and `entitlement_usage`, not a duplicate definition.
+It is not integrated or applied by this increment. Only after its acceptance and
+integration may P2-T16 reserve its own free migration number on the actual
+integrated head. Do not rewrite 0117 or depend on absent revisions. Existing
+#246 → #252 → #253 integration/acceptance gates are unchanged.
+
 ## Optional same-host runtime observation
 
 `RUNTIME_STATE_DIR` is unset by default. An API alone does not prove that

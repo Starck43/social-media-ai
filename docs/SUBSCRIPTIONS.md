@@ -1,7 +1,8 @@
 # Self-service subscriptions — P2-T16 contract draft
 
-Planning only. No checkout, payment integration or subscription activation is
-implemented or accepted by this document. Track decisions in the linked task
+Configuration foundation only. YooKassa is selected; no checkout, provider
+request, payment persistence or subscription activation is implemented or accepted
+by this increment. Track decisions in the linked task
 PR; current status/owner live in [ROADMAP](../ROADMAP.md), scope in the
 [P2-T16 card](tasks/p2-t16.md).
 
@@ -19,20 +20,71 @@ Do not copy, merge or assume acceptance of that branch here. The existing owner
 integration sequence remains #246 → #252 → #253, each after its own acceptance.
 P2-T16 has no implicit place or merge authorization in that sequence.
 
-## Decisions required before implementation
+## Remaining lifecycle decisions before checkout implementation
 
-1. Owner selects the payment provider. Then read its official sandbox,
-   callback-authenticity and event-retrieval documentation and record the exact
-   supported event contract. Do not invent signature headers or status mappings.
-2. Confirm whether the first checkout is one-off period purchase, automatic
+1. Confirm whether the first checkout is one-off period purchase, automatic
    renewal or both; define cancellation and downgrade effective dates explicitly.
    Do not activate recurring payments without an explicit consent contract.
-3. Define configurable offers (plan, period, currency, price, version and payment
+2. Define configurable offers (plan, period, currency, price, version and payment
    environment). Do not finalize capability packaging or real prices in code;
    test-only synthetic offers must never become live purchasable offers.
-4. Establish how accepted P2-T15 is consumed after integration, then reserve a
+3. Establish how accepted P2-T15 is consumed after integration, then reserve a
    free Alembic revision against fresh dev and open PRs. No number is reserved
    by this planning document and no dependency on absent revisions is created.
+
+## Selected provider and official contract
+
+Owner delegated the choice to any provider operating in Russia. Selected:
+**YooKassa API v3**, initial boundary contract `yookassa-v3-test-v1`. Provider
+selection is now resolved; references to a missing selection in the original
+planning snapshot are historical. The new settings and `.env.example` block
+select it by default, keep checkout disabled and accept test mode only. No final
+prices, production payment rollout or automatic debit consent are inferred.
+
+Read the official [quick start](https://yookassa.ru/developers/payment-acceptance/getting-started/quick-start),
+[interaction format](https://yookassa.ru/developers/using-api/interaction-format),
+[notifications](https://yookassa.ru/developers/using-api/webhooks) and
+[test-store contract](https://yookassa.ru/developers/payment-acceptance/testing-and-going-live/testing).
+
+- Fixed API host `https://api.yookassa.ru/v3`. Test-store credentials use the same
+  host as live credentials. HTTP Basic Auth uses shop ID and secret. No user or
+  webhook-supplied API base URL may receive credentials.
+- Payment creation: server-side `POST /payments`, `capture=true`, redirect
+  confirmation with an approved configured return URL. Never request stored
+  payment methods or recurrent debits without a separately approved consent flow.
+- `Idempotence-Key` has at most 64 characters; YooKassa guarantees idempotency for
+  only 24 hours. Keep the purchase's key/immutable request and never blindly issue
+  another create after that window. Timeout/500 means an uncertain outcome;
+  reconcile rather than treat it as failed or retry with a fresh key.
+- Supported event contract for the future handler: `type=notification`,
+  `payment.succeeded` or `payment.canceled`, and a bounded payment object ID.
+  Unknown events never activate anything. HTTP Basic notifications are configured
+  in the Merchant Profile; there is no invented shared signing header in this
+  contract. A notification is a reconciliation hint, not authority.
+- Before a future activation, retrieve `GET /payments/{payment_id}` with the
+  server's credentials and verify the response ID, recipient account_id, exact
+  expected amount/currency, `test=true`, and stored opaque purchase binding in
+  metadata. Only a confirmed `succeeded`/`paid=true` object can be considered.
+  The received event's status and browser return URL alone are never sufficient.
+- Notification retries: the provider requires HTTP 200 acknowledgement and retries
+  other statuses for up to 24 hours. A future handler must not acknowledge an
+  activation as committed before its durable transaction succeeds. Public callback
+  handling needs bounded bodies, abuse controls and safe error handling; no route
+  is exposed in this increment.
+
+## Future migration 0117 dependency
+
+The future P2-T15 `0117` owns nullable `tenants.plan_expires_at` and
+`entitlement_usage`; this task must consume, not recreate or replace, them.
+P2-T15 currently has a temporary independent `0117 → 0112` branch. Preserve its
+owner-approved reconciliation after #246; do not change its parent here.
+
+After #253's independent acceptance/integration, refresh dev, inspect the actual
+migration graph and ensure 0117 is present. Reserve a different free revision for
+subscription purchases/events/receipts on the actual integrated head. No 0118 or
+other number is reserved in this increment, and no migration pointing to absent
+0117 is added now. A missing schema/prerequisite must fail closed at future
+activation, not trigger runtime DDL or silently grant plan access without expiry.
 
 ## Required security and lifecycle contract
 
@@ -66,8 +118,8 @@ provider calls, deployment or subagents were performed for this draft. It is
 not evidence of checkout functionality or readiness. P2-T15's unrun tests remain
 unrun; neither this assignment nor green checks from other work replace them.
 
-Before implementation, record the owner-approved provider and sandbox contract
-in the PR. Before running tests establish their permitted scope, read tests/AGENTS
+Provider selection and the official test contract are recorded in the PR;
+checkout persistence and lifecycle implementation remain incomplete. Before running tests establish their permitted scope, read tests/AGENTS
 and obtain any required environment authorization. No real payment, automatic
 renewal, public-schema mutation or production activation is permitted here.
 Use isolated mocks/synthetic evidence for authorized tests; provider sandbox

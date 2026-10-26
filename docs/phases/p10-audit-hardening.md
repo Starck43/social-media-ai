@@ -9,7 +9,6 @@
 - [P10-T08](../tasks/p10-t08.md) — Home pipeline permission gates
 - [P10-T09](../tasks/p10-t09.md) — Truthful pipeline counts/labels
 - [P10-T16](../tasks/p10-t16.md) — Scheduling model layout checks
-- [P10-T19](../tasks/p10-t19.md) — Reconcile the failing security suites with the current authorization model
 - [P10-T22](../tasks/p10-t22.md) — Reconcile the dispatch-identity suite with the tariff receipt contract
 
 
@@ -28,6 +27,7 @@ their proposals are not approved or shipped features.
 
 **Accepted history:**
 
+- [P10-T19](../audit/p10-t19.md) — reconcile the security suites with the membership model; closed 2026-10-26 (solution `b8eddfd`, follow-up `94d99f33`). The refusal matrix was vacuous because the harness flagged every actor `is_superuser`; privacy suite 47 passed, `tests/security` 433 passed. Pre-existing Q-11 `MAX_WORKSPACE_MEMBERS` errors remain outside this row.
 - [P10-T17](../audit/p10-t17.md) — compact agent entry/workflow and lazy task documentation · 2026-10-25 · `b8dac60`
 - [P10-T02](../audit/phase-p10-history.md#p10-t02) — remove password hashes from HTTP user responses
 - [P10-T03](../audit/p10-t03.md) — separate self-service profile updates from privilege updates · 2026-10-25 · `bd97589`

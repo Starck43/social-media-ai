@@ -848,7 +848,7 @@ async def task_pause(name: str, pause: bool = True) -> dict[str, Any]:
         "При повторе того же запроса передай тот же request_id: результат запуска будет использован повторно. "
         "Разные намерения пользователя получают разные request_id. Не принимает произвольный payload или тип задачи."
     ),
-    required_permission="agenttask.create",
+    required_permission="scheduling.task.create",
     parameters={
         "type": "object",
         "properties": {

@@ -20,10 +20,12 @@ P8-T38–P8-T41, additional VK categories are P8-T33, and non-social connectors
 P8-T34 are deferred beyond the social milestone.
 
 Registered-user purchase of service plans and plan-based connector entitlements
-are future work in [P2-T15](tasks/p2-t15.md) and
-[P2-T16](tasks/p2-t16.md). Existing personal LLM payer consent, balances and
-spend caps do not constitute self-service subscription purchase or connector
-entitlements.
+are future work in [P2-T15](tasks/p2-t15.md). The P2-T16 configuration
+foundation (YooKassa provider selection and env field contract) was accepted
+2026-10-27 ([audit](audit/p2-t16.md)); the broader checkout and lifecycle scope
+closed with that decision and is not tracked as an open task. Existing personal
+LLM payer consent, balances and spend caps do not constitute self-service
+subscription purchase or connector entitlements.
 
 ## Foundation directions
 

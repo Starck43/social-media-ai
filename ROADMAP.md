@@ -10,7 +10,6 @@ means not recorded; source recovery links remain in the card.
 - [P2-T08](docs/tasks/p2-t08.md) corporate/shared billing accounts — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · —
 - [P2-T15](docs/tasks/p2-t15.md) extensible capability entitlements foundation — **DEFERRED** (owner: tests/validation) · notion-ai · integrated 2026-10-27 as merge 67acbd53 (0117 re-parented onto 0116, [handoff + merge](https://github.com/Starck43/social-media-ai/pull/253#issuecomment-6428493023)); validation gates still open
-- [P2-T16](docs/tasks/p2-t16.md) self-service subscription activation — **IN_PROGRESS** · notion-ai (remote executor; scoped registry coordination) · [owner assignment](https://app.notion.com/chat?t=405ddbde02368016884300a9d7865ea6)
 
 ## [P4](docs/phases/p4-delivery.md)
 

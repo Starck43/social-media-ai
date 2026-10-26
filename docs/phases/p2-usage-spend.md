@@ -11,9 +11,11 @@
    0116) integrated into dev 2026-10-27 as merge `67acbd53`; the owner
    deferral of tests/validation stays in force. Existing tenant tier quotas
    and personal LLM payer consent remain separate contracts.
-2. [P2-T16](../tasks/p2-t16.md) — add sandbox-tested, self-service subscription
-   checkout and lifecycle on top of the T15 entitlement contract. Live purchase
-   activation needs a separately authorized rollout gate.
+2. [P2-T16](../audit/p2-t16.md) — YooKassa subscription-payment configuration
+   foundation; accepted 2026-10-27 (PR #254 head `5de6ff36`, merged
+   `e21e373d`). The broader checkout/webhook/activation scope was closed with
+   that owner decision and is not tracked. Live purchase activation still needs
+   a separately authorized rollout gate.
 3. [P2-T09](../tasks/p2-t09.md) — verify real LLM/provider usage admission and
    settlement after its production activation/cutover prerequisites. This lane
    is independent of subscription checkout in T16.

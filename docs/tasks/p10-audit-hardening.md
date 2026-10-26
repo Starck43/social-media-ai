@@ -541,7 +541,9 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   the source with both sides proven; owner: opencode (PR #240); status: DONE —
   accepted 2026-10-26 at branch head `6e6dbbf` on
   `fix/p10-t20-digest-confirmation-dedup` (claim `c0bdf5b`, implementation
-  `cadde1e`, audit fix `6e6dbbf`); integration into `dev` pending.
+  `cadde1e`, audit fix `6e6dbbf`); integrated into `dev` as `c72cf24`
+  (2026-10-26) after the accept-pending gap above was noticed — the branch had
+  never been merged, so `dev` carried the acceptance but not the code.
   Both failing cases were stale expectations: `82555f2` answers a repeated
   identical intent from the pending one, so the `intent_id` is deliberately
   reused; the *changed*-intent case keeps its CAS refusal and gained a DB twin.

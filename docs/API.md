@@ -705,8 +705,16 @@ query and renders neither its count nor activity/link; task/source access does
 not imply these rights. With no permitted component or no selected workspace,
 Home makes no pipeline data query. Session requests resolve membership/grants
 afresh, so revocation applies on the next request, regardless of platform role.
-[P10-T08](audit/p10-t08.md) changes permission gates only; the staged-count label
-and bounded job-count semantics remain [P10-T09](tasks/p10-t09.md).
+[P10-T08](audit/p10-t08.md) supplies the permission gates. The stored-material
+count is the literal CollectedItem row count in the active workspace, including
+already analyzed materials, not a claim of analysis eligibility or backlog.
+Job activity is an explicit preview of at most three newest pending/running
+jobs (created_at descending, then id descending), not queue-wide totals. Both
+running and pending counts describe only that preview; older running jobs can
+be outside it. Pending does not imply immediate execution (run_at may be in the
+future). Activity labels distinguish collect, analyze, digest, prune, learn and
+reflect; unknown types use a neutral label, never an implied LLM call. Home adds
+no total-count query or eligibility calculation for [P10-T09](tasks/p10-t09.md).
 
 
 Attention is implemented in the unified bell, not a second home block (see

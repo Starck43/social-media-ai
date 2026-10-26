@@ -442,7 +442,9 @@ def _with_models(staged=0, analyzed=0, jobs=()):
     AIAnalytics = types.SimpleNamespace(objects=_CountQuery(analyzed))
     CollectedItem = types.SimpleNamespace(objects=_CountQuery(staged))
     Job = types.SimpleNamespace(
-        objects=_CountQuery(rows=jobs), created_at=types.SimpleNamespace(desc=lambda: "created-desc")
+        objects=_CountQuery(rows=jobs),
+        created_at=types.SimpleNamespace(desc=lambda: "created-desc"),
+        id=types.SimpleNamespace(desc=lambda: "id-desc"),
     )
     return {"AIAnalytics": AIAnalytics, "CollectedItem": CollectedItem, "Job": Job}
 
@@ -472,7 +474,7 @@ async def test_pipeline_counts_staged_analyzed_and_running_jobs():
         7, False, _offer(("aianalytics", "view"), ("collecteditem", "view"), ("job", "view"))
     )
     assert result["staged"] == 4 and result["analyzed"] == 9
-    assert result["running"] == [{"job_type": "collect", "collect": True}]
+    assert result["running"] == [{"job_type": "collect", "label": "Сбор данных выполняется…"}]
     assert result["queued_count"] == 1 and result["job_count"] == 2
     assert any(kwargs.get("tenant_id") == 7 for _, kwargs in stubs["CollectedItem"].objects.filters)
     assert any(kwargs.get("tenant_id") == 7 for _, kwargs in stubs["Job"].objects.filters)
@@ -485,12 +487,13 @@ def test_pipeline_strip_shows_waiting_and_model_activity():
             "scope_all": False,
             "staged": 4,
             "analyzed": 9,
-            "running": [{"job_type": "analyze", "collect": False}],
+            "running": [{"job_type": "analyze", "label": "Анализ выполняется…"}],
+            "preview_limit": 3,
             "queued_count": 0,
             "job_count": 1,
         },
     )
     assert "data-home-pipeline" in markup
-    assert "ожидают анализа" in markup
+    assert "сохранено материалов" in markup
     assert "сохранено анализов" in markup
-    assert "Модель анализирует…" in markup
+    assert "Анализ выполняется…" in markup

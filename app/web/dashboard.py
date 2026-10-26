@@ -226,13 +226,23 @@ async def _pipeline(tenant_id: int | None, is_superuser: bool, offer: dict) -> d
     if offer.get("jobs"):
         from app.models.job import Job
 
+        # This is a bounded recent-active preview, never a queue total.
+        pipeline["preview_limit"] = 3
+        activity_labels = {
+            "collect": "Сбор данных выполняется…",
+            "analyze": "Анализ выполняется…",
+            "digest": "Подготовка дайджеста выполняется…",
+            "prune": "Очистка данных выполняется…",
+            "learn": "Обучение выполняется…",
+            "reflect": "Рефлексия выполняется…",
+        }
         active_jobs = (
             await Job.objects.filter(tenant_id=tenant_id, status__in=["pending", "running"])
-            .order_by(Job.created_at.desc())
-            .limit(3)
+            .order_by(Job.created_at.desc(), Job.id.desc())
+            .limit(pipeline["preview_limit"])
         )
         pipeline["running"] = [
-            {"job_type": j.job_type, "collect": j.job_type == "collect"}
+            {"job_type": j.job_type, "label": activity_labels.get(j.job_type, "Задание выполняется…")}
             for j in active_jobs
             if getattr(j, "status", None) == "running"
         ]

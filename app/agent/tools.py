@@ -29,7 +29,7 @@ class Tool:
     parameters: JSONSchema
     handler: Callable[..., Awaitable[Any]]
     requires_confirmation: bool = False
-    required_permission: str | None = None  # "agenttask.create", "source.view", etc.
+    required_permission: str | None = None  # catalog key: "scheduling.task.create", etc.
 
     @property
     def confirm(self) -> bool:
@@ -59,8 +59,9 @@ def tool(
 ) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
     """Register an async function as an agent tool.
 
-    ``required_permission`` is a dotted codename like ``"agenttask.create"``
-    checked by the runtime and both public dispatch paths before the handler.
+    ``required_permission`` is a catalog key, ``domain.resource.action``
+    (``"scheduling.task.create"``), checked by the runtime and both public
+    dispatch paths before the handler.
     ``None`` (default) means
     no permission gate — every workspace member may call the tool.
     """

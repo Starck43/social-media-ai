@@ -7,6 +7,7 @@
 **Plan — active task cards:**
 
 - [P9-T01](../tasks/p9-t01.md) — one capability-specific activation contract
+- [P9-T07](../tasks/p9-t07.md) — actor-scoped admin console catalogs
 
 **Accepted history:**
 

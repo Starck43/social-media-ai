@@ -46,6 +46,7 @@ means not recorded; source recovery links remain in the card.
 ## [P9](docs/phases/p9-safe-activation.md)
 
 - [P9-T01](docs/tasks/p9-t01.md) one capability-specific activation contract — **TODO** · unassigned · —
+- [P9-T07](docs/tasks/p9-t07.md) Actor-scoped admin console catalogs — **IN_PROGRESS** · codex-p9-owner · `codex resume 01a1785e-504b-7893-8129-b57db07d8f37`
 
 ## [P10](docs/phases/p10-audit-hardening.md)
 

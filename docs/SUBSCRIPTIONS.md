@@ -14,11 +14,14 @@ Use existing registration, workspace membership and plan-comparison surfaces.
 Current source has operator-managed tenant tiers but no selected subscription
 payment provider or verified checkout/webhook implementation.
 
-P2-T15 defines the entitlement/expiry contract in deferred PR #253, currently
-`b60998200d5216e6032a58b38a19030324bda699`; those fields/services are not in dev.
-Do not copy, merge or assume acceptance of that branch here. The existing owner
-integration sequence remains #246 → #252 → #253, each after its own acceptance.
-P2-T16 has no implicit place or merge authorization in that sequence.
+P2-T15's entitlement/expiry contract was in deferred PR #253
+(`b60998200d5216e6032a58b38a19030324bda699` at planning time). As of this
+refresh (2026-10-27) the owner-approved sequence #246 → #252 → #253 is
+integrated into dev (merges `4e74318c`, `83c1f79a`, `67acbd53`) and migration
+0117 is the current integrated head; those fields/services are now in dev and
+are consumed by this task, not copied from any branch.
+P2-T16 was never part of that sequence and still has no implicit merge
+authorization beyond the owner's per-PR decisions.
 
 ## Remaining lifecycle decisions before checkout implementation
 
@@ -72,19 +75,22 @@ Read the official [quick start](https://yookassa.ru/developers/payment-acceptanc
   handling needs bounded bodies, abuse controls and safe error handling; no route
   is exposed in this increment.
 
-## Future migration 0117 dependency
+## Migration 0117 dependency (refreshed 2026-10-27)
 
-The future P2-T15 `0117` owns nullable `tenants.plan_expires_at` and
+P2-T15's `0117` owns nullable `tenants.plan_expires_at` and
 `entitlement_usage`; this task must consume, not recreate or replace, them.
-P2-T15 currently has a temporary independent `0117 → 0112` branch. Preserve its
-owner-approved reconciliation after #246; do not change its parent here.
+After #246 (0113–0116) integrated, 0117 was re-parented onto 0116 and merged
+as `67acbd53`; it is the current single alembic head, and it was applied to the
+local dev DB per the owner's 2026-10-27 integration instruction.
 
-After #253's independent acceptance/integration, refresh dev, inspect the actual
-migration graph and ensure 0117 is present. Reserve a different free revision for
-subscription purchases/events/receipts on the actual integrated head. No 0118 or
-other number is reserved in this increment, and no migration pointing to absent
-0117 is added now. A missing schema/prerequisite must fail closed at future
-activation, not trigger runtime DDL or silently grant plan access without expiry.
+Refresh performed on integrated dev: 0117 confirmed present in the actual
+migration graph. When the subscription purchases/events/receipts schema design
+is approved, reserve a distinct free revision on the actual integrated head —
+0118 is free at this refresh — and inspect the graph again before reserving.
+No 0118 or other number is reserved by this increment, and no migration is
+added now. A missing schema/prerequisite must fail closed at future
+activation, not trigger runtime DDL or silently grant plan access without
+expiry.
 
 ## Required security and lifecycle contract
 

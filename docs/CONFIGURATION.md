@@ -73,12 +73,14 @@ binding before accepting evidence; fake callbacks and browser redirects never
 grant access. The official contract and remaining work live in
 [SUBSCRIPTIONS](SUBSCRIPTIONS.md).
 
-**Migration dependency:** consume the future P2-T15 revision `0117` for
-`tenants.plan_expires_at` and `entitlement_usage`, not a duplicate definition.
-It is not integrated or applied by this increment. Only after its acceptance and
-integration may P2-T16 reserve its own free migration number on the actual
-integrated head. Do not rewrite 0117 or depend on absent revisions. Existing
-#246 → #252 → #253 integration/acceptance gates are unchanged.
+**Migration dependency:** consume P2-T15 revision `0117` (integrated into dev
+as `67acbd53`, 2026-10-27, and the current single alembic head) for
+`tenants.plan_expires_at` and `entitlement_usage`; never duplicate those
+columns/tables, rewrite or re-apply 0117. When the subscription schema design
+is approved, reserve a distinct free number on the actual integrated head —
+0118 is free at this refresh — after re-inspecting the graph. Do not depend on
+absent revisions. The #246 → #252 → #253 integration gates are already
+satisfied by that merge sequence.
 
 ## Optional same-host runtime observation
 

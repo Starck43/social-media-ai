@@ -399,6 +399,8 @@ def test_model_view_display_and_telemetry_are_not_editable():
 @pytest.mark.asyncio
 async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_without_db():
     """Exercise SQLAdmin's actual view/form API with canonical ORM metadata only."""
+    from contextlib import nullcontext
+
     from sqladmin import ModelView, action
     from sqladmin.fields import SelectField
     from sqlalchemy import Column, ForeignKey, Integer
@@ -449,6 +451,11 @@ async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_witho
         column_formatters = {}
         form_args = {}
         form_overrides = {"is_active": SelectField, "is_default": SelectField}
+
+        def _catalog_scope(self, request=None):
+            # This canonical-metadata scaffold has no request or DB actor; other
+            # tests cover the real per-actor catalogue scope behavior.
+            return nullcontext()
 
     node = next(
         n

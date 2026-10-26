@@ -14,7 +14,7 @@ from .base_manager import BaseManager, QuerySet
 if TYPE_CHECKING:
     from app.types import SourceType
 
-    from ..source import Source
+    from ..collection.source import Source
 
 
 class SourceManager(BaseManager["Source"]):
@@ -34,7 +34,7 @@ class SourceManager(BaseManager["Source"]):
     """
 
     def __init__(self):
-        from ..source import Source
+        from ..collection.source import Source
 
         super().__init__(Source)
 

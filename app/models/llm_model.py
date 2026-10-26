@@ -1,7 +1,7 @@
-"""Legacy imports; canonical model and manager registration live in the domain facade."""
+"""Compatibility aliases; canonical declarations live in domain packages."""
 
 from .base import Base, TimestampMixin
 from .llm.llm_model import LLMModel, _model_type_to_capabilities
-from .managers.llm_model_manager import LLMModelManager  # noqa: E402
+from .managers.llm_model_manager import LLMModelManager
 
-__all__ = ["LLMModel", "_model_type_to_capabilities", "Base", "TimestampMixin", "LLMModelManager"]
+__all__ = ["Base", "LLMModel", "LLMModelManager", "TimestampMixin", "_model_type_to_capabilities"]

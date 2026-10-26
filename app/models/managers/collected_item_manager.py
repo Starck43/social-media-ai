@@ -346,7 +346,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         that gated collection, so an analyze run never touches content outside
         the task's configured period.
         """
-        from app.models.collected_item import CollectedItem
+        from app.models.collection.collected_item import CollectedItem
 
         query = self.filter(source_id=source_id)
         if not include_exhausted:
@@ -372,7 +372,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         bounds `count_for_source` applies, so a warning about stuck rows reads
         against the window a run would actually process, not the whole history.
         """
-        from app.models.collected_item import CollectedItem
+        from app.models.collection.collected_item import CollectedItem
 
         # Both columns are read because the ceiling is per row: one workspace may
         # have widened it while another kept the default.
@@ -393,7 +393,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         end_date: Any = None,
     ) -> int:
         """Count the fixed staged window, including exhausted rows."""
-        from app.models.collected_item import CollectedItem
+        from app.models.collection.collected_item import CollectedItem
 
         query = self.filter(source_id=source_id)
         if not include_review:
@@ -414,7 +414,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         task progress poll. Callers must omit sources whose configured date
         window is malformed; silently removing a bad bound would widen scope.
         """
-        from app.models.collected_item import CollectedItem
+        from app.models.collection.collected_item import CollectedItem
 
         predicates = []
         for window in source_windows:
@@ -472,7 +472,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
 
     async def for_run(self, run_id: int, limit: int = 50) -> list[CollectedItem]:
         """Raw items of one collect run, newest first."""
-        from app.models.collected_item import CollectedItem
+        from app.models.collection.collected_item import CollectedItem
 
         return list(
             await self.filter(run_id=run_id)
@@ -482,7 +482,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
 
     async def hashes_for_source(self, source_id: int) -> set[str]:
         """Content hashes currently staged for a source (an unread ledger)."""
-        from app.models.collected_item import CollectedItem
+        from app.models.collection.collected_item import CollectedItem
 
         # The column object, not its name: a bare string is taken as a text()
         # expression, which this query rejects outright. `rows()` is the

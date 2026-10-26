@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-	from ..llm_provider import LLMProvider
+	from ..llm.llm_provider import LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class LLMProviderManager(BaseManager):
 	"""Manager for LLMProvider model operations."""
 
 	def __init__(self):
-		from ..llm_provider import LLMProvider
+		from ..llm.llm_provider import LLMProvider
 		super().__init__(LLMProvider)
 
 	async def _get_by_capability(self, capability: str, is_active: bool = True) -> list['LLMProvider']:
@@ -27,7 +27,7 @@ class LLMProviderManager(BaseManager):
 		Returns:
 			List of LLMProvider objects
 		"""
-		from ..llm_model import LLMModel
+		from ..llm.llm_model import LLMModel
 
 		# Get all active providers
 		if is_active:

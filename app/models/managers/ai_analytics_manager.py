@@ -21,7 +21,7 @@ class AIAnalyticsManager(BaseManager):
 
     def __init__(self):
         # Use string literal to avoid circular import
-        from ..ai_analytics import AIAnalytics
+        from ..analysis.ai_analytics import AIAnalytics
 
         super().__init__(AIAnalytics)
 
@@ -296,7 +296,7 @@ class AIAnalyticsManager(BaseManager):
         Returns:
                 List of source IDs that need analysis
         """
-        from ..source import Source
+        from ..collection.source import Source
 
         cutoff_date: date = date.today() - timedelta(days=days)
 

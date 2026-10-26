@@ -14,7 +14,7 @@ from .base_manager import BaseManager
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from ..agent_task import AgentTask
+    from ..scheduling.agent_task import AgentTask
 
 
 # Job types that operate on concrete sources. The rest (digest, prune, learn,
@@ -58,7 +58,7 @@ class AgentTaskManager(BaseManager):
     """Manager for AgentTask model: cron validation and next-run computation."""
 
     def __init__(self):
-        from ..agent_task import AgentTask
+        from ..scheduling.agent_task import AgentTask
 
         super().__init__(AgentTask)
 
@@ -163,7 +163,7 @@ class AgentTaskManager(BaseManager):
         """Take the admission gate before a task row lock and refresh identity state."""
         from sqlalchemy import select
 
-        from ..agent_task import AgentTask
+        from ..scheduling.agent_task import AgentTask
         from .job_manager import JobManager
 
         current = await self.get(id=task_id, session=session)
@@ -223,7 +223,7 @@ class AgentTaskManager(BaseManager):
         from sqlalchemy import select
 
         from app.core.database import async_session_maker
-        from ..agent_task import AgentTask
+        from ..scheduling.agent_task import AgentTask
         from .job_manager import JobManager
 
         if "agent_scenario_id" in values:
@@ -323,7 +323,7 @@ class AgentTaskManager(BaseManager):
         return count
 
     async def _delete_with_queued_cleanup(self, session: "AsyncSession", filters: dict[str, Any]) -> int:
-        from ..agent_task import AgentTask
+        from ..scheduling.agent_task import AgentTask
         from .job_manager import JobManager
 
         matching = list(await self.get_queryset(session).filter(**filters).all())
@@ -381,7 +381,7 @@ class AgentTaskManager(BaseManager):
             raise ValueError("Invalid scenario ID")
         from sqlalchemy import select
 
-        from ..agent_scenario import AgentScenario
+        from ..analysis.agent_scenario import AgentScenario
 
         identity = (
             await session.execute(
@@ -405,8 +405,8 @@ class AgentTaskManager(BaseManager):
         from sqlalchemy import delete as sa_delete, select
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-        from ..agent_task import agent_task_sources
-        from ..source import Source
+        from ..scheduling.agent_task import agent_task_sources
+        from ..collection.source import Source
         from .job_manager import JobManager
 
         if type(task_id) is not int or task_id <= 0:
@@ -632,9 +632,9 @@ class AgentTaskManager(BaseManager):
         """
         from sqlalchemy import and_, exists, literal, not_, or_, select
 
-        from ..agent_scenario import AgentScenario
-        from ..agent_task import AgentTask, agent_task_sources
-        from ..source import Source
+        from ..analysis.agent_scenario import AgentScenario
+        from ..scheduling.agent_task import AgentTask, agent_task_sources
+        from ..collection.source import Source
 
         active_scenario = exists(
             select(literal(1)).where(
@@ -693,7 +693,7 @@ class AgentTaskManager(BaseManager):
             return {}
         from sqlalchemy import select
 
-        from ..agent_task import agent_task_sources
+        from ..scheduling.agent_task import agent_task_sources
 
         rows = await self.aggregate_rows(
             select(agent_task_sources.c.agent_task_id, agent_task_sources.c.source_id).where(
@@ -724,7 +724,7 @@ class AgentTaskManager(BaseManager):
             return None
         from sqlalchemy import select
 
-        from ..agent_task import agent_task_sources
+        from ..scheduling.agent_task import agent_task_sources
 
         rows = await self.aggregate_rows(
             select(agent_task_sources.c.agent_task_id).where(agent_task_sources.c.source_id == source_id)
@@ -757,7 +757,7 @@ class AgentTaskManager(BaseManager):
         """
         from sqlalchemy import exists, literal, not_, or_, select
 
-        from ..agent_task import AgentTask, agent_task_sources
+        from ..scheduling.agent_task import AgentTask, agent_task_sources
 
         linked = exists(
             select(literal(1)).where(
@@ -792,7 +792,7 @@ class AgentTaskManager(BaseManager):
         """
         from sqlalchemy import func, or_, select
 
-        from ..agent_task import AgentTask, agent_task_sources
+        from ..scheduling.agent_task import AgentTask, agent_task_sources
 
         ids = sorted({int(sid) for sid in source_ids if sid is not None})
         if not ids:
@@ -886,7 +886,7 @@ class AgentTaskManager(BaseManager):
         means all active" fallback must not let one task collect through
         another task's search lane.
         """
-        from ..source import Source
+        from ..collection.source import Source
 
         rows = await Source.objects.filter(is_active=True, owner_task_id__isnull=True).values(Source.id).rows()
         return {r.id for r in rows}
@@ -952,8 +952,8 @@ class AgentTaskManager(BaseManager):
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
         from app.tasks.cron import next_run_at
 
-        from ..agent_task import AgentTask
-        from ..source import Source
+        from ..scheduling.agent_task import AgentTask
+        from ..collection.source import Source
         from .job_manager import JobManager
 
         tenant_id = current_tenant_id()
@@ -997,7 +997,7 @@ class AgentTaskManager(BaseManager):
                 if launch_request_key is not None and row.launch_key != launch_request_key:
                     raise ValueError("Launch receipt key does not match this task")
                 if launch_request_key is not None and row.launch_job_id is not None:
-                    from ..job import Job as JobModel
+                    from ..scheduling.job import Job as JobModel
 
                     existing_job = (
                         await session.execute(
@@ -1098,8 +1098,8 @@ class AgentTaskManager(BaseManager):
                     if retry_exhausted:
                         if row.job_type != "analyze":
                             raise ValueError("Exhausted staged content can only be retried by an analysis task")
-                        from ..collected_item import CollectedItem
-                        from ..source import Source
+                        from ..collection.collected_item import CollectedItem
+                        from ..collection.source import Source
                         from .collected_item_manager import CollectedItemManager
 
                         source_rows = list(row.sources or [])
@@ -1276,7 +1276,7 @@ class AgentTaskManager(BaseManager):
                         # stopped worker let one pending copy accumulate per
                         # schedule tick. A task keeps at most one queued or
                         # running occurrence; the current one is retained.
-                        from ..job import Job as JobModel
+                        from ..scheduling.job import Job as JobModel
 
                         active_own = (
                             (

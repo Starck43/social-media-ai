@@ -763,7 +763,7 @@ class BaseManager(Generic[M]):
         from sqlalchemy import select
 
         from app.core.config import settings
-        from app.models.tenant import Tenant
+        from app.models.tenancy.tenant import Tenant
 
         stmt = select(Tenant.id).where(Tenant.slug == settings.DEFAULT_TENANT_SLUG)
         tenant_id = (await session.execute(stmt)).scalar_one_or_none()

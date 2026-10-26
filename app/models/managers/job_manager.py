@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
     from app.jobs.claim_outcomes import JobClaim, JobOutcomeReceipt
 
-    from ..job import Job
+    from ..scheduling.job import Job
 
 # Remove jobs that finished more than this ago to keep the queue readable.
 # Running/pending/failed rows survive — they need human attention or are in
@@ -62,7 +62,7 @@ class JobManager(BaseManager["Job"]):
     """Manager for the Job queue: enqueue, atomic claim, retries."""
 
     def __init__(self):
-        from ..job import Job
+        from ..scheduling.job import Job
 
         super().__init__(Job)
 
@@ -136,7 +136,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.permissions import get_current_user
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         actor = get_current_user()
         trusted_actor_id = getattr(actor, "id", None)
@@ -308,7 +308,7 @@ class JobManager(BaseManager["Job"]):
         from sqlalchemy import select
 
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
-        from app.models.tenant import Tenant
+        from app.models.tenancy.tenant import Tenant
 
         if type(tenant_id) is not int or tenant_id <= 0 or (not is_bypass() and current_tenant_id() != tenant_id):
             raise TenantContextError("Source admission requires the owning workspace")
@@ -329,9 +329,9 @@ class JobManager(BaseManager["Job"]):
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
 
-        from app.models.agent_task import AgentTask
-        from app.models.job import Job
-        from app.models.source import Source
+        from app.models.scheduling.agent_task import AgentTask
+        from app.models.scheduling.job import Job
+        from app.models.collection.source import Source
 
         jobs = list(
             (
@@ -405,8 +405,8 @@ class JobManager(BaseManager["Job"]):
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
         from app.jobs.replay_policy import replay_block_reason
         from app.jobs.source_activity import SOURCE_JOB_TYPES, source_conflict
-        from app.models.job import Job as JobModel
-        from app.models.source import Source
+        from app.models.scheduling.job import Job as JobModel
+        from app.models.collection.source import Source
 
         tenant_id = current_tenant_id()
         actor = get_current_user()
@@ -530,7 +530,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.database import async_session_maker
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
         from app.jobs.source_activity import job_source_ids
-        from app.models.job import Job
+        from app.models.scheduling.job import Job
 
         tenant_id = current_tenant_id()
         if type(tenant_id) is not int or tenant_id <= 0 or is_bypass():
@@ -584,7 +584,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.database import async_session_maker
         from app.jobs.attempt_budget import available_attempt_budget
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         now = now or datetime.now(timezone.utc)
         async with async_session_maker() as session:
@@ -630,7 +630,7 @@ class JobManager(BaseManager["Job"]):
         enqueued. `claim_next` cannot be used for it — it takes the globally
         oldest pending job, which may belong to a different workspace.
         """
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         return await cls._claim(JobModel.id == job_id, now=now)
 
@@ -649,7 +649,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
         from app.jobs.claim_outcomes import JobClaim
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         if not isinstance(claim, JobClaim):
             raise ValueError("A validated acquired claim is required")
@@ -712,7 +712,7 @@ class JobManager(BaseManager["Job"]):
 
         from app.core.database import async_session_maker
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         self._require_claim_tenant(claim, "Progress claim does not match the current tenant")
         if not isinstance(progress, dict):
@@ -750,7 +750,7 @@ class JobManager(BaseManager["Job"]):
         """
         from sqlalchemy import select
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         rows = (
             (
@@ -788,7 +788,7 @@ class JobManager(BaseManager["Job"]):
 
         from app.jobs.recovery_policy import outcome_unconfirmed
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         rows = (
             (
@@ -824,7 +824,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.database import async_session_maker
         from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         scope = self._recovery_scope(JobModel)
         now = datetime.now(timezone.utc)
@@ -852,7 +852,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.database import async_session_maker
         from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
         from .collected_item_manager import CollectedItemManager
 
         self._require_claim_tenant(claim, "Cancellation claim does not match the current tenant")
@@ -907,7 +907,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
         from app.jobs.claim_outcomes import JobClaim
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         if not isinstance(claim, JobClaim):
             raise ValueError("A validated running snapshot is required")
@@ -985,7 +985,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.database import async_session_maker
         from app.jobs.attempt_budget import available_attempt_budget
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         now = now or datetime.now(timezone.utc)
         async with async_session_maker() as session:
@@ -1023,7 +1023,7 @@ class JobManager(BaseManager["Job"]):
         """
         from sqlalchemy import select
 
-        from ..agent_task import AgentTask
+        from ..scheduling.agent_task import AgentTask
 
         task = (
             await session.execute(
@@ -1069,7 +1069,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
         from app.jobs.claim_outcomes import JobClaim, JobOutcomeReceipt, OutcomeAck
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         if not isinstance(claim, JobClaim):
             raise ValueError("A validated acquired claim is required")
@@ -1228,7 +1228,7 @@ class JobManager(BaseManager["Job"]):
         """
         if not task_id:
             return
-        from app.models.agent_task import AgentTask
+        from app.models.scheduling.agent_task import AgentTask
         from app.models.managers.agent_task_manager import AgentTaskManager
 
         task = await AgentTask.objects.get(id=task_id)
@@ -1256,7 +1256,7 @@ class JobManager(BaseManager["Job"]):
             unavailable_attempt_budget,
         )
 
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         scope = self._recovery_scope(JobModel)
         now = datetime.now(timezone.utc)
@@ -1346,7 +1346,7 @@ class JobManager(BaseManager["Job"]):
             return
         from sqlalchemy import or_, update
 
-        from ..agent_task import AgentTask
+        from ..scheduling.agent_task import AgentTask
 
         await session.execute(
             update(AgentTask)
@@ -1388,7 +1388,7 @@ class JobManager(BaseManager["Job"]):
         if statuses is not None:
             if not statuses or any(status not in {"pending", "running", "done", "failed"} for status in statuses):
                 raise ValueError("Invalid Jobs status filter")
-            from ..job import Job as JobModel
+            from ..scheduling.job import Job as JobModel
 
             query = query.filter(web_page_status_criteria(JobModel, statuses, include_attention))
         total = await query.count()
@@ -1405,7 +1405,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.tenant_context import current_tenant_id, is_bypass
         from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
         from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR, OUTCOME_UNCONFIRMED_PREFIX
-        from ..job import Job as JobModel
+        from ..scheduling.job import Job as JobModel
 
         if type(tenant_id) is not int or tenant_id <= 0:
             return (

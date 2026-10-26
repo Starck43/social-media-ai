@@ -9,7 +9,9 @@ Alembic version table alone. Schema separation is not a privilege sandbox.
 
 Fresh tables come from Base.metadata.create_all because the early migration
 chain expects existing tables. Reference roles, permissions, platforms and the
-bootstrap tenant are seeded with the canonical setup scripts. Existing drift
+bootstrap tenant are seeded with the canonical setup scripts; the committed
+legacy catalog owner (migration 0109) is restored directly because the
+create_all path never executes migration data changes. Existing drift
 is checked before schema creation, reset or seeding and is never automatically
 repaired. A branch missing live table metadata must stop, not remove evidence.
 
@@ -46,6 +48,12 @@ _PLATFORM_SEED = (
     ("vk", "ВКонтакте", "https://vk.com"),
     ("telegram", "Телеграм", "https://t.me"),
 )
+
+# Committed legacy catalog owner: migration 0109 assigns the personal catalog
+# to this stable user id and refuses to run unless the user pre-exists and
+# is active. The create_all + stamp head path never executes that data
+# change, so the documented re-seed restores the FK target.
+LEGACY_CATALOG_OWNER_ID = 2
 
 
 def database_name(url: str) -> str:
@@ -361,6 +369,7 @@ async def _seed_reference_rows() -> None:
     await _seed_bootstrap_tenant()
     await _seed_permissions()
     await _seed_role_grants()
+    await _seed_legacy_catalog_owner()
 
 
 async def _seed_platforms() -> None:
@@ -459,6 +468,37 @@ async def _seed_role_grants() -> None:
                 conn.execute(_insert_ignoring_conflicts(workspace_role_permission), rows)
 
 
+async def _seed_legacy_catalog_owner() -> None:
+    """Restore the committed legacy catalog owner after a reset.
+
+    Migration 0109 assigns the personal catalog rows to the active user with
+    this stable id and refuses to run unless the user pre-exists, but the
+    create_all + stamp head test path never executes that data change. The
+    FK-pinned suites insert providers and models owned by this id, so the
+    row must be a documented committed fixture of the re-seed. It carries a
+    synthetic placeholder hash: no credential, no platform permission, no
+    tenant membership.
+    """
+    from app.core.tenant_context import tenant_scope
+    from app.models import PlatformRole, User
+    from app.types import PlatformRoleType
+
+    with tenant_scope(bypass=True):
+        if await User.objects.get(id=LEGACY_CATALOG_OWNER_ID) is not None:
+            return
+        role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
+        if role is None:
+            raise RuntimeError("Legacy catalog owner seeding requires the 'user' platform role row.")
+        await User.objects.create(
+            id=LEGACY_CATALOG_OWNER_ID,
+            username="legacy_catalog_owner",
+            email="legacy-catalog-owner@localhost.invalid",
+            hashed_password="synthetic-hash-never-a-credential",
+            role_id=role.id,
+            is_active=True,
+        )
+
+
 def resolve_and_redirect() -> tuple[str, str, str]:
     """Validate isolation before app imports or changing URL/schema variables.
 
@@ -553,7 +593,7 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
         await check_existing_schema(conn, Base.metadata, settings.DB_SCHEMA, require_all_tables=True)
 
     await _seed_reference_rows()
-    say("reference rows seeded (roles, permissions, platforms, bootstrap tenant)")
+    say("reference rows seeded (roles, permissions, platforms, bootstrap tenant, legacy catalog owner)")
 
     await async_engine.dispose()
 

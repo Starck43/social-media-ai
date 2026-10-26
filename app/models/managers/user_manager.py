@@ -73,19 +73,22 @@ class UserManager(BaseManager):
         Returns:
                 Updated User object or None if not found
         """
-        user = await self.get(id=user_id)
+        from app.models import User
+
+        user = await self.filter(id=user_id).prefetch_related("role").first()
         if not user:
             return None
 
         from app.core.permissions import get_current_user
         from app.core.tenant_context import is_bypass
-        from app.models import User
-
         actor = current_user or get_current_user()
         if actor is None and not is_bypass():
             raise HTTPException(status_code=403, detail="Authenticated actor required")
         if set(update_data) - {"username", "email"}:
             raise HTTPException(status_code=400, detail="Unsupported profile field")
+        is_owner_target = bool(user.role and user.role.codename == PlatformRoleType.SUPERUSER)
+        if is_owner_target and (actor is None or actor.id != user_id):
+            raise HTTPException(status_code=403, detail="Нельзя изменять профиль собственника платформы")
         if actor is not None:
             fresh = await User.objects.prefetch_related("role").get(id=actor.id, is_active=True)
             if fresh is None or (fresh.id != user_id and not fresh.is_platform_admin):
@@ -168,6 +171,11 @@ class UserManager(BaseManager):
         Returns:
                 bool: True if deletion successful, False otherwise
         """
+        from app.models import User
+
+        target = await User.objects.prefetch_related("role").get(id=user_id)
+        if target is not None and target.role and target.role.codename == PlatformRoleType.SUPERUSER:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нельзя удалить аккаунт собственника платформы")
         return await self.delete_by_id(user_id)
 
     async def change_password(

@@ -182,6 +182,14 @@ class UserAdmin(BaseAdmin, model=User):
         if data.get("role_id"):
             raise HTTPException(status_code=400, detail="Используйте отдельную операцию назначения платформенной роли")
         actor = self.get_admin_user(request)
+        target = await User.objects.prefetch_related("role").get(id=int(pk))
+        if (
+            target is not None
+            and target.role is not None
+            and target.role.codename == PlatformRoleType.SUPERUSER
+            and (actor is None or actor.id != int(pk))
+        ):
+            raise HTTPException(status_code=403, detail="Нельзя изменять профиль собственника платформы")
         if role_name:
             await User.objects.set_platform_role(
                 user_id=int(pk),

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import importlib
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -51,7 +51,7 @@ async def test_notification_bulk_operations_stay_inside_the_workspace(workspaces
         await _notify()
 
     with tenant_scope(bypass=True):
-        await Notification.objects.filter(id=old.id).update(created_at=datetime.now(UTC) - timedelta(days=40))
+        await Notification.objects.filter(id=old.id).update(created_at=datetime.now(timezone.utc) - timedelta(days=40))
 
     with tenant_scope(first.id):
         assert await Notification.objects.get_unread_count() == 3

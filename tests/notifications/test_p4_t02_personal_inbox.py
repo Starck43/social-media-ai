@@ -1,7 +1,7 @@
 """User-owned inbox across own/invited workspaces, never an ambient-tenant feed."""
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -94,7 +94,7 @@ async def test_revocation_expiry_and_personal_dismissal(personal_world):
         await TenantUser.objects.update_by_id(w.memberships[2].id, is_active=False)
         assert not await PersonalInbox(w.users[1]).entries()
         await TenantUser.objects.update_by_id(w.memberships[2].id, is_active=True)
-        await Notification.objects.update_by_id(event.id, expires_at=datetime.now(UTC) - timedelta(seconds=1))
+        await Notification.objects.update_by_id(event.id, expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
         assert not await PersonalInbox(w.users[1]).entries()
 
 
@@ -131,7 +131,7 @@ async def test_job_claim_preserves_trusted_global_recipient_and_attempt_dedup(pe
             job_type="collect",
             payload={"initiated_by_user_id": w.users[2].id},
             initiated_by_user_id=w.users[0].id,
-            run_at=datetime.now(UTC),
+            run_at=datetime.now(timezone.utc),
             max_attempts=2,
         )
         acquired = await Job.objects.claim_job(job.id)
@@ -155,7 +155,7 @@ async def test_cleanup_removes_only_own_old_receipts(personal_world):
         await NotificationReceipt.objects.mark_read(w.users[0].id, [event.id])
         # Owned synthetic fixture: emulate an old acknowledged receipt.
         await NotificationReceipt.objects.filter(user_id=w.users[0].id, notification_id=event.id).update(
-            read_at=datetime.now(UTC) - timedelta(days=40)
+            read_at=datetime.now(timezone.utc) - timedelta(days=40)
         )
         assert await NotificationReceipt.objects.cleanup_for_user(w.users[0].id, 30) == 1
         assert not await PersonalInbox(w.users[0]).entries()

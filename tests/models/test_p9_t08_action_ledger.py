@@ -1,7 +1,7 @@
 """Real PostgreSQL concurrency, actor-bound sealed approval and dry-run-only claims."""
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -106,7 +106,9 @@ async def test_nonmember_other_actor_expiry_and_payload_tamper_fail_closed(perso
     expired, _ = await proposal(w, key="expired")
     with tenant_scope(w.tenants[0].id), permission_scope(w.users[0]):
         await AgentAction.objects.approve_action(expired.id)
-        await AgentAction.objects.update_by_id(expired.id, approval_expires_at=datetime.now(UTC) - timedelta(seconds=1))
+        await AgentAction.objects.update_by_id(
+            expired.id, approval_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)
+        )
         assert await AgentAction.objects.claim_action(expired.id) is None
 
 
@@ -120,7 +122,9 @@ async def test_revoked_membership_cannot_finalize_and_expired_claim_is_unknown(p
         with pytest.raises(PermissionError):
             await AgentAction.objects.mark_executed(row.id, claim_token=token)
         await TenantUser.objects.update_by_id(w.memberships[0].id, is_active=True)
-        await AgentAction.objects.update_by_id(row.id, claim_expires_at=datetime.now(UTC) - timedelta(seconds=1))
+        await AgentAction.objects.update_by_id(
+            row.id, claim_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)
+        )
         assert await AgentAction.objects.mark_executed(row.id, claim_token=token) is None
         unknown = await AgentAction.objects.mark_unknown(row.id)
         assert unknown.status == BotActionStatus.UNKNOWN and unknown.claim_token_hash is None

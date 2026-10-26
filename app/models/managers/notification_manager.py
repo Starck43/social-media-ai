@@ -6,7 +6,7 @@ applies to bulk updates, deletes and aggregates as well as to single-row reads.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func
@@ -78,7 +78,7 @@ class NotificationManager(BaseManager["Notification"]):
 
     async def get_recent(self, days: int = 7, is_read: bool | None = None) -> list[Notification]:
         """Notifications created during the last ``days`` days, newest first."""
-        cutoff = datetime.now(UTC) - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         return list(await self._newest_first(self._feed(is_read=is_read, created_at__gte=cutoff)))
 
     async def create_notification(
@@ -101,7 +101,7 @@ class NotificationManager(BaseManager["Notification"]):
 
     async def delete_old_notifications(self, days: int = 30) -> int:
         """Delete notifications older than ``days`` days in one DELETE; returns the count."""
-        cutoff = datetime.now(UTC) - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         return await self.filter(created_at__lt=cutoff).delete()
 
     async def get_stats(self) -> dict[str, Any]:

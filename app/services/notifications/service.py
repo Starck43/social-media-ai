@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.core.permissions import get_current_user
@@ -86,7 +86,7 @@ class NotificationService:
             recipient_user_ids=recipients,
             severity=severity,
             dedup_key=dedup_key,
-            expires_at=expires_at or datetime.now(UTC) + timedelta(days=30),
+            expires_at=expires_at or datetime.now(timezone.utc) + timedelta(days=30),
             title=title,
             message=message,
             notification_type=ntype,

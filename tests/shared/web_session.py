@@ -2,7 +2,7 @@
 
 import base64
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import jwt
 from itsdangerous import TimestampSigner
@@ -12,7 +12,7 @@ from app.core.config import settings
 
 def access_token(user):
     return jwt.encode(
-        {"sub": str(user.id), "type": "access", "exp": datetime.now(UTC) + timedelta(hours=1)},
+        {"sub": str(user.id), "type": "access", "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )

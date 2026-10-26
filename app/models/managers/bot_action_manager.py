@@ -10,7 +10,7 @@ import hashlib
 import json
 import secrets
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import ColumnElement, and_, func, select
@@ -74,7 +74,7 @@ class BotActionManager(BaseManager["BotAction"]):
     ) -> Sequence[BotAction]:
         """Actions of the current workspace created in the last ``hours``, newest first."""
         model = self.model
-        since = datetime.now(UTC) - timedelta(hours=hours)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
         query = (
             select(model)
             .where(model.created_at >= since, *self._tenant_criterion())
@@ -101,7 +101,7 @@ class BotActionManager(BaseManager["BotAction"]):
         if scope is None:
             return 0
         model = self.model
-        since = datetime.now(UTC) - timedelta(hours=hours)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
         query = select(func.count(model.id)).where(
             scope,
             model.created_at >= since,
@@ -266,7 +266,7 @@ class BotActionManager(BaseManager["BotAction"]):
         row.history = [
             *(row.history or []),
             {
-                "at": datetime.now(UTC).isoformat(),
+                "at": datetime.now(timezone.utc).isoformat(),
                 "from": row.status.name,
                 "to": status.name,
                 "actor_user_id": actor.id,
@@ -291,7 +291,7 @@ class BotActionManager(BaseManager["BotAction"]):
         row.payload_hash = row.approved_payload_hash = fingerprint
         self._record(row, actor, member, BotActionStatus.APPROVED)
         row.status, row.confirmed_by, row.approved_user_id = BotActionStatus.APPROVED, member.id, actor.id
-        row.confirmed_at = datetime.now(UTC)
+        row.confirmed_at = datetime.now(timezone.utc)
         row.approval_expires_at = row.confirmed_at + timedelta(seconds=ttl_seconds)
         await session.flush()
         return row
@@ -304,7 +304,7 @@ class BotActionManager(BaseManager["BotAction"]):
             return None
         self._record(row, actor, member, BotActionStatus.REJECTED)
         row.status, row.confirmed_by, row.approved_user_id = BotActionStatus.REJECTED, member.id, actor.id
-        row.confirmed_at = datetime.now(UTC)
+        row.confirmed_at = datetime.now(timezone.utc)
         await session.flush()
         return row
 
@@ -315,7 +315,7 @@ class BotActionManager(BaseManager["BotAction"]):
             raise ValueError("Invalid claim lifetime")
         actor, member = await self._actor(session)
         row = await self._locked(session, action_id)
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         if (
             row is None
             or row.status != BotActionStatus.APPROVED
@@ -349,15 +349,15 @@ class BotActionManager(BaseManager["BotAction"]):
             or not row.claim_token_hash
             or not secrets.compare_digest(row.claim_token_hash, hashlib.sha256(token.encode()).hexdigest())
             or row.claim_expires_at is None
-            or row.claim_expires_at <= datetime.now(UTC)
+            or row.claim_expires_at <= datetime.now(timezone.utc)
             or row.approval_expires_at is None
-            or row.approval_expires_at <= datetime.now(UTC)
+            or row.approval_expires_at <= datetime.now(timezone.utc)
             or row.approved_payload_hash != self.fingerprint(row)
         ):
             return None
         self._record(row, actor, member, BotActionStatus.FAILED if failed else BotActionStatus.EXECUTED)
         row.status = BotActionStatus.FAILED if failed else BotActionStatus.EXECUTED
-        row.executed_at = datetime.now(UTC)
+        row.executed_at = datetime.now(timezone.utc)
         row.result = {"dry_run": True, "simulation_only": True, "success": not failed}
         row.error = "simulation_failed" if failed else None
         row.claim_token_hash = None
@@ -382,7 +382,7 @@ class BotActionManager(BaseManager["BotAction"]):
             or row.status != BotActionStatus.CLAIMED
             or row.approved_user_id != actor.id
             or row.claim_expires_at is None
-            or row.claim_expires_at > datetime.now(UTC)
+            or row.claim_expires_at > datetime.now(timezone.utc)
         ):
             return None
         self._record(row, actor, member, BotActionStatus.UNKNOWN)

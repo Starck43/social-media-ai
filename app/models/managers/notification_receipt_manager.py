@@ -7,7 +7,7 @@ methods remain on NotificationManager for compatibility, not user-facing reads.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -33,7 +33,7 @@ class NotificationReceiptManager(BaseManager):
     def _visible(self, user_id):
         from app.models import Notification, Tenant, TenantUser, User
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         membership = (
             select(TenantUser.id)
             .where(
@@ -85,7 +85,7 @@ class NotificationReceiptManager(BaseManager):
             dedup_key is not None and not 1 <= len(dedup_key) <= 200
         ):
             raise ValueError("Invalid notification lifecycle")
-        if expires_at is not None and (expires_at.tzinfo is None or expires_at <= datetime.now(UTC)):
+        if expires_at is not None and (expires_at.tzinfo is None or expires_at <= datetime.now(timezone.utc)):
             raise ValueError("Notification expiry must be in the future")
         async with self._get_owned_session() as session:
             if not await session.scalar(select(Tenant.id).where(Tenant.id == tenant_id, Tenant.is_active.is_(True))):
@@ -224,7 +224,8 @@ class NotificationReceiptManager(BaseManager):
         async with self._get_owned_session() as session:
             result = await session.execute(
                 delete(self.model).where(
-                    self.model.user_id == user_id, self.model.read_at < datetime.now(UTC) - timedelta(days=days)
+                    self.model.user_id == user_id,
+                    self.model.read_at < datetime.now(timezone.utc) - timedelta(days=days),
                 )
             )
             return result.rowcount

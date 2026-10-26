@@ -1,6 +1,6 @@
 # P10-T25 — bounded utility cleanup evidence
 
-[Task card](../tasks/p10-t25.md) · [PR #243](https://github.com/Starck43/social-media-ai/pull/243) · [local-helper/status comment](https://github.com/Starck43/social-media-ai/pull/243#issuecomment-6410152108)
+[Accepted audit](p10-t25.md) · [PR #243](https://github.com/Starck43/social-media-ai/pull/243) · [local-helper/status comment](https://github.com/Starck43/social-media-ai/pull/243#issuecomment-6410152108)
 
 ## Revision and route
 
@@ -129,4 +129,4 @@ No DB was connected and no synthetic/external data was created remotely; DB clea
 
 ## Canonical registry identity
 
-This is pre-acceptance validation evidence for PR #243, now registered as P10-T25. References to P10-T23 in old branches/tests/commands are historical; accepted docs/audit/p10-t23.md is a different task and must not be overwritten. Related follow-up: [P8-T37](../tasks/p8-t37.md). Registry publication adds documentation only, not solution code, acceptance or new test results.
+This is pre-acceptance validation evidence for PR #243, now accepted as P10-T25 and integrated into dev. References to P10-T23 in old branches/tests/commands are historical; accepted docs/audit/p10-t23.md is a different task and must not be overwritten. Related accepted follow-up: [P8-T37](p8-t37.md). See [the canonical P10-T25 audit](p10-t25.md) for acceptance and current integration status.

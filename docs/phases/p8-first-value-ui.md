@@ -27,8 +27,8 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
    for any other requested categories before T33 closes.
 
 T38 can proceed from the integrated T29 foundation without waiting for the
-live VK gate. T39 reuses the shared execution-scope/mutation policy in existing
-P8-T37 after its independent review and integration. T40 depends on T39, uses
+live VK gate. T39 reuses the accepted shared execution-scope/mutation policy in
+P8-T37. T40 depends on T39, uses
 existing payer/quota controls, applies P2-T15 entitlements if available, and
 can build against mocked VK data while Q-5 is open. T41's live method evidence
 waits on Q-5. T41 is the integrated
@@ -44,14 +44,6 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 - [P8-T18](../tasks/p8-t18.md) — Model tests in single-owner mode
 - [P8-T20](../tasks/p8-t20.md) — Provider cost evidence and diagnostic controls
 - [P8-T36](../tasks/p8-t36.md) — reusable horizontal relationship picker
-- [P8-T37](../audit/p8-t37-validation.md) — task plan execution scope and shared
-  mutation policy; [PR #245](https://github.com/Starck43/social-media-ai/pull/245),
-  independently reviewed with required checks passed at candidate
-  `f695e6478537733b92973f1ba50ed9cc51bf2fba`; integrated into dev by that
-  merge commit and accepted by the owner on 2026-10-26. The new P8-T39
-  journey reuses this work after its separate review; it does not duplicate the
-  mutation policy.
-
 **Deferred beyond the social milestone:** [P8-T34](../tasks/p8-t34.md) keeps the
 future non-social connector direction. It is not a current P8 social release
 gate. P8 cannot be marked fully closed while this deferred item remains attached
@@ -59,6 +51,7 @@ to P8; first move it to a future phase or record an explicit owner cancellation.
 
 **Accepted history:**
 
+- [P8-T37](../audit/p8-t37.md) — task plan execution scope and shared mutation policy · 2026-10-26 · `f695e64`
 - [P8-T35](../audit/p8-t35.md) — reconcile the universal social task plan and follow-up cards · 2026-10-26 · `678466b`
 - [P8-T26](../audit/phase-p8-history.md#p8-t26) — implement the accepted jobs lifecycle audit: built-in cleanup independent of a scheduled prune task, default 24-hour terminal…
 - [P8-T01](../audit/phase-p8-history.md#p8-t01) — home mixed latest-results feed · 2026-10-16 · `19ce6e1`

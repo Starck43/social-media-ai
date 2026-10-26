@@ -45,6 +45,45 @@
     </div>
 </div>
 
+<!-- Delivery signal (P8-T11) ─────────────────────────────────────────── -->
+<section id="delivery" class="mt-6 ui-card" aria-labelledby="delivery-heading">
+    <h2 id="delivery-heading" class="text-sm font-medium text-slate-700 dark:text-slate-300">Незавершённые доставки за 7 дней</h2>
+    {% if delivery_unavailable %}
+        <p class="mt-2 text-sm text-rose-700 dark:text-rose-400" role="status">Сводка доставки сейчас недоступна. Это не означает, что проблем нет.</p>
+    {% elif delivery is none %}
+        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">Сводка доставки показывается в выбранном пространстве участникам с доступом к дайджестам.</p>
+    {% else %}
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            {% if delivery.scope == "workspace" %}Всё пространство: история дайджестов{% if delivery.jobs_included %} и задания отправки{% endif %}.{% else %}Только задания отправки, запущенные вами.{% endif %}
+            Источники — уже записанные итоги доставки; страница ничего не повторяет и не отправляет.
+            Считаются записи, не уникальные отправки: одна доставка может оставить и дайджест, и задание.
+            В списке — не более 20 последних записей каждого источника.
+        </p>
+        <dl class="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {% for key, label in (("undelivered", "Не доставлено"), ("unconfirmed", "Не подтверждено"), ("retrying", "Ожидает повтора"), ("quarantined", "В карантине")) %}
+                <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-3" data-delivery-bucket="{{ key }}">
+                    <dt class="text-xs text-slate-600 dark:text-slate-400">{{ label }}</dt>
+                    <dd class="mt-1 text-xl font-semibold {% if delivery.counts[key] %}text-rose-700 dark:text-rose-400{% endif %}">{{ delivery.counts[key] }}</dd>
+                </div>
+            {% endfor %}
+        </dl>
+        {% if delivery.total %}
+            <ul class="mt-3 space-y-1 text-sm">
+                {% for run in delivery.runs %}
+                    <li data-delivery-run="{{ run.id }}">Дайджест #{{ run.id }} · {{ run.period }} · {{ run.label }}</li>
+                {% endfor %}
+                {% for job in delivery.jobs %}
+                    <li data-delivery-job="{{ job.id }}">Задание #{{ job.id }} · {{ job.label }} · попытки {{ job.attempts }}</li>
+                {% endfor %}
+            </ul>
+            <p class="mt-2 text-xs text-slate-600 dark:text-slate-400">Повтор после «не подтверждено» или «в карантине» возможен только после ручной сверки отправленного.</p>
+        {% else %}
+            <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">В этом окне незавершённых доставок не найдено.</p>
+        {% endif %}
+        {% if delivery.truncated %}<p class="mt-2 text-xs">Окно превышает лимит 200 записей на источник: счётчики неполные (нижняя граница).</p>{% endif %}
+    {% endif %}
+</section>
+
 <!-- Preview ───────────────────────────────────────────────────────────── -->
 <div class="mt-6 grid gap-4 lg:grid-cols-2">
     <div class="ui-card">

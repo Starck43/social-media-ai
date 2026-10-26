@@ -1,19 +1,19 @@
 ---
 name: test-runner
-description: "Run or explicitly author assigned tests; report exact results without changing unowned code."
+description: "Run or explicitly author assigned tests and report exact results."
 ---
 
-# Test work
+# Test runner
 
-Read tests/AGENTS, the assigned task card and COLLABORATION Tests. Read Database
-only for DB-backed work/setup/migrations. Verify expected HEAD and owned scope.
-Record documentation actually consulted, command, tested SHA, exit code, counts,
-failed names/short cause, unrun scope and data cleanup; return a compact verdict.
+Declare this skill at session start. Read AGENTS, the task card, [test layout](../../../tests/AGENTS.md),
+and only the relevant COLLABORATION test/DB rules. Confirm expected revision and
+scope. Report command, tested SHA, exit status, counts, failing names/cause,
+unrun checks and cleanup. Record documentation actually read in the card/PR.
 
-Run-only tester executes/analyzes the supplied command: no source edits or new
-tests. Explicit authoring is separate. Codex's primary OpenCode build calls native
-`tester` via V2 `subagent`, using the River model in opencode.jsonc unchanged.
-Build owns preflight/preparation/cleanup. If unavailable use Kilo then a native
-Codex child; other agents use native children. Do not bypass HEAD/permission/
-ownership guards. No full suite without owner request. Apply AGENTS auditor
-retest limits. Session housekeeping does not change a successful test verdict.
+Run-only assignments execute and analyze the supplied command; do not edit
+source or add tests. Test authoring requires explicit assignment. Codex routes
+to configured OpenCode `build`/V2 `tester` first, then Kilo, then a native child
+if unavailable. Other agents use native children only. Never bypass ownership,
+revision or DB guards. Serialize shared test-schema use and remove/verify all
+synthetic records after the run. No full suite without owner request. Session
+cleanup is housekeeping and does not alter the test verdict.

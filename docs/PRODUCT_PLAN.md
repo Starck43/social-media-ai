@@ -9,26 +9,26 @@ propose → approve when required → deliver/execute → follow up.
 
 ## Universal social tasks
 
-The owner-approved first vertical and cross-surface contract are in [universal tasks](design/universal-tasks.md). Preserve independent management pages and the existing design; chat is supplementary. Current delivery is P8-T29; future categories/connectors are P8-T33/P8-T34.
+The owner-approved first vertical and cross-surface contract are in [universal tasks](AGENT_TASKS.md#explicit-task-plans). Preserve independent management pages and the existing design; chat is supplementary. Current delivery is P8-T29; future categories/connectors are P8-T33/P8-T34.
 
 ## Foundation directions
 
-Choose one task from [ROADMAP](../ROADMAP.md), then its linked card. Parent phase
-files describe direction/gate context and retain closed task history. Release
+Choose one task from [ROADMAP](../ROADMAP.md), then its linked card. Phase plans in `docs/phases/` describe direction, active task links and short
+accepted summaries; detailed historical evidence lives in `docs/audit/`. Release
 criteria live once in [BUSINESS_PRODUCTION_READINESS](BUSINESS_PRODUCTION_READINESS.md).
 
 | Direction | Parent | Release gate |
 | --- | --- | --- |
 | Execution truth and recovery | [P1 archive](phases/p1-queue-execution.md) | [Execution](BUSINESS_PRODUCTION_READINESS.md#prd-05--truthful-bounded-execution) |
-| Usage, pricing and payer attribution | [P2](tasks/p2-usage-spend.md) | [Economics](BUSINESS_PRODUCTION_READINESS.md#prd-03--complete-bounded-economics) |
-| Identity, permissions and approvals | [P3](tasks/p3-identity-access.md) | [Identity](BUSINESS_PRODUCTION_READINESS.md#prd-02--fail-closed-identity-permissions-and-approvals) |
-| Tenant-safe delivery | [P4](tasks/p4-delivery.md) | [Delivery](BUSINESS_PRODUCTION_READINESS.md#prd-01--tenant-safe-retry-safe-delivery) |
-| Typed output and hostile content | [P5](tasks/p5-ai-boundaries.md) | [AI boundaries](BUSINESS_PRODUCTION_READINESS.md#prd-07--structured-safe-ai-boundaries) |
-| Retention, privacy and offboarding | [P6](tasks/p6-lifecycle-privacy.md) | [Lifecycle](BUSINESS_PRODUCTION_READINESS.md#prd-06--data-lifecycle-privacy-and-offboarding) |
-| Installation, operations and recovery | [P7](tasks/p7-operations.md) | [Operations](BUSINESS_PRODUCTION_READINESS.md#prd-04--reproducible-deployment-and-recovery) |
-| First value, diagnostics and support | [P8](tasks/p8-first-value-ui.md) | [Visibility](BUSINESS_PRODUCTION_READINESS.md#prd-08--operational-visibility-and-support) |
-| Controlled activation | [P9](tasks/p9-safe-activation.md) | [Activation](BUSINESS_PRODUCTION_READINESS.md#prd-09--safe-action-activation-and-honest-release-claims) |
-| Verified security/correctness findings | [P10](tasks/p10-audit-hardening.md) | Task-selected gate |
+| Usage, pricing and payer attribution | [P2](phases/p2-usage-spend.md) | [Economics](BUSINESS_PRODUCTION_READINESS.md#prd-03--complete-bounded-economics) |
+| Identity, permissions and approvals | [P3](phases/p3-identity-access.md) | [Identity](BUSINESS_PRODUCTION_READINESS.md#prd-02--fail-closed-identity-permissions-and-approvals) |
+| Tenant-safe delivery | [P4](phases/p4-delivery.md) | [Delivery](BUSINESS_PRODUCTION_READINESS.md#prd-01--tenant-safe-retry-safe-delivery) |
+| Typed output and hostile content | [P5](phases/p5-ai-boundaries.md) | [AI boundaries](BUSINESS_PRODUCTION_READINESS.md#prd-07--structured-safe-ai-boundaries) |
+| Retention, privacy and offboarding | [P6](phases/p6-lifecycle-privacy.md) | [Lifecycle](BUSINESS_PRODUCTION_READINESS.md#prd-06--data-lifecycle-privacy-and-offboarding) |
+| Installation, operations and recovery | [P7](phases/p7-operations.md) | [Operations](BUSINESS_PRODUCTION_READINESS.md#prd-04--reproducible-deployment-and-recovery) |
+| First value, diagnostics and support | [P8](phases/p8-first-value-ui.md) | [Visibility](BUSINESS_PRODUCTION_READINESS.md#prd-08--operational-visibility-and-support) |
+| Controlled activation | [P9](phases/p9-safe-activation.md) | [Activation](BUSINESS_PRODUCTION_READINESS.md#prd-09--safe-action-activation-and-honest-release-claims) |
+| Verified security/correctness findings | [P10](phases/p10-audit-hardening.md) | Task-selected gate |
 
 ## Expansion sequence
 
@@ -95,4 +95,4 @@ execution/sources/targets. A multi-step workflow is a separate versioned concept
 Before a package: name the pilot, scope, data geography/access/retention,
 role/consent matrix, spend limits, schema/API changes, fixtures and recovery.
 Record the selected contract sections in the task card; no activation is granted
-by a product proposal. Current code locations: [PROJECT_MAP](PROJECT_MAP.md).
+by a product proposal. Current code locations: [DESIGN](DESIGN.md).

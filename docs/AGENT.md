@@ -311,4 +311,4 @@ or whole-gate acceptance claim.
 
 ## Universal social task interface (P8-T29)
 
-Target contract: [universal tasks](design/universal-tasks.md). Chat edits the same source/scenario/task configuration as the dedicated pages. Add bounded plan previews and a separate one-off research launch; do not remove confirmation from recurring task creation or digest sends. Implementation/evidence are tracked in [P8-T29](tasks/p8-t29.md).
+Target contract: [universal tasks](AGENT_TASKS.md#explicit-task-plans). Chat edits the same source/scenario/task configuration as the dedicated pages. Add bounded plan previews and a separate one-off research launch; do not remove confirmation from recurring task creation or digest sends. Implementation/evidence are tracked in [P8-T29](tasks/p8-t29.md).

@@ -3,7 +3,7 @@
 Audit base: local `dev` `c98dc9c`; origin/dev `1e0e3a0` verified on
 2026-10-18. The inline source-picker commit `a11f1f9` is part of the current
 base and its behavior is retained. Delivery is tracked by
-[P8-T22](../tasks/p8-first-value-ui.md).
+[P8-T22](../phases/p8-first-value-ui.md).
 
 ## Confirmed behavior and gaps
 
@@ -39,7 +39,7 @@ base and its behavior is retained. Delivery is tracked by
   a task's last explicit source turns it into an all-active-sources task and
   can widen collection unexpectedly. Its old confirmation incorrectly promised
   that collection would stop. Transactional deletion semantics are a separate
-  high-priority follow-up, [P6-T04](../tasks/p6-lifecycle-privacy.md); this web
+  high-priority follow-up, [P6-T04](../phases/p6-lifecycle-privacy.md); this web
   slice corrects the warning but does not certify a backend deletion fix.
 
 ## Operator layout

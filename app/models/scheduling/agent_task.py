@@ -73,7 +73,7 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     job_type: Mapped[str] = Column(String(20), nullable=False)
     # Job payload: {"period": "week", "tracked_users": ["vk:1"], "keywords_list": [...], ...}
     # Selection (tracked users, text scope) lives here, not on a source or a
-    # scenario: docs/design/task-selection.md.
+    # scenario: docs/COLLECTION.md#task-selection-contract.
     payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False, server_default=text("'{}'::json"))
     is_active: Mapped[bool] = Column(Boolean, default=True, nullable=False, server_default="true")
     next_run_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)

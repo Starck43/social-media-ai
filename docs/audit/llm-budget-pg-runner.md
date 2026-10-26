@@ -11,9 +11,9 @@ Load only the section needed to assess the selected task.
 
 Fixture contracts retain their stable paths:
 
-- [Approval example](../validation/llm-budget-pg-approval.example.json).
-- [Isolated approval example](../validation/llm-budget-pg-approval.isolated.example.json).
-- [Isolated evidence](../validation/llm-budget-pg-isolated-evidence.json).
+- [Approval example](../../tests/shared/fixtures/llm-budget-pg-approval.example.json).
+- [Isolated approval example](../../tests/shared/fixtures/llm-budget-pg-approval.isolated.example.json).
+- [Isolated evidence](../../tests/shared/fixtures/llm-budget-pg-isolated-evidence.json).
 
 Current testing/schema/cleanup permission comes from [RULES](../COLLABORATION.md#tasks),
 not this ledger. Active work lives only in [ROADMAP](../../ROADMAP.md).

@@ -556,7 +556,7 @@ class AgentTaskManager(BaseManager):
         keywords_match: str | None = None,
         existing: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Merge a task's selection into its payload (`docs/design/task-selection.md`).
+        """Merge a task's selection into its payload (`docs/COLLECTION.md#task-selection-contract`).
 
         The one writer for every surface — web form, CLI, chat tool and API —
         so the same settings cannot be stored three different ways. `None` means

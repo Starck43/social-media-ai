@@ -1,18 +1,16 @@
 ---
 name: remote-agent-helper
-description: "Help a remote task with local environment/DB checks or review; coordinate through PR comments."
+description: "Run assigned local environment or DB checks for a remote task, coordinated through its PR."
 ---
 
 # Local PR helper
 
-Task ID is sufficient when its card identifies one PR. Resolve the PR and head
-revision from the card/repository; do not ask the owner to supply a SHA. If no
-unique PR is discoverable, ask once for its link. Read AGENTS, PR body and card;
-verify the isolated task checkout and ownership. Load only needed contracts and
-record actual documentation reads. For review use audit. For assigned DB/test
-validation, act as execution support and use test-runner plus COLLABORATION
-Database: resolve the real target, serialize test-schema work and clean synthetic
-data. Public access/migrations retain their approval gates. Publish the tested
-revision, results and cleanup via PR comments; remote agents link this evidence.
-Correct only authorized
-owned paths; never self-accept an executor result or infer merge/deploy permission.
+Declare this skill at session start. Resolve task card and unique PR from the
+task ID; ask only if repository context cannot identify them. Read AGENTS, card
+and PR body, then only required contracts. Verify checkout, candidate revision
+and ownership. For assigned tests/DB work, follow test-runner and the relevant
+COLLABORATION sections: serialize shared test-schema access, use no public test
+records without explicit Superuser approval, and clean synthetic records.
+Publish tested revision, commands, results and cleanup as a PR comment; ask the
+remote agent to include the linked evidence in the PR body. Do not self-accept,
+change unowned files or infer merge/deploy permission.

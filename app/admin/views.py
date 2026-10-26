@@ -2380,7 +2380,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                 "content_types (posts|comments), engagement_types (likes|reposts), limit, queries, "
                 "city {name, mode}, discovery {people, communities, queries}, comments "
                 "{max_per_post, total}, candidates {limit, confirm}, date_window {start, end}. "
-                "Выборка (docs/design/task-selection.md): tracked_users — авторы из источников задачи, "
+                "Выборка (docs/COLLECTION.md#task-selection-contract): tracked_users — авторы из источников задачи, "
                 "чьи записи анализируются (пусто — записи самих источников); keywords_list + "
                 "keywords_match (any|all) — фразы, которые должны быть в записи. Что и где собирать, "
                 "задаёт задача; сценарий отвечает за методику анализа"

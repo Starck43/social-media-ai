@@ -439,7 +439,7 @@ Content-Type: application/json
 `POST /api/v1/monitoring/collect/monitored` no longer exists. It collected
 "monitored users" of a source, replacing that source's own wall and requiring a
 separate `USER` source per person. A task's `tracked_users` selection over the
-task's sources replaces it ([task selection](design/task-selection.md)); author
+task's sources replaces it ([task selection](COLLECTION.md#task-selection-contract)); author
 selection is not a collection endpoint.
 
 ### Get Source Analytics
@@ -695,7 +695,7 @@ No home-request KPI aggregation, new LLM call or migration.
 
 Attention is implemented in the unified bell, not a second home block (see
 [NOTIFICATIONS](NOTIFICATIONS.md#current-web-bell-and-display-policy)). Mixed
-analysis/digest feed and truly upcoming schedules remain deferred in [the phase tasks](tasks/p8-first-value-ui.md).
+analysis/digest feed and truly upcoming schedules remain deferred in [the phase tasks](phases/p8-first-value-ui.md).
 The current task preview is recent-by-creation, not a nearest-run claim. This
 source change is not evidence of deployment or completed runtime validation.
 
@@ -1672,4 +1672,4 @@ and [deletion policy](MODEL_DELETION.md).
 
 ## Universal social task parity (P8-T29)
 
-The [universal task contract](design/universal-tasks.md) adds a typed plan to the existing task operations. API and web/CLI/admin/tools must preserve identical source scope, scenario and data-window semantics. Preview is read-only; execution still performs fresh authorization and budget admission. Existing task routes remain compatible. Exact implementation/checks live in [P8-T29](tasks/p8-t29.md).
+The [universal task contract](AGENT_TASKS.md#explicit-task-plans) adds a typed plan to the existing task operations. API and web/CLI/admin/tools must preserve identical source scope, scenario and data-window semantics. Preview is read-only; execution still performs fresh authorization and budget admission. Existing task routes remain compatible. Exact implementation/checks live in [P8-T29](tasks/p8-t29.md).

@@ -227,7 +227,7 @@ single-workspace (owner-only) database.
 personal vault (`user_credentials`, keyed by `users.id`, not `tenants.id`);
 `0066_drop_tenant_credentials.py` drops the old workspace vault: personal L2
 secrets now live in `user_credentials` and app/bot config (VK app/token, bot
-tokens) moves to the environment. See [COLLECTION.md](./COLLECTION.md).
+tokens) moves to the environment. See [COLLECTION.md](COLLECTION.md).
 
 Migration `0080_replace_tenant_role_string_with_role_id.py` replaced the legacy
 `tenant_users.role` string column with `tenant_users.role_id` (nullable FK to

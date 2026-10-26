@@ -3,7 +3,7 @@
 Owner command:
 `.venv/bin/python -m pytest tests/test_web_task_selection_form.py -q --noconftest -o addopts=`
 
-Контракт из `docs/design/task-selection.md`: люди и фразы живут в задаче
+Контракт из `docs/COLLECTION.md#task-selection-contract`: люди и фразы живут в задаче
 (`tracked_users`, `keywords_list` + `keywords_match`), а не в `Source.params`
 и не в `monitored_users`. Форма и шаблоны проверяются по исходнику (AST/текст):
 запуск FastAPI и БД не нужны, поэтому тест не зависит от шаблонизатора и роутинга.

@@ -888,4 +888,4 @@ Saved legacy task payloads with `sentiment` or `content_type` normalize to theme
 
 ## Universal social task parity (P8-T29)
 
-Expose the [shared task plan](design/universal-tasks.md) through existing task commands with read-only preview and canonical input. Keep explicit workspace selection, one-off and recurring tasks, source/scenario management and digest commands. CLI execution does not bypass collection rights or external-send safeguards. See P8-T29 for actual implementation and evidence.
+Expose the [shared task plan](AGENT_TASKS.md#explicit-task-plans) through existing task commands with read-only preview and canonical input. Keep explicit workspace selection, one-off and recurring tasks, source/scenario management and digest commands. CLI execution does not bypass collection rights or external-send safeguards. See P8-T29 for actual implementation and evidence.

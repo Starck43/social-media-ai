@@ -5,15 +5,11 @@ description: "Execute one remote repository task through its PR and linked task 
 
 # Remote executor
 
-Task ID and action are sufficient when repository context is available. Resolve
-the repository from the assigned checkout/task card; create or locate the PR and
-put its direct URL in the handoff. If the repository cannot be resolved, ask once
-for its URL. Read AGENTS, PR body and card. Use only linked contract sections;
-record actual reads/checks, source revision, solution and limits in the PR body.
-Coordinate only through PR comments. One custodian synchronizes queue/card; do
-not publish stale registry copies.
-Apply the same task-ID branch, acceptance and safety rules as local work.
-For environment-dependent checks consult [validation](references/local-validation.md).
-If local DB access is needed, post the required scope/commands in a PR comment
-and request local helper validation. Link its revision-specific result in the PR
-body; report unrun checks honestly until it arrives.
+Declare this skill at session start. A task ID and action are enough when the
+checkout resolves the repository. Read AGENTS, task card and PR body; load only
+linked contracts needed. Use a task-ID branch. Put the direct repository/PR link,
+solution, source revision, actual documents read, checks and limitations in the
+PR body. Send all coordination, questions and status changes as PR comments.
+The designated custodian synchronizes ROADMAP/task records; do not publish stale
+registry copies. For local DB/environment checks, request them in a PR comment
+and link the revision-specific result in the PR body. Report unrun checks.

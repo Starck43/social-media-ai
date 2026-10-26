@@ -15,7 +15,7 @@ class TaskCreate(BaseModel):
     cron_expr: Optional[str] = Field(None, min_length=1)
     job_type: str = Field(..., pattern="^(collect|digest|prune|analyze|learn|reflect)$")
     payload: dict[str, Any] = Field(default_factory=dict)
-    # Selection (`docs/design/task-selection.md`): top-level too, because they
+    # Selection (`docs/COLLECTION.md#task-selection-contract`): top-level too, because they
     # are a task property, not an opaque blob. The API merges them into
     # `payload` through the same writer the web form and CLI use.
     tracked_users: Optional[list[str]] = Field(

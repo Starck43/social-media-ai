@@ -3,7 +3,7 @@
 The planner already knows that a comment-enabled task has one comments lane per
 post lane; this module executes that lane against the batch a source just
 returned. Two rules come from the collection contract
-(``docs/design/collection-plan.md``):
+(``docs/audit/collection-plan-history.md``):
 
 - a post is expanded when it passes the **author** filter, not the text scope.
   A comment may carry the phrase when the post does not, and that is the whole

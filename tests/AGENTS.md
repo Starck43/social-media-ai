@@ -1,37 +1,30 @@
-# Test directory contract
+# Test conventions
 
-Use [test-runner](../.agents/skills/test-runner/SKILL.md) for assigned test work.
-Read only the task card and relevant [Tests](../docs/COLLABORATION.md#tests) /
-[Database](../docs/COLLABORATION.md#database) procedures, not the whole docs tree.
+Use the assigned task's test-runner skill and read only its card plus the
+relevant [test](../docs/COLLABORATION.md#tests) or
+[database](../docs/COLLABORATION.md#database) procedure.
 
-## Layout and authoring
+- Group tests by domain under `tests/<domain>/` (for example `billing/`,
+  `security/`, `jobs/`, `web/`, `collection/`). Keep root for pytest bootstrap,
+  `conftest.py` and package metadata.
+- Name new task tests `test_<task-id>_<topic>.py`, e.g.
+  `tests/billing/test_p2_t15_cap_replay.py`. Put reusable fixtures, presets,
+  factories and doubles in `tests/shared/`; use descriptive shared names without
+  a consumer task ID. Group other assets by purpose and include the task ID.
+- Move existing files only when assigned and after updating every importer and
+  path-sensitive loader. Avoid unrelated tree reshuffles. Do not bare-import a
+  suite across domains; use stable shared helpers.
+- Classify DB use by fixtures/imports/resources, not test filename. DB tests use
+  root conftest, validated `test_schema` and serialized exclusive ownership.
+  Never create test records in public schema without explicit Superuser approval.
+  Remove and verify all synthetic test-schema records after tests, including
+  committed fixtures. Do not bypass `conftest` or parallelize without proving
+  isolation.
+- Strengthen observable contracts; preserve authorization and tenant checks.
+  Mock paid APIs/external writes. Never weaken assertions to obtain PASS. A
+  run-only tester changes no source and authors no tests. No full suite without
+  owner request. Do not commit logs, caches or generated test data.
 
-- Group suites/helpers/browser assets by meaning in `tests/<domain>/` (billing,
-  security, jobs, web, collection, etc.); one concern per suite.
-- New/meaningfully edited suites: `test_<task_id>_<topic>.py`, e.g.
-  `billing/test_p2_t15_cap_replay.py`; other assets use the same ID/topic stem.
-  Existing task-named suites retain their original ID; record later use in the
-  current task card's explicit test paths.
-- Shared presets/factories/doubles/import helpers: `tests/shared/`, named by
-  function (`<topic>_fixtures.py`, `<topic>_support.py`), without a consumer's ID.
-- Root keeps AGENTS, conftest/bootstrap and package metadata. Move legacy root
-  helpers only with all consumers; preserve path-sensitive loaders. No unrelated
-  bulk moves. Prefer stable shared imports; never bare-import a cross-domain suite.
-- Only assigned files; no source edits/new tests for run-only assignments.
-  Strengthen observable contracts, reuse fixtures/managers and mock paid/external
-  writes. Never weaken assertions to get PASS; ask the parent about ambiguity.
-- English, Black/isort line 120, changed files only. No committed logs/caches.
-
-## Validation and evidence
-
-Classify by actual imports/fixtures/resources, not filename. DB suites require
-root conftest, explicit validated test schema and sequential exclusive ownership;
-`--noconftest` and parallelism require proven no-DB isolation. Preserve tenant/
-permission and root event-loop guards. Collect affected paths after import/enum/
-layout edits. Apply database cleanup and public-write limits from COLLABORATION.
-
-Return exact SHA, command/scope, exit/counts, failure names/cause and cleanup.
-The parent records this and **documentation actually consulted** (path/section,
-purpose) in the task card/PR; long diagnostics are linked, not copied into chat.
-Unknown is not zero. No executor self-acceptance. Session deletion failure is
-housekeeping, not a failed test or a reason to reopen an accepted task.
+Report exact test paths, command, tested revision, exit/counts, failures and
+cause, unrun checks, DB cleanup, and documentation actually read in the task
+card or PR body. Unknown counts remain unknown.

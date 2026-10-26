@@ -366,7 +366,7 @@ Two kinds of secret, resolved by `app/services/social/credentials.py`:
   service token; Telegram/MAX bot tokens) is one-per-deployment and read from
   the **environment** (`.env`), not from the DB.
 
-See also: [COLLECTION.md](./COLLECTION.md) — Credential vault.
+See also: [COLLECTION.md](COLLECTION.md) — Credential vault.
 
 
 ## Notification recipient boundaries

@@ -1,12 +1,9 @@
 # Model deletion behavior
 
-Source audit baseline: dev `dea6e4d985f0d5962ad959e86d19429d85688d95`.
-The canonical SQLAlchemy declarations were loaded in-process with placeholder
-settings; no database connection was opened. The registry exposes 48 mappers and
-51 tables (48 model tables + 3 association tables). Compatibility modules only
-re-export canonical classes and add no tables. This is a **source/metadata audit**,
-not an inspection of the deployed PostgreSQL schema. No database, migration or
-live delete ran. This document changes no cascade, model, schema or migration.
+This is a source-level inventory of declared ORM and FK behavior, not an
+inspection of a deployed PostgreSQL schema. It reports no live deletes and
+changes no model, migration or cascade. Compare the target catalog before relying
+on these declarations.
 
 ## Where the behavior is configured
 
@@ -167,28 +164,8 @@ appear once. Tables without FKs are included. Exact declarations remain in
 
 ## Validation and remaining PostgreSQL acceptance
 
-The inventory above was derived from successful mapper configuration and
-compiled table metadata; it does not execute a DELETE or prove a deployed FK.
-The separate Settings Platforms implementation was verified through the primary
-OpenCode route: 94 isolated settings checks, 15 PostgreSQL/ASGI acceptance cases
-and 32 offline browser cases passed. The browser checks preserve the full
-200-ID selection and DELETE URL, wrapping and scrolling in both themes.
-See the [phase acceptance record](tasks/p8-first-value-ui.md) for source pins
-and limitations. These results do not validate destructive SQLAdmin/FK paths.
-
-Before changing deletion policy, the sequential owner-local route must verify:
-
-- Compare installed PostgreSQL constraints and current Alembic revision with the
-  declarations (read-only first; no automatic migration/reset).
-- ORM deletes with children loaded AND unloaded, plus direct/bulk SQL deletes.
-- Platform → source → analytics/actions/receipts/seen; task-owned source removal;
-  user → membership/credentials; workspace descendants; scenario/task SET NULL
-  and provider/model deletion.
-- RESTRICT cases with billing/ledger/dispatch evidence and initiated jobs;
-  transaction rollback leaves parent and all protected children intact.
-- ModelType/permission association mismatch and assigned-role refusal.
-- SQLAdmin multi-select partial-commit/error behavior on a controlled test fixture.
-
-Run these only against the existing approved local test target through the
-repository's sequential primary test runner. No production deletion, reset,
-new schema, migration or deployment is authorized by this report.
+Historical source pins, checks and the detailed destructive-path acceptance
+plan are in the [model deletion audit record](audit/model-deletion-history.md).
+This inventory alone does not establish deployed FK behavior; read-only catalog
+comparison and controlled test-schema acceptance are required before a policy
+change.

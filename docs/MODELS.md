@@ -57,7 +57,7 @@ The source defines **49 mapped tables and 3 association tables**:
 | Notifications | `notifications`, `digest_runs`, `notification_preferences` | — |
 | Agent | `agent_sessions`, `agent_messages`, `agent_memory`, `agent_feedback` | — |
 
-The 12 additional billing tables are declared in [billing](../app/models/billing/):
+The 12 additional billing tables are declared in [billing](../app/models/billing):
 `personal_billing_accounts`, `task_billing_payers`, `personal_llm_dispatches`,
 `personal_billing_cutovers`, `personal_legacy_attribution_consents`,
 `personal_legacy_attributions`, `personal_llm_billing_incidents`,
@@ -210,7 +210,7 @@ Unique **(`tenant_id`, `platform_id`, `external_id`)**. There is **no `user_id` 
 `owner_task_id` was added by 0108 for task-scoped query lanes. A lane is hidden
 from the global source list and excluded from the task's empty-set/"all active"
 fallback; only an explicit link activates it. See
-[collection plan](design/collection-plan.md).
+[collection plan](audit/collection-plan-history.md).
 
 ### `collected_items`
 
@@ -223,7 +223,7 @@ stored. Analysis reads `selected` rows and legacy `NULL` rows (staged before
 stage C, which still pass through the old analysis-time selection once);
 `needs_review` waits for an operator. Rejected identities/counts live in
 `collection_seen`/`collection_lane_runs`. See
-[collection plan](design/collection-plan.md).
+[collection plan](audit/collection-plan-history.md).
 
 ### `collection_seen`
 
@@ -481,7 +481,7 @@ or ambiguous delivery stops for review; see [DIGEST](DIGEST.md).
 
 ### `notifications`
 
-[Source](../app/models/notifications/notification.py). Fields: `id`, `title` **String(200)**, `message` Text, native `notification_type` enum stored as names, `is_read` Boolean(default false), `related_entity_type` String(50), `related_entity_id` Integer. Related entity fields are generic attribution, not FKs. Source of allowed notification types: [enum definitions](../app/types/enums/). Workspace notifications and fixed operator alerts have different transport/security paths; see [NOTIFICATIONS](NOTIFICATIONS.md).
+[Source](../app/models/notifications/notification.py). Fields: `id`, `title` **String(200)**, `message` Text, native `notification_type` enum stored as names, `is_read` Boolean(default false), `related_entity_type` String(50), `related_entity_id` Integer. Related entity fields are generic attribution, not FKs. Source of allowed notification types: [enum definitions](../app/types/enums). Workspace notifications and fixed operator alerts have different transport/security paths; see [NOTIFICATIONS](NOTIFICATIONS.md).
 
 ## Tenant-scoped conversation, memory and action audit
 

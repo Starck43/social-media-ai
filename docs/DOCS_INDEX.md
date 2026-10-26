@@ -1,49 +1,37 @@
 # Documentation router
 
-Not a startup reading list. Start with README/AGENTS and one task card; consult
-this index only to find a relevant contract. Record actual reads in that card.
+First session: [README](../README.md), [DESIGN](DESIGN.md), [AGENTS](../AGENTS.md).
+Then [ROADMAP](../ROADMAP.md) → one card. This index is optional; load a contract
+only when needed and record the relevant section/purpose in the task card.
 
-## Read by purpose
-
-| Purpose | Document / section |
+| Need | Canonical document |
 | --- | --- |
-| Choose a skill / copy a short task prompt | [PROMPT_EXAMPLES](PROMPT_EXAMPLES.md) |
-| Product directions → phase → task | [PRODUCT_PLAN](PRODUCT_PLAN.md) → [ROADMAP](../ROADMAP.md) → `tasks/<id>.md` |
-| Locate implementation | [PROJECT_MAP](PROJECT_MAP.md) |
-| Claim/evidence/acceptance or delegation | [COLLABORATION](COLLABORATION.md), corresponding heading |
-| Testing / migration target | [test-runner](../.agents/skills/test-runner/SKILL.md), [test contract](../tests/AGENTS.md), [database](COLLABORATION.md#database) |
-| Release/activation audit | [BUSINESS_PRODUCTION_READINESS](BUSINESS_PRODUCTION_READINESS.md), one selected gate |
-| Audit a delivered slice | [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md), then its original PR/phase record |
-
-## Subsystem contracts — load only what changes
-
-| Area | Contract |
-| --- | --- |
+| Product directions / phase plans | [PRODUCT_PLAN](PRODUCT_PLAN.md) → [phases](phases/README.md) |
+| Role / short task prompts | [PROMPT_EXAMPLES](PROMPT_EXAMPLES.md) → selected shared skill |
+| Claim, READY, audit, synchronization, cleanup | [COLLABORATION](COLLABORATION.md), selected section |
 | Chat tools / sessions / memory | [AGENT](AGENT.md) |
-| Jobs / schedules / runtime | [AGENT_TASKS](AGENT_TASKS.md) |
-| Sources / collection | [COLLECTION](COLLECTION.md), [VK application](VK_STANDALONE_APP.md) |
-| Typed analysis / LLM pipeline | [AI_PIPELINE_AND_PROMPTS](AI_PIPELINE_AND_PROMPTS.md) |
-| Analytics / drill-down | [ANALYTICS_AGGREGATION_SYSTEM](ANALYTICS_AGGREGATION_SYSTEM.md) |
-| Reports / delivery / messages | [DIGEST](DIGEST.md), [CHANNELS](CHANNELS.md), [NOTIFICATIONS](NOTIFICATIONS.md) |
-| Identity / ownership / access | [TENANCY](TENANCY.md) |
+| Jobs / schedules / typed task plans | [AGENT_TASKS](AGENT_TASKS.md) |
+| Collection / selection / VK authorization | [COLLECTION](COLLECTION.md), [VK application](VK_STANDALONE_APP.md) |
+| Structured analysis / LLM contracts | [AI pipeline](AI_PIPELINE_AND_PROMPTS.md) |
+| Analytics / reports / delivery | [Analytics](ANALYTICS_AGGREGATION_SYSTEM.md), [DIGEST](DIGEST.md), [CHANNELS](CHANNELS.md), [NOTIFICATIONS](NOTIFICATIONS.md) |
+| Identity / ownership / permissions / cutover | [TENANCY](TENANCY.md), [ACCESS_MIGRATION](ACCESS_MIGRATION.md) |
 | ORM / deletion | [MODELS](MODELS.md), [MODEL_DELETION](MODEL_DELETION.md) |
 | Interfaces | [API](API.md), [CLI](CLI.md), [ADMIN](ADMIN.md) |
 | Environment / deployment | [CONFIGURATION](CONFIGURATION.md), [DEPLOYMENT](DEPLOYMENT.md) |
+| Test procedures / reusable fixtures | [tests/AGENTS](../tests/AGENTS.md), [shared test presets](../tests/shared/README.md) |
+| Release criteria | [BUSINESS_PRODUCTION_READINESS](BUSINESS_PRODUCTION_READINESS.md) |
+| Earlier deliveries / scaling decisions | [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) → phase/audit/PR evidence |
 
-## Folder ownership
+## File ownership
 
-- `tasks/`: per-task/question notebook and parent phase scope/closed-task history.
-  ROADMAP alone owns open status/owner; cards link documents read and checks.
-- `design/`: substantial feature decisions/contracts, only when too detailed for
-  a task card. No task status/duplicate queue. Existing examples: [shell](design/assistant-shell.md),
-  [collection](design/collection-plan.md), [task scope](design/task-selection.md).
-- `audit/`: historical reviews and detailed test/failure evidence linked by a
-  task/PR. No routine requirement to create a report or preload this directory.
-- `phases/`: whole closed phases; [archive index](phases/README.md).
-- `validation/`: compatibility location for machine-consumed JSON fixture files.
-  No new narrative docs; retain pinned paths until consumers migrate together.
+- `docs/phases/`: active phase plans and compact completed summaries; each links
+  its product parent, active tasks and accepted audits. No task-status copies.
+- `docs/tasks/`: active task/question detail, parent/related links, documents read,
+  checks and PR handoff. ROADMAP alone owns open status/owner/dialogue.
+- `docs/audit/`: accepted task summaries, blocked diagnostics and lazy historical
+  evidence. Accepted orphan tasks leave only an audit here.
+- Technical contracts remain in `docs/`; shared test JSON is in
+  `tests/shared/fixtures/`. There is no `docs/design` or `docs/validation` folder.
 
-Facts have one owner: direction/extension contracts in PRODUCT_PLAN, development
-procedures in COLLABORATION, release criteria in BUSINESS_PRODUCTION_READINESS,
-source-specific behavior in subsystem docs, task detail in its card, status in
-ROADMAP, delivered evidence in PR/phase history. Link instead of copying.
+Link to the owner of a fact instead of duplicating it. Phase history records
+what changed/why, date and source SHA; use Git/PRs for full retrospective diffs.

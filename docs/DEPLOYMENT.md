@@ -112,7 +112,7 @@ volumes:
 
 ### 4. .env
 
-Copy from [CONFIGURATION.md](./CONFIGURATION.md) and fill in values.
+Copy from [CONFIGURATION.md](CONFIGURATION.md) and fill in values.
 
 ### 5. Deploy
 

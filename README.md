@@ -12,23 +12,14 @@ API/admin may run separately. Do not start duplicate runtime owners.
 
 ## Development hierarchy
 
-[Product directions](docs/PRODUCT_PLAN.md) → [open queue](ROADMAP.md) → one
-`docs/tasks/<id>.md` card → only its linked subsystem/design/evidence sections.
-Parent phase files retain accepted task history; `docs/phases/` holds closed phases.
+[Architecture](docs/DESIGN.md) → [product directions](docs/PRODUCT_PLAN.md) →
+[numbered phases](docs/phases/README.md) → [ROADMAP](ROADMAP.md) → one active
+`docs/tasks/<id>.md` → accepted `docs/audit/<id>.md`.
 
-**First session:** read this README, [AGENTS](AGENTS.md), then one selected skill.
-**Each task:** open its card; record documentation actually read and checks run.
-Do not preload all overview or subsystem files.
-
-| Need | Read only when relevant |
-| --- | --- |
-| Short prompts: remote work, local DB help and PR audit | [PROMPT_EXAMPLES](docs/PROMPT_EXAMPLES.md) |
-| Find code and runtime responsibilities | [PROJECT_MAP](docs/PROJECT_MAP.md) |
-| Product scope / proposed extension contracts | [PRODUCT_PLAN](docs/PRODUCT_PLAN.md) |
-| Claim, evidence, acceptance, delegation, DB or cleanup procedure | [COLLABORATION](docs/COLLABORATION.md), selected section |
-| Release / activation acceptance | [BUSINESS_PRODUCTION_READINESS](docs/BUSINESS_PRODUCTION_READINESS.md), selected gate |
-| Audit previously delivered work | [IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md), selected area |
-| API, models, tenancy, collection and other contracts | [DOCS_INDEX](docs/DOCS_INDEX.md), then one subsystem |
+**First session:** README, [DESIGN](docs/DESIGN.md), [AGENTS](AGENTS.md).
+**Task:** one queue row/card and its selected skill; then only relevant links.
+[Prompt examples](docs/PROMPT_EXAMPLES.md) cover local/remote work and PR audit.
+[Subsystem index](docs/DOCS_INDEX.md) routes API, models, setup and release gates.
 
 ## Run locally
 

@@ -59,10 +59,16 @@ def test_paths_single_mapper_manager_and_tenant_scope_preserved(name):
     cls = getattr(public, name)
     assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
     assert name in public.__all__ and name in domain.__all__
-    # DigestRun's canonical declaration lives in the notifications domain; the
-    # scheduling leaf is a re-export. The others are declared in scheduling.
-    canonical = "app.models.notifications.digest_run" if module == "digest_run" else f"app.models.scheduling.{module}"
+    # DigestRun and BotAction have accepted canonical owners outside scheduling;
+    # their old scheduling leaves remain aliases, not alternate declarations.
+    canonical = {
+        "digest_run": "app.models.notifications.digest_run",
+        "bot_action": "app.models.actions.agent_action",
+    }.get(module, f"app.models.scheduling.{module}")
     assert cls.__module__ == canonical
+    assert cls is getattr(importlib.import_module(canonical), name)
+    if name == "BotAction":
+        assert cls is public.AgentAction is importlib.import_module("app.models.actions").AgentAction
     assert cls.__table__ is public.Base.metadata.tables[cls.__table__.fullname]
     # `_app_label` is derived by the registry from the class module, so pinning
     # it would only restate the `__module__` assertion above.

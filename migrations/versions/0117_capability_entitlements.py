@@ -1,7 +1,7 @@
 """Add workspace plan expiry and durable capability usage.
 
 Revision ID: 0117
-Revises: 0112
+Revises: 0116
 """
 
 import sqlalchemy as sa

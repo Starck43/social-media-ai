@@ -89,7 +89,7 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
             {
                 "fastapi": SimpleNamespace(APIRouter=Router, Form=lambda default=None, **kw: default, Request=object),
                 "fastapi.responses": SimpleNamespace(RedirectResponse=object),
-                "app.models.job": SimpleNamespace(Job=SimpleNamespace(objects=self.query)),
+                **dict.fromkeys(('app.models.job', 'app.models.scheduling.job'), SimpleNamespace(Job=SimpleNamespace(objects=self.query))),
                 "app.models.managers.job_manager": SimpleNamespace(JobManager=lambda: self.manager),
                 "app.web.deps": deps,
                 "app.jobs.recovery_policy": POLICY,

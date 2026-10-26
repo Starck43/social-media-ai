@@ -1,0 +1,21 @@
+{% extends "web/base.html" %}
+{% block title %}Мои уведомления{% endblock %}
+{% block page_heading %}Мои уведомления{% endblock %}
+{% block content %}
+<p class="mb-4 ui-muted">Личные уведомления из всех доступных вам пространств. Прочтение видно только вам.</p>
+{% for entry in entries %}
+<div class="ui-card mb-3">
+<p class="text-sm ui-muted">Пространство #{{ entry.event.tenant_id }} · {{ entry.event.created_at|human_dt }} · {{ entry.event.severity }}</p>
+<h2>{{ entry.event.title }}</h2><p>{{ entry.event.message }}</p>
+<form method="post" action="/app/notifications/open/{{ entry.event.id }}">
+<input type="hidden" name="_csrf" value="{{ csrf }}"><button class="ui-control">Открыть в нужном пространстве</button>
+</form>
+{% if not entry.receipt.read_at %}
+<form method="post" action="/app/notifications/read/{{ entry.event.id }}">
+<input type="hidden" name="_csrf" value="{{ csrf }}"><button class="ui-control">Отметить прочитанным для меня</button>
+</form>
+{% else %}<p class="ui-muted">Прочитано вами</p>{% endif %}
+</div>
+{% else %}<p>Нет доступных уведомлений в этом окне.</p>{% endfor %}
+<div class="mt-4">{% if page > 1 %}<a href="?page={{ page-1 }}">Назад</a>{% endif %} <a href="?page={{ page+1 }}">Далее</a></div>
+{% endblock %}

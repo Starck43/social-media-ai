@@ -1,28 +1,67 @@
 # Notification delivery boundaries
 
-## Current web bell and display policy
+## Personal inbox contract (P4-T02 / P10-T27, PR #246 candidate)
 
-- One read-time projection combines permitted unread workspace events, the
-  caller's own connection metadata and permitted failed-task signals. GET/poll
-  creates no rows, decrypts no credentials and performs no provider probe.
-- `WebPerms` gates notification/entity/task visibility and shared read actions;
-  fresh requests recheck tenant, membership and linked entity rights. Foreign,
-  deleted and unknown entities are excluded. Messages use fixed summaries.
-- Snapshot bounds: 100 candidate events, 50 failed tasks and 30 displayed items.
-  Counts use the authorized/deduplicated projection. Matching task-error events
-  may coalesce with failed-task signals; this is not per-job identity.
-- Marking read is a CSRF-protected POST and changes shared `Notification.is_read`.
-  Read-all covers the permitted bounded window. Failed-task/connection signals
-  remain until their condition clears. Failed loads are errors, not healthy empty
-  state; context change clears stale state. GET does not mutate.
-- Display preferences are caller-keyed browser storage: optional connection/task
-  signals, opt-in generic hints (off by default), and device-local quiet hours.
-  They do not suppress persisted events or change the shared read flag. Storage
-  failure is memory-only. There is no cross-device sync or durable preference
-  field.
+A notification belongs to a **global User**, not to their active workspace or
+TenantUser membership. `notifications.tenant_id` records event origin only.
+`notification_receipts(notification_id, user_id)` owns personal `read_at`,
+`dismissed_at` and optional `snoozed_until`. There is no workspace-wide read action
+in the user interface, API or admin. The legacy `Notification.is_read` is archive
+compatibility only; historical flags are never copied into invented receipts.
 
-Historical check counts and integration handoffs are in the
-[notification audit record](audit/notifications-history.md).
+- Bell and `/app/notifications/inbox` combine only the caller's addressed events
+  across active own/invited memberships. Current workspace selection never limits
+  ownership. Operators have no cross-user override on personal routes.
+- Fresh reads and opening links recheck account, receipt owner, expiry, origin
+  workspace/membership and linked-resource rights/existence. Unknown, deleted,
+  inaccessible or foreign-origin targets are excluded; revocation hides access
+  without reassigning receipts to another user. Platform authority is not a
+  substitute for a web membership.
+- `NotificationService.create(recipient_user_ids=[...])` accepts **User IDs**.
+  Without that argument it derives only an active initiating actor in the event's
+  origin workspace. `[]` means archive-only. Job outcomes use the trusted persisted
+  `Job.initiated_by_user_id`, never a payload's claimed identity. Analyze proposals
+  notify only that trusted initiator. Scheduled/unattributed collection events
+  remain technical archive entries until an explicit recipient is supplied:
+  there is no automatic broadcast to members, owners, invitees or other spaces.
+- Events and receipts publish in one transaction. A non-null `dedup_key` is unique
+  per origin workspace, across statuses; key reuse with different content or
+  recipients is rejected. Producers supply a logical outcome/attempt key (or an
+  explicit time-window key for recurring errors). `severity` is info/warning/
+  action_required. Service-created events expire after 30 days by default.
+- GET/poll creates no rows, probes no providers and changes no read receipt.
+  Read/read-all are actor-owned CSRF POSTs (bearer authentication in the API).
+  Read-all covers the permitted candidate window, at most 100 events; it never
+  changes another receipt. Delete/cleanup affects only the caller's receipt,
+  not the shared event or anyone else's inbox. Physical event retention remains
+  an operator/P6 policy, not an ad-hoc user purge.
+- Bell scans at most 100 receipts across memberships and displays up to 30 entries,
+  plus only the user's own connection metadata. Raw workspace failed-task signals
+  no longer become personal notifications. Failure is shown as unavailable, not
+  as healthy empty state. Display settings and quiet hours are still per-user;
+  personal persisted messages cannot be hidden by the obsolete `tasks` signal
+  preference key (retained for stored-data/API compatibility).
+
+### Opening a destination in its workspace
+
+The bell/inbox button POSTs `/app/notifications/open/{id}` with CSRF. The server
+chooses a whitelisted destination from the owned event, rechecks membership and
+entity permission, sets the browser's active workspace and redirects (303).
+Neither posted workspace IDs nor posted redirect URLs are trusted.
+
+The API response's `destination` is a signed personal deep link. Its `intent`
+binds the global user and notification, expires after seven days, and permits
+one-click navigation/context switching only after all the same fresh checks.
+Another user's signature, modified/expired intent or revoked access fails closed.
+A plain unsigned GET renders a CSRF-protected open button, without switching.
+GET never marks read and never approves/executes an action. Do not log full signed
+links; responses are no-store and signed redirects suppress the Referrer header.
+Inbox membership is not a messenger binding: automatic per-user transport routing
+is not invented from a workspace's shared chat address.
+
+Current schema/application/acceptance evidence is in PR #246; definitions and
+migration validation do not mean these revisions were applied to the owner's DB.
+Historical transport evidence remains in [notification history](audit/notifications-history.md).
 
 ## Historical transport scope and status
 
@@ -31,12 +70,10 @@ The source-pinned history for this bounded delivery change is retained in the
 
 ## Three distinct paths
 
-### Workspace notifications in the database
+### Workspace-origin events in the technical archive
 
 `NotificationService.create()` remains DB-first and returns the created row.
-Writing a row does not mean it was delivered to a messenger. Web notification
-bell/read endpoints were unchanged by that transport slice; the current A–C
-web contract above supersedes its UI status.
+Writing a row does not mean it was delivered to a messenger. The personal inbox contract above supersedes the earlier shared workspace bell.
 
 Collection failures create a notification in the source's own workspace, with
 an actionable generic message instead of the raw exception. A trusted operator

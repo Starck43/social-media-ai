@@ -1985,30 +1985,30 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     logger.info(f"Action blocked by guards: {reason}")
                     continue
 
-                # Idempotency: skip if PENDING action already exists for this analytics+scenario
+                # One immutable intent per analytics/task/scenario, across all statuses.
                 analytics_id = item.get("analytics_id")
-                existing = await BotAction.objects.filter(
-                    analytics_id=analytics_id,
+                action, created = await BotAction.objects.propose(
+                    idempotency_key=f"analysis:{analytics_id}:task:{task.id if task is not None else 0}:scenario:{scenario.id}:source:{source.id}",
+                    capability=f"social.{action_type.db_value}",
+                    target_ref=f"source:{source.id}:analytics:{analytics_id}",
+                    origin="task", agent_scenario_id=scenario.id,
                     agent_task_id=task.id if task is not None else None,
-                    agent_scenario_id=scenario.id,
-                    status=BotActionStatus.PENDING,
-                ).first()
-                if existing:
-                    logger.info(
-                        f"BotAction already exists for analytics {analytics_id}, task {task.id if task else None}"
-                    )
-                    continue
-
-                action = await BotAction.objects.create(
-                    agent_scenario_id=scenario.id,
-                    agent_task_id=task.id if task is not None else None,
-                    source_id=source.id,
-                    analytics_id=analytics_id,
-                    action_type=action_type,
-                    status=BotActionStatus.PENDING,
-                    payload=action_payload,
-                    dry_run=True,
+                    source_id=source.id, analytics_id=analytics_id,
+                    action_type=action_type, payload=action_payload,
                 )
+                if not created:
+                    continue
+                recipient = _log_id(payload.get("_trusted_initiated_by_user_id"))
+                if recipient is not None:
+                    try:
+                        from app.services.notifications.service import notify
+                        from app.types import NotificationType
+                        await notify.create(title="Предложение действия требует проверки",
+                            message="Откройте предложение и проверьте содержимое. Внешнее выполнение отключено.",
+                            ntype=NotificationType.BOT_COMMENT, entity_type="action", entity_id=action.id,
+                            recipient_user_ids=[recipient], severity="action_required", dedup_key=f"action-proposal:{action.id}")
+                    except Exception:
+                        logger.warning("action_proposal_notification_failed error_code=notification_write_failed")
                 stats["actions_created"] += 1
                 per["actions"] += 1
                 logger.info(f"Created BotAction#{action.id} for source {source.id}")

@@ -44,7 +44,7 @@ activation and whole-gate acceptance are distinct states.
 
 ### Table inventory
 
-The source defines **49 mapped tables and 3 association tables**:
+The source defines **50 mapped tables and 3 association tables**:
 
 | Domain | Mapped tables | Association tables |
 | --- | --- | --- |
@@ -53,8 +53,9 @@ The source defines **49 mapped tables and 3 association tables**:
 | Collection | `platforms`, `sources`, `collected_items`, `collection_seen`, `collection_candidates`, `collection_lane_runs` | — |
 | Analysis | `agent_scenarios`, `ai_analytics`, `analyzed_content_receipts` | — |
 | LLM | `llm_providers`, `llm_models`, `llm_attempts`, `llm_dispatch_receipts`, `llm_outcome_events`, `llm_budget_days`, `llm_budget_reservations` | — |
-| Scheduling | `agent_tasks`, `jobs`, `bot_actions` | `agent_task_sources` |
-| Notifications | `notifications`, `digest_runs`, `notification_preferences` | — |
+| Scheduling | `agent_tasks`, `jobs` | `agent_task_sources` |
+| Actions | `bot_actions` (public AgentAction / legacy BotAction, one mapper) | — |
+| Notifications | `notifications`, `digest_runs`, `notification_preferences`, `notification_receipts` | — |
 | Agent | `agent_sessions`, `agent_messages`, `agent_memory`, `agent_feedback` | — |
 
 The 12 additional billing tables are declared in [billing](../app/models/billing):
@@ -63,7 +64,7 @@ The 12 additional billing tables are declared in [billing](../app/models/billing
 `personal_legacy_attributions`, `personal_llm_billing_incidents`,
 `personal_llm_bound_policies`, `personal_llm_budget_days`,
 `personal_llm_ledger_entries`, `personal_llm_reservation_states` and
-`personal_llm_reservations`. They are part of the 45 mapped tables above, not
+`personal_llm_reservations`. They are part of the mapped tables above, not
 additional associations. Personal account identity is independent of workspace
 membership; task payer changes require explicit consent. Reviewed daily
 baselines, bound policies, reservations and immutable ledger settlement are
@@ -479,9 +480,22 @@ Scheduled creation uses an atomic factory and delivery/re-entry fences; merged
 per-part helpers do not mean automatic recipient-level resume is active. Partial
 or ambiguous delivery stops for review; see [DIGEST](DIGEST.md).
 
-### `notifications`
+### `notifications` and `notification_receipts`
 
-[Source](../app/models/notifications/notification.py). Fields: `id`, `title` **String(200)**, `message` Text, native `notification_type` enum stored as names, `is_read` Boolean(default false), `related_entity_type` String(50), `related_entity_id` Integer. Related entity fields are generic attribution, not FKs. Source of allowed notification types: [enum definitions](../app/types/enums). Workspace notifications and fixed operator alerts have different transport/security paths; see [NOTIFICATIONS](NOTIFICATIONS.md).
+[Event](../app/models/notifications/notification.py) remains workspace-origin
+storage: id/title String(200)/message Text, native name-stored notification_type,
+legacy shared is_read, nullable generic entity attribution. P4-T02 adds severity
+(info/warning/action_required), optional dedup_key (unique tenant/key when present)
+and timezone-aware expires_at. Attribution is not an FK or an execution receipt.
+
+[Receipt](../app/models/notifications/notification_receipt.py) is **global-user
+owned**, without TenantScopedMixin: id, notification_id FK CASCADE, user_id FK
+CASCADE, read_at/dismissed_at/snoozed_until and timestamps. Unique event/user;
+indexed user_id. Explicit actor-constrained manager joins active origin membership
+and workspace/account state; it never uses tenant bypass to read an inbox.
+The same user sees addressed events from own and invited spaces. Existing shared
+flags do not imply recipients; migration 0113 creates no historical receipts.
+See [notification contract](NOTIFICATIONS.md) for navigation and transport separation.
 
 ## Tenant-scoped conversation, memory and action audit
 
@@ -503,9 +517,36 @@ All tables here inherit tenant_id/timestamps.
 
 [Source](../app/models/agent/agent_feedback.py). Fields: `id`; non-null `session_id` FK CASCADE; nullable `message_id` FK SET NULL; **`vote` String(10)**, not enum; nullable `note` Text, `voter_channel` String(20), `voter_external_id` String(100). Indexes: tenant, session, vote. Feedback itself does not mutate prompts.
 
-### `bot_actions`
+### `bot_actions` (public AgentAction, legacy BotAction)
 
-[Source](../app/models/scheduling/bot_action.py). Fields: `id`; non-null `agent_scenario_id` and `source_id` FKs CASCADE; nullable **`agent_task_id`, `analytics_id`** FKs SET NULL; native `action_type` and `status` enums stored as names; non-null `payload` JSON; nullable **`result` JSON** and `error` Text; non-null **`dry_run` Boolean(default true)**; nullable **`confirmed_by` FK → tenant_users SET NULL**, `confirmed_at` timezone-aware DateTime; non-null `attempts` default 0. No `approved_by` String column. Enum status and dry_run are separate, not a manufactured dry_run enum value. Confirmation columns alone do not prove complete actor-bound approval/replay safety.
+[Canonical source](../app/models/actions/agent_action.py). One mapper/table, with
+legacy root/scheduling aliases and the existing scheduling.action permission key.
+The class retains its legacy Python name for compatibility; AgentAction aliases
+that same class. Table name and existing enum storage names are not renamed.
+
+Origin source/scenario/task/analytics FKs are optional SET NULL references.
+`origin_snapshot` preserves their original IDs. `capability`, `target_ref`, `origin`,
+JSON payload and tenant-unique idempotency_key describe a general business intent;
+legacy action_type may be null. payload_hash seals the intent including target,
+references and dry_run. approved_payload_hash, approved_user_id (global User),
+confirmed_by (TenantUser), confirmed_at and approval_expires_at bind approval.
+Claimed_at/claim_expires_at/claim_token_hash and attempts cover an atomic lease;
+executed_at is separate from proposal created_at. Result/error stay JSON/Text;
+raw provider responses/errors are not accepted by the simulation finish API.
+Append-only manager `history` records real transition actor IDs, time, from/to
+and sealed hash even after the account or origin FK is deleted; legacy history
+is empty, never reconstructed as invented approval evidence.
+
+Pending → approved/rejected/cancelled; approved → claimed/cancelled;
+claimed → executed/failed or unknown after lease expiry. Decisions lock and
+recheck active account/workspace/membership/grants. Approval UI submits the reviewed
+hash. Claims require the same approving actor, valid hash/expiry, and dry_run=true;
+only one concurrent caller can claim. Completion requires the one-time claim token
+and still-current authority. Unknown is not automatically retried. **These are
+simulations only; no live capability is enabled or external adapter wired.**
+Web review/cancel lives at `/app/actions`; admin is read-only. API/tool preview does
+not approve. A capability-specific live effect/payer/recipient/budget/recovery
+contract remains P9-T01, separate from the persistence/refactor in this candidate.
 
 ## ER views from declared foreign keys
 
@@ -551,8 +592,8 @@ erDiagram
     sources ||--o{ agent_task_sources : source_id
     agent_tasks o|--o{ jobs : agent_task_id
     agent_tasks o|--o{ digest_runs : agent_task_id
-    agent_scenarios ||--o{ bot_actions : agent_scenario_id
-    sources ||--o{ bot_actions : source_id
+    agent_scenarios o|--o{ bot_actions : agent_scenario_id
+    sources o|--o{ bot_actions : source_id
     agent_tasks o|--o{ bot_actions : agent_task_id
     ai_analytics o|--o{ bot_actions : analytics_id
     tenant_users o|--o{ bot_actions : confirmed_by
@@ -596,6 +637,7 @@ Selected milestones, not a complete replay audit:
 
 | Revision | Change |
 | --- | --- |
+| 0113–0116 (PR #246 candidate) | Personal notification receipts/lifecycle; additive claim states; general action/approval/idempotency fields; transition history |
 | 0031 / 0060 | Analytics cost tracking / sub-cent Numeric precision |
 | 0041 / 0042 / 0043 | Task queue / digest runs / agent tables |
 | 0044 | Tenancy foundation |

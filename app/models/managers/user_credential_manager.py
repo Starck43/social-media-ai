@@ -12,12 +12,12 @@ from typing import TYPE_CHECKING, Any, Optional
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from ..user_credential import UserCredential
+    from ..identity.user_credential import UserCredential
 
 
 class UserCredentialManager(BaseManager["UserCredential"]):
     def __init__(self):
-        from ..user_credential import UserCredential
+        from ..identity.user_credential import UserCredential
 
         super().__init__(UserCredential)
 
@@ -48,7 +48,7 @@ class UserCredentialManager(BaseManager["UserCredential"]):
         """Caller-owned UI metadata only; bounded history, never encrypted secret columns."""
         if type(user_id) is not int or user_id <= 0:
             return []
-        from ..user_credential import UserCredential
+        from ..identity.user_credential import UserCredential
 
         return await (
             self.filter(user_id=user_id)
@@ -68,7 +68,7 @@ class UserCredentialManager(BaseManager["UserCredential"]):
         """One caller-owned status row; never load/decrypt the encrypted secret."""
         from sqlalchemy import func
 
-        from ..user_credential import UserCredential
+        from ..identity.user_credential import UserCredential
 
         return await (
             self.filter(user_id=user_id, platform=platform, kind=kind, is_active=True)

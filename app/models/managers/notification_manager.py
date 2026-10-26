@@ -1,270 +1,125 @@
+"""Workspace notification queries.
+
+Every read and write goes through ``BaseManager`` querysets, so the tenant guard
+applies to bulk updates, deletes and aggregates as well as to single-row reads.
+"""
+
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any
 
-from .base_manager import BaseManager
+from sqlalchemy import func
+
+from app.utils.enum_helpers import get_enum_value
+
+from .base_manager import BaseManager, QuerySet
 
 if TYPE_CHECKING:
-	from ..notification import Notification
-	from app.types import NotificationType
+    from app.types import NotificationType
+
+    from ..notifications.notification import Notification
 
 
-class NotificationManager(BaseManager):
-	"""
-	Manager for Notification model with specialized notification operations.
+class NotificationManager(BaseManager["Notification"]):
+    """Workspace-wide notification feed.
 
-	Provides methods for:
-	— Managing read/unread notifications
-	— Filtering by type and related entities
-	— Bulk operations on notifications
+    ``is_read`` is a shared workspace flag, not a per-user acknowledgement (see
+    docs/NOTIFICATIONS.md). Methods return read and unread rows unless a filter
+    says otherwise; all filtering, counting and bulk changes run in SQL.
+    """
 
-	Note: By default, returns all notifications (read and unread).
-	"""
+    def __init__(self) -> None:
+        from ..notifications.notification import Notification
 
-	def __init__(self):
-		from ..notification import Notification
-		super().__init__(Notification)
+        super().__init__(Notification)
 
-	async def get_unread(
-			self,
-			notification_type: Optional['NotificationType'] = None
-	) -> list['Notification']:
-		"""
-		Get all unread notifications with optional type filter.
+    def _feed(
+        self,
+        *,
+        notification_type: NotificationType | None = None,
+        is_read: bool | None = None,
+        **filters: Any,
+    ) -> QuerySet[Notification]:
+        """Tenant-scoped base queryset with the optional common filters applied."""
+        if notification_type is not None:
+            filters["notification_type"] = notification_type
+        if is_read is not None:
+            filters["is_read"] = is_read
+        return self.filter(**filters)
 
-		Args:
-			notification_type: An optional filter by notification type
+    def _newest_first(self, queryset: QuerySet[Notification]) -> QuerySet[Notification]:
+        return queryset.order_by(self.model.created_at.desc(), self.model.id.desc())
 
-		Returns:
-			List of unread Notification objects
-		"""
-		qs = self.filter(is_read=False)
+    async def get_unread(self, notification_type: NotificationType | None = None) -> list[Notification]:
+        """Unread notifications, newest first, optionally of one type."""
+        return list(await self._newest_first(self._feed(notification_type=notification_type, is_read=False)))
 
-		if notification_type:
-			qs = qs.filter(notification_type=notification_type)
+    async def get_unread_count(self, notification_type: NotificationType | None = None) -> int:
+        """Number of unread notifications, optionally of one type."""
+        return await self._feed(notification_type=notification_type, is_read=False).count()
 
-		return await qs.order_by(self.model.created_at.desc())
+    async def mark_as_read(self, notification_id: int) -> Notification | None:
+        """Set the shared read flag on one notification; None if not visible."""
+        return await self.update_by_id(notification_id, is_read=True)
 
-	async def get_unread_count(
-			self,
-			notification_type: Optional['NotificationType'] = None
-	) -> int:
-		"""
-		Count unread notifications.
+    async def mark_all_as_read(self, notification_type: NotificationType | None = None) -> int:
+        """Set the shared read flag on every unread row in one UPDATE; returns the count."""
+        return await self._feed(notification_type=notification_type, is_read=False).update(is_read=True)
 
-		Args:
-			notification_type: An optional filter by notification type
+    async def get_by_type(self, notification_type: NotificationType, is_read: bool | None = None) -> list[Notification]:
+        """Notifications of one type, newest first."""
+        return list(await self._newest_first(self._feed(notification_type=notification_type, is_read=is_read)))
 
-		Returns:
-			Amount unread notifications
-		"""
-		qs = self.filter(is_read=False)
+    async def get_by_entity(self, entity_type: str, entity_id: int, is_read: bool | None = None) -> list[Notification]:
+        """Notifications attributed to one related entity, newest first."""
+        queryset = self._feed(is_read=is_read, related_entity_type=entity_type, related_entity_id=entity_id)
+        return list(await self._newest_first(queryset))
 
-		if notification_type:
-			qs = qs.filter(notification_type=notification_type)
+    async def get_recent(self, days: int = 7, is_read: bool | None = None) -> list[Notification]:
+        """Notifications created during the last ``days`` days, newest first."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        return list(await self._newest_first(self._feed(is_read=is_read, created_at__gte=cutoff)))
 
-		return await qs.count()
+    async def create_notification(
+        self,
+        title: str,
+        message: str,
+        notification_type: NotificationType,
+        related_entity_type: str | None = None,
+        related_entity_id: int | None = None,
+    ) -> Notification:
+        """Create one unread notification in the current workspace."""
+        return await self.create(
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            related_entity_type=related_entity_type,
+            related_entity_id=related_entity_id,
+            is_read=False,
+        )
 
-	async def mark_as_read(
-			self,
-			notification_id: int
-	) -> Optional['Notification']:
-		"""
-		Mark a specific notification as read.
+    async def delete_old_notifications(self, days: int = 30) -> int:
+        """Delete notifications older than ``days`` days in one DELETE; returns the count."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        return await self.filter(created_at__lt=cutoff).delete()
 
-		Args:
-			notification_id: ID of the notification
-
-		Returns:
-			Updated Notification object or None if not found
-		"""
-		return await self.update_by_id(notification_id, is_read=True)
-
-	async def mark_all_as_read(
-			self,
-			notification_type: Optional['NotificationType'] = None
-	) -> int:
-		"""
-		Mark all unread notifications as read.
-
-		Args:
-			notification_type: An optional filter by notification type
-
-		Returns:
-			Amount notifications marked as read
-		"""
-		unread = await self.get_unread(notification_type=notification_type)
-
-		count = 0
-		for notification in unread:
-			result = await self.update_by_id(notification.id, is_read=True)
-			if result:
-				count += 1
-
-		return count
-
-	async def get_by_type(
-			self,
-			notification_type: 'NotificationType',
-			is_read: Optional[bool] = None
-	) -> list['Notification']:
-		"""
-		Get notifications by type.
-
-		Args:
-			notification_type: Type of notifications to retrieve
-			is_read: An optional filter by read status
-
-		Returns:
-			List of Notification objects
-		"""
-		qs = self.filter(notification_type=notification_type)
-
-		if is_read is not None:
-			qs = qs.filter(is_read=is_read)
-
-		return await qs.order_by(self.model.created_at.desc())
-
-	async def get_by_entity(
-			self,
-			entity_type: str,
-			entity_id: int,
-			is_read: Optional[bool] = None
-	) -> list['Notification']:
-		"""
-		Get notifications for a specific related entity.
-
-		Args:
-			entity_type: Type of entity ('source', 'platform', 'analysis')
-			entity_id: ID of the entity
-			is_read: An optional filter by read status
-
-		Returns:
-			List of Notification objects
-		"""
-		qs = self.filter(
-			related_entity_type=entity_type,
-			related_entity_id=entity_id
-		)
-
-		if is_read is not None:
-			qs = qs.filter(is_read=is_read)
-
-		return await qs.order_by(self.model.created_at.desc())
-
-	async def get_recent(
-			self,
-			days: int = 7,
-			is_read: Optional[bool] = None
-	) -> list['Notification']:
-		"""
-		Get recent notifications from the last N days.
-
-		Args:
-			days: Amount days to look back
-			is_read: An optional filter by read status
-
-		Returns:
-			List of recent Notification objects
-		"""
-		cutoff_date = datetime.now(UTC) - timedelta(days=days)
-
-		qs = self.filter()
-
-		if is_read is not None:
-			qs = qs.filter(is_read=is_read)
-
-		# Filter by date in memory (can be optimized with database filter)
-		notifications = await qs.order_by(self.model.created_at.desc())
-
-		return [
-			n for n in notifications
-			if n.created_at and n.created_at >= cutoff_date
-		]
-
-	async def create_notification(
-			self,
-			title: str,
-			message: str,
-			notification_type: 'NotificationType',
-			related_entity_type: Optional[str] = None,
-			related_entity_id: Optional[int] = None
-	) -> 'Notification':
-		"""
-		Create a new notification.
-
-		Args:
-			title: Notification title
-			message: Notification message
-			notification_type: Type of notification
-			related_entity_type: Optional related entity type
-			related_entity_id: Optional related entity ID
-
-		Returns:
-			Created Notification object
-		"""
-		return await self.create(
-			title=title,
-			message=message,
-			notification_type=notification_type,
-			related_entity_type=related_entity_type,
-			related_entity_id=related_entity_id,
-			is_read=False
-		)
-
-	async def delete_old_notifications(
-			self,
-			days: int = 30
-	) -> int:
-		"""
-		Delete notifications older than specified days.
-
-		Args:
-			days: Delete notifications older than this many days
-
-		Returns:
-			Amount deleted notifications
-		"""
-		cutoff_date = datetime.now(UTC) - timedelta(days=days)
-
-		notifications = await self.filter()
-
-		count = 0
-		for notification in notifications:
-			if notification.created_at and notification.created_at < cutoff_date:
-				result = await self.delete_by_id(notification.id)
-				if result:
-					count += 1
-
-		return count
-
-	async def get_stats(self) -> dict:
-		"""
-		Get statistics about notifications.
-
-		Returns:
-			Dict with notification statistics
-		"""
-		all_notifications = await self.filter()
-
-		stats = {
-			'total': len(all_notifications),
-			'unread': len([n for n in all_notifications if not n.is_read]),
-			'read': len([n for n in all_notifications if n.is_read]),
-			'by_type': {}
-		}
-
-		from app.utils.enum_helpers import get_enum_value
-		
-		for notification in all_notifications:
-			type_name = get_enum_value(notification.notification_type)
-
-			if type_name not in stats['by_type']:
-				stats['by_type'][type_name] = {'total': 0, 'unread': 0}
-
-			stats['by_type'][type_name]['total'] += 1
-			if not notification.is_read:
-				stats['by_type'][type_name]['unread'] += 1
-
-		return stats
+    async def get_stats(self) -> dict[str, Any]:
+        """Totals and per-type read/unread counts from one grouped query."""
+        rows = await (
+            self.filter()
+            .values(self.model.notification_type, self.model.is_read, func.count(self.model.id))
+            .group_by(self.model.notification_type, self.model.is_read)
+            .rows()
+        )
+        stats: dict[str, Any] = {"total": 0, "unread": 0, "read": 0, "by_type": {}}
+        for notification_type, is_read, amount in rows:
+            bucket = stats["by_type"].setdefault(get_enum_value(notification_type), {"total": 0, "unread": 0})
+            bucket["total"] += amount
+            stats["total"] += amount
+            if is_read:
+                stats["read"] += amount
+            else:
+                bucket["unread"] += amount
+                stats["unread"] += amount
+        return stats

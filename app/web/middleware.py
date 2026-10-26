@@ -89,6 +89,7 @@ class TenantUIMiddleware:
             and not memberships
             and path not in NO_WORKSPACE_PATHS
             and path not in PERSONAL_ACCOUNT_PATHS
+            and not path.startswith("/app/notifications")
             and not (
                 request.method == "POST"
                 and path == "/app/settings/platforms"
@@ -161,7 +162,7 @@ class TenantUIMiddleware:
         """
         if request.method not in ("GET", "HEAD") or getattr(request.state, "web_user", None) is None:
             return None
-        if path in PERSONAL_ACCOUNT_PATHS:
+        if path in PERSONAL_ACCOUNT_PATHS or path.startswith("/app/notifications"):
             return None
         item = section_of(path)
         if item is None or allows(item, getattr(request.state, "web_perms", None)):

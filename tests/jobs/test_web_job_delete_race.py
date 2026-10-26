@@ -96,9 +96,9 @@ class JobDeleteRaceTests(unittest.IsolatedAsyncioTestCase):
                     APIRouter=Router, Form=lambda default=None, **kwargs: default, Request=object
                 ),
                 "fastapi.responses": SimpleNamespace(RedirectResponse=Redirect),
-                "app.models.job": SimpleNamespace(
+                **dict.fromkeys(('app.models.job', 'app.models.scheduling.job'), SimpleNamespace(
                     Job=SimpleNamespace(objects=SimpleNamespace(get=self.get, delete=self.delete))
-                ),
+                )),
                 "app.web.deps": deps,
                 "app.core.tenant_context": SimpleNamespace(tenant_scope=tenant_scope),
             },

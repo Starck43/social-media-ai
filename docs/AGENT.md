@@ -319,3 +319,15 @@ chat-first journey is not yet accepted; see [P8-T39](tasks/p8-t39.md). Bounded
 plan previews and one-off research keep recurring-task and digest-send
 confirmation gates intact. The integrated foundation and its evidence are in
 [P8-T29](tasks/p8-t29.md).
+
+## General action ledger (P9-T08, PR #246 candidate)
+
+`AgentAction` and legacy `BotAction` identify one mapper/table. Canonical model:
+`app/models/actions/agent_action.py`; root/scheduling imports remain aliases.
+`actions_log` includes capability and target; `action_send` stays read-only and
+supports a general proposal without mandatory social source/scenario references.
+It never calls claim/approve/finish or a provider. `/app/actions/{id}` reviews the
+sealed payload and offers CSRF-protected approve/reject/cancel with fresh workspace
+rights. Manager claims/finishes are authenticated dry-run simulations only; no live
+capability is enabled. Idempotency is enforced by the database, transitions by row
+locks and actor/hash/expiry/token checks. See [models](MODELS.md#bot_actions-public-agentaction-legacy-botaction).

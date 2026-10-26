@@ -43,6 +43,8 @@ class ActionToolTests(unittest.IsolatedAsyncioTestCase):
             source_id=10,
             agent_scenario_id=11,
             action_type=SimpleNamespace(name="COMMENT"),
+            capability="social.legacy",
+            target_ref=None,
             dry_run=True,
             created_at=datetime.now(timezone.utc),
             confirmed_at=None,

@@ -3,7 +3,6 @@
     <fieldset class="space-y-3" :disabled="loading || saving">
         <legend class="text-sm font-semibold">Показ в колокольчике</legend>
         <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.connections"> Мои подключения</label>
-        <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.tasks"> Разрешённые ошибки задач</label>
         <p class="text-xs ui-muted">Сообщения пространства всегда доступны. Скрыть проблему ≠ устранить её. Прочтение сообщения явно подтверждается кнопкой и остаётся общим для пространства.</p>
         <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.popup"> Подсказка о новых уведомлениях без открытия диалога</label>
         <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.quiet"> Тихие часы для подсказки</label>

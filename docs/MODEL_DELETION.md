@@ -72,23 +72,33 @@ on these declarations.
    promise source/job deletion clears those rows. Retention and explicit service
    cleanup remain separate policies.
 
-### Raw administrator deletion bypasses source admission
+### Raw administrator deletion is disabled (P6-T05)
 
-Source review also identifies a lifecycle gap outside the FK inventory:
-`SourceAdmin` and `PlatformAdmin` in `app/admin/views.py` inherit the generic
-SQLAdmin delete path; neither those views nor `BaseAdmin` forwards deletion to
-`app/services/collection/source_deletion.py`. A platform's database cascade does
-not invoke that Python service either. Those routes therefore bypass its
-source-admission lock and active-task refusal policy. Removing the final named
-source can leave an active task with no links, which the runtime interprets as
-all active workspace sources.
+The historical raw SQLAdmin deletion path for `SourceAdmin` and `PlatformAdmin`
+bypassed `app/services/collection/source_deletion.py`. A platform's database
+cascade cannot invoke that service's per-workspace admission lock or task-scope
+refusal. Removing the final explicit source could leave a task with no links,
+which the runtime interprets as all active workspace sources.
 
-This is a source-confirmed bypass, not a new PostgreSQL/ASGI reproduction or a
-claim that every deployed FK matches the declarations. The new Settings tab
-offers no hard delete, but it does not repair the existing raw admin routes.
-A separate lifecycle fix must either route administrator/parent deletions
-through the admission policy or disallow the bypassing operations. No cascade,
-model, schema or deletion behavior is changed by this audit.
+P6-T05 closes this administrator entry point by disallowing both raw operations:
+the views set `can_delete = False`, and their `delete_model()` overrides also
+raise 403 before object lookup or writes. SQLAdmin's server-side delete gate
+rejects single and bulk DELETE requests, not just the buttons, including for
+the platform owner. No role or workspace selection re-enables raw deletion.
+Platform deletion therefore cannot cascade through this admin path.
+
+Source deletion remains available through the existing permission-scoped
+workspace web/API/CLI policy. That policy holds the source-admission lock and
+refuses sources used by active tasks or the last explicit source of a paused
+task; callers must first explicitly rebind or remove the dependent task.
+Platform activation/editing remains available as before; raw hard delete is
+not a replacement for a future lifecycle-aware platform retirement workflow.
+
+This is an administrator-surface restriction, not a change to ORM/FK cascades,
+the database schema, retention, or direct database privileges. No migration is
+needed. Source/ASGI checks of refusal do not certify the deployed PostgreSQL
+catalog or reproduce a live cascade; the remaining catalog/DB acceptance below
+is unchanged.
 
 ## Complete FK inventory
 

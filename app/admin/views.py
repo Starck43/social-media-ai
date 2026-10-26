@@ -297,6 +297,13 @@ class PlatformAdmin(BaseAdmin, model=Platform):
     name = "Платформа"
     name_plural = "Платформы"
     icon = "fa fa-globe"
+    # A platform cascade cannot run the per-workspace source-admission policy.
+    # Disable both the SQLAdmin route/buttons and direct view-method callers.
+    can_delete = False
+
+    async def delete_model(self, request: Request, pk: Any) -> None:
+        raise HTTPException(status_code=403, detail="admin_platform_delete_disabled")
+
     inline_columns = ["id", "name", "platform_type", "is_active"]
     column_list = ["id", "name", "platform_type", "is_active"]
     column_searchable_list = ["name"]
@@ -368,6 +375,12 @@ class SourceAdmin(BaseAdmin, model=Source):
     name = "Источник"
     name_plural = "Источники"
     icon = "fa fa-rss"
+    # Generic SQLAdmin deletion bypasses the admission lock and task-scope guard.
+    # Use the existing workspace source-deletion surfaces instead.
+    can_delete = False
+
+    async def delete_model(self, request: Request, pk: Any) -> None:
+        raise HTTPException(status_code=403, detail="admin_source_delete_disabled")
 
     # Проверка источника ставит задачу сбора и пишет в карточку источника.
     action_permissions = {"check-source": ActionType.UPDATE}

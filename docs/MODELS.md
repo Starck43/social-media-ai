@@ -34,6 +34,19 @@ New model declarations belong in the matching domain package. Keep `base.py`,
 `bootstrap.py`, `scenario_schema_guard.py` and `managers/` as shared infrastructure.
 Existing root import paths retain their compatibility exports; do not declare
 models or instantiate managers in these wrappers.
+The explicit helper exports retained by P10-T31 are `LLMStrategyType` and
+`TenantScopedMixin` on `app.models.agent_scenario`, `Decimal` and `PeriodType`
+on `app.models.ai_analytics`, and `TenantScopedMixin` on `app.models.job`.
+These are the same objects exported by the corresponding canonical leaves,
+included in the wrappers' explicit `__all__`; they are not new types or a
+wildcard export of every implementation import. Internal model/manager imports
+continue to use canonical domain paths.
+
+`BotAction` and `AgentAction` are the same mapped class declared in
+`app.models.actions.agent_action`. The old root `bot_action` and
+`scheduling.bot_action` paths retain that identity, manager binding and legacy
+pickle resolution; they do not change the class's canonical `__module__` to
+make it look like a scheduling declaration.
 See [access transition](ACCESS_MIGRATION.md) and [tenancy](TENANCY.md).
 
 Field inventories omit inherited fields where indicated. Exact types, defaults,

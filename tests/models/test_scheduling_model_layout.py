@@ -59,10 +59,16 @@ def test_paths_single_mapper_manager_and_tenant_scope_preserved(name):
     cls = getattr(public, name)
     assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
     assert name in public.__all__ and name in domain.__all__
-    # DigestRun's canonical declaration lives in the notifications domain; the
-    # scheduling leaf is a re-export. The others are declared in scheduling.
-    canonical = "app.models.notifications.digest_run" if module == "digest_run" else f"app.models.scheduling.{module}"
+    # DigestRun and BotAction have accepted canonical owners outside scheduling;
+    # their old scheduling leaves remain aliases, not alternate declarations.
+    canonical = {
+        "digest_run": "app.models.notifications.digest_run",
+        "bot_action": "app.models.actions.agent_action",
+    }.get(module, f"app.models.scheduling.{module}")
     assert cls.__module__ == canonical
+    assert cls is getattr(importlib.import_module(canonical), name)
+    if name == "BotAction":
+        assert cls is public.AgentAction is importlib.import_module("app.models.actions").AgentAction
     assert cls.__table__ is public.Base.metadata.tables[cls.__table__.fullname]
     # `_app_label` is derived by the registry from the class module, so pinning
     # it would only restate the `__module__` assertion above.
@@ -82,6 +88,7 @@ def test_legacy_and_current_class_serialization_resolve(name):
 
 def test_task_source_association_has_single_identity_and_unchanged_contract():
     from sqlalchemy.orm import configure_mappers
+
     from app.models import AgentScenario, AgentTask, Base, Source, Tenant
     from app.models.agent_task import agent_task_sources as legacy
     from app.models.scheduling import agent_task_sources as domain
@@ -106,7 +113,7 @@ def test_task_source_association_has_single_identity_and_unchanged_contract():
 
 
 def test_action_relationships_and_guard_defaults_preserved():
-    from app.models import AIAnalytics, AgentScenario, AgentTask, BotAction, Source
+    from app.models import AgentScenario, AgentTask, AIAnalytics, BotAction, Source
 
     for field, target in [
         ("scenario", AgentScenario),
@@ -123,6 +130,7 @@ def test_action_relationships_and_guard_defaults_preserved():
 def test_existing_status_and_cost_types_and_checkpoint_unknown_state_preserved():
     from sqlalchemy import Float, String
     from sqlalchemy.dialects import postgresql
+
     from app.models import BotAction, DigestRun, Job
     from app.types import BotActionStatus
 
@@ -142,6 +150,7 @@ def test_existing_status_and_cost_types_and_checkpoint_unknown_state_preserved()
 
 def test_named_uniqueness_and_nullable_task_foreign_keys_preserved():
     from sqlalchemy import UniqueConstraint
+
     from app.models import AgentTask, DigestRun, Job
 
     for model, name, expected in [

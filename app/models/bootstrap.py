@@ -18,6 +18,9 @@ def bind_managers(models):
     models.AgentFeedback.objects = import_module("app.models.managers.agent_feedback_manager").AgentFeedbackManager()
     models.AgentSession.objects = import_module("app.models.managers.agent_session_manager").AgentSessionManager()
     models.AgentMessage.objects = import_module("app.models.managers.agent_message_manager").AgentMessageManager()
+    models.EntitlementUsage.objects = import_module(
+        "app.models.managers.entitlement_manager"
+    ).EntitlementManager()
     models.Tenant.objects = import_module("app.models.managers.tenant_manager").TenantManager()
     models.TenantUser.objects = import_module("app.models.managers.tenant_manager").TenantUserManager()
     models.TenantInvite.objects = import_module("app.models.managers.tenant_manager").TenantInviteManager()

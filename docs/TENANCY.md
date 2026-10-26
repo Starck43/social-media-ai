@@ -75,6 +75,16 @@ pilot; per-workspace settings tables are a later task.
 Only a platform superuser can change a tier (`POST /app/settings/plan`, or the
 admin console) — it is a billing act, not a workspace preference.
 
+## Product capability foundation
+
+[Product capability entitlements](ENTITLEMENTS.md) defines the P2-T15 source
+contract: versioned namespaced grants, workspace expiry, shared decisions and
+durable per-job usage. Catalog v1 grants `*` without capability quotas to all
+three plans; existing `PLAN_LIMITS` and the deployment member ceiling are not
+changed. Provider credentials/scopes and LLM payer consent remain independent.
+Alembic 0117 is required before using the new fields; its application and all
+application/database tests are deferred by the owner, not verified here.
+
 ## Tables
 
 | Table | Scope | Notes |

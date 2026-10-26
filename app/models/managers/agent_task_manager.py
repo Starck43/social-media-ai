@@ -1247,6 +1247,16 @@ class AgentTaskManager(BaseManager):
                             source_ids = list(dict.fromkeys(source.id for source in source_rows))
                         if not source_ids and not can_discover_without_existing_source:
                             raise ValueError("Source task has no effective sources to snapshot")
+                        from app.models.managers.entitlement_manager import EntitlementManager
+                        from app.services.tenancy.entitlements import EntitlementDenied
+
+                        entitlements = EntitlementManager()
+                        from app.services.collection.entitlement_policy import required_capabilities
+
+                        required = await required_capabilities(session, payload, sources=source_rows)
+                        decision = await entitlements.evaluate(session, required)
+                        if not decision.allowed:
+                            raise EntitlementDenied(decision)
                         payload["source_ids"] = source_ids
                         trigger_type = getattr(row.trigger_type, "name", None)
                         action_type = getattr(row.action_type, "name", None)

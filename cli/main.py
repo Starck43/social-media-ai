@@ -107,8 +107,9 @@ task_app = typer.Typer(help="Manage agent tasks")
 def task_plan_cmd(
     plan_json: str = typer.Argument(..., help="Canonical social task plan as JSON"),
     job_type: str = typer.Option("analyze", "--job-type", help="collect or analyze"),
+    tenant: str = typer.Option(None, "--tenant", help="Workspace slug or ID for a live entitlement preview"),
 ):
-    """Validate and print a social task plan without database or API access."""
+    """Preview a plan; --tenant adds a read-only workspace entitlement decision."""
     import json as _json
 
     from rich import print as rprint
@@ -125,8 +126,45 @@ def task_plan_cmd(
     except (TypeError, ValueError) as error:
         rprint(f"[red]Invalid task plan: {error}[/red]")
         raise typer.Exit(1) from None
-    rprint(_json.dumps(payload["task_plan"], ensure_ascii=False, indent=2))
+    entitlement_preview = {"allowed": None, "reason": "workspace_required", "checked": False}
+    if tenant:
+        from app.core.tenant_context import tenant_scope
+        from app.services.collection.entitlement_policy import preview_entitlements
+
+        async def _preview():
+            from ._tenant import resolve_tenant_id
+
+            tenant_id = await resolve_tenant_id(tenant)
+            with tenant_scope(tenant_id):
+                return await preview_entitlements(payload)
+
+        entitlement_preview = _run_platform(_preview())
+    rprint(_json.dumps(
+        {"task_plan": payload["task_plan"], "entitlements": entitlement_preview}, ensure_ascii=False, indent=2
+    ))
     rprint("[dim]Preview only. Access, payer eligibility and platform coverage are checked at execution.[/dim]")
+
+
+@task_app.command("entitlements")
+def task_entitlements_cmd(
+    tenant: str = typer.Option(..., "--tenant", help="Workspace slug or ID"),
+):
+    """Inspect current product grants and availability; consume no usage."""
+    import json as _json
+
+    from rich import print as rprint
+
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.entitlement_manager import EntitlementManager
+
+    async def _inspect():
+        from ._tenant import resolve_tenant_id
+
+        tenant_id = await resolve_tenant_id(tenant)
+        with tenant_scope(tenant_id):
+            return await EntitlementManager().inspect()
+
+    rprint(_json.dumps(_run_platform(_inspect()), ensure_ascii=False, indent=2))
 
 
 @task_app.command("list")

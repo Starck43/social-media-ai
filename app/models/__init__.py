@@ -45,7 +45,7 @@ from .llm import (
 )
 from .notifications import DigestRun, Notification, NotificationPreference, NotificationReceipt
 from .scheduling import AgentTask, BotAction, Job
-from .tenancy import Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
+from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
 __all__ = [
     # Base classes
@@ -62,6 +62,7 @@ __all__ = [
     "LoginAttempt",
     # Multi-tenant
     "Tenant",
+    "EntitlementUsage",
     "TenantUser",
     "TenantInvite",
     "TenantChannel",

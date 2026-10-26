@@ -20,6 +20,8 @@
 
 - [P8-T36](../tasks/p8-t36.md) — Reusable horizontal relationship picker
 
+- [P8-T37](../tasks/p8-t37.md) — Task plan execution scope and shared mutation policy; [PR #245](https://github.com/Starck43/social-media-ai/pull/245), independent local acceptance pending
+
 **Accepted history:**
 
 - [P8-T26](../audit/phase-p8-history.md#p8-t26) — implement the accepted jobs lifecycle audit: built-in cleanup independent of a scheduled prune task, default 24-hour terminal…

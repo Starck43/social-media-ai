@@ -45,6 +45,8 @@ means not recorded; source recovery links remain in the card.
 
 - [P8-T36](docs/tasks/p8-t36.md) Reusable horizontal relationship picker — **READY** · Notion remote executor/custodian · [PR #244 evidence](https://github.com/Starck43/social-media-ai/pull/244#issuecomment-6418461244)
 
+- [P8-T37](docs/tasks/p8-t37.md) Task plan execution scope and shared mutation policy — **READY** · notion-ai (fix/p8-t37-plan-execution-dry) · [PR #245; local acceptance pending](https://github.com/Starck43/social-media-ai/pull/245)
+
 ## [P9](docs/phases/p9-safe-activation.md)
 
 - [P9-T01](docs/tasks/p9-t01.md) one capability-specific activation contract — **TODO** · unassigned · —
@@ -58,6 +60,8 @@ means not recorded; source recovery links remain in the card.
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
 - [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **READY** · opencode (fix/p10-t19-stale-security-suites, `b8eddfd`) · [merge `f838333`](https://github.com/Starck43/social-media-ai/pull/241#issuecomment-6409463751)
 - [P10-T22](docs/tasks/p10-t22.md) Reconcile the dispatch-identity suite with the tariff receipt contract — **TODO** · unassigned · —
+
+- [P10-T25](docs/tasks/p10-t25.md) Unused utility cleanup and slug transliteration (PR #243; former conflicting ID P10-T23) — **READY** · notion-ai (refactor/p10-t23-unused-utils) · [PR #243; local acceptance pending](https://github.com/Starck43/social-media-ai/pull/243)
 
 ## Questions
 

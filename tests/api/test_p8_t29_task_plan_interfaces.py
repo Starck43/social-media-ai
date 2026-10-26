@@ -43,6 +43,17 @@ async def test_preview_returns_canonical_plan_and_collection() -> None:
     assert response.warnings
 
 
+@pytest.mark.parametrize("job_type", ["digest", "send", "prune"])
+async def test_preview_rejects_job_types_without_social_task_plans(job_type: str) -> None:
+    with pytest.raises(HTTPException) as raised:
+        await preview_task_plan(
+            SimpleNamespace(job_type=job_type, task_plan=_plan()),
+            _user=SimpleNamespace(id=1),
+        )
+
+    assert raised.value.status_code == 400
+
+
 async def test_one_off_plan_requires_a_stable_request_id() -> None:
     with pytest.raises(ValidationError):
         TaskPlanRunRequest(task_plan=_plan())

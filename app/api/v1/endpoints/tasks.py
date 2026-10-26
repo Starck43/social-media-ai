@@ -86,7 +86,7 @@ async def preview_task_plan(
         plan = parse_task_plan(request.task_plan)
     except (TaskPlanError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
-    if request.job_type not in {"collect", "analyze", "digest"}:
+    if request.job_type not in {"collect", "analyze"}:
         raise HTTPException(status_code=400, detail="Unsupported job type for a social task plan")
     return TaskPlanPreviewResponse(
         task_plan=task_plan_block(plan),

@@ -47,6 +47,7 @@ class Source(Base):
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer)
     is_active = Column(Boolean, default=True)
+    owner_task_id = Column(Integer)
     platform_id = Column(ForeignKey("fixture_platforms.id"))
     platform = relationship(Platform)
 

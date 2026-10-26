@@ -698,6 +698,17 @@ Metadata wraps with bounded title/summary previews. Guest-workspace chat entry
 and direct web chat endpoints are denied, including for visiting operators.
 No home-request KPI aggregation, new LLM call or migration.
 
+The pipeline strip gates each component independently on the active workspace's
+`collecteditem.view` (staged count), `aianalytics.view` (stored-analysis count),
+and `job.view` (job activity and `/app/jobs` link). A denied component makes no
+query and renders neither its count nor activity/link; task/source access does
+not imply these rights. With no permitted component or no selected workspace,
+Home makes no pipeline data query. Session requests resolve membership/grants
+afresh, so revocation applies on the next request, regardless of platform role.
+[P10-T08](tasks/p10-t08.md) changes permission gates only; the staged-count label
+and bounded job-count semantics remain [P10-T09](tasks/p10-t09.md).
+
+
 Attention is implemented in the unified bell, not a second home block (see
 [NOTIFICATIONS](NOTIFICATIONS.md#current-web-bell-and-display-policy)). Mixed
 analysis/digest feed and truly upcoming schedules remain deferred in [the phase tasks](phases/p8-first-value-ui.md).

@@ -206,43 +206,39 @@ async def _effective_active_ids(recent_tasks) -> set[int]:
 # is registered as "/" only. Requests to "/app" (no slash) are redirected here
 # by Starlette's redirect_slashes.
 async def _pipeline(tenant_id: int | None, is_superuser: bool, offer: dict) -> dict | None:
-    """Data-state strip: staged items, stored analyses, running collect/analyze jobs.
+    """Read each data component only with its own workspace view permission.
 
-    Shown only when the caller already sees analytics or tasks — no new rights
-    are implied by this strip. Superusers without an active workspace see the
-    global queue instead of a meaningless workspace count.
+    Task/source permissions never imply collected-item, analysis or job access.
+    Without a selected workspace there are no data reads, including global mode.
     """
-    if not (offer.get("analytics") or offer.get("tasks")):
+    if not any(offer.get(key) for key in ("collected_items", "analytics", "jobs")):
         return None
-    if is_superuser and tenant_id is None:
-        return {"scope_all": True}
+    if tenant_id is None:
+        return {"scope_all": True} if is_superuser else None
 
-    from app.models.ai_analytics import AIAnalytics
-    from app.models.collected_item import CollectedItem
-    from app.models.job import Job
+    pipeline = {"scope_all": False}
+    if offer.get("collected_items"):
+        from app.models.collected_item import CollectedItem
 
-    staged = await CollectedItem.objects.filter(tenant_id=tenant_id).count()
-    analyzed = await AIAnalytics.objects.filter(tenant_id=tenant_id).count()
-    active_jobs = (
-        await Job.objects.filter(tenant_id=tenant_id, status__in=["pending", "running"])
-        .order_by(Job.created_at.desc())
-        .limit(3)
-    )
+        pipeline["staged"] = await CollectedItem.objects.filter(tenant_id=tenant_id).count()
+    if offer.get("analytics"):
+        pipeline["analyzed"] = await AIAnalytics.objects.filter(tenant_id=tenant_id).count()
+    if offer.get("jobs"):
+        from app.models.job import Job
 
-    running = [
-        {"job_type": j.job_type, "collect": j.job_type == "collect"}
-        for j in active_jobs
-        if getattr(j, "status", None) == "running"
-    ]
-    queued = sum(1 for j in active_jobs if getattr(j, "status", None) == "pending")
-    return {
-        "scope_all": False,
-        "staged": staged,
-        "analyzed": analyzed,
-        "running": running,
-        "queued_count": queued,
-        "job_count": len(active_jobs),
-    }
+        active_jobs = (
+            await Job.objects.filter(tenant_id=tenant_id, status__in=["pending", "running"])
+            .order_by(Job.created_at.desc())
+            .limit(3)
+        )
+        pipeline["running"] = [
+            {"job_type": j.job_type, "collect": j.job_type == "collect"}
+            for j in active_jobs
+            if getattr(j, "status", None) == "running"
+        ]
+        pipeline["queued_count"] = sum(1 for j in active_jobs if getattr(j, "status", None) == "pending")
+        pipeline["job_count"] = len(active_jobs)
+    return pipeline
 
 
 def _offers(perms) -> dict[str, bool]:
@@ -265,6 +261,8 @@ def _offers(perms) -> dict[str, bool]:
         "add_task": can("agenttask", "view", "create"),
         "digests": can("digestrun", "view"),
         "analytics": can("aianalytics", "view"),
+        "collected_items": can("collecteditem", "view"),
+        "jobs": can("job", "view"),
     }
 
 

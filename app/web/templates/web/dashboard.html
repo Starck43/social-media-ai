@@ -66,20 +66,25 @@
     <section data-home-pipeline class="ui-card mb-6 min-w-0" aria-label="Состояние обработки">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Обработка данных</h2>
-            <a href="/app/jobs" class="text-sm text-cyan-700 dark:text-cyan-400 hover:underline">Очередь →</a>
+            {% if offer.get("jobs") %}<a href="/app/jobs" class="text-sm text-cyan-700 dark:text-cyan-400 hover:underline">Очередь →</a>{% endif %}
         </div>
         {% if pipeline.scope_all %}
         <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Выберите пространство, чтобы увидеть состояние его обработки.</p>
         {% else %}
         <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {% if offer.get("collected_items") %}
             <div>
                 <p class="text-2xl font-semibold">{{ pipeline.staged }}</p>
                 <p class="text-xs text-slate-600 dark:text-slate-400">ожидают анализа</p>
             </div>
+            {% endif %}
+            {% if offer.analytics %}
             <div>
                 <p class="text-2xl font-semibold">{{ pipeline.analyzed }}</p>
                 <p class="text-xs text-slate-600 dark:text-slate-400">сохранено анализов</p>
             </div>
+            {% endif %}
+            {% if offer.get("jobs") %}
             <div>
                 <p class="text-2xl font-semibold">{{ pipeline.running|length }}</p>
                 <p class="text-xs text-slate-600 dark:text-slate-400">выполняется сейчас</p>
@@ -88,7 +93,9 @@
                 <p class="text-2xl font-semibold">{{ pipeline.queued_count }}</p>
                 <p class="text-xs text-slate-600 dark:text-slate-400">в очереди</p>
             </div>
+            {% endif %}
         </div>
+        {% if offer.get("jobs") %}
         {% if pipeline.running %}
         <ul class="mt-3 space-y-1.5">
             {% for job in pipeline.running %}
@@ -104,6 +111,7 @@
         <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Очередь пуста — новых сборов и анализов нет.</p>
         {% else %}
         <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Задачи в очереди, выполнение скоро начнётся.</p>
+        {% endif %}
         {% endif %}
         {% endif %}
     </section>

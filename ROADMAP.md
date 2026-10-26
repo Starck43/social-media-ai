@@ -56,7 +56,7 @@ means not recorded; source recovery links remain in the card.
 
 
 
-- [P10-T31](docs/tasks/p10-t31.md) Root compat shim legacy helper symbols (layout test gap from P10-T28) — **TODO** · unassigned · [post-merge validation of PR #246](https://github.com/Starck43/social-media-ai/pull/246), dev 67acbd53
+- [P10-T31](docs/tasks/p10-t31.md) Root compat shim legacy helper symbols (layout test gap from P10-T28) — **IN_PROGRESS** · notion-ai (fix/p10-t31-legacy-shim-exports) · [owner-authorized claim](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6429030450)
 
 ## Questions
 

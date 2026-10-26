@@ -59,7 +59,6 @@ means not recorded; source recovery links remain in the card.
 ## [P10](docs/phases/p10-audit-hardening.md)
 
 
-- [P10-T22](docs/tasks/p10-t22.md) Reconcile the dispatch-identity suite with the tariff receipt contract — **READY** · notion-ai (remote executor / owner-authorized custodian) · [PR #251 evidence; independent audit / owner choice pending](https://github.com/Starck43/social-media-ai/pull/251#issuecomment-6425258413)
 
 - [P10-T26](docs/tasks/p10-t26.md) Notification/bot-action/agent-session model and manager layout — **IN_PROGRESS** · notion-ai (refactor/p10-t26-notification-action-session-models) · [PR #246; local validation pending](https://github.com/Starck43/social-media-ai/pull/246)
 - [P10-T27](docs/tasks/p10-t27.md) Legacy notification API correctness — **TODO** · unassigned · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)

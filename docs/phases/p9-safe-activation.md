@@ -1,107 +1,20 @@
-# P9 — Safe activation and platform access (gate PRD-09)
+# P9 — Safe activation and platform access
 
-Goal: every external write capability is disabled by default and activated
-only via a capability-specific contract with fresh authorization, idempotency,
-audit and kill switch; release claims match verified capability.
+[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p9) · [full historical notes](../audit/phase-p9-history.md)
 
-Platform access follows the same rule: the platform owner is one named account
-with a distinct role, no console operation can mint that role, and every
-wide-reaching read surface (the table registry) is read-only and reachable by
-that role alone.
+**Goal:** External writes activate only through a capability-specific contract.
 
-## Platform access model (decided by owner, 2026-10-24)
+**Plan — active task cards:**
 
-Three non-overlapping levels:
+- [P9-T01](../tasks/p9-t01.md) — one capability-specific activation contract
+- [P9-T07](../tasks/p9-t07.md) — actor-scoped admin console catalogs
 
-| Level | Where it lives | Who |
-| --- | --- | --- |
-| Platform owner | `PlatformRoleType.SUPERUSER` + one `roles` row | the single owner account |
-| Platform staff | `operator` / `admin` (`user_types.py`) | internal operators and admins |
-| Clients | `user` + workspace membership (`WorkspaceRoleType`) | self-registered individuals and companies |
+**Accepted history:**
 
-Owner decisions that bound this scope:
+- [P9-T02](../audit/phase-p9-history.md#p9-t02) — platform-owner role `SUPERUSER` with a guarded assignment · 2026-10-25 · `e3943f0`
+- [P9-T03](../audit/phase-p9-history.md#p9-t03) — owner-level gates built on the new role · 2026-10-25
+- [P9-T04](../audit/phase-p9-history.md#p9-t04) — read-only table registry for the platform owner · 2026-10-25
+- [P9-T05](../audit/phase-p9-history.md#p9-t05) — owner access documentation and regression guard · 2026-10-25
+- [P9-T06](../audit/phase-p9-history.md#p9-t06) — consistent owner protection across role editing and account management · 2026-10-25 · `e3943f0`
 
-- No arbitrary SQL from the web. Schema change stays Alembic-only; data edits
-  stay in the console or CLI. The owner sees tables, but cannot run queries.
-- `admin` keeps managing `admin` accounts as today (`app/admin/catalog.py`,
-  `app/admin/endpoints.py`); only the owner cannot be demoted or impersonated.
-- Client registration (self-serve individual vs corporate onboarding) is not
-  decided yet — tracked as Q-11, not as part of these tasks.
-
-Today `admin` is the top of the platform ladder (`docs/ADMIN.md`): the console
-backend grants it a `( *, * )` wildcard (`app/admin/authorization.py`), and
-`TenantAdmin.is_accessible`, the role catalog, password/role endpoints and
-billing actions all gate on `User.is_platform_admin`. "Tools for working with
-database tables" are limited by which models have a registered view in
-`app/admin/views.py`, not by the role.
-
-## Tasks
-
-- [ ] P9-T02 — platform-owner role `SUPERUSER` with a guarded assignment;
-  accept: `PlatformRoleType` and the `roles` catalog gain `superuser` through an
-  Alembic migration; the owner account is moved onto it; no console/API/CLI path
-  can grant `superuser` to another account, and the owner account cannot be
-  demoted or edited by `admin`; escalation attempts fail closed with focused
-  tests; depends: none; owns: `app/types/enums/user_types.py`, `app/models/`
-  role/user layer, `app/services/user/permissions.py`, `app/admin/catalog.py`,
-  `app/admin/endpoints.py`, one Alembic migration; owner: unassigned;
-  status: TODO
-
-- [ ] P9-T03 — owner-level gates built on the new role;
-  accept: `User.is_platform_admin` covers `admin` and `superuser` so existing
-  console/workspace gating is unchanged; role/permission catalog editing and
-  other owner-only operations require `superuser`; the console identifies the
-  signed-in level truthfully (role label, not a generic "admin"); depends:
-  P9-T02; owns: `app/models/identity/user.py`, `app/admin/authorization.py`,
-  `app/admin/catalog.py`, `app/admin/endpoints.py`, `app/admin/actions.py`,
-  console layout template; owner: unassigned; status: TODO
-
-- [ ] P9-T04 — read-only table registry for the platform owner;
-  accept: one console surface lists every registered model (all tables in
-  `app/models/**`) with pagination, search and a detail view, gated on
-  `superuser` via `is_accessible` rather than model permissions; no create,
-  edit, delete, export or SQL box; every other platform role gets 403; depends:
-  P9-T02, P9-T03; owns: one new admin view + template, `app/admin/setup.py`
-  registration, focused authorization tests; owner: unassigned; status: TODO
-
-- [ ] P9-T05 — owner access documentation and regression guard;
-  accept: `docs/ADMIN.md` and `docs/ACCESS_MIGRATION.md` describe the
-  three-level model and the assignment rule; tests pin that `operator`/`admin`
-  cannot mint `superuser`, that the registry answers 403 for them, and that no
-  self-registration path grants a platform role above `user`; depends:
-  P9-T02, P9-T03, P9-T04; owns: the two docs, one permission regression test
-  file; owner: unassigned; status: TODO
-
-- [ ] P9-T06 — build-time owner bootstrap: rank-based assignment in the console,
-  an idempotent CLI for the first/prod owner, and the optional `-x` pin;
-  accept: `/admin/user/edit` offers a role picker limited to the actor's
-  assignable ranks; `UserManager.set_platform_role` enforces the same rule
-  server-side (no runtime path grants `superuser`, no self-edit, the owner
-  account is untouchable, an admin cannot rewrite a peer); the create form has
-  no role field; `0110` runs with or without `-x superuser_user_id`, falling back
-  to the sole active admin and refusing on zero or several;
-  `scripts/setup/bootstrap_owner.py` performs the same decision idempotently
-  outside the web; depends: P9-T02, P9-T05; owns: `app/admin/role_picker.py`,
-  `UserAdmin`, `UserManager.set_platform_role`, `PLATFORM_ROLE_RANK` helpers,
-  `scripts/setup/bootstrap_owner.py`, `0110` docs; owner: opencode;
-  status: DONE (dev `eecd30f`), awaiting review
-
-  Evidence: targeted run only —
-  `tests/permissions tests/admin/test_admin_user_role_picker.py
-  tests/admin/test_admin_shell_catalog.py tests/admin/test_admin_table_registry.py
-  tests/api/test_api_roles.py` → 97 passed. Probe on the real `UserAdmin` form:
-  owner sees `admin/operator/user` (highest first), a `user` rank gets a disabled
-  empty select, the create form carries no `role`. `0110` was applied to the
-  working `public` schema earlier with `-x superuser_user_id=2`
-  (`alembic_version=0110`); the no-argument branch is the one added here and has
-  only been reviewed, not exercised.
-
-## Out of scope (explicit)
-
-- Arbitrary SQL / query console, DDL or DML from the web.
-- Owner membership in every workspace (the owner acts at platform level).
-- Client self-registration / corporate onboarding (Q-11).
-
-## Phase approval
-
-- [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —
+**Phase status:** Active phase; close only after every plan item is accepted.

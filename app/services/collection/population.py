@@ -337,6 +337,7 @@ async def resolve_population(
     platform: str,
     dry_run: bool,
     job_id: int | None,
+    owner_user_id: int | None = None,
 ) -> PopulationResult:
     """Find the task's declared population and turn it into task-owned lanes.
 
@@ -374,9 +375,20 @@ async def resolve_population(
     from app.services.social.owner import resolve_source_owner
 
     client = get_social_client(platform_row)
-    # The search runs as the workspace owner, exactly like collection: a
-    # personal token may only be used inside the workspace of its member.
-    owner_user_id = await resolve_source_owner(SimpleNamespace(tenant_id=int(task.tenant_id), params={}))
+    # New explicit plans pass their trusted initiator/payer. Validate that
+    # identity through the same workspace membership gate used by source
+    # collection. Legacy calls retain the workspace-owner fallback.
+    owner_source = SimpleNamespace(
+        tenant_id=int(task.tenant_id),
+        params={"token_owner": owner_user_id} if owner_user_id is not None else {},
+    )
+    resolved_owner = await resolve_source_owner(owner_source)
+    if owner_user_id is not None and resolved_owner != owner_user_id:
+        raise PopulationError(
+            "population_connection_owner_not_workspace_member",
+            hint="Личный аккаунт запуска больше не состоит в рабочем пространстве.",
+        )
+    owner_user_id = resolved_owner
 
     city_id, city_name = await _resolve_city_id(client, discovery, owner_user_id=owner_user_id)
 

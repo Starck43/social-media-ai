@@ -83,13 +83,47 @@ class AgentTaskManager(BaseManager):
         ):
             raise ValueError("Настройка хранения истории должна быть повторяемой, например ежедневно.")
 
+    @staticmethod
+    def _validate_task_plan_binding(
+        job_type: str | None, payload: Any, cron_expr: str | None, scenario_id: int | None
+    ):
+        """Keep typed plan, persisted scenario and scheduler trigger aligned."""
+        if not isinstance(payload, dict) or "task_plan" not in payload:
+            return
+        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+
+        try:
+            plan = parse_task_plan(payload["task_plan"])
+        except TaskPlanError as error:
+            raise ValueError(str(error)) from error
+        if job_type not in {"collect", "analyze"}:
+            raise ValueError("A social task plan requires a collect or analyze task")
+        if plan.trigger.type == "schedule" and cron_expr != plan.trigger.cron:
+            raise ValueError("Task schedule and task plan schedule must match")
+        if plan.trigger.type == "once" and cron_expr != "@once":
+            raise ValueError("A one-off task plan requires an @once task")
+        if plan.scenario_id is not None and scenario_id != plan.scenario_id:
+            raise ValueError("Task plan scenario must match the persisted task scenario")
+        if scenario_id is not None and plan.scenario_id != scenario_id:
+            raise ValueError("Task plan scenario must match the persisted task scenario")
+        canonical = apply_task_plan({}, payload["task_plan"], job_type=job_type)
+        for key in ("collection", "cli_dates"):
+            if payload.get(key) != canonical.get(key):
+                raise ValueError(f"Task plan and {key} must be stored together in canonical form")
+
     # --- permission-gated writes (user surfaces: web, agent tools, CLI) ----
 
     @require_permission("agenttask", ActionType.CREATE)
     @with_db_session
     async def create(self, session: "AsyncSession", **kwargs: Any) -> "AgentTask":
+        reserved = {"launch_key", "launch_fingerprint", "launch_job_id"}.intersection(kwargs)
+        if reserved:
+            raise ValueError(f"Task launch identity fields are server-managed: {', '.join(sorted(reserved))}")
         self._require_job_retention_permission(kwargs.get("job_type"))
         self._validate_job_retention_schedule(kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr"))
+        self._validate_task_plan_binding(
+            kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr"), kwargs.get("agent_scenario_id")
+        )
         # Resolve the tenant through BaseManager's normal context/bootstrap path
         # before validating the scenario, so the FK failure is a domain error.
         stamped = await self._apply_tenant(session, dict(kwargs))
@@ -151,6 +185,9 @@ class AgentTaskManager(BaseManager):
     async def update_by_id(self, instance_id: int, session: "AsyncSession", **kwargs: Any) -> Optional["AgentTask"]:
         if {"id", "tenant_id"}.intersection(kwargs):
             raise ValueError("AgentTask identity fields cannot be updated")
+        reserved = {"launch_key", "launch_fingerprint", "launch_job_id"}.intersection(kwargs)
+        if reserved:
+            raise ValueError(f"Task launch identity fields are server-managed: {', '.join(sorted(reserved))}")
         current = await self._lock_task_for_mutation(session, instance_id)
         if current is None:
             return None
@@ -160,6 +197,12 @@ class AgentTaskManager(BaseManager):
             kwargs.get("job_type", current.job_type),
             kwargs.get("payload", current.payload),
             kwargs.get("cron_expr", current.cron_expr),
+        )
+        self._validate_task_plan_binding(
+            kwargs.get("job_type", current.job_type),
+            kwargs.get("payload", current.payload),
+            kwargs.get("cron_expr", current.cron_expr),
+            kwargs.get("agent_scenario_id", current.agent_scenario_id),
         )
         await self._validate_scenario_binding(
             session,
@@ -186,7 +229,7 @@ class AgentTaskManager(BaseManager):
         if "agent_scenario_id" in values:
             raise ValueError("Use update_by_id for scenario binding changes")
         unknown = set(values) - set(AgentTask.__mapper__.column_attrs.keys())
-        immutable = {"id", "tenant_id"}.intersection(values)
+        immutable = {"id", "tenant_id", "launch_key", "launch_fingerprint", "launch_job_id"}.intersection(values)
         if unknown:
             raise ValueError(f"Unknown AgentTask fields: {', '.join(sorted(unknown))}")
         if immutable:
@@ -229,6 +272,12 @@ class AgentTaskManager(BaseManager):
                         values.get("job_type", task.job_type),
                         values.get("payload", task.payload),
                         values.get("cron_expr", task.cron_expr),
+                    )
+                    self._validate_task_plan_binding(
+                        values.get("job_type", task.job_type),
+                        values.get("payload", task.payload),
+                        values.get("cron_expr", task.cron_expr),
+                        task.agent_scenario_id,
                     )
                     if self._replaces_pending_occurrence(task, values):
                         await jobs.delete_pending_for_task(session, tenant_id=task.tenant_id, task_id=task.id)
@@ -507,7 +556,7 @@ class AgentTaskManager(BaseManager):
         keywords_match: str | None = None,
         existing: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Merge a task's selection into its payload (`docs/design/task-selection.md`).
+        """Merge a task's selection into its payload (`docs/COLLECTION.md#task-selection-contract`).
 
         The one writer for every surface — web form, CLI, chat tool and API —
         so the same settings cannot be stored three different ways. `None` means
@@ -810,6 +859,18 @@ class AgentTaskManager(BaseManager):
             return False
         if not AgentTaskManager.requires_sources(getattr(task, "job_type", "") or ""):
             return True
+        payload = getattr(task, "payload", None)
+        plan = payload.get("task_plan") if isinstance(payload, dict) else None
+        source_scope = plan.get("source_scope") if isinstance(plan, dict) else None
+        if source_scope == "discovery":
+            collection = plan.get("collection")
+            discovery = collection.get("discovery") if isinstance(collection, dict) else None
+            if (
+                isinstance(discovery, dict)
+                and discovery.get("queries")
+                and (discovery.get("communities") or discovery.get("people"))
+            ) or (isinstance(collection, dict) and collection.get("queries")):
+                return True
         linked = task.sources or []
         if linked:
             # Explicit links: active iff at least one is active — no fallback.
@@ -874,6 +935,7 @@ class AgentTaskManager(BaseManager):
         extra_payload: Optional[dict[str, Any]] = None,
         retry_exhausted: bool = False,
         supersede_unfinished: bool = False,
+        launch_request_key: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         """Internal trigger boundary: insert and schedule advancement commit together.
 
@@ -925,13 +987,42 @@ class AgentTaskManager(BaseManager):
                         AgentTask.next_run_at == expected_next_run_at,
                         AgentTask.next_run_at <= now,
                     )
-                query = query.options(selectinload(AgentTask.sources), selectinload(AgentTask.agent_scenario))
+                query = query.options(
+                    selectinload(AgentTask.sources).selectinload(Source.platform),
+                    selectinload(AgentTask.agent_scenario),
+                )
                 row = (await session.execute(query.with_for_update(skip_locked=scheduled))).scalar_one_or_none()
                 if row is None:
                     return None
+                if launch_request_key is not None and row.launch_key != launch_request_key:
+                    raise ValueError("Launch receipt key does not match this task")
+                if launch_request_key is not None and row.launch_job_id is not None:
+                    from ..job import Job as JobModel
+
+                    existing_job = (
+                        await session.execute(
+                            select(JobModel).where(
+                                JobModel.id == row.launch_job_id,
+                                JobModel.tenant_id == tenant_id,
+                                JobModel.agent_task_id == row.id,
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    return {
+                        "status": "replayed",
+                        "task_id": row.id,
+                        "job_id": row.launch_job_id,
+                        "job": existing_job,
+                        "once": True,
+                    }
+                if scheduled:
+                    initiated_by_user_id = None
                 if not scheduled:
                     self._require_job_retention_permission(row.job_type)
                 self._validate_job_retention_schedule(row.job_type, row.payload, row.cron_expr)
+                self._validate_task_plan_binding(
+                    row.job_type, row.payload, row.cron_expr, row.agent_scenario_id
+                )
                 if scheduled:
                     active_source_ids = set()
                     if self.requires_sources(row.job_type) and not row.sources:
@@ -950,7 +1041,13 @@ class AgentTaskManager(BaseManager):
                 schedule_error = None
                 if scheduled and not once:
                     try:
-                        next_fire = next_run_at(row.cron_expr, timezone_name or settings.SCHEDULER_TIMEZONE, after=now)
+                        from app.services.task_plans import task_plan_timezone
+
+                        task_plan = (row.payload or {}).get("task_plan") if isinstance(row.payload, dict) else None
+                        effective_timezone = task_plan_timezone(
+                            task_plan, timezone_name or settings.SCHEDULER_TIMEZONE
+                        )
+                        next_fire = next_run_at(row.cron_expr, effective_timezone, after=now)
                     except (ValueError, KeyError) as error:
                         schedule_error = str(error)
                         next_fire = now
@@ -963,7 +1060,40 @@ class AgentTaskManager(BaseManager):
                 else:
                     payload = dict(row.payload or {})
                     if extra_payload:
-                        payload.update({key: value for key, value in extra_payload.items() if value is not None})
+                        persisted_plan = payload.get("task_plan")
+                        protected = {"source_ids", "collection", "cli_dates"}
+                        requested_protected = protected.intersection(extra_payload)
+                        requested_plan = extra_payload.get("task_plan")
+                        override_keys = set(extra_payload) - {"task_plan"}
+                        if isinstance(persisted_plan, dict):
+                            if requested_protected:
+                                raise ValueError(
+                                    "Task plan run overrides must use task_plan for source, collection, "
+                                    "and window fields"
+                                )
+                            override_keys -= protected
+                            if requested_plan is not None:
+                                from app.services.task_plans import apply_task_plan_override
+
+                                payload = apply_task_plan_override(
+                                    payload, requested_plan, job_type=row.job_type
+                                )
+                                self._validate_task_plan_binding(
+                                    row.job_type, payload, row.cron_expr, row.agent_scenario_id
+                                )
+                        elif requested_plan is not None:
+                            raise ValueError("A task without a saved plan cannot accept a per-run task_plan override")
+                        payload.update(
+                            {
+                                key: value
+                                for key, value in extra_payload.items()
+                                if value is not None and key in override_keys
+                            }
+                        )
+                    if isinstance(payload.get("task_plan"), dict):
+                        from app.services.task_plans import materialize_task_plan_window
+
+                        payload = materialize_task_plan_window(payload, now)
                     retry_reset_count = 0
                     if retry_exhausted:
                         if row.job_type != "analyze":
@@ -1024,8 +1154,74 @@ class AgentTaskManager(BaseManager):
                         linked_sources = list(row.sources or [])
                         if any(source.tenant_id != tenant_id for source in linked_sources):
                             raise TenantContextError("Task source snapshot contains a foreign workspace source")
-                        source_rows = linked_sources
-                        if not source_rows:
+                        plan = payload.get("task_plan")
+                        plan = plan if isinstance(plan, dict) else None
+                        source_scope = plan.get("source_scope") if plan else None
+                        if source_scope == "selected":
+                            selected_ids = plan.get("source_ids")
+                            if not isinstance(selected_ids, list) or any(
+                                type(value) is not int for value in selected_ids
+                            ):
+                                raise ValueError("Selected task source scope is malformed")
+                            selected_set = set(selected_ids)
+                            linked_ids = {source.id for source in linked_sources}
+                            if not selected_set.issubset(linked_ids):
+                                raise ValueError("Selected task sources must be linked before task admission")
+                            unexpected = [
+                                source.id
+                                for source in linked_sources
+                                if source.id not in selected_set
+                                and source.owner_task_id != row.id
+                            ]
+                            if unexpected:
+                                # Population may link a verified, reusable source
+                                # to this task. Existing persisted links outside
+                                # the selected IDs have no such provenance.
+                                raise ValueError("Task links sources outside its explicit selected scope")
+                            source_rows = [source for source in linked_sources if source.is_active]
+                        elif source_scope == "discovery":
+                            # Discovery links may include manually selected or
+                            # previously imported workspace sources. This run
+                            # resolves exact population matches dynamically;
+                            # only this task's generated lanes are safe to put
+                            # in the detached replay snapshot up front.
+                            source_rows = [
+                                source
+                                for source in linked_sources
+                                if source.is_active and source.owner_task_id == row.id
+                            ]
+                        elif source_scope == "all":
+                            from sqlalchemy import or_
+
+                            source_rows = list(
+                                (
+                                    await session.execute(
+                                        select(Source).where(
+                                            Source.tenant_id == tenant_id,
+                                            Source.is_active.is_(True),
+                                            or_(Source.owner_task_id.is_(None), Source.owner_task_id == row.id),
+                                        )
+                                        .options(selectinload(Source.platform))
+                                    )
+                                )
+                                .scalars()
+                                .all()
+                            )
+                        else:
+                            source_rows = linked_sources
+                        collection_plan = plan.get("collection") if plan else None
+                        discovery = collection_plan.get("discovery") if isinstance(collection_plan, dict) else None
+                        can_discover_without_existing_source = source_scope == "discovery" and isinstance(
+                            collection_plan, dict
+                        ) and (
+                            bool(collection_plan.get("queries"))
+                            or (
+                                isinstance(discovery, dict)
+                                and bool(discovery.get("queries"))
+                                and bool(discovery.get("communities") or discovery.get("people"))
+                            )
+                        )
+                        if not source_rows and not can_discover_without_existing_source and source_scope is None:
                             source_rows = list(
                                 (
                                     await session.execute(
@@ -1033,20 +1229,37 @@ class AgentTaskManager(BaseManager):
                                             Source.tenant_id == tenant_id,
                                             Source.is_active.is_(True),
                                         )
+                                        .options(selectinload(Source.platform))
                                     )
                                 )
                                 .scalars()
                                 .all()
                             )
                         source_ids = list(dict.fromkeys(source.id for source in source_rows))
-                        if not source_ids:
+                        if source_scope in {"selected", "discovery", "all"}:
+                            platform_keys = set(plan.get("platforms") or [])
+                            if not platform_keys or not platform_keys.issubset({"vk", "telegram"}):
+                                raise ValueError("Task plan platform scope is malformed")
+
+                            def _in_plan_platform(source):
+                                kind = getattr(getattr(source, "platform", None), "platform_type", None)
+                                key = getattr(kind, "db_value", kind)
+                                return isinstance(key, str) and key.lower() in platform_keys
+
+                            source_rows = [source for source in source_rows if _in_plan_platform(source)]
+                            source_ids = list(dict.fromkeys(source.id for source in source_rows))
+                        if not source_ids and not can_discover_without_existing_source:
                             raise ValueError("Source task has no effective sources to snapshot")
                         payload["source_ids"] = source_ids
                         trigger_type = getattr(row.trigger_type, "name", None)
                         action_type = getattr(row.action_type, "name", None)
                         payload["_effective_snapshot"] = {
                             "version": 1,
+                            "task_id": row.id,
                             "task_payload": dict(payload),
+                            "generated_source_ids": [
+                                source.id for source in source_rows if source.owner_task_id == row.id
+                            ],
                             "scenario_id": row.agent_scenario_id or payload.get("scenario_id"),
                             "trigger_type": trigger_type,
                             "trigger_config": dict(row.trigger_config or {}) if row.trigger_config else None,
@@ -1123,6 +1336,8 @@ class AgentTaskManager(BaseManager):
                         if retry_exhausted:
                             raise _RetryAdmissionBusy(busy.job) from busy
                         return _busy_admission_receipt(row.id, busy.job)
+                    if launch_request_key is not None:
+                        row.launch_job_id = job.id
                     row.last_status = "queued"
                     row.last_error = None
                     if once:

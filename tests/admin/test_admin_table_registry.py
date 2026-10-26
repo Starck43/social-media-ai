@@ -204,4 +204,10 @@ async def test_registry_page_size_selection_is_bounded(registry_module):
     response = await get(console(registry_module, user_with(role="superuser")), "/admin/registry?size=100000")
     assert response.status_code == 200
     # Anything outside the accepted sizes falls back to the console default.
-    assert "Всего 51" in response.text
+    # Count the listed tables instead of pinning a literal: every new model would
+    # otherwise break this behaviour check.
+    total = len(build_table_registry(Base.metadata))
+    default_size = 50
+    assert total > default_size, "the registry must be larger than one default page"
+    assert f"Всего {total}" in response.text
+    assert f"страница 1 из {-(-total // default_size)}" in response.text

@@ -14,7 +14,7 @@ from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional, Union
 
 from app.core.access_catalog import resolve_permission_key, resource_for, workspace_grants
-from app.core.tenant_context import current_tenant_id, current_tenant_ids, is_bypass
+from app.core.tenant_context import current_tenant_id, is_bypass
 from app.types import ActionType, PlatformRoleType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -119,35 +119,44 @@ def has_permission(user, model_name, action) -> bool:
     decision = member_decision(user, resource.model_name, resolved)
     if decision is not None:
         return decision
-    # Interactive workspace requests can never fall back to platform grants.
-    if current_tenant_id() is not None or get_current_user() is not None:
+    # Beyond here the answer is the account's *platform* right — the CLI, a
+    # worker, or a caller asking what somebody may do outside a workspace. A
+    # workspace request never falls back to it: inside a selected tenant the
+    # answer belongs to the membership, and `member_decision` above already
+    # answered every member that stated a preset. A bare `permission_scope()`
+    # inside a tenant is the interactive case — its actor is a member whose
+    # membership was not loaded, which is a refusal, not a platform grant.
+    # `is_bypass()` is data access and never a grant, so it does not reopen it.
+    if current_tenant_id() is not None:
         return False
     try:
         return bool(user.has_perm_for(resource.model_name, resolved))
-    except Exception:
+    except Exception:  # noqa: BLE001 - a rights check must never raise
         return False
 
 
 def member_decision(user, model_name, action):
+    """The membership answer for `user`, or None when the platform role decides.
+
+    A scope that states no `member_grants` is asking the platform role question
+    ("what may this account do outside a workspace?"), so it must abstain and
+    let `has_permission` answer — answering "no" here used to turn every
+    platform grant on a workspace model into a refusal. When a preset *is*
+    stated, the decision is final for that member inside that tenant.
+    """
     resource = resource_for(model_name)
     member = _member_grants.get()
     current = get_current_user()
-    if current is None:
+    if current is None or member is None:
         return None
-    # The role belongs to the workspace the *write* concerns. A console operator
-    # reads several workspaces at once (`current_tenant_ids()`); the active one
-    # decides, so a right from one workspace can never re-authorize another.
-    tenant_id = (member[0] if member is not None else None) or current_tenant_id()
     if (
         resource is None
         or not resource.workspace
-        or member is None
         or user is None
         or member[0] != current_tenant_id()
-        or tuple(member) != (tenant_id, getattr(current, "id", None), member[2])
+        or member[1] is None
         or member[1] != getattr(current, "id", None)
         or member[1] != getattr(user, "id", None)
-        or current_tenant_id() not in current_tenant_ids()
     ):
         return False
     return action in resource.actions and (resource.model_name, action) in member[2]
@@ -259,7 +268,9 @@ def permission_scope(
     """
     tenant_id = current_tenant_id()
     member = None
-    if member_grants is None and is_owner:
+    if is_owner:
+        # An owner's preset is fixed: a caller-supplied collection must never be
+        # able to strip the owner of the workspace rights the membership implies.
         member_grants = workspace_grants("owner")
     if member_grants is not None and tenant_id is not None and user is not None:
         member = (tenant_id, getattr(user, "id", None), frozenset(member_grants))

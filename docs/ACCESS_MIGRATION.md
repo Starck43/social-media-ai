@@ -2,11 +2,10 @@
 
 ## Three platform levels (revision `0110`)
 
-The access model has three non-overlapping levels: the **platform owner**
-(`PlatformRoleType.SUPERUSER`, one account), **platform staff** (`admin`,
-`operator`) and **clients** (`user` plus workspace membership). Revision `0110`
-widens the `roles.codename` CHECK, inserts the `superuser` catalog row and moves
-the platform owner onto it. The owner is addressed explicitly:
+Revision `0110` separates the single platform owner (`superuser`) from platform
+staff (`admin`, `operator`) and workspace members. Current role and permission
+semantics live in [TENANCY](TENANCY.md#roles-and-permissions). The migration
+widens the role catalog and promotes the explicitly selected owner account:
 
 ```
 alembic -x superuser_user_id=<id> upgrade 0110   # pin the reviewed account
@@ -21,7 +20,7 @@ or when several exist; it never guesses between candidates. No console, API or
 CLI path grants `superuser` afterwards: it cannot be assigned to another
 account, and the owner account cannot be demoted or deleted from the console.
 Owner-only surfaces are the role/permission catalog and the read-only table
-registry; see [ADMIN.md](ADMIN.md#additional-restrictions).
+registry; see [ADMIN.md](ADMIN.md#authentication-and-platform-authority).
 
 The same three levels decide the console's *data* scope: the owner sees every
 row, while `admin`, `operator` and an invited client see only their own personal
@@ -90,23 +89,19 @@ rows from its complete versioned resource snapshot. Existing rows and IDs are
 preserved for the subsequent duplicate merge; unknown table registrations stay
 untouched and still fail closed during mapping.
 
-Existing platform `ADMIN`/`SUPERUSER` roles and users with the legacy
-`is_superuser` flag become platform administrators. Other platform assignments
-become ordinary users; operators receive no implicit permissions. Workspace
-`SUPERUSER`, `ADMIN`, `MANAGER`, `ANALYST` and `VIEWER` assignments map to
-`owner`, `admin`, `manager`, `analyst` and `viewer`. Other workspace assignments
-remain unresolved (`NULL`). Owners receive AI chat by default; other members
-remain disabled.
+Revision `0096` maps legacy platform roles to `admin` or ordinary `user`, and
+workspace roles to `owner`, `admin`, `manager`, `analyst` or `viewer`; unknown
+assignments remain unresolved. Operators gain no implicit rights. Existing admin
+grants are merged by resource/action, while workspace grants use the versioned
+matrix. Owners receive AI access by default; other members remain disabled.
+Personal `user_id IS NULL` memory remains legacy data and is visible only under
+the compatibility rule in [TENANCY](TENANCY.md#roles-and-permissions).
 
-Existing administrator permission grants are merged by resource/action and
-retained on the canonical platform administrator. Workspace grants are seeded
-from the versioned action matrix in revision `0096`. Personal memory rows remain
-in the legacy `user_id IS NULL` bucket; they must only be exposed to the owning
-workspace owner until explicitly re-authored into a personal memory.
-
-Review the report and migration diff against the target environment before
-running Alembic. The migration has no automatic downgrade; rollback requires a
-separately reviewed data-preservation procedure.
+Review the report and migration diff against the target. Validate the same
+revisions on `test_schema` before any separately authorized public-schema apply;
+follow [database policy](COLLABORATION.md#database). The migration has no
+automatic downgrade; rollback requires a separately reviewed data-preservation
+procedure.
 
 After applying the reviewed migration, use `python -m scripts.setup.access_report --migrated` to produce the equivalent count-only inventory against the new
 schema. The default command deliberately reads the old `is_superuser` column;
@@ -121,61 +116,19 @@ The role enums contain only string codes and work on the project's declared
 Python 3.10+ floor; display labels live in `access_catalog`. Physical `roles`
 and `users.role_id` names are retained while Python uses `PlatformRole`.
 
+## Profile updates and privilege updates are separate (AUD-03)
+
+Profile endpoints change only account profile fields. Platform role, account
+state and password use dedicated guarded operations. See the endpoint contract
+in [API](API.md#update-user) and
+[ADMIN password rules](ADMIN.md#password-routes-outside-sqladmin).
+Regression: [`test_p10_t03_profile_privilege_split.py`](../tests/security/test_p10_t03_profile_privilege_split.py).
+
 ## Local development execution evidence (2026-10-15)
 
-Revision `0096` was applied to the explicitly configured local development
-PostgreSQL target `social_manager/public`; Alembic reports `0096 (head)`. This
-records a local migration run, not a production deployment. Before the
-successful attempt, two runs failed inside PostgreSQL transactions and fully
-rolled back to `0092`; revisions `0093`–`0095` were not separately committed or
-stamped. A private `public` archive was validated before the successful run at
-`/private/tmp/smai-pre0096-94rkqwmx/pre-0096-public.dump` (`pg_restore --list`
-reported 347 entries; directory mode 0700, file mode 0600).
-
-The migrated count report found 31 resource rows, no unmapped or retired
-metadata, and no unresolved user, membership or invite assignments. Platform
-and workspace role counts and business row counts matched the expected
-postflight; all 56 public foreign keys had zero orphans. The physical empty
-`oauth_pending` table remains intact. The complete redacted before/after counts
-and assignment summary are recorded in Git history at the accepted revision.
-
-`alembic check` still reports metadata drift. Among task-owned objects, it
-reports schema qualification differences for foreign keys and the action enum,
-comment-only differences on several role/user columns, and two membership
-indexes present in PostgreSQL but absent from model metadata. Direct catalog
-inspection confirmed the 0096 public columns, role catalogs, permission enum,
-FK targets, and both partial memory indexes match the migration contract;
-56-key integrity checks found no orphans. Objects reported under `test_schema`
-and broad existing defaults/comments were not treated as migration defects and
-were not changed.
-
-The OpenCode no-DB authorization suite passed 327 tests, followed by a focused
-62-test `test_access_policy.py` run after the resource-seeding regression was
-added. Subsequent real PostgreSQL/ASGI acceptance passed 29 selected cases
-through OpenCode in three sequential batches (21 + 4 + 4). Coverage includes
-API/workspace boundaries, explicit operator grants, ordinary-user admin denial,
-foreign queue/digest isolation, concurrent last-owner self-demotion, fresh AI
-and membership revocation at actual tool dispatch, and personal facts,
-transcript selection and learning cursors. Foreign learning evidence is refused
-without advancing the cursor. Exact scopes and tested revision/diff are in the historical audit ledger (`git show edbe0fc:ROADMAP.md`); these checks do not certify the full suite or production cutover.
-
-The owner also authorized an exceptional in-place update of the existing local
-`social_manager/test_schema`. This schema had no Alembic version table and
-already contained the receipt/outcome/budget tables and their integrity guards.
-After verifying the local target, absence of test writers and a private custom
-archive (399 entries; directory 0700, file 0600), the unchanged revision `0096`
-operations ran through Alembic `MigrationContext`/`Operations` in one transaction
-against that schema. Revisions `0093`–`0095` were not replayed; no version table
-was created and no revision was stamped. This is a bounded update of an
-unversioned test fixture, not evidence of a normal Alembic upgrade chain.
-
-Postflight preserved the checked business counts, all five LLM integrity
-triggers and three supporting functions; `public` counts were unchanged.
-The test catalog contains three platform roles, five workspace roles and 31
-resource identities, with no unmapped or retired resource metadata. Ordinary
-pytest startup now validates schema/reference completeness read-only and does
-not create, migrate or seed the shared target. Exceptional future schema changes
-follow the explicit authorization and backup requirements in `docs/RULES.md`.
+Historical local-schema operations and checks are retained in the
+[access migration audit record](audit/access-migration-history.md). They do not
+establish current or production database state.
 
 ## Acceptance before cutover
 

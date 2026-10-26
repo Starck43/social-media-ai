@@ -47,8 +47,11 @@ def _user(user_id=7, *, superuser=False):
     return SimpleNamespace(id=user_id, is_active=True, is_superuser=superuser)
 
 
-def _request(path="/admin/source/list"):
-    return {"type": "http", "path": path, "method": "GET", "headers": []}
+def _request(path="/admin/source/list", tenant_id=None):
+    session = {}
+    if tenant_id is not None:
+        session["app_tenant_id"] = tenant_id
+    return {"type": "http", "path": path, "method": "GET", "headers": [], "session": session}
 
 
 def _memberships(monkeypatch, rows):
@@ -81,7 +84,7 @@ class _Recorder:
         return None
 
 
-async def _run(monkeypatch, *, user, rows=(), path="/admin/source/list"):
+async def _run(monkeypatch, *, user, rows=(), path="/admin/source/list", tenant_id=None):
     """Drive one console request; returns `(scope seen by the app, recorder)`."""
     probe = _Probe()
 
@@ -91,7 +94,7 @@ async def _run(monkeypatch, *, user, rows=(), path="/admin/source/list"):
     monkeypatch.setattr(AdminScopeMiddleware, "_session_user", staticmethod(resolve))
     _memberships(monkeypatch, rows)
     recorder = _Recorder()
-    await AdminScopeMiddleware(probe)(_request(path), None, recorder)
+    await AdminScopeMiddleware(probe)(_request(path, tenant_id), None, recorder)
     return probe.seen, recorder
 
 
@@ -120,12 +123,14 @@ async def test_an_invited_member_runs_in_the_workspace_that_invited_them(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_every_member_workspace_is_readable_while_one_stays_active(monkeypatch):
-    """Several memberships: the oldest is active (it stamps writes), all are read."""
-    grants = frozenset({("source", "view")})
-    seen = await _scope(monkeypatch, user=_user(7), rows=[(3, grants), (9, grants)])
-    assert seen["tenant"] == 3
-    assert seen["tenants"] == (3, 9)
+async def test_selected_workspace_is_validated_against_memberships(monkeypatch):
+    """A strong membership cannot lend its role to a selected weak workspace."""
+    strong = frozenset({("source", "update")})
+    weak = frozenset({("source", "view")})
+    seen = await _scope(monkeypatch, user=_user(7), rows=[(3, strong), (9, weak)], tenant_id=9)
+    assert seen["tenant"] == 9 and seen["tenants"] == (9,)
+    seen = await _scope(monkeypatch, user=_user(7), rows=[(3, strong), (9, weak)], tenant_id=404)
+    assert seen["tenant"] == 3 and seen["tenants"] == (3,)
 
 
 @pytest.mark.asyncio

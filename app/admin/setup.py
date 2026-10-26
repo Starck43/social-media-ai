@@ -1,6 +1,9 @@
 from pathlib import Path
 
 from starlette.staticfiles import StaticFiles
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from app.admin.session import AdminAsyncSession
 
 from app.admin.authorization import AdminAuthorizationBackend
 from app.admin.csrf import CSRFTokenManager
@@ -9,6 +12,7 @@ from app.core.database import async_engine
 from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
+from .inlines import related_inlines
 from .registry import TableRegistryAdmin
 from .related import RelatedAdmin, related_controls, related_token
 from .views import (
@@ -67,6 +71,7 @@ def setup_admin(app):
     admin = RelatedAdmin(
         app=app,
         engine=async_engine,
+        session_maker=async_sessionmaker(async_engine, class_=AdminAsyncSession, expire_on_commit=False),
         authentication_backend=authentication_backend,
         authorization_backend=AdminAuthorizationBackend(),
         base_url="/admin",
@@ -82,6 +87,7 @@ def setup_admin(app):
             "debug": settings.DEBUG,
             "render_analysis": _render_analysis,
             "related_controls": related_controls,
+            "related_inlines": related_inlines,
             "related_token": related_token,
         }
     )

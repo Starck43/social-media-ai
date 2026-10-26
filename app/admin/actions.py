@@ -147,12 +147,12 @@ class LLMModelActions:
         from app.models import Tenant
 
         actor = getattr(getattr(request, "state", None), "admin_user", None)
-        billing_ready = bool(settings.PERSONAL_BILLING_ENABLED and actor and actor.is_platform_admin)
+        billing_ready = bool(settings.PERSONAL_BILLING_ENABLED and actor and actor.is_superuser)
         billing_tenants = (
             list(await Tenant.objects.filter(is_active=True).order_by(Tenant.name)) if billing_ready else []
         )
-        if not actor or not actor.is_platform_admin:
-            billing_block_reason = "Запуск заблокирован: нужен активный администратор платформы."
+        if not actor or not actor.is_superuser:
+            billing_block_reason = "Запуск заблокирован: нужен собственник платформы."
         elif billing_ready and not billing_tenants:
             billing_block_reason = "Запуск заблокирован: нет активного рабочего пространства для учёта запроса."
         else:

@@ -53,6 +53,7 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "agent_tasks"
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_agent_task_tenant_name"),
+        UniqueConstraint("tenant_id", "launch_key", name="uq_agent_task_tenant_launch_key"),
         Index("ix_agent_tasks_tenant_id", "tenant_id"),
         Index("idx_agent_tasks_next_run_at", "next_run_at"),
         {"schema": settings.DB_SCHEMA},
@@ -61,12 +62,18 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     id: Mapped[int] = Column(Integer, primary_key=True)
     name: Mapped[str] = Column(String(100), nullable=False)
 
+    # A one-off task can retain a launch receipt after the corresponding job
+    # is pruned. These fields are assigned only by the trusted launch service.
+    launch_key: Mapped[str | None] = Column(String(64), nullable=True)
+    launch_fingerprint: Mapped[str | None] = Column(String(64), nullable=True)
+    launch_job_id: Mapped[int | None] = Column(Integer, nullable=True)
+
     cron_expr: Mapped[str] = Column(String(100), nullable=False)  # 5-field cron expression
     # Job type to enqueue: 'collect' | 'digest' | 'prune' | 'analyze' | 'learn' | 'reflect'
     job_type: Mapped[str] = Column(String(20), nullable=False)
     # Job payload: {"period": "week", "tracked_users": ["vk:1"], "keywords_list": [...], ...}
     # Selection (tracked users, text scope) lives here, not on a source or a
-    # scenario: docs/design/task-selection.md.
+    # scenario: docs/COLLECTION.md#task-selection-contract.
     payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False, server_default=text("'{}'::json"))
     is_active: Mapped[bool] = Column(Boolean, default=True, nullable=False, server_default="true")
     next_run_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)

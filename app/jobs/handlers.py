@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from app.services.social.credentials import AuthorizationRequired
 
 # Selection is a task property applied to staged content; `handlers` owns when
-# it runs, `selection` owns what it means (docs/design/task-selection.md).
+# it runs, `selection` owns what it means (docs/COLLECTION.md#task-selection-contract).
 from app.services.monitoring import selection
 
 if TYPE_CHECKING:
@@ -83,6 +83,119 @@ def _provider_error(error: BaseException) -> tuple[str, str | None]:
     return _error_kind(error), None
 
 
+def _task_plan_platforms(plan: dict[str, Any]) -> set[str] | None:
+    """Return a validated platform allowlist, or None for malformed plans."""
+    raw = plan.get("platforms")
+    if not isinstance(raw, list) or not raw or any(
+        not isinstance(value, str) or value not in {"vk", "telegram"} for value in raw
+    ):
+        return None
+    return set(raw)
+
+
+def _source_in_task_platform_scope(source: Any, platforms: set[str]) -> bool:
+    platform = getattr(source, "platform", None)
+    kind = getattr(platform, "platform_type", None)
+    key = getattr(kind, "db_value", kind)
+    return isinstance(key, str) and key.lower() in platforms
+
+
+async def _task_personal_owner(task: Any, payload: dict[str, Any]) -> tuple[int | None, str | None]:
+    """Resolve the trusted manual actor or scheduled payer for generated L2 work."""
+    owner_user_id = _log_id(payload.get("_trusted_initiated_by_user_id"))
+    if owner_user_id is None:
+        try:
+            from app.services.billing.payer import resolve_scheduled_task_payer
+
+            account = await resolve_scheduled_task_payer(task_id=int(task.id), tenant_id=int(task.tenant_id))
+            owner_user_id = _log_id(getattr(account, "user_id", None))
+        except Exception as error:  # noqa: BLE001 — fail closed to an actionable result
+            logger.info(
+                "task_connection_owner_unavailable task_id=%s error_code=%s",
+                _log_id(getattr(task, "id", None)),
+                _error_kind(error),
+            )
+            return None, "task_payer_unavailable"
+    if owner_user_id is None:
+        return None, "task_connection_owner_required"
+
+    from types import SimpleNamespace
+
+    from app.services.social.owner import resolve_source_owner
+
+    resolved = await resolve_source_owner(
+        SimpleNamespace(tenant_id=int(task.tenant_id), params={"token_owner": owner_user_id})
+    )
+    if resolved != owner_user_id:
+        return None, "task_connection_owner_not_workspace_member"
+    return owner_user_id, None
+
+
+def _runtime_source(
+    source: Any,
+    *,
+    task_id: int | None,
+    task_plan_enabled: bool,
+    owner_user_id: int | None,
+    generated_source_ids: set[int] | None = None,
+    cli_dates: dict[str, Any] | None,
+    force_refresh: bool,
+) -> Any:
+    """Copy source fields into an in-memory view with per-run params only."""
+    from types import SimpleNamespace
+
+    params = dict(getattr(source, "params", None) or {})
+    params.pop("force_refresh", None)
+    params.pop("cli_dates", None)
+    if task_id is None and force_refresh:
+        params["force_refresh"] = True
+    if cli_dates:
+        params["cli_dates"] = dict(cli_dates)
+    if (
+        task_plan_enabled
+        and (
+            (task_id is not None and getattr(source, "owner_task_id", None) == task_id)
+            or _log_id(getattr(source, "id", None)) in (generated_source_ids or set())
+        )
+    ):
+        # Generated discovery/mention lanes belong to this run's actor/payer.
+        # A missing owner is pinned to an impossible member id so the resolver
+        # cannot fall back to another workspace member or the L1 service token.
+        params["mode"] = "user"
+        params["token_owner"] = owner_user_id if owner_user_id is not None else 0
+    return SimpleNamespace(
+        id=source.id,
+        tenant_id=source.tenant_id,
+        name=source.name,
+        source_type=source.source_type,
+        external_id=source.external_id,
+        platform_id=source.platform_id,
+        platform=source.platform,
+        params=params,
+        last_checked=getattr(source, "last_checked", None),
+        last_item_id=getattr(source, "last_item_id", None),
+        owner_task_id=getattr(source, "owner_task_id", None),
+        is_active=getattr(source, "is_active", True),
+    )
+
+
+def _remaining_collection_context(context: Any, remaining: int) -> Any:
+    """Narrow a plan lane to the remaining task-wide parent-post budget."""
+    from dataclasses import replace
+
+    return replace(context, intent=replace(context.intent, limit=remaining))
+
+
+def _consume_task_parent_budget(budget: dict[str, Any], parent_count: Any) -> bool:
+    """Accumulate known inspected posts and report when a plan cap is spent."""
+    if type(parent_count) is not int or parent_count < 0:
+        return False
+    budget["parent_posts_inspected"] += parent_count
+    if budget["parent_posts_inspected"] >= budget["limit"]:
+        budget["limit_reached"] = True
+    return budget["limit_reached"] is True
+
+
 async def _load_task(task_id: int | None):
     """Load the AgentTask (with its m2m sources) that triggered this job, if any.
 
@@ -110,7 +223,12 @@ async def _load_task(task_id: int | None):
     return None
 
 
-async def _resolve_sources(task, payload: dict[str, Any] | None = None) -> list:
+async def _resolve_sources(
+    task,
+    payload: dict[str, Any] | None = None,
+    *,
+    discovered_source_ids: list[int] | tuple[int, ...] | None = None,
+) -> list:
     """Sources a job should operate on.
 
     Sources come from the task's m2m `sources`; an empty set means all active
@@ -127,6 +245,42 @@ async def _resolve_sources(task, payload: dict[str, Any] | None = None) -> list:
         foreign = [s.id for s in (task.sources or []) if s.tenant_id != task.tenant_id]
         if foreign:
             logger.warning(f"Task {task.id} links foreign source(s) {foreign}; skipping them")
+        task_payload = _task_payload(task)
+        plan = task_payload.get("task_plan")
+        scope = plan.get("source_scope") if isinstance(plan, dict) else None
+        if scope in {"selected", "discovery", "all"}:
+            platforms = _task_plan_platforms(plan)
+            if platforms is None:
+                logger.warning(f"Task {task.id} has invalid platform scope; refusing collection")
+                return []
+            raw_snapshot = (payload or {}).get("source_ids") or []
+            if not isinstance(raw_snapshot, list) or any(
+                type(value) is not int or value <= 0 for value in raw_snapshot
+            ):
+                logger.warning(f"Task {task.id} has invalid admitted source snapshot; refusing collection")
+                return []
+            allowed = set(raw_snapshot)
+            allowed.update(value for value in discovered_source_ids or () if type(value) is int and value > 0)
+            if scope == "selected":
+                raw_selected = plan.get("source_ids")
+                if not isinstance(raw_selected, list) or any(type(value) is not int for value in raw_selected):
+                    logger.warning(f"Task {task.id} has invalid selected source scope; refusing collection")
+                    return []
+                if not set(raw_selected).issubset(allowed):
+                    logger.warning(
+                        f"Task {task.id} selected sources are outside its admitted snapshot; refusing collection"
+                    )
+                    return []
+            # Admission snapshots bind the ordinary scope. This run may add
+            # only exact sources returned by its own population/mention steps;
+            # current m2m links and workspace contents cannot widen the job.
+            if not allowed:
+                return []
+            rows = list(
+                await Source.objects.filter(is_active=True, id__in=allowed, tenant_id=task.tenant_id)
+                .select_related("platform")
+            )
+            return [source for source in rows if _source_in_task_platform_scope(source, platforms)]
         logger.info(f"_resolve_sources: task={task.id} has {len(task_sources)} sources: {[s.id for s in task_sources]}")
         if task_sources:
             return task_sources
@@ -138,6 +292,29 @@ async def _resolve_sources(task, payload: dict[str, Any] | None = None) -> list:
         )
 
     source_ids = (payload or {}).get("source_ids") or []
+    plan = (payload or {}).get("task_plan")
+    scope = plan.get("source_scope") if isinstance(plan, dict) else None
+    if scope in {"selected", "discovery", "all"}:
+        platforms = _task_plan_platforms(plan)
+        if platforms is None:
+            return []
+        # A detached replay has no task relationship to re-resolve. Its source
+        # IDs were captured by admission; do not widen them using today's task
+        # links, generated lanes, or workspace sources.
+        allowed_ids = {value for value in source_ids if type(value) is int and value > 0}
+        if scope == "selected":
+            selected = plan.get("source_ids")
+            if not isinstance(selected, list) or any(type(value) is not int or value <= 0 for value in selected):
+                return []
+            if not set(selected).issubset(allowed_ids):
+                return []
+        allowed_ids.update(value for value in discovered_source_ids or () if type(value) is int and value > 0)
+        if not allowed_ids:
+            return []
+        rows = list(
+            await Source.objects.filter(is_active=True, id__in=allowed_ids).select_related("platform")
+        )
+        return [source for source in rows if _source_in_task_platform_scope(source, platforms)]
     if source_ids:
         return list(await Source.objects.filter(id__in=source_ids).select_related("platform"))
     return list(await Source.objects.filter(is_active=True, owner_task_id__isnull=True).select_related("platform"))
@@ -157,11 +334,15 @@ def _effective_replay_snapshot(payload: dict[str, Any]) -> dict[str, Any] | None
         return None
     task_payload = snapshot.get("task_payload")
     source_ids = task_payload.get("source_ids") if isinstance(task_payload, dict) else None
+    generated_source_ids = snapshot.get("generated_source_ids", [])
     if (
         not isinstance(source_ids, list)
         or not source_ids
         or any(type(value) is not int or value <= 0 for value in source_ids)
         or len(source_ids) != len(set(source_ids))
+        or not isinstance(generated_source_ids, list)
+        or any(type(value) is not int or value <= 0 for value in generated_source_ids)
+        or not set(generated_source_ids).issubset(set(source_ids))
     ):
         return None
     from app.jobs.replay_policy import _has_replay_window
@@ -360,7 +541,7 @@ async def _llm_failure_code(source_id: int, since: Any) -> str | None:
     return None
 
 
-def _population_platform(task) -> str:
+def _population_platform(task, task_payload: dict[str, Any] | None = None) -> str:
     """The platform the population search runs on.
 
     The discovery block declares no platform of its own, so the task's linked
@@ -369,6 +550,14 @@ def _population_platform(task) -> str:
     """
     from app.services.collection.context import platform_name
 
+    task_plan = (task_payload or {}).get("task_plan")
+    if isinstance(task_plan, dict):
+        platforms = _task_plan_platforms(task_plan)
+        if platforms:
+            # VK supports the current people/community discovery adapter. If
+            # only another platform was requested, pass that platform through
+            # so population reports unsupported without probing VK out of scope.
+            return "vk" if "vk" in platforms else sorted(platforms)[0]
     names: list[str] = []
     for source in getattr(task, "sources", None) or []:
         name = platform_name(source)
@@ -401,6 +590,8 @@ async def _run_population_step(
     task_payload: dict[str, Any],
     dry_run: bool,
     job_id: int | None,
+    owner_user_id: int | None = None,
+    owner_error_code: str | None = None,
 ) -> dict[str, Any] | None:
     """Resolve the task's declared population into lanes before collection.
 
@@ -438,7 +629,7 @@ async def _run_population_step(
     if not discovery.queries or not (discovery.communities or discovery.people):
         return None
 
-    platform_key = _population_platform(task)
+    platform_key = _population_platform(task, task_payload)
     started_at = datetime.now(timezone.utc)
     summary: dict[str, Any] = {
         "ran": True,
@@ -449,6 +640,7 @@ async def _run_population_step(
         "created": 0,
         "reused": 0,
         "linked": 0,
+        "source_ids": [],
         "would_create": 0,
         "refused": [],
         "warnings": [],
@@ -482,12 +674,28 @@ async def _run_population_step(
             return None
 
     try:
+        if owner_error_code:
+            owner_hints = {
+                "task_payer_unavailable": "Подтвердите плательщика задачи и его личный лимит расходов.",
+                "task_connection_owner_required": "Запустите задачу от участника с подключённым личным аккаунтом.",
+                "task_connection_owner_not_workspace_member": (
+                    "Проверьте, что аккаунт запуска состоит в рабочем пространстве."
+                ),
+            }
+            raise PopulationError(
+                owner_error_code,
+                hint=owner_hints.get(
+                    owner_error_code,
+                    "Подключите личный аккаунт участника рабочего пространства для поиска и сбора.",
+                ),
+            )
         result = await resolve_population(
             task=task,
             intent=intent,
             platform=platform_key,
             dry_run=dry_run,
             job_id=job_id,
+            owner_user_id=owner_user_id,
         )
     except PopulationError as error:
         code = error.code
@@ -535,6 +743,9 @@ async def _run_population_step(
         created=len(result.created_source_ids),
         reused=len(result.reused_source_ids),
         linked=len(result.linked_source_ids),
+        # `linked_source_ids` is the task's complete m2m list. Discovery must
+        # contribute only the identities matched by this population request.
+        source_ids=list(dict.fromkeys((*result.created_source_ids, *result.reused_source_ids)))[:500],
         would_create=len(result.would_create),
         refused=list(result.refused[:5]),
         warnings=list(result.warnings[:10]),
@@ -599,11 +810,14 @@ async def _run_mention_lanes_step(
     phrases = mention_lane_queries(intent)
     if not phrases:
         return None
-    platform_key = _population_platform(task)
+    platform_keys = _task_plan_platforms(task_payload.get("task_plan", {}))
+    if not platform_keys:
+        platform_keys = {_population_platform(task, task_payload)}
     summary: dict[str, Any] = {
         "ran": True,
         "dry_run": dry_run,
-        "platform": platform_key,
+        "platform": next(iter(platform_keys)) if len(platform_keys) == 1 else None,
+        "platforms": sorted(platform_keys),
         "match": intent.queries_match,
         "queries": list(phrases)[:10],
         "total": len(phrases),
@@ -617,8 +831,19 @@ async def _run_mention_lanes_step(
         "note": "",
     }
     try:
-        specs = [query_source_spec(task_id=int(task.id), platform=platform_key, query=phrase) for phrase in phrases]
-        result = await ensure_query_lanes(task, specs, platform=platform_key, dry_run=dry_run)
+        created = reused = linked = 0
+        refused: list[str] = []
+        missing: list[str] = []
+        source_ids: list[int] = []
+        for platform_key in sorted(platform_keys):
+            specs = [query_source_spec(task_id=int(task.id), platform=platform_key, query=phrase) for phrase in phrases]
+            result = await ensure_query_lanes(task, specs, platform=platform_key, dry_run=dry_run)
+            created += len(result.created_source_ids)
+            reused += len(result.reused_source_ids)
+            linked += len(result.linked_source_ids)
+            source_ids.extend((*result.created_source_ids, *result.reused_source_ids))
+            refused.extend(result.refused[: max(0, 5 - len(refused))])
+            missing.extend(result.missing[: max(0, 10 - len(missing))])
     except LaneMigrationError as error:
         summary.update(error_code="lane_migration_error", error_hint=" ".join(str(error).split())[:160])
         summary["note"] = mention_note(summary)
@@ -628,11 +853,12 @@ async def _run_mention_lanes_step(
         summary["note"] = mention_note(summary)
         return summary
     summary.update(
-        created=len(result.created_source_ids),
-        reused=len(result.reused_source_ids),
-        linked=len(result.linked_source_ids),
-        refused=list(result.refused[:5]),
-        missing=list(result.missing[:10]),
+        created=created,
+        reused=reused,
+        linked=linked,
+        source_ids=list(dict.fromkeys(source_ids))[:500],
+        refused=refused,
+        missing=missing,
     )
     summary["note"] = mention_note(summary)
     return summary
@@ -736,7 +962,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     Per-task overrides live in the task payload:
         tracked_users:  list[str] — provider:external_id authors whose items are
                         eligible; a filter over each source's own content, never
-                        a collection target (docs/design/task-selection.md)
+                        a collection target (docs/COLLECTION.md#task-selection-contract)
 
     Before the sources are resolved the runtime provisions the task's own
     collection intent: the population search (see `_run_population_step`) and
@@ -778,6 +1004,18 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     # The job's own id, used to tie staged raw content back to this run so it
     # can be retired once an analysis has consumed it.
     run_id = payload.get("job_id")
+    task_plan_enabled = isinstance(task_payload.get("task_plan"), dict)
+    connection_owner_user_id = None
+    connection_owner_error = None
+    if task_plan_enabled and task is not None:
+        connection_owner_user_id, connection_owner_error = await _task_personal_owner(task, payload)
+    elif task_plan_enabled and snapshot is not None and _log_id(snapshot.get("task_id")) is not None:
+        from types import SimpleNamespace
+
+        from app.core.tenant_context import current_tenant_id
+
+        owner_context = SimpleNamespace(id=snapshot["task_id"], tenant_id=current_tenant_id())
+        connection_owner_user_id, connection_owner_error = await _task_personal_owner(owner_context, payload)
     # Whether this task wants its freshly collected content analysed inline.
     # Default False: a `collect` task parks the raw batch in `collected_items`
     # for a separate `analyze` task to drain (the workspace ships collect and
@@ -799,6 +1037,8 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
             task_payload=task_payload,
             dry_run=dry_run,
             job_id=run_id,
+            owner_user_id=connection_owner_user_id,
+            owner_error_code=connection_owner_error,
         )
         if population and (population.get("created") or population.get("reused")):
             # The lanes exist now — read the task's sources again so this run
@@ -810,26 +1050,37 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     # run — no hand-made search source needed (`cli collection lanes`). A dry
     # run creates nothing and only reports the phrases without a lane.
     mention = None
-    if task is not None and _log_id(getattr(task, "id", None)) is not None:
+    if task is not None and _log_id(getattr(task, "id", None)) is not None and not connection_owner_error:
         mention = await _run_mention_lanes_step(task, task_payload=task_payload, dry_run=dry_run)
         if mention and (mention.get("created") or mention.get("linked")):
             # The lanes exist now — read the task's sources again so this run
             # picks them up.
             task = await _load_task(payload.get("agent_task_id")) or task
 
-    sources = await _resolve_sources(None if snapshot else task, payload)
+    discovered_source_ids = list(
+        dict.fromkeys(
+            (*(population or {}).get("source_ids", []), *(mention or {}).get("source_ids", []))
+        )
+    )
+    sources = await _resolve_sources(None if snapshot else task, payload, discovered_source_ids=discovered_source_ids)
+    generated_source_ids = {
+        value
+        for value in (snapshot or {}).get("generated_source_ids", [])
+        if type(value) is int and value > 0
+    }
+    if task_plan_enabled and connection_owner_error:
+        # Existing selected sources keep their configured mode. Generated lanes
+        # cannot be collected under another member or the environment fallback.
+        sources = [
+            source
+            for source in sources
+            if getattr(source, "owner_task_id", None) != getattr(task, "id", None)
+            and _log_id(getattr(source, "id", None)) not in generated_source_ids
+        ]
+    if task_plan_enabled:
+        sources.sort(key=lambda source: _log_id(getattr(source, "id", None)) or 0)
 
     collector = ContentCollector()
-
-    def _apply_params(source) -> None:
-        params = dict(source.params or {})
-        params.pop("force_refresh", None)
-        params.pop("cli_dates", None)
-        if task is None and force_refresh:
-            params["force_refresh"] = True
-        if cli_dates:
-            params["cli_dates"] = cli_dates
-        source.params = params
 
     stats = {
         "sources": 0,
@@ -871,7 +1122,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     if stage_only:
         await job_progress.begin_phase("collection")
 
-    # `docs/design/task-selection.md`: whose items are eligible is the task's
+    # `docs/COLLECTION.md#task-selection-contract`: whose items are eligible is the task's
     # `tracked_users` filter applied over what each source returns. Selection is
     # not a reason to read someone else's wall, and it cannot decide what is
     # collected — the task's `payload["collection"]` owns that.
@@ -897,17 +1148,35 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
             run_limit = int(parse_collection_intent(task_payload).limit)
         except CollectionIntentError:
             run_limit = None
+    task_budget_enabled = task_plan_enabled
+    if task_budget_enabled and (type(run_limit) is not int or run_limit <= 0):
+        return {"status": "failed", "error_code": "task_collection_budget_invalid", "sources": 0, "items": 0}
+    if task_budget_enabled:
+        stats["task_budget"] = {
+            "unit": "parent_posts_inspected",
+            "limit": run_limit,
+            "parent_posts_inspected": 0,
+            "limit_reached": False,
+            "sources_skipped": 0,
+            "count_complete": True,
+            "scope_note": "Comments and discovery candidates use separate limits.",
+        }
+    if task_plan_enabled:
+        stats["task_connection"] = {
+            "status": "ready" if not connection_owner_error else "requires_personal_connection",
+            "error_code": connection_owner_error,
+        }
     evidence_task_id = _log_id(getattr(task, "id", None))
 
     from app.services.monitoring.selection_store import source_limit
 
-    def _limit_metadata(source: Any, result: Any = None) -> dict[str, Any]:
+    def _limit_metadata(source: Any, result: Any = None, *, task_limit: int | None = None) -> dict[str, Any]:
         result = result if isinstance(result, dict) else {}
         applied_limit = result.get("limit_count")
         if type(applied_limit) is int and applied_limit > 0:
             reached = result.get("limit_reached") is True
         else:
-            applied_limit = source_limit(source, run_limit)
+            applied_limit = source_limit(source, task_limit if task_limit is not None else run_limit)
             reached = False
         return {"limit_count": applied_limit, "limit_reached": reached}
 
@@ -924,17 +1193,41 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
             limit_count=run_limit,
         )
 
-    for source in sources:
+    task_id = _log_id(getattr(task, "id", None))
+    generated_task_id = task_id or _log_id((snapshot or {}).get("task_id"))
+    for source_index, source in enumerate(sources):
+        remaining_budget = None
+        parent_count_known = False
+        if task_budget_enabled:
+            budget = stats["task_budget"]
+            remaining_budget = run_limit - budget["parent_posts_inspected"]
+            if remaining_budget <= 0:
+                budget["limit_reached"] = True
+                budget["sources_skipped"] = len(sources) - source_index
+                break
+        source_task_limit = remaining_budget if remaining_budget is not None else run_limit
+        source = _runtime_source(
+            source,
+            task_id=generated_task_id,
+            task_plan_enabled=task_plan_enabled,
+            owner_user_id=connection_owner_user_id,
+            generated_source_ids=generated_source_ids,
+            cli_dates=cli_dates,
+            force_refresh=force_refresh,
+        )
         await job_progress.step(sources, stats["per_source"])
         stats["sources"] += 1
-        _apply_params(source)
         try:
             collection_context = build_collection_context(
                 task_payload,
                 platform=platform_name(source),
                 source_id=source.id,
             )
+            if task_budget_enabled:
+                collection_context = _remaining_collection_context(collection_context, remaining_budget)
         except CollectionIntentError as error:
+            # No provider was called, so this lane consumed zero parent posts.
+            parent_count_known = True
             logger.warning(
                 "collect_collection_intent_invalid task_id=%s source_id=%s error_code=%s",
                 _log_id(getattr(task, "id", None)),
@@ -953,12 +1246,16 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "outcome": "error",
                     "analyzed": 0,
                     "duplicate_count": 0,
-                    **_limit_metadata(source),
+                    **_limit_metadata(source, task_limit=source_task_limit),
                     "error_code": "collection_intent_invalid",
                     "error_hint": str(error),
                 }
             )
             await _evidence(source, stats["per_source"][-1])
+            if task_budget_enabled and stats["task_budget"]["parent_posts_inspected"] >= run_limit:
+                stats["task_budget"]["limit_reached"] = True
+                stats["task_budget"]["sources_skipped"] = len(sources) - source_index - 1
+                break
             continue
         # A tracked author is a filter on what a source returns, not a
         # collection target: the source's own wall is always read.
@@ -976,7 +1273,12 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                 # the local context below is only for the run summary.
                 collection_context=collection_context if has_task_context else None,
                 seen_items=seen_items,
+                **({"report_empty": True} if task_budget_enabled else {}),
             )
+            parent_count = (result or {}).get("parent_count")
+            if task_budget_enabled and type(parent_count) is int and parent_count >= 0:
+                parent_count_known = True
+                _consume_task_parent_budget(stats["task_budget"], parent_count)
             items = (result or {}).get("content_count", 0)
             new_items = (result or {}).get("new_items", 0)
             duplicate_count = (result or {}).get("duplicate_count", 0)
@@ -1021,7 +1323,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "selected": int((result or {}).get("selected", 0) or 0),
                     "needs_review": int((result or {}).get("needs_review", 0) or 0),
                     "rejected": int((result or {}).get("rejected", 0) or 0),
-                    **_limit_metadata(source, result),
+                    **_limit_metadata(source, result, task_limit=source_task_limit),
                     **(
                         {"parent_count": (result or {}).get("parent_count")}
                         if type((result or {}).get("parent_count")) is int
@@ -1085,7 +1387,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "outcome": "rate_limited",
                     "analyzed": 0,
                     "duplicate_count": 0,
-                    **_limit_metadata(source),
+                    **_limit_metadata(source, task_limit=source_task_limit),
                     "retry_after": math.ceil(e.retry_after) if e.retry_after else None,
                     "hint": e.hint,
                     "error_code": "rate_limited",
@@ -1110,7 +1412,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "outcome": "auth_required" if isinstance(e, AuthorizationRequired) else "error",
                     "analyzed": 0,
                     "duplicate_count": 0,
-                    **_limit_metadata(source),
+                    **_limit_metadata(source, task_limit=source_task_limit),
                     "auth_hint": getattr(e, "hint", "") if isinstance(e, AuthorizationRequired) else "",
                     # Bounded cause for the admin diagnostics: the numeric
                     # platform code and an allowlisted hint, never raw text.
@@ -1121,6 +1423,15 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
         # One lane-run row per collected source, over the outcome recorded
         # above — added evidence; the per-source stats stay exactly as they are.
         await _evidence(source, stats["per_source"][-1])
+        if task_budget_enabled and not parent_count_known:
+            stats["task_budget"]["count_complete"] = False
+            stats["task_budget"]["stopped_on_unknown_count"] = True
+            stats["task_budget"]["sources_skipped"] = len(sources) - source_index - 1
+            break
+        if task_budget_enabled and stats["task_budget"]["parent_posts_inspected"] >= run_limit:
+            stats["task_budget"]["limit_reached"] = True
+            stats["task_budget"]["sources_skipped"] = len(sources) - source_index - 1
+            break
     return stats
 
 

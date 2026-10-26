@@ -173,7 +173,9 @@ def test_platform_role_shape_does_not_grant_web_admin_bypass(codename):
 
     user = User(is_active=True, role=PlatformRole(codename=codename, permissions=[]))
     assert user.has_admin_access() is (codename in {"admin", "operator"})
-    assert user._is_superuser_role() is (codename == "admin")
+    # The scope-bypass predicate follows ownership only: an `admin` reaches the
+    # console by its stored grants, never by a code-level bypass (docs/ADMIN.md).
+    assert user._is_superuser_role() is (codename == "superuser")
 
 
 def test_vault_reveal_uses_crypto_double_and_preserves_global_ownership(monkeypatch):

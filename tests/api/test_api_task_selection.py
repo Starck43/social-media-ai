@@ -3,7 +3,7 @@
 Owner command:
 `.venv/bin/python -m pytest tests/test_api_task_selection.py -q --noconftest -o addopts=`
 
-Контракт из `docs/design/task-selection.md`: схемы задачи принимают
+Контракт из `docs/COLLECTION.md#task-selection-contract`: схемы задачи принимают
 `tracked_users`, `keywords_list`, `keywords_match` (в payload или отдельными
 полями), а `/monitoring/collect/monitored` и `CollectMonitoredRequest` удалены
 вместе с `ContentCollector.collect_monitored_users`.

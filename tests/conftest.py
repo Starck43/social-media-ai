@@ -57,39 +57,74 @@ import os  # noqa: E402
 
 os.environ["DB_POOL"] = "null"
 
-# The platform owner's account: the legacy tests' personal catalog belongs to it,
-# matching what the owner's console request binds (`AdminScopeMiddleware`).
-BOOTSTRAP_OWNER_ID = 2
-
 import pytest  # noqa: E402
 
 import app.models.managers.base_manager as base_manager_module  # noqa: E402
 
+pytest_plugins = ("tests.conftest_async",)
+
+
+# A `__source_only__` module in this file may run alone: its tests are doubles
+# and must pass without any database, so a broken or unseeded suite schema
+# cannot mask them. Session fixtures are built before the first test body, so
+# the answer is decided at collection, from the selected items.
+_ONLY_SOURCE = {"off": False}
+
+
+def pytest_collection_modifyitems(config, items):
+    _ONLY_SOURCE["off"] = not any(
+        not getattr(item.module, "__source_only__", False) for item in items if getattr(item, "module", None)
+    )
+
 
 @pytest.fixture(autouse=True)
 def _platform_scope(request, monkeypatch):
-    """Run legacy tests inside the bootstrap workspace (superuser bypass)."""
-    if request.node.get_closest_marker("tenancy"):
+    """Run legacy tests inside the bootstrap workspace (superuser bypass).
+
+    A security/tenancy test opts out of both halves — `is_bypass` for data and
+    the operator grant for rights — so the fail-closed contract stays
+    observable. Leaving the grant on for them made `has_permission`/`has_role`
+    answer before any identity check and turned every "denied" case green.
+
+    The grant covers the *body* only. It is entered for synchronous tests, and
+    for asynchronous ones it is closed at the start of the test's driver task
+    (`tests/conftest_async.py`): a fixture generator must not hold it around the
+    coroutine, because the coroutine then inherits it, and so does every
+    transport task it starts.
+    """
+    from app.core.permissions import operator_permission_scope
+
+    source_only = getattr(request.module, "__source_only__", False)
+    bootstrap = not request.node.get_closest_marker("tenancy") and not source_only
+    if bootstrap:
+        monkeypatch.setattr(base_manager_module, "is_bypass", lambda: True)
+    # Source-only modules bind the grant too: they read the actor from it, never
+    # from storage, so they are not part of the interactive fail-closed contract.
+    if not (bootstrap or source_only):
         yield
         return
-    monkeypatch.setattr(base_manager_module, "is_bypass", lambda: True)
-    # The query layer reads the patched name above; every other caller — the admin
-    # scope, the personal-catalogue owner — reads the real `tenant_context`
-    # functions. A module-level test never runs inside the platform bypass: the
-    # scope it opens itself (`tenant_scope`) owns the answer, exactly as in HTTP.
-    # Legacy tests already model the operator surface. Make its authorization
-    # explicit; security/tenancy tests opt out above and remain fail-closed.
-    from app.core.permissions import operator_permission_scope
-    from app.core.personal_catalog_context import catalog_execution_scope
-    from app.core.tenant_context import tenant_scope
 
-    with tenant_scope(bypass=True), catalog_execution_scope(BOOTSTRAP_OWNER_ID), operator_permission_scope():
+    scope = operator_permission_scope()
+    scope.__enter__()
+    try:
         yield
+    finally:
+        scope.__exit__(None, None, None)
 
 
 @pytest.fixture(scope="session", autouse=True)
 async def _test_database():
-    """Validate the configured test schema and reference rows without writes."""
+    """Validate the configured test schema and reference rows without writes.
+
+    When only `__source_only__` modules are selected the fixture yields without
+    looking at the database: those tests are doubles and must pass without it,
+    so a broken or unseeded suite schema cannot mask them.
+    """
+    if _ONLY_SOURCE["off"]:
+        yield
+        return
+    from sqlalchemy import select, text
+
     from app.core.access_catalog import RESOURCES
     from app.core.config import settings
     from app.core.database import async_engine
@@ -147,6 +182,7 @@ async def _test_database():
                 + ", ".join(f"{resource}.{action}" for resource, action in sorted(missing_permissions))
             )
         raise RuntimeError("The test schema is missing required reference rows: " + "; ".join(missing))
+    yield
 
 
 @pytest.fixture(scope="session", autouse=True)

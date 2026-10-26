@@ -22,6 +22,7 @@ POLICY = load_isolated_source(
 )
 ATTEMPT_BUDGET_STOP_PREFIX = BUDGET.ATTEMPT_BUDGET_STOP_PREFIX
 OUTCOME_UNCONFIRMED_PREFIX = POLICY.OUTCOME_UNCONFIRMED_PREFIX
+OPERATOR_CANCELLED_ERROR = POLICY.OPERATOR_CANCELLED_ERROR
 NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
 SECRET = "token=sk-live-secret payload chat_id=123"
 
@@ -109,7 +110,13 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
     def test_empty_queue_has_no_signal(self):
         self.assertEqual(
             self.signals([]),
-            {"overdue_pending": 0, "oldest_overdue_minutes": None, "stale_running": 0, "unconfirmed_failed": 0},
+            {
+                "overdue_pending": 0,
+                "oldest_overdue_minutes": None,
+                "stale_running": 0,
+                "unconfirmed_failed": 0,
+                "quarantined": 0,
+            },
         )
 
     def test_overdue_pending_counts_only_due_rows_past_threshold(self):
@@ -152,6 +159,22 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(self.signals(rows)["unconfirmed_failed"], 2)
 
+    def test_quarantined_counts_only_the_unconfirmed_outcome_prefix(self):
+        rows = [
+            job("failed", error=OUTCOME_UNCONFIRMED_PREFIX + "lease lost"),
+            job("failed", error=OUTCOME_UNCONFIRMED_PREFIX),
+            job("failed", error=ATTEMPT_BUDGET_STOP_PREFIX + "budget"),
+            job("failed", error=OPERATOR_CANCELLED_ERROR),
+            job("failed", error="known_delivery_failure"),
+            job("failed", error=None),
+            job("done", error=OUTCOME_UNCONFIRMED_PREFIX),
+            job("running", error=OUTCOME_UNCONFIRMED_PREFIX),
+        ]
+        result = self.signals(rows)
+        # Operational stops stay review-only in the generic count, never quarantine.
+        self.assertEqual(result["quarantined"], 2)
+        self.assertEqual(result["unconfirmed_failed"], 4)
+
     def test_signals_are_counts_only_and_never_echo_row_content(self):
         rows = [
             job("pending", run_at=minutes_ago(90), error=SECRET),
@@ -176,6 +199,7 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             (signals["overdue_pending"], signals["stale_running"], signals["unconfirmed_failed"]), (1, 0, 1)
         )
+        self.assertEqual(signals["quarantined"], 1)
 
     async def test_overview_without_tenant_does_not_add_a_filter(self):
         await self.source._queue_overview(None)
@@ -218,10 +242,21 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
 
     def test_page_renders_signals_without_row_content(self):
         page = (ROOT / "app/web/templates/web/jobs.html").read_text()
-        for name in ("overdue_pending", "oldest_overdue_minutes", "stale_running", "unconfirmed_failed"):
+        for name in (
+            "overdue_pending",
+            "oldest_overdue_minutes",
+            "stale_running",
+            "unconfirmed_failed",
+            "quarantined",
+        ):
             self.assertIn(f"signals.{name}", page)
         start = page.index("{% if signals.overdue_pending or signals.stale_running")
         banner = page[start : page.index("{% endif %}\n\n", start)]
+        # Quarantine is an inline subset of the unconfirmed-outcome warning, so
+        # the banner still renders when only quarantined rows exist.
+        self.assertIn("signals.quarantined", page[start : page.index("%}", start) + 2])
+        self.assertIn("{% if signals.quarantined %}", banner)
+        self.assertIn("{{ signals.quarantined }}", banner)
         self.assertNotIn("job.", banner)
 
 

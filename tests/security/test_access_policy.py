@@ -41,12 +41,13 @@ def test_web_and_core_agree_without_platform_elevation(platform, role, model, ac
     membership = member(role.value)
     grants = workspace_grants(role.value)
     perms = WebPerms(actor, [membership], 11, grants)
-    # The platform owner reaches every console model by design; the other
-    # platform levels never gain personal-provider configuration from a workspace.
-    owner = platform is PlatformRoleType.SUPERUSER
+    # The personal LLM catalog (`e14c395`) follows the acting user: `configure`
+    # on one's own provider never asks a role, and never reaches the web
+    # console's workspace predicate — which answers workspace models only.
+    personal_catalog = True
     with tenant_scope(11), permission_scope(actor, is_owner=membership.is_owner, member_grants=grants):
         assert has_permission(actor, model, action) == perms.can(model, action)
-        assert has_permission(actor, "llmprovider", "configure") is owner
+        assert has_permission(actor, "llmprovider", "configure") is personal_catalog
         assert not perms.can("llmprovider", "configure")
     if role == WorkspaceRoleType.VIEWER and action == "delete":
         assert not perms.can(model, action)
@@ -339,9 +340,12 @@ def test_migration_seeds_missing_resource_catalog_rows_idempotently():
 def test_operator_http_identity_loss_fails_closed_even_with_data_bypass():
     from app.core.permissions import platform_request_scope
 
+    # The bypass is data access, never a grant: the console answers with the
+    # operator's own `role_permission` rows (`docs/ADMIN.md`), and only the
+    # platform owner holds the wildcard. Identity loss refuses either way.
     actor = user("admin")
     with tenant_scope(bypass=True), platform_request_scope(), permission_scope(actor):
-        assert has_permission(actor, "source", "delete")
+        assert not has_permission(actor, "source", "delete")
         with permission_scope(None):
             assert not has_permission(None, "source", "delete")
             assert not has_permission(actor, "source", "delete")

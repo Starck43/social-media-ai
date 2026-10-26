@@ -40,6 +40,11 @@ username=<username_or_email>&password=<password>
 }
 ```
 
+Failed attempts count into the shared login budget
+([ADMIN](ADMIN.md#sessions-csrf-and-known-verification-limits)): an unknown
+account, a wrong password, an inactive account and a locked budget all answer
+`400` with the same generic detail.
+
 ### Refresh Token
 
 Get a new access token using a refresh token.
@@ -184,7 +189,7 @@ including zero counts. It uses the same bounded, generic HTTP 500 failure.
 Do not use these legacy probes as the production readiness contract: root
 `/readyz` and `/health` retain generic 200/503 responses with a two-second DB
 probe; `/livez` never queries the DB. `app/core/health.py` is unchanged.
-See [isolated verification and acceptance handoff](validation/legacy-api-db-probes.md)
+See [isolated verification and acceptance handoff](audit/legacy-api-db-probes.md)
 for exact source revisions, commands and the remaining real-environment checks.
 
 ---
@@ -201,7 +206,7 @@ identity dependency, operator routes keep their existing model-action or
 platform-admin guards, and manager authorization remains unchanged.
 
 The runtime schema fix is already present in `eb6cad6`; the bounded
-[HTTP/OpenAPI verification](validation/http-user-response-privacy.md) adds
+[HTTP/OpenAPI verification](audit/http-user-response-privacy.md) adds
 isolated router tests with explicit identity/storage doubles. Owner integration
 acceptance at PR source `987796aa` additionally exercised the full application
 OpenAPI and real ASGI/JWT/middleware/ORM list, me and profile routes: 2 passed,
@@ -434,7 +439,7 @@ Content-Type: application/json
 `POST /api/v1/monitoring/collect/monitored` no longer exists. It collected
 "monitored users" of a source, replacing that source's own wall and requiring a
 separate `USER` source per person. A task's `tracked_users` selection over the
-task's sources replaces it ([task selection](design/task-selection.md)); author
+task's sources replaces it ([task selection](COLLECTION.md#task-selection-contract)); author
 selection is not a collection endpoint.
 
 ### Get Source Analytics
@@ -985,7 +990,7 @@ image, video and audio resolution use the same gate, and the analyzer's failover
 queue never offers another owner's model;
 a chosen foreign/ineligible FK is rejected rather than resolved by name.
 
-See [evidence and outstanding real acceptance](validation/personal-llm-ownership.md).
+See [evidence and outstanding real acceptance](audit/personal-llm-ownership.md).
 
 ### Create Provider
 
@@ -1513,12 +1518,11 @@ The sqladmin panel provides a web UI for managing all database entities.
 **Pages:** User, Role, Permission, Platform, Source, AgentScenario, BotAction,
 AIAnalytics, Notification, LLMProvider, LLMModel, UserCredential.
 
-### Password Reset
+### Password Administration
 
-```
-GET /admin/reset-password
-POST /admin/reset-password (form: email, csrf_token)
-```
+There is no anonymous password recovery route. Password changes and resets are
+authenticated platform-operator actions; see
+[ADMIN password routes](ADMIN.md#password-routes-outside-sqladmin).
 
 ### Change Password
 
@@ -1665,3 +1669,7 @@ a flash message. No delete, sync, live API probe, personal credentials or global
 provider/model editing is exposed by this section.
 See [tenancy boundaries](TENANCY.md#web-settings-and-ownedgranted-workspace-context)
 and [deletion policy](MODEL_DELETION.md).
+
+## Universal social task parity (P8-T29)
+
+The [universal task contract](AGENT_TASKS.md#explicit-task-plans) adds a typed plan to the existing task operations. API and web/CLI/admin/tools must preserve identical source scope, scenario and data-window semantics. Preview is read-only; execution still performs fresh authorization and budget admission. Existing task routes remain compatible. Exact implementation/checks live in [P8-T29](tasks/p8-t29.md).

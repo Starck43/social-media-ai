@@ -260,13 +260,80 @@ class DigestRuntimeBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("отклонено", await self.env.turn(self.runtime))
         self.env.publisher.assert_not_awaited()
 
-    async def test_replaced_intent_cannot_be_consumed_by_observed_old_snapshot(self):
+    async def test_repeated_identical_intent_keeps_intent_id_and_stays_answerable_once(self):
+        """`82555f2`: a staged confirmation is a visible question, never a twin.
+
+        Repeating the *same* tool call with the same canonical `arguments_digest`
+        is answered by the pending intent, so no second intent is minted and the
+        `intent_id` is reused. Because the repeat deliberately writes nothing,
+        the previously observed intent stays exactly as it was — so the CAS does
+        accept that snapshot, and the single dispatch below proves a repeated
+        request cannot produce a second consent: the same question is asked once
+        and consumed once.
+        """
         old = await self.stage()
-        await self.stage()
-        self.assertIsNone(await self.env.session_manager.consume_pending_confirmation(self.env.session.id, old))
-        self.assertNotEqual(old["intent_id"], self.env.session.state["pending_confirmation"]["intent_id"])
-        await self.env.turn(self.runtime)
-        self.env.publisher.assert_awaited_once()
+        env = self.env
+        actor = await env.resolve()
+        with env.tenant.tenant_scope(31):
+            reply, stop = await self.runtime._dispatch_or_stage(env.session, "digest_send_now", {}, "call1", actor)
+        self.assertTrue(stop)
+        self.assertIn("уже ждёт вашего ответа", reply)
+        self.assertIn("confirm digest", reply)
+        replacement = env.session.state["pending_confirmation"]
+        self.assertEqual(old["intent_id"], replacement["intent_id"])
+        self.assertEqual(old, replacement)
+        await env.turn(self.runtime)
+        env.publisher.assert_awaited_once()
+        self.assertNotIn("pending_confirmation", env.session.state)
+
+    async def test_changed_arguments_mint_a_new_intent_and_retire_the_old_one(self):
+        """A *changed* intent is a new question: new `intent_id`, old one dead.
+
+        This is the other half of `82555f2`: dedup must key on the canonical
+        arguments, not on the tool name, otherwise an edited request would be
+        silently answered with the previous question.
+        """
+        env = self.env
+        old = await self.stage()
+        actor = await env.resolve()
+        with env.tenant.tenant_scope(31):
+            _, stop = await self.runtime._dispatch_or_stage(
+                env.session, "digest_send_now", {"period": "week"}, "call2", actor
+            )
+        self.assertTrue(stop)
+        replacement = env.session.state["pending_confirmation"]
+        self.assertNotEqual(old["intent_id"], replacement["intent_id"])
+        self.assertNotEqual(old["arguments_digest"], replacement["arguments_digest"])
+        self.assertIsNone(await env.session_manager.consume_pending_confirmation(env.session.id, old))
+        env.publisher.assert_not_awaited()
+
+    async def test_identical_repeat_does_not_revive_an_expired_intent(self):
+        """Dedup must never report an unanswerable intent as "already waiting".
+
+        `82555f2` answers a repeated identical request instead of staging a twin.
+        Its first implementation compared name + `arguments_digest` only, so an
+        expired intent was also answered with «уже ждёт вашего ответа» — and the
+        owner's following «да» was then rejected by `pending_rejection`
+        (`expired_intent`), the silent dead end the same fix set out to remove.
+        An expired intent is not a live one: the repeat stages a fresh question.
+        """
+        env = self.env
+        old = await self.stage()
+        env.session.state["pending_confirmation"]["expires_at"] = (
+            datetime.now(timezone.utc) - timedelta(seconds=1)
+        ).isoformat()
+        expired = copy.deepcopy(env.session.state["pending_confirmation"])
+        actor = await env.resolve()
+        with env.tenant.tenant_scope(31):
+            reply, stop = await self.runtime._dispatch_or_stage(env.session, "digest_send_now", {}, "call3", actor)
+        self.assertTrue(stop)
+        self.assertNotIn("уже ждёт", reply)
+        fresh = env.session.state["pending_confirmation"]
+        self.assertNotEqual(fresh["intent_id"], expired["intent_id"])
+        self.assertIsNone(await env.session_manager.consume_pending_confirmation(env.session.id, expired))
+        # The freshly staged intent is answerable: «да» dispatches exactly once.
+        self.assertNotIn("отклонено", await env.turn(self.runtime))
+        env.publisher.assert_awaited_once()
 
     async def test_two_yes_turns_with_mock_cas_invoke_publisher_at_most_once(self):
         await self.stage()

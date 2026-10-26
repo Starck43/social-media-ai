@@ -25,7 +25,6 @@ from typing import Optional
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 _tenant_id: ContextVar[Optional[int]] = ContextVar("tenant_id", default=None)
-_tenant_scope_ids: ContextVar[tuple[int, ...]] = ContextVar("tenant_scope_ids", default=())
 _tenant_bypass: ContextVar[bool] = ContextVar("tenant_bypass", default=False)
 
 
@@ -44,18 +43,9 @@ def current_tenant_id() -> Optional[int]:
 
 
 def current_tenant_ids() -> tuple[int, ...]:
-    """Every workspace this task may read, active one first.
-
-    A single-workspace request has exactly one id — the same value as
-    `current_tenant_id()`. The console operator may hold several web memberships
-    and reads them together (`tenant_scope(..., also=...)`), so managers filter
-    on the whole set instead of guessing one workspace.
-    """
-    scoped = _tenant_scope_ids.get()
-    if scoped:
-        return scoped
-    current = _tenant_id.get()
-    return () if current is None else (current,)
+    """The selected workspace, as a tuple for scope inspection."""
+    tenant_id = current_tenant_id()
+    return () if tenant_id is None else (tenant_id,)
 
 
 def is_bypass() -> bool:
@@ -66,62 +56,51 @@ def is_bypass() -> bool:
 def set_tenant(tenant_id: Optional[int], *, bypass: bool = False):
     """Set the tenant for the current task; returns a token to reset it."""
     token_tenant = _tenant_id.set(tenant_id)
-    token_scope = _tenant_scope_ids.set(() if tenant_id is None else (tenant_id,))
     token_bypass = _tenant_bypass.set(bypass)
-    return token_tenant, token_scope, token_bypass
+    return token_tenant, token_bypass
 
 
 def reset_tenant(token) -> None:
     """Restore the previous tenant context (pair with `set_tenant`)."""
-    token_tenant, token_scope, token_bypass = token
+    token_tenant, token_bypass = token
     _tenant_id.reset(token_tenant)
-    _tenant_scope_ids.reset(token_scope)
     _tenant_bypass.reset(token_bypass)
 
 
 @contextmanager
-def tenant_scope(tenant_id: Optional[int] = None, *, bypass: bool = False, also: Optional[tuple[int, ...]] = None):
+def tenant_scope(tenant_id: Optional[int] = None, *, bypass: bool = False):
     """Run a block as `tenant_id` (or as the superuser when `bypass=True`).
-
-    `also` extends the *readable* set past the active workspace without changing
-    which one is active: writes still stamp `current_tenant_id()`, while reads
-    accept every member workspace. Only the console operator's multi-workspace
-    scope uses it.
 
     Contextvars propagate into the task that `asyncio.run`/`create_task`
     starts, so wrapping a coroutine body works for both sync and async callers.
     """
-    extra = tuple(int(value) for value in (also or ()) if tenant_id is None or value != tenant_id)
     token = set_tenant(tenant_id, bypass=bypass)
-    if tenant_id is not None and extra:
-        scope_token = _tenant_scope_ids.set((int(tenant_id),) + extra)
-    else:
-        scope_token = None
     try:
         yield
     finally:
-        if scope_token is not None:
-            _tenant_scope_ids.reset(scope_token)
         reset_tenant(token)
 
 
 class PlatformScopeMiddleware:
-    """Run the operator console as the platform owner; leave clients to their own scope.
+    """Run operator HTTP requests (sqladmin, static, health) as the platform owner.
 
-    `/admin/*` no longer lands here: `AdminScopeMiddleware` runs first (it is
-    registered outermost) and binds the console to its actor — the owner gets
-    this same bypass, everyone else their own rows. What remains here is
-    infrastructure — `/static/*`, `/health`, `/docs` — plus a fall-through for any
-    other operator surface that carries no actor of its own. The CLI is the same
-    thing outside HTTP (`tenant_scope(bypass=True)` in
-    `cli/main.py::_run_platform`).
+    The HTTP surfaces split into two camps, and this middleware only owns the
+    operator one:
 
-    Client surfaces are excluded because they resolve their own tenant and run
-    scoped: `/app/*` from web memberships (`TenantUIMiddleware`) and `/api/*`
-    from the bearer token + membership (`ApiScopeMiddleware`).
+    - **Operator console** — `/admin/*` (sqladmin), `/static/*`, `/health`,
+      `/docs`. Runs in the bootstrap workspace with the guard switched off:
+      the developer/operator legitimately administers every workspace. The CLI
+      is the same thing outside HTTP (`tenant_scope(bypass=True)` in
+      `cli/main.py::_run_platform`).
+    - **Client surfaces** — excluded, because they resolve their own tenant and
+      run scoped: `/app/*` from web memberships (`TenantUIMiddleware`) and
+      `/api/*` from the bearer token + membership (`ApiScopeMiddleware`).
+
+    Letting `/api/*` fall through to bypass is what would let any caller read
+    every tenant's rows, so it is explicitly excluded here.
     """
 
-    # Prefixes that own their own (fail-closed) tenant/permission context.
+    # Prefixes that own their own (fail-closed) tenant context.
     TENANT_SCOPED_PREFIXES = ("/app", "/api", "/static", "/admin")
     # Exact paths that are infrastructure, not data.
     BYPASS_EXACT_PATHS = ("/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico")
@@ -141,3 +120,4 @@ class PlatformScopeMiddleware:
             return
         with tenant_scope(bypass=True):
             await self.app(scope, receive, send)
+

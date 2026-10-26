@@ -1,18 +1,15 @@
-# P4 — Tenant-safe delivery (gate PRD-01)
+# P4 — Tenant-safe delivery
 
-Goal: successful recipients are not resent; ambiguous sends stop for review;
-recipients and credentials belong to the owning workspace.
-Delivered: legacy partial-delivery stop, zero-success terminal outcome,
-scheduled/forced publisher fences and lease-loss evidence (PRs #106, #112,
-#113, #115, #120).
+[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p4) · [full historical notes](../audit/phase-p4-history.md)
 
-## Tasks
+**Goal:** Delivery is tenant-safe, retry-safe and truthful about uncertain outcomes.
 
-- [ ] P4-T01 — staging operator-recovery evidence; accept: documented staging
-  run proving operator recovery of an ambiguous/stopped delivery without
-  resending to successful recipients; depends: staging availability;
-  owns: docs/evidence lane; owner: unassigned; status: TODO
+**Plan — active task cards:**
 
-## Phase approval
+- [P4-T01](../tasks/p4-t01.md) — staging operator-recovery evidence
 
-- [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —
+**Accepted history:**
+
+- No recorded task history.
+
+**Phase status:** Active phase; close only after every plan item is accepted.

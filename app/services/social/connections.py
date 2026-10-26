@@ -159,9 +159,9 @@ def _human_expiry(expires_at: Optional[datetime]) -> str:
     if delta <= timedelta(0):
         return "срок истёк"
     if delta < timedelta(hours=1):
-        return f"обновляется через {int(delta.total_seconds() // 60)} мин"
+        return f"истекает через {int(delta.total_seconds() // 60)} мин"
     if delta < timedelta(days=1):
-        return f"обновляется через {int(delta.total_seconds() // 3600)} ч"
+        return f"истекает через {int(delta.total_seconds() // 3600)} ч"
     return f"действует до {moment:%d.%m.%Y}"
 
 

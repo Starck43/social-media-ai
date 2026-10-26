@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.agent.tools import tool
@@ -119,6 +120,13 @@ async def sources_search(
     from app.services.social.factory import get_social_client
     from app.services.social.owner import resolve_source_owner
 
+    if not isinstance(query, str) or not query.strip() or len(query.strip()) > 200:
+        return {"error": "Укажите поисковую фразу длиной от 1 до 200 символов", "code": "query_invalid"}
+    if kind not in {"group", "page", "event", "user"}:
+        return {"error": "Тип поиска должен быть group, page, event или user", "code": "kind_invalid"}
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
+        return {"error": "Лимит кандидатов должен быть от 1 до 50", "code": "limit_invalid"}
+    query = query.strip()
     platform_key = _PLATFORM_ALIASES.get(platform.strip().lower())
     if platform_key is None:
         return {"error": f"Unknown platform: {platform}. Available: vk, telegram, max"}
@@ -139,11 +147,27 @@ async def sources_search(
     try:
         city_id = None
         if city:
-            cities = await client.get_cities(city, owner_user_id=owner, count=5)
-            if cities:
+            if not isinstance(city, str) or not city.strip() or len(city.strip()) > 120:
+                return {"error": "Укажите корректное название города", "code": "city_invalid"}
+            cities = await client.get_cities(city.strip(), owner_user_id=owner, count=20)
+            exact = [item for item in cities if str(item.get("title", "")).casefold() == city.strip().casefold()]
+            if len(exact) == 1:
+                resolved_city = exact[0]
+            elif len(cities) == 1:
                 resolved_city = cities[0]
-                city_id = cities[0]["id"]
-        count = max(1, min(int(limit), 50))
+            elif cities:
+                return {
+                    "error": "Найдено несколько одноимённых городов. Уточните регион или выберите вариант.",
+                    "code": "city_ambiguous",
+                    "candidates": cities[:10],
+                }
+            else:
+                return {
+                    "error": "Город не найден; поиск без ограничения по городу не выполнялся.",
+                    "code": "city_not_found",
+                }
+            city_id = resolved_city["id"]
+        count = limit
         if kind == "user":
             items = await client.search_users(query, owner_user_id=owner, city_id=city_id, count=count)
         else:
@@ -152,14 +176,43 @@ async def sources_search(
                 query, owner_user_id=owner, group_type=group_type, city_id=city_id, count=count
             )
     except AuthorizationRequired as error:
-        return {"error": str(error), "hint": error.hint, "needs_action": "connect_vk"}
-    except RuntimeError as error:
-        # VK answers 1051 for search methods when the app profile type is not
-        # allowed to call them; say so instead of a generic collection failure.
         return {
             "error": str(error),
-            "hint": "Поисковые методы VK недоступны для текущего типа приложения (ошибка 1051).",
-            "needs_action": "vk_app_search_scope",
+            "hint": error.hint,
+            "needs_action": "connect_vk",
+            "code": "authorization_required",
+        }
+    except Exception as error:
+        from app.services.social.rate_limit import SourceRateLimited
+
+        if isinstance(error, SourceRateLimited):
+            return {
+                "error": "VK ограничил частоту запросов; повторите поиск позже.",
+                "code": "rate_limited",
+            }
+        if not isinstance(error, RuntimeError):
+            raise
+        match = re.search(r"Ошибка API \((\d+)\)", str(error))
+        code = int(match.group(1)) if match else None
+        if code == 1051:
+            return {
+                "error": "Поисковый метод VK недоступен для типа приложения этого окружения.",
+                "code": "api_1051",
+                "hint": "Смена личного токена сама по себе не меняет доступность метода для профиля приложения.",
+                "needs_action": "vk_app_search_scope",
+            }
+        if code == 5:
+            return {
+                "error": "VK отклонил авторизацию. Переподключите VK и повторите поиск.",
+                "code": "authorization_failed",
+            }
+        if code == 15:
+            return {"error": "VK запретил доступ к этому поиску.", "code": "access_denied"}
+        if code in {6, 9}:
+            return {"error": "VK ограничил частоту запросов; повторите поиск позже.", "code": "rate_limited"}
+        return {
+            "error": "VK не выполнил поиск.",
+            "code": f"vk_api_error:{code}" if code else "vk_api_error",
         }
 
     return {
@@ -193,6 +246,15 @@ async def sources_search(
                 "items": {"type": "integer"},
                 "description": "Для source_type=search: оставить только эти стены (id сообществ отрицательные)",
             },
+            "mode": {
+                "type": "string",
+                "enum": ["auto", "api", "user"],
+                "description": "Способ доступа платформы; auto сохраняет существующее поведение",
+            },
+            "token_owner": {
+                "type": "integer",
+                "description": "ID активного участника текущего workspace, чей личный токен разрешено использовать",
+            },
         },
         "required": ["platform", "source_type", "external_id"],
     },
@@ -204,6 +266,8 @@ async def source_add(
     name: str | None = None,
     query: str | None = None,
     owner_ids: list[int] | None = None,
+    mode: str = "auto",
+    token_owner: int | None = None,
 ) -> dict:
     from app.models import Platform
     from app.models.managers.source_manager import SourceManager
@@ -225,17 +289,44 @@ async def source_add(
 
     if st == SourceType.SEARCH and not (query or external_id).strip():
         return {"error": "Для поискового источника нужна фраза (query)"}
+    if mode not in {"auto", "api", "user"}:
+        return {"error": "Способ доступа должен быть auto, api или user", "code": "mode_invalid"}
+    params: dict[str, Any] = {"mode": mode} if mode != "auto" else {}
+    if token_owner is not None:
+        if isinstance(token_owner, bool) or not isinstance(token_owner, int) or token_owner <= 0:
+            return {
+                "error": "token_owner должен быть ID активного участника workspace",
+                "code": "token_owner_invalid",
+            }
+        from app.core.tenant_context import current_tenant_id
+        from app.models.managers.tenant_manager import tenant_users
+
+        members = await tenant_users.web_memberships_for_tenant(current_tenant_id())
+        if token_owner not in {member.user_id for member in members}:
+            return {
+                "error": "Владелец личного подключения не состоит в этом workspace",
+                "code": "token_owner_forbidden",
+            }
+        params["token_owner"] = token_owner
+    if st == SourceType.SEARCH:
+        params["query"] = (query or external_id).strip()
+        if owner_ids is not None:
+            if len(owner_ids) > 1_000 or any(
+                isinstance(value, bool) or not isinstance(value, int) or value == 0 for value in owner_ids
+            ):
+                return {
+                    "error": "owner_ids должны содержать не более 1000 ненулевых целых ID VK",
+                    "code": "owner_ids_invalid",
+                }
+            params["owner_ids"] = owner_ids
+    elif owner_ids is not None:
+        return {"error": "owner_ids допустимы только для поискового источника", "code": "owner_ids_invalid"}
 
     existing = await SourceManager().get_source_by_platform(plat.id, external_id.strip())
     if existing is not None:
         # Re-adding is not an error: the caller asked for an outcome ("this
         # source is in the workspace"), and a duplicate is that outcome.
         return {"status": "exists", **_compact(existing, platform_key)}
-    params: dict = {}
-    if st == SourceType.SEARCH:
-        params["query"] = (query or external_id).strip()
-        if owner_ids:
-            params["owner_ids"] = [int(value) for value in owner_ids]
     source = await SourceManager().create_source(
         platform_id=plat.id,
         source_type=st,

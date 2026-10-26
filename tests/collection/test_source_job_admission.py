@@ -36,11 +36,20 @@ class Tenant(Base):
     id = Column(Integer, primary_key=True)
 
 
+class Platform(Base):
+    __tablename__ = "fixture_platforms"
+    id = Column(Integer, primary_key=True)
+    platform_type = Column(String)
+
+
 class Source(Base):
     __tablename__ = "fixture_sources"
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer)
     is_active = Column(Boolean, default=True)
+    owner_task_id = Column(Integer)
+    platform_id = Column(ForeignKey("fixture_platforms.id"))
+    platform = relationship(Platform)
 
 
 links = Table(
@@ -595,12 +604,16 @@ async def test_web_queue_reports_existing_job_without_claiming_it():
         "enqueue_task_run": AsyncMock(side_effect=activity.SourceJobBusy(NS(id=9, status="running"))),
         "SourceJobBusy": activity.SourceJobBusy,
         "launch_job_background": lambda job_id, **kw: None,  # busy path returns early; never called
+        "AgentTaskManager": lambda: NS(get_sources=AsyncMock(return_value=[1])),
+        "_can_activate": AsyncMock(return_value=None),
     }
     exec(
         compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), "isolated_web_queue", "exec"),
         scope,
     )
-    assert await scope["queue_task_now"](NS(id=10)) == {"job_id": 9, "status": "running", "already_running": True}
+    assert await scope["queue_task_now"](
+        NS(id=10, tenant_id=7, job_type="collect", payload={}, agent_scenario_id=None)
+    ) == {"job_id": 9, "status": "running", "already_running": True}
 
 
 def test_active_membership_is_conservative_and_distinct_from_terminal_jobs():
@@ -610,6 +623,22 @@ def test_active_membership_is_conservative_and_distinct_from_terminal_jobs():
     assert activity.job_source_ids({"source_ids": ["malformed"]}, None, {}, {2}) == {2}
     ignored = [NS(job_type="digest", status="running"), NS(job_type="analyze", status="failed")]
     assert activity.source_conflict({"source_ids": [1]}, None, ignored, {}, {1}) is None
+
+
+def test_task_plan_admission_uses_scoped_snapshot_and_discovery_reserves_unknown_sources():
+    linked = {4, 5, 6}
+    active = {1, 2, 3, 4, 5, 6}
+
+    selected = {
+        "task_plan": {"source_scope": "selected", "source_ids": [4]},
+        "source_ids": [4, 5],
+    }
+    all_authorized = {"task_plan": {"source_scope": "all"}, "source_ids": [1, 2, 5]}
+    discovery = {"task_plan": {"source_scope": "discovery"}, "source_ids": [5]}
+
+    assert activity.job_source_ids(selected, 10, {10: linked}, active) == {4, 5}
+    assert activity.job_source_ids(all_authorized, 10, {10: linked}, active) == {1, 2, 5}
+    assert activity.job_source_ids(discovery, 10, {10: linked}, active) == active
 
 
 @pytest.mark.asyncio

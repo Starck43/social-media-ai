@@ -160,13 +160,29 @@ def console(source, user=None):
 
 @pytest.mark.asyncio
 async def test_external_route_loads_same_menu_grants(source):
-    ctx = console(source)
+    ctx = console(source, actor("superuser"))
     request = NS(state=NS(admin_user=ctx.user), app=NS(state=NS(admin=ctx.admin)), session={})
     # Previously resolve_user alone left every menu item inaccessible.
     assert not ctx.backend.has_permission(request, "platform-role", Action.LIST)
     result = await source.backend.require_admin_perm(request, "llmmodel", TYPES.ActionType.CONFIGURE)
     assert result is ctx.user
     assert all(view.is_accessible(request) for view in ctx.admin._views)
+
+
+@pytest.mark.asyncio
+async def test_an_admin_console_is_bounded_by_its_grants(source):
+    """An `admin` is bounded by the grants its role carries, model by model.
+
+    The owner holds the wildcard; an admin that was granted one right on the
+    model catalog sees the console entry for the models and not for others.
+    Asserted on `model_permissions` — the single answer both the console and
+    the API read — because this fixture resolves identity through the auth
+    backend rather than a session token, so `get_grants` has nothing to load.
+    """
+    user = user_with(TYPES.ActionType.VIEW, role="admin", resource="llm.model")
+    ctx = console(source, user)
+    assert ctx.user.model_permissions("llmmodel") == {TYPES.ActionType.VIEW}
+    assert ctx.user.model_permissions("llmprovider") == set()
 
 
 @pytest.mark.asyncio

@@ -10,11 +10,13 @@ from sqladmin.forms import get_model_form
 from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
-from wtforms import FloatField, validators, widgets
+from wtforms import FloatField, Form, validators, widgets
 
 from app.admin.actions import LLMModelActions
 from app.admin.formatters import format_date, format_usd, model_price, plan_badge
 from app.core.hashing import get_password_hash
+from app.core.personal_catalog_context import catalog_execution_scope
+from app.core.provider_uid import slugify_uid
 from app.models import (
     AgentScenario,
     AgentTask,
@@ -32,6 +34,7 @@ from app.models import (
     User,
     UserCredential,
 )
+from app.models.managers.user_manager import UserManager
 from app.tasks.cron import cron_to_human
 from app.types import (
     ActionType,
@@ -52,7 +55,7 @@ from ..services.ai.llm_client import LLMClientFactory
 from .base import BaseAdmin
 from .catalog import PermissionLabelAdmin, PlatformRoleGrantAdmin
 from .price_fields import ExactModelPriceField
-from .role_picker import RoleChoiceField, RolePickerConverter, role_choices
+from .role_picker import RoleChoiceField, RolePickerConverter, role_choices, role_edit
 from .widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
 
 logger = logging.getLogger(__name__)
@@ -68,6 +71,7 @@ class UserAdmin(BaseAdmin, model=User):
     # имя: `change_password` -> `change-password`).
     action_permissions = {"change-password": ActionType.UPDATE}
 
+    inline_columns = ["id", "username", "email", "is_active"]
     column_list = ["id", "username", "email", "is_active", "role", "updated_at"]
     column_labels = dict(
         {
@@ -138,19 +142,59 @@ class UserAdmin(BaseAdmin, model=User):
             raise HTTPException(status_code=400, detail="Требуется заполнить поле 'Пароль'")
         return await super().insert_model(request, data)
 
+    async def update_model(self, request: Request, pk: str, data: dict) -> Any:
+        """Write identity fields generically; the role goes through its manager.
+
+        The manager is the single place that knows the assignment rules (rank,
+        self-edit, the owner account), so the console must not write `role_id`
+        itself, even with a forged payload.
+
+        The owner's account is out of reach for anyone else: the role picker
+        renders it read-only, but a hand-crafted POST never touches that form.
+        The owner keeps the right to change their own name, email and password.
+        """
+        # sqladmin hands `pk` over as a string from the URL while the column is
+        # an integer: asyncpg refuses `integer = varchar`, so cast before the read.
+        target = await User.objects.prefetch_related("role").get(id=int(pk))
+        actor = self.get_admin_user(request)
+        if UserManager._is_platform_owner(target) and (actor is None or actor.id != target.id):
+            raise HTTPException(status_code=403, detail="Нельзя изменять аккаунт собственника платформы")
+        role_name = data.pop("role", None)
+        if data.get("role_id"):
+            raise HTTPException(status_code=400, detail="Используйте отдельную операцию назначения платформенной роли")
+        if role_name:
+            await User.objects.set_platform_role(
+                user_id=int(pk),
+                role_code=PlatformRoleType(str(getattr(role_name, "codename", role_name))),
+                actor_id=actor.id,
+            )
+        return await super().update_model(request, pk, data)
+
     async def scaffold_form(self, rules: list[str] | None = None):
         """Build the edit form with the choices the signed-in actor may assign.
 
-        SQLAdmin keeps one form class per view, so the role select would
-        otherwise hold the choices of whoever rendered the page first. The
-        converter is bound per call: each request gets its own actor's list.
+        sqladmin passes no `request` here, so the actor comes from the request
+        the authorization backend bound for this task. That binding is per
+        request (`load()` runs before the view renders), so one operator's rank
+        never rides along on a class attribute shared by every request.
+
+        With nothing bound the choices are empty and the select is disabled:
+        fail closed, never "every role".
+
+        The edit form also knows *whom* it edits: the actor's own account and the
+        platform owner's account render the role read-only (`role_edit`), because
+        `UserManager.set_platform_role` refuses those writes.
         """
-        request = getattr(self, "_form_request", None)
+        from app.admin.authorization import bound_console_request
+
+        request = bound_console_request()
         actor = self.get_admin_user(request) if request is not None else None
-        # SQLAdmin instantiates the converter (`form_converter()`), so a
-        # request-local subclass is the seam: one operator's rank never rides
-        # along on a class attribute shared by every request.
-        converter = type("_RolePicker", (RolePickerConverter,), {"choices": role_choices(actor)})
+        choices, locked = role_choices(actor), None
+        if request is not None and (pk := request.path_params.get("pk")) is not None:
+            current = await User.objects.prefetch_related("role").get(id=int(pk))
+            if current is not None:
+                choices, locked = role_edit(actor, current)
+        converter = type("_RolePicker", (RolePickerConverter,), {"choices": choices, "locked_reason": locked})
         form = await get_model_form(
             model=self.model,
             session_maker=self.session_maker,
@@ -164,60 +208,16 @@ class UserAdmin(BaseAdmin, model=User):
             form_include_pk=self.form_include_pk,
             form_converter=converter,
         )
-        # A create page carries no role select; SQLAdmin would otherwise keep
-        # the required field and reject every new account. Deleting through the
-        # metaclass also clears the cached unbound fields.
         if rules is not None and "role" not in rules and hasattr(form, "role"):
             delattr(form, "role")
         return form
 
-    async def update_model(self, request: Request, pk: str, data: dict) -> Any:
-        """Write identity fields generically; the role goes through its manager.
-
-        The manager is the single place that knows the assignment rules (rank,
-        self-edit, the owner account), so the console must not write `role_id`
-        itself, even with a forged payload.
-        """
-        role_name = data.pop("role", None)
-        if data.get("role_id"):
-            raise HTTPException(status_code=400, detail="Используйте отдельную операцию назначения платформенной роли")
-        actor = self.get_admin_user(request)
-        target = await User.objects.prefetch_related("role").get(id=int(pk))
-        if (
-            target is not None
-            and target.role is not None
-            and target.role.codename == PlatformRoleType.SUPERUSER
-            and (actor is None or actor.id != int(pk))
-        ):
-            raise HTTPException(status_code=403, detail="Нельзя изменять профиль собственника платформы")
-        if role_name:
-            await User.objects.set_platform_role(
-                user_id=int(pk),
-                role_code=PlatformRoleType(str(getattr(role_name, "codename", role_name))),
-                actor_id=actor.id,
-            )
-        return await super().update_model(request, pk, data)
-
-    async def edit(self, request: Request, *args: Any, **kwargs: Any):
-        """Expose the request to `scaffold_form` for the actor's role choices."""
-        self._form_request = request
-        try:
-            return await super().edit(request, *args, **kwargs)
-        finally:
-            self._form_request = None
-
-    async def create(self, request: Request, *args: Any, **kwargs: Any):
-        """Same seam for the create form, which must not offer a role at all."""
-        self._form_request = request
-        try:
-            return await super().create(request, *args, **kwargs)
-        finally:
-            self._form_request = None
-
     async def delete_model(self, request: Request, pk: Any) -> bool:
         """The platform-owner account is never deleted from the console."""
-        target = await User.objects.prefetch_related("role").get(id=pk)
-        if target is not None and target.is_superuser:
+        # sqladmin hands `pk` over as a string from the URL; the column is an
+        # integer, and asyncpg refuses `integer = varchar` instead of casting.
+        target = await User.objects.prefetch_related("role").get(id=int(pk))
+        if UserManager._is_platform_owner(target):
             raise HTTPException(status_code=403, detail="Нельзя удалить аккаунт собственника платформы")
         return await super().delete_model(request, pk)
 
@@ -244,6 +244,7 @@ class RoleAdmin(PlatformRoleGrantAdmin, model=PlatformRole):
     name = "Платформенная роль"
     name_plural = "Роли"
     icon = "fa fa-shield"
+    inline_columns = ["id", "codename", "description"]
     column_list = ["id", "codename", "description"]
     column_searchable_list = ["codename"]
     column_labels = dict(
@@ -267,6 +268,7 @@ class PermissionAdmin(PermissionLabelAdmin, model=Permission):
     name = "Разрешение"
     name_plural = "Разрешения"
     icon = "fa fa-key"
+    inline_columns = ["id", "name", "action_type"]
     column_list = ["id", "codename", "name", "action_type"]
     column_searchable_list = ["name"]
     column_labels = dict(
@@ -294,6 +296,7 @@ class PlatformAdmin(BaseAdmin, model=Platform):
     name = "Платформа"
     name_plural = "Платформы"
     icon = "fa fa-globe"
+    inline_columns = ["id", "name", "platform_type", "is_active"]
     column_list = ["id", "name", "platform_type", "is_active"]
     column_searchable_list = ["name"]
     column_sortable_list = ["name", "is_active"]
@@ -367,6 +370,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 
     # Проверка источника ставит задачу сбора и пишет в карточку источника.
     action_permissions = {"check-source": ActionType.UPDATE}
+    inline_columns = ["id", "name", "source_type", "is_active", "last_checked"]
     column_list = [
         "id",
         "tenant",
@@ -615,6 +619,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
         "view-prompts": ActionType.VIEW,
         "toggle-active": ActionType.UPDATE,
     }
+    inline_columns = ["id", "name", "is_active"]
     column_list = ["id", "name", "description", "is_active", "max_tokens"]
     column_searchable_list = ["name", "description"]
     column_sortable_list = ["name", "is_active", "max_tokens"]
@@ -981,6 +986,7 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
     action_permissions = {"view-analysis": ActionType.VIEW}
 
     # topic_chain_id and content_hash are machine keys kept out of the crowded list
+    inline_columns = ["id", "analysis_date", "period_type", "llm_model", "estimated_cost"]
     column_list = ["id", "source", "analysis_date", "period_type", "llm_model", "estimated_cost", "created_at"]
     column_searchable_list = ["source.name", "period_type", "llm_model"]
     column_sortable_list = ["analysis_date", "created_at", "period_type", "estimated_cost"]
@@ -1118,6 +1124,7 @@ class NotificationAdmin(BaseAdmin, model=Notification):
         "mark-read": ActionType.UPDATE,
         "send-to-messenger": ActionType.UPDATE,
     }
+    inline_columns = ["id", "title", "notification_type", "is_read", "created_at"]
     column_list = ["id", "title", "notification_type", "is_read", "created_at"]
     column_searchable_list = ["title", "notification_type"]
     column_sortable_list = ["created_at", "is_read"]
@@ -1262,18 +1269,19 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 
 
 class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
-    # Write access is the actor's own catalog (or the owner's whole one), bound
-    # by `AdminScopeMiddleware`; the view no longer switches itself off. The
-    # credential checks in `LLMProvider.get_api_key()` still refuse a foreign
-    # row, so a direct URL to someone else's provider is a 403, not a form.
     name = "Провайдер ИИ"
     name_plural = "Провайдеры ИИ"
     icon = "fa fa-server"
+    # The stock templates have no hook for a page script; these two add the UID
+    # autofill next to them.
+    create_template = "sqladmin/llm_create.html"
+    edit_template = "sqladmin/llm_edit.html"
 
     # Проба подключения ходит в провайдера его же ключом и тратит токены —
     # это часть настройки, а не чтение.
     action_permissions = {"test-connection": ActionType.CONFIGURE}
 
+    inline_columns = ["id", "name", "api_format", "is_active"]
     column_list = ["id", "name", "api_format", "base_url", "is_active"]
     column_searchable_list = ["name", "base_url"]
     column_sortable_list = ["name", "api_format", "is_active"]
@@ -1301,10 +1309,27 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         **BaseAdmin.column_labels,
     )
 
-    form_excluded_columns = BaseAdmin.form_excluded_columns + ["models"]
+    # Explicit order, so the two identity fields sit under the name instead of
+    # wherever the mapper happens to list them; `models` is the relationship the
+    # console never edits inline. `scaffold_form` drops the owner for an actor
+    # who does not choose it.
+    form_columns = [
+        "owner_user_id",
+        "name",
+        "uid",
+        "description",
+        "api_format",
+        "base_url",
+        "auth_header",
+        "encrypted_api_key",
+        "is_active",
+    ]
 
     form_overrides = {
         "api_format": SelectField,
+        # A plain foreign-key column is skipped by sqladmin's form builder; the
+        # owner is still a real field, so it is declared as a select.
+        "owner_user_id": SelectField,
         **BaseAdmin.form_overrides,
     }
 
@@ -1312,9 +1337,31 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         "base_url": {"placeholder": "https://api.openai.com/v1"},
         "auth_header": {"placeholder": "Authorization: Bearer {key}"},
         "encrypted_api_key": {"type": "password", "placeholder": "Enter API key"},
+        "owner_user_id": {"placeholder": "Выберите владельца"},
+        "uid": {
+            "placeholder": "unorouter",
+            # Read-only for everyone but the owner: a slug someone else's links
+            # already point at is not a value an admin edits by hand.
+            "data-uid-autofill": "name",
+            "spellcheck": "false",
+            "autocomplete": "off",
+        },
     }
 
     form_args = {
+        "owner_user_id": {
+            "label": "Владелец",
+            "description": "Чей это провайдер. Каталог, ключ и модели видны только этому пользователю.",
+            # WTForms snapshots `choices` when the form class is built, so the
+            # actor's list has to be part of the arguments, not patched after.
+            "choices": [],
+            "coerce": str,
+        },
+        "uid": {
+            "label": "UID провайдера",
+            "description": "Короткий идентификатор латиницей, например unorouter. По умолчанию берётся из названия "
+            "до точки; меняет только владелец платформы.",
+        },
         "name": {"label": "Название", "description": "Например: OpenAI, DeepSeek, Anthropic"},
         "description": {"label": "Описание", "description": "Для справки"},
         "api_format": {
@@ -1343,8 +1390,138 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         **BaseAdmin.form_args,
     }
 
+    async def scaffold_form(self, rules=None):
+        """Hide the fields the signed-in actor may not write.
+
+        The owner is the platform owner's field: an admin or operator creates
+        providers in their own catalog, so a user picker would only invite a
+        choice the server overrides. The UID stays visible to everyone — it is
+        part of the provider's identity and links point at it — but read-only
+        outside the platform owner, because renaming it breaks those links. The
+        server normalises whatever a readonly field still submits.
+
+        The owner select is built here, through `get_model_form` and
+        `_form_overrides`, the same way `UserAdmin` builds the role select.
+        `scaffold_form` caches its first form on the instance, so mutating the
+        cached one would freeze the first actor's choices for every later
+        request; a fresh form also means "no owner field for an admin" is a
+        property of the actor, not of whoever opened the page first.
+        """
+        from app.admin.authorization import bound_console_request
+
+        request = bound_console_request()
+        actor = self.get_admin_user(request) if request is not None else None
+        may_choose = bool(actor is not None and getattr(actor, "is_superuser", False))
+
+        columns = [name for name in self._form_prop_names if may_choose or name != "owner_user_id"]
+        form_args = dict(self.form_args)
+        if may_choose and "owner_user_id" in columns:
+            # The select carries usernames, not ids: a console operator who *may*
+            # assign the catalog should not read `42` and guess. The choices are
+            # frozen into the class, so they pass through `form_args`.
+            from app.models import User as PlatformUser
+
+            owners = await PlatformUser.objects.filter(is_active=True).order_by("username")
+            form_args["owner_user_id"] = {
+                **form_args.get("owner_user_id", {}),
+                "choices": [(str(user.id), user.username) for user in owners],
+                "coerce": str,
+            }
+        form = await get_model_form(
+            model=self.model,
+            session_maker=self.session_maker,
+            only=columns,
+            column_labels=self._column_labels,
+            form_args=form_args,
+            form_widget_args=self.form_widget_args,
+            form_class=self.form_base_class,
+            form_overrides=self._form_overrides,
+            form_ajax_refs=self._form_ajax_refs,
+            form_include_pk=self.form_include_pk,
+            form_converter=self.form_converter,
+        )
+        if hasattr(form, "uid"):
+            # An empty UID is "derive it from the name", not a missing field:
+            # the browser previews the slug and skips the release, so the server
+            # fills it here — from the submitted name, before validation.
+            #
+            # `form` is a class here; `meta.bind_field` is the one seam that sees
+            # both the bound field and the form data, for every instance.
+            base_meta = form.Meta if "Meta" in dir(form) else Form.Meta
+            form_meta = type("ProviderFormMeta", (base_meta,), {})
+
+            def bind_field(meta_self, form_instance, unbound_field, options):
+                field = base_meta.bind_field(meta_self, form_instance, unbound_field, options)
+                if unbound_field.name != "uid":
+                    return field
+                original = field.process
+
+                def process(formdata, data=None, **kwargs):
+                    original(formdata, data=data, **kwargs)
+                    if formdata is None:
+                        return
+                    raw = (field.raw_data or [""])[0]
+                    source = raw or formdata.get("name") or ""
+                    slug = slugify_uid(source)
+                    if not slug and not raw:
+                        return
+                    # WTForms validates `raw_data`, so the derived value has to
+                    # land there too — an empty list means "missing".
+                    field.data = slug or None
+                    if slug:
+                        field.raw_data = [slug]
+
+                field.process = process
+                return field
+
+            form_meta.bind_field = bind_field
+            form.Meta = form_meta
+        if rules:
+            self._validate_form_class(rules, form)
+        return form
+
+    async def on_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
+        """Who owns the catalog row is a rule, not a text field.
+
+        The platform owner may hand a catalog to anyone. An admin or operator
+        never picks a stranger's owner: their new provider belongs to them, and
+        the owner of an existing row stays as it is. A forged POST is refused
+        the same way, because this runs on the data the form accepted.
+        """
+        actor = self.get_admin_user(request)
+        may_choose = bool(actor is not None and getattr(actor, "is_superuser", False))
+        if not may_choose:
+            data.pop("owner_user_id", None)
+            if is_created:
+                if actor is None:
+                    raise HTTPException(status_code=403, detail="Не удалось определить владельца провайдера")
+                data["owner_user_id"] = actor.id
+                model.owner_user_id = actor.id
+        elif is_created and not data.get("owner_user_id"):
+            data["owner_user_id"] = actor.id
+        if "owner_user_id" in data and data["owner_user_id"] is not None:
+            try:
+                data["owner_user_id"] = int(data["owner_user_id"])
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="Не удалось определить владельца провайдера")
+
+        uid = data.get("uid")
+        if uid is not None:
+            slug = slugify_uid(uid)
+            if not slug:
+                raise HTTPException(status_code=400, detail="UID провайдера может содержать только a-z, 0-9, «-» и «_»")
+            data["uid"] = slug
+            model.uid = slug
+
+        with self._catalog_scope(request):
+            await super().on_model_change(data, model, is_created, request)
+
     @action(name="test-connection", label="🔌 Проверить подключение", add_in_list=True, add_in_detail=True)
     async def test_connection_action(self, request: Request):
+        with self._catalog_scope(request):
+            return await self._test_connection(request)
+
+    async def _test_connection(self, request: Request):
         pks = request.query_params.get("pks", "")
         if not pks:
             request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
@@ -1373,12 +1550,13 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
     async def after_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
-        if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
-            from app.utils.crypto import encrypt_secret
+        with self._catalog_scope(request):
+            if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
+                from app.utils.crypto import encrypt_secret
 
-            model.encrypted_api_key = encrypt_secret(model.encrypted_api_key)
-            await LLMProvider.objects.update_by_id(model.id, encrypted_api_key=model.encrypted_api_key)
-        await super().after_model_change(data, model, is_created, request)
+                model.encrypted_api_key = encrypt_secret(model.encrypted_api_key)
+                await LLMProvider.objects.update_by_id(model.id, encrypted_api_key=model.encrypted_api_key)
+            await super().after_model_change(data, model, is_created, request)
 
 
 def _catalog_rate(value, token_unit: int) -> str:
@@ -1387,16 +1565,16 @@ def _catalog_rate(value, token_unit: int) -> str:
 
 
 class LLMModelAdmin(BaseAdmin, model=LLMModel):
-    # Same rule as the provider screen: the actor writes their own models (the
-    # owner, any model), and "own" is the personal catalogue bound by
-    # `AdminScopeMiddleware` — never a row picked from the form.
     name = "Модель ИИ"
     name_plural = "Модели ИИ"
     icon = "fa fa-microchip"
+    create_template = "sqladmin/llm_create.html"
+    edit_template = "sqladmin/llm_edit.html"
 
     # Local checks and an explicitly confirmed real probe require operator configuration rights.
     action_permissions = {"test-model": ActionType.CONFIGURE}
 
+    inline_columns = ["id", "name", "model_id", "model_type", "is_default", "is_active"]
     column_list = [
         "id",
         "name",
@@ -1616,25 +1794,9 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 
     column_formatters_detail = column_formatters
 
-    def list_query(self, request: Request) -> Select:
-        # The manager, not a bare `select()`, so the personal criterion of
-        # `AdminScopeMiddleware`'s actor applies: another user's models are simply
-        # not in the result (`docs/ADMIN.md` — "everyone else their own").
-        # No `select_related`: sqladmin adds `selectinload(provider)` itself for
-        # `column_list`, and two loaders for one path are a mapper conflict.
-        return LLMModel.objects.filter().to_select()
-
-    def details_query(self, request: Request) -> Select:
-        # A foreign model must 404 here, never render: sqladmin's default query is
-        # `select(LLMModel).where(id == pk)`, which has no owner in it.
-        return LLMModel.objects.prefetch_related("provider").filter(id=int(request.path_params["pk"])).to_select()
-
-    def form_edit_query(self, request: Request) -> Select:
-        # Same for the edit form: `details` and `edit` are two separate statements
-        # in sqladmin, and both bypass the manager unless overridden.
-        return LLMModel.objects.prefetch_related("provider").filter(id=int(request.path_params["pk"])).to_select()
-
     async def scaffold_form(self, rules=None):
+        from app.admin.authorization import bound_console_request
+
         form = await super().scaffold_form(rules)
 
         # Ensure SelectMultipleField for model_type uses proper multi-value coercion/processing
@@ -1643,7 +1805,10 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             # Actually WTForms SelectMultipleField handles list of strings, but model.model_type is a string.
             pass
 
-        providers = await LLMProvider.objects.all().order_by("name")
+        # The signed-in operator's own providers only: a model is filed in the
+        # catalog it belongs to, and a foreign provider is not even offered.
+        with self._catalog_scope(bound_console_request()):
+            providers = await LLMProvider.objects.all().order_by("name")
 
         if hasattr(form, "provider_id"):
             field_name = "provider_id"
@@ -1652,25 +1817,62 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         else:
             return form
 
-        getattr(form, field_name).kwargs.update(
-            {
-                "data": [(str(p.id), p) for p in providers],
-                "get_label": lambda obj: obj.name,
-            }
-        )
+        # `choices` is what validation and the widget both read; a `data` list of
+        # model instances renders the options but never validates them, and the
+        # submitted id is then rejected as "Not a valid choice".
+        field = getattr(form, field_name)
+        field.data = [(str(p.id), p.name) for p in providers]
+        field.choices = list(field.data)
+        field.coerce = str
+        field.get_label = lambda option, field=field: dict(field.choices).get(str(option), "")
 
         return form
+
+    async def insert_model(self, request: Request, data: dict) -> Any:
+        """Fill the owner before sqladmin touches the relation.
+
+        The field is out of the form (`owner_user_id` is half of the composite
+        key to the provider and NOT NULL), so the provider decides it. sqladmin
+        fills a many-to-one relation from the related row's *primary key* only,
+        while this relation carries two FK columns — a `KeyError` naming
+        `owner_user_id` is exactly that. The value is already set here, so the
+        relation is dropped and the scalar FK goes in instead.
+        """
+        provider_id = data.pop("provider_id", None) or data.pop("provider", None)
+        with self._catalog_scope(request):
+            provider = await LLMProvider.objects.get(id=int(provider_id)) if provider_id not in (None, "") else None
+        if provider is None:
+            raise HTTPException(status_code=400, detail="Выберите провайдера — от него берётся владелец модели")
+
+        # The catalog scope already answered "is this provider in *my* catalog":
+        # a foreign or unknown id is simply not found, so the case never reaches
+        # here. The owner comes from the provider — the form has no such field.
+        data["owner_user_id"] = provider.owner_user_id
+        data["provider_id"] = provider.id
+        with self._catalog_scope(request):
+            return await super().insert_model(request, data)
 
     async def on_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
         if "model_type" in data and isinstance(data["model_type"], list):
             data["model_type"] = ",".join(data["model_type"])
-        # The catalog owner is the actor's own catalogue, bound by
-        # `AdminScopeMiddleware`. With no actor there is nothing to write into:
-        # the manager refuses (`PermissionError`) rather than picking a user.
-        await super().on_model_change(data, model, is_created, request)
+        if is_created:
+            model.owner_user_id = data["owner_user_id"]
+            model.provider_id = data["provider_id"]
+        else:
+            # SQLAdmin resolves the `provider` relation from the provider's
+            # primary key alone, and this relation carries two FK columns — a
+            # `KeyError` on `owner_user_id`. The model stays in its provider (the
+            # pair is half of the composite key and immutable by design), so the
+            # field is dropped and the stored scalars answer for it.
+            data.pop("provider", None)
+            data.pop("provider_id", None)
+            data.pop("owner_user_id", None)
+        with self._catalog_scope(request):
+            await super().on_model_change(data, model, is_created, request)
 
     async def after_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
-        await super().after_model_change(data, model, is_created, request)
+        with self._catalog_scope(request):
+            await super().after_model_change(data, model, is_created, request)
 
         if model.is_default:
             # One default per capability fleet-wide — the same rule
@@ -1680,7 +1882,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             # request; matching on the model_type *string* left both flagged
             # and forked the fleet into a provider-priority lottery. Runs
             # after the commit, where a freshly created row already has its id.
-            await LLMModel.objects.set_default(model.id)
+            with self._catalog_scope(request):
+                await LLMModel.objects.set_default(model.id)
 
     async def delete_model(self, request: Request, pk: Union[int, str]) -> None:
         """Override default delete to use manager's reassignment logic.
@@ -1689,7 +1892,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         before forwarding to the manager which expects an integer id.
         """
         model_id = int(pk) if isinstance(pk, str) else pk
-        result = await LLMModel.objects.delete_with_default_reassignment(model_id)
+        with self._catalog_scope(request):
+            result = await LLMModel.objects.delete_with_default_reassignment(model_id)
         warnings = result.get("warnings", [])
         if warnings:
             msg = "; ".join(warnings)
@@ -1710,7 +1914,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             request.session["admin_message"] = {"type": "error", "message": "Не выбрана модель для тестирования"}
             return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
-        return await LLMModelActions.test_model(self, request, pks, self.identity)
+        with self._catalog_scope(request):
+            return await LLMModelActions.test_model(self, request, pks, self.identity)
 
 
 class TenantAdmin(BaseAdmin, model=Tenant):
@@ -1718,6 +1923,7 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     name_plural = "Рабочие пространства"
     icon = "fa fa-building"
 
+    inline_columns = ["id", "name", "slug", "plan", "is_active"]
     column_list = [
         "id",
         "name",
@@ -1805,16 +2011,15 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     }
 
     def is_accessible(self, request: Request) -> bool:
-        """Workspace settings follow membership, like every console screen.
+        """Workspace-wide administration is reserved for platform admins.
 
-        Nothing is hard-coded per role here: `AdminScopeMiddleware` gives the
-        owner every workspace, and an invited member only the workspaces they
-        belong to. What changes per actor is the *right* — the workspace the
-        member is not allowed to configure is read-only for them, because
-        `tenancy.workspace` UPDATE is not in their membership role's grants.
+        The gate is the `tenancy.workspace` right, not the platform badge: the
+        owner holds every registered action, an `admin` must be granted the
+        right like any other role. A model permission is still the right
+        question rather than a per-row one — the list spans every workspace.
         """
         user = self.get_admin_user(request)
-        return user is not None and bool(user.has_admin_access())
+        return bool(user is not None and user.has_perm_for("tenant", ActionType.VIEW))
 
 
 class UserCredentialAdmin(BaseAdmin, model=UserCredential):
@@ -1832,6 +2037,7 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
     name_plural = "Личные креды"
     icon = "fa fa-user-lock"
 
+    inline_columns = ["id", "platform", "kind", "label", "expires_at", "is_active"]
     column_list = ["id", "user_id", "platform", "kind", "label", "expires_at", "is_active", "updated_at"]
     column_searchable_list = ["platform", "kind", "label"]
     column_sortable_list = ["user_id", "platform", "kind", "expires_at", "is_active"]
@@ -1891,6 +2097,8 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
     name_plural = "Собранный контент"
     icon = "fa fa-database"
 
+    # High-volume raw content stays on its dedicated list, never in parent inlines.
+    inline_exclude = True
     column_list = [
         "id",
         "source_id",
@@ -1995,6 +2203,7 @@ class BotActionAdmin(BaseAdmin, model=BotAction):
     can_create = False
     form_columns = ["status"]
 
+    inline_columns = ["id", "action_type", "status", "dry_run", "created_at"]
     column_list = ["id", "agent_scenario_id", "source_id", "action_type", "status", "dry_run", "created_at"]
     column_searchable_list = ["status", "action_type"]
     column_sortable_list = ["created_at", "status"]
@@ -2062,6 +2271,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     # Запуск задачи ставит job в очередь — это изменение, а не просмотр.
     action_permissions = {"run-now": ActionType.UPDATE}
 
+    inline_columns = ["id", "name", "job_type", "is_active", "next_run_at", "last_status"]
     column_list = [
         "id",
         "tenant",
@@ -2170,7 +2380,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                 "content_types (posts|comments), engagement_types (likes|reposts), limit, queries, "
                 "city {name, mode}, discovery {people, communities, queries}, comments "
                 "{max_per_post, total}, candidates {limit, confirm}, date_window {start, end}. "
-                "Выборка (docs/design/task-selection.md): tracked_users — авторы из источников задачи, "
+                "Выборка (docs/COLLECTION.md#task-selection-contract): tracked_users — авторы из источников задачи, "
                 "чьи записи анализируются (пусто — записи самих источников); keywords_list + "
                 "keywords_match (any|all) — фразы, которые должны быть в записи. Что и где собирать, "
                 "задаёт задача; сценарий отвечает за методику анализа"
@@ -2222,9 +2432,33 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         if not isinstance(raw_payload, Mapping):
             raise ValueError('Параметры задачи: нужен JSON-объект, например {"period": "day"}')
         try:
-            data["payload"] = apply_collection(dict(raw_payload), raw_payload.get("collection"), job_type=job_type)
+            payload = apply_collection(dict(raw_payload), raw_payload.get("collection"), job_type=job_type)
+            if "task_plan" in raw_payload:
+                from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+
+                plan_raw = raw_payload["task_plan"]
+                plan = parse_task_plan(plan_raw)
+                planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
+                cron_value = data.get("cron_expr") or getattr(model, "cron_expr", None)
+                if cron_value != planned_cron:
+                    raise TaskPlanError("cron_expr must match task_plan.trigger")
+                raw_sources = data.get("sources")
+                if plan.source_scope == "selected" and raw_sources is not None:
+                    linked_ids = sorted(getattr(source, "id", source) for source in raw_sources)
+                    if linked_ids != sorted(plan.source_ids):
+                        raise TaskPlanError("Admin source selection must match task_plan.source_scope")
+                raw_scenario = data.get("agent_scenario")
+                selected_scenario = getattr(raw_scenario, "id", raw_scenario)
+                if selected_scenario is not None and selected_scenario != plan.scenario_id:
+                    raise TaskPlanError("Admin scenario must match task_plan.scenario_id")
+                if plan.source_scope != "selected":
+                    data["sources"] = []
+                payload = apply_task_plan(payload, plan_raw, job_type=job_type)
+            data["payload"] = payload
         except CollectionIntentError as exc:
             raise ValueError(collection_error_message(str(exc))) from None
+        except ValueError as exc:
+            raise ValueError(str(exc)) from None
 
         # Guard: an active source-based task (collect/analyze) needs at least one
         # active source to operate on. Empty links fall back to "all active
@@ -2234,6 +2468,16 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         from app.models.managers.agent_task_manager import AgentTaskManager
 
         active = data.get("is_active", getattr(model, "is_active", False))
+        # The platform admin has no personal payer context. A newly authored
+        # paid plan must be activated by its workspace owner after consent.
+        if is_created and isinstance(data.get("payload"), Mapping) and "task_plan" in data["payload"]:
+            active = False
+            data["is_active"] = False
+            if request is not None and getattr(request, "session", None) is not None:
+                request.session["admin_message"] = {
+                    "type": "warning",
+                    "message": "Новая задача сохранена неактивной: владелец пространства должен настроить оплату и активировать её.",
+                }
         tenant_val = data.get("tenant") or getattr(model, "tenant_id", None)
         tenant_id = tenant_val.id if hasattr(tenant_val, "id") else tenant_val
         # The form delivers the workspace as a string ("1"), and a `tenant_id`
@@ -2312,8 +2556,13 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                 # the offset between the two on its first fire.
                 with tenant_scope(bypass=True):
                     tenant = await Tenant.objects.get(id=tenant_id) if tenant_id else None
+                from app.services.task_plans import task_plan_timezone
 
-                data["next_run_at"] = compute_next(cron_expr, resolve_tz(tenant))
+                task_plan = (data.get("payload") or {}).get("task_plan")
+                data["next_run_at"] = compute_next(
+                    cron_expr,
+                    task_plan_timezone(task_plan, resolve_tz(tenant)),
+                )
         await super().on_model_change(data, model, is_created, request)
 
     def list_query(self, request: Request) -> Select:
@@ -2349,13 +2598,9 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         if admin_user is None or not getattr(admin_user, "is_active", False):
             raise HTTPException(status_code=403, detail="Доступ запрещён: оператор не аутентифицирован")
 
-        # The task must be one the actor may already see: `AdminScopeMiddleware`
-        # narrowed the console to the owner's everything or the actor's own
-        # workspaces, and a job is executed for the task's workspace, so reading
-        # it by bypass would let a non-member run a foreign workspace's task from
-        # a guessed id. The scoped read below resolves it to `None` instead, and
-        # the redirect reports nothing was run.
-        with tenant_scope(bypass=bool(admin_user.is_superuser)):
+        # Operator console: read the task across workspaces (bypass), then act
+        # inside the task's own workspace — the shared helper does the scoping.
+        with tenant_scope(bypass=True):
             task = await AgentTask.objects.get(id=task_id)
         if task:
             from app.core.permissions import permission_scope
@@ -2376,14 +2621,7 @@ from app.models import Job
 
 
 class JobAdmin(BaseAdmin, model=Job):
-    """Workspace queue inspection; the owner reads the whole one.
-
-    The four flags below are *business* rules, not actor rules, and they apply to
-    the owner too: a queue row is written by the dispatcher, so fabricating,
-    rewriting or deleting one from a form would desynchronise it from its
-    `AgentTask`. Who reaches the page at all — and which workspaces' jobs are in
-    it — is decided by `AdminScopeMiddleware` like every other console screen.
-    """
+    """Global operator inspection; mutations use the scoped queue workflow."""
 
     name = "Выполнение"
     name_plural = "Очередь выполнения"
@@ -2392,6 +2630,14 @@ class JobAdmin(BaseAdmin, model=Job):
     can_edit = False
     can_delete = False
     can_export = False
+    column_labels = {
+        **BaseAdmin.column_labels,
+        "job_type": "Тип задания",
+        "status": "Статус",
+        "run_at": "Запуск",
+        "attempts": "Попытки",
+    }
+    inline_columns = ["id", "job_type", "status", "run_at", "attempts"]
     column_list = ["id", "tenant_id", "agent_task_id", "job_type", "status", "run_at", "attempts"]
     column_details_list = column_list + ["locked_at", "started_at", "finished_at", "created_at", "updated_at"]
     column_sortable_list = ["id", "run_at", "status"]

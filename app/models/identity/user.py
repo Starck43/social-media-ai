@@ -64,19 +64,25 @@ class User(Base, TimestampMixin):
         return bool(self.is_active and self.role and self.role.codename == PlatformRoleType.SUPERUSER)
 
     def _is_superuser_role(self) -> bool:
-        """Compatibility predicate for platform entrypoints only."""
-        return self.is_platform_admin
+        """Compatibility predicate for platform entrypoints only.
+
+        Ownership, not the badge: code that asks "may this actor bypass scopes"
+        gets `superuser` only, so an `admin` is held to its grants.
+        """
+        return self.is_superuser
 
     def model_permissions(self, model_name: str) -> set[ActionType]:
         """Registered actions granted to this platform operator for one resource.
 
         Stable resource keys define authority; model names are lookup metadata.
-        Platform administrators receive all registered actions through the
-        caller's resource/action validation.
+        Only the platform owner gets every action implied by the role: an
+        `admin` is held to the grants stored for `admin` in `role_permission`,
+        exactly like an `operator`, so widening the console for everyone means
+        granting the right, never widening the bypass.
         """
         if not self.has_admin_access():
             return set()
-        if self.is_platform_admin:
+        if self.is_superuser:
             return set(ActionType)
 
         if self._model_perms_cache is None:

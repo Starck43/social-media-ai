@@ -21,7 +21,7 @@ did not upgrade a working/deployment schema; prior isolated migration
 acceptance remains in the evidence ledger. PostgreSQL/ASGI and browser evidence
 remains pinned to the original execution SHAs; none is attributed as a rerun on
 final dev. See
-[implementation evidence](validation/personal-llm-ownership.md).
+[implementation evidence](audit/personal-llm-ownership.md).
 
 The public facade is [app.models](../app/models/__init__.py); canonical definitions
 live in domain packages. [bootstrap](../app/models/bootstrap.py) binds managers
@@ -44,11 +44,11 @@ activation and whole-gate acceptance are distinct states.
 
 ### Table inventory
 
-The source defines **48 mapped tables and 3 association tables**:
+The source defines **49 mapped tables and 3 association tables**:
 
 | Domain | Mapped tables | Association tables |
 | --- | --- | --- |
-| Identity | `users`, `roles`, `permissions`, `model_types`, `user_credentials` | `role_permission` |
+| Identity | `users`, `roles`, `permissions`, `model_types`, `user_credentials`, `login_attempts` | `role_permission` |
 | Tenancy | `tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, `workspace_roles` | `workspace_role_permission` |
 | Collection | `platforms`, `sources`, `collected_items`, `collection_seen`, `collection_candidates`, `collection_lane_runs` | — |
 | Analysis | `agent_scenarios`, `ai_analytics`, `analyzed_content_receipts` | — |
@@ -57,7 +57,7 @@ The source defines **48 mapped tables and 3 association tables**:
 | Notifications | `notifications`, `digest_runs`, `notification_preferences` | — |
 | Agent | `agent_sessions`, `agent_messages`, `agent_memory`, `agent_feedback` | — |
 
-The 12 additional billing tables are declared in [billing](../app/models/billing/):
+The 12 additional billing tables are declared in [billing](../app/models/billing):
 `personal_billing_accounts`, `task_billing_payers`, `personal_llm_dispatches`,
 `personal_billing_cutovers`, `personal_legacy_attribution_consents`,
 `personal_legacy_attributions`, `personal_llm_billing_incidents`,
@@ -120,6 +120,17 @@ are stated in their own section.
 ### `users`
 
 [Source](../app/models/identity/user.py). Fields: `id` PK; `username` String(50) and `email` String(100), each unique/indexed/non-null; `hashed_password` String(255); `is_active` Boolean; non-null `role_id` FK → roles. No `is_superuser` column or `notifications` relationship is declared on User. Platform operator identity and workspace membership are separate concepts.
+
+### `login_attempts`
+
+[Source](../app/models/identity/login_attempt.py); revision `0111`. Global
+infrastructure table for the shared login budget, not tenant-owned. Fields: `id`
+PK; `scope` String(16) (`account` or `address`); `identifier` String(255) — the
+casefolded username/email or the client address, never a secret; `failed_count`
+Integer; `last_attempt_at` timestamp with time zone; nullable `locked_until`
+timestamp with time zone; timestamps. Unique (`scope`, `identifier`). A
+successful login deletes the account row; the address row decays with
+`LOGIN_TIMEOUT_MINUTES`.
 
 ### `llm_providers`
 
@@ -199,7 +210,7 @@ Unique **(`tenant_id`, `platform_id`, `external_id`)**. There is **no `user_id` 
 `owner_task_id` was added by 0108 for task-scoped query lanes. A lane is hidden
 from the global source list and excluded from the task's empty-set/"all active"
 fallback; only an explicit link activates it. See
-[collection plan](design/collection-plan.md).
+[collection plan](audit/collection-plan-history.md).
 
 ### `collected_items`
 
@@ -212,7 +223,7 @@ stored. Analysis reads `selected` rows and legacy `NULL` rows (staged before
 stage C, which still pass through the old analysis-time selection once);
 `needs_review` waits for an operator. Rejected identities/counts live in
 `collection_seen`/`collection_lane_runs`. See
-[collection plan](design/collection-plan.md).
+[collection plan](audit/collection-plan-history.md).
 
 ### `collection_seen`
 
@@ -427,7 +438,7 @@ replay returns false: **not permission to dispatch again**. There is no terminal
 settlement/release, automatic baseline provisioning or all-client HTTP wiring in
 this merged slice. Baseline/bound production and activation remain open. See
 [delivered scope](IMPLEMENTATION_STATUS.md) and
-[budget validation attribution](validation/llm-budget-pg-runner.md).
+[budget validation attribution](audit/llm-budget-pg-runner.md).
 
 ## Tenant-scoped scheduling and delivery
 
@@ -470,7 +481,7 @@ or ambiguous delivery stops for review; see [DIGEST](DIGEST.md).
 
 ### `notifications`
 
-[Source](../app/models/notifications/notification.py). Fields: `id`, `title` **String(200)**, `message` Text, native `notification_type` enum stored as names, `is_read` Boolean(default false), `related_entity_type` String(50), `related_entity_id` Integer. Related entity fields are generic attribution, not FKs. Source of allowed notification types: [enum definitions](../app/types/enums/). Workspace notifications and fixed operator alerts have different transport/security paths; see [NOTIFICATIONS](NOTIFICATIONS.md).
+[Source](../app/models/notifications/notification.py). Fields: `id`, `title` **String(200)**, `message` Text, native `notification_type` enum stored as names, `is_read` Boolean(default false), `related_entity_type` String(50), `related_entity_id` Integer. Related entity fields are generic attribution, not FKs. Source of allowed notification types: [enum definitions](../app/types/enums). Workspace notifications and fixed operator alerts have different transport/security paths; see [NOTIFICATIONS](NOTIFICATIONS.md).
 
 ## Tenant-scoped conversation, memory and action audit
 

@@ -392,7 +392,7 @@ def _build_trigger_config(
 def _payload_from_form(
 		job_type, start_date, end_date,
 		digest_period=None, digest_group_by=None, digest_time_breakdown=False,
-		retention_success_hours=24, retention_failure_hours=24,
+		retention_success_hours=24, retention_failure_hours=24, window_type="fixed",
 ) -> dict:
 	"""The flat payload keys a task of this type needs.
 
@@ -417,7 +417,7 @@ def _payload_from_form(
 			raise ValueError("Срок хранения должен быть целым числом от 1 до 8760 часов")
 		return payload
 	payload: dict = {}
-	if AgentTaskManager.requires_content_dates(job_type):
+	if AgentTaskManager.requires_content_dates(job_type) and window_type != "rolling":
 		start = AgentTaskManager.parse_date(start_date)
 		if start is None:
 			raise ValueError("Укажите дату начала сбора контента — иначе первый запуск вытянет всё с первого поста")
@@ -425,7 +425,10 @@ def _payload_from_form(
 		payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=False))
 		payload["force_reanalyze"] = False
 		payload["collect_before_analyze"] = True
+	elif AgentTaskManager.requires_content_dates(job_type) and window_type == "rolling":
+		payload.pop("cli_dates", None)
 	if job_type == "digest":
+		payload.pop("task_plan", None)
 		if digest_period and digest_period in ("day", "week", "month"):
 			payload["period"] = digest_period
 		if digest_group_by:
@@ -433,6 +436,42 @@ def _payload_from_form(
 		if digest_time_breakdown:
 			payload["time_breakdown"] = True
 	return payload
+
+
+def _task_plan_from_form(
+		goal, platforms, source_scope, source_ids, scenario_id, job_type, cron_expr, payload,
+		window_type, rolling_days, trigger_timezone="",
+) -> dict | None:
+	"""Build the additive canonical plan from the current task form."""
+	if source_scope == "legacy":
+		return None
+	from app.services.task_plans import TaskPlanError, parse_task_plan, task_plan_block
+
+	if source_scope not in {"selected", "discovery", "all"}:
+		raise TaskPlanError("Выберите область источников задачи")
+	selected_ids = source_ids if source_scope == "selected" else []
+	collection_input = dict(payload.get("collection") or {})
+	if window_type == "rolling":
+		window = {"type": "rolling", "days": rolling_days}
+		collection_input.pop("date_window", None)
+	else:
+		cli_dates = payload.get("cli_dates") if isinstance(payload.get("cli_dates"), dict) else {}
+		window = {"type": "fixed", "start": cli_dates.get("start_date"), "end": cli_dates.get("end_date")}
+	trigger = {"type": "once"} if cron_expr == "@once" else {"type": "schedule", "cron": cron_expr}
+	if trigger["type"] == "schedule" and trigger_timezone.strip():
+		trigger["timezone"] = trigger_timezone.strip()
+	raw = {
+		"version": 1,
+		"goal": goal.strip() or None,
+		"platforms": list(dict.fromkeys(platforms or ["vk"])),
+		"source_scope": source_scope,
+		"source_ids": selected_ids,
+		"collection": collection_input,
+		"window": window,
+		"scenario_id": scenario_id,
+		"trigger": trigger,
+	}
+	return task_plan_block(parse_task_plan(raw))
 
 
 def _trigger_and_action_fields(
@@ -509,6 +548,16 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"cron_expr": task.cron_expr,
 		"is_active": task.id in effective_active,
 		"source_ids": source_ids,
+		"trigger_timezone": ((payload.get("task_plan") or {}).get("trigger") or {}).get("timezone") or "",
+		"task_goal": (payload.get("task_plan") or {}).get("goal") or "",
+		"source_scope": (payload.get("task_plan") or {}).get(
+			"source_scope", "selected" if source_ids else "all"
+		),
+		"platforms": (payload.get("task_plan") or {}).get("platforms") or ["vk"],
+		"window_type": ((payload.get("task_plan") or {}).get("window") or {}).get(
+			"type", "fixed" if payload.get("cli_dates") else "rolling"
+		),
+		"rolling_days": ((payload.get("task_plan") or {}).get("window") or {}).get("days", 1),
 		"scenario_id": task.agent_scenario_id,
 		"tracked_users": ", ".join(payload.get("tracked_users") or []),
 		"keywords_match": payload.get("keywords_match") or "any",
@@ -617,7 +666,14 @@ async def _activate_selected_sources(tenant_id: int, source_ids: list[int]) -> N
 				await Source.objects.update_by_id(source.id, is_active=True)
 
 
-async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], scenario_id: int | None) -> str | None:
+async def _can_activate(
+	tenant_id: int,
+	job_type: str,
+	source_ids: list[int],
+	scenario_id: int | None,
+	*,
+	payload: dict[str, Any] | None = None,
+) -> str | None:
 	"""Return why the task cannot be activated, or None if it can.
 
 	A task is only activatable when its scenario (if one is chosen) is active
@@ -636,6 +692,23 @@ async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], sc
 				return "выбранный сценарий деактивирован"
 
 		if not AgentTaskManager.requires_sources(job_type):
+			return None
+		plan = payload.get("task_plan") if isinstance(payload, dict) else None
+		collection = plan.get("collection") if isinstance(plan, dict) else None
+		discovery = collection.get("discovery") if isinstance(collection, dict) else None
+		if (
+			isinstance(plan, dict)
+			and plan.get("source_scope") == "discovery"
+			and isinstance(collection, dict)
+			and (
+				collection.get("queries")
+				or (
+					isinstance(discovery, dict)
+					and discovery.get("queries")
+					and (discovery.get("people") or discovery.get("communities"))
+				)
+			)
+		):
 			return None
 		if source_ids:
 			sources = await Source.objects.filter(id__in=source_ids)
@@ -733,6 +806,14 @@ async def queue_task_now(task: "AgentTask", initiated_by_user_id: int | None = N
 	from app.jobs.dispatcher import launch_job_background
 	from app.jobs.enqueue import enqueue_task_run
 	from app.jobs.source_activity import SourceJobBusy
+	from app.models.managers.agent_task_manager import AgentTaskManager
+
+	linked_sources = await AgentTaskManager().get_sources(task.id)
+	blocked = await _can_activate(
+		task.tenant_id, task.job_type, linked_sources, task.agent_scenario_id, payload=task.payload
+	)
+	if blocked is not None:
+		return {"status": "blocked", "reason": blocked}
 
 	if initiated_by_user_id is None:
 		from app.core.permissions import get_current_user
@@ -878,6 +959,12 @@ async def task_create(
 		job_type: str = Form(...),
 		cron_custom: str = Form(...),
 		source_ids: list[str] = Form([]),
+		source_scope: str = Form("legacy"),
+		task_goal: str = Form(""),
+		platforms: list[str] = Form([]),
+		window_type: str = Form("fixed"),
+		rolling_days: int | None = Form(default=None),
+		trigger_timezone: str = Form(""),
 		scenario_id: int = Form(default=None),
 		tracked_users: str = Form(""),
 		keywords_match: str = Form("any"),
@@ -992,6 +1079,7 @@ async def task_create(
 			digest_time_breakdown=digest_time_breakdown == "on",
 			retention_success_hours=retention_success_hours,
 			retention_failure_hours=retention_failure_hours,
+			window_type=window_type,
 		)
 		if job_type != "prune":
 			apply_selection(payload, tracked_users, _split_phrases(keywords_list), keywords_match)
@@ -1015,6 +1103,8 @@ async def task_create(
 	# older client that posts the legacy fields alone keeps the task's stored
 	# block instead of silently resetting it to posts.
 	if collection_configured == "1":
+		if job_type in ("collect", "analyze") and window_type == "rolling":
+			payload.pop("cli_dates", None)
 		try:
 			collection_block = _collection_block(
 				job_type,
@@ -1042,6 +1132,22 @@ async def task_create(
 			payload["collection"] = collection_block
 		else:
 			payload.pop("collection", None)
+
+	task_plan = None
+	if job_type in ("collect", "analyze"):
+		try:
+			task_plan = _task_plan_from_form(
+				task_goal, platforms, source_scope, parsed_source_ids, scenario_id,
+				job_type, cron_expr, payload, window_type, rolling_days, trigger_timezone,
+			)
+			if task_plan is not None:
+				from app.services.task_plans import apply_task_plan
+
+				payload = apply_task_plan(payload, task_plan, job_type=job_type)
+				parsed_source_ids = list(task_plan["source_ids"])
+		except ValueError as error:
+			add_flash(request, "error", f"Проверьте план задачи: {error}")
+			return RedirectResponse(back, status_code=302)
 
 	if job_type == "analyze":
 		# A deactivated scenario may be chosen on purpose (it is on the task's
@@ -1095,7 +1201,8 @@ async def task_create(
 	# The workspace zone wins; the global setting is only the fallback. Must
 	# agree with the runner, which re-advances the schedule in the same zone.
 	tenant = await tenants.get(id=tenant_id)
-	tz = resolve_tz(tenant)
+	from app.services.task_plans import task_plan_timezone
+	tz = task_plan_timezone(task_plan, resolve_tz(tenant))
 
 	if cron_expr == "@once":
 		next_run = datetime.now(timezone.utc) + timedelta(minutes=1)
@@ -1117,7 +1224,7 @@ async def task_create(
 	# A task can only be created active when it has an active scenario and, for
 	# a source-based type, at least one active source; otherwise it starts
 	# inactive.
-	activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id)
+	activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id, payload=payload)
 	if activation_blocked is not None:
 		add_flash(
 			request,
@@ -1125,6 +1232,9 @@ async def task_create(
 			f"Задача «{name}» создана неактивной: {activation_blocked}",
 		)
 	is_active = activation_blocked is None
+	# New universal plans are saved as drafts until the creator establishes
+	# payer consent. Existing non-plan tasks keep their prior activation path.
+	needs_payer_consent = task_plan is not None and is_active
 
 	from app.core.database import new_session
 
@@ -1138,7 +1248,7 @@ async def task_create(
 					cron_expr=cron_expr,
 					payload=payload,
 					agent_scenario_id=None if job_type == "prune" else scenario_id,
-					is_active=is_active,
+					is_active=False if needs_payer_consent else is_active,
 					next_run_at=next_run,
 					dry_run=dry_run_flag,
 					session=session,
@@ -1157,6 +1267,22 @@ async def task_create(
 		return RedirectResponse(back, status_code=302)
 	finally:
 		await session.close()
+
+	if needs_payer_consent:
+		from app.models.managers.personal_billing_manager import PersonalBillingError, PersonalBillingUnavailable
+		from app.services.billing import consent_current_user_as_task_payer
+
+		try:
+			await consent_current_user_as_task_payer(task.id)
+		except (PersonalBillingError, PersonalBillingUnavailable):
+			add_flash(
+				request,
+				"warning",
+				f"Задача «{name}» сохранена неактивной. Настройте личный AI-бюджет и подтвердите оплату для активации.",
+			)
+			return RedirectResponse(back, status_code=302)
+		await AgentTask.objects.update_by_id(task.id, is_active=True)
+		task = await AgentTask.objects.get(id=task.id, tenant_id=tenant_id)
 
 	# "Создать и выполнить" only queues the job. It used to run the handler
 	# inside this request, which for a long job (an `analyze` task draining a
@@ -1386,9 +1512,9 @@ async def _lane_run_rows(job: Any) -> list[dict[str, Any]]:
 
 
 def _legacy_task_status_label(task: Any) -> str:
-	"""Translate the task's coarse schedule receipt without exposing last_error."""
+	"""Translate the task's historical schedule receipt without implying a live Job."""
 	return {
-		"queued": "поставлена в очередь",
+		"queued": "последний запуск ожидал очереди",
 		"ok": "завершилась успешно",
 		"failed": "завершилась с ошибкой",
 		"skipped": "пропущена",
@@ -1618,6 +1744,16 @@ async def task_edit_page(request: Request, task_id: int):
 	effective_active = {tid for tid, ok in effective.items() if ok}
 
 	edit = _edit_payload(task, effective_active, source_ids_for_task)
+	if not (task.payload or {}).get("task_plan") and source_ids_for_task:
+		edit["platforms"] = list(
+			dict.fromkeys(
+				getattr(getattr(source, "platform", None), "platform_type", None).db_value
+					if hasattr(getattr(getattr(source, "platform", None), "platform_type", None), "db_value")
+					else str(getattr(getattr(source, "platform", None), "platform_type", "vk"))
+				for source in (task.sources or [])
+				if source.id in source_ids_for_task
+			)
+		) or ["vk"]
 
 	# Which payload targets each scenario's analysis types want — the form
 	# renders the matching inputs (see `param_registry.PAYLOAD_PARAMS`).
@@ -1702,7 +1838,7 @@ async def task_toggle(
 		from app.models.managers.agent_task_manager import AgentTaskManager
 
 		linked = await AgentTaskManager().get_sources(task.id)
-		blocked = await _can_activate(tenant_id, task.job_type, linked, task.agent_scenario_id)
+		blocked = await _can_activate(tenant_id, task.job_type, linked, task.agent_scenario_id, payload=task.payload)
 		if blocked is not None:
 			add_flash(request, "error", f"Задача «{task.name}» не активирована: {blocked}")
 			return RedirectResponse("/app/tasks", status_code=302)
@@ -1756,6 +1892,9 @@ async def task_run_now(
 	# job pending for *another* task on the same sources is still reported as
 	# busy — replacing it would cancel somebody else's run.
 	outcome = await queue_task_now(task, getattr(request.state.web_user, "id", None))
+	if outcome.get("status") == "blocked":
+		add_flash(request, "error", f"Задача «{task.name}» не запущена: {outcome.get('reason')}")
+		return RedirectResponse(back, status_code=302)
 	if outcome.get("already_running"):
 		add_flash(request, "info", "Источник уже занят сбором или анализом. Новый запуск не создан")
 	else:
@@ -1822,6 +1961,12 @@ async def task_update(
 		cron_expr: str = Form(...),
 		is_active: str = Form(""),
 		source_ids: list[str] = Form([]),
+		source_scope: str = Form("legacy"),
+		task_goal: str = Form(""),
+		platforms: list[str] = Form([]),
+		window_type: str = Form("fixed"),
+		rolling_days: int | None = Form(default=None),
+		trigger_timezone: str = Form(""),
 		scenario_id: int = Form(default=None),
 		tracked_users: str = Form(""),
 		keywords_match: str = Form("any"),
@@ -1934,6 +2079,7 @@ async def task_update(
 			digest_time_breakdown=digest_time_breakdown == "on",
 			retention_success_hours=retention_success_hours,
 			retention_failure_hours=retention_failure_hours,
+			window_type=window_type,
 		)
 		if job_type != "prune":
 			apply_selection(new_payload, tracked_users, _split_phrases(keywords_list), keywords_match)
@@ -1961,6 +2107,8 @@ async def task_update(
 	payload = new_payload if job_type == "prune" else (task.payload.copy() if isinstance(task.payload, dict) else {})
 	if job_type != "prune":
 		payload.update(new_payload)
+	if job_type in ("collect", "analyze") and window_type == "rolling":
+		payload.pop("cli_dates", None)
 	requested_active = is_active == "on"
 	if job_type == "analyze":
 		scenario_block = await _unified_analysis_scenario_block(
@@ -2020,6 +2168,25 @@ async def task_update(
 		else:
 			payload.pop("collection", None)
 
+	task_plan = None
+	if job_type in ("collect", "analyze") and source_scope != "legacy":
+		try:
+			task_plan = _task_plan_from_form(
+				task_goal, platforms, source_scope, parsed_source_ids, scenario_id,
+				job_type, cron_expr, payload, window_type, rolling_days, trigger_timezone,
+			)
+			if task_plan is not None:
+				from app.services.task_plans import apply_task_plan
+
+				payload = apply_task_plan(payload, task_plan, job_type=job_type)
+				parsed_source_ids = list(task_plan["source_ids"])
+		except ValueError as error:
+			add_flash(request, "error", f"Проверьте план задачи: {error}")
+			return RedirectResponse(back, status_code=302)
+
+	if job_type == "digest":
+		payload.pop("task_plan", None)
+
 	# Warn about missing target params for the scenario's analysis types —
 	# the scenario this save binds, not the one the row held before the edit.
 	if scenario_id and job_type != "prune":
@@ -2045,7 +2212,9 @@ async def task_update(
 	# Same rule as create: the workspace zone, so an edit does not silently
 	# re-schedule the task in the global zone the runner would keep using.
 	tenant = await tenants.get(id=tenant_id)
-	tz = resolve_tz(tenant)
+	from app.services.task_plans import task_plan_timezone
+	stored_plan = (task.payload or {}).get("task_plan") if isinstance(task.payload, dict) else None
+	tz = task_plan_timezone(task_plan or stored_plan, resolve_tz(tenant))
 
 	if cron_expr == "@once":
 		next_run = datetime.now(timezone.utc) + timedelta(minutes=1)
@@ -2067,7 +2236,7 @@ async def task_update(
 	# source-based type, at least one active source; otherwise it stays inactive.
 	activation_blocked = None
 	if requested_active:
-		activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id)
+		activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id, payload=payload)
 		if activation_blocked is not None:
 			add_flash(
 				request,

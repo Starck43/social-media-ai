@@ -406,6 +406,7 @@ class ContentCollector:
 			task_id: int | None = None,
 			collection_context: Any = None,
 			seen_items: set[tuple[str, str, str]] | None = None,
+			report_empty: bool = False,
 	) -> Optional[dict]:
 		"""
 		Collect content from a single source.
@@ -478,6 +479,16 @@ class ContentCollector:
 
 			if not content:
 				logger.warning(f"No content collected from source {source.id}")
+				if report_empty:
+					return {
+						"source_id": source.id,
+						"content_count": 0,
+						"parent_count": parent_count,
+						"new_items": 0,
+						"limit_count": effective_limit,
+						"limit_reached": parent_limit_reached,
+						"empty": True,
+					}
 				return None
 
 			logger.info(f"Collected {len(content)} items from source {source.id}")

@@ -31,6 +31,7 @@ a set of `(identity, action)` pairs that later calls only match against.
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -47,6 +48,22 @@ from app.models import User
 from app.types import ActionType
 
 logger = logging.getLogger(__name__)
+
+# The console request currently being served. sqladmin hands `scaffold_form`
+# the rules but not the request, so the actor it needs is published here by
+# `AdminAuthorizationBackend.load()`. A context var, not an attribute: two
+# operators can render forms at the same time and each must see their own.
+_console_request: ContextVar[Optional[Request]] = ContextVar("console_request", default=None)
+
+
+def bind_console_request(request: Request) -> None:
+    """Publish `request` to console code that sqladmin calls without it."""
+    _console_request.set(request)
+
+
+def bound_console_request() -> Optional[Request]:
+    """The request bound by `load()`, or None outside a console request."""
+    return _console_request.get()
 
 # sqladmin action -> the `ActionType` a role must carry for it. `Action` is a
 # `str` enum, so these keys match the plain strings sqladmin passes in.
@@ -92,22 +109,48 @@ class AdminAuthorizationBackend(GrantsAuthorizationBackend):
 
     # --- per-request state -------------------------------------------------
 
+    async def load(self, request: Request) -> None:
+        """Prepare the request, and publish it to code sqladmin calls later.
+
+        `scaffold_form` gets no request argument, and `BaseAdmin._form_request`
+        only covers the routes of one view — so the request is bound here, once,
+        where sqladmin already guarantees "authentication done, nothing rendered
+        yet". The context var is task-local: two operators browsing at the same
+        time each see their own.
+        """
+        bind_console_request(request)
+        await super().load(request)
+
     async def get_grants(self, request: Request) -> set[tuple[str, str]]:
         """The `(identity, action)` pairs the signed-in operator may use.
 
-        Empty for an anonymous/non-operator request, the wildcard pair for a platform admin, and
-        the role's rights translated into console actions otherwise.
+        Empty for an anonymous/non-operator request, the wildcard pair for the
+        platform owner, and the role's rights translated into console actions
+        otherwise. An `admin` is not a wildcard holder: its console is exactly
+        what `role_permission` grants the `admin` role, which is what lets the
+        owner narrow one admin's reach without touching the owner's own.
         """
         user = await self.resolve_user(request)
         if user is None or not user.has_admin_access():
             return set()
-        if user.is_platform_admin:
+        if user.is_superuser:
             return {(WILDCARD, WILDCARD)}
 
         model_by_identity, custom_rights = self._catalog(request)
         grants: set[tuple[str, str]] = set()
         for identity, model_name in model_by_identity.items():
             granted = user.model_permissions(model_name)
+            # Inside a selected workspace, platform console grants are only the
+            # outer ceiling. The active membership role must also grant the
+            # action; otherwise an ADMIN with platform-wide CRUD could edit a
+            # workspace where they are only a viewer.
+            from app.core.access_catalog import resource_for
+            from app.core.permissions import has_permission
+            from app.core.tenant_context import current_tenant_id
+
+            resource = resource_for(model_name)
+            if current_tenant_id() is not None and resource is not None and resource.workspace:
+                granted = {action for action in granted if has_permission(user, model_name, action)}
             if not granted:
                 continue
 

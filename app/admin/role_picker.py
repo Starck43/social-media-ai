@@ -29,6 +29,34 @@ def role_choices(actor: Any) -> list[tuple[str, str]]:
     return [(role.value, role_label(role.value)) for role in reversed(assignable_platform_roles(actor))]
 
 
+def role_edit(actor: Any, target: Any) -> tuple[list[tuple[str, str]], str | None]:
+    """What the edit form offers for `target`, and why it may be read-only.
+
+    Returns `(choices, locked_reason)`. An empty reason means the select works.
+    The two read-only cases are the ones `UserManager.set_platform_role`
+    refuses, so the form never invites a write that would come back as 403:
+
+    - **the actor's own account** — a mis-click would demote themselves, and
+      the console has no other owner-adjacent path to undo it;
+    - **the platform owner's account** — no console, API or CLI operation
+      re-roles the owner; the role is a fact, not a setting.
+
+    Whatever is returned, the role is *shown*: the select is filled with the
+    target's current role so the page still answers "which role is this?".
+    """
+    from app.core.access_catalog import role_label
+    from app.types import PlatformRoleType
+
+    current = getattr(getattr(target, "role", None), "codename", None)
+    shown = [(str(current), role_label(str(current)))] if current else []
+
+    if getattr(actor, "id", None) is not None and getattr(actor, "id", None) == getattr(target, "id", None):
+        return shown, "Свою платформенную роль изменить нельзя: её назначает другой администратор платформы"
+    if current == PlatformRoleType.SUPERUSER.value:
+        return shown, "Роль собственника платформы не меняется из консоли"
+    return role_choices(actor), None
+
+
 class RoleChoiceField(sqladmin_fields.SelectField):
     """A role select whose options are exactly the actor's assignable roles."""
 
@@ -55,12 +83,22 @@ class RolePickerConverter(ModelConverter):
     """Stock converter everywhere except `role`, which gets a fixed choice list."""
 
     choices: list[tuple[str, str]] = []
+    # Why the select is read-only, when it is. Two cases share the field but not
+    # the reason: the actor's own account (a mis-click would demote themselves)
+    # and the platform owner's account (nobody re-roles the owner, ever).
+    locked_reason: str | None = None
 
     def _role_field(self, prop: Any, field_widget_args: dict[str, Any], label: str | None):
         widget_args = dict(field_widget_args)
         widget_args.setdefault("class", "form-control")
         description = getattr(prop, "doc", None)
-        if not self.choices:
+        if self.locked_reason:
+            # The role is shown, not offered: the manager refuses the write, so
+            # the form must not invite it. Disabled fields are not submitted, so
+            # this is also what keeps `update_model` from seeing a change.
+            widget_args["disabled"] = True
+            description = self.locked_reason
+        elif not self.choices:
             # Nothing to assign at this rank: say so instead of rendering an
             # empty select the operator would try to submit.
             widget_args["disabled"] = True
@@ -105,4 +143,4 @@ class RolePickerConverter(ModelConverter):
         return self._role_field(prop, field_widget_args, label)
 
 
-__all__ = ["RoleChoiceField", "RolePickerConverter", "role_choices"]
+__all__ = ["RoleChoiceField", "RolePickerConverter", "role_choices", "role_edit"]

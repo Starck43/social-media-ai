@@ -81,7 +81,7 @@
     </div>
 </div>
 
-{% if signals.overdue_pending or signals.stale_running or signals.unconfirmed_failed %}
+{% if signals.overdue_pending or signals.stale_running or signals.unconfirmed_failed or signals.quarantined %}
     <div class="mt-4 space-y-1 rounded-xl border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
         {% if signals.overdue_pending %}
             <p>Ждут запуска дольше {{ overdue_pending_minutes }} мин: {{ signals.overdue_pending }} (самое старое — {{ signals.oldest_overdue_minutes }} мин).
@@ -92,7 +92,7 @@
             Цикл воркера не работает — проверьте процесс воркера.</p>
         {% endif %}
         {% if signals.unconfirmed_failed %}
-            <p>Ошибок с неподтверждённым результатом: {{ signals.unconfirmed_failed }}. Проверьте внешний эффект вручную, прежде чем повторять.</p>
+            <p>Ошибок с неподтверждённым результатом: {{ signals.unconfirmed_failed }}{% if signals.quarantined %}; в карантине: {{ signals.quarantined }}{% endif %}. Проверьте внешний эффект вручную, прежде чем повторять.</p>
         {% endif %}
     </div>
 {% endif %}

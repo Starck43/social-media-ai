@@ -838,7 +838,7 @@ acceptance guidance, not execution evidence or permission to start a runtime
 or use a real DB. No schema, paid probe or deployment is required.
 
 P10-T11 retains its pinned historical audit evidence in
-`docs/audits/2026-10-18-cli-api-chat.md`; its probes must be reconciled against
+`docs/audit/2026-10-18-cli-api-chat.md`; its probes must be reconciled against
 current source. P10-T12 owns chat task-tool fixes; no task-tool/API/billing
 files are changed here.
 
@@ -885,3 +885,7 @@ Digest command help lists `themes`, `sources`, `entities`, `intent` and
 `topic_chains`. `days` is web-only chronology; use `time_breakdown` for digest
 chronology. Sentiment and media are metrics/cross-filters, not grouping axes.
 Saved legacy task payloads with `sentiment` or `content_type` normalize to themes.
+
+## Universal social task parity (P8-T29)
+
+Expose the [shared task plan](AGENT_TASKS.md#explicit-task-plans) through existing task commands with read-only preview and canonical input. Keep explicit workspace selection, one-off and recurring tasks, source/scenario management and digest commands. CLI execution does not bypass collection rights or external-send safeguards. See P8-T29 for actual implementation and evidence.

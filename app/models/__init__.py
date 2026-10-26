@@ -32,7 +32,7 @@ from .collection import (
     Platform,
     Source,
 )
-from .identity import ModelType, Permission, PlatformRole, Role, User, UserCredential
+from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
 from .llm import (
     LLMAttempt,
     LLMBudgetDay,
@@ -58,6 +58,7 @@ __all__ = [
     "PlatformRole",
     "WorkspaceRole",
     "User",
+    "LoginAttempt",
     # Multi-tenant
     "Tenant",
     "TenantUser",

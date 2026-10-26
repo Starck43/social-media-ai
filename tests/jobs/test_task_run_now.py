@@ -270,7 +270,10 @@ async def test_saving_and_running_queues_the_job_instead_of_blocking(client, mon
         assert tenant_id != 1, f"registered into the bootstrap workspace: {tenant_id}"
         resp = await _create(client, task_name, source.id, run_now=True)
         assert resp.status_code == 200
-        assert "поставлена в очередь" in resp.text
+        # The live pending Job owns the queue state; the task receipt stays history.
+        assert "в очереди</span>" in resp.text
+        assert "поставлена в очередь" not in resp.text
+        assert "последний запуск ожидал очереди" not in resp.text
 
         with tenant_scope(bypass=True):
             all_tasks = await AgentTask.objects.filter(name=task_name)
@@ -419,10 +422,32 @@ async def test_a_repeated_submit_reports_the_clash_instead_of_a_500(client):
 
 @pytest.mark.asyncio
 async def test_a_task_can_still_be_saved_under_its_own_name(client):
-    """Saving a task under the name it already has is not a clash."""
-    user, tenant_id = await _register(client, "selfname")
-    source = await _make_source(tenant_id)
-    task_name = _name("same")
+    """Reopening and saving a task without renaming it updates that row."""
+    user = None
+    tenant_id = None
+    try:
+        user, tenant_id = await _register(client, "selfname")
+        source = await _make_source(tenant_id)
+        task_name = _name("same")
+
+        created = await _create(client, task_name, source.id)
+        assert created.status_code == 200
+        with tenant_scope(bypass=True):
+            task = await AgentTask.objects.filter(name=task_name, tenant_id=tenant_id).first()
+        assert task is not None, f"no task named {task_name}"
+
+        updated = await _create(client, task_name, source.id, path=f"/app/tasks/{task.id}")
+        assert updated.status_code == 200
+        # The client follows redirects, so inspect the rendered flash to detect
+        # a duplicate-name refusal that also ends on a 200 list page.
+        assert "уже существует" not in updated.text, "saving under its current name must not be refused"
+
+        with tenant_scope(bypass=True):
+            rows = await AgentTask.objects.filter(name=task_name, tenant_id=tenant_id)
+        assert [row.id for row in rows] == [task.id], "the update must not create a second task"
+        assert rows[0].name == task_name
+    finally:
+        await _drop(user, tenant_id)
 
 
 @pytest.mark.asyncio

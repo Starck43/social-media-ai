@@ -65,6 +65,13 @@ would charge the owner for talking to their own agent, which is the product.
 The same applies to `tenant_channels`: binding a chat your workspace already
 owns is not a second channel.
 
+**A deployment ceiling sits above the tier.** `MAX_WORKSPACE_MEMBERS`
+(`app/core/config.py`, default `2` = the owner plus one invited person) caps
+every workspace whatever its plan, and the tighter of it and the tier's
+`max_team_members` wins. Refusing an invite this way answers `no_seat` on the
+invite page and leaves the code usable. The knob is deployment-wide for the
+pilot; per-workspace settings tables are a later task.
+
 Only a platform superuser can change a tier (`POST /app/settings/plan`, or the
 admin console) — it is a billing act, not a workspace preference.
 
@@ -85,7 +92,7 @@ marker. Social `Platform` is a system-wide catalog, including across users;
 `UserCredential` remains personal. In the 0109 candidate, `LLMProvider` and
 `LLMModel` are also personal, filtered by `owner_user_id`, with a composite
 model/provider owner FK. They are shared only across their user's workspaces,
-not among different users. See [the 0109 contract](#personal-llm-catalog-0109-source-contract-deployment-pending).
+not among different users. See [the 0109 contract](#personal-llm-catalog-0109-source-contract-code-integrated-rollout-pending).
 
 ## Routing
 
@@ -153,6 +160,9 @@ labels come from one presentation catalog. Role descriptions are plain text.
 Only platform admins assign platform roles or configure operator grants.
 Workspace role creation/editing is not exposed.
 
+An invited person is never a workspace owner: invitations carry at most
+`admin`, and only the workspace owner may hand out `admin`. `owner` comes
+from creating the workspace or from a workspace owner's promotion.
 Workspace owners/admins manage settings and the team. An admin may manage only
 manager/analyst/viewer members and invitations; only owners assign admins/owners.
 Team changes lock the workspace row and reload the active actor/membership.
@@ -217,7 +227,7 @@ single-workspace (owner-only) database.
 personal vault (`user_credentials`, keyed by `users.id`, not `tenants.id`);
 `0066_drop_tenant_credentials.py` drops the old workspace vault: personal L2
 secrets now live in `user_credentials` and app/bot config (VK app/token, bot
-tokens) moves to the environment. See [COLLECTION.md](./COLLECTION.md).
+tokens) moves to the environment. See [COLLECTION.md](COLLECTION.md).
 
 Migration `0080_replace_tenant_role_string_with_role_id.py` replaced the legacy
 `tenant_users.role` string column with `tenant_users.role_id` (nullable FK to
@@ -251,9 +261,9 @@ the revision of any running database. Check a target explicitly before upgrade o
 rollback, and use the schema resolved from `settings.DB_SCHEMA`.
 
 Tests default to the shared `DB_TEST_SCHEMA=test_schema` on the configured test
-database. Follow `docs/RULES.md`: run at most one database test owner at a time
-and never create, reset, drop, stamp or migrate a schema without explicit owner
-authorization. A historical test count is not current evidence.
+database. Follow [database policy](COLLABORATION.md#database) for exclusive
+ownership, authorized test-schema preparation/migrations, cleanup and public
+schema restrictions. Historical test counts are not current evidence.
 
 For a tenancy change, verify at least unknown identity, missing membership,
 revoked/disabled membership, cross-workspace read/write, manager update/delete,
@@ -343,4 +353,4 @@ does not grant another user's key use.
 Pre-0109 dev used a global LLM fleet; current source integration is recorded in
 dev `b34353645fe37de53c97c4d022c05af0044dc8ba`. This does not prove that a
 running database has been migrated. Migration definition, source-pinned
-acceptance evidence and rollout boundary: [personal ownership evidence](validation/personal-llm-ownership.md).
+acceptance evidence and rollout boundary: [personal ownership evidence](audit/personal-llm-ownership.md).

@@ -3,7 +3,7 @@
 `AdminScopeMiddleware` decides the ambient scope; these tests pin what the
 managers and the permission checks then do with it, against real rows:
 
-- the owner's console keeps the platform bypass — every user, every workspace;
+- the platform bypass does not widen a personal catalog beyond its bound owner;
 - everyone else reads only their own personal rows (`owner_user_id`) and the
   workspaces they are a member of, with that membership's role as the right
   source — the same rule the web UI applies to an invited member;
@@ -70,7 +70,7 @@ async def _member(tenant: Tenant, user: User, role_codename: str = "admin") -> T
 
 async def _provider(owner: User, name: str) -> LLMProvider:
     """A provider in `owner`'s catalogue; the write needs that owner bound."""
-    with catalog_execution_scope(owner.id):
+    with permission_scope(owner), catalog_execution_scope(owner.id):
         return await LLMProvider.objects.create(
             uid=_uniq("prov"),
             name=name,
@@ -103,10 +103,10 @@ async def _membership_scope(user: User) -> list[tuple[int, frozenset]]:
     return [(m.tenant_id, await manager.member_grants(m)) for m in memberships]
 
 
-def _scope(rows: list[tuple[int, frozenset]]):
-    """The read scope a member runs in: active workspace first, all readable."""
-    active, _ = rows[0]
-    return tenant_scope(active, also=tuple(tenant_id for tenant_id, _ in rows))
+def _scope(rows: list[tuple[int, frozenset]], active_tenant_id: int | None = None):
+    """One selected membership controls each request and manager operation."""
+    active = next((row for row in rows if row[0] == active_tenant_id), rows[0])
+    return tenant_scope(active[0])
 
 
 # --- personal rows --------------------------------------------------------
@@ -126,15 +126,16 @@ async def test_a_personal_catalog_is_only_its_owner_s_rows():
 
 
 @pytest.mark.asyncio
-async def test_the_owner_reads_every_catalog_through_the_bypass():
-    """The owner is the one actor that keeps `is_bypass()` on `/admin`."""
+async def test_platform_bypass_does_not_widen_the_bound_personal_catalog():
+    """The platform bypass still keeps catalog reads bound to its owner."""
     first, second = await _user("scope-c"), await _user("scope-d")
     mine = await _provider(first, "owner-visible-1")
     theirs = await _provider(second, "owner-visible-2")
 
-    with tenant_scope(bypass=True):
+    with tenant_scope(bypass=True), catalog_execution_scope(first.id):
         ids = {row.id for row in await LLMProvider.objects.all()}
-    assert {mine.id, theirs.id} <= ids
+    assert mine.id in ids
+    assert theirs.id not in ids
 
 
 @pytest.mark.asyncio
@@ -153,7 +154,7 @@ async def test_a_console_model_write_cannot_pick_an_owner():
     """The console writes the actor's catalogue; a form's `owner_user_id` is refused."""
     actor, other = await _user("scope-g"), await _user("scope-h")
     provider = await _provider(actor, "own-provider")
-    with catalog_execution_scope(actor.id):
+    with permission_scope(actor), catalog_execution_scope(actor.id):
         created = await LLMModel.objects.create(
             name=_uniq("model"),
             model_id=_uniq("model-id"),
@@ -187,7 +188,7 @@ async def test_an_invited_member_reads_the_workspace_that_invited_them():
 
     rows = await _membership_scope(helper)
     assert {tenant_id for tenant_id, _ in rows} == {home.id, invited.id}
-    with _scope(rows), permission_scope(helper, member_grants=rows[0][1]):
+    with _scope(rows, invited.id), permission_scope(helper, member_grants=next(g for tid, g in rows if tid == invited.id)):
         visible = await Source.objects.filter(tenant_id=invited.id)
         # `source.view` belongs to the invited admin role; `update` too.
         assert has_permission(helper, "source", "update")
@@ -313,3 +314,128 @@ async def _scenario_id(tenant_id: int) -> int:
             await AgentScenario.objects.create(name=_uniq("scenario"), tenant_id=tenant_id)
         ).id
 
+
+
+
+
+@pytest.mark.asyncio
+async def test_admin_http_uses_selected_weak_membership_with_stronger_membership_first():
+    """A stronger first workspace cannot lend its grants to the selected viewer workspace."""
+    import base64
+    import json
+    import re
+    from httpx import ASGITransport, AsyncClient
+    from starlette.middleware.sessions import SessionMiddleware
+    from app.core.config import settings
+    from app.models import Permission, Role
+
+    actor = await _user("scope-http", PlatformRoleType.ADMIN)
+    strong_workspace, weak_workspace = await _workspace(), await _workspace()
+    await _member(strong_workspace, actor, "admin")
+    await _member(weak_workspace, actor, "viewer")
+    with tenant_scope(bypass=True):
+        weak_source = await Source.objects.create(
+            tenant_id=weak_workspace.id, name=_uniq("selected-viewer"), platform_id=1,
+            source_type="GROUP", external_id=_uniq("selected"),
+        )
+        strong_source = await Source.objects.create(
+            tenant_id=strong_workspace.id, name=_uniq("unselected-admin"), platform_id=1,
+            source_type="GROUP", external_id=_uniq("unselected"),
+        )
+
+    role = await Role.objects.get(codename=PlatformRoleType.ADMIN.value)
+    loaded = await Role.objects.get_with_permissions(role.id)
+    original = [permission.id for permission in loaded.permissions]
+    permissions = await Permission.objects.prefetch_related("model_type").all()
+    selected = [p.id for p in permissions if p.model_type and p.model_type.resource_key == "collection.source"]
+    with tenant_scope(bypass=True):
+        await Role.objects.set_permissions(role.id, selected)
+    try:
+        from app.main import create_application
+        app = create_application()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            page = await client.get("/admin/login")
+            token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', page.text).group(1)
+            await client.post("/admin/login", data={
+                "username": actor.username, "password": "scope-password-1", "csrf_token": token,
+            }, follow_redirects=True)
+            raw = client.cookies.get("session")
+            signer = SessionMiddleware(app, secret_key=settings.SECRET_KEY).signer
+            payload = json.loads(base64.b64decode(signer.unsign(raw.encode("utf-8"))))
+            payload["app_tenant_id"] = weak_workspace.id
+            client.cookies.set("session", signer.sign(base64.b64encode(json.dumps(payload).encode())).decode())
+
+            listing = await client.get("/admin/source/list")
+            assert listing.status_code == 200
+            assert weak_source.name in listing.text
+            assert strong_source.name not in listing.text
+            assert (await client.get(f"/admin/source/details/{weak_source.id}")).status_code == 200
+            assert (await client.get(f"/admin/source/edit/{weak_source.id}")).status_code == 403
+            assert (await client.get(f"/admin/source/details/{strong_source.id}")).status_code == 404
+    finally:
+        with tenant_scope(bypass=True):
+            await Role.objects.set_permissions(role.id, original)
+
+
+@pytest.mark.asyncio
+async def test_admin_http_personal_catalog_blocks_foreign_provider_and_model_routes():
+    """Personal ownership protects list, details, edit, POST and delete in SQLAdmin."""
+    import re
+    from httpx import ASGITransport, AsyncClient
+    from app.core.config import settings
+    from app.models import LLMModel, Permission, Role
+
+    actor = await _user("scope-owner-http", PlatformRoleType.ADMIN)
+    other = await _user("scope-foreign-http")
+    own_provider = await _provider(actor, "own-http-provider")
+    foreign_provider = await _provider(other, "foreign-http-provider")
+    with permission_scope(actor), catalog_execution_scope(actor.id):
+        own_model = await LLMModel.objects.create(
+            name=_uniq("own-model"), model_id=_uniq("own-model-id"), provider_id=own_provider.id,
+        )
+    with permission_scope(other), catalog_execution_scope(other.id):
+        foreign_model = await LLMModel.objects.create(
+            name=_uniq("foreign-model"), model_id=_uniq("foreign-model-id"), provider_id=foreign_provider.id,
+        )
+
+    role = await Role.objects.get(codename=PlatformRoleType.ADMIN.value)
+    loaded = await Role.objects.get_with_permissions(role.id)
+    original = [permission.id for permission in loaded.permissions]
+    permissions = await Permission.objects.prefetch_related("model_type").all()
+    keys = {"llm.provider", "llm.model"}
+    selected = [p.id for p in permissions if p.model_type and p.model_type.resource_key in keys]
+    with tenant_scope(bypass=True):
+        await Role.objects.set_permissions(role.id, selected)
+    try:
+        from app.main import create_application
+        app = create_application()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            page = await client.get("/admin/login")
+            login_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', page.text).group(1)
+            await client.post("/admin/login", data={
+                "username": actor.username, "password": "scope-password-1", "csrf_token": login_token,
+            }, follow_redirects=True)
+            own_list = await client.get("/admin/llm-provider/list")
+            assert own_list.status_code == 200 and own_provider.name in own_list.text
+            assert foreign_provider.name not in own_list.text
+            assert (await client.get("/admin/llm-provider/create")).status_code == 200
+            assert (await client.get(f"/admin/llm-provider/edit/{own_provider.id}")).status_code == 200
+            assert (await client.get(f"/admin/llm-model/edit/{own_model.id}")).status_code == 200
+            for identity, record in (("llm-provider", foreign_provider), ("llm-model", foreign_model)):
+                assert (await client.get(f"/admin/{identity}/details/{record.id}")).status_code == 404
+                assert (await client.get(f"/admin/{identity}/edit/{record.id}")).status_code == 404
+                post = await client.post(
+                    f"/admin/{identity}/edit/{record.id}", data={"name": "forged"},
+                    headers={"X-CSRF-Token": app.state.csrf_manager.generate_token()},
+                )
+                assert post.status_code == 404
+                await client.post(
+                    f"/admin/{identity}/delete?pks={record.id}",
+                    headers={"X-CSRF-Token": app.state.csrf_manager.generate_token()},
+                )
+            with permission_scope(other), catalog_execution_scope(other.id):
+                assert await LLMProvider.objects.get(id=foreign_provider.id) is not None
+                assert await LLMModel.objects.get(id=foreign_model.id) is not None
+    finally:
+        with tenant_scope(bypass=True):
+            await Role.objects.set_permissions(role.id, original)

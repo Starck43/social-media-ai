@@ -12,10 +12,10 @@ class TaskCreate(BaseModel):
     """Request body for creating a task."""
 
     name: str = Field(..., min_length=1, max_length=100)
-    cron_expr: str = Field(..., min_length=1)
+    cron_expr: Optional[str] = Field(None, min_length=1)
     job_type: str = Field(..., pattern="^(collect|digest|prune|analyze|learn|reflect)$")
     payload: dict[str, Any] = Field(default_factory=dict)
-    # Selection (`docs/design/task-selection.md`): top-level too, because they
+    # Selection (`docs/COLLECTION.md#task-selection-contract`): top-level too, because they
     # are a task property, not an opaque blob. The API merges them into
     # `payload` through the same writer the web form and CLI use.
     tracked_users: Optional[list[str]] = Field(
@@ -28,6 +28,14 @@ class TaskCreate(BaseModel):
         description=(
             "Task-owned collection intent: content_types, engagement_types, limit, queries, city, "
             "discovery, comments, candidates, date_window. Omit to keep the payload's block."
+        ),
+    )
+    task_plan: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Optional canonical social task plan: goal, platforms, explicit source_scope, collection, "
+            "fixed/rolling window, scenario and once/schedule trigger. New plans must not encode scope "
+            "implicitly through an empty source_ids list."
         ),
     )
     agent_scenario_id: Optional[int] = None
@@ -54,6 +62,10 @@ class TaskUpdate(BaseModel):
             "an object replaces it and is validated through the shared parser."
         ),
     )
+    task_plan: Optional[dict[str, Any]] = Field(
+        None,
+        description=("Optional canonical social task plan. Omit to preserve the existing plan."),
+    )
     agent_scenario_id: Optional[int] = None
     source_ids: Optional[list[int]] = None
     is_active: Optional[bool] = None
@@ -63,6 +75,29 @@ class TaskRunRequest(BaseModel):
     """Request body for running a task immediately."""
 
     payload: Optional[dict[str, Any]] = None
+
+
+class TaskPlanPreviewRequest(BaseModel):
+    """A pure preview; accepting this body never saves or runs a task."""
+
+    job_type: str = Field(..., pattern="^(collect|analyze)$")
+    task_plan: dict[str, Any]
+
+
+class TaskPlanPreviewResponse(BaseModel):
+    """Canonical task input returned by the shared plan parser."""
+
+    task_plan: dict[str, Any]
+    collection: dict[str, Any]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class TaskPlanRunRequest(BaseModel):
+    """Explicit social one-off launch; separate from the legacy query route."""
+
+    job_type: str = Field("analyze", pattern="^(collect|analyze)$")
+    task_plan: dict[str, Any]
+    request_id: str = Field(..., min_length=1, max_length=128)
 
 
 class TaskResponse(BaseModel):

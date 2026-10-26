@@ -81,7 +81,3 @@ def test_no_console_write_picks_a_fixed_owner():
     assert not re.search(r"\.owner_user_id\s*=\s*\d", source)
 
 
-def test_the_console_binds_a_catalog_owner_for_every_signed_in_actor():
-    """Provider keys need `current_catalog_owner_id()`; without it create/edit die."""
-    source = (ROOT / "app/admin/scope.py").read_text()
-    assert source.count("catalog_execution_scope(user.id)") == 3

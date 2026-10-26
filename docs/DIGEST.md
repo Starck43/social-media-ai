@@ -98,7 +98,7 @@ the technical axis value remains `entities`.
 the analysed items* is `group_by="entities", entity_type="person"`. That is a
 report over analysed rows, not a selection of whose posts were analysed — those
 are different people and are chosen by the task's `tracked_users`
-([task selection](design/task-selection.md)).
+([task selection](COLLECTION.md#task-selection-contract)).
 
 **Example task payload:**
 ```json
@@ -308,3 +308,7 @@ current right before dispatch. Pending confirmations recorded under the old
 again. The read-only `report_period` tool retains `digestrun.view`. This does
 not change scheduled/operator sends, channel scope, delivery safeguards or
 external-write activation policy.
+
+## Shared social task contract (P8-T29)
+
+Keep the standalone digest page, preview, manual send and scheduled tasks under the [universal task contract](AGENT_TASKS.md#explicit-task-plans). Report generation and external delivery remain separate actions; automatic research does not authorize a send. Digests consume stored analytics unless preceding collection/analysis is explicit. P10-T07 owns consistent source/scenario/window/row scope across report sections; P3-T01 retains its permission acceptance owner.

@@ -434,7 +434,10 @@ class ProjectionAndRetentionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('job.id in unconfirmed_jobs',text)
         self.assertIn('Удаление безвозвратно сотрёт это свидетельство',text)
         task=(ROOT/'app/web/templates/web/tasks.html').read_text()
-        self.assertIn("task.last_status == 'queued'",task);self.assertIn('поставлена в очередь',task)
+        self.assertIn("task.last_status == 'queued'",task)
+        self.assertIn("task.id in running_jobs",task)
+        self.assertIn('последний запуск ожидал очереди',task)
+        self.assertNotIn('поставлена в очередь',task)
     async def test_prune_excludes_both_operational_stop_markers(self):
         class Filter:
             def __init__(self):self.calls=[]

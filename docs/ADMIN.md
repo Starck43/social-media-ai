@@ -6,94 +6,133 @@ workspace web application and not an editor for every ORM table.
 - Base path: `/admin` (local development: `http://localhost:8000/admin`).
 - Registration: [setup.py](../app/admin/setup.py); views: [views.py](../app/admin/views.py).
 - Enabled by `ADMIN_ENABLED` (default true) in [app.main](../app/main.py).
-- Source baseline: `dev` `edbe0fc02e6ea2d78302129e51febfa0e87464ab`, reviewed
-  on 2026-10-15; reservation commit `916d2e18eeafdd86d4857587638b73a24bcd0891`
-  changes only the ownership board.
 
-This is a source reference, not proof of deployment or whole-console acceptance.
-The baseline above records the original documentation-only audit. The LLM model
-section was subsequently revised with the shared short-check/admin UI change
-and then combined with the personal-billing lane for code review only:
-its evidence is isolated source/mocked-handler tests, real SQLAdmin form
-scaffolding against canonical ORM metadata (no database), and offline template
-browser fixtures. Evidence from either source lane is not acceptance of the combined candidate.
-No real application startup, database inspection, migration,
-provider call or messenger send was performed remotely. Other legacy page
-mismatches remain listed below. See [MODELS](MODELS.md) for ORM definitions and
-[IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) for attributed prior acceptance.
 
-## Console data scope: the owner sees everything, everyone else their own
+## Admin actor scope
 
-One rule decides what any screen shows, in the list and behind a direct URL
-alike ([scope.py](../app/admin/scope.py), `AdminScopeMiddleware`):
+`AdminScopeMiddleware` binds each `/admin/*` request to its fresh signed-in
+actor. Personal provider/model rows stay owner-scoped for every platform role,
+including the platform owner, as required by the personal-catalog contract
+above. For workspace screens, `app_tenant_id` selects one active membership;
+the selection is validated on every request and falls back to the oldest active
+membership if it is stale. Users switch workspaces through `/app`.
 
-| Actor | Personal rows (`owner_user_id`) | Workspace rows (`tenant_id`) | Platform catalogs |
-| --- | --- | --- | --- |
-| `superuser` (the owner) | all | all | all |
-| `admin` / `operator` | **own only** | only workspaces they are a web member of | per platform grants |
-| invited member (workspace role) | **own only** | only their workspaces, rights from **that membership's role** | per platform grants |
-
-"Own" is the signed-in actor, never a value taken from the form, the path or the
-query string. The middleware binds that identity for every `/admin` request;
-`BaseManager` then filters personal models on `owner_user_id` and workspace
-models on the memberships, exactly as `/app` and `/api` do. A row outside the
-scope does not exist for the actor: `/admin/llm-provider/edit/<foreign id>` is a
-404/403, not an editable form, and a provider found that way cannot decrypt its
-key (`LLMProvider.get_api_key()`).
-
-An invited member carries **the same authority in the console as in the web
-UI**: if user1 invites user2 into their workspace with the `admin` membership
-role, user2 may configure user1's sources, scenarios and tasks from `/admin` as
-well — with `admin`-role rights, in that workspace only. Membership never
-widens the personal catalogue: being an admin of user1's workspace does not make
-user1's provider key usable by user2.
-
-Two rules do not come from the scope and stay per-table:
-
-- **business rules** — a queue row is written by the dispatcher (`JobAdmin` keeps
-  create/edit/delete/export off for everyone, the owner included); an analysis
-  run is written by the analyser (`AIAnalyticsAdmin.can_create = False`);
-- **rank/owner gates** — the role and permission catalogs remain the owner's,
-  and role assignment stays strictly below the actor's rank (below).
-
-`/static/*`, `/health` and `/docs` keep the platform bypass
-(`PlatformScopeMiddleware`); `/admin/*` is excluded from it, so the two
-middleware cannot disagree about who the request runs for. `AdminScopeMiddleware`
-is registered **last**, which makes it the outermost wrapper: it replaces the
-incoming scope before the bypass opens on any path. An actor with no workspace
-membership gets a `403` on a workspace page (the same answer `/api` gives for
-"no workspace membership"), never an empty list and never a 500; personal and
-global pages still open for them.
-
-Whether a page needs a workspace is derived from its model
-(`__tenant_scoped__`), not from a hand-kept list, so the classification cannot
-drift when a view is renamed or added. Unknown identities count as
-workspace-bound (fail closed).
+The selected membership role caps the actor's platform console actions for that
+workspace. Rows and direct detail/edit/delete URLs outside the selected
+workspace are unavailable. A stronger role in another membership does not
+grant actions in the selected workspace. The platform owner's existing global
+workspace inspection exception remains; it does not widen the personal catalog.
 
 ## Personal catalog source contract (0109; PR #229 + #230 integrated)
 
-Providers/models remain **personally owned**: one user's catalog is shared
-across that user's workspaces and is not a global editable fleet. The console
-now edits *the actor's own* catalog (`LLMProviderAdmin`, `LLMModelAdmin` use
-SQLAdmin's normal create/edit; the previous `can_create`/`can_edit = False`
-crutch was removed once the middleware started binding an owner). Settings →
-Models stays the surface for atomic provider+models saves and per-user defaults;
-the console writes one row at a time through the same manager guards.
+Providers and models are personal to a user and may be shared across that user's
+workspaces. Console action grants do not widen row ownership or permit another
+user's key use. Settings → Models remains the atomic provider/model/default flow;
+SQLAdmin uses the same managers. See [TENANCY](TENANCY.md#personal-llm-catalog-0109-source-contract-code-integrated-rollout-pending),
+[MODELS](MODELS.md#personal-catalog-0109-defined-operational-rollout-separate) and the
+[ownership audit](audit/personal-llm-ownership.md) for the canonical ownership,
+rollout and source-pinned evidence.
 
-Platform operator entry/model-action grants are still required for the admin
-console, but never grant another user's key use. Existing connection/model test
-actions cannot rely on CONFIGURE alone: personal owner/active provider/model and
-fresh dispatch checks still apply. No foreign-catalog probe is authorized by a
-platform override. Owner-local ASGI and PostgreSQL evidence is recorded
-at its original source SHAs in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md)
-and the [ownership evidence ledger](validation/personal-llm-ownership.md). It was
-not rerun on final dev `b343536`; full SQLAdmin acceptance is not inferred.
+### Who sees which rows, and who writes the owner
 
-Code is integrated in dev `b34353645fe37de53c97c4d022c05af0044dc8ba` with the
-stacked UI router. This integration did not upgrade a working/deployment
-schema; prior isolated migration/backfill acceptance remains in the evidence
-ledger. No deployment is claimed. See
-[ownership evidence and rollout boundary](validation/personal-llm-ownership.md).
+All catalog reads remain owner-scoped, including for the platform owner. In the
+provider form, only the platform owner can choose an owner at creation; other
+actors are stamped as owner, and the database prevents reassignment. Models
+inherit their provider's owner and cannot be attached to a foreign provider.
+The source-only regression is
+[`test_admin_llm_catalog_scope.py`](../tests/admin/test_admin_llm_catalog_scope.py).
+Provider UID is derived from its name when omitted; the UI previews the same slug.
+
+
+## Read-only related FK lists (P8-T30 / P8-T31 / P8-T32)
+
+Persisted details and edit pages append **Связанные записи** below the main
+content, including custom Source, analytics and LLM/scenario templates. Creates,
+list pages and unsaved objects do not render this footer. This is a read-only
+projection, not a new CRUD route: no add/edit/delete buttons, inline mutation,
+exports or foreign-record popup controls are introduced by these lists. Each
+section is a native `details` disclosure, collapsed by default; click its heading
+or decorative SVG chevron (or use the keyboard) to expand/collapse. Open state is
+not persisted; page navigation reloads sections collapsed. Collapse is visual,
+not lazy loading: the existing scoped count/page queries remain unchanged.
+
+ID and name/title/user-label cells link to the existing edit route when
+SQLAdmin's per-row `check_can_edit` allows it; otherwise to details when
+`check_can_view_details` allows it. If neither allows navigation, cells remain
+plain text. Both checks use a detached shell of the already scoped scalar row,
+never a relationship read. Destination routes recheck authority themselves;
+links do not grant access or perform writes. Pagination stays aligned right;
+the visible-row count remains on the left.
+
+- Discover inbound FK constraints among **registered admin model views** with a
+  registered access resource. Compound FKs stay conjunctive; multiple independent
+  FKs to the parent get separate sections. Missing ORM backrefs are supported.
+  Unregistered models and association-table/many-to-many editors are not exposed.
+- Require a fresh active console actor and parent/target list/details grants and
+  view accessibility. Parent visibility is checked before loading any child list.
+- The lists add scope constraints beyond the historical global console queries.
+  Non-owner platform operators/admins see workspace rows only through their
+  active web membership in an active workspace, and only when that membership's
+  fixed role grants VIEW on the target resource. Owning and granted workspaces
+  are both supported; authorship does not replace workspace rights. Disabled,
+  foreign, unknown-role and unresolved memberships do not grant visibility.
+- The platform owner's existing global workspace inspection exception remains.
+  It does **not** widen personal provider/model catalogs or credentials: those
+  are restricted to the signed-in user's owner/user id for every platform role.
+  Global reference catalogs still require console model rights. These new filters
+  do not change the legacy global scope of the main console pages or grant an
+  ordinary workspace member access to `/admin`.
+- Each FK section reuses SQLAdmin `Pagination`: independent previous/next,
+  numbered pages, visible-row count and page-size selection (10/25/50/100 by
+  default, 25 initial). Counts and pages share the same scoped DISTINCT
+  projection and existing view predicates; no global count is exposed. Page/size
+  query parameters are namespaced by target and FK constraint. Invalid pages
+  clamp before OFFSET and unsupported sizes fall back to configured defaults;
+  links preserve other sections/parent query state and jump to their section.
+- Tables scroll within a bounded container, headers remain visible, and native
+  SQLAdmin/Tabler pagination classes are used in both themes. On edit pages a
+  notice asks the operator to save first: page navigation performs a GET reload
+  and does not save/preserve unsaved form input implicitly.
+- Only configured scalar list columns also allowed in details are projected;
+  sensitive names, JSON/binary values, relationship labels and arbitrary/custom
+  row formatters remain excluded. Cells are escaped length-bounded text; enum
+  labels are used where the mapped enum provides them. Empty means **Нет
+  доступных записей**, not that no rows exist globally.
+- `CollectedItemAdmin.inline_exclude = True` retains P10-T21's high-volume
+  raw-content exclusion for every parent/console role. Raw rows remain on their
+  dedicated collection list; no central table deny-list is needed.
+
+### Configuring inline lists in views
+
+A target view configures its presentation wherever it appears as a related FK
+list; configuration never grants access or overrides projection safety rules:
+
+```python
+class SourceAdmin(BaseAdmin, model=Source):
+    inline_columns = ["id", "name", "source_type", "is_active", "last_checked"]
+    inline_page_size = 25
+    inline_page_size_options = (10, 25, 50, 100)
+    inline_exclude = False
+```
+
+`inline_columns = None` reuses the safe scalar subset of `column_list`;
+`[]` omits the inline. `inline_link_columns` defaults to ID, name, title, username and label cells;
+it only selects which displayed cells may receive a permission-gated link.
+`column_labels` supplies Russian column/relation headings,
+using shared BaseAdmin labels for common identifiers. Target-level exclusion
+skips even count/page queries. Page-size options are bounded to 1–200.
+
+Current view choices retain 3–6 useful columns: IDs and names, type/status or
+active flag, and task dates/cost where useful. Provider URLs, repeated owner/FK
+IDs, scenario descriptions and the wide model-price matrix are omitted from
+compact inlines, without changing the full model lists. Models keep their API
+identifier/type/default/active state; jobs keep type/status/run time/attempts.
+
+Implementation: [inlines.py](../app/admin/inlines.py). Synthetic role/scope,
+ASGI and canonical metadata checks: [scope tests](../tests/admin/test_p8_t30_related_inlines.py) and
+[pagination tests](../tests/admin/test_p8_t31_inline_pagination.py).
+Real PostgreSQL/session and deployed UI audit remain owner-local follow-up;
+mocked evidence does not certify the deployed console.
 
 ## Authentication and platform authority
 
@@ -104,18 +143,17 @@ ledger. No deployment is claimed. See
 
 `GET /admin/login` displays the SQLAdmin login form. Login accepts username or
 email and password, validates its CSRF token, and requires an active account
-whose **platform** role is `superuser`, `operator` or `admin`
-(`User.has_admin_access()`). A workspace membership alone does not open the
-console; once inside, the membership decides *which* workspace rows the actor
-sees (see the scope section above). SQLAdmin logout clears the browser session.
+whose **platform** role is `operator` or `admin` (`User.has_admin_access()`).
+Workspace owner/admin membership does not confer console access. SQLAdmin logout
+clears the browser session.
 
 Authenticated requests resolve the JWT subject to a fresh active User with
 platform role/permissions. The backend does not trust a stale session `user_id`
-as a second identity source. `AdminScopeMiddleware` resolves the same identity
-from the same session token and binds the data scope for the request. A platform
-admin receives wildcard console grants; an operator receives explicit
-model/action grants. `User.is_superuser` is the single owner account (revision
-`0110`) and is the only actor that keeps the console-wide bypass.
+as a second identity source. **Only the platform owner (`superuser`) receives
+wildcard console grants.** An `admin` and an `operator` both receive explicit
+model/action grants from `role_permission`; the difference is what the stored
+grants say, not a code-level bypass. There is no current `User.is_superuser`
+column.
 
 Permissions come from `role_permission` → `permissions.model_type_id` /
 `action_type`, with stable `ModelType.resource_key` registered in
@@ -136,38 +174,38 @@ presets and scope checks; do not reuse console grants as workspace membership.
 | export | EXPORT |
 | custom action | Explicit `BaseAdmin.action_permissions` entry; otherwise UPDATE |
 
-For operators, any granted non-VIEW action also implies list/details so its form
-can be reached. No grants means no model access. View-level `can_*` flags still
-disable operations even for platform admins. Custom action declarations are
+For operators and admins, any granted non-VIEW action also implies list/details
+so its form can be reached. No grants means no model access. The owner skips the
+lookup entirely. View-level `can_*` flags still disable operations even for the
+owner. Custom action declarations are
 checked against the action slugs; unknown declaration keys are logged when the
 lazy view catalog is built. Menu visibility alone is not authorization.
 
 Additional restrictions:
 
-- Every screen is narrowed by the actor's scope (section at the top): the owner
-  sees all, anyone else only their personal rows and their workspaces.
-  `TenantAdmin` is reachable by any operator, which is what lets an invited
-  member administer *their* workspace; what they may change there is the
-  `tenancy.workspace` UPDATE right of their membership role.
+- `TenantAdmin.is_accessible()` requires the `tenancy.workspace` VIEW right, not
+  the platform badge and not ownership of one workspace. The owner holds it
+  through the wildcard; an `admin` needs it granted like any other role.
 - Platform role and permission identities remain fixed: no create/delete or code,
   resource/action, or user-assignment editing. Only the platform owner
   (`superuser`) may edit the permission selection of the operator role
   (`RoleManager.set_permissions`) and a permission's display name; a platform
-  `admin` is refused, even though it keeps the console wildcard. Operators cannot
+  `admin` is refused. Operators cannot
   edit either catalog, even with explicit grants. Writes recheck the active owner
-  and CSRF. Stored grants do not change fixed role authority: `admin` retains
-  wildcard console access, and `user` cannot enter the console. The API
+  and CSRF. Stored grants decide role authority: widening an `admin` means
+  granting the right in `role_permission`, never restoring a bypass, and `user`
+  cannot enter the console. The API
   `PUT /api/v1/users/roles/{role}/permissions` uses the same owner gate.
 - The console names the signed-in level truthfully: the owner's identity block
-  says «Собственник: полный доступ ко всем данным», an admin sees «Полный доступ
-  к консоли», an operator «Доступ по назначенным правам».
+  says «Собственник: полный доступ ко всем данным», an admin sees «Доступ по
+  назначенным правам», an operator the same.
 - Реестр таблиц (`/admin/registry`, [registry.py](../app/admin/registry.py),
   [table_registry.py](../app/admin/table_registry.py)) is the owner's read-only map
   of every mapped table, including association tables and tables without a
   console page: search by table, model or resource key, pagination, and a detail
   page with columns, types, keys, foreign keys and sensitive-column markers.
   It is gated on `is_accessible` (`User.is_superuser`) rather than model grants,
-  so an admin's wildcard does not open it; it has no create/edit/delete/export
+  so an admin's grants do not open it; it has no create/edit/delete/export
   route and reads no rows.
 - User forms: the edit page carries a **role picker**
   ([role_picker.py](../app/admin/role_picker.py)) listing only the roles the
@@ -175,16 +213,27 @@ Additional restrictions:
   badge: an actor assigns a role strictly **below their own** — the owner
   (`superuser`) offers `admin`/`operator`/`user`, an `admin` offers
   `operator`/`user`, an `operator` offers `user`, and a rank with nothing below it
-  sees a disabled empty select. The `identity.user` UPDATE right still decides who
+  sees a disabled empty select. Two rows show the role **read-only** instead of a
+  choice list — the actor's own account and the platform owner's account: the
+  select holds the current role only and is disabled, with the reason in its
+  hint, because `set_platform_role()` refuses both writes. The `identity.user`
+  UPDATE right still decides who
   opens the form at all; the rank decides what the form may submit. The write goes
   through `UserManager.set_platform_role()`, never the generic `role_id` column, so
   a forged payload is refused too.
 - `superuser` is never assignable at runtime: not by an admin, not by the owner,
   not from the console, the API or any CLI. Only revision `0110`/the bootstrap
   command (`scripts/setup/bootstrap_owner.py`) put an account on it, and a second
-  owner cannot be created. The owner account cannot be re-roled or deleted from
-  the console; nobody changes their own role. An `admin` also cannot rewrite an
-  account that already sits at or above their rank, so peers stay peers.
+  owner cannot be created. An `admin` also cannot rewrite an account that already
+  sits at or above their rank, so peers stay peers.
+
+  The owner's account is protected at every seam, not only in the form:
+  `UserManager.delete_user()` refuses it (so `DELETE /api/v1/users/{id}` cannot
+  drop it — the old protection was an incidental foreign key from the catalog),
+  `UserManager.update_user()` and `UserAdmin.update_model()` refuse another
+  account writing it, and both password routes (`GET`/`POST
+  /admin/user/change-password/{id}`) answer 403. Nobody changes their own role.
+  The owner keeps the routine rights: their own name, email and password.
 - New users always receive the ordinary platform `user` role: the create form has
   no role field.
 - `UserManager.set_platform_role()` rejects every self-assignment (including
@@ -194,14 +243,10 @@ Additional restrictions:
 - External FastAPI dashboards use `require_admin_perm()` explicitly. Password
   administration has its additional self/cross-account checks below.
 
-The main app resolves the console scope per request: `AdminScopeMiddleware`
-binds the actor and their memberships for `/admin`, and
-`PlatformScopeMiddleware` supplies the bypass only for `/static`, `/health` and
-`/docs` (and for the console request itself when the actor **is** the owner).
-`/app` and `/api` have their own scope middleware. Admin listings are not
-filtered by the web UI's selected workspace; they are filtered by the actor's
-scope, which for a member is every workspace they belong to. Actions that
-execute a task re-enter the selected task's owning workspace.
+The main app's `PlatformScopeMiddleware` supplies explicit tenant bypass for the
+operator console/infrastructure, while `/app` and `/api` have their own scope
+middleware. Admin listings are not filtered by the web UI's selected workspace.
+Actions that execute a task re-enter the selected task's owning workspace.
 
 ## Role permission picker
 
@@ -231,8 +276,9 @@ only on visible matches. Group changes clear transient marks, never selected gra
 
 The native select remains the sole submitted value source, including filtered-out
 choices, and remains usable if JavaScript is disabled. This needs no new dependency
-or schema migration. Editing stored grants on `admin` does not remove its wildcard
-access and is distinct from changing one's account role.
+or schema migration. Editing stored grants on `admin` is how its console reach is narrowed or
+widened — there is no wildcard to remove — and is distinct from changing one's
+account role.
 
 Offline validation: `tests/permission_transfer_fixture.py` renders actual SQLAdmin
 forms with up to 206 synthetic permissions and explicit storage doubles;
@@ -278,13 +324,13 @@ business-workflow execution.
 | `CollectedItemAdmin` | `CollectedItem` | `/admin/collected-item/list` | Raw staged content |
 | `AgentScenarioAdmin` | `AgentScenario` | `/admin/agent-scenario/list` | Analysis methodology, prompt preview and active flag |
 | `AgentTaskAdmin` | `AgentTask` | `/admin/agent-task/list` | Scheduled tasks and inline run action |
-| `BotActionAdmin` | `BotAction` | `/admin/bot-action/list` | Create disabled for all (written by the run); edit form contains only `status` |
-| `AIAnalyticsAdmin` | `AIAnalytics` | `/admin/ai-analytics/list` | Create disabled for all (written by the analyser); stored analysis view |
-| `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection for all, the owner included: create/edit/delete/export disabled |
+| `BotActionAdmin` | `BotAction` | `/admin/bot-action/list` | Create disabled; edit form contains only `status` |
+| `AIAnalyticsAdmin` | `AIAnalytics` | `/admin/ai-analytics/list` | Create disabled; stored analysis view |
+| `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection: create/edit/delete/export disabled |
 | `NotificationAdmin` | `Notification` | `/admin/notification/list` | Shared workspace read state; guarded hidden send action |
-| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Actor's own personal catalog (the owner: every catalog); create/edit enabled, foreign rows are 403, connection test |
-| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Actor's own personal models; create/edit enabled, short/mock/real checks |
-| `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Workspaces the actor belongs to (the owner: all); changes need `tenancy.workspace` UPDATE |
+| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Personal catalog: create/edit for roles holding `llm.provider` CREATE/UPDATE (the owner always), connection test, owner-only credential use |
+| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Personal models: create/edit for roles holding `llm.model` CREATE/UPDATE (the owner always), short/mock/real checks |
+| `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Global workspace settings; platform-admin-only visibility |
 | `UserCredentialAdmin` | `UserCredential` | `/admin/user-credential/list` | Personal credential vault rows, not workspace-owned credentials |
 
 `Role` is a Python compatibility alias; the mapped class is `PlatformRole` and
@@ -342,7 +388,7 @@ task-scoped query source is labelled as a task lane through
 `sources.owner_task_id` (details show the owner task), and the collected-item
 list exposes `content_type`, `selection_status` and `media_type` while the
 collector-written lane/selection fields stay out of the edit form. See
-[collection plan](design/collection-plan.md).
+[collection plan](audit/collection-plan-history.md).
 
 **Deleting a source.** The web sources page and the source page carry a
 delete action (`source`/`delete` permission, workspace-scoped, with the
@@ -469,8 +515,6 @@ delivery; it is not a per-recipient delivery report. See [NOTIFICATIONS](NOTIFIC
 
 | Method / route | Current contract |
 | --- | --- |
-| `GET /admin/reset-password` | Legacy public form still renders and issues a CSRF token; it is not a verified recovery flow |
-| `POST /admin/reset-password` | Handler raises **410 Gone** without account lookup, password mutation or temporary-password logging; limiter can reject earlier |
 | `GET /admin/user/change-password/{user_id}` | Active platform operator/admin required; self-change or platform-admin-only cross-account reset |
 | `POST /admin/user/change-password/{user_id}` | Same authority plus CSRF, confirmation and password validation; self-change verifies current password; cross-account reset also checks `user.update` |
 | `POST /admin/verify-current-password` | Uses the authenticated token subject and platform-entry gate; checks only that account's supplied `current_password`; returns `valid` Boolean |
@@ -478,15 +522,48 @@ delivery; it is not a per-recipient delivery report. See [NOTIFICATIONS](NOTIFIC
 The password action's UPDATE grant alone does **not** authorize an operator to
 reset someone else's password. An operator may change their own through the
 external form without a user UPDATE grant. A platform admin resetting another
-account does not need that account's current password. No delivered expiring,
-one-use, account-bound self-service recovery mechanism is implied by the inert
-legacy form. Historical anonymous password replacement is no longer the current
-POST implementation; this documentation change did not implement that fix.
+account does not need that account's current password.
+
+**Accepted recovery mechanism (P10-T01).** Recovery is the operator-issued reset
+above, not self-service. A platform admin resets a member account after identity
+confirmation; the owner changes their own password with their current one. The
+legacy public `/admin/reset-password` form (and its "Забыли пароль?" login-page
+link) has been removed from both routes and templates: there is no anonymous
+password-mutation route and no handler that looks an account up by a submitted
+email address. Account-bound, expiring, one-use email recovery is **not**
+implemented; it is deferred to a separate task that must also bring a verified
+delivery channel. Nothing in the current console flow mutates a hash without an
+authenticated operator, and no route logs a password or a temporary credential.
 
 Password rules come from `validate_password()` and `PASSWORD_*` settings, including
 minimum length and configured uppercase/lowercase/digit/special requirements.
-Rate-limit defaults: reset POST `3/hour`, change-password POST `5/minute`;
-`DEBUG` disables this endpoint limiter. These limits are not authorization.
+Rate limiting: the change-password POST keeps `CHANGE_PASSWORD_RATE_LIMIT`
+(`5/minute`); `DEBUG` disables this endpoint limiter. These limits are not
+authorization.
+
+### Owner recovery (out-of-band)
+
+The console refuses to reset the owner's password for *everyone*, including other
+platform admins and the owner's own reset link — the owner changes it only with
+the current password. If the owner loses that password, recovery happens on the
+deployment host with write access to the database, never through a web route:
+
+1. Generate the hash with the application's own hasher, entering the new secret
+   through a prompt so it never reaches the shell history:
+   `.venv/bin/python -c "import getpass; from app.core.hashing import get_password_hash; print(get_password_hash(getpass.getpass()))"`.
+2. Update only that account, qualified by `DB_SCHEMA` (`public` by default), and
+   check the returned row:
+   `psql "$POSTGRES_URL" -c "UPDATE public.users SET hashed_password = '<hash>' WHERE id = <owner-id> RETURNING id, username"`.
+3. Record actor, timestamp, reason and the host in the operator log. Do not paste
+   the password or the hash into chat, tickets or the log.
+4. Treat every access token issued before the reset as still valid: tokens are
+   stateless JWTs with no server-side revocation list, so a reset does not by
+   itself sign live sessions out. Rotate `SECRET_KEY` (invalidating all tokens for
+   all users) when the compromise of a session is suspected, and confirm the
+   recovery with the owner over an already trusted channel.
+
+This path is an accepted residual risk for the single-owner pilot, not a
+self-service product feature.
 
 ## Dashboard routes
 
@@ -506,9 +583,17 @@ from the web UI selector or full data-endpoint acceptance from a page GET.
   storage. It carries an access JWT; max age is 24 hours. Access JWT expiry follows
   the environment-specific token settings. HTTPS-only is false only for the
   explicit development profile.
-- `LOGIN_TIMEOUT_MINUTES` is the legacy lockout interval, not session lifetime.
-  Login counters are cookie-local; ordinary wrong-password returns do not call
-  `track_login_attempt()`. A shared cross-surface throttle is still open work.
+- `LOGIN_TIMEOUT_MINUTES` is the counting window and lockout duration, not
+  session lifetime. Failed logins are counted in the global `login_attempts`
+  table keyed by the casefolded account identifier and by the client address, so
+  the console, `/app/login` and `POST /api/v1/auth/login` share one budget across
+  cookies and processes. The account lockout is `MAX_LOGIN_ATTEMPTS`; the
+  per-address budget is `LOGIN_IP_MAX_ATTEMPTS`. A successful login clears the
+  account key, the address key decays with the window, and every refusal answers
+  the same generic credentials error. Unknown accounts verify a real placeholder
+  bcrypt hash, so the failure path does not reveal whether the account exists.
+  Losing or not migrating the table breaks login — apply the revision with the
+  deploy.
 - Login, password-change and the model-test POST handlers explicitly verify `csrf_token`. The current
   `CSRFTokenManager` constructor defaults to **30 minutes** and a signed timed
   payload. Setup passes only `secret_key`; the similarly named
@@ -524,16 +609,8 @@ from the web UI selector or full data-endpoint acceptance from a page GET.
 
 ### Known view/ORM configuration drift
 
-The registered source still contains legacy configuration mismatches; this
-reference must not describe them as working schema fields:
-
-- `SourceAdmin.column_list` names `date_from` / `date_to`, while current `Source`
-  declares neither column nor property (the columns were removed in migration
-  0079). Its create/edit form no longer includes those fields.
-
-These are source observations, not a claim that startup or a particular rendered
-page was reproduced. These unrelated runtime/view fixes are outside the LLM model-test change. Real SQLAdmin/ASGI/PG role, revocation and page-render acceptance remains
-outside the checks performed here; prior C/D limits stay in the delivered index.
+The dated source observation is retained in
+[admin implementation history](audit/admin-history.md#known-vieworm-configuration-drift); verify against current source before relying on it.
 
 ## Templates and module map
 
@@ -563,12 +640,10 @@ independent template environment or URL safety.
 
 ## Access schema and rollout
 
-Source head 0096 separates platform/workspace catalogs, adds resource keys and
-personal-memory ownership, and changes membership AI access. See
-[ACCESS_MIGRATION](ACCESS_MIGRATION.md) and [MODELS](MODELS.md). Existing owner-local
-application/validation is recorded in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md);
-it is not proof of production state, universal schema parity or full admin
-acceptance. This patch applies no migrations and activates no provider or live action.
+Platform/workspace access migration procedure: [ACCESS_MIGRATION](ACCESS_MIGRATION.md).
+Canonical entity fields and migration state: [MODELS](MODELS.md). Source-pinned
+acceptance is indexed in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); it does
+not establish a deployed database revision.
 
 ## Related FK/m2m record editors
 
@@ -602,114 +677,13 @@ that record to edit it). This is a related-record window, not nested inline CRUD
 
 ### Related-editor validation and local handoff
 
-Task P8-T21. Implementation/test SHA: `6f1f695dec730396bda79043d19414fea13a2094`;
-synchronized dev: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Other active
-lanes #216/P10-T11 and #217/P10-T12 were inspected; their owners, reservations,
-statuses and evidence were not changed or imported as accepted work.
-
-Initial implementation sandbox evidence (owner remote exception; follow-up below):
-
-```sh
-/data/admin-relations-venv/bin/python -m pytest tests/test_admin_related.py \
-  --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
-NODE_PATH=/data/admin-relations-browser/node_modules node tests/admin_related_browser.cjs
-```
-
-- Pytest: exit 0, **20 passed, 0 failed/skipped**. Actual SQLAdmin routes and
-  Jinja fragments over synthetic ORM metadata and explicit storage doubles;
-  create/edit, ordinary redirects, validation/storage failures, grant and
-  object-check denials, excluded/unregistered targets, token preservation,
-  JSON escaping and custom-response preservation. No bound database engine.
-- Chromium: exit 0, **32 assertions** at 390/1440px. Actual child-completion
-  script, FK and m2m selection/rename, unsaved parent preservation, origin,
-  source-window, identity/ID rejection, cancellation and popup blocker. Every
-  request intercepted; no real application server or external requests.
-- Separate venv: Python 3.13.14; SQLAdmin 0.32.0, SQLAlchemy 2.1.5,
-  Starlette 1.9.0, WTForms 3.2.2, pytest 9.1.1, pytest-asyncio 1.4.0,
-  httpx 0.28.1, greenlet 3.5.6 (manifest-compatible versions). Browser fixture
-  uses a separate Playwright install and local Chromium; set `CHROMIUM_PATH`
-  if Chromium is elsewhere. No owner `.venv`, `.env`, secrets or providers used.
-- Earlier fixture attempts failed on an unbound synthetic read and a missing
-  request `query_string`; corrected explicit doubles/request scope, not weakened
-  assertions. These were not successful runs. Final counts above are complete.
-
-Original owner-local acceptance checklist (historical plan; final bounded owner
-acceptance is recorded below; the full checklist is not claimed as executed).
-At the exact implementation SHA, run sequentially under R8/R10 in the owner's
-prepared environment, without reset/migration/seed or real provider dispatch:
-
-1. Exercise actual `LLMModel.provider` and `Source.platform` FK forms, then
-   `AgentTask.sources` m2m with records in an existing approved test workspace.
-   Verify create/edit persistence, unchanged other selections/unsaved fields,
-   cancellation and independent child/parent transaction behavior.
-2. Verify platform admin/operator create-only/edit-only/denied roles, revoked
-   identity/grants between opening and saving, direct forged popup POSTs and
-   object-level denials. Catalog permissions and hidden user-role assignment
-   must remain restricted; workspace roles must not gain console access.
-3. Check actual Select2, application CSP/browser headers, popup opener policy,
-   specialized forms, nested windows, validation retry, back/refresh and no-JS.
-   A restrictive opener policy may require falling back to ordinary CRUD.
-4. Confirm existing workspace/source/scenario validators still reject invalid
-   cross-workspace links and actual DB write/rollback failures do not report a
-   success receipt. No new atomicity guarantee is made across two forms.
-
-No migration, schema change, real DB/ASGI integration acceptance, full-suite,
-whole-console security or deployment certification is claimed by this subset.
-
+Historical source pins, sandbox commands, test outcomes and owner handoff are in
+[admin implementation history](audit/admin-history.md#related-editor-validation-and-local-handoff).
 
 ### Related-editor follow-up: inline icons and Float forms
 
-The owner-local attempt reported HTTP 500 while opening `/admin/tenant/edit/1`
-from a related field. This is failure evidence, not successful local acceptance.
-The same failure was reproduced offline on the canonical Tenant/TenantAdmin:
-SQLAdmin 0.32.0 could not convert `daily_cost_limit` (`sqlalchemy.sql.sqltypes.Float`)
-with SQLAlchemy 2.1.5, where Float no longer inherits Numeric.
-
-`BaseAdmin` now uses a converter for Float/FLOAT/REAL/Double/DOUBLE families;
-exact Numeric/Decimal monetary fields retain SQLAdmin's DecimalField path.
-This does not alter ORM types, stored values, validation boundaries or grants.
-The regression loads the actual model and view declaration with isolated
-configuration and a storage function that raises on use; both ordinary and
-related create/edit form scaffolding therefore need no database.
-
-Plus/pencil SVG actions now share a flex row with the native input or actual
-Select2 container. Icon-only controls have 44px targets, accessible names,
-tooltips and visible keyboard focus; the status remains below the field.
-Select2 is moved with its original select and handlers, not recreated; scoped
-height/padding prevents label clipping and chips follow the existing theme.
-
-Follow-up evidence: **81 isolated pytest cases passed**, 0 failed/skipped, exit 0;
-**228 offline Chromium assertions passed**, exit 0, across native + real Select2,
-light/dark and 390/1440px. Checks include canonical Tenant related GETs, required
-and nullable float parsing, unchanged precise Decimal, existing catalog grants,
-parent preservation, popup protocol, inline geometry, icon-only labels, dropdown
-operation, label bounds and no page overflow. Eight fixture screens were
-individually inspected; this is not owner-local browser or DB acceptance.
-Published source SHA is pinned in PR #219's current handoff. Initial evidence
-above stays attributed to its original SHA and does not certify this follow-up.
-
-```sh
-/data/admin-relations-venv/bin/python -m pytest \
-  tests/test_admin_form_compatibility.py tests/test_admin_related.py \
-  tests/test_admin_shell_catalog.py tests/test_admin_all_role_records.py \
-  --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
-SQLADMIN_STATIC_DIR=/data/admin-relations-venv/lib/python3.13/site-packages/sqladmin/statics \
-NODE_PATH=/data/admin-relations-browser/node_modules node tests/admin_related_browser.cjs
-```
-
-Same Python/SQLAdmin/SQLAlchemy/Starlette/WTForms versions as the initial run;
-FastAPI 0.146.0 and itsdangerous 2.2.0 added to the separate sandbox environment
-for the existing isolated catalog tests. Python 3.14 was not available/tested
-remotely. No application/runtime, real DB, environment secrets, providers,
-schema operation, dependency manifest change or delegated test execution.
-Owner subsequently reported that the updated local UI works and explicitly
-requested task closure and Ready/merge into dev. Accepted implementation:
-`aec048db192bfc9842883502065646d5650f43d9`. This is owner-reported functional
-smoke, not a remotely verified PostgreSQL/revocation/rollback/full-suite result.
-The coordinator reviewed the exact implementation and reused the completed
-81-test/228-assertion evidence; no runtime source changed for closeout. P8-T21
-is accepted as a bounded feature; no whole-phase, security-gate, schema or
-deployment acceptance is implied. Detailed original test limitations remain above.
+Follow-up failure diagnosis, source pins, validation counts and owner-reported
+closeout are in [admin implementation history](audit/admin-history.md#related-editor-follow-up-inline-icons-and-float-forms).
 
 ### Bulk-delete confirmation readability
 
@@ -728,3 +702,9 @@ DELETE URL are not truncated or rewritten. Buttons remain outside that scrolling
 region. Custom confirmation bodies use the same wrapping boundary.
 See [deletion audit](MODEL_DELETION.md) before changing cascade policies or treating
 multi-select deletion as one atomic transaction.
+
+## Universal social task parity (P8-T29)
+
+Task plans follow the shared [task contract](AGENT_TASKS.md#explicit-task-plans).
+Console forms do not edit collector/runtime evidence or secrets; Run now uses the
+standard admission path. Implementation evidence belongs to the task record.

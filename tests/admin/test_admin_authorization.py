@@ -76,12 +76,21 @@ class _StubUser:
         return True
 
     @property
-    def is_platform_admin(self) -> bool:
-        """Mirror the real `User.is_platform_admin`: the platform admin role.
+    def is_superuser(self) -> bool:
+        """Mirror the real `User.is_superuser`: the platform owner alone.
 
-        A platform admin passes every gate (the wildcard grant); an operator
-        with narrower rights does not. It is a property on the model, so the
-        stub must be one too — a bound method would always be truthy.
+        Only the owner gets the wildcard grant and every `model_permissions`
+        action; an `admin` is held to the grants stored for its role.
+        """
+        return self._superuser
+
+    @property
+    def is_platform_admin(self) -> bool:
+        """Mirror the real `User.is_platform_admin`: admin or owner.
+
+        Console access only. It no longer implies the wildcard grant — that is
+        `is_superuser` — so a stub must expose both. A property, not a method:
+        a bound method would always be truthy.
         """
         return self._superuser
 
@@ -431,3 +440,21 @@ async def test_the_dashboard_outside_the_console_asks_the_same_question():
 
     assert analytics.status_code == 403
     assert dashboard.status_code == 403
+
+
+async def test_workspace_membership_caps_platform_admin_console_actions():
+    """A platform ADMIN who is a workspace viewer cannot edit its rows."""
+    user = _StubUser({"source": set(ActionType)})
+    user.id = 7
+    user.is_active = True
+    from app.core.permissions import permission_scope
+    from app.core.tenant_context import tenant_scope
+
+    backend, request = await _loaded(user)
+    view_grants = frozenset({("source", ActionType.VIEW)})
+    with tenant_scope(9), permission_scope(user, member_grants=view_grants):
+        grants = await backend.get_grants(request)
+    assert ("source", Action.LIST) in grants
+    assert ("source", Action.DETAILS) in grants
+    assert ("source", Action.EDIT) not in grants
+    assert ("source", Action.DELETE) not in grants

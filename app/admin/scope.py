@@ -1,21 +1,19 @@
 """Admin console scope: the owner sees everything, everyone else sees their own.
 
-The console is a *global* interface, so until now `/admin/*` ran as the platform
-owner (`PlatformScopeMiddleware` with `tenant_scope(bypass=True)`) and carried no
-actor at all. That made the whole console one undifferentiated surface: every
+The console binds every request to its fresh signed-in actor and selected
+workspace membership. Platform bypass remains available only to the owner. That made the whole console one undifferentiated surface: every
 operator listed every row, personal LLM catalogs leaked across users, and the
 views that decrypt a provider key had to switch create/edit off for everybody
 because no owner was ever bound. This middleware replaces that bypass with the
 same rule the client surfaces already use:
 
 - **platform owner** (`superuser`) — everything, exactly as before;
-- **everyone else** — only what belongs to them:
+- **everyone else** — their personal rows and the one selected workspace:
   - rows linked to a person (`users.is_superuser` is the only link this console
     reads at the account level, `owner_user_id` for personal catalogs) are
     filtered by `BaseManager` through `permission_scope(actor)`;
-  - workspace rows are filtered by the memberships the actor holds, one workspace
-    at a time, with that membership's role as the rights source — the same
-    `member_grants` the web UI's invited members get;
+  - workspace rows are filtered to the selected `app_tenant_id`; only that
+    membership's role grants workspace actions for this request;
   - rows with no personal or workspace link stay visible only while the actor's
     platform role grants them.
 
@@ -93,12 +91,19 @@ class AdminScopeMiddleware:
                 await self.app(scope, receive, send)
             return
 
-        active_id, active_grants = memberships[0]
-        # Every workspace the actor belongs to is readable; the active one (and
-        # therefore every write stamp) is decided by `permission_scope`, which
-        # also swaps in the role *of that workspace* — not the union of roles.
+        wanted_id = request.session.get("app_tenant_id") if "session" in request.scope else None
+        try:
+            wanted_id = int(wanted_id) if wanted_id is not None else None
+        except (TypeError, ValueError):
+            wanted_id = None
+        active = next((row for row in memberships if row[0] == wanted_id), memberships[0])
+        active_id, active_grants = active
+        if "session" in request.scope:
+            request.session["app_tenant_id"] = active_id
+        # One selected workspace is active per request, preventing one
+        # membership role from authorizing writes to another workspace.
         with (
-            tenant_scope(active_id, also=tuple(tenant_id for tenant_id, _ in memberships)),
+            tenant_scope(active_id),
             catalog_execution_scope(user.id),
             permission_scope(user, member_grants=active_grants),
         ):

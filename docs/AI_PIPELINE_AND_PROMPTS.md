@@ -192,7 +192,7 @@ videos/reels to video, stories to image, and presets declare text. Collection
 scope (posts/comments, likes/reposts, queries, city, dates, limits) lives in the
 task's `payload.collection` and is validated by
 `app/services/collection/intent.py`. See
-[collection plan](design/collection-plan.md).
+[collection plan](audit/collection-plan-history.md).
 
 ## Usage and cost boundary
 
@@ -476,7 +476,7 @@ Evidence now includes57 focused no-DB checks and one real isolated PostgreSQL
 node/all14 journaled scenarios at `d10bde4c3e63a5308e5ae61b8f46b87e63cf3c71`,
 plus the separate owner-local normal migration report at
 `f4c14c4da0fc212591ca0f88c35db3f8a20d87d3`. Original test SHAs and retained-data
-manifests are not relabelled; [exact evidence and limitations](validation/llm-budget-pg-runner.md).
+manifests are not relabelled; [exact evidence and limitations](audit/llm-budget-pg-runner.md).
 This is not production-baseline or whole-gate acceptance. Durable day-baseline
 provisioning, reviewed bound production, client/caller wiring, cap-overrun
 settlement, release, all-path accounting and rollout stay OPEN.

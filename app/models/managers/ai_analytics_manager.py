@@ -404,7 +404,9 @@ class AIAnalyticsManager(BaseManager):
         base["topic_statistics"] = stats
         return base
 
-    async def build_period_rollups(self, period_type: PeriodType, start: date, end: date) -> int:
+    async def build_period_rollups(
+        self, period_type: PeriodType, start: date, end: date, source_ids: list[int] | None = None
+    ) -> int:
         """Aggregate daily analytics per source and analysis context.
 
         Gives `period_type` its real meaning: a WEEKLY/MONTHLY run folds the
@@ -417,6 +419,9 @@ class AIAnalyticsManager(BaseManager):
                 period_type: PeriodType.WEEK or PeriodType.MONTH
                 start: First day of the period (also the rollup row's analysis_date)
                 end: Last day of the period (inclusive)
+                source_ids: the calling digest's source selection (AUD-07);
+                    None keeps the legacy whole-workspace write. A selected
+                    digest must not write rollups for sources it did not read.
 
         Returns:
                 Number of rollup rows written (created or updated)
@@ -424,11 +429,14 @@ class AIAnalyticsManager(BaseManager):
         if period_type not in (PeriodType.WEEK, PeriodType.MONTH):
             return 0
 
-        daily = await self.filter(
-            analysis_date__gte=start,
-            analysis_date__lte=end,
-            period_type=PeriodType.DAY,
-        )
+        filters: dict[str, Any] = {
+            "analysis_date__gte": start,
+            "analysis_date__lte": end,
+            "period_type": PeriodType.DAY,
+        }
+        if source_ids:
+            filters["source_id__in"] = list(source_ids)
+        daily = await self.filter(**filters)
 
         by_source_context: dict[tuple[int, str], list[Any]] = {}
         for row in daily:

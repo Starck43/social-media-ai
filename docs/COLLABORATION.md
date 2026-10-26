@@ -1,144 +1,184 @@
-# Collaboration Protocol
+# Development contract
 
-Handoff, delegation-launch, and task-file contract. Roles and operational
-rules: [AGENTS.md](../AGENTS.md); environment/DB/test-delegation constraints:
-[docs/RULES.md](RULES.md); task registry: [ROADMAP.md](../ROADMAP.md) +
-[docs/phases/](phases/README.md).
+Read only the section needed by the selected skill. Mandatory entry rules live
+in [AGENTS](../AGENTS.md); this file owns detailed workflow and DB/test procedures.
 
-## Start or resume
+## Tasks
 
-1. Identify local or remote execution, branch, HEAD, base dev and dirty files.
-2. Locate the selected task in ROADMAP.md / its phase file; if none was
-   selected, propose one bounded unclaimed item rather than the whole board.
-3. Read only the relevant phase file, readiness gate, subsystem contract and
-   call sites; do not reread unrelated merged packages.
-4. Resume from the existing handoff or PR description; verify the recorded SHA
-   against HEAD and preserve other agents' ownership.
-5. Work in `dev` for one sequential local task; branch/worktree only when
-   isolation is needed (RULES.md R6/R7). Never push `dev` without explicit
-   authorization.
+ROADMAP owns one line per open item: ID/title linked to its card, status, owner,
+and last status-changing dialogue or PR-comment link. Use `—` only for unknown
+legacy links; a real session ID/resume command is valid when no URL exists.
+Anyone may add a TODO/question. Reserve the next unused phase/task or question ID
+against ROADMAP and phase/audit history; insert in numeric order. Do not recycle IDs.
 
-## Shared-document synchronization (all agents)
+Before editing a solution, fetch `origin`, claim/create the row as IN_PROGRESS
+with owner/dialogue, and add its card/parent-plan link. Publish only these registry
+paths in a small commit based on current `origin/dev`; synchronize local `dev`
+without overwriting other changes. If local dev is ahead, use a separate registry
+worktree based on origin rather than pushing unrelated commits. A non-fast-forward
+push requires fetch/reconcile and rechecking the claim; never force-push. Claim
+publication to `origin/dev` is authorized by this workflow; solution publication
+and merge still require the owner’s explicit choice. An offline/unpublishable claim
+is local only: report the coordination limitation, never pretend it is visible.
+Remote agents request the same update via PR comments; one custodian publishes
+registry changes. The custodian refreshes both directions before each transition.
 
-- Before reserving task/question IDs or editing `ROADMAP.md` / owned `docs/`,
-  inspect the working tree, fresh `dev`, the relevant phase ownership and other
-  agents' active PRs/handoffs that touch the same files or task. In remote lanes,
-  fetch the current `dev` ref; never assume a previously loaded copy is current.
-- Reserve globally unique IDs in the registry and phase files together. Check
-  both open and completed phase rows before choosing the next ID. `ROADMAP.md`
-  mirrors open tasks; accepted DONE/DROPPED rows stay in their phase only.
-- Make scoped edits, preserve other agents' task owners, statuses, evidence and
-  accepted work, and reconcile concurrent additions instead of replacing shared
-  files from stale branch copies. Do not silently claim another agent's work.
-- Recheck `dev` and relevant PR heads immediately before publish/merge. Integrate
-  new shared-doc changes, validate affected links and ID uniqueness, and document
-  resolved identifier-only collisions without changing acceptance evidence.
-- For conflicting ownership, task meaning or acceptance, stop that edit and
-  coordinate through the active PR/handoff (or an owner-relayed question). Never
-  invent agreement, silently overwrite another agent, or change a foreign status
-  just to make the registry agree. A clean merge alone is not semantic validation.
-- State the synchronized base SHA and any unresolved conflict in the handoff.
-  These checks never authorize direct `dev` pushes, force-pushes or deployment.
+Create `type/<task-id>-<topic>` from the agreed source revision. Independent
+writers use exclusive paths and separate worktrees. Keep task implementation out
+of integration `dev`; registry-only synchronization is the exception above.
 
-## Audits, Goals and subagents
+`docs/tasks/<id>.md` contains scope/acceptance, parent phase (or explicit orphan),
+related task links, owned paths/dependencies, branch/PR, documents read and checks.
+It links ROADMAP instead of copying current status. Phases live in `docs/phases/`:
+product-parent backlink, goal, numbered plan, active-card links and accepted audit
+links. Plan substantial work by creating/revising a numbered phase with continuity
+and reasons; keep short standalone tasks as cards, not artificial stages.
 
-Follow routine and test routing in [AGENTS.md](../AGENTS.md) and
-[docs/RULES.md](RULES.md) (R10). Codex owns architecture, review and acceptance;
-preserve HEAD, permission and ownership blockers.
+## Evidence
 
-Use subagents for independent read-heavy audit lanes and bounded implementation
-tasks; reserve them for parallelizable work. Give each agent one question or
-task, a file/claim boundary, relevant SHA, expected evidence and a compact
-response format (verdict + refs, no logs). The coordinator owns audit
-synthesis, task acceptance, integration and final verification.
+Before READY, record in the card or linked PR body:
 
-Audit findings become tasks only after deduplication and acceptance: add them
-to the matching phase file (`P<n>-T<nn>` rows with acceptance, dependencies,
-exclusive ownership) and mirror ID+link rows in ROADMAP.md. Independent write
-tasks get separate agents in separate worktrees/branches. Integrate one
-finished task at a time, then update its status and commit with matching
-evidence. Executors report completed work as READY and may update evidence, but only
-the coordinating Codex reviews the diff/evidence at the exact SHA, marks tasks
-DONE and deletes resolved ROADMAP rows — no subagent self-accepts as DONE or
-removes resolved ROADMAP rows. Phase closure still requires Codex approval in
-the phase file.
+- **Solution:** behavior, affected files, source SHA, branch and dependencies.
+- **Documentation read:** actual `path#section` and purpose, not suggested reading.
+- **Checks:** exact commands, route, tested SHA, exit code and passed/failed/skipped
+  counts; required unrun checks and reason; DB target/cleanup when applicable.
+- **Handoff:** direct repository/PR links, remaining limits and review request.
 
-Start /goal only when the work has a measurable finish line; point it at the
-active ROADMAP.md rows. Goals persist within a thread and do not replace the
-checked-in registry. Codex-generated memories are opportunistic recall, not
-the source of project policy or current task state.
+READY means every required acceptance check passed. Docs/mechanical work records
+applicable static checks and explains why application tests are not applicable.
+A required test not run is not PASS; use BLOCKED only if necessary acceptance
+cannot proceed, otherwise continue IN_PROGRESS. A waived check requires an explicit
+owner waiver and remains labelled unrun. Remote PR body is the solution/evidence
+entry point; the card links it instead of duplicating it. Preserve original
+revision attribution; old greens never certify new code. Long failures belong
+in `docs/audit/<id>.md`. `/tmp` and ignored `.agents/tmp/` are local scratch only:
+never link them as evidence or a handoff. Copy the useful summary, tested SHA,
+commands/results and resume commit into the task card or PR body, then delete
+scratch files at closeout. A path on one machine is not visible to another
+checkout. For local commands, name the tested SHA and branch/worktree; distinguish
+migration/command success from application-test results. A clean `dev` status
+does not mean tests passed.
 
-PR evidence is scoped to PRs named in the selected rows (`view` without full
-diffs); open a full diff only for a file being edited.
+## Acceptance
 
-## Closeout procedure (triggered by the phrases listed in AGENTS.md)
+The auditor skill resolves a READY row → card → PR solution/diff and recorded
+checks. Findings may require focused tests; auditors decide based on corrections
+and risk. No routine retest for a docs-only review; full suites need owner request.
+No executor self-acceptance. `audit <ID>` / skill selection is enough; `/audit`
+works only if an interface explicitly maps it to the skill.
 
-1. Record the actual state in ROADMAP.md, the phase files and the PR when it changed.
-2. Commit each completed, validated, task-scoped part locally in `dev`; exclude unrelated/incomplete/unvalidated changes and list them in the handoff; an early stop is never converted into completion.
-3. Offer a new chat with this copyable handoff (never claim to open/close chats automatically):
+On success, in one registry update:
 
-```text
-Project: <absolute worktree>; integration branch: dev.
-Read AGENTS.md, docs/RULES.md, docs/COLLABORATION.md.
-Completed: <behavior/result>.
-Branch/commit/PR: <references>; uncommitted changes: <summary or none>.
-Validation: <checks done; TEST RUN summary block; pending checks>.
-Next task: <ROADMAP row ID, or wait for the owner>.
-Constraints: preserve unrelated work; pytest only via the primary OpenCode
-test-runner (R10); sequential shared test DB (R8); no automatic
-push/merge/deploy/DB reset.
-```
+1. Write `docs/audit/<id>.md`: verdict, completion date, accepted source SHA,
+   key corrections, affected files (including tests), checks/limitations and dialogue.
+   Consolidate useful card evidence here; do not retain redundant active cards.
+2. Replace the parent plan's task link with that audit link and brief DONE/date
+   summary. Remove the ROADMAP row and task card; repair inbound active references.
+   For an orphan, only the audit remains. Keep historical references as history.
+3. When every phase item is accepted, mark PHASE DONE/date; replace detailed plan
+   with a short outcome per task/audit link, history pointer, accepted SHA and its
+   actual commit date. Do not invent missing historical metadata.
+4. Synchronize the scoped registry update with local/origin dev as under Tasks.
+   Record pending solution integration separately from audit acceptance.
 
-## Headless delegation launches (from a task worktree)
+Before integrating or deferring solution work, the executor reports the exact
+branch/commit or PR and asks the owner for one choice: merge to dev; continue on
+the current branch/PR; or defer and preserve that resume point. Do not merge,
+push a solution, close the PR or discard the branch until the owner chooses; an
+existing explicit instruction already covering that action counts. If the owner
+has not answered, leave the solution intact and record the pending decision.
+READY is executor evidence; successful audit is an acceptance decision; neither
+authorizes integration by itself. After acceptance, remove the queue item and
+archive it even when integration is still pending. For unresolved work, keep the
+task IN_PROGRESS if work can continue; use BLOCKED only for a task/dependency
+that prevents resolution. If the owner chooses to defer, record that choice and
+resume branch/PR without calling it BLOCKED solely for being postponed.
 
-Primary test route (R10): Codex subagent `.codex/agents/test-runner.toml` delegates
-to OpenCode:
+If unresolved acceptance cannot proceed, change IN_PROGRESS/READY to BLOCKED;
+record concrete reason, passed/failed/unrun checks and recommended fix in the
+linked audit diagnostic. Correctable findings return to IN_PROGRESS when work
+can continue. Cleanup/session failures never cause BLOCKED or reopen accepted work.
+Data residue is an acceptance defect if test cleanup is required.
 
-```sh
-opencode run --dir /absolute/task/worktree --agent build -m river/deepseek-ai/DeepSeek-V4.1-Flash-1017 \
-  --auto "Выполни тестовое задание из прикреплённого файла и верни итоговый блок TEST RUN." \
-  --file /absolute/task/worktree/.agents/tmp/test-task.md
-```
+Report briefly: `✅ <ID>: <result>; removed from ROADMAP; archive: <link>;
+checks: <actual results>`. State pending integration/cleanup separately.
 
-Secondary route (only when the primary is BLOCKED; never parallel with it —
-R8 sequential): Codex subagent `.codex/agents/kilo-test-runner.toml` starts
-Kilo's restricted `test-orchestrator`, which delegates to the project
-`test-runner` child running tests only through the `pare-test` MCP:
+## Delegation
 
-```sh
-kilo run "Передай задачу из файла дочернему агенту test-runner и верни только итоговый блок TEST RUN." \
-  --dir /absolute/task/worktree --agent test-orchestrator --format json \
-  --file /absolute/task/worktree/.agents/tmp/test-task.md
-```
+Delegate bounded routine edits/inventories/test commands to a cheaper agent when
+its narrow input saves more cost/context than setup and result review. Keep
+judgment and final acceptance with the auditor; do not relay whole documentation
+trees. Assign one outcome, exact HEAD, file ownership and checks; require a compact
+verdict, file refs and counts. Only Codex calls third-party agents; if unavailable,
+use native children under the same scope/guards. Other agents use native children.
+Persist results, then stop/delete owned child sessions immediately. Never delete
+foreign sessions or manipulate session storage; unavailable/already closed sessions
+are housekeeping notes, not task failures. Keep a durable handoff if deletion
+prevents resume. Do not repeatedly investigate missing sessions after owner closure.
 
-- For Kilo 7.8.8, supply the required message **before the flags**. `--file` is an array option: text after it is treated as another file.
-- Agent configuration comes from the checkout selected by `--dir`. The orchestrator must be permitted to read the attached task file; moving it inside the worktree does not overcome `read: deny`. Fix the reviewed configuration/placement or return BLOCKED; do not bypass a denial through an IDE/shell tool.
-- Do not use `--pure` (disables external plugins), `--auto`, or shared sessions with Kilo. If the child or MCP runner is unavailable, report BLOCKED.
-- The Codex `subagents` MCP (`codex-as-mcp`) creates Codex agents and is separate from these test routes.
-- No provider/model credentials are stored in the repository.
+Remote assignments include repository and PR URLs. PR body holds solution/source
+and evidence; all instructions, feedback and questions go through PR comments.
+One custodian applies those status comments to fresh ROADMAP/task cards; remote
+branches do not publish competing registry copies.
 
-## Testing task-file contract (`.agents/tmp/test-task.md`)
+For a task-ID assignment, the remote agent resolves its repository from the
+checkout/card and creates or locates the PR. Ask the owner for a repository or PR
+link only when project context cannot resolve it; never require the owner to find
+the source SHA. Reviewer/executor records the resolved SHA as evidence.
 
-Minimal fields: absolute worktree, branch, expected HEAD, test files, behavior
-under test (1–2 lines), pointer "follow AGENTS.md and docs/RULES.md".
-Runner-side obligations (defined once in the agent/skill definitions, not
-repeated per task): sequential runs; `pgrep -fl pytest` pre-check (exact
-command, no operators; exit 1 = free; shared test schema across worktrees ⇒
-coordinator serializes); quiet pytest flags; `.agents/tmp/test-report.md`
-evidence (commands, exit codes, counts, failure excerpts, HEAD, dirty paths;
-no secrets); final `TEST RUN …` summary block to the coordinator.
-Infrastructure blockers are not successful tests; do not run a broad suite to
-validate documentation edits.
+## Tests
 
-## Test bootstrap compatibility
+Read [test-runner](../.agents/skills/test-runner/SKILL.md) and
+[tests/AGENTS](../tests/AGENTS.md) for test work only. Codex uses OpenCode first:
+from the target checkout, `opencode run --agent build --file <task-file>` with
+instructions to invoke configured `tester` via the V2 `subagent` tool. Its model
+`river/deepseek-ai/DeepSeek-V4.1-Flash-1017` and subagent mode come from
+`~/.config/opencode/opencode.jsonc`; do not override them or select tester as
+parent. Tester only runs the supplied command and analyzes output; parent owns
+preparation/cleanup. Explicit test authoring is a separate assignment.
+If unavailable, use Kilo, then a native Codex child; permission/HEAD/ownership
+failures are not bypass permissions. Other agents use native test children.
+Collect affected paths after enum/import/layout changes. DB scopes use root
+conftest; disable it only for proven no-DB isolation. No broad suite without
+explicit owner request; auditor retest decisions follow Acceptance above.
 
-`scripts/setup_test_db.py` inspects an existing target in a read-only catalog
-transaction before create/reset/seed. A live table absent from the branch's ORM
-metadata (other than Alembic's version table), missing columns on existing
-tables, or UNIQUE drift stops the run; bootstrap never adds or drops UNIQUE
-constraints to reconcile an existing table. Missing model tables retain the
-fresh-table path. Schema reconciliation/reset still needs separate owner
-approval, never a retry or weaker baseline to obtain PASS. `--check` remains
-offline target diagnostics, not this database preflight. These checks are not a
-shared-writer lock: R8/R10 coordination and any existing evidence-preservation
-pauses remain in force.
+## Database
+
+Local `localhost:5432/social_manager/test_schema` is authorized for synthetic
+records, setup/reset and reviewed Alembic migrations without repeated permission.
+Resolve effective host/database/`TEST_POSTGRES_URL`/`DB_TEST_SCHEMA`/settings,
+compatibility and exclusive writer ownership first. All worktrees share it:
+tests, migrations, setup and cleanup are sequential. Use the existing claim/lock
+and inspect active runners; no pytest alone does not exclude other writers.
+Preserve unrelated schemas/reference data; back up retained evidence before
+necessary destructive reset. Do not fake migration history or edit applied DDL.
+
+After success/failure/interruption, stop surviving processes, remove all synthetic
+records (including separately committed fixtures), and verify none remain.
+Rollback alone is insufficient. Never delete another active run's data; wait for
+exclusive ownership. Report partial/interrupted runs honestly and resolve unknown
+target/data state before retry. Preserve migration metadata/non-test reference rows.
+Public migrations require full prior validation of the same revisions/behavior on
+test_schema and separately authorized apply. Public test records require explicit
+Superuser approval for that scope; a DB role/agent identity does not grant approval.
+Use resolved schemas/Alembic context, qualified DDL and existing manager/session
+conventions; no ad-hoc engines, runtime DDL or unsafe search-path assumptions.
+
+## Git and cleanup
+
+Review scoped diffs before local task commits. Preserve foreign staging/edits.
+Integration/push/deployment requires applicable owner authorization. At closeout,
+inventory `git worktree list`; for each candidate verify task/status/owner, HEAD,
+dirty and untracked files, and whether its commits are integrated. Age or a repeated
+HEAD alone does not prove a workspace is unused.
+
+Remove an owned, clean worktree when its owner confirms no active work remains.
+If its commits are unmerged, retain the branch and record branch/HEAD in the task
+card as the resume point. After verified integration (ancestry, or reviewed
+equivalent squash/rebase patch), remove the worktree and merged task branch.
+If files are dirty/untracked, ownership or activity is unclear, or task work
+remains active, preserve the workspace and report its path, task, branch/HEAD,
+file state and next owner action. Never discard work or force-delete to hide loss.
+Preserve foreign branches and explicit recovery backups. Record removed and
+retained candidates in closeout; acceptance, integration and housekeeping remain
+separate facts.

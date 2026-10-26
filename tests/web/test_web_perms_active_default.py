@@ -7,6 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
+class PlatformRoleType(Enum):
+    """Platform roles used by the source slice, without importing app packages."""
+
+    USER = "user"
+    OPERATOR = "operator"
+    ADMIN = "admin"
+
+
 class ActionType(Enum):
     """Minimal action double; this package tests active-user gating, not enums."""
 
@@ -61,7 +69,12 @@ def load_web_perms():
             return node
 
     module = RewriteCatalogImport().visit(module)
-    scope = {"ActionType": ActionType, "WORKSPACE_OWNER_MODELS": owner_models, "_resource_for": resource_for}
+    scope = {
+        "ActionType": ActionType,
+        "PlatformRoleType": PlatformRoleType,
+        "WORKSPACE_OWNER_MODELS": owner_models,
+        "_resource_for": resource_for,
+    }
     exec(compile(ast.fix_missing_locations(module), str(path), "exec"), scope)
     return scope["WebPerms"]
 
@@ -70,6 +83,19 @@ WebPerms = load_web_perms()
 
 
 class WebPermsActiveDefaultTests(unittest.TestCase):
+    def test_operator_role_is_distinct_from_workspace_owner_and_global_bypass(self):
+        for codename, active, expected in (
+            (PlatformRoleType.OPERATOR, True, True),
+            (PlatformRoleType.ADMIN, True, True),
+            (PlatformRoleType.USER, True, False),
+            (PlatformRoleType.ADMIN, False, False),
+        ):
+            with self.subTest(codename=codename, active=active):
+                user = SimpleNamespace(is_active=active, role=SimpleNamespace(codename=codename))
+                perms = WebPerms(user=user, memberships=[], tenant_id=1)
+                self.assertEqual(perms.is_superuser_role, expected)
+                self.assertFalse(perms.is_superuser, "platform role must not enable global workspace bypass")
+
     def test_missing_user_denies_access(self):
         perms = WebPerms(user=None, memberships=[], tenant_id=1)
         self.assertFalse(perms.can("source", ActionType.VIEW))

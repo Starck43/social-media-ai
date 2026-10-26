@@ -67,6 +67,7 @@ means not recorded; source recovery links remain in the card.
 - [P10-T26](docs/tasks/p10-t26.md) Notification/bot-action/agent-session model and manager layout — **IN_PROGRESS** · notion-ai (refactor/p10-t26-notification-action-session-models) · [PR #246; local validation pending](https://github.com/Starck43/social-media-ai/pull/246)
 - [P10-T27](docs/tasks/p10-t27.md) Legacy notification API correctness — **TODO** · unassigned · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
 - [P10-T28](docs/tasks/p10-t28.md) Retire root-level model compatibility modules — **TODO** · unassigned · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
+- [P10-T29](docs/tasks/p10-t29.md) Test-schema reset survives migration guard triggers — **IN_PROGRESS** · codex (local OpenCode session) · fix/p10-t29-reset-guard-triggers
 
 ## Questions
 

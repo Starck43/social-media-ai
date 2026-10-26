@@ -18,6 +18,7 @@
 - [P10-T26](../tasks/p10-t26.md) — notification/bot-action/agent-session model and manager layout
 - [P10-T27](../tasks/p10-t27.md) — legacy notification API correctness
 - [P10-T28](../tasks/p10-t28.md) — retire root-level model compatibility modules
+- [P10-T29](../tasks/p10-t29.md) — test-schema reset survives migration guard triggers
 
 **P10-T26 audit follow-up order (within this audit, not a reprioritization of
 other lanes):** validate/integrate P10-T26 first; then P10-T27 API correctness.

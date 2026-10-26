@@ -1,22 +1,27 @@
 """Actual analyze clients and journal keys with isolated imports/transports.
 
-Run from the repository root:
-.venv/bin/python tests/test_analysis_dispatch_identity.py
+Run from the repository root (source-only, no root DB conftest):
+PYTHONPATH=.:tests .venv/bin/python -m pytest tests/security/test_analysis_dispatch_identity.py \
+    --noconftest -p no:cacheprovider -o addopts=""
 
-Requires project HTTPX, but imports no app/DB bootstrap and uses no network.
-Persistence is doubled; this is not PostgreSQL or whole-ledger acceptance.
+Actual clients, catalog/dispatch validation, cache pricing and attempt journal;
+module-local storage/settings doubles, no app bootstrap or network. Personal
+billing is disabled in this fixture; no PostgreSQL/whole-ledger acceptance.
 """
 
 import asyncio
+import builtins
 import hashlib
 import json
+import socket
+import sys
 import unittest
 from copy import deepcopy
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
 
 import httpx
@@ -32,6 +37,49 @@ class Model:
 
 class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        before = {name for name in sys.modules if name == "app" or name.startswith("app.")}
+        self.addCleanup(
+            lambda: self.assertEqual({name for name in sys.modules if name == "app" or name.startswith("app.")}, before)
+        )
+        normal_import = builtins.__import__
+
+        def guarded_import(name, *args, **kwargs):
+            if name == "app" or name.startswith("app."):
+                raise ImportError("Undeclared application import in isolated dispatch test: " + name)
+            return normal_import(name, *args, **kwargs)
+
+        self.enterContext(patch("builtins.__import__", side_effect=guarded_import))
+        self.enterContext(patch.object(socket.socket, "connect", side_effect=AssertionError("No network")))
+        self.enterContext(patch.object(socket, "getaddrinfo", side_effect=AssertionError("No DNS")))
+        self.cache_pricing = load_isolated_source("_dispatch_cache_pricing", ROOT / "app/services/ai/cache_pricing.py")
+        self.catalog = load_isolated_source(
+            "_dispatch_catalog_context",
+            ROOT / "app/core/personal_catalog_context.py",
+            imports={"app.core.permissions": SimpleNamespace(get_current_user=lambda: None)},
+        )
+        self.enterContext(self.catalog.catalog_execution_scope(7))
+        tenant_context = load_isolated_source("_dispatch_tenant_context", ROOT / "app/core/tenant_context.py")
+
+        async def fresh_model(**kwargs):
+            self.assertEqual(kwargs, {"id": 4, "owner_user_id": 7, "is_active": True})
+            return self.selected_model
+
+        query = SimpleNamespace(get=AsyncMock(side_effect=fresh_model))
+        Model.objects = SimpleNamespace(select_related=Mock(return_value=query))
+        self.dispatch = load_isolated_source(
+            "_dispatch_personal_gate",
+            ROOT / "app/services/ai/personal_dispatch.py",
+            imports={
+                "app.core.personal_catalog_context": self.catalog,
+                "app.core.tenant_context": tenant_context,
+                "app.models": SimpleNamespace(
+                    LLMModel=Model,
+                    User=SimpleNamespace(
+                        objects=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(id=7, is_active=True)))
+                    ),
+                ),
+            },
+        )
         self.requests = []
         self.identities = []
         self.error = None
@@ -66,6 +114,9 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                     settings=SimpleNamespace(LLM_DEFAULT_TIMEOUT=60.0, PERSONAL_BILLING_ENABLED=False)
                 ),
                 "app.models": SimpleNamespace(LLMModel=Model),
+                "app.core.personal_catalog_context": self.catalog,
+                "app.services.ai.personal_dispatch": self.dispatch,
+                "app.services.ai.cache_pricing": self.cache_pricing,
                 "app.services.ai.attempt_journal": SimpleNamespace(
                     provider_cost_evidence=lambda data: test.journal.provider_cost_evidence(data),
                 ),
@@ -96,18 +147,27 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
             ROOT / "app/services/ai/attempt_journal.py",
             imports={
                 "app.models.managers.llm_attempt_manager": SimpleNamespace(LLMAttemptManager=lambda: None),
+                "app.services.ai.cache_pricing": self.cache_pricing,
             },
         )
 
     def client(self, name):
         provider = SimpleNamespace(
             name="Synthetic",
+            owner_user_id=7,
+            is_active=True,
+            api_format={"OpenAICompatibleClient": "openai", "AnthropicClient": "anthropic", "CustomClient": "custom"}[
+                name
+            ],
             base_url="https://provider.invalid",
             auth_header=None,
             get_api_key=lambda: "synthetic-test-key",
         )
         model = SimpleNamespace(
             id=4,
+            owner_user_id=7,
+            is_active=True,
+            capabilities=["text"],
             name="synthetic-model",
             model_id="synthetic-model",
             provider=provider,
@@ -116,17 +176,44 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
             custom_endpoint_path="/test",
             input_cost_per_1k=0.001,
             output_cost_per_1k=0.002,
+            pricing_token_unit=1000,
+            cache_read_cost_per_1m=0,
+            cache_write_5m_cost_per_1m=0,
+            cache_write_1h_cost_per_1m=0,
         )
+        self.selected_model = model
         client = getattr(self.module, name)(model)
         client._rate_limit = AsyncMock()
         self.raw = {
             "choices": [{"message": {"content": '{"summary": "same"}'}}],
             "content": [{"type": "text", "text": '{"summary": "same"}'}],
-            "usage": {"prompt_tokens": 120, "completion_tokens": 40, "input_tokens": 120, "output_tokens": 40},
+            "usage": {
+                "prompt_tokens": 120,
+                "completion_tokens": 40,
+                "input_tokens": 120,
+                "output_tokens": 40,
+                "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+            },
         }
         if name == "CustomClient":
             self.raw["content"] = {"summary": "same"}
         return client
+
+    @staticmethod
+    def tariff(input_rate, output_rate, **overrides):
+        """Explicit 1K ordinary rates and zero cache charges for synthetic tests."""
+        return {
+            "id": 4,
+            "input_cost_per_1k": input_rate,
+            "output_cost_per_1k": output_rate,
+            "pricing_token_unit": 1000,
+            "cache_read_cost_per_1m": 0,
+            "cache_write_5m_cost_per_1m": 0,
+            "cache_write_1h_cost_per_1m": 0,
+            **overrides,
+        }
 
     def classes(self):
         return ("OpenAICompatibleClient", "AnthropicClient", "CustomClient")
@@ -183,8 +270,9 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["request"]["model"], "synthetic-model")
                 self.assertNotIn("usage", result)
                 self.assertEqual(self.records(result)[0]["outcome"], self.journal.OUTCOME_FAILED_TRANSPORT)
-                if name == "OpenAICompatibleClient":
-                    self.assertIn("messages", result["request"])
+                self.assertEqual(set(result["request"]), {"model", "llm_model_id", "provider", "dispatch_id"})
+                for sensitive in ("messages", "prompt", "endpoint"):
+                    self.assertNotIn(sensitive, result["request"])
 
     async def test_non_success_http_envelopes_keep_the_same_allocated_identity(self):
         self.status_code = 503
@@ -306,9 +394,7 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
             return True
 
         fake = SimpleNamespace(record_attempt=record_attempt)
-        resolver = AsyncMock(
-            return_value={"synthetic-model": {"id": 4, "input_cost_per_1k": 1, "output_cost_per_1k": 1}}
-        )
+        resolver = AsyncMock(return_value={(4, "synthetic", "synthetic-model"): self.tariff(1, 1)})
         for envelope, expected in ((envelopes[0], 1), (envelopes[1], 1), (envelopes[0], 0)):
             created = await self.journal.record_analysis_attempts(
                 {"text_analysis": envelope},
@@ -320,6 +406,12 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(created, expected)
         self.assertEqual(len(stored), 2)
+        self.assertEqual(resolver.await_count, 3)
+        resolver.assert_awaited_with({(4, "synthetic", "synthetic-model")})
+        for record in stored.values():
+            self.assertEqual(record["cost_usd"], Decimal("0.160000000"))
+            self.assertEqual(record["pricing_policy_version"], "cache-tariff-v2")
+            self.assertEqual(record["pricing_token_unit"], 1000)
 
     async def test_explicit_free_tariff_preserves_missing_usage_evidence(self):
         for name in self.classes():
@@ -331,7 +423,7 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["usage"]["completion_tokens"], 0)
                 self.assertEqual(result["accounting_usage"], {"prompt_tokens": None, "completion_tokens": None})
                 record = self.records(result)[0]
-                priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 0, "output_cost_per_1k": 0})
+                priced = self.journal.price_attempt(record, self.tariff(0, 0))
                 self.assertEqual(priced["cost_usd"], Decimal(0))
                 self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_FREE)
 
@@ -344,7 +436,7 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 record = self.records(result)[0]
                 self.assertEqual(record["prompt_tokens"], 17)
                 self.assertIsNone(record["completion_tokens"])
-                priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 1, "output_cost_per_1k": 1})
+                priced = self.journal.price_attempt(record, self.tariff(1, 1))
                 self.assertIsNone(priced["cost_usd"])
                 self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_USAGE)
 
@@ -375,25 +467,32 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
         for name in self.classes():
             with self.subTest(client=name):
                 client = self.client(name)
+                # This custom endpoint explicitly uses OpenAI-style cache counters.
+                if name == "CustomClient":
+                    client.provider.api_format = "openai"
                 self.raw["usage"] = {
+                    "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
                     "prompt_tokens": 0,
                     "completion_tokens": 0,
                     "input_tokens": 0,
                     "output_tokens": 0,
                 }
                 result = await client.analyze("same")
-                priced = self.journal.price_attempt(
-                    self.records(result)[0], {"id": 4, "input_cost_per_1k": 1, "output_cost_per_1k": 2}
-                )
+                priced = self.journal.price_attempt(self.records(result)[0], self.tariff(1, 2))
                 self.assertEqual(priced["cost_usd"], Decimal(0))
                 self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_PRICED)
 
     async def test_custom_reported_usage_reaches_journal_without_changing_legacy_projection(self):
-        result = await self.client("CustomClient").analyze("same")
+        client = self.client("CustomClient")
+        # A custom endpoint can explicitly declare the documented OpenAI usage format.
+        client.provider.api_format = "openai"
+        result = await client.analyze("same")
         self.assertEqual(result["usage"]["cost"], 0.0)
         record = self.records(result)[0]
         self.assertEqual((record["prompt_tokens"], record["completion_tokens"]), (120, 40))
-        priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 0.001, "output_cost_per_1k": 0.002})
+        priced = self.journal.price_attempt(record, self.tariff(0.001, 0.002))
         self.assertEqual(priced["cost_usd"], Decimal("0.000200000"))
 
     async def test_provider_owned_accounting_field_cannot_replace_client_evidence(self):
@@ -466,9 +565,7 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 client = self.client(name)
                 self.raw["usage"]["cost"] = "0.123456789"
                 result = await client.analyze("same")
-                priced = self.journal.price_attempt(
-                    self.records(result)[0], {"id": 4, "input_cost_per_1k": 0, "output_cost_per_1k": 0}
-                )
+                priced = self.journal.price_attempt(self.records(result)[0], self.tariff(0, 0))
                 self.assertEqual(result["accounting_cost_usd"], "0.123456789")
                 self.assertEqual(priced["cost_usd"], Decimal("0.123456789"))
                 self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_PRICED)
@@ -481,9 +578,7 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 self.raw.pop("usage")
                 self.raw["cost"] = 0
                 result = await client.analyze("same")
-                priced = self.journal.price_attempt(
-                    self.records(result)[0], {"id": 4, "input_cost_per_1k": 1, "output_cost_per_1k": 1}
-                )
+                priced = self.journal.price_attempt(self.records(result)[0], self.tariff(1, 1))
                 self.assertEqual(priced["cost_usd"], Decimal(0))
                 self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_FREE)
                 self.assertIsNone(priced["prompt_tokens"])
@@ -540,6 +635,110 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(priced["cost_usd"], Decimal("0.010000000"))
                 self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_PRICED)
+
+    async def test_v2_unit_and_cache_snapshot_prices_exactly_without_changing_identity(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                if name == "CustomClient":
+                    client.provider.api_format = "openai"
+                result = await client.analyze("same")
+                record = self.records(result)[0]
+                original = deepcopy(record)
+                self.assertEqual(record["pricing_policy_version"], "cache-tariff-v2")
+                for unit, expected in ((1000, "0.000200000"), (1000000, "0.000000200")):
+                    with self.subTest(unit=unit):
+                        priced = self.journal.price_attempt(
+                            record, self.tariff("0.001", "0.002", pricing_token_unit=unit)
+                        )
+                        self.assertEqual(priced["cost_usd"], Decimal(expected))
+                        self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_PRICED)
+                        self.assertEqual(priced["pricing_token_unit"], unit)
+                        for field in self.cache_pricing.CACHE_RATE_FIELDS:
+                            self.assertEqual(priced[field], Decimal(0))
+                        self.assertEqual(priced["attempt_key"], record["attempt_key"])
+                self.assertEqual(record, original)
+
+    async def test_missing_cache_evidence_is_undefined_not_invented_zero(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                result = await self.client(name).analyze("same")
+                envelope = deepcopy(result)
+                # The owned cache block stays unknown; ordinary token counts are not enough.
+                envelope["accounting_cache_usage"] = self.cache_pricing.normalize_cache_usage({}, None)
+                priced = self.journal.price_attempt(self.records(envelope)[0], self.tariff(1, 2))
+                self.assertIsNone(priced["cost_usd"])
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNDEFINED)
+                self.assertEqual(priced["pricing_policy_version"], "cache-tariff-v2")
+                self.assertEqual(priced["pricing_token_unit"], 1000)
+
+    async def test_unknown_custom_format_does_not_imply_a_known_cache_protocol(self):
+        result = await self.client("CustomClient").analyze("same")
+        self.assertEqual(result["accounting_cache_usage"]["format"], "unknown")
+        record = self.records(result)[0]
+        priced = self.journal.price_attempt(record, self.tariff("0.001", "0.002"))
+        self.assertEqual((priced["prompt_tokens"], priced["completion_tokens"]), (120, 40))
+        self.assertIsNone(priced["cost_usd"])
+        self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNDEFINED)
+
+    async def test_explicit_null_or_invalid_v2_unit_is_rejected_not_defaulted(self):
+        client = self.client("OpenAICompatibleClient")
+        record = self.records(await client.analyze("same"))[0]
+        for unit in (None, True, 0, 1, "1000", 1000.0):
+            with self.subTest(unit=repr(unit)):
+                with self.assertRaises(ValueError):
+                    self.journal.price_attempt(record, self.tariff(1, 2, pricing_token_unit=unit))
+
+    def test_legacy_policy_retains_1k_semantics_and_null_unit(self):
+        record = self.records({"request": {"model": "m"}, "usage": {"prompt_tokens": 120, "completion_tokens": 40}})[0]
+        self.assertEqual(record["pricing_policy_version"], "provider-price-v1")
+        priced = self.journal.price_attempt(record, self.tariff("0.001", "0.002", pricing_token_unit=1000000))
+        self.assertEqual(priced["cost_usd"], Decimal("0.000200000"))
+        self.assertIsNone(priced["pricing_token_unit"])
+        self.assertEqual(priced["attempt_key"], record["attempt_key"])
+
+    def test_fixture_does_not_bypass_actual_personal_catalog_ownership(self):
+        client = self.client("OpenAICompatibleClient")
+        client.model.owner_user_id = 8
+        with self.assertRaises(PermissionError):
+            self.module.OpenAICompatibleClient(client.model)
+        self.assertEqual(self.requests, [])
+        self.assertEqual(self.identities, [])
+
+    async def test_free_v2_snapshot_requires_explicit_zero_cache_rates(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                self.raw.pop("usage")
+                record = self.records(await client.analyze("same"))[0]
+                for field in self.cache_pricing.CACHE_RATE_FIELDS:
+                    with self.subTest(missing_rate=field):
+                        priced = self.journal.price_attempt(record, self.tariff(0, 0, **{field: None}))
+                        self.assertIsNone(priced["cost_usd"])
+                        self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNDEFINED)
+                        self.assertIsNone(priced[field])
+
+    async def test_absent_legacy_double_unit_defaults_but_receipt_stores_explicit_unit(self):
+        record = self.records(await self.client("OpenAICompatibleClient").analyze("same"))[0]
+        tariff = self.tariff("0.001", "0.002")
+        tariff.pop("pricing_token_unit")
+        priced = self.journal.price_attempt(record, tariff)
+        self.assertEqual(priced["pricing_token_unit"], 1000)
+        self.assertEqual(priced["cost_usd"], Decimal("0.000200000"))
+        self.assertEqual(priced["pricing_policy_version"], "cache-tariff-v2")
+
+    async def test_cache_rate_remains_per_million_when_ordinary_rate_unit_changes(self):
+        client = self.client("OpenAICompatibleClient")
+        self.raw["usage"]["prompt_tokens_details"]["cached_tokens"] = 40
+        record = self.records(await client.analyze("same"))[0]
+        for unit, expected in ((1000, "0.000240000"), (1000000, "0.000080160")):
+            with self.subTest(unit=unit):
+                priced = self.journal.price_attempt(
+                    record, self.tariff("0.001", "0.002", pricing_token_unit=unit, cache_read_cost_per_1m=2)
+                )
+                self.assertEqual(priced["cost_usd"], Decimal(expected))
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_PRICED)
+                self.assertEqual(priced["cache_read_cost_per_1m"], Decimal(2))
 
 
 if __name__ == "__main__":

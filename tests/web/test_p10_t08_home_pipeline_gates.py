@@ -95,11 +95,11 @@ def home(monkeypatch):
             return self
 
         async def limit(self, limit):
-            assert self.model == "job" and limit == 3  # P10-T09 semantics unchanged.
+            assert self.model == "job" and limit == 3  # Home preview remains bounded.
             return state.jobs
 
     def model(name):
-        return NS(objects=Query(name), created_at=NS(desc=lambda: "created_at DESC"))
+        return NS(objects=Query(name), created_at=NS(desc=lambda: "created_at DESC"), id=NS(desc=lambda: "id DESC"))
 
     models = {name: model(name) for name in (*COMPONENTS, "source", "agenttask")}
     deps = load(
@@ -217,14 +217,14 @@ def assert_components(home, allowed, response):
     assert {name for name, _ in home.calls if name in COMPONENTS} == expected
     assert ("data-home-pipeline" in html) == bool(expected)
     for model, label in (
-        ("collecteditem", "ожидают анализа"),
+        ("collecteditem", "сохранено материалов"),
         ("aianalytics", "сохранено анализов"),
-        ("job", "выполняется сейчас"),
+        ("job", "выполняются в предпросмотре"),
     ):
         assert (label in html) == (model in expected)
     assert ('href="/app/jobs"' in html) == ("job" in expected)
-    assert ("Сбор выполняется…" in html) == ("job" in expected)
-    assert ("в очереди" in html) == ("job" in expected)
+    assert ("Сбор данных выполняется…" in html) == ("job" in expected)
+    assert ("ожидают в предпросмотре" in html) == ("job" in expected)
     assert ("71" in html) == ("collecteditem" in expected)
     assert ("83" in html) == ("aianalytics" in expected)
     if "aianalytics" not in allowed:
@@ -320,8 +320,11 @@ def test_platform_role_alone_never_grants_pipeline_or_queue(home, platform_role)
 @pytest.mark.parametrize(
     "rows, text",
     [
-        ([], "Очередь пуста — новых сборов и анализов нет."),
-        ([NS(status="pending", job_type="collect")], "Задачи в очереди, выполнение скоро начнётся."),
+        ([], "Нет ожидающих или выполняющихся заданий."),
+        (
+            [NS(status="pending", job_type="collect")],
+            "В предпросмотре — ожидающие задания. Время запуска зависит от расписания.",
+        ),
     ],
 )
 def test_job_empty_and_pending_states_require_job_view(home, rows, text):

@@ -374,7 +374,8 @@ def test_runtime_state_setting_is_opt_in_and_absolute(tmp_path, monkeypatch):
         config.Settings(_env_file=None, RUNTIME_STATE_DIR="relative/path")
 
 
-def test_owner_is_retained_until_all_component_cleanup_finishes(tmp_path):
+@pytest.mark.parametrize("repeat_cancel", [False, True])
+def test_owner_is_retained_until_all_component_cleanup_finishes(tmp_path, repeat_cancel):
     async def scenario():
         started, cleaning, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
@@ -396,6 +397,9 @@ def test_owner_is_retained_until_all_component_cleanup_finishes(tmp_path):
                 task.cancel()
                 await cleaning.wait()
                 await asyncio.sleep(0)
+                if repeat_cancel:
+                    task.cancel()
+                    await asyncio.sleep(0)
                 assert not task.done()
                 assert PRESENCE.runtime_signal(tmp_path)["state"] == "fresh"
                 release.set()

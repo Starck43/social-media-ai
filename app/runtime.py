@@ -54,9 +54,20 @@ async def main() -> None:
                 component.cancel()
             if heartbeat is not None:
                 heartbeat.cancel()
-            await asyncio.gather(
+            drain = asyncio.gather(
                 *components, group, *([heartbeat] if heartbeat is not None else []), return_exceptions=True
             )
+            interrupted = False
+            while not drain.done():
+                try:
+                    await asyncio.shield(drain)
+                except asyncio.CancelledError:
+                    # A second shutdown request must not release the local
+                    # owner while an old component is still draining.
+                    interrupted = True
+            drain.result()
+            if interrupted:
+                raise asyncio.CancelledError
 
 
 if __name__ == "__main__":

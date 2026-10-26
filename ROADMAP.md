@@ -47,6 +47,8 @@ means not recorded; source recovery links remain in the card.
 - [P9-T01](docs/tasks/p9-t01.md) one capability-specific activation contract — **TODO** · unassigned · —
 
 ## [P10](docs/phases/p10-audit-hardening.md)
+- [P10-T24](docs/tasks/p10-t24.md) Record handoff locations and require owner choice before merge/deferral — **IN_PROGRESS** · codex · `codex resume 01a1726d-96c3-7083-8828-2a2a1558676b`
+
 
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —

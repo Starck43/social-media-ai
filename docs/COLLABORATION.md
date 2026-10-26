@@ -29,6 +29,13 @@ Create `type/<task-id>-<topic>` from the agreed source revision. Independent
 writers use exclusive paths and separate worktrees. Keep task implementation out
 of integration `dev`; registry-only synchronization is the exception above.
 
+The primary checkout is the owner's interactive workspace: agents never
+switch, move or commit branches in it, and never leave it on an agent branch.
+When the owner's checkout sits on a branch an agent needs, the agent opens a
+worktree for that branch instead of moving the checkout. Verify the current
+branch and dirty state before any commit; a commit belongs only in the
+agent's own task worktree.
+
 `docs/tasks/<id>.md` contains scope/acceptance, parent phase (or explicit orphan),
 related task links, owned paths/dependencies, branch/PR, documents read and checks.
 It links ROADMAP instead of copying current status. Phases live in `docs/phases/`:

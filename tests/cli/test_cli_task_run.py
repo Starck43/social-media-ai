@@ -14,7 +14,7 @@ import typer
 
 from app.core.permissions import has_permission, operator_permission_scope, permission_scope, service_permission_scope
 from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
-from app.models import AgentTask, Job, Platform, Source, Tenant
+from app.models import AgentTask, Job, Notification, Platform, Source, Tenant
 from app.models.managers.job_manager import JobManager
 from app.models.managers.tenant_manager import tenants
 from app.types.enums.platform_types import SourceType
@@ -85,12 +85,13 @@ async def clean_created_rows():
             Job: await _ids(Job),
             AgentTask: await _ids(AgentTask),
             Source: await _ids(Source),
+            Notification: await _ids(Notification),
             Tenant: await _ids(Tenant),
         }
     yield
     with tenant_scope(bypass=True), operator_permission_scope():
         # Jobs can outlive tasks, and tasks can retain source references.
-        for model in (Job, AgentTask, Source, Tenant):
+        for model in (Job, AgentTask, Source, Notification, Tenant):
             after_ids = await _ids(model)
             for row_id in after_ids - before[model]:
                 if model is Tenant:

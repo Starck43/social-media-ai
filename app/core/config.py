@@ -1,8 +1,8 @@
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from dotenv import load_dotenv
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -167,6 +167,46 @@ class Settings(BaseSettings):
             value = value.expanduser()
             if not value.is_absolute():
                 raise ValueError("RUNTIME_STATE_DIR must be an absolute path")
+        return value
+
+    # Workspace subscriptions: selecting a provider never enables checkout.
+    # Live payments are deliberately unsupported by this foundation. Test stores
+    # use the same API host; the merchant credentials, not a URL, select test mode.
+    SUBSCRIPTION_PAYMENT_PROVIDER: Literal["yookassa"] = "yookassa"
+    SUBSCRIPTION_PAYMENT_MODE: Literal["test"] = "test"
+    SUBSCRIPTION_CHECKOUT_ENABLED: bool = False
+    YOOKASSA_SHOP_ID: str = ""
+    YOOKASSA_SECRET_KEY: SecretStr = Field(default=SecretStr(""), repr=False, exclude=True)
+    YOOKASSA_RETURN_URL: str = ""
+    YOOKASSA_HTTP_TIMEOUT: float = Field(default=15.0, ge=1.0, le=30.0)
+
+    @field_validator("YOOKASSA_SHOP_ID")
+    @classmethod
+    def _yookassa_shop_id(cls, value: str) -> str:
+        value = value.strip()
+        if value and (not value.isascii() or not value.isdecimal()):
+            raise ValueError("YOOKASSA_SHOP_ID must be an ASCII numeric merchant ID")
+        return value
+
+    @field_validator("YOOKASSA_RETURN_URL")
+    @classmethod
+    def _yookassa_return_url(cls, value: str) -> str:
+        from urllib.parse import urlsplit
+
+        value = value.strip()
+        if not value:
+            return value
+        try:
+            url = urlsplit(value)
+            port = url.port
+        except ValueError:
+            raise ValueError("YOOKASSA_RETURN_URL must be a valid HTTPS URL") from None
+        if (
+            url.scheme != "https" or not url.hostname or url.username is not None
+            or url.password is not None or url.fragment or port not in (None, 443, 8443)
+            or any(character.isspace() or ord(character) < 32 for character in value)
+        ):
+            raise ValueError("YOOKASSA_RETURN_URL requires HTTPS without credentials or a fragment")
         return value
 
     # Personal budget admission is opt-in until schema and real acceptance pass.

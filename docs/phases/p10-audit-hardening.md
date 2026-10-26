@@ -11,8 +11,9 @@
 - [P10-T16](../tasks/p10-t16.md) — Scheduling model layout checks
 - [P10-T19](../tasks/p10-t19.md) — Reconcile the failing security suites with the current authorization model
 - [P10-T22](../tasks/p10-t22.md) — Reconcile the dispatch-identity suite with the tariff receipt contract
-- [P10-T24](../tasks/p10-t24.md) — portable evidence handoff and explicit owner integration/deferral decision
 
+
+- [P10-T24](../audit/p10-t24.md) — portable handoff, owner decision before integration and migration evidence review; accepted 2026-10-26 at `1df675f`.
 
 **Accepted history:**
 

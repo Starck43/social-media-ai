@@ -6,8 +6,6 @@
 
 **Plan — active task cards:**
 
-- [P10-T30](../tasks/p10-t30.md) — committed catalog fixtures survive test-schema reset
-
 
 - [P10-T24](../audit/p10-t24.md) — portable handoff, owner decision before integration and migration evidence review; accepted 2026-10-26 at `1df675f`.
 
@@ -20,6 +18,7 @@
 - [P10-T09](../audit/p10-t09.md) — truthful Home preview counts and activity labels; accepted 2026-10-26 at `94c559e1` (independent audit, owner-choice merge `ef5d7936`, [PR #250](https://github.com/Starck43/social-media-ai/pull/250)).
 - [P10-T22](../audit/p10-t22.md) — dispatch-identity suite reconciled with cache-tariff v2 receipts; accepted 2026-10-26 at `8b825e6b` (independent audit, owner-choice merge `cf2a1fe7`, [PR #251](https://github.com/Starck43/social-media-ai/pull/251)).
 - [P10-T16](../audit/p10-t16.md) — scheduling model layout checks; accepted 2026-10-26 at `7898e670` (independent audit, owner command, integrated into dev via merge `08ca4965`).
+- [P10-T30](../audit/p10-t30.md) — committed catalog fixtures survive test-schema reset; accepted 2026-10-26 at `cd5f9596` (owner pre-authorized audits, integrated into dev via merge `32b0d6f2`).
 
 **P10-T26 audit follow-up order (within this audit, not a reprioritization of
 other lanes):** validate/integrate P10-T26 first; then P10-T27 API correctness.

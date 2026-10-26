@@ -405,6 +405,7 @@ async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_witho
     from sqlalchemy.orm import relationship
     from wtforms import FloatField, widgets
 
+    price_fields = load_isolated_source("_exact_model_price_field_fixture", ROOT / "app/admin/price_fields.py")
     settings = NS(DB_SCHEMA="fixture_schema")
     config = NS(settings=settings)
     decorators = NS(app_label=lambda label: lambda cls: cls)
@@ -463,6 +464,7 @@ async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_witho
         widgets=widgets,
         FloatField=FloatField,
         SelectField=SelectField,
+        ExactModelPriceField=price_fields.ExactModelPriceField,
         model_price=lambda value: "$" + format(Decimal(str(value)), "f"),
         action=action,
     )
@@ -525,9 +527,10 @@ async def test_web_handler_preserves_guards_and_calls_same_short_service(allowed
         {
             "app.models.managers.tenant_manager": NS(tenants=tenant_manager),
             "app.services.ai.model_probe": probe,
+            "app.services.ai.personal_catalog": NS(validate_chat_model=AsyncMock(return_value=selected)),
         },
     )
-    request = NS(session={})
+    request = NS(session={}, state=NS(web_user=NS(id=selected.owner_user_id)))
     await handler(request, agent_model_id="7", token="fake-csrf", tenant_id=3)
     if allowed and csrf and exists:
         probe.probe_short.assert_called_once_with(selected)

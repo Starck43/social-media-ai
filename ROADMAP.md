@@ -43,6 +43,8 @@ means not recorded; source recovery links remain in the card.
 - [P8-T34](docs/tasks/p8-t34.md) Non-social resources and connector actions — **TODO** · unassigned · —
 - [P8-T35](docs/tasks/p8-t35.md) Reconcile universal social task delivery plan — **IN_PROGRESS** · codex-p8-plan · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 
+- [P8-T36](docs/tasks/p8-t36.md) Reusable horizontal relationship picker — **IN_PROGRESS** · Notion remote executor/custodian · [owner assignment](https://app.notion.com/chat?t=404ddbde02368077b65f00a927166ed8)
+
 ## [P9](docs/phases/p9-safe-activation.md)
 
 - [P9-T01](docs/tasks/p9-t01.md) one capability-specific activation contract — **TODO** · unassigned · —

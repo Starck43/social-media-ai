@@ -18,6 +18,8 @@
 - [P8-T34](../tasks/p8-t34.md) — Non-social resources and connector actions
 - [P8-T35](../tasks/p8-t35.md) — Reconcile universal social task delivery plan
 
+- [P8-T36](../tasks/p8-t36.md) — Reusable horizontal relationship picker
+
 **Accepted history:**
 
 - [P8-T26](../audit/phase-p8-history.md#p8-t26) — implement the accepted jobs lifecycle audit: built-in cleanup independent of a scheduled prune task, default 24-hour terminal…

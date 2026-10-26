@@ -1,4 +1,4 @@
-/* This route owns a viewport-height editor; other SQLAdmin forms stay unchanged. */
+/* Shared filtered-select assets; only the role shell owns a viewport-height editor; other SQLAdmin forms stay unchanged. */
 .page-wrapper:has(.permission-role-edit) { height: 100dvh; min-height: 0; padding: 1rem; }
 .page-wrapper:has(.permission-role-edit) > .container-fluid { flex: none; }
 .page-wrapper:has(.permission-role-edit) .page-body { min-height: 0; margin: 0; }
@@ -22,9 +22,9 @@
 }
 /* Keep the shared .btn palette, padding, radius and intrinsic widths from custom.css. */
 .permission-role-footer > .btn { min-height: 44px; white-space: normal; max-width: 100%; }
-select[data-permission-transfer] { flex: 1; min-height: 0; width: 100%; overflow-y: auto; }
-select[data-permission-transfer][hidden], .permission-transfer [hidden] { display: none !important; }
-.permission-transfer { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; color: var(--color-text); }
+select[data-filtered-select] { flex: 1; min-height: 0; width: 100%; overflow-y: auto; }
+select[data-filtered-select][hidden], .permission-transfer[hidden], .permission-transfer [hidden] { display: none !important; }
+.permission-transfer { height: 26rem; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; color: var(--color-text); }
 .permission-transfer-caption { flex: none; margin-top: .75rem; }
 .permission-transfer-caption .form-label { display: block; margin: 0 0 .25rem; font-size: .875rem; }
 .permission-transfer-help { margin: 0; font-size: .75rem; line-height: 1.4; color: var(--color-text-secondary); }
@@ -106,4 +106,28 @@ select[data-permission-transfer][hidden], .permission-transfer [hidden] { displa
 }
 @media (forced-colors: active) {
     .permission-transfer .permission-transfer-option[aria-selected="true"] { outline: 1px solid Highlight; }
+}
+
+/* Inline form fields have a bounded local scroll area; only role edit fills its card. */
+.permission-role-field > .permission-transfer { height: auto; flex: 1; }
+.permission-transfer .permission-transfer-option[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+
+/* Plain record names need no permission-code prefix; keep long labels compact. */
+[data-filtered-select-ui="plain"] .permission-transfer-option-code {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Related-record actions stay below a full-width two-list field, not beside it. */
+.admin-related-field:has([data-filtered-select-ui="plain"]) { flex-wrap: wrap; justify-content: flex-end; }
+.admin-related-field:has([data-filtered-select-ui="plain"]) > .admin-related-input { flex-basis: 100%; }
+@media (max-width: 575.98px) {
+    /* Ordinary forms have more padding than the full-screen role editor. */
+    [data-filtered-select-ui="plain"] { height: 40rem; }
+    [data-filtered-select-ui="plain"] .permission-transfer-grid {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) 2.75rem minmax(0, 1fr);
+        gap: .375rem;
+    }
+    [data-filtered-select-ui="plain"] .permission-transfer-controls { flex-direction: row; }
+    [data-filtered-select-ui="plain"] .permission-transfer-arrow-icon { transform: rotate(90deg); }
 }

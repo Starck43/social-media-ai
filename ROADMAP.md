@@ -13,11 +13,11 @@ means not recorded; source recovery links remain in the card.
 ## [P4](docs/phases/p4-delivery.md)
 
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · —
+- [P4-T02](docs/tasks/p4-t02.md) Notification recipients, per-user read state and lifecycle — **TODO** · product-owner (decision) · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
 
 ## [P5](docs/phases/p5-ai-boundaries.md)
 
 - [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **BLOCKED** · codex-analysis-receipts · —
-- [P5-T15](docs/tasks/p5-t15.md) Derived output-contract error envelopes — **TODO** · unassigned · `codex resume 01a1726d-96c3-7083-8828-2a2a1558676b`
 
 ## [P6](docs/phases/p6-lifecycle-privacy.md)
 
@@ -31,7 +31,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P8](docs/phases/p8-first-value-ui.md)
 
-- [P8-T10](docs/tasks/p8-t10.md) runtime freshness identity — **TODO** · unassigned · —
+- [P8-T10](docs/tasks/p8-t10.md) runtime freshness identity — **IN_PROGRESS** · notion-ai (remote executor / owner-authorized custodian) · [owner assignment](https://app.notion.com/chat?t=405ddbde02368102880c00a967f1cd5c)
 - [P8-T11](docs/tasks/p8-t11.md) incomplete-delivery aggregate signal — **TODO** · unassigned · —
 - [P8-T13](docs/tasks/p8-t13.md) named support/escalation + pilot measures — **TODO** · unassigned · —
 - [P8-T15](docs/tasks/p8-t15.md) Admin API connectivity, mock and real checks — **BLOCKED** · codex · —
@@ -43,10 +43,15 @@ means not recorded; source recovery links remain in the card.
 - [P8-T34](docs/tasks/p8-t34.md) Non-social resources and connector actions — **TODO** · unassigned · —
 - [P8-T35](docs/tasks/p8-t35.md) Reconcile universal social task delivery plan — **IN_PROGRESS** · codex-p8-plan · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 
+- [P8-T36](docs/tasks/p8-t36.md) Reusable horizontal relationship picker — **READY** · Notion remote executor/custodian · [PR #244 evidence](https://github.com/Starck43/social-media-ai/pull/244#issuecomment-6418461244)
+
+- [P8-T37](docs/tasks/p8-t37.md) Task plan execution scope and shared mutation policy — **READY** · notion-ai (fix/p8-t37-plan-execution-dry) · [PR #245; local acceptance pending](https://github.com/Starck43/social-media-ai/pull/245)
+
 ## [P9](docs/phases/p9-safe-activation.md)
 
 - [P9-T01](docs/tasks/p9-t01.md) one capability-specific activation contract — **TODO** · unassigned · —
 - [P9-T07](docs/tasks/p9-t07.md) Actor-scoped admin console catalogs — **IN_PROGRESS** · codex-p9-owner · `codex resume 01a1785e-504b-7893-8129-b57db07d8f37`
+- [P9-T08](docs/tasks/p9-t08.md) Approval-bound action ledger (BotAction → outbound action) — **TODO** · product-owner (decision) · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
 
 ## [P10](docs/phases/p10-audit-hardening.md)
 
@@ -54,8 +59,12 @@ means not recorded; source recovery links remain in the card.
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
-- [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **READY** · opencode (fix/p10-t19-stale-security-suites, `b8eddfd`) · [merge `f838333`](https://github.com/Starck43/social-media-ai/pull/241#issuecomment-6409463751)
+- [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **IN_PROGRESS** · opencode (audit of `b8eddfd`, merged `f838333`) · [PR #241](https://github.com/Starck43/social-media-ai/pull/241)
 - [P10-T22](docs/tasks/p10-t22.md) Reconcile the dispatch-identity suite with the tariff receipt contract — **TODO** · unassigned · —
+
+- [P10-T26](docs/tasks/p10-t26.md) Notification/bot-action/agent-session model and manager layout — **IN_PROGRESS** · notion-ai (refactor/p10-t26-notification-action-session-models) · [PR #246; local validation pending](https://github.com/Starck43/social-media-ai/pull/246)
+- [P10-T27](docs/tasks/p10-t27.md) Legacy notification API correctness — **TODO** · unassigned · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
+- [P10-T28](docs/tasks/p10-t28.md) Retire root-level model compatibility modules — **TODO** · unassigned · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
 
 ## Questions
 

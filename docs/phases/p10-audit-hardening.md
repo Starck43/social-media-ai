@@ -15,6 +15,17 @@
 
 - [P10-T24](../audit/p10-t24.md) — portable handoff, owner decision before integration and migration evidence review; accepted 2026-10-26 at `1df675f`.
 
+- [P10-T25](../audit/p10-t25.md) — removal of two unused utilities and the `str.maketrans` slug rewrite; accepted 2026-10-26 at `fe04ab85`, integration pending. Historical conflicting branch ID P10-T23 reconciled. [PR #243](https://github.com/Starck43/social-media-ai/pull/243)
+- [P10-T26](../tasks/p10-t26.md) — notification/bot-action/agent-session model and manager layout
+- [P10-T27](../tasks/p10-t27.md) — legacy notification API correctness
+- [P10-T28](../tasks/p10-t28.md) — retire root-level model compatibility modules
+
+**P10-T26 audit follow-up order (within this audit, not a reprioritization of
+other lanes):** validate/integrate P10-T26 first; then P10-T27 API correctness.
+P10-T28 is lower-priority mechanical cleanup, one domain at a time. Product
+redesigns belong to [P4-T02](../tasks/p4-t02.md) and [P9-T08](../tasks/p9-t08.md);
+their proposals are not approved or shipped features.
+
 **Accepted history:**
 
 - [P10-T17](../audit/p10-t17.md) — compact agent entry/workflow and lazy task documentation · 2026-10-25 · `b8dac60`

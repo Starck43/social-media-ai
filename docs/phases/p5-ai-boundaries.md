@@ -7,10 +7,10 @@
 **Plan — active task cards:**
 
 - [P5-T04](../tasks/p5-t04.md) — remove web duplicate-analysis force bypasses and persist context-scoped success receipts
-- [P5-T15](../tasks/p5-t15.md) — Derived output-contract error envelopes
 
 **Accepted history:**
 
+- [P5-T15](../audit/p5-t15.md) — derived output-contract error envelopes; accepted 2026-10-26 at `e76832d1`, tests-only, integration pending. Current `validate_output` already normalises the boundary for inherited models, so no production change was needed; validator
 - [P5-T02](../audit/phase-p5-history.md#p5-t02) — audit the collection-to-analysis path for task 1582 and scenario 8, including source 2939; trace task/source conditions…
 - [P5-T03](../audit/phase-p5-history.md#p5-t03) — inspect newly collected public-schema raw records for task 1582 and source 2939 after the operator's successful collection;…
 - [P5-T05](../audit/phase-p5-history.md#p5-t05) — bounded-output map-reduce analysis pipeline so any text model, including small output caps (observed: `zai-org/GLM-5.3-Flash`…

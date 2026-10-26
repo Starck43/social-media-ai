@@ -20,8 +20,10 @@ push requires fetch/reconcile and rechecking the claim; never force-push. Claim
 publication to `origin/dev` is authorized by this workflow; solution publication
 and merge still require the owner’s explicit choice. An offline/unpublishable claim
 is local only: report the coordination limitation, never pretend it is visible.
-Remote agents request the same update via PR comments; one custodian publishes
-registry changes. The custodian refreshes both directions before each transition.
+Remote agents do not write the registry: they request the claim via PR comments
+and one custodian publishes it. The claim reaches `origin/dev` through that
+custodian, not later with the solution. The custodian refreshes both directions
+before each transition.
 
 Create `type/<task-id>-<topic>` from the agreed source revision. Independent
 writers use exclusive paths and separate worktrees. Keep task implementation out
@@ -163,6 +165,20 @@ test_schema and separately authorized apply. Public test records require explici
 Superuser approval for that scope; a DB role/agent identity does not grant approval.
 Use resolved schemas/Alembic context, qualified DDL and existing manager/session
 conventions; no ad-hoc engines, runtime DDL or unsafe search-path assumptions.
+
+## State transitions
+
+A state-changing method is not safe for concurrent callers merely because it
+exists and passes a single-threaded test. Read-then-write transitions need an
+atomic compare-and-set or a row lock; a pre-check against unique columns does not
+protect concurrent creators, only a database uniqueness constraint does. Approval
+must be bound to actor and payload, not to a writable status field.
+
+When a task delivers such a mechanism, its acceptance names the atomicity and
+idempotency guarantee actually provided, and the audit records any remaining
+race or duplicate window. Do not describe a preview, helper or unreachable
+transition path as an execution mechanism. Loopholes found in a mechanism belong
+in the owning task card and its acceptance criteria, not in shared rules.
 
 ## Git and cleanup
 

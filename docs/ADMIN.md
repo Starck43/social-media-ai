@@ -645,6 +645,49 @@ Canonical entity fields and migration state: [MODELS](MODELS.md). Source-pinned
 acceptance is indexed in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); it does
 not establish a deployed database revision.
 
+## Reusable horizontal relationship picker (P8-T36)
+
+Use the existing SQLAdmin field pipeline, not a custom form or endpoint:
+
+```python
+from app.admin.filtered_select import FilteredSelectMultipleField
+
+class ExampleAdmin(BaseAdmin, model=Example):
+    form_overrides = {"sources": FilteredSelectMultipleField}
+```
+
+`FilteredSelectMultipleField` subclasses `QuerySelectMultipleField`: offered
+choices, bound PKs, empty selection and server validation stay with SQLAdmin.
+Its `media` uses SQLAdmin's deduplicated `collect_form_media` support on create,
+edit and validation-error renders. No template-specific asset tags are needed.
+The historical `permission-transfer.js/css` filenames now contain the shared
+`FilteredSelect` JS class/UI and scoped role-shell styling, not a second widget.
+Dynamic forms may call `FilteredSelect.init(container)`; repeated calls are safe.
+
+- Default `plain` mode displays complete record labels (including punctuation),
+  with two-line visual clamping, full title/ARIA labels and full-text search.
+  `AgentTaskAdmin.sources` uses it on create/edit; the existing empty-selection
+  meaning (all active sources) and task save validation remain unchanged.
+- `form_args = {"permissions": {"transfer_mode": "permissions"}}` retains the
+  platform role editor's code/name presentation and group filter. The same field
+  and JS class drive both views. Owner-only catalog writes/CSRF are unchanged.
+- Both panels search independently; double-click or Enter transfers records,
+  Space marks them, arrows/Home/End navigate, Ctrl/Cmd+A marks visible enabled
+  records. Search never changes submitted values. Reset restores the native
+  defaults. Disabled controls fall back to their disabled native select.
+- The original multiple select is the only named value source. With JS disabled
+  it stays usable. External `change` events and option mutations synchronize
+  the enhanced UI, including existing related-record popup updates. Existing
+  authorized source create/edit buttons remain below the full-width component.
+- Source lists use local scrolling; on narrow mobile forms their panels stack
+  with downward/upward transfer icons. The role editor's existing horizontal,
+  viewport-height layout remains scoped to its own route.
+
+This is presentation only: it performs no option queries or authorization.
+It preserves whatever the existing scoped converter supplies; it does not
+replace actor/workspace filtering or grant access to unoffered IDs. P9-T07 owns
+pending console-wide actor-scoping work.
+
 ## Related FK/m2m record editors
 
 On existing create/edit form selects backed by a registered FK or many-to-many

@@ -140,7 +140,15 @@ class PersonalInbox:
                 )
         except Exception:
             errors.append("connections")
-        items = [*connections, *items]
+        deliveries = []
+        try:
+            from .delivery_signal import bell_item, personal_signals
+
+            # Read-time aggregate (P8-T11): no receipt, nothing to mark read.
+            deliveries = [bell_item(self.user.id, signal) for signal in await personal_signals(self.user)]
+        except Exception:
+            errors.append("deliveries")
+        items = [*connections, *deliveries, *items]
         return dict(
             context={"workspace_id": workspace_id, "user_id": self.user.id},
             notifications=items[:limit],

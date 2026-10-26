@@ -611,6 +611,44 @@ and redirects to its object. A signed `destination` link permits immediate
 navigation after reauthorization; a plain unsigned GET requires the open button.
 Neither navigating nor reading approves or executes a business action.
 
+### Incomplete-delivery signal (P8-T11)
+
+The personal bell also contains a read-time `kind: delivery` aggregate per
+authorized workspace, with no Notification/receipt creation or acknowledgement.
+Owner/admin see workspace DigestRun evidence, plus digest Job evidence only with
+`job.view`. Other roles see **only** digest Jobs with their trusted
+`initiated_by_user_id`; scheduled/unattributed and other users' Jobs are excluded.
+Both paths require active web membership and fresh `digestrun.view`; platform
+operator privileges do not widen the signal.
+
+Sources are existing DigestRun status/validated delivery ledger and committed
+digest Job outcomes: failed/partial/blocked delivery → undelivered;
+uncertain/unknown ledger or attempt-budget stop → unconfirmed; pending Job with
+an error and a positive attempt count → retrying; outcome-unconfirmed failed
+Job → quarantined. Deliberate cancellations are excluded. No provider probing,
+send/retry, queue transition or new delivery semantics are introduced.
+
+The window is seven days by `created_at`, newest first, at most 200 candidates
+per source and 20 displayed samples per source. Overflow is explicitly incomplete
+(counts are lower bounds). Counts are evidence records, **not unique sends**:
+Job and DigestRun can describe the same delivery. A later done Job for the same
+schedule is not sufficient evidence to hide an earlier failure. Current row
+state is re-read; evidence also ages out of the window.
+
+Only counts, row IDs, period/attempt counters, safe status labels and timestamps
+are projected. Destination/chat identifiers, content, provider errors and payload
+are not returned. A source failure is reported as unavailable, not zero problems.
+Existing personal display preference `tasks` controls delivery signals;
+mandatory personal notifications remain visible. This is not role configuration.
+
+GET `/app/notifications/delivery/{workspace_id}` freshly authorizes and either
+redirects within the current workspace or shows a POST confirmation; GET does
+not switch workspace. CSRF POST to the same route rechecks membership/grants,
+switches to that workspace and redirects to `/app/digests#delivery`. Both are
+no-store. Foreign/revoked workspace IDs are rejected. The read-only delivery
+panel on `/app/digests` uses the same scope and displays unavailable/empty/bounded
+states; it does not expose other users' personal notifications.
+
 ## Dashboard
 
 ### Web home overview

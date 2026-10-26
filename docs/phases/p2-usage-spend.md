@@ -7,8 +7,10 @@
 **Plan — active task cards:**
 
 1. [P2-T15](../tasks/p2-t15.md) — define and enforce plan entitlements for
-   connector operations. Existing tenant tier quotas and personal LLM payer
-   consent remain separate contracts.
+   connector operations. Contract, model and migration 0117 (re-parented onto
+   0116) integrated into dev 2026-10-27 as merge `67acbd53`; the owner
+   deferral of tests/validation stays in force. Existing tenant tier quotas
+   and personal LLM payer consent remain separate contracts.
 2. [P2-T16](../tasks/p2-t16.md) — add sandbox-tested, self-service subscription
    checkout and lifecycle on top of the T15 entitlement contract. Live purchase
    activation needs a separately authorized rollout gate.

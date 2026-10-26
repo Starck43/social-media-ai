@@ -8,12 +8,12 @@
 
 - [P9-T01](../tasks/p9-t01.md) — one capability-specific activation contract
 - [P9-T07](../tasks/p9-t07.md) — actor-scoped admin console catalogs
-- [P9-T08](../tasks/p9-t08.md) — approval-bound action ledger (BotAction → outbound action)
+- [P9-T08](../audit/p9-t08.md) — approval-bound action ledger (BotAction → outbound action); accepted 2026-10-27, integrated in PR #246 (merge `4e74318c`) with migrations 0113–0116
 
-P9-T08 must be designed with P9-T01 before enabling any external write. Reuse or
-replace the social ledger only after the owner selects the contract; require
-actor-bound approval, atomic claims/transitions and durable idempotency. Existing
-`action_send` remains preview-only, and manager approval is not an execution gate.
+P9-T08 shipped the sealed-approval ledger (actor-bound approvals with
+expiry, atomic transitions, durable claim/outcome, read-only admin). The
+capability-neutral extension still designs with P9-T01 before enabling any
+new external write; `action_send` remains preview-only.
 
 **Accepted history:**
 

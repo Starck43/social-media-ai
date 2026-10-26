@@ -7,11 +7,12 @@
 **Plan — active task cards:**
 
 - [P4-T01](../tasks/p4-t01.md) — staging operator-recovery evidence
-- [P4-T02](../tasks/p4-t02.md) — notification recipients, per-user read state and lifecycle
+- [P4-T02](../audit/p4-t02.md) — notification recipients, per-user read state and lifecycle; accepted 2026-10-27, integrated in PR #246 (merge `4e74318c`)
 
-P4-T02 extends delivery with recipient-specific inbox semantics for the business
-assistant. First decide the receipt/lifecycle contract; only then change schema,
-bell/admin behavior and migration. P10-T26 manager cleanup does not implement it.
+P4-T02 shipped the recipient-specific inbox semantics decided in the PR #246
+coordination: `notification_receipts` per user, `severity`, addressed
+delivery and per-recipient read state; retention purging stays a P6-T02
+contract item.
 
 **Accepted history:**
 

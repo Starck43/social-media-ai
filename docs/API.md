@@ -714,7 +714,7 @@ running and pending counts describe only that preview; older running jobs can
 be outside it. Pending does not imply immediate execution (run_at may be in the
 future). Activity labels distinguish collect, analyze, digest, prune, learn and
 reflect; unknown types use a neutral label, never an implied LLM call. Home adds
-no total-count query or eligibility calculation for [P10-T09](tasks/p10-t09.md).
+no total-count query or eligibility calculation for [P10-T09](audit/p10-t09.md).
 
 
 Attention is implemented in the unified bell, not a second home block (see

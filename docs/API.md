@@ -566,116 +566,45 @@ keep the FK with `ondelete=SET NULL` and fall back to the workspace default.
 
 ## Notifications
 
-### List Notifications
+Authenticated global User inbox (P4-T02/P10-T27, PR #246 candidate), independent
+of `X-Tenant-ID`. An operator cannot select another user's inbox. Canonical
+prefix: `/api/v1/notifications`; the old doubled `/notifications/notifications`
+paths remain hidden compatibility aliases with the **same personal semantics**.
 
-```
-GET /api/v1/notifications?is_read=false&notification_type=alert&since=2025-01-01&limit=50&offset=0
-Authorization: Bearer <token>
-```
+| Method / suffix | Behavior |
+| --- | --- |
+| GET empty suffix | Personal list; `is_read`, `notification_type` (enum name or db value), timezone-aware `since`, `limit` 1–100 and `offset` |
+| GET `/stats` | SQL counts grouped by type/read state for owned receipts with an active origin membership; excludes expired/dismissed/snoozed entries |
+| GET `/{id}` | One owned, currently authorized notification; hidden/foreign IDs return 404 |
+| POST `/{id}/mark-read` | Idempotently reads only the caller's receipt |
+| POST `/mark-all-read` | Reads the authorized candidate window, at most 100; response includes `windowed: true` |
+| DELETE `/{id}` | Dismisses only the caller's receipt, not the shared event |
+| POST `/cleanup?days=30` | Removes only caller-owned receipts read longer than `days` ago (1–365) |
+| POST empty suffix | Existing active-workspace `notification.create` permission required; creates **only for the authenticated user**, no recipient ID/transport override accepted |
 
-**Query params:**
-| Param | Type | Description |
-|---|---|---|
-| `is_read` | bool | Filter by read status |
-| `notification_type` | string | Filter by type |
-| `since` | datetime | Show notifications after this date |
-| `limit` | int | Max 100 |
-| `offset` | int | Pagination offset |
+Personal reads/acknowledgements need authentication, not another workspace's
+notification.view/update grant. Linked objects still require current destination
+membership and model permission. Counts are owned active-origin receipt totals;
+the bell count is the smaller authorized/deduplicated display window.
 
-**Permissions:** `notification.view`
+Response fields retain id/title/message/type/is_read/entity/created_at and add
+`origin_workspace_id`, `severity`, and a user-bound expiring `destination` link.
+`is_read` is projected from the caller's receipt, never Notification.is_read.
+Type statistics use enum names such as REPORT_READY/API_ERROR. Personal API
+responses are no-store. See [personal inbox and navigation](NOTIFICATIONS.md).
 
-### Get Notification Stats
+Create body (title max 200, message max 4000; unknown fields rejected):
 
-```
-GET /api/v1/notifications/stats?since=2025-01-01
-Authorization: Bearer <token>
-```
-
-**Permissions:** `notification.view`
-
-**Response:**
 ```json
-{
-  "total": 42,
-  "unread": 5,
-  "by_type": {"alert": 20, "info": 22}
-}
+{"title":"Report ready","message":"Open the result","notification_type":"REPORT_READY","severity":"info","related_entity_type":"task","related_entity_id":3}
 ```
 
-### Get Notification
-
-```
-GET /api/v1/notifications/{notification_id}
-Authorization: Bearer <token>
-```
-
-**Permissions:** `notification.view`
-
-### Create Notification
-
-```
-POST /api/v1/notifications
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "title": "System Alert",
-  "message": "High toxicity detected in source #3",
-  "notification_type": "alert",
-  "related_entity_type": "source",
-  "related_entity_id": 3
-}
-```
-
-**Permissions:** `notification.create`
-
-### Mark as Read
-
-```
-POST /api/v1/notifications/{notification_id}/mark-read
-Authorization: Bearer <token>
-```
-
-**Permissions:** `notification.update`
-
-### Mark All as Read
-
-```
-POST /api/v1/notifications/mark-all-read
-Authorization: Bearer <token>
-```
-
-**Permissions:** `notification.update`
-
-**Response:**
-```json
-{
-  "status": "success",
-  "marked_count": 5
-}
-```
-
-### Delete Notification
-
-```
-DELETE /api/v1/notifications/{notification_id}
-Authorization: Bearer <token>
-```
-
-**Permissions:** `notification.delete`
-
-### Cleanup Old Notifications
-
-```
-POST /api/v1/notifications/cleanup?days=30
-Authorization: Bearer <token>
-```
-
-Deletes read notifications older than `days` (1–365).
-
-**Permissions:** `notification.delete`
-
----
+Web: GET `/app/notifications` is the personal bell snapshot; GET
+`/app/notifications/inbox` is the paginated personal page. CSRF POST
+`/app/notifications/open/{id}` switches to the server-validated origin workspace
+and redirects to its object. A signed `destination` link permits immediate
+navigation after reauthorization; a plain unsigned GET requires the open button.
+Neither navigating nor reading approves or executes a business action.
 
 ## Dashboard
 

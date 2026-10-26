@@ -1541,8 +1541,19 @@ def _system_prompt(has_media: bool) -> str:
 
 
 def _try_json(text: str) -> dict[str, Any]:
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        # Reject ambiguity before decoding loses duplicate keys. Let this
+        # content-free failure reach analyze's failed-output boundary rather
+        # than turning the rejected document into a plain-text analysis.
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("invalid_structured_output")
+            result[key] = value
+        return result
+
     try:
-        parsed = json.loads(text)
+        parsed = json.loads(text, object_pairs_hook=unique_object)
     except (json.JSONDecodeError, TypeError):
         return {"analysis": text}
     return parsed if isinstance(parsed, dict) else {"analysis": text}

@@ -112,7 +112,7 @@ once/recurring triggers, fresh rights/payer checks, duplicate launch protection,
 honest failures/coverage, result links and digest scope. Record exact checks and
 source SHA. Review/general refactoring are later; no production activation.
 
-Additional VK categories: P8-T32. File/network/business connectors: P8-T31.
+Additional VK categories: P8-T33. File/network/business connectors: P8-T34.
 
 ## Version-1 example
 

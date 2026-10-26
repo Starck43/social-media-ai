@@ -42,6 +42,7 @@ _operator_grant: ContextVar[bool] = ContextVar("operator_permission_grant", defa
 _current_user: ContextVar[Optional["User"]] = ContextVar("current_user", default=None)
 # Ownership configures workspace resources, never the global fleet or queue.
 WORKSPACE_OWNER_MODELS = frozenset({"source", "agenttask", "agentscenario"})
+_workspace_owner: ContextVar[Optional[int]] = ContextVar("workspace_owner", default=None)
 _service_grant: ContextVar[Optional[tuple[int, str, ActionType]]] = ContextVar("service_grant", default=None)
 # A non-owner member's workspace rights: (tenant_id, user_id, {(model, action)}).
 _member_grants: ContextVar[Optional[tuple[int, int, frozenset]]] = ContextVar("member_grants", default=None)
@@ -118,25 +119,39 @@ def has_permission(user, model_name, action) -> bool:
     decision = member_decision(user, resource.model_name, resolved)
     if decision is not None:
         return decision
-    # Interactive workspace requests can never fall back to platform grants.
-    if current_tenant_id() is not None or get_current_user() is not None:
+    # Beyond here the answer is the account's *platform* right — the CLI, a
+    # worker, or a caller asking what somebody may do outside a workspace. A
+    # workspace request never falls back to it: inside a selected tenant the
+    # answer belongs to the membership, and `member_decision` above already
+    # answered every member that stated a preset. A bare `permission_scope()`
+    # inside a tenant is the interactive case — its actor is a member whose
+    # membership was not loaded, which is a refusal, not a platform grant.
+    # `is_bypass()` is data access and never a grant, so it does not reopen it.
+    if current_tenant_id() is not None:
         return False
     try:
         return bool(user.has_perm_for(resource.model_name, resolved))
-    except Exception:
+    except Exception:  # noqa: BLE001 - a rights check must never raise
         return False
 
 
 def member_decision(user, model_name, action):
+    """The membership answer for `user`, or None when the platform role decides.
+
+    A scope that states no `member_grants` is asking the platform role question
+    ("what may this account do outside a workspace?"), so it must abstain and
+    let `has_permission` answer — answering "no" here used to turn every
+    platform grant on a workspace model into a refusal. When a preset *is*
+    stated, the decision is final for that member inside that tenant.
+    """
     resource = resource_for(model_name)
     member = _member_grants.get()
     current = get_current_user()
-    if current is None:
+    if current is None or member is None:
         return None
     if (
         resource is None
         or not resource.workspace
-        or member is None
         or user is None
         or member[0] != current_tenant_id()
         or member[1] is None
@@ -260,6 +275,7 @@ def permission_scope(
     if member_grants is not None and tenant_id is not None and user is not None:
         member = (tenant_id, getattr(user, "id", None), frozenset(member_grants))
     token = set_current_user(user)
+    owner_token = _workspace_owner.set(tenant_id if is_owner else None)
     member_token = _member_grants.set(member)
     service_token = _service_grant.set(None)
     operator_token = _operator_grant.set(False)
@@ -267,6 +283,7 @@ def permission_scope(
         yield user
     finally:
         _current_user.reset(token)
+        _workspace_owner.reset(owner_token)
         _member_grants.reset(member_token)
         _service_grant.reset(service_token)
         _operator_grant.reset(operator_token)

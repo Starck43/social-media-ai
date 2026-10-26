@@ -612,3 +612,37 @@ The [universal task contract](../design/universal-tasks.md) reuses collection la
   Evidence: [collection plan](../design/collection-plan.md); append stage
   evidence at the exact tested SHA. Test routing: primary OpenCode
   test-runner subagent per stage (RULES.md R10), shared DB sequential (R8).
+
+- [x] P5-T01 — one bounded typed-output / hostile-input gap; accept: gap
+  verified in current code, fix keeps boundary invariants, focused tests via
+  R10; owner: remote Notion agent (PR #241); status: DONE — accepted
+  2026-10-26 at dev `9dd6927` (claim `526bad5`, implementation `72da231`,
+  evidence `0be7ecf`).
+  Selection: `_try_json` decoded generated JSON with last-key-wins semantics, so
+  `{"summary":"first","summary":"second"}` passed `DigestSummary` validation
+  while the identical raw string was rejected by `validate_output` — a
+  duplicate-key ambiguity silently resolved by decoding order.
+  Fix: `json.loads(..., object_pairs_hook=unique_object)` raises
+  `ValueError("invalid_structured_output")` on a repeated key at any nesting
+  depth, including escaped equivalents (`\u0073ummary`). The exception is
+  caught by the existing `analyze` wrappers (all three call sites) and by
+  `_parse_response`, so the failed output takes the established
+  `failed_output` path: `parsed == {}`, response `invalid_structured_output`,
+  unknown accounting stays `None`, the attempt is journaled, and no content
+  leaks into the result or the log. Valid JSON, legacy plain-text fallback and
+  non-object fallback are unchanged.
+  Reviewer checks on `9dd6927`: `tests/ai/test_p5_t01_duplicate_output_keys.py`
+  → **23 passed**; the same suite is **23 failed** without the fix (confirmed by
+  reverting `llm_client.py`), so the new tests are not vacuous.
+  `tests/ai/` without the two `test_schema`-guarded suites → 87 failed, 901
+  passed, identical on the stashed baseline (pre-existing, outside this diff,
+  not claimed). No P5-T04 lane, permission, billing, delivery, provider or
+  migration change. [PR #241](https://github.com/Starck43/social-media-ai/pull/241).
+
+- [ ] P5-T01 follow-up (registered, unassigned) — derived `input_model` on the
+  digest `SummaryPayload`/`AnalysisPayload` still rejects the
+  `invalid_structured_output` envelope. `app/services/digest/builder.py`
+  treats `info["error"]` as `summary_provider_failed` before validation, so the
+  current path is safe, but a future caller validating directly would get
+  "missing fields" instead of the boundary error. Owns: `app/services/ai/output_contracts.py`
+  plus its focused test only.

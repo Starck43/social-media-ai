@@ -1,0 +1,28 @@
+{# SQLAdmin's Pagination supplies the window/URLs; markup uses its native classes. #}
+{% set pagination = section.pagination %}
+<div class="card-footer d-flex flex-wrap justify-content-end align-items-center gap-2">
+  <p class="m-0 me-auto text-muted small" aria-live="polite">
+    {% if pagination.count %}Записи {{ (pagination.page - 1) * pagination.page_size + 1 }}–{{ [pagination.page * pagination.page_size, pagination.count]|min }} из {{ pagination.count }}{% else %}Доступных записей: 0{% endif %}
+  </p>
+  <nav class="ms-auto" aria-label="Страницы: {{ section.title }} — {{ section.relation_label }}">
+    <ul class="pagination pagination-sm m-0 flex-wrap justify-content-end">
+      <li class="page-item{% if not pagination.has_previous %} disabled{% endif %}">
+        {% if pagination.has_previous %}<a class="page-link" href="{{ pagination.previous_page.url }}" aria-label="Предыдущая страница">‹ Назад</a>{% else %}<span class="page-link" aria-disabled="true">‹ Назад</span>{% endif %}
+      </li>
+      {% for control in pagination.page_controls %}
+      <li class="page-item{% if control.number == pagination.page %} active{% endif %}">
+        {% if control.number == pagination.page %}<span class="page-link" aria-current="page">{{ control.number }}</span>{% else %}<a class="page-link" href="{{ control.url }}" aria-label="Страница {{ control.number }}">{{ control.number }}</a>{% endif %}
+      </li>
+      {% endfor %}
+      <li class="page-item{% if not pagination.has_next %} disabled{% endif %}">
+        {% if pagination.has_next %}<a class="page-link" href="{{ pagination.next_page.url }}" aria-label="Следующая страница">Далее ›</a>{% else %}<span class="page-link" aria-disabled="true">Далее ›</span>{% endif %}
+      </li>
+    </ul>
+  </nav>
+  <div class="dropdown">
+    <button class="btn btn-sm btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Записей на странице: {{ section.title }}">По {{ pagination.page_size }}</button>
+    <div class="dropdown-menu dropdown-menu-end">
+      {% for option in section.sizes %}<a class="dropdown-item{% if option.size == pagination.page_size %} active{% endif %}" href="{{ option.url }}">По {{ option.size }} записей</a>{% endfor %}
+    </div>
+  </div>
+</div>

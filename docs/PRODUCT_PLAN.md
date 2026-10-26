@@ -9,7 +9,7 @@ propose → approve when required → deliver/execute → follow up.
 
 ## Universal social tasks
 
-The owner-approved first vertical and cross-surface contract are in [universal tasks](design/universal-tasks.md). Preserve independent management pages and the existing design; chat is supplementary. Current delivery is P8-T29; future categories/connectors are P8-T32/P8-T31.
+The owner-approved first vertical and cross-surface contract are in [universal tasks](design/universal-tasks.md). Preserve independent management pages and the existing design; chat is supplementary. Current delivery is P8-T29; future categories/connectors are P8-T33/P8-T34.
 
 ## Foundation directions
 

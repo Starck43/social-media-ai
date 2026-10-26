@@ -71,6 +71,7 @@ class UserAdmin(BaseAdmin, model=User):
     # имя: `change_password` -> `change-password`).
     action_permissions = {"change-password": ActionType.UPDATE}
 
+    inline_columns = ["id", "username", "email", "is_active"]
     column_list = ["id", "username", "email", "is_active", "role", "updated_at"]
     column_labels = dict(
         {
@@ -193,9 +194,7 @@ class UserAdmin(BaseAdmin, model=User):
             current = await User.objects.prefetch_related("role").get(id=int(pk))
             if current is not None:
                 choices, locked = role_edit(actor, current)
-        converter = type(
-            "_RolePicker", (RolePickerConverter,), {"choices": choices, "locked_reason": locked}
-        )
+        converter = type("_RolePicker", (RolePickerConverter,), {"choices": choices, "locked_reason": locked})
         form = await get_model_form(
             model=self.model,
             session_maker=self.session_maker,
@@ -245,6 +244,7 @@ class RoleAdmin(PlatformRoleGrantAdmin, model=PlatformRole):
     name = "Платформенная роль"
     name_plural = "Роли"
     icon = "fa fa-shield"
+    inline_columns = ["id", "codename", "description"]
     column_list = ["id", "codename", "description"]
     column_searchable_list = ["codename"]
     column_labels = dict(
@@ -268,6 +268,7 @@ class PermissionAdmin(PermissionLabelAdmin, model=Permission):
     name = "Разрешение"
     name_plural = "Разрешения"
     icon = "fa fa-key"
+    inline_columns = ["id", "name", "action_type"]
     column_list = ["id", "codename", "name", "action_type"]
     column_searchable_list = ["name"]
     column_labels = dict(
@@ -295,6 +296,7 @@ class PlatformAdmin(BaseAdmin, model=Platform):
     name = "Платформа"
     name_plural = "Платформы"
     icon = "fa fa-globe"
+    inline_columns = ["id", "name", "platform_type", "is_active"]
     column_list = ["id", "name", "platform_type", "is_active"]
     column_searchable_list = ["name"]
     column_sortable_list = ["name", "is_active"]
@@ -368,6 +370,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 
     # Проверка источника ставит задачу сбора и пишет в карточку источника.
     action_permissions = {"check-source": ActionType.UPDATE}
+    inline_columns = ["id", "name", "source_type", "is_active", "last_checked"]
     column_list = [
         "id",
         "tenant",
@@ -616,6 +619,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
         "view-prompts": ActionType.VIEW,
         "toggle-active": ActionType.UPDATE,
     }
+    inline_columns = ["id", "name", "is_active"]
     column_list = ["id", "name", "description", "is_active", "max_tokens"]
     column_searchable_list = ["name", "description"]
     column_sortable_list = ["name", "is_active", "max_tokens"]
@@ -982,6 +986,7 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
     action_permissions = {"view-analysis": ActionType.VIEW}
 
     # topic_chain_id and content_hash are machine keys kept out of the crowded list
+    inline_columns = ["id", "analysis_date", "period_type", "llm_model", "estimated_cost"]
     column_list = ["id", "source", "analysis_date", "period_type", "llm_model", "estimated_cost", "created_at"]
     column_searchable_list = ["source.name", "period_type", "llm_model"]
     column_sortable_list = ["analysis_date", "created_at", "period_type", "estimated_cost"]
@@ -1119,6 +1124,7 @@ class NotificationAdmin(BaseAdmin, model=Notification):
         "mark-read": ActionType.UPDATE,
         "send-to-messenger": ActionType.UPDATE,
     }
+    inline_columns = ["id", "title", "notification_type", "is_read", "created_at"]
     column_list = ["id", "title", "notification_type", "is_read", "created_at"]
     column_searchable_list = ["title", "notification_type"]
     column_sortable_list = ["created_at", "is_read"]
@@ -1275,6 +1281,7 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
     # это часть настройки, а не чтение.
     action_permissions = {"test-connection": ActionType.CONFIGURE}
 
+    inline_columns = ["id", "name", "api_format", "is_active"]
     column_list = ["id", "name", "api_format", "base_url", "is_active"]
     column_searchable_list = ["name", "base_url"]
     column_sortable_list = ["name", "api_format", "is_active"]
@@ -1567,6 +1574,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     # Local checks and an explicitly confirmed real probe require operator configuration rights.
     action_permissions = {"test-model": ActionType.CONFIGURE}
 
+    inline_columns = ["id", "name", "model_id", "model_type", "is_default", "is_active"]
     column_list = [
         "id",
         "name",
@@ -1915,6 +1923,7 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     name_plural = "Рабочие пространства"
     icon = "fa fa-building"
 
+    inline_columns = ["id", "name", "slug", "plan", "is_active"]
     column_list = [
         "id",
         "name",
@@ -2028,6 +2037,7 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
     name_plural = "Личные креды"
     icon = "fa fa-user-lock"
 
+    inline_columns = ["id", "platform", "kind", "label", "expires_at", "is_active"]
     column_list = ["id", "user_id", "platform", "kind", "label", "expires_at", "is_active", "updated_at"]
     column_searchable_list = ["platform", "kind", "label"]
     column_sortable_list = ["user_id", "platform", "kind", "expires_at", "is_active"]
@@ -2087,6 +2097,8 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
     name_plural = "Собранный контент"
     icon = "fa fa-database"
 
+    # High-volume raw content stays on its dedicated list, never in parent inlines.
+    inline_exclude = True
     column_list = [
         "id",
         "source_id",
@@ -2191,6 +2203,7 @@ class BotActionAdmin(BaseAdmin, model=BotAction):
     can_create = False
     form_columns = ["status"]
 
+    inline_columns = ["id", "action_type", "status", "dry_run", "created_at"]
     column_list = ["id", "agent_scenario_id", "source_id", "action_type", "status", "dry_run", "created_at"]
     column_searchable_list = ["status", "action_type"]
     column_sortable_list = ["created_at", "status"]
@@ -2258,6 +2271,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     # Запуск задачи ставит job в очередь — это изменение, а не просмотр.
     action_permissions = {"run-now": ActionType.UPDATE}
 
+    inline_columns = ["id", "name", "job_type", "is_active", "next_run_at", "last_status"]
     column_list = [
         "id",
         "tenant",
@@ -2616,6 +2630,14 @@ class JobAdmin(BaseAdmin, model=Job):
     can_edit = False
     can_delete = False
     can_export = False
+    column_labels = {
+        **BaseAdmin.column_labels,
+        "job_type": "Тип задания",
+        "status": "Статус",
+        "run_at": "Запуск",
+        "attempts": "Попытки",
+    }
+    inline_columns = ["id", "job_type", "status", "run_at", "attempts"]
     column_list = ["id", "tenant_id", "agent_task_id", "job_type", "status", "run_at", "attempts"]
     column_details_list = column_list + ["locked_at", "started_at", "finished_at", "created_at", "updated_at"]
     column_sortable_list = ["id", "run_at", "status"]

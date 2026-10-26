@@ -314,8 +314,12 @@ async def test_platform_grants_do_not_widen_own_and_shared_workspace_scope(harne
     assert [row[0] for row in result[0]["rows"]] == ["10", "20"]
     assert result[0]["columns"] == ["id", "Источник"]
     assert "MUST-NOT-RENDER" not in str(result)
-    assert len(harness.store.statements) == 2  # bounded parent + target; no N+1
-    assert all(stmt._limit_clause.value == 26 for stmt in harness.store.statements)
+    assert len(harness.store.statements) == 3  # parent + scoped count + page; no N+1
+    parent, count, page = harness.store.statements
+    assert parent._limit_clause.value == 1
+    assert count._limit_clause is None
+    assert page._limit_clause.value == INLINE.INLINE_LIMIT
+    assert result[0]["pagination"].count == 2
 
 
 @pytest.mark.asyncio
@@ -407,11 +411,10 @@ async def test_high_volume_collections_are_not_listed_inline(harness):
 
     `collected_items` is the largest table and its rows are long texts and
     media, so the section only duplicated the collection pages and made the
-    edit form heavy. The deny-list is by table, never by parent, so the section
+    edit form heavy. Exclusion is configured on the target view, not the parent, so the section
     is skipped for every console reader, the platform owner included, while a
     regular child of the same parent stays visible.
     """
-    assert INLINE.INLINE_EXCLUDED_TABLES == frozenset({"collected_items"})
 
     class TenantView(ModelView, model=Tenant):
         column_list = ["id", "is_active"]
@@ -425,6 +428,7 @@ async def test_high_volume_collections_are_not_listed_inline(harness):
         text = Column(String)
 
     class CollectedItemView(ModelView, model=CollectedItem):
+        inline_exclude = True
         column_list = ["id", "text"]
 
     admin = harness.views[Source]._admin_ref
@@ -455,8 +459,23 @@ async def test_limit_after_scope_and_no_unfiltered_total_or_write_controls(harne
     await grant(harness, actor())
     result = await sections(harness)
     assert len(result[0]["rows"]) == INLINE.INLINE_LIMIT
-    assert result[0]["truncated"] is True
-    assert set(result[0]) == {"title", "foreign_key", "columns", "rows", "truncated", "limit"}
+    assert result[0]["pagination"].has_next
+    assert result[0]["pagination"].count == 42
+    assert set(result[0]) == {
+        "id",
+        "title",
+        "foreign_key",
+        "relation_label",
+        "column_names",
+        "columns",
+        "rows",
+        # P8-T32 navigation contract: one permission-gated link per row plus the
+        # scalar columns that may carry it. No new query, mutation or endpoint.
+        "row_links",
+        "link_columns",
+        "pagination",
+        "sizes",
+    }
 
 
 @pytest.mark.asyncio
@@ -473,7 +492,8 @@ async def test_raw_values_are_escaped_and_relationships_not_rendered(harness):
     assert "&lt;img" in html and "<img" not in html
     assert "MUST-NOT-RENDER" not in html
     assert "Нет доступных записей" not in html
-    assert "<form" not in html and "href=" not in html and "<button" not in html
+    assert "<form" not in html and 'type="submit"' not in html
+    assert "/create" not in html and "/edit" not in html and "/delete" not in html
 
 
 @pytest.mark.asyncio

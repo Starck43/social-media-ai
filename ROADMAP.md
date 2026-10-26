@@ -18,7 +18,6 @@ means not recorded; source recovery links remain in the card.
 
 ## [P5](docs/tasks/p5-ai-boundaries.md)
 
-- [P5-T01](docs/tasks/p5-t01.md) One typed-output or hostile-input gap — **TODO** · unassigned · —
 - [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **BLOCKED** · codex-analysis-receipts · —
 
 ## [P6](docs/tasks/p6-lifecycle-privacy.md)
@@ -40,8 +39,9 @@ means not recorded; source recovery links remain in the card.
 - [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —
 - [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks across web/chat/API/CLI/admin; VK first — **IN_PROGRESS** · codex-p8-t29 · —
-- [P8-T31](docs/tasks/p8-t31.md) Non-social resources and connector actions — **TODO** · unassigned · —
-- [P8-T32](docs/tasks/p8-t32.md) Additional VK search categories — **TODO** · unassigned · —
+- [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · —
+- [P8-T34](docs/tasks/p8-t34.md) Non-social resources and connector actions — **TODO** · unassigned · —
+- [P8-T32](docs/tasks/p8-t32.md) collapsed inline sections and permission-aware links — **DONE** · opencode (fix/p8-t32-inline-row-links, `9534f9a`) · [PR #239 follow-up](https://github.com/Starck43/social-media-ai/pull/239#issuecomment-6404431470)
 
 ## [P9](docs/tasks/p9-safe-activation.md)
 
@@ -52,15 +52,15 @@ means not recorded; source recovery links remain in the card.
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **TODO** · unassigned · —
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
-- [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **TODO** · opencode · ses_e8c7a3fceffeCpQALzF1rL4pJh
-- [P10-T20](docs/tasks/p10-t20.md) Align the digest-confirmation suites with the deliberate intent dedup — **TODO** · unassigned · —
+- [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **READY** · opencode (fix/p10-t19-stale-security-suites, `b8eddfd`) · [merge `f838333`](https://github.com/Starck43/social-media-ai/pull/241#issuecomment-6409463751)
+- [P10-T22](docs/tasks/p10-t22.md) Reconcile the dispatch-identity suite with the tariff receipt contract — **TODO** · unassigned · —
 
 ## Questions
 
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · —
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · —
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · —
-- [Q-11](docs/tasks/q-11.md) Individual and company onboarding — **OPEN** · unassigned · —
-- [Q-12](docs/tasks/q-12.md) Self-service email password recovery for the public phase — **OPEN** · product-owner · —
+- [Q-11](docs/tasks/q-11.md) Individual and company onboarding — **RESOLVED** · owner decision 2026-10-25 · [PR #238](https://github.com/Starck43/social-media-ai/pull/238) · ⚠️ **deployment ceiling reddens two suites on `dev`** — see [Q-11 follow-up](docs/tasks/q-11.md#follow-up-max_workspace_members-reddens-two-suites-on-dev)
+- [Q-12](docs/tasks/q-12.md) Self-service email password recovery for the public phase — **DEFERRED** · product-owner · pre-production: email confirmation first, then recovery
 
 Choose one unclaimed dependency-ready task; P10 security P0 items have priority.

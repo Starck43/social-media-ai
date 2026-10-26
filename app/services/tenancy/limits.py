@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from app.core.config import settings
 from app.models.tenant import Tenant
 
 logger = logging.getLogger(__name__)
@@ -137,10 +138,21 @@ async def check_member_limit(tenant: Any) -> Optional[str]:
     Counts web memberships only: `tenant_users` also holds messenger identities
     bound by invite redemption, and charging a plan for the same person reaching
     the workspace through two surfaces would make the number unreadable.
+
+    Two ceilings apply and the tighter one wins: the deployment-wide
+    `MAX_WORKSPACE_MEMBERS` (a pilot guard the operator sets in the environment)
+    and the workspace's tier limit.
     """
     from app.models.managers.tenant_manager import TenantUserManager
 
     current = len(await TenantUserManager().web_memberships_for_tenant(tenant.id))
+    deployment_ceiling = settings.MAX_WORKSPACE_MEMBERS
+    if deployment_ceiling is not None and current >= deployment_ceiling:
+        logger.info("Member blocked for tenant %s by deployment ceiling %s", tenant.id, deployment_ceiling)
+        return (
+            f"На платформе сейчас не более {int(deployment_ceiling)} "
+            f"{_plural('участник команды', int(deployment_ceiling))} в workspace — уже {current}."
+        )
     reason = _over_limit(tenant, "max_team_members", current)
     if reason is not None:
         logger.info("Member blocked for tenant %s on plan %s", tenant.id, tenant.plan)

@@ -89,13 +89,25 @@ from the name (`UnoRouter.AI` → `unorouter`, via `app/core/provider_uid.py`) �
 the browser previews the same slug from `app/static/js/admin-uid.js`.
 
 
-## Read-only related FK lists (P8-T30)
+## Read-only related FK lists (P8-T30 / P8-T31 / P8-T32)
 
 Persisted details and edit pages append **Связанные записи** below the main
 content, including custom Source, analytics and LLM/scenario templates. Creates,
 list pages and unsaved objects do not render this footer. This is a read-only
-projection, not a new CRUD route: no add/edit/delete buttons, detail links,
-exports or foreign-record popup controls are introduced by these lists.
+projection, not a new CRUD route: no add/edit/delete buttons, inline mutation,
+exports or foreign-record popup controls are introduced by these lists. Each
+section is a native `details` disclosure, collapsed by default; click its heading
+or decorative SVG chevron (or use the keyboard) to expand/collapse. Open state is
+not persisted; page navigation reloads sections collapsed. Collapse is visual,
+not lazy loading: the existing scoped count/page queries remain unchanged.
+
+ID and name/title/user-label cells link to the existing edit route when
+SQLAdmin's per-row `check_can_edit` allows it; otherwise to details when
+`check_can_view_details` allows it. If neither allows navigation, cells remain
+plain text. Both checks use a detached shell of the already scoped scalar row,
+never a relationship read. Destination routes recheck authority themselves;
+links do not grant access or perform writes. Pagination stays aligned right;
+the visible-row count remains on the left.
 
 - Discover inbound FK constraints among **registered admin model views** with a
   registered access resource. Compound FKs stay conjunctive; multiple independent
@@ -115,22 +127,55 @@ exports or foreign-record popup controls are introduced by these lists.
   Global reference catalogs still require console model rights. These new filters
   do not change the legacy global scope of the main console pages or grant an
   ordinary workspace member access to `/admin`.
-- Each FK section selects at most 25 visible records in primary-key order, plus
-  one sentinel for a truthful truncation notice. No unscoped total is queried.
-  Existing view query predicates are preserved. Only configured scalar list
-  columns also allowed in details are projected; sensitive names, JSON/binary
-  values, relationship labels and arbitrary/custom row formatters are excluded.
-  Cells are escaped plain text, length bounded, and never invoke ORM `__str__`.
-  Empty means **Нет доступных записей**, not that no rows exist globally.
-- `INLINE_EXCLUDED_TABLES` (`collected_items` only today) keeps high-volume
-  payload tables out of every object page, the platform owner included. Those
-  rows are the newest 25 long texts/media of a workspace, so the section only
-  duplicated the collection pages and made the edit form heavy; they stay
-  reachable through their own console list. The deny-list is by table name and
-  never widens or narrows scope for the sections that remain.
+- Each FK section reuses SQLAdmin `Pagination`: independent previous/next,
+  numbered pages, visible-row count and page-size selection (10/25/50/100 by
+  default, 25 initial). Counts and pages share the same scoped DISTINCT
+  projection and existing view predicates; no global count is exposed. Page/size
+  query parameters are namespaced by target and FK constraint. Invalid pages
+  clamp before OFFSET and unsupported sizes fall back to configured defaults;
+  links preserve other sections/parent query state and jump to their section.
+- Tables scroll within a bounded container, headers remain visible, and native
+  SQLAdmin/Tabler pagination classes are used in both themes. On edit pages a
+  notice asks the operator to save first: page navigation performs a GET reload
+  and does not save/preserve unsaved form input implicitly.
+- Only configured scalar list columns also allowed in details are projected;
+  sensitive names, JSON/binary values, relationship labels and arbitrary/custom
+  row formatters remain excluded. Cells are escaped length-bounded text; enum
+  labels are used where the mapped enum provides them. Empty means **Нет
+  доступных записей**, not that no rows exist globally.
+- `CollectedItemAdmin.inline_exclude = True` retains P10-T21's high-volume
+  raw-content exclusion for every parent/console role. Raw rows remain on their
+  dedicated collection list; no central table deny-list is needed.
+
+### Configuring inline lists in views
+
+A target view configures its presentation wherever it appears as a related FK
+list; configuration never grants access or overrides projection safety rules:
+
+```python
+class SourceAdmin(BaseAdmin, model=Source):
+    inline_columns = ["id", "name", "source_type", "is_active", "last_checked"]
+    inline_page_size = 25
+    inline_page_size_options = (10, 25, 50, 100)
+    inline_exclude = False
+```
+
+`inline_columns = None` reuses the safe scalar subset of `column_list`;
+`[]` omits the inline. `inline_link_columns` defaults to ID, name, title, username and label cells;
+it only selects which displayed cells may receive a permission-gated link.
+`column_labels` supplies Russian column/relation headings,
+using shared BaseAdmin labels for common identifiers. Target-level exclusion
+skips even count/page queries. Page-size options are bounded to 1–200.
+
+Current view choices retain 3–6 useful columns: IDs and names, type/status or
+active flag, and task dates/cost where useful. Provider URLs, repeated owner/FK
+IDs, scenario descriptions and the wide model-price matrix are omitted from
+compact inlines, without changing the full model lists. Models keep their API
+identifier/type/default/active state; jobs keep type/status/run time/attempts.
 
 Implementation: [inlines.py](../app/admin/inlines.py). Synthetic role/scope,
-ASGI and canonical metadata checks: [P8-T30 tests](../tests/admin/test_p8_t30_related_inlines.py).
+ASGI and canonical metadata checks: [scope tests](../tests/admin/test_p8_t30_related_inlines.py) and
+[pagination tests](../tests/admin/test_p8_t31_inline_pagination.py).
 Real PostgreSQL/session and deployed UI audit remain owner-local follow-up;
 mocked evidence does not certify the deployed console.
 

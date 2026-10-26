@@ -420,12 +420,42 @@ curl --silent --show-error --connect-timeout 2 --max-time 5 --output /dev/null -
 | `/readyz` = 200 | One global Permission ORM count succeeded | Tenant rights, queue progress, all tables/schema revisions, digest delivery or production acceptance |
 | `/readyz` = 503 | That DB read failed or timed out; response is a generic failure, not root cause | Proof that PostgreSQL itself is down rather than credentials/schema/permissions/driver failure |
 | `/health` | Same readiness handler and 200/503 semantics, at the root path | A distinct process-only probe; `/api/v1/health` is not the contract used here |
+| `/runtimez` = 200 | Recent running heartbeat plus held local owner lock in configured shared directory | DB health, useful queue/scheduler/listener progress, cross-host uniqueness or production acceptance |
+| `/runtimez` = 503 | Presence is unconfirmed: unconfigured, missing, unavailable, invalid, starting, stopped or stale | Permission to start/restart runtime, provision storage, change permissions or reset DB |
 | Client error / 000 | Address, network, proxy, process or client timeout needs investigation | A confirmed DB failure or a replay-safe message |
 
 The response includes no-store and a UTC timestamp; DB readiness returns
 status/database, liveness status only. The handler uses a two-second cooperative
 async timeout; this is not a hard deadline for middleware/startup/uncooperative
 drivers. A timeout is not a reason to repeatedly restart the DB/API.
+
+`/runtimez` is a separate optional runtime-presence observation. See
+[configuration and topology requirements](CONFIGURATION.md#optional-same-host-runtime-observation).
+It is read-only, does not create files or query the DB, and always returns
+`Cache-Control: no-store`. A 200 requires a held exclusive owner lock and a
+`running` heartbeat no older than 60 seconds. A future timestamp, malformed or
+oversized record cannot be green. Released ownership overrides even a recent
+running record after process death; an unresponsive loop retaining ownership
+becomes stale after the freshness window. During shutdown a heartbeat may still
+be recent while cleanup drains; it does not promise continued task availability.
+
+The response exposes only component, observation state, UTC heartbeat/response
+time, age, random runtime ID and scheduler-enabled flag where evidence is valid;
+no PID, hostname, path, DSN, customer data or raw exception is returned. This root
+probe is infrastructure metadata, not a tenant/operator data endpoint. Keep it on
+the same trusted monitoring boundary as existing probes. File reads run off the
+HTTP event loop; the local filesystem is trusted, not a hard-deadline remote
+storage dependency. Clock rollback conservatively reports invalid evidence.
+
+Example read-only command for an **already running authorized service**:
+
+```bash
+curl --silent --show-error --connect-timeout 2 --max-time 5 http://127.0.0.1:8000/runtimez
+```
+
+Do not equate presence with queue progress. Follow scoped Job/delivery evidence
+below even when `/runtimez` is green. No runtime startup, DB migration or deployment
+was performed to validate this source change.
 
 ### 3. Inspect scoped outcomes, not only a green process
 

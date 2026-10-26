@@ -17,7 +17,7 @@ http://localhost:8000/api/v1
 `/api/v1/auth/register`, `/api/v1/auth/refresh-token`, `/api/v1/health` and
 `/api/v1/social/callback` from access-token/workspace middleware. Refresh still
 requires a valid **refresh** Bearer token; OAuth callback validates signed state.
-The root `/livez`, `/readyz` and `/health` probes are outside `/api/*`.
+The root `/livez`, `/readyz`, `/health` and `/runtimez` probes are outside `/api/*`.
 
 ### Login
 
@@ -188,7 +188,12 @@ including zero counts. It uses the same bounded, generic HTTP 500 failure.
 
 Do not use these legacy probes as the production readiness contract: root
 `/readyz` and `/health` retain generic 200/503 responses with a two-second DB
-probe; `/livez` never queries the DB. `app/core/health.py` is unchanged.
+probe; `/livez` never queries the DB. `/runtimez` is a separate opt-in same-host
+runtime-presence signal (200 only for a fresh running heartbeat and held local
+owner lock; otherwise 503). It does not query the DB or assert scheduler/worker/
+listener progress. No-store responses contain only redacted infrastructure
+observation fields. See [runtime observation configuration](CONFIGURATION.md#optional-same-host-runtime-observation)
+and [probe interpretation](DEPLOYMENT.md#2-interpret-the-http-probes-correctly).
 See [isolated verification and acceptance handoff](audit/legacy-api-db-probes.md)
 for exact source revisions, commands and the remaining real-environment checks.
 

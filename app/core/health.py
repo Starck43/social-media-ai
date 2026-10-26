@@ -1,4 +1,4 @@
-"""API-process liveness and bounded DB readiness; no worker health claim."""
+"""API/DB probes and opt-in runtime presence; no component-progress claim."""
 
 import asyncio
 from datetime import datetime, timezone
@@ -40,3 +40,14 @@ async def readiness() -> JSONResponse:
     except Exception:
         return _response(503, status="error", database="disconnected")
     return _response(200, status="ok", database="connected")
+
+
+@router.get("/runtimez")
+async def runtime_presence() -> JSONResponse:
+    """Same-host runtime observation, separate from API/DB readiness."""
+    from app.core.config import settings
+    from app.core.runtime_presence import runtime_signal
+
+    signal = await asyncio.to_thread(runtime_signal, settings.RUNTIME_STATE_DIR)
+    fresh = signal["state"] == "fresh"
+    return _response(200 if fresh else 503, status="ok" if fresh else "error", **signal)

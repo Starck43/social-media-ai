@@ -85,6 +85,9 @@ def source():
         PlatformRole=role.PlatformRole,
         Permission=permission.Permission,
         validators=validators,
+        FilteredSelectMultipleField=load_isolated_source(
+            "_catalog_filtered_select", ROOT / "app/admin/filtered_select.py"
+        ).FilteredSelectMultipleField,
     )
     exec(
         compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), "actual-catalog-views", "exec"), ns

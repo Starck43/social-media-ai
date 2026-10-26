@@ -13,6 +13,7 @@ means not recorded; source recovery links remain in the card.
 ## [P4](docs/phases/p4-delivery.md)
 
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · —
+- [P4-T02](docs/tasks/p4-t02.md) Notification recipients, per-user read state and lifecycle — **TODO** · product-owner (decision) · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
 
 ## [P5](docs/phases/p5-ai-boundaries.md)
 
@@ -51,6 +52,7 @@ means not recorded; source recovery links remain in the card.
 
 - [P9-T01](docs/tasks/p9-t01.md) one capability-specific activation contract — **TODO** · unassigned · —
 - [P9-T07](docs/tasks/p9-t07.md) Actor-scoped admin console catalogs — **IN_PROGRESS** · codex-p9-owner · `codex resume 01a1785e-504b-7893-8129-b57db07d8f37`
+- [P9-T08](docs/tasks/p9-t08.md) Approval-bound action ledger (BotAction → outbound action) — **TODO** · product-owner (decision) · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
 
 ## [P10](docs/phases/p10-audit-hardening.md)
 
@@ -62,6 +64,9 @@ means not recorded; source recovery links remain in the card.
 - [P10-T22](docs/tasks/p10-t22.md) Reconcile the dispatch-identity suite with the tariff receipt contract — **TODO** · unassigned · —
 
 - [P10-T25](docs/tasks/p10-t25.md) Unused utility cleanup and slug transliteration (PR #243; former conflicting ID P10-T23) — **READY** · notion-ai (refactor/p10-t23-unused-utils) · [PR #243; local acceptance pending](https://github.com/Starck43/social-media-ai/pull/243)
+- [P10-T26](docs/tasks/p10-t26.md) Notification/bot-action/agent-session model and manager layout — **IN_PROGRESS** · notion-ai (refactor/p10-t26-notification-action-session-models) · [PR #246; local validation pending](https://github.com/Starck43/social-media-ai/pull/246)
+- [P10-T27](docs/tasks/p10-t27.md) Legacy notification API correctness — **TODO** · unassigned · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
+- [P10-T28](docs/tasks/p10-t28.md) Retire root-level model compatibility modules — **TODO** · unassigned · [P10-T26 audit / decisions](https://github.com/Starck43/social-media-ai/pull/246#issuecomment-6419901327)
 
 ## Questions
 

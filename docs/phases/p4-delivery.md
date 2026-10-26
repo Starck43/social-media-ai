@@ -7,6 +7,11 @@
 **Plan — active task cards:**
 
 - [P4-T01](../tasks/p4-t01.md) — staging operator-recovery evidence
+- [P4-T02](../tasks/p4-t02.md) — notification recipients, per-user read state and lifecycle
+
+P4-T02 extends delivery with recipient-specific inbox semantics for the business
+assistant. First decide the receipt/lifecycle contract; only then change schema,
+bell/admin behavior and migration. P10-T26 manager cleanup does not implement it.
 
 **Accepted history:**
 

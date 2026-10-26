@@ -156,6 +156,19 @@ class Settings(BaseSettings):
     # --- Task runner ---
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_POLL_SECONDS: int = 30
+    # Opt-in same-host runtime presence. API/runtime must share this trusted
+    # local POSIX directory; never use a distributed/network filesystem lease.
+    RUNTIME_STATE_DIR: Optional[Path] = None
+
+    @field_validator("RUNTIME_STATE_DIR")
+    @classmethod
+    def _absolute_runtime_state_dir(cls, value: Optional[Path]) -> Optional[Path]:
+        if value is not None:
+            value = value.expanduser()
+            if not value.is_absolute():
+                raise ValueError("RUNTIME_STATE_DIR must be an absolute path")
+        return value
+
     # Personal budget admission is opt-in until schema and real acceptance pass.
     PERSONAL_BILLING_ENABLED: bool = False
     SCHEDULER_TIMEZONE: str = "Europe/Moscow"

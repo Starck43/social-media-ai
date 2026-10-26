@@ -38,6 +38,36 @@ generic source-owned DB notification and emit only a generic operator event.
 Missing admin configuration does not redirect messages to a client workspace.
 See [notification boundaries and remaining limits](NOTIFICATIONS.md).
 
+## Optional same-host runtime observation
+
+`RUNTIME_STATE_DIR` is unset by default. An API alone does not prove that
+`python -m app.runtime` is running. Set an absolute path to one trusted local
+POSIX directory **in both API and runtime environments** to enable `/runtimez`.
+Example configuration only: `RUNTIME_STATE_DIR=/var/lib/social-media-ai/runtime`.
+The operator must provision ownership/access for the service user; the runtime
+creates the directory with mode 0700 and its files with mode 0600. Do not point
+this at a customer-controlled directory, symlink, FIFO or a network filesystem.
+
+The same OS user, host/kernel lock namespace and directory must be shared.
+Containers need an explicitly reviewed local shared mount and matching UID;
+this change does not edit Compose or deploy a volume. Independent paths/hosts
+are independent observations, not global runtime uniqueness. Do not enable a
+new profile during an incident as a supposedly read-only probe.
+
+With the option enabled, runtime takes a nonblocking exclusive local owner lock
+before default-task bootstrap. A duplicate owner or inaccessible directory
+aborts before bootstrap. Keep `owner.lock` in place; never unlink/replace it to
+force a start. The lock is not a DB/distributed lease, job claim or authorization
+mechanism. Unset configuration preserves the existing startup path and reports
+`unconfigured`, never green, from `/runtimez`.
+
+A random runtime ID changes per start. Runtime publishes `starting`, then
+`running` after bootstrap, every 15 seconds on its event loop, and `stopped` at
+shutdown; ownership stays held until component cleanup finishes. Heartbeat or
+component failure cancels/drains the supervised tasks before releasing ownership.
+No scheduler/worker/listener progress is inferred; a responsive event loop can
+coexist with failing jobs, broken credentials or disconnected channels.
+
 ## .env.example
 
 ```bash

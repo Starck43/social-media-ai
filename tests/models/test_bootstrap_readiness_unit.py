@@ -206,7 +206,7 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result.content["timestamp"].endswith("+00:00"))
 
     def test_legacy_health_alias_and_explicit_probe_routes_registered(self):
-        self.assertEqual(set(self.health.router.paths), {"/livez", "/readyz", "/health"})
+        self.assertEqual(set(self.health.router.paths), {"/livez", "/readyz", "/health", "/runtimez"})
         self.assertIs(self.health.router.paths["/health"], self.health.router.paths["/readyz"])
 
 

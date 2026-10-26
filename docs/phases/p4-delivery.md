@@ -7,6 +7,7 @@
 **Plan — active task cards:**
 
 - [P4-T01](../tasks/p4-t01.md) — staging operator-recovery evidence
+- [P4-T02](../tasks/p4-t02.md) — notification recipients, per-user read state and lifecycle
 
 **Accepted history:**
 

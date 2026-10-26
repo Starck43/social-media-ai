@@ -1,16 +1,15 @@
-"""Compatibility facade for the notifications model domain.
+"""Deprecated compatibility path for ``Notification``.
 
-The canonical Notification declaration now lives in
-`app.models.notifications.notification`. This module keeps the legacy
-`app.models.notification` import path working and remains the place where
-`Notification.objects` is bound, so the manager import order is unchanged.
-
-Do not move manager creation into the leaf module: NotificationManager
-resolves the model by importing it back from this facade.
+Canonical import: ``from app.models import Notification`` (or the domain package
+``app.models.notifications``). The class is declared once in
+``app.models.notifications.notification``; managers are bound only by
+``app.models.bootstrap``. This module re-exports the same objects and declares
+nothing; removal of the root compatibility modules is tracked by P10-T28.
 """
 
 from __future__ import annotations
 
-# Manager binding stays at this legacy entry point (import order preserved).
-from .managers.notification_manager import NotificationManager  # noqa: E402,F401
-from .notifications.notification import Notification  # noqa: F401
+from .managers.notification_manager import NotificationManager
+from .notifications.notification import Notification
+
+__all__ = ["Notification", "NotificationManager"]

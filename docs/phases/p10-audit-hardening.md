@@ -16,6 +16,9 @@
 - [P10-T24](../audit/p10-t24.md) — portable handoff, owner decision before integration and migration evidence review; accepted 2026-10-26 at `1df675f`.
 
 - [P10-T25](../tasks/p10-t25.md) — Unused utility cleanup and slug transliteration; [PR #243](https://github.com/Starck43/social-media-ai/pull/243), historical conflicting branch ID P10-T23 reconciled
+- [P10-T26](../tasks/p10-t26.md) — notification/bot-action/agent-session model and manager layout
+- [P10-T27](../tasks/p10-t27.md) — legacy notification API correctness
+- [P10-T28](../tasks/p10-t28.md) — retire root-level model compatibility modules
 
 **Accepted history:**
 

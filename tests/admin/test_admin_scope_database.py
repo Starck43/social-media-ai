@@ -23,6 +23,7 @@ off so that "no scope" is the failure mode, not the default.
 import secrets
 from contextlib import asynccontextmanager, contextmanager
 from typing import AsyncIterator
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from httpx import AsyncClient
@@ -591,10 +592,15 @@ async def test_admin_http_personal_catalog_blocks_foreign_provider_and_model_rou
                     data={"name": "forged-by-http", "csrf_token": _valid_csrf_token()},
                 )
                 assert forged.status_code in {403, 404}, identity
-                deleted = await client.post(
-                    f"/admin/{identity}/delete?pks={record.id}", data={"csrf_token": _valid_csrf_token()}
+                deleted = await client.delete(
+                    f"/admin/{identity}/delete?pks={record.id}",
+                    headers={"X-CSRF-Token": _valid_csrf_token()},
                 )
-                assert deleted.status_code in {403, 404}, identity
+                # SQLAdmin returns a list URL with an error receipt for a
+                # missing scoped object, including from its DELETE route.
+                assert deleted.status_code == 200, identity
+                errors = parse_qs(urlsplit(deleted.text).query).get("error", [])
+                assert errors and errors[0].startswith("404:"), (identity, deleted.text)
 
     # The foreign rows are still there, unchanged, and still theirs.
     with setup_scope(other):

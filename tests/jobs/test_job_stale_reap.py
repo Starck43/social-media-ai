@@ -123,8 +123,8 @@ class ReapTests(unittest.IsolatedAsyncioTestCase):
             ROOT / "app/models/managers/job_manager.py",
             {
                 "app.models.managers.base_manager": SimpleNamespace(BaseManager=DummyBase),
-                "app.models.scheduling.job": SimpleNamespace(Job=JobRow),
-                "app.models.scheduling.agent_task": SimpleNamespace(AgentTask=TaskRow),
+                **dict.fromkeys(('app.models.job', 'app.models.scheduling.job'), SimpleNamespace(Job=JobRow)),
+                **dict.fromkeys(('app.models.agent_task', 'app.models.scheduling.agent_task'), SimpleNamespace(AgentTask=TaskRow)),
                 "app.core.database": SimpleNamespace(async_session_maker=session_maker),
                 "app.core.tenant_context": tenancy,
                 "app.jobs.attempt_budget": self.budget,

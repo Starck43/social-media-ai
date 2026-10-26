@@ -109,9 +109,9 @@ class CancelRouteTests(unittest.IsolatedAsyncioTestCase):
             {
                 "fastapi": SimpleNamespace(APIRouter=Router, Form=lambda default=None, **kw: default, Request=object),
                 "fastapi.responses": SimpleNamespace(RedirectResponse=Redirect),
-                "app.models.scheduling.job": SimpleNamespace(
+                **dict.fromkeys(('app.models.job', 'app.models.scheduling.job'), SimpleNamespace(
                     Job=SimpleNamespace(objects=SimpleNamespace(get=self.get, cancel_running=self.cancel))
-                ),
+                )),
                 "app.web.deps": SimpleNamespace(
                     action_tenant_id=lambda request, tenant: self.lookup_tenant,
                     add_flash=lambda request, kind, text: self.flashes.append((kind, text)),

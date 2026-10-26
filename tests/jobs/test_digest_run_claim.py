@@ -59,7 +59,7 @@ MODULE = load_isolated_source(
     ROOT / "app/models/managers/digest_run_manager.py",
     {
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseManagerDouble),
-        "app.models.notifications.digest_run": SimpleNamespace(DigestRun=object),
+        **dict.fromkeys(('app.models.digest_run', 'app.models.notifications.digest_run'), SimpleNamespace(DigestRun=object)),
     },
 )
 

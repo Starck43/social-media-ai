@@ -93,8 +93,8 @@ class BatchTests(unittest.IsolatedAsyncioTestCase):
                     current_tenant_id=lambda: self.tenant, TenantContextError=RuntimeError
                 ),
                 "app.models.managers.base_manager": SimpleNamespace(BaseManager=ManagerBase),
-                "app.models.agent.agent_memory": SimpleNamespace(AgentMemory=Memory),
-                "app.models.agent.agent_message": SimpleNamespace(AgentMessage=Message),
+                **dict.fromkeys(('app.models.agent_memory', 'app.models.agent.agent_memory'), SimpleNamespace(AgentMemory=Memory)),
+                **dict.fromkeys(('app.models.agent_message', 'app.models.agent.agent_message'), SimpleNamespace(AgentMessage=Message)),
             },
         )
         self.manager = self.module.agent_memory

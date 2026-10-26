@@ -53,6 +53,8 @@ means not recorded; source recovery links remain in the card.
 - [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **READY** · opencode (fix/p10-t19-stale-security-suites, `b8eddfd`) · [merge `f838333`](https://github.com/Starck43/social-media-ai/pull/241#issuecomment-6409463751)
 - [P10-T22](docs/tasks/p10-t22.md) Reconcile the dispatch-identity suite with the tariff receipt contract — **TODO** · unassigned · —
 
+- [P10-T23](docs/tasks/p10-t23.md) Remove unused utilities and simplify slug transliteration — **IN_PROGRESS** · notion-ai (refactor/p10-t23-unused-utils) · [claim dialogue](https://app.notion.com/chat?t=4053606b33f6806096a700a96c4570a2)
+
 ## Questions
 
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · —

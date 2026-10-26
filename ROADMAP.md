@@ -64,7 +64,6 @@ means not recorded; source recovery links remain in the card.
 - [P10-T08](docs/tasks/p10-t08.md) Home pipeline permission gates — **IN_PROGRESS** · notion-ai (remote executor / owner-authorized custodian) · [owner assignment](https://app.notion.com/chat?t=405ddbde02368102880c00a967f1cd5c)
 - [P10-T09](docs/tasks/p10-t09.md) Truthful pipeline counts/labels — **TODO** · unassigned · —
 - [P10-T16](docs/tasks/p10-t16.md) Scheduling model layout checks — **TODO** · codex · —
-- [P10-T19](docs/tasks/p10-t19.md) Reconcile the failing security suites with the current authorization model — **READY** · opencode (A done: privacy suite 47 passed, matrix no longer vacuous; owner choice on remaining Q-11/Q-11 gate) · [audit](docs/audit/p10-t19.md)
 - [P10-T22](docs/tasks/p10-t22.md) Reconcile the dispatch-identity suite with the tariff receipt contract — **TODO** · unassigned · —
 
 - [P10-T26](docs/tasks/p10-t26.md) Notification/bot-action/agent-session model and manager layout — **IN_PROGRESS** · notion-ai (refactor/p10-t26-notification-action-session-models) · [PR #246; local validation pending](https://github.com/Starck43/social-media-ai/pull/246)

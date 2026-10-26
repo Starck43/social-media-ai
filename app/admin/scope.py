@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ADMIN_PREFIX = "/admin"
+DASHBOARD_PREFIX = "/dashboard"
 
 # Endpoints that must never touch data: the sign-in form, its handler, and the
 # sign-out redirect. They still run scoped (fail-closed) but need no actor.
@@ -65,7 +66,7 @@ class AdminScopeMiddleware:
             await self.app(scope, receive, send)
             return
         path = scope.get("path", "")
-        if not (path == ADMIN_PREFIX or path.startswith(f"{ADMIN_PREFIX}/")):
+        if not any(path == prefix or path.startswith(f"{prefix}/") for prefix in (ADMIN_PREFIX, DASHBOARD_PREFIX)):
             await self.app(scope, receive, send)
             return
 
@@ -156,6 +157,8 @@ class AdminScopeMiddleware:
         non-workspace page is treated as workspace-bound (fail closed), including
         the base views that read every table.
         """
+        if path == DASHBOARD_PREFIX or path.startswith(f"{DASHBOARD_PREFIX}/"):
+            return True
         parts = path.split("/")
         if len(parts) < 3 or not parts[2]:
             return False

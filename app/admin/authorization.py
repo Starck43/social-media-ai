@@ -44,6 +44,9 @@ from sqladmin.authorization import (
 from sqladmin.models import ModelView
 from starlette.requests import Request
 
+from app.core.access_catalog import resource_for
+from app.core.permissions import has_permission
+from app.core.tenant_context import current_tenant_id
 from app.models import User
 from app.types import ActionType
 
@@ -145,10 +148,6 @@ class AdminAuthorizationBackend(GrantsAuthorizationBackend):
             # outer ceiling. The active membership role must also grant the
             # action; otherwise an ADMIN with platform-wide CRUD could edit a
             # workspace where they are only a viewer.
-            from app.core.access_catalog import resource_for
-            from app.core.permissions import has_permission
-            from app.core.tenant_context import current_tenant_id
-
             resource = resource_for(model_name)
             if current_tenant_id() is not None and resource is not None and resource.workspace:
                 granted = {action for action in granted if has_permission(user, model_name, action)}
@@ -272,7 +271,11 @@ async def require_admin_perm(request: Request, model_name: str, action: ActionTy
     # Load the same request-bound grants before rendering its shared menu.
     await backend.load(request)
     user = await backend.resolve_user(request)
-    if user is None or not user.has_admin_access() or not user.has_perm_for(model_name, action):
+    allowed = user is not None and user.has_admin_access() and user.has_perm_for(model_name, action)
+    resource = resource_for(model_name)
+    if allowed and resource is not None and resource.workspace and not user.is_superuser:
+        allowed = current_tenant_id() is not None and has_permission(user, model_name, action)
+    if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Missing permission: {model_name}.{action.db_value}",

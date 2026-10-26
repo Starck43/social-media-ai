@@ -2,17 +2,20 @@
 
 import secrets
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.admin.authorization import AdminAuthorizationBackend, require_admin_perm
+from app.admin.scope import AdminScopeMiddleware
 from app.admin.session import AdminAsyncSession
 from app.core.database import async_engine
 from app.core.permissions import operator_permission_scope, permission_scope
 from app.core.tenant_context import tenant_scope
-from app.models import AgentTask, Source, Tenant
+from app.models import AgentScenario, AgentTask, Source, Tenant
 from app.types import ActionType
 
 pytestmark = pytest.mark.tenancy
@@ -122,3 +125,86 @@ async def test_same_workspace_forged_source_owner_task_fk_requires_target_grant(
                 await session.flush()
             assert refused.value.status_code == 403
             await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_pending_scalar_relationship_assignment_checks_target_grants():
+    tenant, _, _ = await _rows()
+    with tenant_scope(bypass=True), operator_permission_scope():
+        scenario = await AgentScenario.objects.create(name=_uniq("scenario"), tenant_id=tenant.id)
+    actor = _Actor({"agenttask": {ActionType.CREATE}})
+    member = _member(("agenttask", ActionType.CREATE))
+    task = AgentTask(
+        tenant_id=tenant.id,
+        name=_uniq("relationship-task"),
+        cron_expr="0 9 * * *",
+        job_type="collect",
+        agent_scenario=scenario,
+    )
+
+    with _console(actor, tenant.id, member):
+        async with ADMIN_SESSION() as session:
+            session.add(task)
+            with pytest.raises(HTTPException) as refused:
+                await session.flush()
+            assert refused.value.status_code == 403
+            await session.rollback()
+
+
+def test_dashboard_paths_are_workspace_bound_by_console_scope():
+    assert AdminScopeMiddleware._reads_workspace_data("/dashboard")
+    assert AdminScopeMiddleware._reads_workspace_data("/dashboard/topic-chains")
+    assert (
+        "/dashboard"
+        in __import__(
+            "app.core.tenant_context", fromlist=["PlatformScopeMiddleware"]
+        ).PlatformScopeMiddleware.TENANT_SCOPED_PREFIXES
+    )
+
+
+@pytest.mark.asyncio
+async def test_admin_endpoint_permission_applies_selected_member_cap(monkeypatch):
+    actor = _Actor({"aianalytics": {ActionType.VIEW}})
+    backend = AdminAuthorizationBackend()
+
+    async def load(_request):
+        return None
+
+    async def resolve_user(_request):
+        return actor
+
+    monkeypatch.setattr(backend, "load", load)
+    monkeypatch.setattr(backend, "resolve_user", resolve_user)
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(admin=SimpleNamespace(authorization_backend=backend))),
+        state=SimpleNamespace(),
+        session={"token": "test"},
+    )
+
+    with _console(actor, 41, _member()):
+        with pytest.raises(HTTPException) as refused:
+            await require_admin_perm(request, "aianalytics", ActionType.VIEW)
+    assert refused.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_endpoint_keeps_platform_gate_for_non_workspace_resources(monkeypatch):
+    actor = _Actor({"user": {ActionType.VIEW}})
+    backend = AdminAuthorizationBackend()
+
+    async def load(_request):
+        return None
+
+    async def resolve_user(_request):
+        return actor
+
+    monkeypatch.setattr(backend, "load", load)
+    monkeypatch.setattr(backend, "resolve_user", resolve_user)
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(admin=SimpleNamespace(authorization_backend=backend))),
+        state=SimpleNamespace(),
+        session={"token": "test"},
+    )
+
+    with _console(actor, 41, _member()):
+        assert await require_admin_perm(request, "user", ActionType.VIEW) is actor

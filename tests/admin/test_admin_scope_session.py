@@ -115,6 +115,7 @@ async def _provider(owner: User, label: str) -> LLMProvider:
             api_format="openai",
             base_url="https://example.invalid/v1",
             is_active=True,
+            owner_user_id=owner.id,
         )
 
 

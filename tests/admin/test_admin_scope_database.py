@@ -104,6 +104,7 @@ async def _provider(owner: User, name: str) -> LLMProvider:
             api_format="openai",
             base_url="https://example.invalid/v1",
             is_active=True,
+            owner_user_id=owner.id,
         )
 
 
@@ -495,7 +496,7 @@ async def test_admin_http_uses_selected_weak_membership_with_stronger_membership
             assert (await client.get(f"/admin/source/edit/{weak_source.id}")).status_code == 403
             # A workspace the actor administers but did not select is not in this request.
             assert (await client.get(f"/admin/source/details/{strong_source.id}")).status_code == 404
-            assert (await client.get(f"/admin/source/edit/{strong_source.id}")).status_code == 404
+            assert (await client.get(f"/admin/source/edit/{strong_source.id}")).status_code == 403
 
     # The unselected workspace is reachable only when it is selected — with its
     # own role, not by reusing the viewer request's permissions.

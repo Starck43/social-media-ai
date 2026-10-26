@@ -90,7 +90,7 @@ class PlatformScopeMiddleware:
     """
 
     # Prefixes that own their own (fail-closed) tenant context.
-    TENANT_SCOPED_PREFIXES = ("/app", "/api", "/static", "/admin")
+    TENANT_SCOPED_PREFIXES = ("/app", "/api", "/static", "/admin", "/dashboard")
     # Exact paths that are infrastructure, not data.
     BYPASS_EXACT_PATHS = ("/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico")
 

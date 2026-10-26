@@ -26,15 +26,17 @@ from app.core.tenant_context import (
     is_bypass,
     tenant_scope,
 )
+from app.types import ActionType
 
 ROOT = Path(__file__).resolve().parents[2]
+pytestmark = pytest.mark.tenancy
 
 # The questions the probe answers about the live scope, by name. `has_permission`
 # needs the actor *and* the membership grants the middleware entered, so they are
 # evaluated inside the app call and kept under the same keys as the scope facts.
 CAPABILITIES = {
-    "can_view_source": ("source", "view"),
-    "can_update_source": ("source", "update"),
+    "can_view_source": ("source", ActionType.VIEW),
+    "can_update_source": ("source", ActionType.UPDATE),
 }
 
 
@@ -64,7 +66,15 @@ class _Probe:
 
 
 def _user(user_id=7, *, superuser=False):
-    return SimpleNamespace(id=user_id, is_active=True, is_superuser=superuser)
+    # Mirrors the permission methods used by has_permission() for platform
+    # bypass; regular users still rely on the selected membership grants.
+    return SimpleNamespace(
+        id=user_id,
+        is_active=True,
+        is_superuser=superuser,
+        has_admin_access=lambda: superuser,
+        has_perm_for=lambda _model, _action: superuser,
+    )
 
 
 def _request(path="/admin/source/list", tenant_id=None):
@@ -143,7 +153,7 @@ async def test_the_platform_owner_keeps_global_workspace_inspection(monkeypatch)
 @pytest.mark.asyncio
 async def test_an_invited_member_runs_in_the_workspace_that_invited_them(monkeypatch):
     """user2 invited by user1 as that workspace's admin: in, under that role."""
-    grants = frozenset({("source", "view"), ("source", "update")})
+    grants = frozenset({("source", ActionType.VIEW), ("source", ActionType.UPDATE)})
     seen = await _scope(monkeypatch, user=_user(7), rows=[(3, grants)])
     assert seen["bypass"] is False
     assert seen["tenant"] == 3 and seen["tenants"] == (3,)
@@ -160,8 +170,8 @@ async def test_selected_workspace_is_validated_against_memberships(monkeypatch):
     active" rule would silently run the request under `source.update` while the
     operator believes they are in the workspace where they may only view.
     """
-    strong = frozenset({("source", "view"), ("source", "update")})
-    weak = frozenset({("source", "view")})
+    strong = frozenset({("source", ActionType.VIEW), ("source", ActionType.UPDATE)})
+    weak = frozenset({("source", ActionType.VIEW)})
     seen, capabilities = await _decision(monkeypatch, user=_user(7), rows=[(3, strong), (9, weak)], tenant_id=9)
     assert seen["tenant"] == 9 and seen["tenants"] == (9,)
     # The selected (weaker) membership, not the stronger first one, is the role
@@ -172,8 +182,8 @@ async def test_selected_workspace_is_validated_against_memberships(monkeypatch):
 @pytest.mark.asyncio
 async def test_an_invalid_workspace_selection_falls_back_to_a_real_membership(monkeypatch):
     """A stale `app_tenant_id` never becomes an unverified workspace."""
-    strong = frozenset({("source", "view"), ("source", "update")})
-    weak = frozenset({("source", "view")})
+    strong = frozenset({("source", ActionType.VIEW), ("source", ActionType.UPDATE)})
+    weak = frozenset({("source", ActionType.VIEW)})
     for stale in (404, "not-a-number", None):
         seen, capabilities = await _decision(monkeypatch, user=_user(7), rows=[(3, strong), (9, weak)], tenant_id=stale)
         # Back to the oldest *verified* membership — never the typed value.
@@ -305,7 +315,7 @@ async def test_the_console_narrows_the_platform_bypass(monkeypatch):
         return _user(7)
 
     monkeypatch.setattr(AdminScopeMiddleware, "_session_user", staticmethod(resolve))
-    _memberships(monkeypatch, [(3, frozenset({("source", "view")}))])
+    _memberships(monkeypatch, [(3, frozenset({("source", ActionType.VIEW)}))])
     console = AdminScopeMiddleware(app)
     # The outer platform middleware would have opened a bypass around this call.
     with tenant_scope(bypass=True):

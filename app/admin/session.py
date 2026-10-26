@@ -95,6 +95,18 @@ def _scope_writes(session, flush_context, instances):
         new = obj in session.new
         deleting = obj in session.deleted
         tenant_scoped = getattr(model, "__tenant_scoped__", False)
+        private = (
+            tenant_scoped
+            or getattr(model, "__personal_scoped__", False)
+            or model.__name__ in {"Tenant", "UserCredential"}
+        )
+        action = ActionType.DELETE if deleting else ActionType.CREATE if new else ActionType.UPDATE
+        # Backref collection changes do not write the target row. The owning
+        # view's route gate authorizes its association operation; scalar writes
+        # and nested creates/deletes must carry the target's own platform grant.
+        writes_row = new or deleting or session.is_modified(obj, include_collections=False)
+        if private and writes_row and not actor.has_perm_for(model.__name__, action):
+            raise HTTPException(status_code=403, detail="Console operation denied")
         if tenant_scoped and not new and state.attrs.tenant_id.history.has_changes():
             raise HTTPException(status_code=403, detail="Workspace ownership is immutable")
         if tenant_scoped or model.__name__ == "Tenant":
@@ -107,8 +119,7 @@ def _scope_writes(session, flush_context, instances):
                     raise HTTPException(status_code=403, detail="Workspace access denied")
                 if state.attrs[key].history.deleted:
                     raise HTTPException(status_code=403, detail="Workspace ownership is immutable")
-                action = ActionType.DELETE if deleting else ActionType.CREATE if new else ActionType.UPDATE
-                if not has_permission(actor, model.__name__, action):
+                if writes_row and not has_permission(actor, model.__name__, action):
                     raise HTTPException(status_code=403, detail="Workspace operation denied")
         if getattr(model, "__personal_scoped__", False) or model.__name__ == "UserCredential":
             key = "owner_user_id" if getattr(model, "__personal_scoped__", False) else "user_id"
@@ -152,3 +163,55 @@ def _scope_writes(session, flush_context, instances):
             stmt = select(target).where(*conditions)
             if session.execute(stmt).first() is None:
                 raise HTTPException(status_code=403, detail="Related record access denied")
+
+    # Relationship assignment can leave scalar FKs or association rows unset until SQLAlchemy's
+    # dependency processor runs, after before_flush. Inspect changed scalar
+    # and collection relationships separately so an attached cached object cannot bypass the
+    # same row and workspace checks applied to raw form FK values above.
+    for obj in set(session.new) | set(session.dirty):
+        state = inspect(obj)
+        model = type(obj)
+        tenant_scoped = getattr(model, "__tenant_scoped__", False)
+        for relationship in state.mapper.relationships:
+            related_objects = state.attrs[relationship.key].history.added
+            if not related_objects:
+                continue
+            target = relationship.mapper.class_
+            if (
+                target.__name__ == "Tenant"
+                and relationship.local_columns
+                and all(column.key == "tenant_id" for column in relationship.local_columns)
+            ):
+                continue
+            criterion = row_criterion(target)
+            same_workspace = tenant_scoped and getattr(target, "__tenant_scoped__", False)
+            if criterion is None and not same_workspace:
+                continue
+            for related in related_objects:
+                if related is None:
+                    continue
+                related_state = inspect(related)
+                if related in session.new:
+                    # New related rows are independently checked by the first
+                    # pass above; require the target's own action grant here too.
+                    if getattr(target, "__tenant_scoped__", False):
+                        target_allowed = actor.has_perm_for(target.__name__, ActionType.CREATE) and has_permission(
+                            actor, target.__name__, ActionType.CREATE
+                        )
+                    else:
+                        target_allowed = actor.has_perm_for(target.__name__, ActionType.CREATE)
+                    if not target_allowed:
+                        raise HTTPException(status_code=403, detail="Related record access denied")
+                    if same_workspace and getattr(related, "tenant_id", None) != getattr(obj, "tenant_id", None):
+                        raise HTTPException(status_code=403, detail="Related record access denied")
+                    continue
+                identity = related_state.identity
+                if identity is None:
+                    raise HTTPException(status_code=403, detail="Related record access denied")
+                conditions = [column == value for column, value in zip(relationship.mapper.primary_key, identity)]
+                if criterion is not None:
+                    conditions.append(criterion)
+                if same_workspace:
+                    conditions.append(target.tenant_id == obj.tenant_id)
+                if session.execute(select(target).where(*conditions)).first() is None:
+                    raise HTTPException(status_code=403, detail="Related record access denied")

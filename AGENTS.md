@@ -20,8 +20,10 @@ sections. Record documents actually read and checks in the card/PR. Shared
 - ROADMAP owns open status; `docs/tasks` owns active detail; `docs/phases` owns
   stage plans; `docs/audit` owns accepted results and detailed failures. Use
   [lifecycle and evidence rules](docs/COLLABORATION.md#acceptance). Never invent
-  checks, approvals, dialogue links or completion. BLOCKED concerns the solution
-  or required acceptance, never housekeeping. READY requires required checks PASS.
+  checks, approvals, dialogue links or completion. READY requires required checks
+  PASS. Before solution merge or deferral ask the owner to choose; preserve the
+  branch/PR until then. Acceptance and integration are separate. BLOCKED concerns
+  the solution/acceptance, never a decision wait or housekeeping.
 - Resolve DB target/schema before access. Test-schema setup/migrations are allowed;
   serialize shared DB work and remove/verify all synthetic records afterward.
   Public test records require explicit Superuser approval. Public migrations need
@@ -34,9 +36,11 @@ sections. Record documents actually read and checks in the card/PR. Shared
   Registry-only publication above does not authorize code pushes, force-push,
   deployment, production mutation or publication of unrelated local commits.
 - Only Codex may invoke third-party agents; others use native children. Preserve
-  handoff evidence, then stop/delete owned child sessions immediately. Unsupported
-  cleanup is reported separately. Remote coordination uses PR comments; the PR
-  body carries solution/evidence and direct repository/task links.
+  handoff evidence in the task card/PR; `.agents/tmp` and `/tmp` are scratch,
+  never portable evidence. Ask owner before merge or deferral; preserve resume
+  branch/PR pending the choice. Then stop/delete owned child sessions. Unsupported
+  cleanup is reported separately. Remote coordination uses PR comments; PR body
+  carries solution/evidence and direct repository/task links.
 - Read [tests/AGENTS](tests/AGENTS.md) before test work. Run focused required checks;
   full suites require explicit owner request. Routine docs review needs no pytest.
 - At closeout remove own temporary files; inventory worktrees and apply

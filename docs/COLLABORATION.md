@@ -18,7 +18,7 @@ without overwriting other changes. If local dev is ahead, use a separate registr
 worktree based on origin rather than pushing unrelated commits. A non-fast-forward
 push requires fetch/reconcile and rechecking the claim; never force-push. Claim
 publication to `origin/dev` is authorized by this workflow; solution publication
-and merge still require their own authorization. An offline/unpublishable claim
+and merge still require the owner’s explicit choice. An offline/unpublishable claim
 is local only: report the coordination limitation, never pretend it is visible.
 Remote agents request the same update via PR comments; one custodian publishes
 registry changes. The custodian refreshes both directions before each transition.
@@ -51,7 +51,13 @@ cannot proceed, otherwise continue IN_PROGRESS. A waived check requires an expli
 owner waiver and remains labelled unrun. Remote PR body is the solution/evidence
 entry point; the card links it instead of duplicating it. Preserve original
 revision attribution; old greens never certify new code. Long failures belong
-in `docs/audit/<id>.md`; temporary logs in ignored `.agents/tmp/`.
+in `docs/audit/<id>.md`. `/tmp` and ignored `.agents/tmp/` are local scratch only:
+never link them as evidence or a handoff. Copy the useful summary, tested SHA,
+commands/results and resume commit into the task card or PR body, then delete
+scratch files at closeout. A path on one machine is not visible to another
+checkout. For local commands, name the tested SHA and branch/worktree; distinguish
+migration/command success from application-test results. A clean `dev` status
+does not mean tests passed.
 
 ## Acceptance
 
@@ -74,6 +80,19 @@ On success, in one registry update:
    actual commit date. Do not invent missing historical metadata.
 4. Synchronize the scoped registry update with local/origin dev as under Tasks.
    Record pending solution integration separately from audit acceptance.
+
+Before integrating or deferring solution work, the executor reports the exact
+branch/commit or PR and asks the owner for one choice: merge to dev; continue on
+the current branch/PR; or defer and preserve that resume point. Do not merge,
+push a solution, close the PR or discard the branch until the owner chooses; an
+existing explicit instruction already covering that action counts. If the owner
+has not answered, leave the solution intact and record the pending decision.
+READY is executor evidence; successful audit is an acceptance decision; neither
+authorizes integration by itself. After acceptance, remove the queue item and
+archive it even when integration is still pending. For unresolved work, keep the
+task IN_PROGRESS if work can continue; use BLOCKED only for a task/dependency
+that prevents resolution. If the owner chooses to defer, record that choice and
+resume branch/PR without calling it BLOCKED solely for being postponed.
 
 If unresolved acceptance cannot proceed, change IN_PROGRESS/READY to BLOCKED;
 record concrete reason, passed/failed/unrun checks and recommended fix in the

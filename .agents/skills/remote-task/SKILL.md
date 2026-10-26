@@ -12,4 +12,6 @@ solution, source revision, actual documents read, checks and limitations in the
 PR body. Send all coordination, questions and status changes as PR comments.
 The designated custodian synchronizes ROADMAP/task records; do not publish stale
 registry copies. For local DB/environment checks, request them in a PR comment
-and link the revision-specific result in the PR body. Report unrun checks.
+and link the revision-specific result in the PR body. Report unrun checks. Do not
+merge or close a PR without the owner’s explicit choice; use PR comments for the
+choice and handoff. Preserve the branch/PR if work will continue or be deferred.

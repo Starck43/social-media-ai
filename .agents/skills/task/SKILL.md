@@ -16,5 +16,7 @@ documents actually read (path/section and purpose), checks and outcomes in the
 card or PR body. Report READY only when required checks pass. Continue
 IN_PROGRESS on actionable failures; use BLOCKED only when the solution/required acceptance cannot proceed,
 with passed/failed/unrun checks and a recommended next step.
-Never self-accept. Preserve data/session/branch cleanup as separate closeout
-facts. Follow [COLLABORATION](../../../docs/COLLABORATION.md) only as needed.
+Never self-accept or merge/push a solution without the owner’s explicit
+choice. Report merge / continue / defer options with the exact resume branch/PR;
+keep the work intact while awaiting a decision. Store handoff in the card/PR,
+not `/tmp` or ignored `.agents/tmp`. Follow [COLLABORATION](../../../docs/COLLABORATION.md) only as needed.

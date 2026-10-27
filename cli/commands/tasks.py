@@ -7,6 +7,7 @@ operator transport.
 
 from __future__ import annotations
 
+from enum import Enum
 from functools import wraps
 import secrets
 from typing import Callable
@@ -21,6 +22,11 @@ EXIT_COMMAND_FAILED = 1
 EXIT_USAGE = 2
 EXIT_TARGET_UNRESOLVED = 3
 EXIT_OPERATOR_REQUIRED = 4
+
+
+class TaskOutputFormat(str, Enum):
+    HUMAN = "human"
+    JSON = "json"
 
 
 def _json_command(command: str):
@@ -189,15 +195,20 @@ task_app = typer.Typer(
 
 @task_app.callback()
 def _task_operator_boundary(
-    output: str = typer.Option("human", "--output", help="Output format: human or json"),
+    output: TaskOutputFormat = typer.Option(
+        TaskOutputFormat.HUMAN,
+        "--output",
+        help="Output format",
+    ),
 ) -> None:
     """Label and gate the group before any task subcommand can execute."""
-    if output not in {"human", "json"}:
+    output_format = output.value if isinstance(output, TaskOutputFormat) else output
+    if output_format not in {"human", "json"}:
         from .task_output import task_print
 
         task_print("[red]--output must be human or json[/red]")
         raise typer.Exit(EXIT_USAGE)
-    set_task_output_format(output)
+    set_task_output_format(output_format)
     try:
         _require_operator_context()
     except OperatorIdentityRequired:

@@ -125,7 +125,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main scenarios output-schema | --apply | option | boolean | no | false |
 | python -m cli.main scenarios seed-default | --tenant | option | str | no | "owner" |
 | python -m cli.main scenarios seed-default | --force | option | boolean | no | false |
-| python -m cli.main task | --output | option | str | no | "human" |
+| python -m cli.main task | --output | option | choice | no | "human" |
 | python -m cli.main task add | name | argument | str | yes | null |
 | python -m cli.main task add | cron | argument | str | yes | null |
 | python -m cli.main task add | job_type | argument | str | yes | null |

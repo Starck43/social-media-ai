@@ -88,10 +88,11 @@ def test_task_operator_revalidation_binds_a_fresh_actor():
 
 def test_task_group_declares_output_format_option():
     source = ast.unparse(_functions()["_task_operator_boundary"])
+    module = _task_source()
 
     assert "--output" in source
-    assert "human" in source
-    assert "json" in source
+    assert 'HUMAN = "human"' in module
+    assert 'JSON = "json"' in module
 
 
 def test_json_envelope_is_versioned_and_redacts_credentials():
@@ -143,6 +144,21 @@ def test_json_command_hides_unexpected_exception_details():
     assert "provider-secret" not in stream.getvalue()
 
 
+def test_json_command_maps_unresolved_target_to_exit_code_three():
+    @tasks._json_command("task probe")
+    def missing_target():
+        raise typer.Exit(tasks.EXIT_TARGET_UNRESOLVED)
+
+    stream = StringIO()
+    with redirect_stdout(stream), task_output_format("json"), pytest.raises(typer.Exit) as exc:
+        missing_target()
+
+    assert exc.value.exit_code == 3
+    result = json.loads(stream.getvalue())
+    assert result["exit_code"] == 3
+    assert result["error"]["code"] == "target_unresolved"
+
+
 def test_typer_json_command_writes_one_envelope(monkeypatch):
     monkeypatch.setattr(tasks, "_require_operator_context", lambda: None)
     app = typer.Typer()
@@ -163,6 +179,21 @@ def test_typer_json_command_writes_one_envelope(monkeypatch):
         "data": {"status": "done"},
     }
     assert result.stdout.count("\n") == 1
+
+
+def test_invalid_output_format_uses_usage_exit_code(monkeypatch):
+    monkeypatch.setattr(tasks, "_require_operator_context", lambda: None)
+    app = typer.Typer()
+    app.callback()(tasks._task_operator_boundary)
+
+    @app.command("probe")
+    def probe():
+        return None
+
+    result = CliRunner().invoke(app, ["--output", "xml", "probe"])
+    assert result.exit_code == tasks.EXIT_USAGE == 2
+    assert "invalid value" in result.stderr.lower()
+    assert result.stdout == ""
 
 
 def test_typer_operator_failure_uses_exit_code_four_and_json(monkeypatch):

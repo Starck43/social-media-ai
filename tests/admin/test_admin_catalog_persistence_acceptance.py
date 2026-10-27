@@ -40,8 +40,8 @@ if (
 # isort: split
 
 from app.core.config import settings
-from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.permissions import operator_permission_scope
+from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import LLMModel, LLMProvider, Permission, PlatformRole, User

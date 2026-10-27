@@ -8,15 +8,22 @@ from test_admin_model_billing_integration import endpoint_case
 from test_admin_model_diagnostics import PAYLOAD, stack
 from test_admin_model_probe import ROOT, action_module, model, probe_module, template_env
 
+import app.services.ai.personal_dispatch as personal_dispatch
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prompt,limit", [("", 8), ("Что такое API?", 512)])
-async def test_actual_client_owner_mode_sends_once_and_retains_json_and_usage(prompt, limit):
+async def test_actual_client_owner_mode_sends_once_and_retains_json_and_usage(prompt, limit, monkeypatch):
     probe, dependency, selected, sent, client = stack()
     dependency.__isolated_imports__["app.core.config"].settings.PERSONAL_BILLING_ENABLED = False
+    # P3 made the admission path revalidate the catalog owner before the flag
+    # check; the isolated stack owns no DB, so that check is doubled here.
+    owner_check = AsyncMock(return_value=None)
+    monkeypatch.setattr(personal_dispatch, "validate_personal_dispatch", owner_check)
     # Exercise the real flag-off admission branch, not an unconditional fake.
     dependency._personal_admission = dependency._actual_personal_admission
     result = await probe.probe_real_capped(selected, prompt)
+    owner_check.assert_awaited_once()  # The real admission branch ran the owner check.
     assert result["ok"] and result["response_json"] == PAYLOAD and result["tokens_spent"] == 5
     assert result["accounting_status"] == "standard" and result["http_status"] == 200
     assert result["max_tokens"] == limit and len(sent) == 1
@@ -58,7 +65,9 @@ async def test_both_modes_keep_authority_and_csrf_guards(enabled, changes, statu
 async def test_owner_render_has_no_billing_warning_or_workspace_setup():
     probe, _ = probe_module()
     actions, _, view = action_module(probe)
-    context = await actions.LLMModelActions._render(view, NS(state=NS(admin_user=NS(is_superuser=True, is_platform_admin=True))), model())
+    context = await actions.LLMModelActions._render(
+        view, NS(state=NS(admin_user=NS(is_superuser=True, is_platform_admin=True))), model()
+    )
     assert not context["billing_ready"] and not context["billing_tenants"]
     assert context["billing_block_reason"] == ""
     env = template_env()

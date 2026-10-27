@@ -129,6 +129,23 @@ for Telegram, `/me` for MAX) and reports `user-vault|env -> ok|error`. It also p
 an L2 line (`telegram L2 (MTProto): ok|error|not configured`), which pings the
 authorized user session.
 
+### VK OAuth refresh log privacy
+
+VK OAuth refresh failures and failures to persist `refresh_failed_at` log only
+fixed event text, a positive integer `user_id` (or `None` for invalid input),
+and the shared bounded `credential_exception_status` category. Neither path
+formats the exception or logs a traceback, request URL, provider payload,
+access token, refresh token, PKCE verifier or device identifier. Unknown errors
+use `error: integration_error`; raw exception text is not a diagnostic code.
+
+Refresh failures still attempt to record the failure and return `None`;
+bookkeeping failure remains best-effort and does not mask the original failure.
+Successful refresh rotation and cancellation propagation are unchanged. This
+contract is limited to these two refresh error paths, not a certification of
+all OAuth/login/provider logging. Regression coverage:
+`tests/security/test_p6_t02_vk_oauth_log_privacy.py` (isolated mocked checks,
+no live tokens or real DB; exact revision/commands in the task PR).
+
 ### Credential diagnostic error privacy
 
 The API `credentials/test` error statuses and the shared MTProto `check_session`

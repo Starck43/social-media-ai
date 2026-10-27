@@ -101,7 +101,7 @@ async def execute_task_launch(command: TaskLaunchCommand) -> TaskLaunchResult:
     actor, tenant, grants = await _fresh_actor()
     key, fingerprint = launch_identity(tenant.id, actor.id, request_id, canonical, job_type)
     payload = apply_task_plan({}, canonical, job_type=job_type)
-    if job_type == "analyze":
+    if job_type == "analyze" and canonical.get("version", 1) == 1:
         payload["collect_before_analyze"] = True
 
     with permission_scope(actor, member_grants=grants):

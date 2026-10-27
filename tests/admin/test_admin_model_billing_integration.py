@@ -14,6 +14,8 @@ from fastapi import HTTPException
 from source_import_isolation import load_isolated_source
 from test_admin_model_probe import COST_EVIDENCE, ROOT, extracted_handler, model, probe_module, template_env
 
+from app.core.personal_catalog_context import catalog_execution_scope
+
 
 @pytest.mark.asyncio
 async def test_single_owner_mode_runs_without_personal_billing():
@@ -109,11 +111,15 @@ async def test_actual_chat_transport_keeps_caps_and_admission_but_not_timeout_in
     )
     client_module._personal_admission = AsyncMock(return_value=({"dispatch_id": "owned"}, "owned"))
     client_module._verify_personal_dispatch_day = AsyncMock()
+    # P3 credential revalidation owns the pre-HTTP DB check; this harness doubles it.
+    client_module._revalidate_personal_dispatch_before_http = AsyncMock()
     client_module._observe_personal_outcome = AsyncMock()
     client_module._record_llm_usage = AsyncMock()
     selected = model()
     selected.provider.base_url, selected.provider.auth_header = "https://provider.invalid/v1", None
-    client = client_module.OpenAICompatibleClient(selected)
+    # The actual client asserts the bound personal-catalogue owner at construction.
+    with catalog_execution_scope(selected.owner_user_id):
+        client = client_module.OpenAICompatibleClient(selected)
     client._rate_limit = AsyncMock()
     client_module.LLMClientFactory.create = lambda selected: client
     client_module.journal_chat_attempt = AsyncMock()
@@ -237,7 +243,8 @@ async def test_non_generation_modes_do_not_require_billing_tenant_or_payer(mode)
     handler, request, lookup, submit, seen, form = endpoint_case(enabled=False, admin=False, consent=False, tenant="")
     form["test_type"] = mode
     assert await handler(request) == "rendered"
-    assert seen == ["configure"]
+    # The actor scope binds the personal catalogue; the tenant stays out of scope.
+    assert seen == ["configure", ("actor", 31)]
     lookup.assert_not_awaited()
     assert submit.await_args.args[3] == mode
 

@@ -38,11 +38,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P1
 
-- [P11-T07](docs/tasks/p11-t07.md) Incremental package-boundary enforcement — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C3`
-- [P8-T15](docs/tasks/p8-t15.md) Admin API connectivity, mock and real checks — **BLOCKED** · codex · — · `P1` · `C3`
-- [P8-T17](docs/tasks/p8-t17.md) Model response diagnostics and consent — **BLOCKED** · codex · — · `P1` · `C3`
-- [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · — · `P1` · `C3`
-- [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · — · `P1` · `C3`
+- [P11-T07](docs/tasks/p11-t07.md) Incremental package-boundary enforcement — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=4069ac7bd6e5804189db00a95c3a97cc) · `P1` · `C3`
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
 - [P8-T39](docs/tasks/p8-t39.md) Complete chat-first and standalone task journeys — **IN_PROGRESS** · Codex · `codex resume 01a17d52-e51c-7072-81ee-de09e21c0f5f` · `P1` · `C5`
 - [P8-T40](docs/tasks/p8-t40.md) Compose collection, analysis and digest schedules — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P1` · `C5`
@@ -55,9 +51,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P11-T08](docs/tasks/p11-t08.md) Public API compatibility and bounded request policy — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
 - [P11-T09](docs/tasks/p11-t09.md) Fail-closed typed agent-tool registration — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
-- [P11-T10](docs/tasks/p11-t10.md) Operator CLI boundaries and machine-output contract — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=40636385470c802da6c300a99fd79436) · `P2` · `C4`
 - [P11-T11](docs/tasks/p11-t11.md) Web and admin use-case decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
-- [P11-T12](docs/tasks/p11-t12.md) Durable action-audit contract and support correlation — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
+- [P11-T12](docs/tasks/p11-t12.md) Durable action-audit contract and support correlation — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=40652eb6491780269c1c00a9d89825d9) · `P2` · `C4`
 - [P11-T13](docs/tasks/p11-t13.md) Manager and execution-module decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
 - [P11-T14](docs/tasks/p11-t14.md) Canonical model imports and semantic helper reuse — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
@@ -69,6 +64,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P11-T17](docs/tasks/p11-t17.md) Localizable presentation boundaries — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C3`
 - [P11-T18](docs/tasks/p11-t18.md) Typed connector and job extension seams — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
+- [P11-T23](docs/tasks/p11-t23.md) Split agent-task documentation by reader — **TODO** · unassigned · — · `P3` · `C2`
 - [P11-T19](docs/tasks/p11-t19.md) Capacity telemetry and reproducible scale evidence — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 
 ## Deferred by explicit owner decision

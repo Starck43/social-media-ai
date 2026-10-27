@@ -125,6 +125,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main scenarios output-schema | --apply | option | boolean | no | false |
 | python -m cli.main scenarios seed-default | --tenant | option | str | no | "owner" |
 | python -m cli.main scenarios seed-default | --force | option | boolean | no | false |
+| python -m cli.main task | --output | option | choice | no | "human" |
 | python -m cli.main task add | name | argument | str | yes | null |
 | python -m cli.main task add | cron | argument | str | yes | null |
 | python -m cli.main task add | job_type | argument | str | yes | null |
@@ -136,7 +137,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task add | --force-refresh | option | boolean | no | false |
 | python -m cli.main task add | --payload, -p | option | str | no | "{}" |
 | python -m cli.main task add | --task-plan | option | str | no | null |
-| python -m cli.main task add | --tenant | option | str | no | null |
+| python -m cli.main task add | --tenant | option | str | yes | null |
 | python -m cli.main task add | --brands | option | str | no | null |
 | python -m cli.main task add | --competitors | option | str | no | null |
 | python -m cli.main task add | --hashtags | option | str | no | null |
@@ -149,7 +150,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task analyze | --keywords | option | str | no | null |
 | python -m cli.main task analyze | --scenario | option | int | no | null |
 | python -m cli.main task analyze | --period | option | str | no | null |
-| python -m cli.main task analyze | --tenant | option | str | no | null |
+| python -m cli.main task analyze | --tenant | option | str | yes | null |
 | python -m cli.main task analyze | --force-refresh | option | boolean | no | false |
 | python -m cli.main task analyze | --start-date | option | str | no | null |
 | python -m cli.main task analyze | --end-date | option | str | no | null |
@@ -164,7 +165,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task collect | --keywords | option | str | no | null |
 | python -m cli.main task collect | --scenario | option | int | no | null |
 | python -m cli.main task collect | --period | option | str | no | null |
-| python -m cli.main task collect | --tenant | option | str | no | null |
+| python -m cli.main task collect | --tenant | option | str | yes | null |
 | python -m cli.main task collect | --force-refresh | option | boolean | no | false |
 | python -m cli.main task collect | --start-date | option | str | no | null |
 | python -m cli.main task collect | --end-date | option | str | no | null |
@@ -179,7 +180,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task digest | --keywords | option | str | no | null |
 | python -m cli.main task digest | --scenario | option | int | no | null |
 | python -m cli.main task digest | --period | option | str | no | null |
-| python -m cli.main task digest | --tenant | option | str | no | null |
+| python -m cli.main task digest | --tenant | option | str | yes | null |
 | python -m cli.main task digest | --force-refresh | option | boolean | no | false |
 | python -m cli.main task digest | --start-date | option | str | no | null |
 | python -m cli.main task digest | --end-date | option | str | no | null |
@@ -195,7 +196,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task learn | --keywords | option | str | no | null |
 | python -m cli.main task learn | --scenario | option | int | no | null |
 | python -m cli.main task learn | --period | option | str | no | null |
-| python -m cli.main task learn | --tenant | option | str | no | null |
+| python -m cli.main task learn | --tenant | option | str | yes | null |
 | python -m cli.main task learn | --force-refresh | option | boolean | no | false |
 | python -m cli.main task learn | --start-date | option | str | no | null |
 | python -m cli.main task learn | --end-date | option | str | no | null |
@@ -205,6 +206,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task learn | --influencers | option | str | no | null |
 | python -m cli.main task learn | --topics | option | str | no | null |
 | python -m cli.main task pause | name | argument | str | yes | null |
+| python -m cli.main task pause | --tenant | option | str | yes | null |
 | python -m cli.main task pause | --resume | option | boolean | no | false |
 | python -m cli.main task plan | plan_json | argument | str | yes | null |
 | python -m cli.main task plan | --job-type | option | str | no | "analyze" |
@@ -216,7 +218,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task prune | --keywords | option | str | no | null |
 | python -m cli.main task prune | --scenario | option | int | no | null |
 | python -m cli.main task prune | --period | option | str | no | null |
-| python -m cli.main task prune | --tenant | option | str | no | null |
+| python -m cli.main task prune | --tenant | option | str | yes | null |
 | python -m cli.main task prune | --force-refresh | option | boolean | no | false |
 | python -m cli.main task prune | --start-date | option | str | no | null |
 | python -m cli.main task prune | --end-date | option | str | no | null |
@@ -231,7 +233,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task reflect | --keywords | option | str | no | null |
 | python -m cli.main task reflect | --scenario | option | int | no | null |
 | python -m cli.main task reflect | --period | option | str | no | null |
-| python -m cli.main task reflect | --tenant | option | str | no | null |
+| python -m cli.main task reflect | --tenant | option | str | yes | null |
 | python -m cli.main task reflect | --force-refresh | option | boolean | no | false |
 | python -m cli.main task reflect | --start-date | option | str | no | null |
 | python -m cli.main task reflect | --end-date | option | str | no | null |
@@ -241,6 +243,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task reflect | --influencers | option | str | no | null |
 | python -m cli.main task reflect | --topics | option | str | no | null |
 | python -m cli.main task remove | name | argument | str | yes | null |
+| python -m cli.main task remove | --tenant | option | str | yes | null |
 | python -m cli.main task result | task_id | argument | int | yes | null |
 | python -m cli.main task result | --job-id | option | int | no | null |
 | python -m cli.main task result | --limit | option | int range | no | 5 |
@@ -264,6 +267,6 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task update | --influencers | option | str | no | null |
 | python -m cli.main task update | --keywords | option | str | no | null |
 | python -m cli.main task update | --topics | option | str | no | null |
-| python -m cli.main task update | --tenant | option | str | no | null |
+| python -m cli.main task update | --tenant | option | str | yes | null |
 | python -m cli.main task vk-connections | --tenant | option | str | yes | null |
 | python -m cli.main task vk-connections | --user | option | int | yes | null |

@@ -41,6 +41,7 @@ if (
 
 from app.core.config import settings
 from app.core.permissions import operator_permission_scope
+from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import LLMModel, LLMProvider, Permission, PlatformRole, User
@@ -208,11 +209,15 @@ async def owned_model(make_user, record_property):
                 sort_keys=True,
             ),
         )
+        # Personal-catalog deletes resolve the actor from the bound owner; the
+        # fixture owns these rows, so its teardown acts under the same scope.
         with platform_scope():
             if model_id is not None:
-                await LLMModel.objects.delete_by_id(model_id)
+                with catalog_execution_scope(owner.id):
+                    await LLMModel.objects.delete_by_id(model_id)
             if provider_id is not None:
-                await LLMProvider.objects.delete_by_id(provider_id)
+                with catalog_execution_scope(owner.id):
+                    await LLMProvider.objects.delete_by_id(provider_id)
 
 
 async def stored_grants(role_id: int) -> set[int]:

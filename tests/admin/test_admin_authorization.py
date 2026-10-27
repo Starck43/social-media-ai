@@ -210,7 +210,10 @@ def test_the_catalogue_reads_the_model_name_off_the_views():
     assert model_by_identity["agent-task"] == "agenttask"
     assert model_by_identity["ai-analytics"] == "aianalytics"
     assert model_by_identity["llm-provider"] == "llmprovider"
-    assert custom["notification"]["mark-read"] is ActionType.UPDATE
+    # Notifications expose only the technical archive/send path now; personal
+    # receipt-read state is not a shared admin action.
+    assert "mark-read" not in custom.get("notification", {})
+    assert custom["notification"]["send-to-messenger"] is ActionType.UPDATE
     assert custom["llm-provider"]["test-connection"] is ActionType.CONFIGURE
     assert custom["agent-scenario"]["view-prompts"] is ActionType.VIEW
 
@@ -255,6 +258,25 @@ async def _operator(role: Role) -> str:
     return username
 
 
+async def _operator_with_workspace(role: Role) -> str:
+    """The same operator, plus a web membership of its own workspace.
+
+    A workspace page lists rows of a workspace, so the actor needs one: the
+    console scope is the membership, exactly as in `/app` and `/api`
+    (`docs/ADMIN.md` — "everyone else their own").
+    """
+    from app.models import Tenant
+    from app.models.managers.tenant_manager import TenantUserManager
+
+    username = await _operator(role)
+    user = await User.objects.get(username=username)
+    with tenant_scope(bypass=True):
+        slug = _uniq("ws")
+        workspace = await Tenant.objects.create(name=slug, slug=slug)
+    await TenantUserManager().add_web_member(tenant_id=workspace.id, user_id=user.id, role="owner")
+    return username
+
+
 async def _role(codename: str) -> Role:
     return await Role.objects.get(codename=PlatformRoleType[codename].value)
 
@@ -283,7 +305,7 @@ async def test_a_viewer_opens_the_models_its_role_covers():
         lambda permission: permission.action_type is ActionType.VIEW
         and permission.model_type.resource_key in {"collection.source", "collection.platform"},
     ):
-        async with _signed_in(await _operator(role)) as client:
+        async with _signed_in(await _operator_with_workspace(role)) as client:
             assert (await client.get("/admin/source/list")).status_code == 200
             assert (await client.get("/admin/platform/list")).status_code == 200
 
@@ -335,8 +357,43 @@ async def test_a_viewer_cannot_write_and_cannot_run_a_task():
 
 
 @pytest.mark.tenancy
-async def test_a_superuser_sees_every_model():
+async def test_an_admin_opens_the_platform_catalogs():
+    """A platform admin reaches the account/workspace catalogs it administers."""
     async with _signed_in(await _operator(await _role("ADMIN"))) as client:
+        for url in (
+            "/admin/user/list",
+            "/admin/platform-role/list",
+            "/admin/tenant/list",
+        ):
+            assert (await client.get(url)).status_code == 200, url
+
+
+@pytest.mark.tenancy
+async def test_an_admin_without_a_workspace_is_refused_workspace_data_not_500():
+    """`admin` is staff, not the owner: a workspace page is a refusal, not a crash.
+
+    The owner is the only actor that sees every workspace (`AdminScopeMiddleware`
+    keeps the bypass for `superuser` only). An admin who belongs to no workspace
+    has no workspace rows, so the page must say so rather than run the manager
+    against an empty tenant context.
+    """
+    async with _signed_in(await _operator(await _role("ADMIN"))) as client:
+        assert (await client.get("/admin/agent-task/list")).status_code == 403
+
+
+@pytest.mark.tenancy
+async def test_the_owner_sees_every_model():
+    """Only the `superuser` account keeps the console-wide bypass."""
+    username = await _operator(await _role("ADMIN"))
+    # Promote through the reviewed migration, not a console/API grant: no runtime
+    # path may hand out `superuser`, so the fixture writes the role row directly.
+    from app.models import PlatformRole
+
+    superuser_role = await PlatformRole.objects.get(codename=PlatformRoleType.SUPERUSER.value)
+    user = await User.objects.get(username=username)
+    await User.objects.update_by_id(user.id, role_id=superuser_role.id)
+
+    async with _signed_in(username) as client:
         for url in (
             "/admin/user/list",
             "/admin/platform-role/list",
@@ -386,3 +443,26 @@ async def test_the_dashboard_outside_the_console_asks_the_same_question():
 
     assert analytics.status_code == 403
     assert dashboard.status_code == 403
+
+
+@pytest.mark.tenancy
+async def test_workspace_membership_caps_platform_admin_console_actions():
+    """A platform ADMIN who is a workspace viewer cannot edit its rows.
+
+    `tenancy`-marked: the autouse fixture otherwise leaves the operator grant on,
+    and `has_permission` would answer before the membership guard is consulted.
+    """
+    user = _StubUser({"source": set(ActionType)})
+    user.id = 7
+    user.is_active = True
+    from app.core.permissions import permission_scope
+    from app.core.tenant_context import tenant_scope
+
+    backend, request = await _loaded(user)
+    view_grants = frozenset({("source", ActionType.VIEW)})
+    with tenant_scope(9), permission_scope(user, member_grants=view_grants):
+        grants = await backend.get_grants(request)
+    assert ("source", Action.LIST) in grants
+    assert ("source", Action.DETAILS) in grants
+    assert ("source", Action.EDIT) not in grants
+    assert ("source", Action.DELETE) not in grants

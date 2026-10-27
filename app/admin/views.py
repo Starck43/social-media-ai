@@ -2602,7 +2602,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     )
     async def run_now_action(self, request: Request):
         """Run the selected task's job immediately; completes a @once task."""
-        from app.core.tenant_context import tenant_scope
+        from app.core.tenant_context import current_tenant_id, tenant_scope
         from app.jobs.dispatcher import run_task_directly
 
         pks = request.query_params.get("pks", "")
@@ -2620,9 +2620,10 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         if admin_user is None or not getattr(admin_user, "is_active", False):
             raise HTTPException(status_code=403, detail="Доступ запрещён: оператор не аутентифицирован")
 
-        # Operator console: read the task across workspaces (bypass), then act
-        # inside the task's own workspace — the shared helper does the scoping.
-        with tenant_scope(bypass=True):
+        # Read only inside the actor's selected workspace. Preserve its id;
+        # opening a tenant-less scope would either leak rows via bypass or fail
+        # closed for every ordinary operator. Only the owner retains bypass.
+        with tenant_scope(current_tenant_id(), bypass=bool(getattr(admin_user, "is_superuser", False))):
             task = await AgentTask.objects.get(id=task_id)
         if task:
             from app.core.permissions import permission_scope

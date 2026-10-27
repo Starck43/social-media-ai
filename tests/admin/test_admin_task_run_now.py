@@ -43,12 +43,25 @@ def _run_now_action():
     return func
 
 
-def _admin_user(active=True):
-    return SimpleNamespace(id=42, username="operator", is_active=active)
+def _admin_user(active=True, *, superuser=False):
+    return SimpleNamespace(id=42, username="operator", is_active=active, is_superuser=superuser)
 
 
 async def _fake_task_get(**kwargs):
     return SimpleNamespace(id=kwargs.get("id"), name="demo-task", tenant_id=3)
+
+
+def _patch_task_get(monkeypatch, seen):
+    """A console read that fails closed outside the actor's own workspaces."""
+
+    async def scoped_get(**kwargs):
+        from app.core.tenant_context import current_tenant_ids, is_bypass
+
+        seen["bypass"] = is_bypass()
+        seen["tenants"] = current_tenant_ids()
+        return await _fake_task_get(**kwargs)
+
+    monkeypatch.setattr(AgentTask.objects, "get", scoped_get)
 
 
 def _patch_dispatch(monkeypatch, captured):
@@ -67,21 +80,39 @@ async def test_a_trusted_active_operator_reaches_the_admission_context(monkeypat
     """The authenticated operator, not the query params, enters the manual Job
     admission context (`permission_scope` -> `get_current_user`)."""
     captured: dict = {}
+    seen: dict = {}
     request = _StubRequest(admin_user=_admin_user())
-    monkeypatch.setattr(AgentTask.objects, "get", _fake_task_get)
+    _patch_task_get(monkeypatch, seen)
     _patch_dispatch(monkeypatch, captured)
 
     await _run_now_action()(AgentTaskAdmin(), request)
 
     assert captured["task_id"] == 7
     assert captured["actor_id"] == 42
+    # A staff operator reads the task inside their own scope, never by bypass:
+    # a guessed id from a foreign workspace would resolve to nothing.
+    assert seen["bypass"] is False
+
+
+@pytest.mark.asyncio
+async def test_the_owner_reads_the_task_across_workspaces(monkeypatch):
+    captured: dict = {}
+    seen: dict = {}
+    _patch_task_get(monkeypatch, seen)
+    _patch_dispatch(monkeypatch, captured)
+
+    await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=_admin_user(superuser=True)))
+
+    assert captured["task_id"] == 7
+    assert seen["bypass"] is True
 
 
 @pytest.mark.asyncio
 async def test_an_absent_or_inactive_operator_is_denied(monkeypatch):
     """Fail closed: no session identity means no dispatch, whatever pks says."""
     captured: dict = {}
-    monkeypatch.setattr(AgentTask.objects, "get", _fake_task_get)
+    seen: dict = {}
+    _patch_task_get(monkeypatch, seen)
     _patch_dispatch(monkeypatch, captured)
 
     with pytest.raises(HTTPException) as exc:

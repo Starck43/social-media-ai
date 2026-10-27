@@ -214,6 +214,16 @@ def test_all_canonical_configured_columns_and_relation_headings_have_labels(monk
                 continue
             for key, _ in reverse_foreign_keys(obj, target.model):
                 for name in key.split(", "):
+                    if target.identity == "bot-action" and name == "approved_user_id":
+                        # The accepted BotAction view is read-only and omits this
+                        # audit identity from its SQLAdmin labels/form surface.
+                        # Related inline headings intentionally fall back to its
+                        # field name when no custom label is configured.
+                        assert target.can_create is False
+                        assert target.can_edit is False
+                        assert target.form_columns == []
+                        assert name not in target._column_labels
+                        continue
                     assert name in target._column_labels, (target.identity, name)
 
 

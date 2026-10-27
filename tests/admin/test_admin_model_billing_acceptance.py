@@ -2,6 +2,9 @@
 
 Never run remotely, with --noconftest, or against a newly repaired schema.
 Normal conftest validates the existing target read-only before fixture DML.
+The target guard accepts `test_schema` and the user-authorized isolated schema
+`test_p9_t07_20261026` only, always under the root conftest and the local
+`social_manager` database.
 Synthetic financial evidence and its dependencies are deliberately retained.
 See docs/audit/admin-llm-billing-acceptance.md for permissions and gates.
 """
@@ -30,8 +33,13 @@ _conftest = next(
     (module for module in tuple(sys.modules.values()) if getattr(module, "__file__", None) == str(_expected_conftest)),
     None,
 )
-if _conftest is None or getattr(_conftest, "TEST_SCHEMA", None) != "test_schema":
-    raise RuntimeError("STOP: current root conftest and test_schema redirect required; never use --noconftest")
+# The default suite schema and the one user-authorized isolated schema P9-T07
+# owns. Nothing else is allowed: a typo here must stop before any fixture DML.
+_APPROVED_SCHEMAS = ("test_schema", "test_p9_t07_20261026")
+if _conftest is None or getattr(_conftest, "TEST_SCHEMA", None) not in _APPROVED_SCHEMAS:
+    raise RuntimeError(
+        "STOP: current root conftest and an approved test schema redirect required; never use --noconftest"
+    )
 _target = urlsplit(getattr(_conftest, "TEST_DATABASE_URL", ""))
 if (
     _target.hostname not in ("localhost", "127.0.0.1")
@@ -47,6 +55,7 @@ from sqlalchemy import event, select
 from app.core.config import settings
 from app.core.database import async_engine, async_session_maker
 from app.core.permissions import operator_permission_scope, permission_scope
+from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.tenant_context import tenant_scope
 from app.models import LLMModel, LLMProvider, PlatformRole, Tenant, User, WorkspaceRole
 from app.models.billing.dispatch import PersonalLLMDispatch
@@ -99,10 +108,15 @@ def token_from(response, name):
 
 
 @contextmanager
-def fixture_scope():
+def fixture_scope(owner=None):
     """Trusted setup/readback only; NEVER surround an ASGI request with bypass."""
     with tenant_scope(bypass=True), operator_permission_scope():
-        yield
+        if owner is None:
+            yield
+        else:
+            owner_id = owner.id if hasattr(owner, "id") else owner
+            with catalog_execution_scope(owner_id):
+                yield
 
 
 async def role_id(model, code):
@@ -171,7 +185,7 @@ class Case:
         with permission_scope(self.admin):
             account = await PersonalBillingManager().configure_self(Decimal(cap))
         self.account_id = account.id
-        with fixture_scope():
+        with fixture_scope(self.admin):
             if cutover:
                 boundary = await PersonalBillingCutover.objects.create(
                     account_id=account.id,
@@ -321,7 +335,7 @@ async def case(monkeypatch, record_property):
     monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", True)
     from app.main import create_application
 
-    assert settings.DB_SCHEMA == "test_schema", "STOP: application schema was not redirected"
+    assert settings.DB_SCHEMA == _conftest.TEST_SCHEMA, "STOP: application schema was not redirected"
     owned = Case(create_application())
     forbidden = []
     setup_complete = False
@@ -372,7 +386,7 @@ async def case(monkeypatch, record_property):
                 is_active=True,
             )
         owned.admin = await owned.user("admin", membership="owner")
-        with fixture_scope():
+        with fixture_scope(owned.admin):
             owned.provider = await LLMProvider.objects.create(
                 owner_user_id=owned.admin.id,
                 uid=owned.marker,
@@ -417,16 +431,15 @@ async def case(monkeypatch, record_property):
             "policy_id": owned.policy_id,
             "cutover_id": owned.cutover_id,
             "setup_complete": setup_complete,
-            "retained": setup_complete or any(
-                value is not None for value in (owned.account_id, owned.policy_id, owned.cutover_id)
-            ),
+            "retained": setup_complete
+            or any(value is not None for value in (owned.account_id, owned.policy_id, owned.cutover_id)),
         }
         record_property("owned_fixture_manifest", json.dumps(manifest, sort_keys=True))
         print("OWNED_FIXTURE_MANIFEST " + json.dumps(manifest, sort_keys=True))
         if not setup_complete and not any(
             value is not None for value in (owned.account_id, owned.policy_id, owned.cutover_id)
         ):
-            with fixture_scope():
+            with fixture_scope(owned.admin):
                 if owned.model is not None:
                     await LLMModel.objects.delete_by_id(owned.model.id)
                 if owned.provider is not None:
@@ -439,6 +452,12 @@ async def case(monkeypatch, record_property):
 
 
 async def test_admin_list_details_and_forms_are_real(case):
+    """The actor's own catalogue is readable *and* writable from the console.
+
+    Providers and models are personal (`owner_user_id`), so `admin`/`operator`
+    edit the models they own — the `can_create/can_edit = False` crutch from
+    0109 is gone (`docs/ADMIN.md`). `case.model` belongs to `case.admin`.
+    """
     async with case.client(case.admin) as client:
         listing = page_ok(await client.get(f"{BASE}/list", params={"search": case.marker}))
         assert case.marker in listing and "0.001" in listing and "0.002" in listing
@@ -446,7 +465,17 @@ async def test_admin_list_details_and_forms_are_real(case):
         assert case.marker in detail and "text,image" in detail and "1024" in detail
         for path in (f"{BASE}/create", f"{BASE}/edit/{case.model.id}"):
             response = await client.get(path)
-            assert response.status_code == 403, f"Global SQLAdmin model CRUD must remain disabled: {path}"
+            assert response.status_code == 200, f"The owner of the catalogue edits it: {path}"
+    await case.no_dispatch()
+
+
+async def test_a_foreign_personal_model_is_refused_even_to_a_platform_admin(case):
+    """Someone else's model is not the platform admin's to edit — 403, direct URL."""
+    other_admin = await case.user("admin")
+    async with case.client(other_admin) as client:
+        for path in (f"{BASE}/details/{case.model.id}", f"{BASE}/edit/{case.model.id}"):
+            response = await client.get(path)
+            assert response.status_code in {403, 404}, f"Foreign personal catalogue leaked: {path}"
     await case.no_dispatch()
 
 
@@ -454,7 +483,7 @@ async def test_admin_global_model_crud_is_disabled_and_personal_catalog_is_avail
     async with case.client(case.admin) as client:
         for path in (f"{BASE}/create", f"{BASE}/edit/{case.model.id}"):
             response = await client.get(path)
-            assert response.status_code == 403, f"Global SQLAdmin model CRUD must remain disabled: {path}"
+            assert response.status_code == 200, f"The actor's own catalogue is editable: {path}"
     async with case.client(case.admin, "web") as client:
         settings_page = page_ok(await client.get("/app/settings?tab=models"))
         assert case.marker in settings_page
@@ -635,7 +664,7 @@ async def test_real_request_initiator_payer_durable_settlement(case, prompt, lim
     assert reservation.bound_version == case.marker and state.status == "settled"
     assert state.settled_usd == Decimal("0.000008") and state.reserved_usd == 0
     assert {row.entry_kind for row in ledger} >= {"reserve", "settlement"}
-    with fixture_scope():
+    with fixture_scope(case.admin):
         updated = await LLMModel.objects.get(id=case.model.id)
     assert updated.last_request_cost == pytest.approx(0.000008) and updated.use_count == 1
 
@@ -670,7 +699,7 @@ async def test_missing_cache_counters_keep_estimate_unknown(case):
     assert reservation.ceiling_state == "bounded" and reservation.cap_usd is not None
     assert state.status == "reserved"
     assert not any(row.entry_kind in {"settlement", "release"} for row in ledger)
-    with fixture_scope():
+    with fixture_scope(case.admin):
         updated = await LLMModel.objects.get(id=case.model.id)
     assert updated.last_request_cost is None
     assert updated.last_request_cost_at is None
@@ -686,14 +715,14 @@ async def test_capped_admission_refuses_missing_cache_rate(case):
         "total_tokens": 6,
         "prompt_tokens_details": {"cached_tokens": 2, "cache_write_tokens": 0},
     }
-    with fixture_scope():
+    with fixture_scope(case.admin):
         await LLMModel.objects.update_by_id(case.model.id, cache_read_cost_per_1m=None)
     async with case.client(case.admin) as client:
         html = page_ok(await case.post(client, "real"))
     assert "Проверка не пройдена" in html
     assert "model_bound_required" in html
     await case.no_dispatch()
-    with fixture_scope():
+    with fixture_scope(case.admin):
         updated = await LLMModel.objects.get(id=case.model.id)
     assert updated.last_request_cost is None
     assert updated.last_request_cost_at is None
@@ -789,6 +818,12 @@ async def test_short_and_mock_do_not_require_billing_or_workspace_selection(case
 
 
 async def test_other_platform_admin_cannot_probe_fixture_owners_model_key(case):
+    """Another admin's model is outside the scope: the action is refused, not run.
+
+    The probe uses *the model's* provider key, so a foreign model must never reach
+    the service at all — `AdminScopeMiddleware` binds the actor's own catalogue,
+    and the credential check refuses the row before any HTTP call.
+    """
     other_admin = await case.user("admin")
     async with case.client(other_admin) as client:
         response = await client.post(
@@ -800,8 +835,7 @@ async def test_other_platform_admin_cannot_probe_fixture_owners_model_key(case):
                 "csrf_token": case.app.state.csrf_manager.generate_token(),
             },
         )
-        assert response.status_code == 200, "Global platform-admin inspection remains available"
-        assert "Проверьте API-ключ и активность модели/провайдера." in response.text
+        assert response.status_code in {403, 404}, "Foreign personal catalogue must be refused"
         assert "API доступен" not in response.text
     await case.no_dispatch()
 
@@ -809,7 +843,7 @@ async def test_other_platform_admin_cannot_probe_fixture_owners_model_key(case):
 @pytest.mark.parametrize("broken", ["inactive_model", "inactive_provider", "missing_key", "unsupported_format"])
 async def test_invalid_model_configuration_cannot_dispatch(case, broken):
     await case.billing()
-    with fixture_scope():
+    with fixture_scope(case.admin):
         if broken == "inactive_model":
             await LLMModel.objects.update_by_id(case.model.id, is_active=False)
         else:
@@ -834,7 +868,7 @@ async def test_single_owner_real_runs_without_personal_account_or_workspace(case
         assert "PERSONAL_BILLING_ENABLED" not in html and 'name="tenant_id"' not in html
         assert "Обычный учёт модели" in html
     assert len(case.sent) == 1 and not await case.dispatches()
-    with fixture_scope():
+    with fixture_scope(case.admin):
         updated = await LLMModel.objects.get(id=case.model.id)
     assert updated.use_count == 1 and updated.last_request_cost == pytest.approx(0.000008)
 
@@ -851,7 +885,7 @@ async def test_single_owner_explicit_zero_provider_cost_is_persisted(case, monke
         assert "Цена провайдера, USD" in html and 'llm-state-success">0</span>' in html
         assert "478" in html and "length" in html
     assert len(case.sent) == 1 and not await case.dispatches()
-    with fixture_scope():
+    with fixture_scope(case.admin):
         updated = await LLMModel.objects.get(id=case.model.id)
     assert updated.use_count == 1
     # A recognized explicit provider zero is the saved estimate, not a tariff recomputation.

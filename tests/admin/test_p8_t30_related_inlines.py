@@ -702,5 +702,6 @@ def test_canonical_registered_views_compile_without_database_connections(monkeyp
                 if getattr(target, "model", None):
                     fk_pairs += len(list(reverse_foreign_keys(obj, target.model)))
     assert len(compiled) == 16
-    assert fk_pairs == 28
+    # Keep compiling every relationship exposed by the current canonical models.
+    assert fk_pairs == 29
     assert admin.templates.env.globals["related_inlines"].__name__ == "related_inlines"

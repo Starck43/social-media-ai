@@ -22,6 +22,15 @@ account, and the owner account cannot be demoted or deleted from the console.
 Owner-only surfaces are the role/permission catalog and the read-only table
 registry; see [ADMIN.md](ADMIN.md#authentication-and-platform-authority).
 
+The same levels decide the console's *data* scope. Console entry needs a platform
+`operator`, `admin` or `superuser` role; an ordinary (invited) client never
+reaches `/admin`. Inside, the owner (`superuser`) retains global workspace
+inspection, while every console actor — the owner included — reads only their
+**own** personal rows (`owner_user_id`), and an `admin`/`operator` reads workspace
+rows only for the one selected active membership, with that membership role's
+rights inside it — the rule `/app` and `/api` already apply. Unknown or missing
+membership fails closed. See [ADMIN.md](ADMIN.md#admin-actor-scope).
+
 ### Bootstrapping the owner without the migration (P9-T06)
 
 [`scripts/setup/bootstrap_owner.py`](../scripts/setup/bootstrap_owner.py) is the

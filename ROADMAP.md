@@ -45,7 +45,6 @@ means not recorded; source recovery links remain in the card.
 ## [P9](docs/phases/p9-safe-activation.md)
 
 - [P9-T01](docs/tasks/p9-t01.md) one capability-specific activation contract — **IN_PROGRESS** · notion-ai (remote executor) · [owner assignment](https://app.notion.com/chat?t=4066f4961afe80079abc00a9667bb4b9)
-- [P9-T07](docs/tasks/p9-t07.md) Actor-scoped admin console catalogs — **IN_PROGRESS** · codex-p9-owner · `codex resume 01a1785e-504b-7893-8129-b57db07d8f37`
 
 ## Questions
 

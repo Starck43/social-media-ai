@@ -34,7 +34,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P0
 
 
-- [P6-T06](docs/tasks/p6-t06.md) Close P6-T05 test follow-ups: verify catalog diagnostic and clean up the created tenant — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=40636385470c802da6c300a99fd79436) · `P0` · `C2`
+- [P6-T06](docs/tasks/p6-t06.md) Close P6-T05 test follow-ups: verify catalog diagnostic and clean up the created tenant — **IN_PROGRESS** · Codex (owner-authorized completion/audit) · `codex resume 01a17d52-e51c-7072-81ee-de09e21c0f5f` · `P0` · `C2`
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · — · `P0` · `C3`
 
 ### Priority P1

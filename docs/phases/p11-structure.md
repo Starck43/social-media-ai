@@ -29,6 +29,8 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 19. [P11-T19](../tasks/p11-t19.md) — Capacity telemetry and reproducible scale evidence (R-17).
 20. [P11-T20](../tasks/p11-t20.md) — Select and specify bounded enterprise requirements (R-18).
 
+21. [P11-T21](../tasks/p11-t21.md) — minimal task-reading path and removal of redundant audit navigation.
+
 ## Sequencing and continuity
 
 The owner requested all 18 follow-ups be registered on 2026-10-27, superseding

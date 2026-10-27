@@ -1302,26 +1302,25 @@ async def task_create(
     # payer consent. Existing non-plan tasks keep their prior activation path.
     needs_payer_consent = task_plan is not None and is_active
 
-    from app.core.database import new_session
-
-    session = new_session()
     try:
         with tenant_scope(tenant_id):
-            async with session.begin():
-                task = await AgentTask.objects.create(
-                    name=name.strip()[:100],
-                    job_type=job_type,
-                    cron_expr=cron_expr,
-                    payload=payload,
-                    agent_scenario_id=None if job_type == "prune" else scenario_id,
-                    is_active=False if needs_payer_consent else is_active,
-                    next_run_at=next_run,
-                    dry_run=dry_run_flag,
-                    session=session,
+            from app.services.task_creation import create_task_with_sources
+
+            task = await create_task_with_sources(
+                task_values={
+                    "name": name.strip()[:100],
+                    "job_type": job_type,
+                    "cron_expr": cron_expr,
+                    "payload": payload,
+                    "agent_scenario_id": None if job_type == "prune" else scenario_id,
+                    "is_active": False if needs_payer_consent else is_active,
+                    "next_run_at": next_run,
+                    "dry_run": dry_run_flag,
                     **trigger_action_fields,
-                )
-                if parsed_source_ids:
-                    await _replace_task_sources(task.id, parsed_source_ids, tenant_id, session=session)
+                },
+                source_ids=parsed_source_ids if parsed_source_ids else None,
+                tenant_id=tenant_id,
+            )
     except ValueError:
         # A source that vanished between the check and this write must not leave
         # an active task whose empty link set means "all active sources".
@@ -1331,8 +1330,6 @@ async def task_create(
             "Источники задачи изменились во время сохранения — обновите страницу и повторите",
         )
         return RedirectResponse(back, status_code=302)
-    finally:
-        await session.close()
 
     if needs_payer_consent:
         from app.models.managers.personal_billing_manager import PersonalBillingError, PersonalBillingUnavailable

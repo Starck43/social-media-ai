@@ -301,19 +301,24 @@ async def create_task(
         # and any explicit source links commit together.
         from app.core.database import new_session
         from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.services.task_creation import persist_task_create
 
         session = new_session()
         try:
             async with session.begin():
-                task = await AgentTask.objects.create(
-                    session=session,
-                    name=request.name.strip()[:100],
-                    cron_expr=cron_expr,
-                    job_type=request.job_type,
-                    payload=payload,
-                    agent_scenario_id=scenario_id,
-                    is_active=request.is_active,
-                    next_run_at=next_run,
+                task = await persist_task_create(
+                    session,
+                    task_values={
+                        "name": request.name.strip()[:100],
+                        "cron_expr": cron_expr,
+                        "job_type": request.job_type,
+                        "payload": payload,
+                        "agent_scenario_id": scenario_id,
+                        "is_active": request.is_active,
+                        "next_run_at": next_run,
+                    },
+                    source_ids=None,
+                    tenant_id=tid,
                 )
                 if source_ids:
                     with tenant_scope(task.tenant_id), service_permission_scope("agenttask", "update"):
@@ -328,19 +333,24 @@ async def create_task(
         # which would otherwise mean every active workspace source.
         from app.core.database import new_session
         from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.services.task_creation import persist_task_create
 
         session = new_session()
         try:
             async with session.begin():
-                task = await AgentTask.objects.create(
-                    session=session,
-                    name=request.name.strip()[:100],
-                    cron_expr=cron_expr,
-                    job_type=request.job_type,
-                    payload=payload,
-                    agent_scenario_id=scenario_id,
-                    is_active=False,
-                    next_run_at=next_run,
+                task = await persist_task_create(
+                    session,
+                    task_values={
+                        "name": request.name.strip()[:100],
+                        "cron_expr": cron_expr,
+                        "job_type": request.job_type,
+                        "payload": payload,
+                        "agent_scenario_id": scenario_id,
+                        "is_active": False,
+                        "next_run_at": next_run,
+                    },
+                    source_ids=None,
+                    tenant_id=tid,
                 )
                 with tenant_scope(task.tenant_id), service_permission_scope("agenttask", "update"):
                     await AgentTaskManager().set_sources(task.id, source_ids, session=session)
@@ -585,9 +595,9 @@ async def run_task_oneoff(
     import secrets
     from datetime import datetime, timezone
 
+    from app.core.tenant_context import current_tenant_id
     from app.jobs.dispatcher import run_job_now
     from app.jobs.enqueue import enqueue_task_run
-    from app.models.managers.agent_task_manager import AgentTaskManager
 
     # Create temporary task
     stamp = datetime.now(timezone.utc)
@@ -597,19 +607,21 @@ async def run_task_oneoff(
         safe_payload.get("collection") if "collection" in safe_payload else None,
         job_type=job_type,
     )
-    task = await AgentTask.objects.create(
-        name=f"one-off-{job_type}-{stamp:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}",
-        cron_expr="@once",
-        job_type=job_type,
-        payload=safe_payload,
-        agent_scenario_id=scenario_id,
-        is_active=False,
-        next_run_at=None,
-    )
+    from app.services.task_creation import create_task_with_sources
 
-    if source_ids:
-        with tenant_scope(task.tenant_id):
-            await AgentTaskManager().add_sources(task.id, source_ids)
+    task = await create_task_with_sources(
+        task_values={
+            "name": f"one-off-{job_type}-{stamp:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}",
+            "cron_expr": "@once",
+            "job_type": job_type,
+            "payload": safe_payload,
+            "agent_scenario_id": scenario_id,
+            "is_active": False,
+            "next_run_at": None,
+        },
+        source_ids=source_ids if source_ids else None,
+        tenant_id=current_tenant_id(),
+    )
 
     from app.jobs.source_activity import SourceJobBusy
 

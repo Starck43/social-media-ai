@@ -45,6 +45,8 @@ means not recorded; source recovery links remain in the card.
 
 - [P11-T01](docs/tasks/p11-t01.md) Critical structural audit, refactoring plan and task-card reconciliation — **READY** · notion-ai (remote executor, resumed) · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556)
 
+- [P11-T02](docs/tasks/p11-t02.md) Register structural follow-ups and prioritize the active queue — **IN_PROGRESS** · notion-ai · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556)
+
 ## Questions
 
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · —

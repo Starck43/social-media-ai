@@ -65,7 +65,9 @@ async def test_both_modes_keep_authority_and_csrf_guards(enabled, changes, statu
 async def test_owner_render_has_no_billing_warning_or_workspace_setup():
     probe, _ = probe_module()
     actions, _, view = action_module(probe)
-    context = await actions.LLMModelActions._render(view, NS(state=NS(admin_user=NS(is_superuser=True, is_platform_admin=True))), model())
+    context = await actions.LLMModelActions._render(
+        view, NS(state=NS(admin_user=NS(is_superuser=True, is_platform_admin=True))), model()
+    )
     assert not context["billing_ready"] and not context["billing_tenants"]
     assert context["billing_block_reason"] == ""
     env = template_env()

@@ -1,5 +1,8 @@
 # API Reference
 
+[Generated OpenAPI route index](generated/api-routes.md) covers schema-visible
+metadata only; the policies and examples below remain handwritten.
+
 FastAPI application exposes REST endpoints under `/api/v1` and the sqladmin
 panel under `/admin`. Workspace data endpoints require an access Bearer JWT
 and an active web membership. Token acquisition, registration and the signed-state

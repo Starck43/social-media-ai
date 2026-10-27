@@ -40,14 +40,14 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 
 **Other active P8 cards:**
 
-- [P8-T10](../tasks/p8-t10.md) — runtime freshness identity
+- [P8-T10](../audit/p8-t10.md) — runtime freshness identity; accepted 2026-10-27, integrated in PR #248 (merge `d7213c6b`)
 - [P8-T11](../audit/p8-t11.md) — incomplete-delivery aggregate signal; accepted 2026-10-27, integrated in PR #252 (merge `83c1f79a`)
 - [P8-T13](../tasks/p8-t13.md) — named support/escalation + pilot measures
 - [P8-T15](../tasks/p8-t15.md) — Admin API connectivity, mock and real checks
 - [P8-T17](../tasks/p8-t17.md) — Model response diagnostics and consent
 - [P8-T18](../tasks/p8-t18.md) — Model tests in single-owner mode
 - [P8-T20](../tasks/p8-t20.md) — Provider cost evidence and diagnostic controls
-- [P8-T36](../tasks/p8-t36.md) — reusable horizontal relationship picker
+- [P8-T36](../audit/p8-t36.md) — reusable horizontal relationship picker; accepted 2026-10-27, integrated in PR #244 (merge `682dbe37`)
 **Deferred beyond the social milestone:** [P8-T34](../tasks/p8-t34.md) keeps the
 future non-social connector direction. It is not a current P8 social release
 gate. P8 cannot be marked fully closed while this deferred item remains attached

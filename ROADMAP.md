@@ -29,7 +29,6 @@ means not recorded; source recovery links remain in the card.
 
 ## [P8](docs/phases/p8-first-value-ui.md)
 
-- [P8-T10](docs/tasks/p8-t10.md) runtime freshness identity — **READY** · notion-ai (remote executor / owner-authorized custodian) · [PR #248 evidence; independent review / owner choice pending](https://github.com/Starck43/social-media-ai/pull/248#issuecomment-6422065238)
 - [P8-T13](docs/tasks/p8-t13.md) named support/escalation + pilot measures — **IN_PROGRESS** · notion-ai (remote executor) · [owner assignment](https://app.notion.com/chat?t=405ddbde02368016884300a9d7865ea6)
 - [P8-T15](docs/tasks/p8-t15.md) Admin API connectivity, mock and real checks — **BLOCKED** · codex · —
 - [P8-T17](docs/tasks/p8-t17.md) Model response diagnostics and consent — **BLOCKED** · codex · —
@@ -38,7 +37,6 @@ means not recorded; source recovery links remain in the card.
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · —
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · —
 - [P8-T34](docs/tasks/p8-t34.md) Non-social connector pilot — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
-- [P8-T36](docs/tasks/p8-t36.md) Reusable horizontal relationship picker — **READY** · Notion remote executor/custodian · [PR #244 evidence](https://github.com/Starck43/social-media-ai/pull/244#issuecomment-6418461244)
 
 - [P8-T38](docs/tasks/p8-t38.md) VK connection capabilities and access selection — **DEFERRED** · notion-ai (remote executor / scoped registry coordination) · [policy increment in dev (PR #258, merge `5848c216`); acceptance incomplete — audit note](docs/audit/p8-t38-integration.md) · [remaining work on PR #256](https://github.com/Starck43/social-media-ai/pull/256)
 - [P8-T39](docs/tasks/p8-t39.md) Complete chat-first and standalone task journeys — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`

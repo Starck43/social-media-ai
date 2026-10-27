@@ -27,7 +27,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 17. [P11-T17](../tasks/p11-t17.md) — Localizable presentation boundaries (R-15).
 18. [P11-T18](../tasks/p11-t18.md) — Typed connector and job extension seams (R-16).
 19. [P11-T19](../tasks/p11-t19.md) — Capacity telemetry and reproducible scale evidence (R-17).
-20. [P11-T20](../tasks/p11-t20.md) — Select and specify bounded enterprise requirements (R-18).
+20. [P11-T20](../audit/p11-t20.md) — Select and specify bounded enterprise requirements (R-18) — DONE 2026-10-27; owner retained the current identity scope (accepted PR #265, `f4ecdceb`).
 
 21. [P11-T21](../audit/p11-t21.md) — minimal task-reading path and removal of redundant audit navigation — DONE 2026-10-27 (accepted `401ee050`).
 22. [P11-T22](../audit/p11-t22.md) — host shared working principles in the project rules — DONE 2026-10-27 (accepted `59027292`).

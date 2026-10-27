@@ -6,10 +6,14 @@ in [AGENTS](../AGENTS.md); this file owns detailed workflow and DB/test procedur
 ## Tasks
 
 ROADMAP owns one line per open item: ID/title linked to its card, status, owner,
-and last status-changing dialogue or PR-comment link. Use `—` only for unknown
+priority/complexity and last status-changing dialogue or PR-comment link. Use `—` only for unknown
 legacy links; a real session ID/resume command is valid when no URL exists.
 Anyone may add a TODO/question. Reserve the next unused phase/task or question ID
-against ROADMAP and phase/audit history; insert in numeric order. Do not recycle IDs.
+against ROADMAP and phase/audit history; allocate IDs in numeric sequence, never
+recycle them. Display the active queue in the priority order defined by ROADMAP,
+respecting required predecessors and keeping explicit deferrals parked; phase
+plans retain numeric task order. Priority/complexity do not authorize execution
+or change a task status.
 
 Before editing a solution, fetch `origin`, claim/create the row as IN_PROGRESS
 with owner/dialogue, and add its card/parent-plan link. Publish only these registry

@@ -39,11 +39,7 @@ def _missing_task_fields(
         missing.append("job_type (что запускать)")
     if not str(cron or "").strip():
         missing.append("cron (расписание)")
-    if (
-        job_type
-        and AgentTaskManager.requires_content_dates(job_type)
-        and not AgentTaskManager.parse_date(start_date)
-    ):
+    if job_type and AgentTaskManager.requires_content_dates(job_type) and not AgentTaskManager.parse_date(start_date):
         missing.append(_REQUIRED_START_DATE[0] + " (YYYY-MM-DD — " + _REQUIRED_START_DATE[1] + ")")
     return missing
 
@@ -244,34 +240,42 @@ async def task_add(
 
     plan_block = None
     if task_plan is not None:
-        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+        from app.services.task_creation import TaskPlanCreateConflict, resolve_task_plan_create
+        from app.services.task_plans import TaskPlanError
 
         try:
-            parsed_plan = parse_task_plan(task_plan)
+            prepared_plan = resolve_task_plan_create(
+                task_plan,
+                requested_cron=cron,
+                requested_scenario_id=scenario_id,
+                requested_source_ids=source_ids,
+                enforce_source_match=source_ids is not None,
+                conflict_order=("cron_expr", "source_ids", "scenario_id"),
+            )
             plan_block = dict(task_plan)
-            expected_cron = parsed_plan.trigger.cron if parsed_plan.trigger.type == "schedule" else "@once"
-            if cron != expected_cron:
-                return {"error": "cron conflicts with task_plan.trigger; provide matching values"}
-            if source_ids is not None and source_ids != list(parsed_plan.source_ids):
-                return {"error": "source_ids conflicts with task_plan.source_ids"}
-            if scenario_id is not None and scenario_id != parsed_plan.scenario_id:
-                return {"error": "scenario_id conflicts with task_plan.scenario_id"}
             if collection is not None:
                 return {"error": "collection is defined by task_plan; omit the legacy collection field"}
             if start_date is not None or end_date is not None:
                 return {"error": "date fields are defined by task_plan.window; omit legacy date fields"}
-            cron = expected_cron
-            source_ids = list(parsed_plan.source_ids) if parsed_plan.source_scope == "selected" else []
-            scenario_id = parsed_plan.scenario_id
+            cron = prepared_plan.cron_expr
+            source_ids = list(prepared_plan.source_ids) if prepared_plan.source_scope == "selected" else []
+            scenario_id = prepared_plan.scenario_id
             collection = dict(task_plan.get("collection") or {})
-            if parsed_plan.window and parsed_plan.window.type == "fixed":
-                start_date = parsed_plan.window.start.isoformat()
-                end_date = parsed_plan.window.end.isoformat() if parsed_plan.window.end else None
+            if prepared_plan.plan.window and prepared_plan.plan.window.type == "fixed":
+                start_date = prepared_plan.plan.window.start.isoformat()
+                end_date = prepared_plan.plan.window.end.isoformat() if prepared_plan.plan.window.end else None
+        except TaskPlanCreateConflict as error:
+            messages = {
+                "cron_expr": "cron conflicts with task_plan.trigger; provide matching values",
+                "source_ids": "source_ids conflicts with task_plan.source_ids",
+                "scenario_id": "scenario_id conflicts with task_plan.scenario_id",
+            }
+            return {"error": messages[error.field]}
         except TaskPlanError as error:
             return {"error": str(error)}
 
     missing = _missing_task_fields(cron=cron, job_type=job_type, start_date=start_date)
-    if plan_block is not None and parsed_plan.window and parsed_plan.window.type == "rolling":
+    if plan_block is not None and prepared_plan.plan.window and prepared_plan.plan.window.type == "rolling":
         missing = [item for item in missing if not item.startswith("start_date ")]
     if missing:
         # Refused before anything is written: the same turn asks the owner for
@@ -341,10 +345,12 @@ async def task_add(
         return {"error": collection_error_message(str(error))}
 
     if plan_block is not None:
-        from app.services.task_plans import apply_task_plan
-
         try:
-            payload = apply_task_plan(payload, plan_block, job_type=job_type)
+            from app.services.task_creation import project_task_plan_create
+
+            projected = project_task_plan_create(payload, prepared_plan, job_type=job_type)
+            assert projected.payload is not None
+            payload = projected.payload
         except ValueError as error:
             return {"error": str(error)}
 
@@ -429,7 +435,6 @@ async def task_add(
                 ]
 
     return result
-
 
 
 @tool(
@@ -593,12 +598,11 @@ async def task_update(
     collection: dict[str, Any] | None = None,
     task_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from app.core.database import new_session
     from app.core.tenant_context import current_tenant_id
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.tasks.cron import next_run_at, resolve_tz
-
-    from app.core.database import new_session
 
     session = new_session()
     try:
@@ -800,7 +804,10 @@ async def task_update(
                 await AgentTaskManager().set_sources(task.id, source_ids, session=session)
 
             changes: dict[str, Any] = {
-                "status": "updated", "id": task.id, "task_url": f"/app/tasks/{task.id}", "name": task.name
+                "status": "updated",
+                "id": task.id,
+                "task_url": f"/app/tasks/{task.id}",
+                "name": task.name,
             }
             if job_type:
                 changes["old_job_type"] = original_job_type
@@ -972,8 +979,10 @@ async def search_plan(
         return {"error": "source_ids допустимы только для selected", "code": "source_ids_unexpected"}
     if queries is None:
         queries = []
-    if not isinstance(queries, list) or len(queries) > 5 or any(
-        not isinstance(query, str) or not query.strip() or len(query.strip()) > 200 for query in queries
+    if (
+        not isinstance(queries, list)
+        or len(queries) > 5
+        or any(not isinstance(query, str) or not query.strip() or len(query.strip()) > 200 for query in queries)
     ):
         return {"error": "Укажите не более пяти непустых запросов длиной до 200 символов", "code": "queries_invalid"}
     if city is not None and (not isinstance(city, str) or not city.strip() or len(city.strip()) > 120):
@@ -987,13 +996,17 @@ async def search_plan(
             return {"error": "Некорректный выбор подключения ВКонтакте", "code": "vk_access_selection_invalid"}
     from app.services.collection.entitlement_policy import preview_entitlements
 
-    entitlement_preview = await preview_entitlements({
-        "task_plan": {
-            "platforms": [platform], "source_scope": source_scope, "source_ids": ids,
+    entitlement_preview = await preview_entitlements(
+        {
+            "task_plan": {
+                "platforms": [platform],
+                "source_scope": source_scope,
+                "source_ids": ids,
+                "collection": {"queries": queries},
+            },
             "collection": {"queries": queries},
-        },
-        "collection": {"queries": queries},
-    })
+        }
+    )
     from app.services.social.vk_task_access import preview_vk_access
 
     preview_plan = {
@@ -1104,13 +1117,15 @@ async def task_plan(plan: dict[str, Any]) -> dict[str, Any]:
             return {"error": "Сценарий не найден или отключён в этом workspace", "code": "scenario_unavailable"}
     from app.services.collection.entitlement_policy import preview_entitlements
 
-    entitlements = await preview_entitlements(
-        {"task_plan": normalized, "collection": normalized.get("collection", {})}
-    )
+    entitlements = await preview_entitlements({"task_plan": normalized, "collection": normalized.get("collection", {})})
     from app.services.social.vk_task_access import preview_vk_access
 
     vk_access_preview = await preview_vk_access(normalized)
     return {
-        "status": "validated_preview", "plan": normalized, "writes": False,
-        "run_created": False, "entitlements": entitlements, "vk_access": vk_access_preview,
+        "status": "validated_preview",
+        "plan": normalized,
+        "writes": False,
+        "run_created": False,
+        "entitlements": entitlements,
+        "vk_access": vk_access_preview,
     }

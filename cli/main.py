@@ -190,10 +190,13 @@ def task_plan_cmd(
                     return entitlements, await preview_vk_access(payload["task_plan"])
 
         entitlement_preview, vk_access_preview = _run_platform(_preview())
-    rprint(_json.dumps(
-        {"task_plan": payload["task_plan"], "entitlements": entitlement_preview, "vk_access": vk_access_preview},
-        ensure_ascii=False, indent=2
-    ))
+    rprint(
+        _json.dumps(
+            {"task_plan": payload["task_plan"], "entitlements": entitlement_preview, "vk_access": vk_access_preview},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     rprint("[dim]Preview only. Access, payer eligibility and platform coverage are checked at execution.[/dim]")
 
 
@@ -446,13 +449,17 @@ def task_add(
         help="Tracked authors, platform:id (e.g. vk:123456): only their items are analysed",
     ),
     scenario_id: int = typer.Option(None, "--scenario", help="AgentScenario ID to apply when the task runs"),
-    start_date: str = typer.Option(None, "--start-date", help="Collect content from this date (DD-MM-YYYY) for collect/analyze"),
+    start_date: str = typer.Option(
+        None, "--start-date", help="Collect content from this date (DD-MM-YYYY) for collect/analyze"
+    ),
     end_date: str = typer.Option(None, "--end-date", help="Collect content until this date (DD-MM-YYYY)"),
     force_refresh: bool = typer.Option(
         False, "--force-refresh", help="Re-fetch the whole window on every run (collect); stored on the task"
     ),
     payload: str = typer.Option("{}", "--payload", "-p", help='Extra JSON payload, e.g. \'{"period": "week"}\''),
-    task_plan: str = typer.Option(None, "--task-plan", help="Canonical social task plan JSON; source scope is explicit"),
+    task_plan: str = typer.Option(
+        None, "--task-plan", help="Canonical social task plan JSON; source scope is explicit"
+    ),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id to create the task in"),
     # Specific analysis targets — they belong on the task (payload), not the
     # scenario (methodology), see app/services/ai/param_registry.py.
@@ -493,21 +500,33 @@ def task_add(
         raise typer.Exit(1)
     parsed_source_ids = _split_ints(source_ids)
     if task_plan is not None:
-        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+        from app.services.task_creation import TaskPlanCreateConflict, prepare_task_plan_create
+        from app.services.task_plans import TaskPlanError
 
         try:
             raw_plan = _json.loads(task_plan)
-            plan = parse_task_plan(raw_plan)
-            planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
-            if cron != planned_cron:
-                raise TaskPlanError("cron must match task_plan.trigger")
-            if source_ids is not None and parsed_source_ids != list(plan.source_ids):
-                raise TaskPlanError("--sources must match task_plan.source_scope and source_ids")
-            if scenario_id is not None and scenario_id != plan.scenario_id:
-                raise TaskPlanError("--scenario must match task_plan.scenario_id")
-            parsed_source_ids = list(plan.source_ids)
-            scenario_id = plan.scenario_id
-            parsed_payload = apply_task_plan(parsed_payload, raw_plan, job_type=job_type)
+            try:
+                prepared = prepare_task_plan_create(
+                    parsed_payload,
+                    raw_plan,
+                    job_type=job_type,
+                    requested_cron=cron,
+                    requested_scenario_id=scenario_id,
+                    requested_source_ids=parsed_source_ids if source_ids is not None else None,
+                    enforce_source_match=True,
+                    conflict_order=("cron_expr", "source_ids", "scenario_id"),
+                )
+            except TaskPlanCreateConflict as error:
+                messages = {
+                    "cron_expr": "cron must match task_plan.trigger",
+                    "scenario_id": "--scenario must match task_plan.scenario_id",
+                    "source_ids": "--sources must match task_plan.source_scope and source_ids",
+                }
+                raise TaskPlanError(messages[error.field]) from None
+            cron = prepared.cron_expr
+            parsed_source_ids = list(prepared.source_ids)
+            scenario_id = prepared.scenario_id
+            parsed_payload = prepared.payload
         except (ValueError, TypeError) as error:
             rprint(f"[red]Invalid task plan: {error}[/red]")
             raise typer.Exit(1) from error
@@ -612,24 +631,20 @@ def task_pause(name: str = typer.Argument(...), resume: bool = typer.Option(Fals
 @task_app.command("update")
 def task_update(
     name: str = typer.Argument(..., help="Task name to update"),
-    job_type: str = typer.Option(None, "--job-type", help="New job type: collect | digest | prune | analyze | learn | reflect"),
+    job_type: str = typer.Option(
+        None, "--job-type", help="New job type: collect | digest | prune | analyze | learn | reflect"
+    ),
     cron: str = typer.Option(None, "--cron", help="New cron expression (5 fields) or @once"),
     source_ids: str = typer.Option(
         None, "--sources", "-s", help="New comma/space separated source IDs (empty = all active)"
     ),
-    tracked_users: str = typer.Option(
-        None, "--tracked", help="New tracked authors, platform:id"
-    ),
+    tracked_users: str = typer.Option(None, "--tracked", help="New tracked authors, platform:id"),
     scenario_id: int = typer.Option(None, "--scenario", help="New AgentScenario ID"),
     period: str = typer.Option(None, "--period", help="Period for digest: day | week"),
     start_date: str = typer.Option(None, "--start-date", help="New start_date (YYYY-MM-DD) for collect/analyze"),
     end_date: str = typer.Option(None, "--end-date", help="New end_date (YYYY-MM-DD)"),
-    force_refresh: bool = typer.Option(
-        None, "--force-refresh", help="New force_refresh value (collect)"
-    ),
-    force_reanalyze: bool = typer.Option(
-        None, "--force-reanalyze", help="New force_reanalyze value (analyze)"
-    ),
+    force_refresh: bool = typer.Option(None, "--force-refresh", help="New force_refresh value (collect)"),
+    force_reanalyze: bool = typer.Option(None, "--force-reanalyze", help="New force_reanalyze value (analyze)"),
     payload: str = typer.Option(
         None,
         "--payload",
@@ -638,13 +653,9 @@ def task_update(
     ),
     task_plan: str = typer.Option(None, "--task-plan", help="Replace the canonical social task plan JSON"),
     brands: str = typer.Option(None, "--brands", help="New comma/space separated brands"),
-    competitors: str = typer.Option(
-        None, "--competitors", help="New comma/space separated competitors"
-    ),
+    competitors: str = typer.Option(None, "--competitors", help="New comma/space separated competitors"),
     hashtags: str = typer.Option(None, "--hashtags", help="New comma/space separated hashtags"),
-    influencers: str = typer.Option(
-        None, "--influencers", help="New comma/space separated authors/influencers"
-    ),
+    influencers: str = typer.Option(None, "--influencers", help="New comma/space separated authors/influencers"),
     keywords: str = typer.Option(None, "--keywords", help="New comma/space separated keywords"),
     topics: str = typer.Option(None, "--topics", help="New comma/space separated topics"),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (for global lookup)"),
@@ -816,9 +827,7 @@ def task_update(
                         async with session.begin():
                             await AgentTask.objects.update_by_id(task.id, session=session, **updates)
                             with service_permission_scope("agenttask", "update"):
-                                await AgentTaskManager().set_sources(
-                                    task.id, planned_sources or [], session=session
-                                )
+                                await AgentTaskManager().set_sources(task.id, planned_sources or [], session=session)
                     finally:
                         await session.close()
                 else:
@@ -829,11 +838,15 @@ def task_update(
                         await AgentTaskManager().set_sources(task.id, parsed)
 
                 where = await tenant_label(task.tenant_id)
-                changes = [f"{k}={v}" for k, v in {
-                    "job_type": new_job_type,
-                    "cron": new_cron,
-                    "scenario": scenario_id,
-                }.items() if {k: {"job_type": job_type, "cron": cron, "scenario": scenario_id}.get(k)}]
+                changes = [
+                    f"{k}={v}"
+                    for k, v in {
+                        "job_type": new_job_type,
+                        "cron": new_cron,
+                        "scenario": scenario_id,
+                    }.items()
+                    if {k: {"job_type": job_type, "cron": cron, "scenario": scenario_id}.get(k)}
+                ]
                 rprint(f"[green]Updated '{name}' in {where}[/green]")
 
     _run_platform(_run())
@@ -969,9 +982,7 @@ def _make_task_run_command(job_type: str) -> Callable:
     def run(
         task: str = typer.Option(None, "--task", "-t", help="Existing task by name or id to run"),
         sources: str = typer.Option(None, "--sources", "-s", help="Source IDs to link (one-off run)"),
-        tracked: str = typer.Option(
-            None, "--tracked", help="Tracked authors, platform:id (one-off run)"
-        ),
+        tracked: str = typer.Option(None, "--tracked", help="Tracked authors, platform:id (one-off run)"),
         keywords: str = typer.Option(None, "--keywords", help="Text scope phrases (one-off run)"),
         scenario: int = typer.Option(None, "--scenario", help="AgentScenario ID (one-off run)"),
         period: str = typer.Option(None, "--period", help="Period for digest/collect: day | week | last month etc."),
@@ -1027,8 +1038,12 @@ digest_app = typer.Typer(help="Digest operations")
 @digest_app.command("send-now")
 def digest_send_now(
     period: str = typer.Argument("day", help="Period: day | week"),
-    group_by: str = typer.Option("themes", "--group-by", help="Grouping axis: themes | sources | entities | intent | topic_chains"),
-    time_breakdown: bool = typer.Option(False, "--time-breakdown", help="Enable per-date sub-entries within each group"),
+    group_by: str = typer.Option(
+        "themes", "--group-by", help="Grouping axis: themes | sources | entities | intent | topic_chains"
+    ),
+    time_breakdown: bool = typer.Option(
+        False, "--time-breakdown", help="Enable per-date sub-entries within each group"
+    ),
 ):
     """Build and publish a digest right now (manual run, not idempotent)."""
 
@@ -1066,13 +1081,21 @@ def digest_run(
     src: str = typer.Option(None, "--src", "-s", help="Source ids, urls or platform (vk/telegram/max)"),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active)"),
     period: str = typer.Option("day", "--period", help="Period: day | week"),
-    group_by: str = typer.Option("themes", "--group-by", help="Grouping axis: themes | sources | entities | intent | topic_chains"),
-    time_breakdown: bool = typer.Option(False, "--time-breakdown", help="Enable per-date sub-entries within each group"),
+    group_by: str = typer.Option(
+        "themes", "--group-by", help="Grouping axis: themes | sources | entities | intent | topic_chains"
+    ),
+    time_breakdown: bool = typer.Option(
+        False, "--time-breakdown", help="Enable per-date sub-entries within each group"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
 ):
     """Build and publish a digest directly (not idempotent)."""
 
-    _run_platform(direct._digest_main(period=period, src=src, tenant=tenant, group_by=group_by, time_breakdown=time_breakdown, verbose=verbose))
+    _run_platform(
+        direct._digest_main(
+            period=period, src=src, tenant=tenant, group_by=group_by, time_breakdown=time_breakdown, verbose=verbose
+        )
+    )
 
 
 # app.add_typer(permissions.app, name="permissions", help="Manage permissions")

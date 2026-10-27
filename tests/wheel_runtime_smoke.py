@@ -214,7 +214,7 @@ application = importlib.import_module("app.main")
 assert application.app.version == importlib.metadata.version("social-media-ai")
 assert application.app.title == "AI Assistant"
 cli_main = importlib.import_module("cli.main")
-assert cli_main.app.info.help == "AI Assistant CLI"
+assert cli_main.app.info.help == "Privileged operator-only administration; not a customer or end-user CLI."
 web = importlib.import_module("app.web.deps")
 admin = importlib.import_module("app.admin.setup")
 from app.core.config import Settings, settings

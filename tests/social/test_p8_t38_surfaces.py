@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+from tests.source_import_isolation import load_isolated_source
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -41,11 +43,16 @@ def _actual_function(path: str, function_name: str, namespace: dict, imports: di
 
 class VKTaskFormSelectionTests(unittest.TestCase):
     def setUp(self):
-        self.parsed = []
-        task_plans = types.SimpleNamespace(
-            TaskPlanError=ValueError,
-            parse_task_plan=lambda raw: self.parsed.append(raw) or raw,
-            task_plan_block=lambda plan: plan,
+        config = types.ModuleType("app.core.config")
+        config.settings = types.SimpleNamespace(SOCIAL_COLLECT_LIMIT=100, SOCIAL_COLLECT_HARD_LIMIT=1000)
+        intent = load_isolated_source(
+            "_p8_t38_surface_intent", ROOT / "app/services/collection/intent.py", {"app.core.config": config}
+        )
+        access = load_isolated_source("_p8_t38_surface_access", ROOT / "app/services/social/vk_access.py")
+        task_plans = load_isolated_source(
+            "_p8_t38_surface_plans",
+            ROOT / "app/services/task_plans.py",
+            {"app.services.collection.intent": intent, "app.services.social.vk_access": access},
         )
         self.build = _actual_function(
             "app/web/tasks.py",
@@ -63,7 +70,7 @@ class VKTaskFormSelectionTests(unittest.TestCase):
             None,
             "collect",
             "@once",
-            {},
+            {"collection": {"queries": ["research"]}},
             "rolling",
             1,
             "",
@@ -82,6 +89,11 @@ class VKTaskFormSelectionTests(unittest.TestCase):
         result = self.call_form('{"mode":"api"}', existing={"mode": "user", "credential_id": 19})
 
         self.assertEqual(result["vk_access"], {"mode": "api"})
+
+    def test_malformed_editor_json_is_rejected_without_echoing_input(self):
+        with self.assertRaises(ValueError) as caught:
+            self.call_form('{"token":"private-sentinel"')
+        self.assertNotIn("private-sentinel", str(caught.exception))
 
     def test_invalid_editor_json_is_rejected_without_echoing_input(self):
         secret = '{"token":"private-sentinel"}'

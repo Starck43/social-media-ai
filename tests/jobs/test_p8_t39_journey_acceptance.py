@@ -33,6 +33,7 @@ from test_p8_t29_social_launch import Workspace
 from app.core.tenant_context import tenant_scope
 from app.models import AgentTask, Job, Source
 from app.models.managers.agent_task_manager import AgentTaskManager
+from app.models.managers.job_manager import JobManager
 from app.services.billing.payer import configure_current_personal_account
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
@@ -117,6 +118,8 @@ async def test_collect_discovery_launch_replays_and_projects_partial_results(lau
     from app.services.collection.population import resolve_population
 
     shared = await launch_workspace.source()
+    claimed_job = await JobManager.claim_job(first["job_id"])
+    assert claimed_job is not None and claimed_job.status == "running"
     with launch_workspace.actor_scope():
         from app.services.social import factory
 

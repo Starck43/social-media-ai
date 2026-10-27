@@ -33,7 +33,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
-- [P11-T01](docs/tasks/p11-t01.md) Critical structural audit, refactoring plan and task-card reconciliation — **READY** · notion-ai (remote executor, resumed) · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P0` · `C2`
 - [P11-T02](docs/tasks/p11-t02.md) Register structural follow-ups and prioritize the active queue — **READY** · notion-ai · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P0` · `C2`
 
 - [P6-T06](docs/tasks/p6-t06.md) Close P6-T05 test follow-ups: verify catalog diagnostic and clean up the created tenant — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=40636385470c802da6c300a99fd79436) · `P0` · `C2`

@@ -8,7 +8,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 
 ## Numbered plan and active cards
 
-1. [P11-T01](../tasks/p11-t01.md) — structural audit and reconciliation (optional [historical source](../tasks/p11-t01.md#historical-audit)).
+1. [P11-T01](../audit/p11-t01.md) — structural audit and reconciliation — DONE 2026-10-27 (accepted `58f6ddfb`).
 2. [P11-T02](../tasks/p11-t02.md) — register follow-ups, queue priority and complexity.
 3. [P11-T03](../tasks/p11-t03.md) — Offline CI safety net and supported baseline (R-01).
 4. [P11-T04](../tasks/p11-t04.md) — Shared task application orchestration (R-02).
@@ -36,7 +36,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 This parent plan is optional navigation, not a prerequisite read for each card.
 Task findings/acceptance and exact contract pointers are task-local; the root
 audit overview is retired. Snapshot statistics and full reconciliation stay in
-pinned Git history linked from P11-T01, never in the execution read path.
+pinned Git history linked from [P11-T01's audit](../audit/p11-t01.md), never in the execution read path.
 
 The owner requested all 18 follow-ups be registered on 2026-10-27, superseding
 one-at-a-time registration in the original audit draft. Execution is still

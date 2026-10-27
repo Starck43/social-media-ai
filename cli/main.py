@@ -10,8 +10,8 @@ import app.core.logger  # noqa: F401  (configures the "app" logger handlers)
 from .commands import chains, collect, collection, credentials, direct, llm, roles, scenarios
 
 app = typer.Typer(
-    name="SMM Admin CLI",
-    help="Social Media Manager CLI",
+    name="AI Assistant CLI",
+    help="AI Assistant CLI",
     no_args_is_help=True,
 )
 

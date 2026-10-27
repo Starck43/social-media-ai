@@ -30,7 +30,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 20. [P11-T20](../tasks/p11-t20.md) — Select and specify bounded enterprise requirements (R-18).
 
 21. [P11-T21](../audit/p11-t21.md) — minimal task-reading path and removal of redundant audit navigation — DONE 2026-10-27 (accepted `401ee050`).
-22. [P11-T22](../tasks/p11-t22.md) — host shared working principles in the project rules.
+22. [P11-T22](../audit/p11-t22.md) — host shared working principles in the project rules — DONE 2026-10-27 (accepted `59027292`).
 
 ## Sequencing and continuity
 

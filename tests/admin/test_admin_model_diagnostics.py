@@ -5,10 +5,11 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-from app.core.personal_catalog_context import catalog_execution_scope
 from source_import_isolation import load_isolated_source
 from test_admin_model_billing_integration import endpoint_case
 from test_admin_model_probe import COST_EVIDENCE, ROOT, action_module, model, probe_module, template_env
+
+from app.core.personal_catalog_context import catalog_execution_scope
 
 PAYLOAD = {
     "id": "chat-fixture",

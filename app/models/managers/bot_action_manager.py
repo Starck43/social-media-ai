@@ -33,7 +33,8 @@ class BotActionManager(BaseManager["BotAction"]):
     """Ledger of proposed bot actions (created PENDING with ``dry_run=True``).
 
     Mutations lock rows and bind approvals to an active actor and sealed intent.
-    Claims are dry-run simulations only; live capability activation is separate.
+    Generic claims are dry-run simulations; the named Telegram capability has
+    separate release/authorization/fencing methods and never enables this API.
     """
 
     def __init__(self) -> None:
@@ -193,36 +194,60 @@ class BotActionManager(BaseManager["BotAction"]):
         )
         values["payload_hash"] = self.fingerprint(values)
         values["origin_snapshot"] = {key: references.get(key) for key in allowed - {"action_type"}}
+        async with self._get_owned_session() as session:
+            return await self._insert_proposal(session, values)
+
+    async def _insert_proposal(self, session, values):
+        """Shared atomic persistence for validated trusted proposal producers."""
         from app.models import AgentScenario, AgentTask, AIAnalytics, Source
 
-        async with self._get_owned_session() as session:
-            for name, cls in {
-                "source_id": Source,
-                "agent_scenario_id": AgentScenario,
-                "agent_task_id": AgentTask,
-                "analytics_id": AIAnalytics,
-            }.items():
-                if references.get(name) is not None and not await session.scalar(
-                    select(cls.id).where(cls.id == references[name], cls.tenant_id == tenant_id)
-                ):
-                    raise PermissionError("Action reference outside origin workspace")
-            statement = (
-                insert(self.model)
-                .values(**values)
-                .on_conflict_do_nothing(constraint="uq_bot_actions_tenant_idempotency")
-                .returning(self.model)
+        for name, cls in {
+            "source_id": Source,
+            "agent_scenario_id": AgentScenario,
+            "agent_task_id": AgentTask,
+            "analytics_id": AIAnalytics,
+        }.items():
+            if values.get(name) is not None and not await session.scalar(
+                select(cls.id).where(cls.id == values[name], cls.tenant_id == values["tenant_id"])
+            ):
+                raise PermissionError("Action reference outside origin workspace")
+        statement = (
+            insert(self.model)
+            .values(**values)
+            .on_conflict_do_nothing(constraint="uq_bot_actions_tenant_idempotency")
+            .returning(self.model)
+        )
+        row = (await session.execute(statement)).scalar_one_or_none()
+        if row is not None:
+            return row, True
+        row = await session.scalar(
+            select(self.model).where(
+                self.model.tenant_id == values["tenant_id"], self.model.idempotency_key == values["idempotency_key"]
             )
-            row = (await session.execute(statement)).scalar_one_or_none()
-            if row is not None:
-                return row, True
-            row = await session.scalar(
-                select(self.model).where(
-                    self.model.tenant_id == tenant_id, self.model.idempotency_key == idempotency_key
-                )
-            )
-            if row.payload_hash != values["payload_hash"] or self.fingerprint(row) != values["payload_hash"]:
-                raise ValueError("Idempotency key reused for a different intent")
-            return row, False
+        )
+        if row.payload_hash != values["payload_hash"] or self.fingerprint(row) != values["payload_hash"]:
+            raise ValueError("Idempotency key reused for a different intent")
+        return row, False
+
+    async def telegram_message_targets(self):
+        from app.services.actions.telegram_message import targets
+
+        return await targets(self)
+
+    async def propose_telegram_message(self, *, binding_id, text, idempotency_key):
+        from app.services.actions.telegram_message import propose
+
+        return await propose(self, binding_id=binding_id, text=text, idempotency_key=idempotency_key)
+
+    async def execute_telegram_message(self, action_id, *, expected_payload_hash):
+        from app.services.actions.telegram_message import execute
+
+        return await execute(self, action_id, expected_payload_hash=expected_payload_hash)
+
+    async def reconcile_telegram_message(self, action_id):
+        from app.services.actions.telegram_message import reconcile
+
+        return await reconcile(self, action_id)
 
     async def _actor(self, session, membership_id=None):
         """Re-read active account, workspace, membership and role; never platform bypass."""

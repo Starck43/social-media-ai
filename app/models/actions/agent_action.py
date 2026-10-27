@@ -17,8 +17,9 @@ from ..base import Base, TenantScopedMixin, TimestampMixin
 class BotAction(Base, TenantScopedMixin, TimestampMixin):
     """Capability-neutral proposal ledger; legacy table/name retained for compatibility.
 
-    Live execution is disabled. Source/scenario are optional origin references,
-    never the owner or approval authority. Approved payloads are sealed by hash.
+    Generic execution is simulation-only; capability-specific release lives in
+    services/actions. Source/scenario are optional origin references, never the
+    owner or approval authority. Approved payloads are sealed by hash.
     """
 
     __tablename__ = "bot_actions"

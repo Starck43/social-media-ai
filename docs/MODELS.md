@@ -556,10 +556,14 @@ recheck active account/workspace/membership/grants. Approval UI submits the revi
 hash. Claims require the same approving actor, valid hash/expiry, and dry_run=true;
 only one concurrent caller can claim. Completion requires the one-time claim token
 and still-current authority. Unknown is not automatically retried. **These are
-simulations only; no live capability is enabled or external adapter wired.**
+simulations only; the generic API wires no external adapter.**
 Web review/cancel lives at `/app/actions`; admin is read-only. API/tool preview does
-not approve. A capability-specific live effect/payer/recipient/budget/recovery
-contract remains P9-T01, separate from the persistence/refactor in this candidate.
+not approve. P9-T01's separate default-off
+[`telegram.bound_message.v1`](ACTION_ACTIVATION.md) reuses the same table/unique key
+and history without changing schema. Its dedicated owner/binding-scoped web path
+seals `dry_run=false` manual intent, commits one dispatch reservation before HTTP,
+and persists a safe live receipt or UNKNOWN without automatic replay. Generic
+simulation and legacy social execution are not activated by this exception.
 
 ## ER views from declared foreign keys
 

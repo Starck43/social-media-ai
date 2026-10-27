@@ -37,9 +37,18 @@ async def test_chat_rolling_plan_is_saved_atomically_then_activated_after_consen
     from app.services.billing import payer
 
     class Session:
+        active = False
+
         @asynccontextmanager
         async def begin(self):
-            yield
+            self.active = True
+            try:
+                yield
+            finally:
+                self.active = False
+
+        def in_transaction(self):
+            return self.active
 
         async def close(self):
             pass

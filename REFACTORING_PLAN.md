@@ -9,8 +9,11 @@ This revision supersedes its R-01–R-30 numbering, including the unpublished no
 provided by the owner. Findings below were rechecked, not inherited as proof.
 
 This is an ordered **structural plan**, not a second status registry. Existing
-functional work stays in its task card (section 5). Register one bounded follow-up
-at a time in [ROADMAP](ROADMAP.md); do not bulk-create implementation tasks.
+functional work stays in its task card (section 5). All 18 items are now
+registered as P11-T03–P11-T20 by the owner's explicit
+2026-10-27 request (superseding the earlier one-at-a-time registration advice).
+Scope/acceptance live in those cards; priority/complexity/status/owner live only
+in ROADMAP. Claim execution one dependency-ready task at a time.
 No runtime, database, migrations, live/paid providers, load tests or application
 pytest were run for this docs-only audit. Static inspection does not certify
 production readiness or independently accept any implementation.
@@ -68,328 +71,42 @@ snapshot observations, not performance/security test results.
   deferred. Never relocate all tenant limits into this catalog: the task explicitly
   preserves `Tenant.PLAN_LIMITS`, `effective_limits()` and the deployment member cap.
 
-## 2. Execution order and safety rules
+## Registered follow-ups
 
-Priority order: **R-01 → R-02 → R-03**, then bounded R-04/R-05 alongside the owning
-functional task, then interface hardening R-06–R-10. R-11–R-14 follow extracted
-seams. R-15–R-18 are demand/measurement-led, not prerequisites to the VK milestone.
-A reproducible authorization/atomicity defect takes precedence over cleanup.
+Detailed findings and acceptance moved into the linked task cards. The source
+R-IDs remain stable for audit attribution; they are not a second task registry.
+All are children of [P11](docs/phases/p11-structure.md). Current priority and
+complexity are in [ROADMAP](ROADMAP.md#execution-queue), not duplicated here.
 
-Apply SOLID through cohesive use-cases, explicit dependencies and narrow ports;
-DRY only for identical semantics; KISS/YAGNI for infrastructure. No generic
-repository/DI framework, universal workflow engine or ORM rewrite is required.
-Each future task must name compatibility, owned paths, checks and rollback. Keep
-structural moves separate from behavior changes; preserve public paths during a
-bounded transition, then retire aliases only when every consumer is migrated.
-Do not hold P8-T33/T39/T40 hostage to all of P11 or require a global format pass.
+| Finding | Task | Structural deliverable |
+| --- | --- | --- |
+| R-01 | [P11-T03](docs/tasks/p11-t03.md) | Offline CI safety net and supported baseline |
+| R-02 | [P11-T04](docs/tasks/p11-t04.md) | Shared task application orchestration |
+| R-03 | [P11-T05](docs/tasks/p11-t05.md) | Explicit task transaction ownership |
+| R-04 | [P11-T06](docs/tasks/p11-t06.md) | Typed use-case contracts, safe errors and presenters |
+| R-05 | [P11-T07](docs/tasks/p11-t07.md) | Incremental package-boundary enforcement |
+| R-06 | [P11-T08](docs/tasks/p11-t08.md) | Public API compatibility and bounded request policy |
+| R-07 | [P11-T09](docs/tasks/p11-t09.md) | Fail-closed typed agent-tool registration |
+| R-08 | [P11-T10](docs/tasks/p11-t10.md) | Operator CLI boundaries and machine-output contract |
+| R-09 | [P11-T11](docs/tasks/p11-t11.md) | Web and admin use-case decomposition |
+| R-10 | [P11-T12](docs/tasks/p11-t12.md) | Durable action-audit contract and support correlation |
+| R-11 | [P11-T13](docs/tasks/p11-t13.md) | Manager and execution-module decomposition |
+| R-12 | [P11-T14](docs/tasks/p11-t14.md) | Canonical model imports and semantic helper reuse |
+| R-13 | [P11-T15](docs/tasks/p11-t15.md) | Reproducible package and configuration contract |
+| R-14 | [P11-T16](docs/tasks/p11-t16.md) | Test and reference navigation without evidence loss |
+| R-15 | [P11-T17](docs/tasks/p11-t17.md) | Localizable presentation boundaries |
+| R-16 | [P11-T18](docs/tasks/p11-t18.md) | Typed connector and job extension seams |
+| R-17 | [P11-T19](docs/tasks/p11-t19.md) | Capacity telemetry and reproducible scale evidence |
+| R-18 | [P11-T20](docs/tasks/p11-t20.md) | Select and specify bounded enterprise requirements |
 
-### R-01 — Establish a small, reproducible safety net (first)
-
-**Evidence:** no in-tree Actions workflow; Black/isort/mypy configured in
-`pyproject.toml`; README requires Python 3.12+, package metadata still says >=3.10.
-**Change:** agree on supported Python/install profiles, then CI with pinned tools,
-Black/isort 120 checks, syntax/import-boundary checks, secret scanning and an
-explicitly classified no-DB test subset. Inventory baseline violations without
-weakening tests. Formatter replacement needs its own decision. Alembic graph
-inspection must not import env/config or connect to a DB implicitly.
-**Acceptance:** deterministic install and focused checks on supported Python;
-no secret/DB/provider requirement for the offline lane; exceptions are narrow,
-owned and non-growing. Baseline formatting only on touched/extracted modules.
-**Risk/rollback:** tool/version drift and accidental DB fixtures; review fixture
-imports before selecting CI tests, keep DB checks separately authorized.
-
-### R-02 — Extract application orchestration, starting with tasks (DIP/SRP)
-
-**Evidence:** `app/web/tasks.py::task_create/task_update`,
-`app/api/v1/endpoints/tasks.py`, `app/agent/toolset/tasks.py`, `cli/main.py`
-repeat task manager calls, date/source/cron handling and transaction wiring.
-Shared `task_plans.py`, `task_launch.py`, `task_results.py` already exist.
-**Change:** define narrow typed create/update/delete/launch query/use-case seams
-around existing services, not a parallel replacement. Actor, workspace, sources,
-payer and authorization are explicit. Interfaces translate transport only;
-execution-time checks remain in trusted policy/services/managers. First migrate
-one vertical operation through all adapters, then extend to sources/scenarios,
-digests and provider catalog only as their tasks require.
-**Acceptance:** same allowed/denied behavior and data-window/source/payer semantics
-across five surfaces; adapter tests pin mapping, use-case tests pin business rules;
-no unreviewed bypass or new service-permission grant. No naive grep prohibition on
-read-only model imports. P8-T39 owns the actual task-journey/parity delivery.
-**Dependency/risk:** R-01; snapshot tests before extraction; retain adapter shims
-until consumers migrate. Coordinate active owned paths before editing.
-
-### R-03 — Make transaction ownership explicit, not ambient
-
-**Evidence:** `BaseManager._get_owned_session(session)` commits its own session
-only when none is supplied; task controllers manually pass sessions, whereas
-legacy `/tasks/run` assembles multiple committed calls. Agent task create also
-performs payer consent after its create transaction.
-**Change:** use-case owns an explicit session/UoW passed to participating managers;
-retain current transaction helpers where adequate. Define which configuration,
-source links, consent and enqueue steps must be atomic versus recoverable.
-Never hold a DB transaction open across provider/network calls. Do not hide all
-sessions in a new global ContextVar or turn missing UoW into log-only success.
-**Acceptance:** inject failure at each write step, prove rollback/no orphan or a
-specified compensating state; concurrent duplicate admission and tenant isolation
-remain safe. DB/concurrency proof requires a later authorized test environment.
-**Dependency/risk:** R-02 seam; don't change commit ownership silently or assert
-that static inspection has reproduced a production race.
-
-### R-04 — Consolidate commands, results, errors and presenters (ISP/DRY)
-
-**Evidence:** API schemas in `app/schemas`, hand-written tool JSON Schema,
-Typer/Jinja form coercion, and progress helpers in `app/web/tasks.py`,
-`task_progress.py`, `analysis_progress.py` repeat transport/domain mapping.
-**Change:** typed use-case commands/results, transport-specific adapters and shared
-permission-filtered result builders. Generate tool parameter schemas from the
-same validation contract where practical. Preserve HTTP/form/CLI compatibility;
-not every API schema or form field is a domain object. Introduce a small domain
-error taxonomy with boundary mappings and safe messages, preserving unknown
-external outcomes. Broad catches at rollback/worker boundaries may remain.
-**Acceptance:** boundary tests for missing/unknown/extra fields, limits and timezone;
-no cross-tenant fields or raw provider errors; contract-version readers for saved
-payloads. Existing task-plan schemas are reused, not cloned. P8-T40 owns its run
-snapshot/composition schema; this item covers reusable structural seams only.
-**Dependency/risk:** R-02/03; avoid schema churn and losing valid partial results.
-
-### R-05 — Enforce real package boundaries incrementally
-
-**Evidence:** manager imports from interfaces; input helpers in
-`AgentTaskManager`; local app imports span 1,333 statements across app/CLI.
-**Change:** map actual cycles and define contracts for the newly extracted
-application packages first. Permit legitimate lazy optional/provider imports.
-Do not declare the entire `app.agent` a transport layer or `app.core` a pure
-bottom layer without examining runtime/config/model dependencies. Static
-import-lint rules start with a reviewed baseline and tighten per extraction.
-**Acceptance:** at least the migrated aggregate cannot import adapters from its
-application core; import/import-time smoke checks preserve optional integration
-startup behavior; no `# noqa` blanket hiding dependencies.
-**Dependency/risk:** R-02; mechanical moves must update all re-exports and loaders.
-
-## 3. Interface hardening (structural work not already owned by a task)
-
-### R-06 — API compatibility, bounded lists and request policy
-
-**Evidence:** free-text and structured `HTTPException.detail` coexist;
-`tasks.py::run_task_oneoff` differs from typed plan launch; only one
-`@limiter.limit` decorator found in app (admin change-password);
-`app/core/api_scope.py` uses a public-path allow-list; `/test-db` legacy routes
-and Q-10's doubled credential path are part of current contracts.
-**Change:** inventory the externally mounted route/auth matrix, bounded list
-responses, error codes and expensive operations. Add safe request correlation,
-page-size bounds and per-actor/workspace admission budgets. Reuse current launch
-keys; where generalized idempotency is needed define atomic key+payload binding,
-TTL/replay, conflict/in-flight semantics and unknown-effect reconciliation.
-Propose stable error envelope/OpenAPI snapshots and route aliases before breaking
-old clients. Request correlation IDs are not idempotency keys. A multi-process
-rate limiter needs an explicitly selected consistent store; do not revive Redis
-by default while it is frozen. Q-10 retains its compatibility decision.
-**Acceptance:** authenticated membership/selector failures, stale/revoked JWT,
-unknown paths/methods, same-key concurrent replay/different-payload conflicts,
-bounded lists, redaction and 429 retry behavior. Public paths never expand by a
-prefix mistake. Preserve already-supported tenant headers; document versions.
-**Dependency/risk:** R-02–R-04 for mutations; start read-only route contract checks
-under R-01. Existing P8-T40 owns duplicate composed starts, not this generic API work.
-
-### R-07 — Agent registration fails closed; schemas stay provider-neutral
-
-**Evidence:** `app/agent/tools.py::tool` defaults `required_permission=None`;
-`_check_tool_permission` omits the gate for None, although all 40 current tools
-supply it. Registry is mutable/global; serializers are OpenAI-shaped.
-**Change:** require catalog permission or a reviewed explicit open-tool policy,
-validate registry names/schema at registration, derive typed inputs/results and
-put provider serializers at the provider boundary. Keep existing one-use,
-argument-bound confirmation checks and execution-time tenant/actor rechecks.
-Use injectable registry instances only when test isolation/lifecycle requires it;
-no heavyweight DI container. Explicit tool budgets and redacted metadata audit
-must not store prompts, credentials or full argument payloads by default.
-**Acceptance:** missing/unknown policy registration rejected, duplicate names
-rejected, invalid input never invokes handler; direct/confirmed dispatch have
-matching denials, replay and revoked-right tests. No new PUBLIC sentinel may
-silently mean "any caller". Version public tool contracts only when exposed.
-**Dependency/risk:** R-02/04; registration changes can break lazy loading.
-
-### R-08 — Separate operator trust from customer CLI access
-
-**Evidence:** `cli/main.py::_run_platform` intentionally uses
-`tenant_scope(bypass=True)` plus `operator_permission_scope`; scoped commands
-already re-enter actor/tenant contexts. This is an operator tool, not a proven
-remote vulnerability. JSON output exists for selected commands, not consistently.
-**Change:** label/distribute this CLI as operator-only; require explicit target
-workspace for tenant mutations and trustworthy operator identity for audit.
-Extract task commands from main into domain modules over the same use-cases.
-Specify stable exit codes and `--output json` without leaking secrets. A future
-customer CLI is a token-authenticated HTTP adapter, never this DB bypass path;
-ship it only with a selected customer/API credential requirement.
-**Acceptance:** absent/ambiguous tenant rejected for destructive commands; operator
-and workspace rights never confused; machine output/exit-code contract tested;
-legacy operator automation gets a documented transition.
-**Dependency/risk:** R-02/06; no unnecessary customer client in the current VK pilot.
-
-### R-09 — Split web/admin along tested use-case seams
-
-**Evidence:** `app/web/tasks.py` mixes routes, form parsing, orchestration and
-presentation; `app/admin/views.py` combines domains; templates live in
-`app/templates` and `app/web/templates`. Multiple roots alone are not a defect.
-**Change:** extract forms/presenters/routes by aggregate; sqladmin remains an
-operator adapter to trusted policies, not a second implementation of mutations.
-Inventory template loader precedence before proposing consolidation. Inventory
-static caching, CSP, dependency/build cost before selecting an assets pipeline.
-Keep current product design, URLs, overview and deep links (P8-T39).
-**Acceptance:** loader/route/form/CSRF and permission checks preserved, no template
-shadowing; browser fixtures updated with moves; no UI redesign or speculative
-JavaScript framework migration.
-**Dependency/risk:** R-02/04; preserve SQLAdmin hooks and authorized operator behavior.
-
-### R-10 — Durable action audit and support correlation
-
-**Evidence:** per-attempt/usage, job, entitlement and delivery evidence exists;
-no general cross-surface action audit model identified in `app/models`.
-`app/core/logger.py` provides logging, not a substitute for an action ledger.
-**Change:** define the minimal actor/workspace/action/resource/outcome/request/job
-metadata contract and retention/access/redaction policy, then add use-case audit
-hooks and read-only support views/export. Successful transactional changes should
-have transactional audit evidence; denied/rolled-back attempts need a distinct
-safe logging path. Never log secrets/raw tool arguments or equate logs with receipts.
-**Acceptance:** denied/success/rollback/unknown outcome distinction, tenant-filtered
-reads/export, retention and immutable-event permissions; migration/cleanup checks
-only in a separately authorized implementation task. Reuse existing billing and
-delivery identities instead of a parallel money ledger.
-**Dependency/risk:** R-02/03; maps to PRD-02/06/08 without claiming those gates passed.
-
-## 4. Subsequent structural work and demand-led preparation
-
-### R-11 — Decompose persistence and execution modules without replacing them
-
-**Evidence:** `base_manager.py` implements QuerySet/Prefetch/lookup compilation;
-`job_manager.py` mixes queue/lifecycle/query concerns; `jobs/handlers.py` and
-AI analyzer/reporting/client modules mix orchestration with provider/report logic.
-**Change:** extract query compilation/prefetch, lifecycle/claim helpers and
-per-job handlers behind stable public methods. Extract input helpers from task
-manager after R-02. Keep SQLAlchemy and current manager semantics; no speculative
-ORM rewrite, fixed module-length rule or blanket ban on the existing lookup DSL.
-**Acceptance:** preserve filtering/relations, transaction ownership, lock/fencing,
-usage settlement and error semantics; move-only diffs first, focused regressions
-next. Cover rollback/duplicate/lease-loss behavior at the authorized test target.
-**Dependency/risk:** R-01–04; lookup/prefetch and concurrent state transitions are
-high-risk even when a split looks mechanical.
-
-### R-12 — Canonical imports and small helpers, only after semantic review
-
-**Evidence:** `app/models/source.py` re-exports the canonical collection model;
-`models/analysis/llm_model.py` and `models/scheduling/digest_run.py` are aliases;
-`_positive_id`, `_brief`, `_error_kind` and plural helpers repeat across packages.
-**Change:** migrate internal consumers to canonical domain imports one domain at
-a time; inventory migrations, scripts, tests, package exports and external users
-before deleting compatibility paths. Deduplicate only equal behavior, keeping
-explicit limits/type/error handling at call sites. Do not unify by function name.
-**Acceptance:** old saved migration scripts/bootstrap and import-time model
-registration still work; no duplicate SQLAlchemy metadata; edge tests for bool,
-non-int, invalid IDs, truncation and pluralization retain intentional differences.
-**Dependency/risk:** R-01/05/11 as relevant; retiring aliases is not an early
-prerequisite to an urgent correctness fix.
-
-### R-13 — Reproducible package/configuration contract
-
-**Evidence:** `requirements.txt` is pinned while `pyproject.toml` has permissive
-ranges; both include frozen Celery/Redis. Python metadata/README and package/API
-versions differ; project author/URLs are placeholders. Flat `Settings` mixes DB,
-security, collection and LLM concerns. `app/celery` is frozen; `app/worker.py`
-remains a real supported-path candidate, not dead code by name.
-**Change:** choose canonical dependency declarations plus a generated reviewed
-lock/export and separate dev/optional profiles; establish supported interpreter
-and package version source. Review import/release consumers before moving frozen
-code/dependencies to an extra. Narrow settings views by subsystem first; if nested
-settings are selected, preserve every existing env key, precedence and default
-through compatibility tests. Align visible product labels to AI Assistant; leave
-repository/database infrastructure identifiers unchanged unless separately chosen.
-**Acceptance:** install/import smoke checks for supported profiles with absent
-optional integrations, parity of dependency export, version, env/default/secret
-redaction and packaged templates. No change to tenant plan policy, deployment
-member ceiling or billing contracts is smuggled into settings cleanup.
-**Dependency/risk:** R-01; P2-T15 validation stays deferred, not satisfied here.
-
-### R-14 — Test/document navigation with stable evidence
-
-**Evidence:** browser `.cjs` files and historical fixtures live at tests root;
-large handwritten API/CLI reference docs coexist with code; helper code appears
-in task-focused suites. Size alone does not establish duplication.
-**Change:** move reusable fixtures to `tests/shared/` and browser assets by
-purpose only when assigned, updating every path-sensitive loader/import. Keep
-new test task-ID naming from tests/AGENTS. Classify offline/DB/browser/external
-resources by actual imports/fixtures. Generate only stable reference tables from
-OpenAPI/Typer; keep policy and decisions handwritten. Link accepted audit history
-lazily; no archival rewrite that destroys links or source attribution.
-**Acceptance:** test discovery and intended fixture behavior unchanged; reference
-output reproducible; links resolve; no fewer authorization/concurrency assertions
-just to reduce test volume. Separate move and behavior commits.
-**Dependency/risk:** R-01; root conftest cannot be bypassed based on filenames.
-
-### R-15 — Localizable presentation without changing domain policy
-
-**Evidence:** Russian strings/plural helpers are embedded in web, CLI, tools and
-services; `app/core/logger.py` also contains Russian comments despite English
-code/docs convention. No unsupported numeric string count is used as evidence.
-**Change:** put safe message IDs/parameters at presenter and error boundaries;
-select a catalog approach only with an actual locale requirement. Keep Russian
-product wording by default and English source comments. Do not translate machine
-codes, permission keys, stored states or provider identifiers.
-**Acceptance:** plural/interpolation and HTML escaping tests; existing displayed
-meaning and API codes unchanged; fallback locale predictable. This is not a
-blanket corporate-launch requirement or approval for mass text churn.
-**Dependency/risk:** R-04/09; prevent user-controlled formatting/markup injection.
-
-### R-16 — Typed connector/job capabilities without a new framework
-
-**Evidence:** `jobs/handlers.py` has a handler registry but `web/tasks.py` still
-branches on job type; connector concerns span `services/collection`, `monitoring`
-and `social`; VK client is 1,139 lines.
-**Change:** where a real extension needs it, declare narrow typed job/connector
-capabilities and separate provider operations from platform-neutral pipeline.
-Extract a bounded package seam before moving entire folders. Preserve provenance,
-credential ownership, consent and distinct read/write capabilities.
-**Acceptance:** one added capability uses existing authorization/paging/retry
-contracts without duplicating all adapters; disabled capabilities stay disabled.
-P8-T33 owns additional VK result categories; P8-T34 owns the selected non-social
-pilot and remains deferred. Neither must wait for a general registry rewrite.
-**Dependency/risk:** R-02/04; avoid a universal connector schema that erases category
-semantics or treats people/search results as permanent Sources.
-
-### R-17 — Measure capacity before changing topology
-
-**Evidence:** queue/attempt/health evidence exists; `core/logger.py` uses console
-and rotating text handlers without a shared request/use-case/job context contract.
-This audit measured code only, not p95, database pressure or tenant fairness.
-**Change:** choose workload/SLO and safe telemetry schema; connect HTTP/use-case/job
-identities without unbounded tenant labels or customer content. Measure queue age,
-completion latency, DB pool/lock waits, provider budgets and per-tenant admission
-under synthetic workloads; state numerical targets in the implementation task.
-Choose fair admission/pool bounds/indexes from those results. Partitioning, replicas
-or separate workers require a measured case and explicit architecture decision.
-**Acceptance:** reproducible workload, isolation/noisy-neighbor and recovery report,
-with cost and p95/queue-age evidence, not a file-count argument. Preserve one
-runtime owner and existing claim fencing; no extra worker/scheduler/listener is
-started as part of this plan. P7-T02 still owns staging operations proof; PRD-04,
-05/08 and PRODUCT_PLAN Scale remain the release/expansion gates.
-**Dependency/risk:** R-01/10; synthetic/load execution separately authorized;
-telemetry should not become a high-cardinality or privacy liability.
-
-### R-18 — Enterprise seams only for an owner-selected requirement
-
-**Evidence:** current identity is user/membership/role/JWT based; the reviewed API
-has no general service-account/token management contract. Existing shared billing
-P2-T08 is deferred, and Q-12 already owns pre-public email confirmation/recovery.
-**Change:** keep actor/workspace identity explicit so later machine credentials,
-SSO/OIDC/SAML, SCIM, organization policy and data-residency can have bounded tasks.
-Before building, select one customer/use-case, trust model, revocation/rotation,
-role mapping, retention/legal boundary and acceptance matrix. Do not infer that
-corporate billing is organization identity, or that all enterprise features are
-mandatory for the first managed B2B release.
-**Acceptance:** for a selected feature, revoked/mis-scoped credentials and
-cross-tenant operations fail closed; existing user sessions and operator boundary
-remain compatible; audit/export/privacy requirements are explicit. No new
-infrastructure or legal-compliance claim is authorized by listing these options.
-**Dependency/risk:** R-06/08/10 as selected; commercial scope stays with P2-T08,
-privacy/activation with their release gates, not a duplicate roadmap here.
+Start with the offline safety net, then the shared use-case and explicit
+transaction slice. Consolidate typed boundaries before adapter decomposition.
+Urgent permission/data-cleanup fixes and the existing P8 milestone must not wait
+for all of P11. Later locale/connector/capacity/enterprise items have explicit
+selection/measurement boundaries; TODO is not blanket activation permission.
+Apply SOLID/DRY only where semantics agree, retain KISS/YAGNI and keep structural
+moves separate from behavior changes. Do not replace the ORM or add runtime
+owners without a measured, separately authorized requirement.
 
 ## 5. Reconciliation with every open card and queue-only follow-up
 
@@ -447,12 +164,12 @@ above do not silently become additional mandatory dependencies of existing tasks
 
 ## 6. Suggested next bounded task and handoff
 
-Register one R-01 offline safety-net task, or prioritize the recorded P5-T04
-permission defect if its owner resumes; do not block that fix on all structural
-work. Then deliver one R-02/R-03 task-operation slice through P8-T39. Keep the
-existing P8 milestone deliverable while later structural work remains selectable.
+Claim [P11-T03](docs/tasks/p11-t03.md) for the offline safety net, or prioritize
+the recorded P5-T04 permission defect if its owner resumes. Then deliver the
+P11-T04/T05 operation slice alongside P8-T39. Registration of every item does
+not make all later structural work prerequisites to the existing P8 milestone.
 
-Implementation must be planned/claimed separately. This audit changes documents
-only. Independent review should verify priority, each evidence path, task-card
+Implementation must be claimed separately. This audit and registration change
+documents only. Independent review should verify priority, each evidence path, task-card
 ownership, compatibility/deferral preservation and link integrity; it is not a
 request to run the full application suite or spend on live providers.

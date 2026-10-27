@@ -1,59 +1,128 @@
 # Active queue
 
-Status/owner are authoritative here; scope, documents read and checks live only
-in the linked task card. Open one card, not the entire docs tree.
-Lifecycle: [COLLABORATION](docs/COLLABORATION.md#tasks); status set:
-[state machine](docs/COLLABORATION.md#state-machine). Legacy dialogue “—”
-means not recorded; source recovery links remain in the card.
+Status/owner, execution priority and complexity are authoritative here; scope,
+dependencies, documents read and checks live in each linked task card.
+Lifecycle: [COLLABORATION](docs/COLLABORATION.md#tasks); status transitions:
+[state machine](docs/COLLABORATION.md#state-machine). Legacy dialogue “—” means
+not recorded; source recovery links remain in the card.
+
+## Priority and complexity
+
+- `P0`: review/correctness/access/data-cleanup blockers; resolve before building on the affected behavior.
+- `P1`: safety foundations, first complete product journey and its release evidence.
+- `P2`: broader interface hardening and maintainability after the required seams exist.
+- `P3`: demand-led preparation and future extension; not a pilot prerequisite.
+- `C1`: small isolated documentation/assertion change; low coupling.
+- `C2`: bounded single-subsystem work or review; focused compatibility checks.
+- `C3`: multi-file subsystem change/integration or external-evidence uncertainty.
+- `C4`: cross-interface, persistence/concurrency/security work with substantial verification.
+- `C5`: broad cross-cutting/high-uncertainty delivery; plan reviewed slices before implementation.
+
+These are provisional engineering estimates, not elapsed-time promises or model
+selection. Complexity includes the **remaining** acceptance/evidence work; review
+and registration estimates are not the size of the whole audited system.
+Order is global across phases: P0 → P1 → P2 → P3, then row order within each
+band. Dependencies, ownership and environmental gates override the next row:
+review READY work; fix BLOCKED work only within its owning lane; claim the first
+unassigned TODO whose required predecessors/permissions are satisfied. Skip a
+gated item, do not idle or mark it accepted. TODO can have unfulfilled predecessors.
+Explicit DEFERRED rows are parked separately and never auto-resumed by priority.
+Historical statuses and owner-selected deferrals are unchanged by this ranking.
+
+## Execution queue
+
+### Priority P0
+
+- [P11-T01](docs/tasks/p11-t01.md) Critical structural audit, refactoring plan and task-card reconciliation — **READY** · notion-ai (remote executor, resumed) · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P0` · `C2`
+- [P11-T02](docs/tasks/p11-t02.md) Register structural follow-ups and prioritize the active queue — **READY** · notion-ai · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P0` · `C2`
+- [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **BLOCKED** · codex-analysis-receipts · — · `P0` · `C3`
+- P6-T05 audit follow-up: stale catalog assertion `tests/admin/test_admin_authorization.py::test_the_catalogue_reads_the_model_name_off_the_views` fails on dev (`KeyError: 'mark-read'` after the #246 notification-action removal) — **OPEN** · unassigned · [P6-T05 audit](docs/audit/p6-t05.md) · `P0` · `C1`
+- P6-T05 audit follow-up: `tests/models/test_llm_models_manager.py::test_delete_reports_workspace_that_lost_its_agent_model` leaks its tenant (no cleanup) — **OPEN** · unassigned · [P6-T05 audit](docs/audit/p6-t05.md) · `P0` · `C2`
+- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · — · `P0` · `C3`
+
+### Priority P1
+
+- [P11-T03](docs/tasks/p11-t03.md) Offline CI safety net and supported baseline — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C3`
+- [P11-T04](docs/tasks/p11-t04.md) Shared task application orchestration — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C4`
+- [P11-T05](docs/tasks/p11-t05.md) Explicit task transaction ownership — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C4`
+- [P11-T06](docs/tasks/p11-t06.md) Typed use-case contracts, safe errors and presenters — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C4`
+- [P11-T07](docs/tasks/p11-t07.md) Incremental package-boundary enforcement — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C3`
+- [P8-T15](docs/tasks/p8-t15.md) Admin API connectivity, mock and real checks — **BLOCKED** · codex · — · `P1` · `C3`
+- [P8-T17](docs/tasks/p8-t17.md) Model response diagnostics and consent — **BLOCKED** · codex · — · `P1` · `C3`
+- [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · — · `P1` · `C3`
+- [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · — · `P1` · `C3`
+- [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
+- [P8-T39](docs/tasks/p8-t39.md) Complete chat-first and standalone task journeys — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P1` · `C5`
+- [P8-T40](docs/tasks/p8-t40.md) Compose collection, analysis and digest schedules — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P1` · `C5`
+- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P1` · `C4`
+- [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
+- [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
+- [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
+
+### Priority P2
+
+- [P11-T08](docs/tasks/p11-t08.md) Public API compatibility and bounded request policy — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
+- [P11-T09](docs/tasks/p11-t09.md) Fail-closed typed agent-tool registration — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
+- [P11-T10](docs/tasks/p11-t10.md) Operator CLI boundaries and machine-output contract — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
+- [P11-T11](docs/tasks/p11-t11.md) Web and admin use-case decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
+- [P11-T12](docs/tasks/p11-t12.md) Durable action-audit contract and support correlation — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
+- [P11-T13](docs/tasks/p11-t13.md) Manager and execution-module decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
+- [P11-T14](docs/tasks/p11-t14.md) Canonical model imports and semantic helper reuse — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
+- [P11-T15](docs/tasks/p11-t15.md) Reproducible package and configuration contract — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
+- [P11-T16](docs/tasks/p11-t16.md) Test and reference navigation without evidence loss — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
+- [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
+- [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
+- [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
+- [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
+
+### Priority P3
+
+- [P11-T17](docs/tasks/p11-t17.md) Localizable presentation boundaries — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C3`
+- [P11-T18](docs/tasks/p11-t18.md) Typed connector and job extension seams — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
+- [P11-T19](docs/tasks/p11-t19.md) Capacity telemetry and reproducible scale evidence — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
+- [P11-T20](docs/tasks/p11-t20.md) Select and specify bounded enterprise requirements — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C3`
+
+## Deferred by explicit owner decision
+
+- [P2-T08](docs/tasks/p2-t08.md) corporate/shared billing accounts — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P3` · `C4`
+- [P2-T15](docs/tasks/p2-t15.md) extensible capability entitlements foundation — **DEFERRED** (owner: tests/validation deferred to project end, 2026-10-27) · notion-ai · integrated 2026-10-27 as merge 67acbd53 (0117 re-parented onto 0116, [handoff + merge](https://github.com/Starck43/social-media-ai/pull/253#issuecomment-6428493023)); validation gates still open · `P3` · `C4`
+- [P8-T34](docs/tasks/p8-t34.md) Non-social connector pilot — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P3` · `C4`
+- [Q-12](docs/tasks/q-12.md) Self-service email password recovery for the public phase — **DEFERRED** · product-owner · pre-production: email confirmation first, then recovery · `P3` · `C4`
+
+## Phase navigation
+
+Stable anchors below preserve inbound task-card links. The queue above is the
+only status/priority list; phases contain numbered plans and parent relations.
 
 ## [P2](docs/phases/p2-usage-spend.md)
 
-- [P2-T08](docs/tasks/p2-t08.md) corporate/shared billing accounts — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
-- [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · —
-- [P2-T15](docs/tasks/p2-t15.md) extensible capability entitlements foundation — **DEFERRED** (owner: tests/validation deferred to project end, 2026-10-27) · notion-ai · integrated 2026-10-27 as merge 67acbd53 (0117 re-parented onto 0116, [handoff + merge](https://github.com/Starck43/social-media-ai/pull/253#issuecomment-6428493023)); validation gates still open
+Use the P2 cards in the execution queue or the linked parent plan.
 
 ## [P4](docs/phases/p4-delivery.md)
 
-- [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · —
+Use the P4 cards in the execution queue or the linked parent plan.
 
 ## [P5](docs/phases/p5-ai-boundaries.md)
 
-- [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **BLOCKED** · codex-analysis-receipts · —
+Use the P5 cards in the execution queue or the linked parent plan.
 
 ## [P6](docs/phases/p6-lifecycle-privacy.md)
 
-- [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · —
+Use the P6 cards in the execution queue or the linked parent plan.
+
 ## [P7](docs/phases/p7-operations.md)
 
-- [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · —
+Use the P7 cards in the execution queue or the linked parent plan.
 
 ## [P8](docs/phases/p8-first-value-ui.md)
 
-- [P8-T15](docs/tasks/p8-t15.md) Admin API connectivity, mock and real checks — **BLOCKED** · codex · —
-- [P8-T17](docs/tasks/p8-t17.md) Model response diagnostics and consent — **BLOCKED** · codex · —
-- [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —
-- [P8-T20](docs/tasks/p8-t20.md) Provider cost evidence and diagnostic controls — **BLOCKED** · codex · —
-- [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · —
-- [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · —
-- [P8-T34](docs/tasks/p8-t34.md) Non-social connector pilot — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
-
-- [P8-T39](docs/tasks/p8-t39.md) Complete chat-first and standalone task journeys — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
-- [P8-T40](docs/tasks/p8-t40.md) Compose collection, analysis and digest schedules — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
-- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
+Use the P8 cards in the execution queue or the linked parent plan.
 
 ## [P11](docs/phases/p11-structure.md)
 
-- [P11-T01](docs/tasks/p11-t01.md) Critical structural audit, refactoring plan and task-card reconciliation — **READY** · notion-ai (remote executor, resumed) · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556)
-
-- [P11-T02](docs/tasks/p11-t02.md) Register structural follow-ups and prioritize the active queue — **IN_PROGRESS** · notion-ai · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556)
+Use the P11 cards in the execution queue or the linked parent plan.
 
 ## Questions
 
-- [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · —
-- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · —
-- [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · —
-- [Q-12](docs/tasks/q-12.md) Self-service email password recovery for the public phase — **DEFERRED** · product-owner · pre-production: email confirmation first, then recovery
-- P6-T05 audit follow-up: stale catalog assertion `tests/admin/test_admin_authorization.py::test_the_catalogue_reads_the_model_name_off_the_views` fails on dev (`KeyError: 'mark-read'` after the #246 notification-action removal) — **OPEN** · unassigned · [P6-T05 audit](docs/audit/p6-t05.md)
-- P6-T05 audit follow-up: `tests/models/test_llm_models_manager.py::test_delete_reports_workspace_that_lost_its_agent_model` leaks its tenant (no cleanup) — **OPEN** · unassigned · [P6-T05 audit](docs/audit/p6-t05.md)
-
-Choose one unclaimed dependency-ready task.
+Q-2/Q-5/Q-10 are ordered in the execution queue; Q-12 remains owner-deferred.
+The two P6-T05 diagnostic follow-ups keep their existing audit evidence links.

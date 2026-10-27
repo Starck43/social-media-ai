@@ -79,6 +79,7 @@ def test_task_add_passes_canonical_plan_fields_to_persistence(monkeypatch, fixed
 
 def test_task_add_rejects_source_conflict_before_persistence(monkeypatch):
     _allow_operator_cli(monkeypatch)
+
     async def fail_if_persisted(**_values):
         pytest.fail("conflicting source selection must be rejected before persistence")
 
@@ -106,6 +107,7 @@ def test_task_add_rejects_source_conflict_before_persistence(monkeypatch):
 
 def test_task_add_reports_unknown_job_type_before_parsing_a_valid_plan(monkeypatch):
     _allow_operator_cli(monkeypatch)
+
     async def fail_if_persisted(**_values):
         pytest.fail("an unsupported task type must not reach persistence")
 

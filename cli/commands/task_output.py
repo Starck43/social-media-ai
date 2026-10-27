@@ -10,7 +10,6 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Iterator
 
-
 _OUTPUT_FORMAT: ContextVar[str] = ContextVar("task_cli_output_format", default="human")
 _SENSITIVE_KEY = re.compile(
     r"(?:token|secret|password|credential|authorization|cookie|private[_-]?key|"

@@ -169,11 +169,7 @@ class TestDryRunFlagPresent:
         cmd = _functions(direct)["cmd_analyze"]
         flags = _option_flags(cmd)
         assert "--dry-on" in flags, f"analyze: {sorted(flags)}"
-        guards = [
-            node
-            for node in ast.walk(cmd)
-            if isinstance(node, ast.If) and "dry_on" in ast.unparse(node.test)
-        ]
+        guards = [node for node in ast.walk(cmd) if isinstance(node, ast.If) and "dry_on" in ast.unparse(node.test)]
         assert any("payload['dry_run'] = True" in ast.unparse(guard.body[0]) for guard in guards)
 
 

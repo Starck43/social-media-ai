@@ -7,15 +7,14 @@ operator transport.
 
 from __future__ import annotations
 
+import secrets
 from enum import Enum
 from functools import wraps
-import secrets
 from typing import Callable
 
 import typer
 
 from .task_output import emit_task_json, is_json_output, set_task_output_format
-
 
 EXIT_OK = 0
 EXIT_COMMAND_FAILED = 1
@@ -188,9 +187,7 @@ def _run_task_platform(coro):
         raise typer.Exit(EXIT_OPERATOR_REQUIRED) from None
 
 
-task_app = typer.Typer(
-    help="Operator-only task management. Requires an authenticated active platform admin context."
-)
+task_app = typer.Typer(help="Operator-only task management. Requires an authenticated active platform admin context.")
 
 
 @task_app.callback()
@@ -294,9 +291,9 @@ def task_plan_cmd(
     """Preview a plan; --tenant adds a read-only workspace entitlement decision."""
     import json as _json
 
-    from .task_output import task_print as rprint
-
     from app.services.task_plans import apply_task_plan
+
+    from .task_output import task_print as rprint
 
     try:
         if len(plan_json) > 65_536:
@@ -354,10 +351,10 @@ def task_entitlements_cmd(
     """Inspect current product grants and availability; consume no usage."""
     import json as _json
 
-    from .task_output import task_print as rprint
-
     from app.core.tenant_context import tenant_scope
     from app.models.managers.entitlement_manager import EntitlementManager
+
+    from .task_output import task_print as rprint
 
     async def _inspect():
         tenant_id = await _require_explicit_tenant(tenant)
@@ -374,10 +371,11 @@ def task_entitlements_cmd(
 def task_list():
     """List all tasks."""
 
-    from .task_output import task_print as rprint
     from rich.table import Table
 
     from app.models import AgentTask
+
+    from .task_output import task_print as rprint
 
     async def _run():
         from app.models.managers.tenant_manager import tenants
@@ -428,11 +426,12 @@ def task_result_cmd(
     tenant: str = typer.Option(..., "--tenant", help="Workspace slug or ID"),
 ):
     """Read bounded task status and permitted analysis summaries."""
-    from .task_output import task_print as rprint
     from rich.table import Table
 
     from app.core.tenant_context import tenant_scope
     from app.services.task_results import task_result
+
+    from .task_output import task_print as rprint
 
     async def _run():
         tenant_id = await _require_explicit_tenant(tenant)
@@ -483,8 +482,6 @@ async def _add_task(
     """
     from datetime import datetime, timedelta, timezone
 
-    from .task_output import task_print as rprint
-
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
     from app.models.managers.agent_task_manager import AgentTaskManager
@@ -497,6 +494,7 @@ async def _add_task(
     from app.tasks.cron import next_run_at
 
     from .._tenant import tenant_label
+    from .task_output import task_print as rprint
 
     if not isinstance(parsed_payload, dict):
         rprint("[red]Payload must be a JSON object[/red]")
@@ -659,9 +657,9 @@ def task_add(
     """Add a task."""
     import json as _json
 
-    from .task_output import task_print as rprint
-
     from app.models.managers.agent_task_manager import AgentTaskManager
+
+    from .task_output import task_print as rprint
 
     if not AgentTaskManager().validate_cron(cron):
         rprint(f"[red]Invalid cron expression: {cron}[/red]")
@@ -766,12 +764,11 @@ def task_add(
 
 async def _remove_task(name: str, tenant: str | None) -> int:
     """Delete exactly one named task inside an explicitly selected workspace."""
-    from .task_output import task_print as rprint
-
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
 
     from .._tenant import tenant_label
+    from .task_output import task_print as rprint
 
     tenant_id = await _require_explicit_tenant(tenant)
     with tenant_scope(tenant_id):
@@ -808,10 +805,10 @@ def task_pause(
 ):
     """Pause or resume one task in the required workspace."""
 
-    from .task_output import task_print as rprint
-
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
+
+    from .task_output import task_print as rprint
 
     async def _run():
         tenant_id = await _require_explicit_tenant(tenant)
@@ -874,8 +871,6 @@ def task_update(
     """Update an existing task. Only provided fields are changed."""
     import json as _json
 
-    from .task_output import task_print as rprint
-
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
@@ -887,6 +882,7 @@ def task_update(
     from app.tasks.cron import next_run_at, resolve_tz
 
     from .._tenant import tenant_label
+    from .task_output import task_print as rprint
 
     parsed_patch: dict | None = None
     parsed_plan: dict | None = None
@@ -1105,8 +1101,6 @@ async def _run_task(
     unless the command-line flags override them (the stored values flow through
     the task payload either way).
     """
-    from .task_output import task_print as rprint
-
     from app.core.tenant_context import tenant_scope
     from app.jobs.dispatcher import run_job_now
     from app.jobs.enqueue import enqueue_task_run
@@ -1114,6 +1108,7 @@ async def _run_task(
     from app.models.managers.agent_task_manager import AgentTaskManager
 
     from .._tenant import tenant_label
+    from .task_output import task_print as rprint
 
     tenant_id = await _require_explicit_tenant(tenant)
     if task:
@@ -1256,5 +1251,3 @@ def _make_task_run_command(job_type: str) -> Callable:
 
 for _jt in ("collect", "digest", "analyze", "prune", "learn", "reflect"):
     task_app.command(name=_jt)(_json_command(f"task {_jt}")(_make_task_run_command(_jt)))
-
-

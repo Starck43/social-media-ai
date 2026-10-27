@@ -245,6 +245,7 @@ async def test_task_remove_only_targets_the_selected_workspace():
 
 async def test_cli_helper_preserves_operator_authority_under_narrowing_and_restores_scope():
     """Mirror the real entrypoint without granting authority to the whole test."""
+
     async def probe():
         with tenant_scope(31):
             assert current_tenant_id() == 31

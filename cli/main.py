@@ -1,4 +1,3 @@
-
 import typer
 
 # Configure logging (console + file -> logs/app.log) for CLI runs.

@@ -1,10 +1,4 @@
-"""`cli.main task run` — whose workflow runs, and whose job actually executes.
-
-The CLI is developer mode: it bypasses the tenant guard and may touch every
-workspace. What it must never do is *run the wrong thing* — an earlier queued job
-of another workspace has to survive a manual run untouched, and a task has to run
-in its own workspace.
-"""
+"""Operator task CLI — explicit workspace targeting and correct job execution."""
 
 import secrets
 from contextlib import nullcontext
@@ -20,8 +14,8 @@ from app.models.managers.tenant_manager import tenants
 from app.types.enums.platform_types import SourceType
 from cli.main import _add_task, _remove_task, _run_task
 
-# The CLI is developer mode: these tests drive the real guard, opening
-# `tenant_scope(bypass=True)` and explicit operator authority where the CLI would.
+# These tests call private task use-case helpers under the trusted operator
+# scope, then verify their explicit workspace targets and actual job effects.
 pytestmark = pytest.mark.tenancy
 
 RUN_ARGS = dict(
@@ -30,18 +24,18 @@ RUN_ARGS = dict(
     tracked=None,
     scenario=None,
     period=None,
-    tenant=None,
+    tenant="owner",
 )
 
 
 async def _all(read):
-    """Read across every workspace, the way the CLI does."""
+    """Read across workspaces for test assertions."""
     with tenant_scope(bypass=True):
         return await read
 
 
 async def _cli(coro_fn, **kwargs):
-    """Call a CLI command the way `cli.main._run_platform` does."""
+    """Run a task helper under the operator grant used by the CLI boundary."""
     with tenant_scope(bypass=True), operator_permission_scope():
         return await coro_fn(**kwargs)
 
@@ -159,7 +153,7 @@ async def test_task_run_uses_the_workspace_of_the_task():
     await _make_source(other.id)
     task = await _make_task(other.id, _uniq("run-scoped-"))
 
-    await _cli(_run_task, task=str(task.id), **RUN_ARGS)
+    await _cli(_run_task, task=str(task.id), **{**RUN_ARGS, "tenant": other.slug})
 
     with tenant_scope(bypass=True):
         jobs = await Job.objects.filter(agent_task_id=task.id)
@@ -205,7 +199,7 @@ async def test_task_add_rejects_a_foreign_source():
             parsed_payload={},
             parsed_source_ids=[foreign.id],
             scenario_id=None,
-            tenant=None,
+            tenant="owner",
         )
 
     with tenant_scope(bypass=True):
@@ -228,7 +222,7 @@ async def test_task_add_persists_target_params_in_payload():
         parsed_payload={"brands": ["Арт-Сервис"], "keywords_list": ["клей"]},
         parsed_source_ids=[],
         scenario_id=None,
-        tenant=None,
+        tenant="owner",
     )
 
     task = await _all(AgentTask.objects.get(name=name))
@@ -237,19 +231,21 @@ async def test_task_add_persists_target_params_in_payload():
     assert payload["keywords_list"] == ["клей"]
 
 
-async def test_task_remove_covers_every_workspace_with_that_name():
+async def test_task_remove_only_targets_the_selected_workspace():
     name = _uniq("dup-")
-    await _make_task(None, name)
+    selected = await _make_task(None, name)
     other = await tenants.create(name=_uniq("WS "), slug=_uniq("ws-"))
-    await _make_task(other.id, name)
+    foreign = await _make_task(other.id, name)
 
     with tenant_scope(bypass=True):
-        assert await _cli(_remove_task, name=name) == 2
-        assert await AgentTask.objects.filter(name=name) == []
+        assert await _cli(_remove_task, name=name, tenant="owner") == 1
+        assert await AgentTask.objects.get(id=selected.id) is None
+        assert (await AgentTask.objects.get(id=foreign.id)).tenant_id == other.id
 
 
 async def test_cli_helper_preserves_operator_authority_under_narrowing_and_restores_scope():
     """Mirror the real entrypoint without granting authority to the whole test."""
+
     async def probe():
         with tenant_scope(31):
             assert current_tenant_id() == 31
@@ -283,7 +279,7 @@ async def test_task_add_normalizes_the_collection_block():
         },
         parsed_source_ids=[],
         scenario_id=None,
-        tenant=None,
+        tenant="owner",
     )
 
     task = await _all(AgentTask.objects.get(name=name))
@@ -308,7 +304,7 @@ async def test_task_add_rejects_a_malformed_collection_without_creating():
             parsed_payload={"collection": {"limit": 0}},
             parsed_source_ids=[],
             scenario_id=None,
-            tenant=None,
+            tenant="owner",
         )
 
     with tenant_scope(bypass=True):
@@ -325,7 +321,7 @@ async def test_task_add_drops_a_collection_for_a_non_collecting_job():
         parsed_payload={"collection": {"content_types": ["posts"]}},
         parsed_source_ids=[],
         scenario_id=None,
-        tenant=None,
+        tenant="owner",
     )
 
     task = await _all(AgentTask.objects.get(name=name))

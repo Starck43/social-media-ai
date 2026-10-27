@@ -199,12 +199,13 @@ def adapter_update(surface, payload, changes):
         namespace = {
             "task_app": NS(command=lambda *a, **kw: lambda f: f),
             "typer": typer,
-            "_run_platform": asyncio.run,
-            "nullcontext": nullcontext,
+            "_run_task_platform": asyncio.run,
+            "_require_explicit_tenant": AsyncMock(return_value=2),
+            "EXIT_TARGET_UNRESOLVED": 3,
             "_split_ints": lambda text: [int(x) for x in text.split(",") if x],
             "_check_task_sources": AsyncMock(),
         }
-        module = source_functions("cli/main.py", ["task_update"], imports, namespace, package="cli")
+        module = source_functions("cli/commands/tasks.py", ["task_update"], imports, namespace, package="cli.commands")
         import inspect
         import json
 

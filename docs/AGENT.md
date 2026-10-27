@@ -314,10 +314,14 @@ or whole-gate acceptance claim.
 Target contract: [universal tasks](AGENT_TASKS.md#explicit-task-plans). Chat is
 the primary workspace for the task lifecycle; dedicated pages remain directly
 accessible for source, scenario, task, schedule and digest management. Current
-chat task tools edit the same configuration as those pages, but the full
-chat-first journey is not yet accepted; see [P8-T39](tasks/p8-t39.md). Bounded
-plan previews and one-off research keep recurring-task and digest-send
-confirmation gates intact. The integrated foundation and its evidence are in
+chat task tools edit the same configuration as those pages; the permitted
+collect/analyze journey is accepted in [P8-T39](audit/p8-t39.md). Bounded plan
+previews and one-off research keep recurring-task and digest-send confirmation
+gates intact. Chat can collect without analysis via
+`task_execute_once(job_type="collect")`, reopen a saved plan via `task_get`, and
+request bounded progress/results via `task_result`; see the
+[field mapping and lifecycle](AGENT_TASKS.md#chat-task-journey-p8-t39).
+The integrated foundation and its evidence are in
 [P8-T29](tasks/p8-t29.md).
 
 ## General action ledger (P9-T08)

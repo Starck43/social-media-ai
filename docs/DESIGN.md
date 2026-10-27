@@ -10,8 +10,8 @@ owns future directions and links every [phase plan](phases/README.md).
 The AI chat is the primary user workspace across request, clarification,
 preview, execution, status, results and follow-up. Dedicated source, scenario,
 task, schedule and digest pages remain directly accessible for setup and
-management. This is the target interaction contract; completion is tracked in
-[P8-T39](tasks/p8-t39.md).
+management. The permitted social-task journey is accepted in
+[P8-T39](audit/p8-t39.md).
 
 Chat / web / API / CLI → permission-scoped services → ORM managers → PostgreSQL.
 A single `python -m app.runtime` owns scheduler, worker and messenger listeners;

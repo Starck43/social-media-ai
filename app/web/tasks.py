@@ -1460,6 +1460,19 @@ async def task_detail(request: Request, task_id: int):
     await _attach_task_llm_diagnostics(request, source, latest_job, latest_run)
     await _attach_task_lane_evidence(latest_run, latest_job)
 
+    # Reuse the permission-filtered canonical reader under this task's concrete
+    # workspace. The editor remains the write surface; this summary only reads.
+    task_definition = {"plan": None, "plan_status": "task_access_required"}
+    if type(source.tenant_id) is int and perms_can(request, "agenttask", "view"):
+        from app.services.task_results import task_configuration
+
+        with tenant_scope(source.tenant_id):
+            try:
+                task_definition = await task_configuration(task_id) or task_definition
+            except PermissionError:
+                # Keep the detail page useful while hiding inaccessible plan data.
+                pass
+
     return render(
         request,
         "web/task_detail.html",
@@ -1474,6 +1487,7 @@ async def task_detail(request: Request, task_id: int):
         latest_run=latest_run,
         sources=linked_sources,
         scenario=scenario,
+        task_definition=task_definition,
         collection=_collection_edit(source.payload),
         cron_to_human=cron_to_human,
         JOB_TYPE_TITLES=JOB_TYPE_TITLES,

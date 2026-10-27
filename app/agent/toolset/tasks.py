@@ -26,6 +26,18 @@ def _get_job_types() -> tuple[str, ...]:
 # a half-configured task.
 _REQUIRED_START_DATE = ("start_date", "с какой даты собирать контент")
 _MAX_PG_INTEGER = 2_147_483_647
+_TASK_READ_ERRORS = {
+    "task_read_forbidden": "Нет доступа к задаче этого workspace.",
+    "task_result_invalid": "Укажите сохранённую задачу этого workspace.",
+    "task_read_unconfirmed": "Не удалось безопасно прочитать задачу. Попробуйте позже.",
+}
+
+
+def _task_read_error(code: str) -> dict[str, str]:
+    """Use fixed messages so DB and provider exception text stays private."""
+    if code not in _TASK_READ_ERRORS:
+        code = "task_read_unconfirmed"
+    return {"error": _TASK_READ_ERRORS[code], "code": code}
 
 
 def _missing_task_fields(
@@ -850,9 +862,10 @@ async def task_pause(name: str, pause: bool = True) -> dict[str, Any]:
 @tool(
     name="task_execute_once",
     description=(
-        "Запустить одну ограниченную социальную задачу поиска и анализа сразу через общий диспетчер. "
+        "Запустить одну ограниченную социальную задачу сбора или сбора с анализом сразу через общий диспетчер. "
         "При повторе того же запроса передай тот же request_id: результат запуска будет использован повторно. "
-        "Разные намерения пользователя получают разные request_id. Не принимает произвольный payload или тип задачи."
+        "Разные намерения пользователя получают разные request_id. Тип ограничен collect/analyze; "
+        "произвольные поля команды и payload запрещены."
     ),
     required_permission="scheduling.task.create",
     parameters={
@@ -862,11 +875,14 @@ async def task_pause(name: str, pause: bool = True) -> dict[str, Any]:
 async def task_execute_once(
     request_id: str | None = None,
     plan: dict[str, Any] | None = None,
+    job_type: str = "analyze",
     **extra: Any,
 ) -> dict[str, Any]:
-    """Queue one bounded analyze run through the shared admission/deduplication service."""
+    """Queue one bounded collect/analyze run through the common admission service."""
     try:
-        command = TaskLaunchArguments.model_validate({"request_id": request_id, "plan": plan, **extra}).to_command()
+        command = TaskLaunchArguments.model_validate(
+            {"request_id": request_id, "plan": plan, "job_type": job_type, **extra}
+        ).to_command()
     except ValidationError:
         return task_launch_tool_error("request_invalid")
 
@@ -921,9 +937,41 @@ async def task_result(task_id: int, job_id: int | None = None, limit: int = 5) -
 
     try:
         result = await read_result(task_id, job_id=job_id, limit=limit)
-    except ValueError as error:
-        return {"error": str(error), "code": "task_result_invalid"}
+    except PermissionError:
+        return _task_read_error("task_read_forbidden")
+    except ValueError:
+        return _task_read_error("task_result_invalid")
+    except Exception:
+        return _task_read_error("task_read_unconfirmed")
     return result if result is not None else {"error": "Задача или запуск не найдены", "code": "task_not_found"}
+
+
+@tool(
+    name="task_get",
+    description=(
+        "Открыть сохранённое определение и состояние задачи этого workspace. Возвращает только проверенный план; "
+        "используй перед разъяснением или изменением, а полный task_plan передай на preview и новой проверке прав."
+    ),
+    required_permission="scheduling.task.view",
+    parameters={
+        "type": "object",
+        "properties": {"task_id": {"type": "integer", "minimum": 1}},
+        "required": ["task_id"],
+    },
+)
+async def task_get(task_id: int) -> dict[str, Any]:
+    """Read a permission-filtered saved definition for in-chat follow-up."""
+    from app.services.task_results import task_configuration
+
+    try:
+        result = await task_configuration(task_id)
+    except PermissionError:
+        return _task_read_error("task_read_forbidden")
+    except ValueError:
+        return _task_read_error("task_result_invalid")
+    except Exception:
+        return _task_read_error("task_read_unconfirmed")
+    return result if result is not None else {"error": "Задача не найдена", "code": "task_not_found"}
 
 
 @tool(

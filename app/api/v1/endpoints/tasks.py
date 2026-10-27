@@ -154,9 +154,11 @@ async def run_task_plan(
         raise HTTPException(status_code=403, detail="Missing permission: agenttask.update")
 
     try:
-        command = TaskLaunchArguments(request_id=request.request_id, plan=request.task_plan).to_command(
-            job_type=request.job_type
-        )
+        command = TaskLaunchArguments(
+            request_id=request.request_id,
+            plan=request.task_plan,
+            job_type=request.job_type,
+        ).to_command()
         return await launch_social_task(
             command.plan,
             request_id=command.request_id,

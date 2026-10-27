@@ -5,7 +5,7 @@ workflows. Social-media monitoring is the first domain: authorized VK/Telegram
 collection, scenario-based analysis, scheduled jobs, digests and Telegram/MAX/web
 chat. Product direction makes the AI chat the primary workspace for clarifying
 requests, previewing and launching work, checking progress/results and following
-up; completing that journey is tracked in [P8-T39](docs/tasks/p8-t39.md).
+up; the permitted social-task journey is accepted in [P8-T39](docs/audit/p8-t39.md).
 Dedicated source, scenario, task, schedule and digest pages remain directly
 accessible for setup and management. MAX transport does not imply MAX collection;
 planned integrations are not shipped features. Source integration alone does

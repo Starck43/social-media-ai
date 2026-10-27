@@ -33,9 +33,6 @@
 </style>
 {% endblock %}
 {% block page_heading %}Обзор{% endblock %}
-{% block page_actions %}
-{% if can_open_chat %}<a href="/app/chat" data-home-chat class="shell-icon-button" aria-label="Открыть чат" title="Открыть чат">{{ icon('message') }}</a>{% endif %}
-{% endblock %}
 {% block content %}
 <div class="ui-home">
     {% if is_superuser and tenants %}
@@ -49,6 +46,18 @@
             {% endfor %}
         </select>
     </form>
+    {% endif %}
+
+    {% if can_open_chat %}
+    <section data-home-chat-primary class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-5">
+        <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">Начните с разговора</h2>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            Опишите, что хотите собрать или проанализировать, и агент поможет уточнить план и покажет результат.
+        </p>
+        <a href="/app/chat" data-home-chat class="mt-3 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+            Открыть чат →
+        </a>
+    </section>
     {% endif %}
 
     {% if next_step %}

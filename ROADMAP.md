@@ -34,14 +34,13 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P0
 
 
-- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · — · `P0` · `C3`
+- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (awaiting VK support reply on 1051) · — · `P0` · `C3`
 
 ### Priority P1
 
 - [P11-T07](docs/tasks/p11-t07.md) Incremental package-boundary enforcement — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=4069ac7bd6e5804189db00a95c3a97cc) · `P1` · `C3`
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
-- [P8-T39](docs/tasks/p8-t39.md) Complete chat-first and standalone task journeys — **IN_PROGRESS** · Codex · `codex resume 01a17d52-e51c-7072-81ee-de09e21c0f5f` · `P1` · `C5`
-- [P8-T40](docs/tasks/p8-t40.md) Compose collection, analysis and digest schedules — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P1` · `C5`
+- [P8-T40](docs/tasks/p8-t40.md) Compose collection, analysis and digest schedules — **IN_PROGRESS** · Codex · `codex resume 01a17d52-e51c-7072-81ee-de09e21c0f5f` · `P1` · `C5`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
@@ -65,6 +64,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P11-T17](docs/tasks/p11-t17.md) Localizable presentation boundaries — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C3`
 - [P11-T18](docs/tasks/p11-t18.md) Typed connector and job extension seams — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 - [P11-T23](docs/tasks/p11-t23.md) Split agent-task documentation by reader — **TODO** · unassigned · — · `P3` · `C2`
+- [P11-T24](docs/tasks/p11-t24.md) Reproduce schema guard objects in the metadata-built test schema — **IN_PROGRESS** · opencode · — · `P3` · `C2`
 - [P11-T19](docs/tasks/p11-t19.md) Capacity telemetry and reproducible scale evidence — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 
 ## Deferred by explicit owner decision

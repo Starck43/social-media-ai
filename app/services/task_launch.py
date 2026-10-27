@@ -221,8 +221,8 @@ async def launch_social_task(
 ) -> dict[str, Any]:
     """Compatibility adapter returning the existing task-launch receipt shape."""
     try:
-        arguments = TaskLaunchArguments(request_id=request_id, plan=dict(raw_plan))
-        command = arguments.to_command(job_type=job_type)
+        arguments = TaskLaunchArguments(request_id=request_id, plan=dict(raw_plan), job_type=job_type)
+        command = arguments.to_command()
     except (TypeError, ValidationError, ValueError) as error:
         if isinstance(error, TaskLaunchError):
             raise

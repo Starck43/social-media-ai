@@ -2,12 +2,26 @@
 {% block page_heading %}Предложение #{{ action.id }}{% endblock %}
 {% block content %}<div class="ui-card"><h2>{{ action.capability }} · {{ action.status.label }}</h2>
 <p>Адресат: {{ action.target_ref or 'Историческая запись' }}</p>
-<p class="ui-muted">Внешнее выполнение отключено. Одобрение действует ограниченное время и только для показанного содержимого.</p>
+{% if telegram_action %}
+<p class="ui-muted">Одно обычное сообщение в указанный Telegram-канал. Одобрение не отправляет его: нужна отдельная кнопка отправки. Неизвестный исход не повторяется автоматически.</p>
+{% else %}
+<p class="ui-muted">Внешнее выполнение этого типа отключено. Одобрение действует ограниченное время и только для показанного содержимого.</p>
+{% endif %}
 <pre class="overflow-auto">{{ action.payload|tojson(indent=2) }}</pre>
+{% if action.result %}<h3>Результат</h3><pre class="overflow-auto">{{ action.result|tojson(indent=2) }}</pre>{% endif %}
 {% if perms and perms.can('botaction','update') %}
 {% for decision,label in [('approve','Одобрить'),('reject','Отклонить'),('cancel','Отменить')] %}
 {% if (action.status.name == 'PENDING') or (decision == 'cancel' and action.status.name == 'APPROVED') %}
 <form method="post" action="/app/actions/{{ action.id }}/{{ decision }}" class="inline-block mt-3">
 <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="payload_hash" value="{{ review_hash }}">
-<button class="ui-control">{{ label }}</button></form>{% endif %}{% endfor %}{% endif %}
-</div>{% endblock %}
+<button class="ui-control">{{ label }}</button></form>{% endif %}{% endfor %}
+{% if telegram_available and action.status.name == 'APPROVED' %}
+<form method="post" action="/app/actions/{{ action.id }}/execute-telegram" class="inline-block mt-3">
+<input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="payload_hash" value="{{ review_hash }}">
+<button class="ui-control">Отправить одобренное сообщение один раз</button></form>
+{% endif %}
+{% if telegram_action and action.status.name == 'CLAIMED' %}
+<form method="post" action="/app/actions/{{ action.id }}/reconcile-telegram" class="mt-3">
+<input type="hidden" name="_csrf" value="{{ csrf }}"><button class="ui-control">После истечения lease зафиксировать неизвестный исход — без повтора</button></form>
+{% endif %}
+{% endif %}</div>{% endblock %}

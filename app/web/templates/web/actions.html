@@ -1,5 +1,17 @@
 {% extends "web/base.html" %}
 {% block page_heading %}Предложения действий{% endblock %}
-{% block content %}<p class="mb-4 ui-muted">Журнал текущего пространства. Внешнее выполнение отключено; согласование само по себе ничего не отправляет.</p>
+{% block content %}
+<p class="mb-4 ui-muted">Журнал текущего пространства. Одобрение само по себе ничего не отправляет. Внешнее выполнение доступно только для отдельно включённой Telegram capability.</p>
+{% if telegram_targets %}
+<form method="post" action="/app/actions/telegram-message" class="ui-card mb-4">
+<h2>Предложить одно сообщение в Telegram-канал</h2>
+<p class="ui-muted">Только обычный текст, до 4096 UTF-16 единиц. После создания потребуется проверить адресата и текст, одобрить предложение и отдельно отправить.</p>
+<input type="hidden" name="_csrf" value="{{ csrf }}">
+<input type="hidden" name="idempotency_key" value="{{ proposal_key }}">
+<label>Канал <select name="binding_id" class="ui-control" required>{% for target in telegram_targets %}<option value="{{ target.id }}">#{{ target.id }} · {{ target.chat_id }}</option>{% endfor %}</select></label>
+<label class="block mt-3">Текст <textarea name="text" class="ui-control w-full" rows="4" maxlength="4096" required></textarea></label>
+<button class="ui-control mt-3">Создать предложение — без отправки</button>
+</form>
+{% endif %}
 {% for action in actions %}<div class="ui-card mb-3"><a href="/app/actions/{{ action.id }}">#{{ action.id }} · {{ action.capability }}</a><p>{{ action.status.label }} · {{ action.created_at|human_dt }}</p></div>
 {% else %}<p>Нет предложений за последние 30 дней.</p>{% endfor %}{% endblock %}

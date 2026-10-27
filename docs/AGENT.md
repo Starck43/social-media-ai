@@ -320,7 +320,7 @@ plan previews and one-off research keep recurring-task and digest-send
 confirmation gates intact. The integrated foundation and its evidence are in
 [P8-T29](tasks/p8-t29.md).
 
-## General action ledger (P9-T08, PR #246 candidate)
+## General action ledger (P9-T08)
 
 `AgentAction` and legacy `BotAction` identify one mapper/table. Canonical model:
 `app/models/actions/agent_action.py`; root/scheduling imports remain aliases.
@@ -328,6 +328,14 @@ confirmation gates intact. The integrated foundation and its evidence are in
 supports a general proposal without mandatory social source/scenario references.
 It never calls claim/approve/finish or a provider. `/app/actions/{id}` reviews the
 sealed payload and offers CSRF-protected approve/reject/cancel with fresh workspace
-rights. Manager claims/finishes are authenticated dry-run simulations only; no live
-capability is enabled. Idempotency is enforced by the database, transitions by row
-locks and actor/hash/expiry/token checks. See [models](MODELS.md#bot_actions-public-agentaction-legacy-botaction).
+rights. Generic manager claims/finishes remain authenticated dry-run simulations.
+Idempotency is enforced by the database, transitions by row locks and
+actor/hash/expiry/token checks. See [models](MODELS.md#bot_actions-public-agentaction-legacy-botaction).
+
+P9-T01 adds exactly one separate, default-off capability:
+[`telegram.bound_message.v1`](ACTION_ACTIVATION.md). An operator allowlist and
+fresh workspace-owner/binding authorization gate a manually proposed plain-text
+channel message, with review/approval and a separate CSRF execute POST. Its own
+committed one-attempt fence and safe receipts do not enable generic action tools,
+VK, automatic actions or digest sends. UNKNOWN is never automatically replayed.
+Sandbox tests are not live Telegram or production activation evidence.

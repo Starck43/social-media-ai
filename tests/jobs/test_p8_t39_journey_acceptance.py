@@ -93,7 +93,7 @@ async def test_collect_discovery_launch_replays_and_projects_partial_results(lau
     assert replay["job_id"] == first["job_id"]
     assert consent.await_count == 1
     with tenant_scope(launch_workspace.tenant.id):
-        task = await AgentTask.objects.get(id=first["task_id"])
+        task = await AgentTask.objects.prefetch_related("sources").get(id=first["task_id"])
         jobs = await Job.objects.filter(agent_task_id=first["task_id"])
         after_launch_sources = await Source.objects.count()
     assert task is not None

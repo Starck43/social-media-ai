@@ -75,6 +75,13 @@ allowed = {
     "app.core.config",
     "app.core.settings_views",
     "app.core.database",
+    "app.services",
+    "app.services.collection",
+    "app.services.collection.intent",
+    "app.services.social",
+    "app.services.social.vk_access",
+    "app.services.task_plans",
+    "app.services.task_contracts",
     "app.utils",
     "app.utils.crypto",
     "app.jobs",
@@ -129,12 +136,25 @@ modules = (
     "app.utils.crypto",
     "app.jobs.progress",
     "app.types.enums",
-    "cli.commands.llm",
     "app.core.database",
+    # This is a narrow import-time check for the extracted plan/contract core.
+    # It does not classify all of app.agent or app.core as a particular layer.
+    "app.services.task_plans",
+    "app.services.task_contracts",
+    "cli.commands.llm",
 )
 for name in modules:
     module = importlib.import_module(name)
     assert Path(module.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()), name
+
+assert {
+    "app.models",
+    "app.agent",
+    "app.channels",
+    "app.api",
+    "app.web",
+    "app.admin",
+}.isdisjoint(sys.modules), "Task-plan imports loaded an unreviewed model or adapter graph"
 
 from app.utils.crypto import decrypt_secret, encrypt_secret
 
@@ -228,7 +248,10 @@ else:
 assert list(Path.cwd().iterdir()) == [], "Application import wrote into empty CWD"
 assert (
     not connection_attempts and not execution_attempts and not external_attempts
-), f"Forbidden execution attempted: DB={connection_attempts}, runtime={execution_attempts}, external={external_attempts}"
+), (
+    "Forbidden execution attempted: "
+    f"DB={connection_attempts}, runtime={execution_attempts}, external={external_attempts}"
+)
 assert {"app.runtime", "app.worker"}.isdisjoint(sys.modules)
 
 print(

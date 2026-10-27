@@ -14,6 +14,7 @@ from starlette.responses import Response
 from starlette.websockets import WebSocket
 
 from app.admin.csrf import CSRFTokenManager
+from app.admin.scope import AdminScopeMiddleware
 from app.api.v1 import entry
 from app.core.api_scope import ApiScopeMiddleware
 from app.core.config import settings
@@ -104,10 +105,17 @@ def create_application() -> FastAPI:
     # workspace the caller is a member of (never bypass).
     application.add_middleware(ApiScopeMiddleware)
 
-    # Operator console only (sqladmin, static, health): runs as the platform
-    # owner. See app/core/tenant_context.PlatformScopeMiddleware — it excludes
-    # /app/* and /api/* because those resolve their own tenant.
+    # Operator console only (static, health, docs): infrastructure runs as the
+    # platform owner. `/admin/*` is excluded from the bypass — `AdminScopeMiddleware`
+    # finishes first and binds the console to its signed-in actor.
     application.add_middleware(PlatformScopeMiddleware)
+
+    # Console data scope, registered last so it is the OUTERMOST wrapper of these
+    # two (Starlette nests in reverse order of the calls). It must run *before*
+    # the platform bypass opens: it replaces the caller's scope entirely, and an
+    # inner layer could only widen it again. Owner keeps the bypass
+    # (`docs/ADMIN.md` — "everyone else their own").
+    application.add_middleware(AdminScopeMiddleware)
 
     # Set up CORS
     # application.middleware("http")(csrf_middleware)

@@ -7,6 +7,57 @@ workspace web application and not an editor for every ORM table.
 - Registration: [setup.py](../app/admin/setup.py); views: [views.py](../app/admin/views.py).
 - Enabled by `ADMIN_ENABLED` (default true) in [app.main](../app/main.py).
 
+## Admin actor scope
+
+Analytics routes `/dashboard` and `/dashboard/*` use the same selected-workspace
+scope and membership action limits as SQLAdmin.
+
+`AdminScopeMiddleware` binds each `/admin/*` request to its fresh signed-in
+actor ([scope.py](../app/admin/scope.py)). Console entry itself is the login
+gate: only an active account whose **platform** role is `operator`, `admin` or
+`superuser` may sign in, so an ordinary invited client never reaches `/admin`
+at all ([authentication below](#authentication-and-platform-authority)). What
+the console then *shows* is decided by one scope rule:
+
+| Actor | Personal rows (`owner_user_id`) | Workspace rows (`tenant_id`) | Platform catalogs |
+| --- | --- | --- | --- |
+| `superuser` (the owner) | **own only** | all (global inspection) | all |
+| `admin` / `operator` | **own only** | only the selected active workspace, with that membership's role | per platform grants |
+
+Personal provider/model rows stay owner-scoped for every platform role,
+including the owner, as the personal-catalog contract requires. "Own" is the
+signed-in actor, never a value from the form, the path or the query string; a
+row outside the scope does not exist for that request. A foreign id is a
+404/403 on its direct details/edit URL, and a provider reached that way cannot
+decrypt its key.
+
+For workspace screens the platform console grant is only the outer ceiling:
+`app_tenant_id` selects one active membership, the selection is validated on
+every request and falls back to the oldest active membership if it is stale,
+unknown or foreign. Users switch workspaces through `/app`. The selected
+membership's role then caps the action — a stronger role in another membership
+does not grant actions in the selected workspace. Rows and direct
+detail/edit/delete URLs outside the selected workspace are unavailable.
+
+Failures close: an actor with no workspace membership gets `403` on a workspace
+page (never an empty list, never a 500), and an unknown view identity is treated
+as workspace-bound. The classification is derived from the model
+(`__tenant_scoped__`), not from a hand-kept list.
+
+The platform owner retains the existing global workspace inspection exception.
+It does **not** widen the personal catalog, credentials or `owner_user_id`
+filtering of providers/models, and it does not let an ordinary workspace member
+into `/admin`. SQLAdmin's own ORM statements (counts, details, relationships and
+raw-FK writes) run on the dedicated `AdminAsyncSession`/`AdminSession` in
+[session.py](../app/admin/session.py) so they obey the same actor/workspace
+scope; that session is not a general-purpose raw-query guard and
+`BaseManager` does not implement one either.
+
+Regression evidence: [middleware](../tests/admin/test_admin_scope_middleware.py),
+[manager scope](../tests/admin/test_admin_scope_database.py),
+[console session](../tests/admin/test_admin_scope_session.py),
+[coverage](../tests/admin/test_admin_scope_coverage.py).
+
 ## Personal catalog source contract (0109; PR #229 + #230 integrated)
 
 Providers and models are personal to a user and may be shared across that user's
@@ -227,10 +278,14 @@ Additional restrictions:
 - External FastAPI dashboards use `require_admin_perm()` explicitly. Password
   administration has its additional self/cross-account checks below.
 
-The main app's `PlatformScopeMiddleware` supplies explicit tenant bypass for the
-operator console/infrastructure, while `/app` and `/api` have their own scope
-middleware. Admin listings are not filtered by the web UI's selected workspace.
-Actions that execute a task re-enter the selected task's owning workspace.
+The main app's `PlatformScopeMiddleware` leaves infrastructure paths outside
+data scoping, while `/app` and `/api` have their own scope middleware. `/admin`
+and `/dashboard` are excluded from its operator bypass: `AdminScopeMiddleware`
+binds their requests to the actor ([actor scope](#admin-actor-scope)). Admin
+listings use the validated selected membership for workspace rows and the actor's
+own personal catalogue. Users select the shared workspace through `/app`;
+console middleware rechecks membership before using it. Manual task actions
+look up the task inside that scope before admission into its owning workspace.
 
 ## Role permission picker
 
@@ -619,6 +674,8 @@ independent template environment or URL safety.
 | `app/admin/role_picker.py` | Rank-limited platform-role select on the user edit form |
 | `app/admin/auth.py` | Login/logout and fresh platform entry |
 | `app/admin/authorization.py` | Per-request grants, lazy identity/action catalog and external-route guard |
+| `app/admin/scope.py` | Actor/selected-workspace scope for every `/admin/*` request |
+| `app/admin/session.py` | Dedicated console session enforcing the same scope on SQLAdmin's own ORM statements |
 | `app/admin/base.py`, `formatters.py`, `widgets.py` | Shared view configuration, display formatting and form widgets |
 | `app/admin/actions.py` | LLM metadata/mock/billed-request action rendering |
 | `app/admin/endpoints.py` | Password, dashboard and model-test POST routes |

@@ -301,8 +301,13 @@ async def test_sources_page_has_no_scenario_filter(client: AsyncClient) -> None:
         await tenants.delete_by_id(tenant_id)
 
 
+@pytest.mark.tenancy
 async def test_platform_scope_skips_app_paths() -> None:
-    """PlatformScope must not run /app requests as bypass — TenantUI owns them."""
+    """PlatformScope must not run /app requests as bypass — TenantUI owns them.
+
+    `/admin` is out too: `AdminScopeMiddleware` binds the console to its actor
+    (the owner gets the bypass there, a member does not).
+    """
     seen: dict[str, object] = {}
 
     async def probe(scope, receive, send):
@@ -315,7 +320,12 @@ async def test_platform_scope_skips_app_paths() -> None:
         await mw({"type": "http", "path": path, "method": "GET", "headers": []}, None, None)
 
     await call("/admin/tasks")
-    assert seen["bypass"] is True
+    assert seen["bypass"] is False
+
+    # /static is a file mount with no actor: it owns its own (empty) scope, so a
+    # console page that lost its session cannot serve someone else's asset.
+    await call("/static/logo.png")
+    assert seen["bypass"] is False
 
     # /api is a client surface, not the operator console: it must stay out of
     # the bypass (ApiScopeMiddleware authenticates and scopes it instead).
@@ -409,8 +419,14 @@ async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
             csrf = await _csrf(c, "/app/tasks")
             resp = await c.post(
                 "/app/tasks",
-                data={"name": name, "job_type": "collect", "cron_custom": "@once", "run_now": "on",
-                      "start_date": "2026-09-01", "_csrf": csrf},
+                data={
+                    "name": name,
+                    "job_type": "collect",
+                    "cron_custom": "@once",
+                    "run_now": "on",
+                    "start_date": "2026-09-01",
+                    "_csrf": csrf,
+                },
             )
             assert resp.status_code == 200
 

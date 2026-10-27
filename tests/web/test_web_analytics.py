@@ -455,15 +455,14 @@ async def test_viewer_cannot_delete_chain(client: AsyncClient) -> None:
             page = await m.get("/app/analytics/chains")
             assert page.status_code == 200
             assert "chain_keep" in page.text
-            assert f"/app/analytics/chains/chain_keep/delete" not in page.text, "viewer sees no delete form"
+            assert f"/app/analytics/chains/chain_keep/delete" not in page.text, "viewer sees no chain-delete form"
+            assert f'action="/app/analytics/{row_id}/delete"' not in page.text, "viewer sees no row-delete form"
 
             # A crafted POST is refused by the same `guard_web` rule.
             token = CSRF_RE.search(page.text).group(1)
-            resp = await m.post(
-                "/app/analytics/chains/chain_keep/delete",
-                data={"_csrf": token},
-            )
-            assert "Недостаточно прав" in resp.text
+            for path in (f"/app/analytics/{row_id}/delete", "/app/analytics/chains/chain_keep/delete"):
+                resp = await m.post(path, data={"_csrf": token})
+                assert "Недостаточно прав" in resp.text, path
 
             with tenant_scope(tenant_id):
                 assert await AIAnalytics.objects.get(id=row_id) is not None, "row survives"
@@ -1304,7 +1303,7 @@ def test_visible_text_preserves_prose_contract_without_matching_assets_or_attrib
 
 
 @pytest.mark.tenancy
-async def test_workspace_owner_without_structured_delete_right_cannot_delete_analytics(client):
+async def test_workspace_owner_uses_workspace_delete_grant_without_platform_delete(client):
     from app.core.permissions import service_permission_scope
     from app.types import ActionType
 
@@ -1322,14 +1321,15 @@ async def test_workspace_owner_without_structured_delete_right_cannot_delete_ana
         await _login(client, user.username)
         page = await client.get(f"/app/analytics/chains/{chain_id}")
         assert page.status_code == 200
-        assert f'action="/app/analytics/{row_id}/delete"' not in page.text
-        assert f'action="/app/analytics/chains/{chain_id}/delete"' not in page.text
-        token = await _csrf(client, f"/app/analytics/chains/{chain_id}")
-        for path in (f"/app/analytics/{row_id}/delete", f"/app/analytics/chains/{chain_id}/delete"):
-            response = await client.post(path, data={"_csrf": token, "tenant_id": str(tenant_id)})
-            assert "Недостаточно прав" in response.text, path
-            with tenant_scope(tenant_id):
-                assert await AIAnalytics.objects.get(id=row_id) is not None
+        assert f'action="/app/analytics/{row_id}/delete"' in page.text
+        assert f'action="/app/analytics/chains/{chain_id}/delete"' in page.text
+        response = await client.post(
+            f"/app/analytics/{row_id}/delete",
+            data={"_csrf": await _csrf(client, f"/app/analytics/chains/{chain_id}"), "tenant_id": str(tenant_id)},
+        )
+        assert f"Анализ #{row_id} удалён" in response.text
+        with tenant_scope(tenant_id):
+            assert await AIAnalytics.objects.get(id=row_id) is None
     finally:
         if tenant_id is not None:
             with tenant_scope(tenant_id), service_permission_scope("source", "delete"):

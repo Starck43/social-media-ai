@@ -1028,6 +1028,28 @@ async def search_plan(
 
 
 @tool(
+    name="task_vk_connections",
+    description="Показать мои подключения ВКонтакте, режимы доступа, scopes и состояние без секретов.",
+    required_permission="scheduling.task.view",
+    parameters={"type": "object", "properties": {}, "required": []},
+)
+async def task_vk_connections() -> dict[str, Any]:
+    """Discover caller-owned choices before constructing a pinned task plan."""
+    from app.core.permissions import get_current_user
+    from app.core.tenant_context import current_tenant_id
+    from app.services.social.vk_connections import connection_catalog
+
+    actor_id = getattr(get_current_user(), "id", None)
+    tenant_id = current_tenant_id()
+    if type(actor_id) is not int or type(tenant_id) is not int:
+        return {"error": "Нужен активный участник рабочего пространства", "code": "vk_access_unavailable"}
+    try:
+        return await connection_catalog(tenant_id=tenant_id, actor_id=actor_id)
+    except PermissionError:
+        return {"error": "Нет доступа к подключениям ВКонтакте", "code": "vk_access_unavailable"}
+
+
+@tool(
     name="task_plan",
     description=(
         "Проверить и показать полный план социальной задачи без сохранения или запуска. "

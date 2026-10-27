@@ -166,6 +166,26 @@ class ConnectionCatalogRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.detail, "vk_access_unavailable")
         self.catalog.assert_awaited_once_with(tenant_id=10, actor_id=7)
 
+    async def test_agent_can_discover_caller_owned_connection_choices_without_a_selection(self):
+        catalog = {"connections": [{"selection": {"mode": "user", "credential_id": 19}}]}
+        read = AsyncMock(return_value=catalog)
+        route = _actual_function(
+            "app/agent/toolset/tasks.py",
+            "task_vk_connections",
+            {"__name__": "isolated_agent_catalog"},
+            {
+                "app.core.permissions": types.SimpleNamespace(get_current_user=lambda: types.SimpleNamespace(id=7)),
+                "app.core.tenant_context": types.SimpleNamespace(current_tenant_id=lambda: 10),
+                "app.services.social.vk_connections": types.SimpleNamespace(connection_catalog=read),
+            },
+        )
+        self.assertEqual(await route(), catalog)
+        read.assert_awaited_once_with(tenant_id=10, actor_id=7)
+        read.side_effect = PermissionError("private-sentinel")
+        denied = await route()
+        self.assertEqual(denied["code"], "vk_access_unavailable")
+        self.assertNotIn("private-sentinel", str(denied))
+
     async def test_catalog_metadata_in_both_editors_stays_safe_and_explicit(self):
         for filename in ("tasks.html", "task_edit.html"):
             source = (ROOT / "app/web/templates/web" / filename).read_text()

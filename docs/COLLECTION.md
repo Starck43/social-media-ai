@@ -262,7 +262,8 @@ catalogs share `vk_connections.connection_catalog`:
   `task plan '<JSON>' --tenant <workspace> --user <member>` adds a safe preview.
 - Admin: `/admin/agent-task/vk-connections?tenant_id=<workspace>` returns only the
   signed-in operator's own member connections. Plan JSON uses the same selector.
-- Agent: `task_plan` and `search_plan` show the same safe connection preview;
+- Agent: `task_vk_connections` lists choices before selection; `task_plan` and
+  `search_plan` show the same safe connection preview;
   pass `vk_access` to select a connection. A preview never reveals a token.
 
 Capability metadata is conservative. OAuth `meta.scope` records returned scopes,

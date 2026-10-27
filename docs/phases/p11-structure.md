@@ -10,7 +10,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 
 1. [P11-T01](../audit/p11-t01.md) — structural audit and reconciliation — DONE 2026-10-27 (accepted `58f6ddfb`).
 2. [P11-T02](../audit/p11-t02.md) — register follow-ups, queue priority and complexity — DONE 2026-10-27 (accepted `08fa36d4`).
-3. [P11-T03](../tasks/p11-t03.md) — Offline CI safety net and supported baseline (R-01).
+3. [P11-T03](../audit/p11-t03.md) — Offline CI safety net and supported baseline (R-01) — DONE 2026-10-27 (accepted `0d154532`).
 4. [P11-T04](../tasks/p11-t04.md) — Shared task application orchestration (R-02).
 5. [P11-T05](../tasks/p11-t05.md) — Explicit task transaction ownership (R-03).
 6. [P11-T06](../tasks/p11-t06.md) — Typed use-case contracts, safe errors and presenters (R-04).

@@ -948,15 +948,19 @@ async def _record_lane_evidence(
         )
 
 
-async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -> dict[str, Any]:
+async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False, _resolved_context=None) -> dict[str, Any]:
     """Bind an admitted selected connection through discovery and all read lanes."""
     from app.core.tenant_context import current_tenant_id
     from app.services.social.vk_task_access import authorized_vk_task_scope
 
-    snapshot = _effective_replay_snapshot(payload)
-    task = None if snapshot else await _load_task(payload.get("agent_task_id"))
-    task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
-    resolved_context = (snapshot, task, task_payload)
+    if _resolved_context is None:
+        snapshot = _effective_replay_snapshot(payload)
+        task = None if snapshot else await _load_task(payload.get("agent_task_id"))
+        task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
+        resolved_context = (snapshot, task, task_payload)
+    else:
+        snapshot, task, task_payload = _resolved_context
+        resolved_context = _resolved_context
     plan = task_payload.get("task_plan")
     if not isinstance(plan, dict) or "vk_access" not in plan:
         return await _handle_collect_with_access(payload, stage_only=stage_only, _resolved_context=resolved_context)
@@ -1618,7 +1622,9 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
+async def handle_analyze(
+    payload: dict[str, Any], *, _resolved_context=None, collection_stats_override=None
+) -> dict[str, Any]:
     """Analyze collected content and create bot actions if triggers match.
 
     Sources come from the task's m2m `sources` (task.sources); empty = all active.
@@ -1633,25 +1639,52 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     3. Run TriggerEvaluator.should_act on already-stored analysis result
     4. If action needed, check guards and create BotAction (dry_run=True by default)
     """
+    if _resolved_context is None and collection_stats_override is None:
+        snapshot = payload.get("_effective_snapshot")
+        snapshot_payload = snapshot.get("task_payload") if isinstance(snapshot, dict) else None
+        task_plan = snapshot_payload.get("task_plan") if isinstance(snapshot_payload, dict) else None
+        if isinstance(task_plan, dict) and isinstance(task_plan.get("pipeline"), dict):
+            from app.services.task_pipeline import execute_task_pipeline
+
+            return await execute_task_pipeline(payload)
+
     from app.models import AgentScenario, AIAnalytics, BotAction, CollectedItem
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.services.ai.trigger_evaluator import trigger_evaluator
     from app.services.social.guards import guards_checker
     from app.types import BotActionStatus
 
-    snapshot = _effective_replay_snapshot(payload)
-    task = _replay_task_view(snapshot) if snapshot else await _load_task(payload.get("agent_task_id"))
-    task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
-    unified_run = bool(task_payload.get("collect_before_analyze"))
-    collection_stats = await handle_collect(payload, stage_only=True) if unified_run else None
+    if _resolved_context is not None:
+        snapshot, task, task_payload = _resolved_context
+    else:
+        snapshot = _effective_replay_snapshot(payload)
+        task = _replay_task_view(snapshot) if snapshot else await _load_task(payload.get("agent_task_id"))
+        task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
+    unified_run = bool(task_payload.get("collect_before_analyze")) and collection_stats_override is None
+    collection_stats = (
+        collection_stats_override
+        if collection_stats_override is not None
+        else await handle_collect(payload, stage_only=True, _resolved_context=(snapshot, task, task_payload))
+        if unified_run
+        else None
+    )
     collection_by_source = {
         row["source_id"]: row
         for row in (collection_stats or {}).get("per_source", [])
         if isinstance(row, dict) and type(row.get("source_id")) is int
     }
+    collected_hashes_by_source = {}
+    if collection_stats_override is not None:
+        for source_id, row in collection_by_source.items():
+            hashes = row.get("content_hashes") if isinstance(row, dict) else None
+            collected_hashes_by_source[source_id] = set(
+                value
+                for value in hashes
+                if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+            ) if isinstance(hashes, list) else set()
     from app.jobs import progress as job_progress
 
-    if unified_run:
+    if unified_run or collection_stats_override is not None:
         await job_progress.begin_phase("analysis")
     scenario_id = (
         snapshot.get("scenario_id") if snapshot else task_payload.get("scenario_id") or payload.get("scenario_id")
@@ -1771,7 +1804,12 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 scenario = None
 
             if not scenario or not scenario.is_active:
-                # Fallback: tenant's default scenario
+                plan = task_payload.get("task_plan")
+                if isinstance(plan, dict) and plan.get("version") == 2:
+                    # A composed run is bound to its admitted scenario; never
+                    # silently swap in the workspace default after revocation.
+                    raise PermissionError("pipeline_scenario_unavailable")
+                # Legacy tasks retain their workspace-default fallback.
                 scenario = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
 
             if not scenario or not scenario.is_active:
@@ -1813,6 +1851,10 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     start_date=window.get("start_date"),
                     end_date=window.get("end_date"),
                 )
+                if collection_stats_override is not None:
+                    current_hashes = collected_hashes_by_source.get(source.id, set())
+                    staged = [row for row in staged if getattr(row, "content_hash", None) in current_hashes]
+                    raw_total = None  # Exact selected hashes can exceed the bounded read batch.
                 per.update({"raw_total": raw_total, "raw_selected": len(staged), "raw_processed": 0})
                 await job_progress.update_current(sources, stats["per_source"], per)
                 progress_attempted = True

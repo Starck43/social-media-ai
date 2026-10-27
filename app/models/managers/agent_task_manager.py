@@ -1093,9 +1093,16 @@ class AgentTaskManager(BaseManager):
                             }
                         )
                     if isinstance(payload.get("task_plan"), dict):
-                        from app.services.task_plans import materialize_task_plan_window
+                        from app.models.tenancy.tenant import Tenant
+                        from app.services.task_plans import materialize_task_plan_window, task_plan_timezone
 
-                        payload = materialize_task_plan_window(payload, now)
+                        workspace_timezone = timezone_name or (
+                            await session.execute(select(Tenant.timezone).where(Tenant.id == tenant_id))
+                        ).scalar_one_or_none()
+                        effective_timezone = task_plan_timezone(
+                            payload["task_plan"], workspace_timezone or settings.SCHEDULER_TIMEZONE
+                        )
+                        payload = materialize_task_plan_window(payload, now, timezone=effective_timezone)
                     retry_reset_count = 0
                     if retry_exhausted:
                         if row.job_type != "analyze":

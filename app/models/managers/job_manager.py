@@ -735,6 +735,35 @@ class JobManager(BaseManager["Job"]):
                 )
         return True
 
+    async def record_pipeline_checkpoint(self, claim: "JobClaim", checkpoint: dict) -> bool:
+        """Persist a bounded composed-task stage receipt under the live claim."""
+        from sqlalchemy import select, update
+
+        from app.core.database import async_session_maker
+
+        from ..scheduling.job import Job as JobModel
+
+        self._require_claim_tenant(claim, "Pipeline checkpoint does not match the current tenant")
+        if claim.job_type != "analyze" or not isinstance(checkpoint, dict):
+            raise ValueError("A composed analyze claim and checkpoint are required")
+        predicates = (*self._claim_predicates(JobModel, claim), JobModel.status == "running")
+        async with async_session_maker() as session:
+            async with session.begin():
+                current = (
+                    await session.execute(select(JobModel.id, JobModel.result).where(*predicates).with_for_update())
+                ).one_or_none()
+                if current is None:
+                    return False
+                result = dict(current.result) if isinstance(current.result, dict) else {}
+                result["pipeline"] = checkpoint
+                await session.execute(
+                    update(JobModel)
+                    .where(*predicates)
+                    .values(result=result, updated_at=JobModel.updated_at)
+                    .execution_options(synchronize_session=False)
+                )
+        return True
+
     async def delete_unfinished_for_task(self, session: "AsyncSession", *, tenant_id: int, task_id: int) -> int:
         """Remove this task's queued/running rows before a manual re-run.
 

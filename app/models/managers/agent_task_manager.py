@@ -84,18 +84,16 @@ class AgentTaskManager(BaseManager):
             raise ValueError("Настройка хранения истории должна быть повторяемой, например ежедневно.")
 
     @staticmethod
-    def _validate_task_plan_binding(
-        job_type: str | None, payload: Any, cron_expr: str | None, scenario_id: int | None
-    ):
+    def _validate_task_plan_binding(job_type: str | None, payload: Any, cron_expr: str | None, scenario_id: int | None):
         """Keep typed plan, persisted scenario and scheduler trigger aligned."""
-        if not isinstance(payload, dict) or "task_plan" not in payload:
-            return
-        from app.services.task_plans import TaskPlanError, apply_parsed_task_plan, parse_task_plan
+        from app.services.task_plans import TaskPlanError, apply_parsed_task_plan, read_saved_task_plan
 
         try:
-            plan = parse_task_plan(payload["task_plan"])
+            plan = read_saved_task_plan(payload)
         except TaskPlanError as error:
             raise ValueError(str(error)) from error
+        if plan is None:
+            return
         if job_type not in {"collect", "analyze"}:
             raise ValueError("A social task plan requires a collect or analyze task")
         if plan.trigger.type == "schedule" and cron_expr != plan.trigger.cron:
@@ -125,9 +123,7 @@ class AgentTaskManager(BaseManager):
         # Resolve the tenant through BaseManager's normal context/bootstrap path
         # before validating the scenario, so the FK failure is a domain error.
         stamped = await self._apply_tenant(session, dict(kwargs))
-        await self._validate_scenario_binding(
-            session, stamped["tenant_id"], stamped.get("agent_scenario_id")
-        )
+        await self._validate_scenario_binding(session, stamped["tenant_id"], stamped.get("agent_scenario_id"))
         return await super().create(session=session, **stamped)
 
     # Fields that define what the next occurrence will do. A change to any of
@@ -226,6 +222,7 @@ class AgentTaskManager(BaseManager):
         from sqlalchemy import select
 
         from app.core.database import async_session_maker
+
         from ..scheduling.agent_task import AgentTask
         from .job_manager import JobManager
 
@@ -412,11 +409,12 @@ class AgentTaskManager(BaseManager):
         session: "AsyncSession | None" = None,
     ) -> int:
         """Change source links under the same gate and task lock as admission."""
-        from sqlalchemy import delete as sa_delete, select
+        from sqlalchemy import delete as sa_delete
+        from sqlalchemy import select
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-        from ..scheduling.agent_task import agent_task_sources
         from ..collection.source import Source
+        from ..scheduling.agent_task import agent_task_sources
         from .job_manager import JobManager
 
         if type(task_id) is not int or task_id <= 0:
@@ -643,8 +641,8 @@ class AgentTaskManager(BaseManager):
         from sqlalchemy import and_, exists, literal, not_, or_, select
 
         from ..analysis.agent_scenario import AgentScenario
-        from ..scheduling.agent_task import AgentTask, agent_task_sources
         from ..collection.source import Source
+        from ..scheduling.agent_task import AgentTask, agent_task_sources
 
         active_scenario = exists(
             select(literal(1)).where(
@@ -962,8 +960,8 @@ class AgentTaskManager(BaseManager):
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
         from app.tasks.cron import next_run_at
 
-        from ..scheduling.agent_task import AgentTask
         from ..collection.source import Source
+        from ..scheduling.agent_task import AgentTask
         from .job_manager import JobManager
 
         tenant_id = current_tenant_id()
@@ -1030,9 +1028,7 @@ class AgentTaskManager(BaseManager):
                 if not scheduled:
                     self._require_job_retention_permission(row.job_type)
                 self._validate_job_retention_schedule(row.job_type, row.payload, row.cron_expr)
-                self._validate_task_plan_binding(
-                    row.job_type, row.payload, row.cron_expr, row.agent_scenario_id
-                )
+                self._validate_task_plan_binding(row.job_type, row.payload, row.cron_expr, row.agent_scenario_id)
                 if scheduled:
                     active_source_ids = set()
                     if self.requires_sources(row.job_type) and not row.sources:
@@ -1054,9 +1050,7 @@ class AgentTaskManager(BaseManager):
                         from app.services.task_plans import task_plan_timezone
 
                         task_plan = (row.payload or {}).get("task_plan") if isinstance(row.payload, dict) else None
-                        effective_timezone = task_plan_timezone(
-                            task_plan, timezone_name or settings.SCHEDULER_TIMEZONE
-                        )
+                        effective_timezone = task_plan_timezone(task_plan, timezone_name or settings.SCHEDULER_TIMEZONE)
                         next_fire = next_run_at(row.cron_expr, effective_timezone, after=now)
                     except (ValueError, KeyError) as error:
                         schedule_error = str(error)
@@ -1085,9 +1079,7 @@ class AgentTaskManager(BaseManager):
                             if requested_plan is not None:
                                 from app.services.task_plans import apply_task_plan_override
 
-                                payload = apply_task_plan_override(
-                                    payload, requested_plan, job_type=row.job_type
-                                )
+                                payload = apply_task_plan_override(payload, requested_plan, job_type=row.job_type)
                                 self._validate_task_plan_binding(
                                     row.job_type, payload, row.cron_expr, row.agent_scenario_id
                                 )
@@ -1180,8 +1172,7 @@ class AgentTaskManager(BaseManager):
                             unexpected = [
                                 source.id
                                 for source in linked_sources
-                                if source.id not in selected_set
-                                and source.owner_task_id != row.id
+                                if source.id not in selected_set and source.owner_task_id != row.id
                             ]
                             if unexpected:
                                 # Population may link a verified, reusable source
@@ -1206,7 +1197,8 @@ class AgentTaskManager(BaseManager):
                             source_rows = list(
                                 (
                                     await session.execute(
-                                        select(Source).where(
+                                        select(Source)
+                                        .where(
                                             Source.tenant_id == tenant_id,
                                             Source.is_active.is_(True),
                                             or_(Source.owner_task_id.is_(None), Source.owner_task_id == row.id),
@@ -1221,21 +1213,24 @@ class AgentTaskManager(BaseManager):
                             source_rows = linked_sources
                         collection_plan = plan.get("collection") if plan else None
                         discovery = collection_plan.get("discovery") if isinstance(collection_plan, dict) else None
-                        can_discover_without_existing_source = source_scope == "discovery" and isinstance(
-                            collection_plan, dict
-                        ) and (
-                            bool(collection_plan.get("queries"))
-                            or (
-                                isinstance(discovery, dict)
-                                and bool(discovery.get("queries"))
-                                and bool(discovery.get("communities") or discovery.get("people"))
+                        can_discover_without_existing_source = (
+                            source_scope == "discovery"
+                            and isinstance(collection_plan, dict)
+                            and (
+                                bool(collection_plan.get("queries"))
+                                or (
+                                    isinstance(discovery, dict)
+                                    and bool(discovery.get("queries"))
+                                    and bool(discovery.get("communities") or discovery.get("people"))
+                                )
                             )
                         )
                         if not source_rows and not can_discover_without_existing_source and source_scope is None:
                             source_rows = list(
                                 (
                                     await session.execute(
-                                        select(Source).where(
+                                        select(Source)
+                                        .where(
                                             Source.tenant_id == tenant_id,
                                             Source.is_active.is_(True),
                                         )

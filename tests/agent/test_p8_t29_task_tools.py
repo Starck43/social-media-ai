@@ -52,10 +52,32 @@ async def test_execute_once_delegates_fixed_job_and_request_key(monkeypatch) -> 
     assert result == {"status": "queued", "task_id": 31, "job_id": 41}
     assert calls == [(plan, "request-123", "analyze")]
     assert await tasks.task_execute_once("short", plan) == {
-        "error": "request_id должен содержать от 8 до 128 символов",
-        "code": "request_id_invalid",
+        "error": "The task launch request is invalid.",
+        "code": "request_invalid",
     }
     assert len(calls) == 1
+
+
+async def test_execute_once_rejects_missing_and_extra_arguments_before_launch(monkeypatch) -> None:
+    from app.agent.toolset import tasks
+
+    calls = []
+
+    async def launch(*_args, **_kwargs):
+        calls.append(True)
+        return {"status": "queued"}
+
+    _module(monkeypatch, "app.services.task_launch", launch_social_task=launch)
+
+    assert await tasks.task_execute_once() == {
+        "error": "The task launch request is invalid.",
+        "code": "request_invalid",
+    }
+    assert await tasks.task_execute_once("request-123", {}, tenant_id=77) == {
+        "error": "The task launch request is invalid.",
+        "code": "request_invalid",
+    }
+    assert calls == []
 
 
 async def test_execute_once_surfaces_a_replayed_request(monkeypatch) -> None:
@@ -74,22 +96,79 @@ async def test_execute_once_surfaces_a_replayed_request(monkeypatch) -> None:
 
 async def test_execute_once_rejects_a_recurring_trigger_through_shared_guard(monkeypatch) -> None:
     from app.agent.toolset import tasks
+    from app.services.task_contracts import TaskLaunchError
 
     async def launch(plan, *, request_id, job_type):
         assert job_type == "analyze"
         if plan.get("trigger", {}).get("type") != "once":
-            raise ValueError("task_execute_once only accepts one-off plans")
+            raise TaskLaunchError("schedule_confirmation_required")
         return {"status": "queued"}
 
     _module(monkeypatch, "app.services.task_launch", launch_social_task=launch)
-    result = await tasks.task_execute_once(
-        "request-123", {"trigger": {"type": "schedule", "cron": "0 9 * * *"}}
-    )
-    assert result == {"error": "task_execute_once only accepts one-off plans", "code": "task_plan_invalid"}
+    result = await tasks.task_execute_once("request-123", {"trigger": {"type": "schedule", "cron": "0 9 * * *"}})
+    assert result == {
+        "error": "Recurring tasks require explicit schedule confirmation.",
+        "code": "schedule_confirmation_required",
+    }
+
+
+async def test_execute_once_maps_plan_validation_to_a_bounded_error_code(monkeypatch) -> None:
+    from app.agent.toolset import tasks
+    from app.services.task_plans import TaskPlanError
+
+    marker = "provider secret must not escape"
+
+    async def launch(*_args, **_kwargs):
+        raise TaskPlanError(marker)
+
+    _module(monkeypatch, "app.services.task_launch", launch_social_task=launch)
+
+    assert await tasks.task_execute_once("request-123", {"trigger": {"type": "once"}}) == {
+        "error": "Invalid task plan (task_plan_invalid).",
+        "code": "task_plan_invalid",
+    }
+
+
+async def test_execute_once_hides_known_and_unknown_external_error_text(monkeypatch) -> None:
+    from app.agent.toolset import tasks
+    from app.services.task_contracts import TaskLaunchError
+
+    marker = "provider credential detail"
+
+    async def known(*_args, **_kwargs):
+        raise TaskLaunchError("request_id_conflict", cause=RuntimeError(marker))
+
+    _module(monkeypatch, "app.services.task_launch", launch_social_task=known)
+    known_result = await tasks.task_execute_once("request-123", {"trigger": {"type": "once"}})
+    assert known_result == {
+        "error": "request_id was already used for different task conditions",
+        "code": "request_id_conflict",
+    }
+    assert marker not in str(known_result)
+
+    async def unknown(*_args, **_kwargs):
+        raise RuntimeError(marker)
+
+    _module(monkeypatch, "app.services.task_launch", launch_social_task=unknown)
+    unknown_result = await tasks.task_execute_once("request-123", {"trigger": {"type": "once"}})
+    assert unknown_result == {
+        "error": "The launch result is unconfirmed; inspect the task before retrying.",
+        "code": "launch_unconfirmed",
+    }
+    assert marker not in str(unknown_result)
 
 
 async def test_plan_previews_are_bounded_and_do_not_start_platform_work(monkeypatch) -> None:
     from app.agent.toolset import tasks
+
+    async def entitlements(_payload):
+        return {"allowed": True}
+
+    async def vk_access(_plan):
+        return {"reason": "legacy_source_access", "checked": False}
+
+    monkeypatch.setattr("app.services.collection.entitlement_policy.preview_entitlements", entitlements)
+    monkeypatch.setattr("app.services.social.vk_task_access.preview_vk_access", vk_access)
 
     result = await tasks.search_plan(
         goal="Find recent posts",
@@ -101,6 +180,8 @@ async def test_plan_previews_are_bounded_and_do_not_start_platform_work(monkeypa
     assert result["status"] == "proposal"
     assert result["execution"] == "not_started"
     assert result["queries"] == ["repair", "renovation"]
+    assert result["entitlements"] == {"allowed": True}
+    assert result["vk_access"] == {"reason": "legacy_source_access", "checked": False}
 
     invalid = await tasks.search_plan(
         goal="Find recent posts",
@@ -240,9 +321,7 @@ async def test_source_add_rejects_non_member_token_owner_and_raw_params(monkeypa
 
     monkeypatch.setattr(tenant_manager.tenant_users, "web_memberships_for_tenant", memberships)
 
-    result = await sources.source_add(
-        "vk", "group", "-77", mode="user", token_owner=8
-    )
+    result = await sources.source_add("vk", "group", "-77", mode="user", token_owner=8)
     assert result["code"] == "token_owner_forbidden"
     parameters = inspect.signature(sources.source_add).parameters
     assert not {"params", "tenant_id", "owner_task_id"}.intersection(parameters)

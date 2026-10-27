@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -36,16 +35,32 @@ def application_for(environment, *, debug=False, cors=False):
     if len(selected) != 1:
         raise RuntimeError("Expected one application factory")
     settings = SimpleNamespace(
-        ENVIRONMENT=environment, DEBUG=debug, SECRET_KEY="synthetic-secret",
-        BACKEND_CORS_ORIGINS=["http://localhost:8000"] if cors else [], ADMIN_ENABLED=False,
+        ENVIRONMENT=environment,
+        DEBUG=debug,
+        SECRET_KEY="synthetic-secret",
+        BACKEND_CORS_ORIGINS=["http://localhost:8000"] if cors else [],
+        ADMIN_ENABLED=False,
     )
-    tokens = {name: object() for name in (
-        "SessionMiddleware", "TenantUIMiddleware", "ApiScopeMiddleware", "PlatformScopeMiddleware",
-        "CORSMiddleware", "health_router", "web_router", "lifespan",
-    )}
+    tokens = {
+        name: object()
+        for name in (
+            "SessionMiddleware",
+            "TenantUIMiddleware",
+            "ApiScopeMiddleware",
+            "PlatformScopeMiddleware",
+            "AdminScopeMiddleware",
+            "CORSMiddleware",
+            "health_router",
+            "web_router",
+            "lifespan",
+        )
+    }
     namespace = {
-        **tokens, "FastAPI": ApplicationDouble, "settings": settings,
-        "entry": SimpleNamespace(router=object()), "add_pagination": lambda app: None,
+        **tokens,
+        "FastAPI": ApplicationDouble,
+        "settings": settings,
+        "entry": SimpleNamespace(router=object()),
+        "add_pagination": lambda app: None,
         "CSRFTokenManager": lambda **options: options,
     }
     module = ast.Module(body=selected, type_ignores=[])
@@ -87,9 +102,20 @@ class WebSessionCookieSecurityTests(unittest.TestCase):
 
     def test_middleware_registration_order_is_preserved(self):
         application, tokens, _ = application_for("production", cors=True)
-        self.assertEqual([kind for kind, _ in application.middleware], [tokens[name] for name in (
-            "TenantUIMiddleware", "ApiScopeMiddleware", "PlatformScopeMiddleware", "SessionMiddleware", "CORSMiddleware",
-        )])
+        self.assertEqual(
+            [kind for kind, _ in application.middleware],
+            [
+                tokens[name]
+                for name in (
+                    "TenantUIMiddleware",
+                    "ApiScopeMiddleware",
+                    "PlatformScopeMiddleware",
+                    "AdminScopeMiddleware",
+                    "SessionMiddleware",
+                    "CORSMiddleware",
+                )
+            ],
+        )
 
     def test_existing_health_router_remains_registered_once(self):
         application, tokens, _ = application_for("production")

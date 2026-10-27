@@ -1,0 +1,5 @@
+# Tool-only profile: no app, DB drivers, providers or pytest plugins.
+black==25.1.0
+isort==6.0.1
+pytest==8.3.5
+detect-secrets==1.5.0

@@ -188,7 +188,7 @@ def admin_page(out: Path, vendor: Path) -> None:
 
 def render(out: Path, vendor: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
-    settings_pages(out, runpy.run_path(str(ROOT / "tests/settings_layout_fixtures.py")), vendor)
+    settings_pages(out, runpy.run_path(str(ROOT / "tests/shared/settings_layout_fixtures.py")), vendor)
     admin_page(out, vendor)
 
 

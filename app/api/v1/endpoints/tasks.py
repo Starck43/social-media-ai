@@ -113,10 +113,11 @@ async def preview_task_plan(
     _user=Depends(require_model_perm("agenttask", ActionType.CREATE)),
 ):
     """Normalize a social-task request without writing rows or calling a platform."""
-    from app.services.task_plans import TaskPlanError, parse_task_plan, task_plan_block
+    from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan, task_plan_block
 
     try:
         plan = parse_task_plan(request.task_plan)
+        apply_task_plan({}, request.task_plan, job_type=request.job_type)
     except (TaskPlanError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
     if request.job_type not in {"collect", "analyze"}:
@@ -671,3 +672,23 @@ async def run_task_oneoff(
         "result": outcome.get("result"),
         "error": outcome.get("error"),
     }
+
+
+@router.post("/{task_id}/runs/{job_id}/digest/send", response_model=dict)
+async def send_composed_task_digest(
+    task_id: int,
+    job_id: int,
+    confirmed: bool = Query(False, description="Explicit confirmation to send this frozen run report"),
+    _user=Depends(require_model_perm("digestrun", ActionType.CREATE)),
+):
+    """Deliver a retained generated report; preview and generation never call this."""
+    if confirmed is not True:
+        raise HTTPException(status_code=400, detail="Explicit report delivery confirmation required")
+    from app.services.task_digest_delivery import send_task_digest
+
+    try:
+        return await send_task_digest(task_id, job_id)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Report delivery is not permitted") from None
+    except Exception:
+        raise HTTPException(status_code=409, detail="Inspect retained delivery receipts before retrying") from None

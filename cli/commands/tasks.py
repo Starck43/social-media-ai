@@ -1251,3 +1251,29 @@ def _make_task_run_command(job_type: str) -> Callable:
 
 for _jt in ("collect", "digest", "analyze", "prune", "learn", "reflect"):
     task_app.command(name=_jt)(_json_command(f"task {_jt}")(_make_task_run_command(_jt)))
+
+
+@task_app.command("digest-send")
+@_json_command("task digest-send")
+def task_digest_send_cmd(
+    task_id: int = typer.Argument(..., help="Composed AgentTask ID"),
+    job_id: int = typer.Option(..., "--job-id", help="Retained run containing the generated report"),
+    tenant: str = typer.Option(..., "--tenant", help="Workspace slug or ID"),
+    confirm: bool = typer.Option(False, "--confirm", help="Explicitly confirm delivery of this frozen report"),
+):
+    """Send an existing report with per-part receipts; never regenerate it."""
+    if confirm is not True:
+        raise typer.Exit(EXIT_USAGE)
+    from app.core.tenant_context import tenant_scope
+    from app.services.task_digest_delivery import send_task_digest
+
+    from .task_output import task_print as rprint
+
+    async def _run():
+        tenant_id = await _require_explicit_tenant(tenant)
+        with tenant_scope(tenant_id):
+            result = await send_task_digest(task_id, job_id)
+        rprint(f"Report delivery: {result['status']} ({result['sent_parts']}/{result['total_parts']} parts)")
+        return result
+
+    return _run_task_platform(_run())

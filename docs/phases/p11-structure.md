@@ -17,7 +17,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 7. [P11-T07](../tasks/p11-t07.md) — Incremental package-boundary enforcement (R-05).
 8. [P11-T08](../tasks/p11-t08.md) — Public API compatibility and bounded request policy (R-06).
 9. [P11-T09](../tasks/p11-t09.md) — Fail-closed typed agent-tool registration (R-07).
-10. [P11-T10](../tasks/p11-t10.md) — Operator CLI boundaries and machine-output contract (R-08).
+10. [P11-T10](../audit/p11-t10.md) — Operator CLI boundaries and machine-output contract — DONE 2026-10-28 (accepted `e1dec81d`, integrated `1506d98d`; PR #267).
 11. [P11-T11](../tasks/p11-t11.md) — Web and admin use-case decomposition (R-09).
 12. [P11-T12](../tasks/p11-t12.md) — Durable action-audit contract and support correlation (R-10).
 13. [P11-T13](../tasks/p11-t13.md) — Manager and execution-module decomposition (R-11).
@@ -31,7 +31,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 
 21. [P11-T21](../audit/p11-t21.md) — minimal task-reading path and removal of redundant audit navigation — DONE 2026-10-27 (accepted `401ee050`).
 22. [P11-T22](../audit/p11-t22.md) — host shared working principles in the project rules — DONE 2026-10-27 (accepted `59027292`).
-23. [P11-T23](p11-t23.md) — Split agent-task documentation by reader — TODO (registered 2026-10-27; waits for P11-T16, P8-T40 and P8-T41).
+23. [P11-T23](../tasks/p11-t23.md) — Split agent-task documentation by reader — TODO (registered 2026-10-27; waits for P11-T16, P8-T40 and P8-T41).
 
 ## Sequencing and continuity
 

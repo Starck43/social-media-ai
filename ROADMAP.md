@@ -51,7 +51,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P11-T08](docs/tasks/p11-t08.md) Public API compatibility and bounded request policy — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
 - [P11-T09](docs/tasks/p11-t09.md) Fail-closed typed agent-tool registration — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
-- [P11-T10](docs/tasks/p11-t10.md) Operator CLI boundaries and machine-output contract — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=4069ac7bd6e5804189db00a95c3a97cc) · `P2` · `C4`
 - [P11-T11](docs/tasks/p11-t11.md) Web and admin use-case decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
 - [P11-T12](docs/tasks/p11-t12.md) Durable action-audit contract and support correlation — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
 - [P11-T13](docs/tasks/p11-t13.md) Manager and execution-module decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`

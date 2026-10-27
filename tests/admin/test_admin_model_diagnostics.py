@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
+from app.core.personal_catalog_context import catalog_execution_scope
 from source_import_isolation import load_isolated_source
 from test_admin_model_billing_integration import endpoint_case
 from test_admin_model_probe import COST_EVIDENCE, ROOT, action_module, model, probe_module, template_env
@@ -53,6 +54,8 @@ def stack(*, payload=None, status=200, failure=None, accounting_failure=False, a
         return_value=({"dispatch_id": "owned"}, "owned"), side_effect=admission_failure
     )
     client_module._verify_personal_dispatch_day = AsyncMock()
+    # P3 credential revalidation owns the pre-HTTP DB check; the cost lane doubles it.
+    client_module._revalidate_personal_dispatch_before_http = AsyncMock()
     client_module._observe_personal_outcome = AsyncMock(
         side_effect=RuntimeError("PRIVATE_ACCOUNTING") if accounting_failure else None
     )
@@ -60,7 +63,9 @@ def stack(*, payload=None, status=200, failure=None, accounting_failure=False, a
     client_module.journal_chat_attempt = AsyncMock()
     selected = model()
     selected.provider.base_url, selected.provider.auth_header = "https://provider.invalid/v1", None
-    client = client_module.OpenAICompatibleClient(selected)
+    # The actual client asserts the bound personal-catalogue owner at construction.
+    with catalog_execution_scope(selected.owner_user_id):
+        client = client_module.OpenAICompatibleClient(selected)
     client._rate_limit = AsyncMock()
     client_module.LLMClientFactory.create = lambda selected: client
     probe = load_isolated_source(

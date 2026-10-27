@@ -21,6 +21,21 @@ For structural changes, keep move-only and behavior edits separate, preserve
 compatibility until consumers migrate, and define a safe rollback. Task cards
 carry only task-specific additions, not copies of these common rules.
 
+## Working principles
+
+- Simplicity over cleverness; concise reporting without restating what the commit,
+  card or PR already carries. Ask only when ambiguity materially changes the
+  outcome; otherwise choose a reasonable default and proceed.
+- Derive, don't store: a stale fact is worse than an absent one. Keep conventions,
+  workflow order, gotchas and security constraints; never record values one
+  command reveals (versions, listings, counts, current metrics) — store the pointer
+  to their source instead.
+- Prefer scripts over instructions for deterministic checks; only their output
+  enters context. Hand long implementations to a fresh session with plan,
+  decisions and next steps. Record actual documents read, never suggested reading.
+- All projects follow [Semantic Versioning](https://semver.org/); a release updates
+  the package version and records its evidence in the task card or audit.
+
 ## Mandatory boundaries
 
 - Before task edits, claim/create its unique ID, status, owner, dialogue and card

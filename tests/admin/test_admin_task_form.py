@@ -101,7 +101,9 @@ async def test_an_active_collect_task_saves_through_the_real_form(monkeypatch):
     from app.types import SourceType
 
     with tenant_scope(bypass=True):
-        tenant = await Tenant.objects.create(name=f"admin-form-{secrets.token_hex(4)}", slug=f"af-{secrets.token_hex(4)}")
+        tenant = await Tenant.objects.create(
+            name=f"admin-form-{secrets.token_hex(4)}", slug=f"af-{secrets.token_hex(4)}"
+        )
         platform = await Platform.objects.filter(is_active=True).first()
         source = await Source.objects.create(
             tenant_id=tenant.id,
@@ -184,6 +186,35 @@ async def test_missing_target_params_reach_the_admin_toast(monkeypatch):
 
     assert session["admin_message"]["type"] == "warning"
     assert "укажите в параметрах задачи" in session["admin_message"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_new_admin_task_plan_is_canonical_and_waits_for_workspace_payer():
+    """The shared create preparation preserves admin's inactive-until-consent guard."""
+    plan = {
+        "platforms": ["vk"],
+        "source_scope": "discovery",
+        "source_ids": [],
+        "collection": {"queries": ["renovation"]},
+        "window": {"type": "rolling", "days": 2},
+        "trigger": {"type": "once"},
+    }
+    data = {
+        "tenant": "1",
+        "is_active": True,
+        "job_type": "collect",
+        "cron_expr": "@once",
+        "payload": {"task_plan": plan},
+    }
+    model = SimpleNamespace(is_active=False, job_type="collect", cron_expr="@once", next_run_at=None)
+
+    await AgentTaskAdmin().on_model_change(data, model, is_created=True)
+
+    assert data["is_active"] is False
+    assert data["payload"]["task_plan"]["source_scope"] == "discovery"
+    assert data["payload"]["task_plan"]["source_ids"] == []
+    assert data["cron_expr"] == "@once"
+    assert data["next_run_at"] is not None
 
 
 def test_task_admin_documents_the_collection_block_and_dry_run() -> None:

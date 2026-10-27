@@ -1,0 +1,563 @@
+{
+  "ACCESS_TOKEN_EXPIRE_MINUTES": {
+    "annotation": "<class 'int'>",
+    "default": 43200,
+    "factory": false,
+    "required": false
+  },
+  "ADMIN_ENABLED": {
+    "annotation": "<class 'bool'>",
+    "default": true,
+    "factory": false,
+    "required": false
+  },
+  "AGENT_DAILY_COST_LIMIT": {
+    "annotation": "<class 'float'>",
+    "default": 5.0,
+    "factory": false,
+    "required": false
+  },
+  "AGENT_HISTORY_LIMIT": {
+    "annotation": "<class 'int'>",
+    "default": 20,
+    "factory": false,
+    "required": false
+  },
+  "AGENT_MAX_ITERATIONS": {
+    "annotation": "<class 'int'>",
+    "default": 6,
+    "factory": false,
+    "required": false
+  },
+  "AGENT_MAX_TOKENS": {
+    "annotation": "<class 'int'>",
+    "default": 2048,
+    "factory": false,
+    "required": false
+  },
+  "AGENT_MODEL": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "AGENT_SYSTEM_PROMPT": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "AGENT_TEMPERATURE": {
+    "annotation": "<class 'float'>",
+    "default": 0.3,
+    "factory": false,
+    "required": false
+  },
+  "ALGORITHM": {
+    "annotation": "<class 'str'>",
+    "default": "HS256",
+    "factory": false,
+    "required": false
+  },
+  "ALLOWED_ORIGINS": {
+    "annotation": "<class 'str'>",
+    "default": "http://localhost:3000,http://localhost:8000,http://localhost:8501",
+    "factory": false,
+    "required": false
+  },
+  "API_V1_STR": {
+    "annotation": "<class 'str'>",
+    "default": "/api/v1",
+    "factory": false,
+    "required": false
+  },
+  "BACKEND_CORS_ORIGINS": {
+    "annotation": "list[str]",
+    "default": [
+      "http://localhost:3000",
+      "http://localhost:8000"
+    ],
+    "factory": false,
+    "required": false
+  },
+  "CHANGE_PASSWORD_RATE_LIMIT": {
+    "annotation": "<class 'str'>",
+    "default": "5/minute",
+    "factory": false,
+    "required": false
+  },
+  "CREDENTIALS_KEY": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "DATA_RETENTION_MONTHS": {
+    "annotation": "<class 'int'>",
+    "default": 1,
+    "factory": false,
+    "required": false
+  },
+  "DB_POOL": {
+    "annotation": "<class 'str'>",
+    "default": "pool",
+    "factory": false,
+    "required": false
+  },
+  "DB_SCHEMA": {
+    "annotation": "<class 'str'>",
+    "default": "public",
+    "factory": false,
+    "required": false
+  },
+  "DB_TEST_SCHEMA": {
+    "annotation": "<class 'str'>",
+    "default": "test_schema",
+    "factory": false,
+    "required": false
+  },
+  "DEBUG": {
+    "annotation": "<class 'bool'>",
+    "default": false,
+    "factory": false,
+    "required": false
+  },
+  "DEFAULT_TENANT_SLUG": {
+    "annotation": "<class 'str'>",
+    "default": "owner",
+    "factory": false,
+    "required": false
+  },
+  "ENVIRONMENT": {
+    "annotation": "<class 'str'>",
+    "default": "development",
+    "factory": false,
+    "required": false
+  },
+  "HOST": {
+    "annotation": "<class 'str'>",
+    "default": "0.0.0.0",
+    "factory": false,
+    "required": false
+  },
+  "JOB_MAX_ATTEMPTS": {
+    "annotation": "<class 'int'>",
+    "default": 3,
+    "factory": false,
+    "required": false
+  },
+  "JOB_RETRY_BACKOFF_SECONDS": {
+    "annotation": "<class 'int'>",
+    "default": 300,
+    "factory": false,
+    "required": false
+  },
+  "LLM_DEFAULT_MAX_TOKENS": {
+    "annotation": "<class 'int'>",
+    "default": 400,
+    "factory": false,
+    "required": false
+  },
+  "LLM_DEFAULT_STREAM": {
+    "annotation": "<class 'bool'>",
+    "default": false,
+    "factory": false,
+    "required": false
+  },
+  "LLM_DEFAULT_TEMPERATURE": {
+    "annotation": "<class 'float'>",
+    "default": 0.3,
+    "factory": false,
+    "required": false
+  },
+  "LLM_DEFAULT_TIMEOUT": {
+    "annotation": "<class 'float'>",
+    "default": 60.0,
+    "factory": false,
+    "required": false
+  },
+  "LLM_REQUEST_DELAY": {
+    "annotation": "<class 'int'>",
+    "default": 1000,
+    "factory": false,
+    "required": false
+  },
+  "LOGIN_IP_MAX_ATTEMPTS": {
+    "annotation": "<class 'int'>",
+    "default": 20,
+    "factory": false,
+    "required": false
+  },
+  "LOGIN_TIMEOUT_MINUTES": {
+    "annotation": "<class 'int'>",
+    "default": 15,
+    "factory": false,
+    "required": false
+  },
+  "LOG_DIR": {
+    "annotation": "<class 'pathlib.Path'>",
+    "default": "<required>",
+    "factory": true,
+    "required": false
+  },
+  "LOG_LEVEL": {
+    "annotation": "<class 'str'>",
+    "default": "WARNING",
+    "factory": false,
+    "required": false
+  },
+  "MAX_API_URL": {
+    "annotation": "<class 'str'>",
+    "default": "https://platform-api2.max.ru",
+    "factory": false,
+    "required": false
+  },
+  "MAX_BOT_TOKEN": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "MAX_CHANNEL_ID": {
+    "annotation": "<class 'str'>",
+    "default": "",
+    "factory": false,
+    "required": false
+  },
+  "MAX_LOGIN_ATTEMPTS": {
+    "annotation": "<class 'int'>",
+    "default": 5,
+    "factory": false,
+    "required": false
+  },
+  "MAX_OWNER_ID": {
+    "annotation": "<class 'str'>",
+    "default": "",
+    "factory": false,
+    "required": false
+  },
+  "MAX_WORKSPACE_MEMBERS": {
+    "annotation": "<class 'int'>",
+    "default": 2,
+    "factory": false,
+    "required": false
+  },
+  "PASSWORD_MIN_LENGTH": {
+    "annotation": "<class 'int'>",
+    "default": 6,
+    "factory": false,
+    "required": false
+  },
+  "PASSWORD_REQUIRE_LOWERCASE": {
+    "annotation": "<class 'bool'>",
+    "default": true,
+    "factory": false,
+    "required": false
+  },
+  "PASSWORD_REQUIRE_NUMBERS": {
+    "annotation": "<class 'bool'>",
+    "default": true,
+    "factory": false,
+    "required": false
+  },
+  "PASSWORD_REQUIRE_SPECIAL": {
+    "annotation": "<class 'bool'>",
+    "default": false,
+    "factory": false,
+    "required": false
+  },
+  "PASSWORD_REQUIRE_UPPERCASE": {
+    "annotation": "<class 'bool'>",
+    "default": true,
+    "factory": false,
+    "required": false
+  },
+  "PERSONAL_BILLING_ENABLED": {
+    "annotation": "<class 'bool'>",
+    "default": false,
+    "factory": false,
+    "required": false
+  },
+  "PORT": {
+    "annotation": "<class 'int'>",
+    "default": 8000,
+    "factory": false,
+    "required": false
+  },
+  "POSTGRES_URL": {
+    "annotation": "<class 'str'>",
+    "default": "<required>",
+    "factory": false,
+    "required": true
+  },
+  "REDIS_URL": {
+    "annotation": "<class 'str'>",
+    "default": "redis://localhost:6379/0",
+    "factory": false,
+    "required": false
+  },
+  "REFRESH_TOKEN_EXPIRE_DAYS": {
+    "annotation": "<class 'int'>",
+    "default": 30,
+    "factory": false,
+    "required": false
+  },
+  "RUNTIME_STATE_DIR": {
+    "annotation": "typing.Optional[pathlib.Path]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "SCHEDULER_ENABLED": {
+    "annotation": "<class 'bool'>",
+    "default": true,
+    "factory": false,
+    "required": false
+  },
+  "SCHEDULER_POLL_SECONDS": {
+    "annotation": "<class 'int'>",
+    "default": 30,
+    "factory": false,
+    "required": false
+  },
+  "SCHEDULER_TIMEZONE": {
+    "annotation": "<class 'str'>",
+    "default": "Europe/Moscow",
+    "factory": false,
+    "required": false
+  },
+  "SCRF_TOKEN_EXPIRY_MINUTES": {
+    "annotation": "<class 'int'>",
+    "default": 15,
+    "factory": false,
+    "required": false
+  },
+  "SCRF_TOKEN_LENGTH": {
+    "annotation": "<class 'int'>",
+    "default": 32,
+    "factory": false,
+    "required": false
+  },
+  "SECRET_KEY": {
+    "annotation": "<class 'str'>",
+    "default": "<required>",
+    "factory": false,
+    "required": true
+  },
+  "SOCIAL_COLLECT_HARD_LIMIT": {
+    "annotation": "<class 'int'>",
+    "default": 1000,
+    "factory": false,
+    "required": false
+  },
+  "SOCIAL_COLLECT_LIMIT": {
+    "annotation": "<class 'int'>",
+    "default": 1000,
+    "factory": false,
+    "required": false
+  },
+  "SOCIAL_MAX_PAGES": {
+    "annotation": "<class 'int'>",
+    "default": 20,
+    "factory": false,
+    "required": false
+  },
+  "SOCIAL_PAGE_SIZE": {
+    "annotation": "<class 'int'>",
+    "default": 50,
+    "factory": false,
+    "required": false
+  },
+  "SOCIAL_RATE_LIMIT_MAX_WAIT": {
+    "annotation": "<class 'float'>",
+    "default": 10.0,
+    "factory": false,
+    "required": false
+  },
+  "SOCIAL_RATE_LIMIT_RETRIES": {
+    "annotation": "<class 'int'>",
+    "default": 2,
+    "factory": false,
+    "required": false
+  },
+  "SOCIAL_REQUEST_TIMEOUT": {
+    "annotation": "<class 'float'>",
+    "default": 30.0,
+    "factory": false,
+    "required": false
+  },
+  "SOURCE_STALE_HOURS": {
+    "annotation": "<class 'int'>",
+    "default": 24,
+    "factory": false,
+    "required": false
+  },
+  "SUBSCRIPTION_CHECKOUT_ENABLED": {
+    "annotation": "<class 'bool'>",
+    "default": false,
+    "factory": false,
+    "required": false
+  },
+  "SUBSCRIPTION_PAYMENT_MODE": {
+    "annotation": "typing.Literal['test']",
+    "default": "test",
+    "factory": false,
+    "required": false
+  },
+  "SUBSCRIPTION_PAYMENT_PROVIDER": {
+    "annotation": "typing.Literal['yookassa']",
+    "default": "yookassa",
+    "factory": false,
+    "required": false
+  },
+  "TELEGRAM_ADMIN_CHAT_ID": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "TELEGRAM_API_BASE_URL": {
+    "annotation": "<class 'str'>",
+    "default": "https://api.telegram.org",
+    "factory": false,
+    "required": false
+  },
+  "TELEGRAM_API_HASH": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "TELEGRAM_API_ID": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "TELEGRAM_BOT_TOKEN": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "TELEGRAM_DIGEST_CHANNEL_ID": {
+    "annotation": "<class 'str'>",
+    "default": "",
+    "factory": false,
+    "required": false
+  },
+  "TELEGRAM_OWNER_IDS": {
+    "annotation": "<class 'str'>",
+    "default": "",
+    "factory": false,
+    "required": false
+  },
+  "TELEGRAM_REQUEST_TIMEOUT": {
+    "annotation": "<class 'float'>",
+    "default": 30.0,
+    "factory": false,
+    "required": false
+  },
+  "TELEGRAM_SESSION": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "TOKEN_URL": {
+    "annotation": "<class 'str'>",
+    "default": "/api/v1/auth/login",
+    "factory": false,
+    "required": false
+  },
+  "VK_API_BASE_URL": {
+    "annotation": "<class 'str'>",
+    "default": "https://api.vk.com/method",
+    "factory": false,
+    "required": false
+  },
+  "VK_API_VERSION": {
+    "annotation": "<class 'str'>",
+    "default": "5.199",
+    "factory": false,
+    "required": false
+  },
+  "VK_APP_ID": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "VK_CLIENT_ACCESS_KEY": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "VK_OAUTH_BASE_URL": {
+    "annotation": "<class 'str'>",
+    "default": "https://id.vk.ru",
+    "factory": false,
+    "required": false
+  },
+  "VK_REDIRECT_URI": {
+    "annotation": "<class 'str'>",
+    "default": "http://localhost/api/v1/social/callback",
+    "factory": false,
+    "required": false
+  },
+  "VK_REQUEST_TIMEOUT": {
+    "annotation": "<class 'float'>",
+    "default": 30.0,
+    "factory": false,
+    "required": false
+  },
+  "VK_SERVICE_GRANTED_SCOPES": {
+    "annotation": "typing.Optional[list[str]]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "VK_SERVICE_KEY": {
+    "annotation": "typing.Optional[str]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "VK_SERVICE_METHOD_GRANTS": {
+    "annotation": "typing.Optional[list[str]]",
+    "default": null,
+    "factory": false,
+    "required": false
+  },
+  "VK_SERVICE_METHOD_SCOPES": {
+    "annotation": "dict[str, list[str]]",
+    "default": "<required>",
+    "factory": true,
+    "required": false
+  },
+  "YOOKASSA_HTTP_TIMEOUT": {
+    "annotation": "<class 'float'>",
+    "default": 15.0,
+    "factory": false,
+    "required": false
+  },
+  "YOOKASSA_RETURN_URL": {
+    "annotation": "<class 'str'>",
+    "default": "",
+    "factory": false,
+    "required": false
+  },
+  "YOOKASSA_SECRET_KEY": {
+    "annotation": "<class 'pydantic.types.SecretStr'>",
+    "default": "<secret>",
+    "factory": false,
+    "required": false
+  },
+  "YOOKASSA_SHOP_ID": {
+    "annotation": "<class 'str'>",
+    "default": "",
+    "factory": false,
+    "required": false
+  }
+}

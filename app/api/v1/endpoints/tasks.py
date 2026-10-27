@@ -15,8 +15,8 @@ from app.schemas.task import (
     TaskPlanPreviewRequest,
     TaskPlanPreviewResponse,
     TaskPlanRunRequest,
-    TaskRunRequest,
     TaskResponse,
+    TaskRunRequest,
     TaskUpdate,
 )
 from app.types import ActionType
@@ -76,7 +76,7 @@ router = APIRouter(tags=["tasks"])
 
 @router.get("/vk-connections", response_model=dict)
 async def get_vk_connections(
-    _user = Depends(require_model_perm("agenttask", ActionType.VIEW)),
+    _user=Depends(require_model_perm("agenttask", ActionType.VIEW)),
 ):
     """List caller-owned VK connections and safe capability metadata."""
     from app.core.tenant_context import current_tenant_id
@@ -93,7 +93,7 @@ async def get_vk_connections(
 
 @router.get("/entitlements", response_model=dict)
 async def get_task_entitlements(
-    _user = Depends(require_model_perm("agenttask", ActionType.VIEW)),
+    _user=Depends(require_model_perm("agenttask", ActionType.VIEW)),
 ):
     """Inspect current workspace product grants without consuming usage."""
     from app.models.managers.entitlement_manager import EntitlementManager
@@ -110,7 +110,7 @@ async def _preview_entitlements(plan):
 @router.post("/plan", response_model=TaskPlanPreviewResponse)
 async def preview_task_plan(
     request: TaskPlanPreviewRequest,
-    _user = Depends(require_model_perm("agenttask", ActionType.CREATE)),
+    _user=Depends(require_model_perm("agenttask", ActionType.CREATE)),
 ):
     """Normalize a social-task request without writing rows or calling a platform."""
     from app.services.task_plans import TaskPlanError, parse_task_plan, task_plan_block
@@ -136,13 +136,13 @@ async def preview_task_plan(
 @router.post("/run/plan", response_model=dict)
 async def run_task_plan(
     request: TaskPlanRunRequest,
-    _user = Depends(require_model_perm("agenttask", ActionType.CREATE)),
+    _user=Depends(require_model_perm("agenttask", ActionType.CREATE)),
 ):
     """Launch one explicit social plan through the common idempotent runner."""
-    from app.services.task_launch import launch_social_task
     from app.core.permissions import has_permission
     from app.jobs.source_activity import SourceJobBusy
     from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
+    from app.services.task_launch import launch_social_task
 
     # One-off plans create a task receipt, so callers need both rights even
     # though the legacy task-run route only requires update.
@@ -192,7 +192,7 @@ def _task_response(t: AgentTask) -> TaskResponse:
 
 @router.get("", response_model=list[TaskResponse])
 async def list_tasks(
-    _user = Depends(require_model_perm("agenttask", ActionType.VIEW)),
+    _user=Depends(require_model_perm("agenttask", ActionType.VIEW)),
 ):
     """List all tasks in the current workspace."""
     tasks = await AgentTask.objects.filter().order_by(AgentTask.id)
@@ -202,7 +202,7 @@ async def list_tasks(
 @router.get("/{task_id}", response_model=TaskResponse)
 async def get_task(
     task_id: int,
-    _user = Depends(require_model_perm("agenttask", ActionType.VIEW)),
+    _user=Depends(require_model_perm("agenttask", ActionType.VIEW)),
 ):
     """Get a specific task by ID."""
     task = await AgentTask.objects.get(id=task_id)
@@ -216,7 +216,7 @@ async def get_task_result(
     task_id: int,
     job_id: Optional[int] = None,
     limit: int = Query(default=5, ge=1, le=10),
-    _user = Depends(require_model_perm("agenttask", ActionType.VIEW)),
+    _user=Depends(require_model_perm("agenttask", ActionType.VIEW)),
 ):
     """Return bounded task progress and permission-filtered result summaries."""
     from app.services.task_results import task_result
@@ -227,11 +227,11 @@ async def get_task_result(
 @router.post("", response_model=TaskResponse, status_code=201)
 async def create_task(
     request: TaskCreate,
-    _user = Depends(require_model_perm("agenttask", ActionType.CREATE)),
+    _user=Depends(require_model_perm("agenttask", ActionType.CREATE)),
 ):
     """Create a new scheduled task."""
-    from app.tasks.cron import next_run_at, resolve_tz
     from app.models.managers.tenant_manager import tenants
+    from app.tasks.cron import next_run_at, resolve_tz
 
     # Check for duplicate name in workspace
     existing = await AgentTask.objects.filter(name=request.name).first()
@@ -249,24 +249,31 @@ async def create_task(
     scenario_id = request.agent_scenario_id
     cron_expr = request.cron_expr
     if request.task_plan is not None:
-        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+        from app.services.task_creation import TaskPlanCreateConflict, prepare_task_plan_create
+        from app.services.task_plans import TaskPlanError
 
         try:
-            plan = parse_task_plan(request.task_plan)
-            planned_sources = list(plan.source_ids)
-            planned_scenario = plan.scenario_id
-            planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
-            if "source_ids" in request.model_fields_set:
-                if not isinstance(request.source_ids, list) or source_ids != planned_sources:
-                    raise TaskPlanError("source_ids must match task_plan.source_scope and source_ids")
-            if scenario_id is not None and scenario_id != planned_scenario:
-                raise TaskPlanError("agent_scenario_id must match task_plan.scenario_id")
-            if cron_expr is not None and cron_expr != planned_cron:
-                raise TaskPlanError("cron_expr must match task_plan.trigger")
-            source_ids = planned_sources
-            scenario_id = planned_scenario
-            cron_expr = planned_cron
-            payload = apply_task_plan(payload, request.task_plan, job_type=request.job_type)
+            prepared = prepare_task_plan_create(
+                payload,
+                request.task_plan,
+                job_type=request.job_type,
+                requested_cron=cron_expr,
+                requested_scenario_id=scenario_id,
+                requested_source_ids=source_ids if "source_ids" in request.model_fields_set else None,
+                enforce_source_match="source_ids" in request.model_fields_set,
+                conflict_order=("source_ids", "scenario_id", "cron_expr"),
+            )
+            source_ids = list(prepared.source_ids)
+            scenario_id = prepared.scenario_id
+            cron_expr = prepared.cron_expr
+            payload = prepared.payload
+        except TaskPlanCreateConflict as error:
+            messages = {
+                "source_ids": "source_ids must match task_plan.source_scope and source_ids",
+                "scenario_id": "agent_scenario_id must match task_plan.scenario_id",
+                "cron_expr": "cron_expr must match task_plan.trigger",
+            }
+            raise HTTPException(status_code=400, detail=messages[error.field]) from None
         except (TaskPlanError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
 
@@ -294,19 +301,24 @@ async def create_task(
         # and any explicit source links commit together.
         from app.core.database import new_session
         from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.services.task_creation import persist_task_create
 
         session = new_session()
         try:
             async with session.begin():
-                task = await AgentTask.objects.create(
-                    session=session,
-                    name=request.name.strip()[:100],
-                    cron_expr=cron_expr,
-                    job_type=request.job_type,
-                    payload=payload,
-                    agent_scenario_id=scenario_id,
-                    is_active=request.is_active,
-                    next_run_at=next_run,
+                task = await persist_task_create(
+                    session,
+                    task_values={
+                        "name": request.name.strip()[:100],
+                        "cron_expr": cron_expr,
+                        "job_type": request.job_type,
+                        "payload": payload,
+                        "agent_scenario_id": scenario_id,
+                        "is_active": request.is_active,
+                        "next_run_at": next_run,
+                    },
+                    source_ids=None,
+                    tenant_id=tid,
                 )
                 if source_ids:
                     with tenant_scope(task.tenant_id), service_permission_scope("agenttask", "update"):
@@ -320,21 +332,25 @@ async def create_task(
         # failed relationship write cannot leave an empty-link legacy task,
         # which would otherwise mean every active workspace source.
         from app.core.database import new_session
-
         from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.services.task_creation import persist_task_create
 
         session = new_session()
         try:
             async with session.begin():
-                task = await AgentTask.objects.create(
-                    session=session,
-                    name=request.name.strip()[:100],
-                    cron_expr=cron_expr,
-                    job_type=request.job_type,
-                    payload=payload,
-                    agent_scenario_id=scenario_id,
-                    is_active=False,
-                    next_run_at=next_run,
+                task = await persist_task_create(
+                    session,
+                    task_values={
+                        "name": request.name.strip()[:100],
+                        "cron_expr": cron_expr,
+                        "job_type": request.job_type,
+                        "payload": payload,
+                        "agent_scenario_id": scenario_id,
+                        "is_active": False,
+                        "next_run_at": next_run,
+                    },
+                    source_ids=None,
+                    tenant_id=tid,
                 )
                 with tenant_scope(task.tenant_id), service_permission_scope("agenttask", "update"):
                     await AgentTaskManager().set_sources(task.id, source_ids, session=session)
@@ -347,8 +363,8 @@ async def create_task(
         # accepts the existing task-payer contract. On unavailable billing the
         # saved task remains a recoverable inactive draft.
         if request.is_active:
-            from app.services.billing import consent_current_user_as_task_payer
             from app.models.managers.personal_billing_manager import PersonalBillingError, PersonalBillingUnavailable
+            from app.services.billing import consent_current_user_as_task_payer
 
             try:
                 await consent_current_user_as_task_payer(task.id)
@@ -367,7 +383,7 @@ async def create_task(
 async def update_task(
     task_id: int,
     request: TaskUpdate,
-    _user = Depends(require_model_perm("agenttask", ActionType.UPDATE)),
+    _user=Depends(require_model_perm("agenttask", ActionType.UPDATE)),
 ):
     """Update a task — only provided fields are changed."""
     task = await AgentTask.objects.get(id=task_id)
@@ -433,10 +449,10 @@ async def update_task(
             raise HTTPException(status_code=400, detail=f"Invalid cron expression: {updates['cron_expr']}")
 
         # Recalculate next_run_at
-        from app.tasks.cron import next_run_at, resolve_tz
-        from app.models.managers.tenant_manager import tenants
         from app.core.tenant_context import current_tenant_id
+        from app.models.managers.tenant_manager import tenants
         from app.services.task_plans import task_plan_timezone
+        from app.tasks.cron import next_run_at, resolve_tz
 
         tid = current_tenant_id()
         tenant = await tenants.get(id=tid) if tid else None
@@ -496,7 +512,7 @@ async def update_task(
 @router.delete("/{task_id}", status_code=204)
 async def delete_task(
     task_id: int,
-    _user = Depends(require_model_perm("agenttask", ActionType.DELETE)),
+    _user=Depends(require_model_perm("agenttask", ActionType.DELETE)),
 ):
     """Delete a task."""
     task = await AgentTask.objects.get(id=task_id)
@@ -510,7 +526,7 @@ async def delete_task(
 async def pause_task(
     task_id: int,
     resume: bool = False,
-    _user = Depends(require_model_perm("agenttask", ActionType.UPDATE)),
+    _user=Depends(require_model_perm("agenttask", ActionType.UPDATE)),
 ):
     """Pause or resume a task."""
     task = await AgentTask.objects.get(id=task_id)
@@ -529,7 +545,7 @@ async def pause_task(
 async def run_task(
     task_id: int,
     request: TaskRunRequest = TaskRunRequest(),
-    _user = Depends(require_model_perm("agenttask", ActionType.UPDATE)),
+    _user=Depends(require_model_perm("agenttask", ActionType.UPDATE)),
 ):
     """Run a task immediately (one-off execution)."""
     from app.jobs.dispatcher import run_job_now
@@ -573,15 +589,15 @@ async def run_task_oneoff(
     payload: dict = {},
     source_ids: list[int] = [],
     scenario_id: Optional[int] = None,
-    _user = Depends(require_model_perm("agenttask", ActionType.UPDATE)),
+    _user=Depends(require_model_perm("agenttask", ActionType.UPDATE)),
 ):
     """Run a one-off task (creates a temporary @once task)."""
-    from datetime import datetime, timezone
     import secrets
+    from datetime import datetime, timezone
 
+    from app.core.tenant_context import current_tenant_id
     from app.jobs.dispatcher import run_job_now
     from app.jobs.enqueue import enqueue_task_run
-    from app.models.managers.agent_task_manager import AgentTaskManager
 
     # Create temporary task
     stamp = datetime.now(timezone.utc)
@@ -591,19 +607,21 @@ async def run_task_oneoff(
         safe_payload.get("collection") if "collection" in safe_payload else None,
         job_type=job_type,
     )
-    task = await AgentTask.objects.create(
-        name=f"one-off-{job_type}-{stamp:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}",
-        cron_expr="@once",
-        job_type=job_type,
-        payload=safe_payload,
-        agent_scenario_id=scenario_id,
-        is_active=False,
-        next_run_at=None,
-    )
+    from app.services.task_creation import create_task_with_sources
 
-    if source_ids:
-        with tenant_scope(task.tenant_id):
-            await AgentTaskManager().add_sources(task.id, source_ids)
+    task = await create_task_with_sources(
+        task_values={
+            "name": f"one-off-{job_type}-{stamp:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}",
+            "cron_expr": "@once",
+            "job_type": job_type,
+            "payload": safe_payload,
+            "agent_scenario_id": scenario_id,
+            "is_active": False,
+            "next_run_at": None,
+        },
+        source_ids=source_ids if source_ids else None,
+        tenant_id=current_tenant_id(),
+    )
 
     from app.jobs.source_activity import SourceJobBusy
 

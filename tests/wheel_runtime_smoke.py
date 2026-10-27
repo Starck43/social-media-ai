@@ -14,9 +14,13 @@ import json
 import os
 import subprocess
 import tempfile
+import tomllib
 from email.parser import Parser
 from pathlib import Path
 from zipfile import ZipFile
+
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 # Runs under the installed environment's Python -I, not the checkout interpreter.
 INSTALLED_CHECK = r"""
@@ -69,6 +73,7 @@ allowed = {
     "app",
     "app.core",
     "app.core.config",
+    "app.core.settings_views",
     "app.core.database",
     "app.utils",
     "app.utils.crypto",
@@ -186,6 +191,10 @@ def reject_provider_construction(frame, event, arg):
 
 sys.setprofile(reject_provider_construction)
 application = importlib.import_module("app.main")
+assert application.app.version == importlib.metadata.version("social-media-ai")
+assert application.app.title == "AI Assistant"
+cli_main = importlib.import_module("cli.main")
+assert cli_main.app.info.help == "AI Assistant CLI"
 web = importlib.import_module("app.web.deps")
 admin = importlib.import_module("app.admin.setup")
 from app.core.config import Settings, settings
@@ -272,10 +281,34 @@ def main() -> None:
         assert not any(n.startswith(("tests/", "docs/", ".agents/", "docker/", ".env")) for n in names)
         (metadata_name,) = (n for n in names if n.endswith(".dist-info/METADATA"))
         metadata = Parser().parsestr(wheel.read(metadata_name).decode())
-        assert "cryptography>=42.0.0" in metadata.get_all("Requires-Dist", []), "Encryption must be runtime, not extra"
+        assert any(
+            Requirement(r).name == "cryptography" and Requirement(r).marker is None
+            for r in metadata.get_all("Requires-Dist", [])
+        ), "Encryption must be runtime, not extra"
         requirements = metadata.get_all("Requires-Dist", [])
-        assert "sqlalchemy[asyncio]>=2.0.0" in requirements, "SQLAlchemy asyncio support must be runtime"
-        assert "psycopg[binary]>=3.1.0" in requirements, "Default PostgreSQL driver must be runtime"
+        declaration = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+
+        def normalized(value):
+            requirement = Requirement(value)
+            requirement.name = canonicalize_name(requirement.name)
+            return str(requirement)
+
+        expected_requirements = {normalized(value) for value in declaration["dependencies"]}
+        for extra, values in declaration["optional-dependencies"].items():
+            expected_requirements.update(normalized(f"{value}; extra == '{extra}'") for value in values)
+        assert {
+            normalized(value) for value in requirements
+        } == expected_requirements, "Wheel/source dependency metadata differs"
+        assert any(
+            Requirement(r).name.lower() == "sqlalchemy"
+            and "asyncio" in Requirement(r).extras
+            and Requirement(r).marker is None
+            for r in requirements
+        ), "SQLAlchemy asyncio support must be runtime"
+        assert any(
+            Requirement(r).name == "psycopg" and "binary" in Requirement(r).extras and Requirement(r).marker is None
+            for r in requirements
+        ), "Default PostgreSQL driver must be runtime"
         (entry_points_name,) = (n for n in names if n.endswith(".dist-info/entry_points.txt"))
         assert "cli = cli.main:app" in wheel.read(entry_points_name).decode()
     # Do not inherit owner credentials, DB URLs, PYTHONPATH or dotenv files.

@@ -17,7 +17,7 @@
         <aside class="admin-sidebar" aria-label="Панель администратора">
             <a class="admin-brand" href="{{ url_for('admin:index') }}">
                 {% if admin.logo_url %}<img src="{{ admin.logo_url }}" width="32" height="32" alt="" />{% endif %}
-                <span>ИИ Ассистент<small>Администрирование</small></span>
+                <span>AI Assistant<small>Администрирование</small></span>
             </a>
             {% set admin_user = request.state.admin_user if request.state is defined else none %}
             {% if admin_user and admin_user.is_active and admin_user.has_admin_access() %}

@@ -151,7 +151,7 @@ git clone https://github.com/.../social-media-ai.git .
 pip install -r requirements.txt
 
 # Install telethon (optional, for L2 Telegram)
-pip install telethon
+pip install -r requirements/telegram.txt
 ```
 
 ### 2. Configure

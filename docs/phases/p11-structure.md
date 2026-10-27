@@ -11,8 +11,8 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 1. [P11-T01](../audit/p11-t01.md) — structural audit and reconciliation — DONE 2026-10-27 (accepted `58f6ddfb`).
 2. [P11-T02](../audit/p11-t02.md) — register follow-ups, queue priority and complexity — DONE 2026-10-27 (accepted `08fa36d4`).
 3. [P11-T03](../audit/p11-t03.md) — Offline CI safety net and supported baseline (R-01) — DONE 2026-10-27 (accepted `0d154532`).
-4. [P11-T04](../tasks/p11-t04.md) — Shared task application orchestration (R-02).
-5. [P11-T05](../tasks/p11-t05.md) — Explicit task transaction ownership (R-03).
+4. [P11-T04](../audit/p11-t04.md) — Shared canonical task-plan CREATE preparation across five adapters — DONE 2026-10-27 (accepted `ef2f7030d9f5f8e6b8e3fe0e53c5734dbaf10cfe`, integrated `8fc84585a9f188b48799e02984fd12f4f2ac73da`; PR #263).
+5. [P11-T05](../audit/p11-t05.md) — Explicit CREATE transaction ownership and recoverable post-commit steps — DONE 2026-10-27 (accepted `393b73bb15cddf57e23b0b8a15514aea8e1286e5`, integrated `bb8d4385cee477fab39d52ad73a68936400f0ab6`; PR #264).
 6. [P11-T06](../tasks/p11-t06.md) — Typed use-case contracts, safe errors and presenters (R-04).
 7. [P11-T07](../tasks/p11-t07.md) — Incremental package-boundary enforcement (R-05).
 8. [P11-T08](../tasks/p11-t08.md) — Public API compatibility and bounded request policy (R-06).
@@ -22,7 +22,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 12. [P11-T12](../tasks/p11-t12.md) — Durable action-audit contract and support correlation (R-10).
 13. [P11-T13](../tasks/p11-t13.md) — Manager and execution-module decomposition (R-11).
 14. [P11-T14](../tasks/p11-t14.md) — Canonical model imports and semantic helper reuse (R-12).
-15. [P11-T15](../tasks/p11-t15.md) — Reproducible package and configuration contract (R-13).
+15. [P11-T15](../audit/p11-t15.md) — Reproducible package and configuration contract (R-13) — DONE 2026-10-27 (accepted `2c4c6e5566a61f6a9b02967db1a152e4fa1140e7`).
 16. [P11-T16](../tasks/p11-t16.md) — Test and reference navigation without evidence loss (R-14).
 17. [P11-T17](../tasks/p11-t17.md) — Localizable presentation boundaries (R-15).
 18. [P11-T18](../tasks/p11-t18.md) — Typed connector and job extension seams (R-16).

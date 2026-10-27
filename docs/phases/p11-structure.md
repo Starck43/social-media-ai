@@ -12,7 +12,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 2. [P11-T02](../audit/p11-t02.md) — register follow-ups, queue priority and complexity — DONE 2026-10-27 (accepted `08fa36d4`).
 3. [P11-T03](../audit/p11-t03.md) — Offline CI safety net and supported baseline (R-01) — DONE 2026-10-27 (accepted `0d154532`).
 4. [P11-T04](../audit/p11-t04.md) — Shared canonical task-plan CREATE preparation across five adapters — DONE 2026-10-27 (accepted `ef2f7030d9f5f8e6b8e3fe0e53c5734dbaf10cfe`, integrated `8fc84585a9f188b48799e02984fd12f4f2ac73da`; PR #263).
-5. [P11-T05](../tasks/p11-t05.md) — Explicit task transaction ownership (R-03).
+5. [P11-T05](../audit/p11-t05.md) — Explicit CREATE transaction ownership and recoverable post-commit steps — DONE 2026-10-27 (accepted `393b73bb15cddf57e23b0b8a15514aea8e1286e5`, integrated `bb8d4385cee477fab39d52ad73a68936400f0ab6`; PR #264).
 6. [P11-T06](../tasks/p11-t06.md) — Typed use-case contracts, safe errors and presenters (R-04).
 7. [P11-T07](../tasks/p11-t07.md) — Incremental package-boundary enforcement (R-05).
 8. [P11-T08](../tasks/p11-t08.md) — Public API compatibility and bounded request policy (R-06).

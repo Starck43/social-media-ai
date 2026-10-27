@@ -37,11 +37,23 @@ def _pipeline_outcome(raw: Any, *, can_view_preview: bool) -> dict[str, Any] | N
         if not isinstance(value, dict):
             continue
         state = value.get("state", value.get("status"))
-        if state not in {"started", "complete", "completed", "failed", "skipped", "review_required", "unknown"}:
+        if state not in {"started", "complete", "completed", "failed", "partial", "skipped", "review_required", "unknown"}:
             state = "unknown"
         receipt = value.get("result") if isinstance(value.get("result"), dict) else value
         stage: dict[str, Any] = {"status": "complete" if state == "completed" else state}
+        reported_status = receipt.get("status")
+        if reported_status in {"started", "complete", "completed", "failed", "partial", "skipped", "review_required", "unknown"}:
+            stage["status"] = "complete" if reported_status == "completed" else reported_status
         counts = outcome_counts(receipt)
+        nested_counts = receipt.get("counts")
+        if isinstance(nested_counts, dict):
+            counts.update(
+                {
+                    key: value
+                    for key, value in nested_counts.items()
+                    if isinstance(key, str) and len(key) <= 80 and type(value) is int and 0 <= value <= 1_000_000_000
+                }
+            )
         if type(receipt.get("analysis_count")) is int and 0 <= receipt["analysis_count"] <= 1_000_000_000:
             counts["analysis_count"] = receipt["analysis_count"]
         if counts:
@@ -53,7 +65,7 @@ def _pipeline_outcome(raw: Any, *, can_view_preview: bool) -> dict[str, Any] | N
                     stage[key] = item
             if type(receipt.get("time_breakdown")) is bool:
                 stage["time_breakdown"] = receipt["time_breakdown"]
-            if receipt.get("generated") is True or state in {"complete", "completed"}:
+            if receipt.get("generated") is True:
                 stage["generated"] = True
                 stage["generated_count"] = 1
             delivered = receipt.get("delivered")

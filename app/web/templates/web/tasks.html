@@ -277,6 +277,7 @@
                         <span>После сбора и анализа подготовить дайджест. Текст появится в результатах; отправка потребует отдельного подтверждённого действия.</span>
                     </label>
                     <div x-show="task.compose_digest" class="space-y-3">
+                        <label class="text-sm"><input type="checkbox" name="include_collection" value="true" checked x-model="task.include_collection"> Собирать новые публикации перед анализом</label>
                         <label class="block text-sm">Период отчёта
                             <select name="digest_window_type" x-model="task.digest_window_type" class="{{ control() }} mt-1">
                                 <option value="rolling">Скользящий период</option>
@@ -948,6 +949,7 @@
                 digest_group_by: "themes",
                 digest_time_breakdown: false,
                 compose_digest: false,
+                include_collection: true,
                 digest_window_type: "rolling",
                 digest_rolling_days: 7,
                 digest_start_date: "",

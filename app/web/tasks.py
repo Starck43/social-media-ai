@@ -483,6 +483,7 @@ def _task_plan_from_form(
     digest_end_date="",
     digest_group_by="themes",
     digest_time_breakdown=False,
+    include_collection=True,
 ) -> dict | None:
     """Build the additive canonical plan from the current task form."""
     if source_scope == "legacy":
@@ -534,7 +535,9 @@ def _task_plan_from_form(
             digest_window = {"type": "fixed", "start": digest_start_date or None, "end": digest_end_date or None}
         else:
             digest_window = {"type": "rolling", "days": digest_rolling_days}
-        raw["pipeline"] = {"stages": ["collect", "analyze", "digest"]}
+        raw["pipeline"] = {
+            "stages": (["collect"] if include_collection else []) + ["analyze", "digest"]
+        }
         raw["digest"] = {
             "window": digest_window,
             "group_by": digest_group_by or "themes",
@@ -611,6 +614,7 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
     saved_plan = payload.get("task_plan") if isinstance(payload.get("task_plan"), dict) else {}
     digest_plan = saved_plan.get("digest") if isinstance(saved_plan.get("digest"), dict) else {}
     digest_window = digest_plan.get("window") if isinstance(digest_plan.get("window"), dict) else {}
+    pipeline = saved_plan.get("pipeline") if isinstance(saved_plan.get("pipeline"), dict) else {}
     collection_edit = _collection_edit(payload)
     trigger_config = task.trigger_config if isinstance(task.trigger_config, dict) else {}
     edit: dict[str, Any] = {
@@ -640,6 +644,7 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
         "end_date": collection_edit["end_date"],
         "digest_period": payload.get("period") or "day",
         "compose_digest": bool(saved_plan.get("pipeline")),
+        "include_collection": "collect" in pipeline.get("stages", []),
         "digest_window_type": digest_window.get("type", "rolling"),
         "digest_rolling_days": digest_window.get("days", 7),
         "digest_start_date": digest_window.get("start", "") or "",
@@ -1064,6 +1069,7 @@ async def task_create(
     digest_rolling_days: int = Form(7),
     digest_start_date: str = Form(""),
     digest_end_date: str = Form(""),
+    include_collection: str = Form(""),
     retention_success_hours: int = Form(24),
     retention_failure_hours: int = Form(24),
     trigger_type: str = Form(""),
@@ -1243,6 +1249,7 @@ async def task_create(
                 digest_end_date=digest_end_date,
                 digest_group_by=digest_group_by or "themes",
                 digest_time_breakdown=digest_time_breakdown == "true",
+                include_collection=include_collection == "true",
             )
             if task_plan is not None:
                 from app.services.task_creation import prepare_task_plan_create
@@ -2184,6 +2191,7 @@ async def task_update(
     digest_rolling_days: int = Form(7),
     digest_start_date: str = Form(""),
     digest_end_date: str = Form(""),
+    include_collection: str = Form(""),
     retention_success_hours: int = Form(24),
     retention_failure_hours: int = Form(24),
     trigger_type: str = Form(""),
@@ -2399,6 +2407,7 @@ async def task_update(
                 digest_end_date=digest_end_date,
                 digest_group_by=digest_group_by or "themes",
                 digest_time_breakdown=digest_time_breakdown == "true",
+                include_collection=include_collection == "true",
             )
             if task_plan is not None:
                 from app.services.task_plans import apply_task_plan

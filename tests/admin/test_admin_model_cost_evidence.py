@@ -33,10 +33,14 @@ REPLY = {
 
 
 @pytest.mark.asyncio
-async def test_sample_owner_mode_keeps_price_zero_tokens_and_saves_tariff_estimate_even_without_text():
+async def test_sample_owner_mode_keeps_price_zero_tokens_and_saves_tariff_estimate_even_without_text(monkeypatch):
     probe, dependency, selected, sent, _ = stack(payload=deepcopy(REPLY))
     dependency.__isolated_imports__["app.core.config"].settings.PERSONAL_BILLING_ENABLED = False
     dependency._personal_admission = dependency._actual_personal_admission
+    # P3 credential revalidation is a pre-HTTP DB seam; this file stays no-DB.
+    import app.services.ai.personal_dispatch as personal_dispatch
+
+    monkeypatch.setattr(personal_dispatch, "validate_personal_dispatch", AsyncMock(return_value=None))
     actions, manager, view = action_module(probe)
     manager.get.return_value = selected
     result = (await actions.LLMModelActions.submit_test(view, NS(), "7", "real", ""))["result"]
@@ -45,10 +49,11 @@ async def test_sample_owner_mode_keeps_price_zero_tokens_and_saves_tariff_estima
     assert result["tokens_spent"] == 478 and result["usage"]["prompt_tokens"] == 470
     assert result["usage"]["completion_tokens"] == 8  # Includes reasoning; never add 6 again.
     assert result["provider_cost_usd"] == "0" and result["provider_cost_state"] == "resolved"
-    assert result["estimated_cost"] == Decimal("0.000016047")  # Not provider-reported spend.
+    # The recognized explicit provider zero is the saved estimate, not a tariff recompute.
+    assert result["estimated_cost"] == Decimal("0")
     manager.update_by_id.assert_awaited_once()
     assert manager.update_by_id.await_args.args == (7,)
-    assert manager.update_by_id.await_args.kwargs["last_request_cost"] == pytest.approx(0.000016047)
+    assert manager.update_by_id.await_args.kwargs["last_request_cost"] == pytest.approx(0.0)
     assert result["response_json"] == REPLY and result["accounting_status"] == "standard"
     dependency._record_llm_usage.assert_awaited_once()
     dependency.journal_chat_attempt.assert_awaited_once()

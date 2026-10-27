@@ -20,6 +20,8 @@ API/admin may run separately. Do not start duplicate runtime owners.
 [Architecture](docs/DESIGN.md) → [product directions](docs/PRODUCT_PLAN.md) →
 [numbered phases](docs/phases/README.md) → [ROADMAP](ROADMAP.md) → one active
 `docs/tasks/<id>.md` → accepted `docs/audit/<id>.md`.
+This hierarchy defines ownership, not a mandatory reading chain; follow AGENTS'
+lazy task-reading rule rather than loading every ancestor.
 
 **First session:** README, [DESIGN](docs/DESIGN.md), [AGENTS](AGENTS.md).
 **Task:** one queue row/card and its selected skill; then only relevant links.

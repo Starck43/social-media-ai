@@ -1,8 +1,9 @@
 # Documentation router
 
 First session: [README](../README.md), [DESIGN](DESIGN.md), [AGENTS](../AGENTS.md).
-Then [ROADMAP](../ROADMAP.md) → one card. This index is optional; load a contract
-only when needed and record the relevant section/purpose in the task card.
+Then one [ROADMAP](../ROADMAP.md) row → its card. This index is optional and is
+not a reading checklist. Follow AGENTS' lazy rule; load only the section needed
+for the operation, not all parents/related/history links.
 
 | Need | Canonical document |
 | --- | --- |

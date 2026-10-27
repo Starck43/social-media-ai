@@ -8,8 +8,18 @@ use general execution. Anyone may add a question or TODO to [ROADMAP](ROADMAP.md
 
 Read [README](README.md), [DESIGN](docs/DESIGN.md) and this file once per session.
 For work, open one ROADMAP row and its task card; load only relevant linked
-sections. Record documents actually read and checks in the card/PR. Shared
+sections. A link is navigation, not an instruction to recursively load parent
+phases, PRODUCT_PLAN, related cards or audit history. If assigned an ID, read only
+its queue row; scan the queue only to choose work or coordinate ownership. For
+predecessors inspect their current row and just the specific delivered contract
+needed. Reuse already-loaded unchanged rules within a session; refresh source
+and changed sections after a revision change. Record documents actually read and
+checks in the card/PR. Shared
 [skills and prompt examples](docs/PROMPT_EXAMPLES.md) select execution/audit roles.
+
+For structural changes, keep move-only and behavior edits separate, preserve
+compatibility until consumers migrate, and define a safe rollback. Task cards
+carry only task-specific additions, not copies of these common rules.
 
 ## Mandatory boundaries
 

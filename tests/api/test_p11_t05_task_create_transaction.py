@@ -11,14 +11,14 @@ from app.models.managers.agent_task_manager import AgentTaskManager
 from tests.api.test_api_permissions import _auth_headers, _client, _drop, _platform_value, _register_owner
 
 
-def _plan(*, scope: str, source_ids: list[int], trigger: dict) -> dict:
+def _plan(*, scope: str, source_ids: list[int], trigger: dict, collection: dict | None = None) -> dict:
     return {
         "version": 1,
         "goal": "P11-T05 transaction boundary",
         "platforms": ["vk"],
         "source_scope": scope,
         "source_ids": source_ids,
-        "collection": {},
+        "collection": collection or {},
         "window": {"type": "rolling", "days": 1},
         "trigger": trigger,
     }
@@ -123,7 +123,12 @@ async def test_task_create_scopes_and_triggers_persist_through_uow() -> None:
                     json={
                         "name": name,
                         "job_type": "collect",
-                        "task_plan": _plan(scope=scope, source_ids=plan_source_ids, trigger=trigger),
+                        "task_plan": _plan(
+                            scope=scope,
+                            source_ids=plan_source_ids,
+                            trigger=trigger,
+                            collection={"discovery": {"queries": ["research"]}} if scope == "discovery" else None,
+                        ),
                         "is_active": False,
                     },
                     headers=headers,
@@ -202,8 +207,10 @@ async def test_duplicate_concurrent_creates_commit_one_task() -> None:
             await _drop(owner, tenant_id)
 
 
+@pytest.mark.tenancy
 async def test_foreign_workspace_source_rolls_back_task_and_same_name_is_tenant_scoped() -> None:
     """A foreign source cannot cross tenant scope; task names remain tenant local."""
+    from app.core.permissions import permission_scope
     from app.services.task_creation import create_task_with_sources
 
     async with await _client() as client:
@@ -218,7 +225,7 @@ async def test_foreign_workspace_source_rolls_back_task_and_same_name_is_tenant_
             source_b = await _create_source(client, headers_b)
 
             shared_name = f"p11-t05-tenant-name-{secrets.token_hex(3)}"
-            with tenant_scope(tenant_a):
+            with tenant_scope(tenant_a), permission_scope(owner_a, is_owner=True):
                 with pytest.raises(ValueError, match="workspace changed"):
                     await create_task_with_sources(
                         task_values=_task_values(shared_name), source_ids=None, tenant_id=tenant_b
@@ -234,7 +241,8 @@ async def test_foreign_workspace_source_rolls_back_task_and_same_name_is_tenant_
                 task_a = await create_task_with_sources(
                     task_values=_task_values(shared_name), source_ids=None, tenant_id=tenant_a
                 )
-            with tenant_scope(tenant_b):
+                assert await AgentTaskManager().filter(name=shared_name).count() == 1
+            with tenant_scope(tenant_b), permission_scope(owner_b, is_owner=True):
                 task_b = await create_task_with_sources(
                     task_values=_task_values(shared_name), source_ids=None, tenant_id=tenant_b
                 )

@@ -20,6 +20,31 @@ is no global fallback. `task list` remains an operator-wide read and includes a
 `workspace` column. A future customer CLI must use a selected token-authenticated
 HTTP/API contract, never this database-bypass path.
 
+### Task command output and exit codes
+
+Put `--output json` on the `task` group, before the subcommand:
+
+```bash
+python -m cli.main task --output json list
+python -m cli.main task --output json result 42 --tenant owner
+```
+
+For a parsed task command, JSON mode writes one versioned JSON object to
+standard output. It contains `schema_version`, `command`, `ok`, and
+`exit_code`; successful commands also include structured `data`, while
+failures include a fixed `error.code` and generic `error.message`. Credential
+fields and exception/provider diagnostics are not serialized. Human output
+remains the default. Typer syntax/parameter parsing errors occur before command
+execution, retain Typer's diagnostic on standard error, and use exit code `2`.
+
+| Exit code | Meaning |
+|---:|---|
+| `0` | Command completed |
+| `1` | Command rejected or failed; JSON omits diagnostic details |
+| `2` | Invalid usage or options |
+| `3` | Workspace/task target not resolved |
+| `4` | Trusted active platform-admin context required |
+
 ---
 
 ## Registered commands and parameters

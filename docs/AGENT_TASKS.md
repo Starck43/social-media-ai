@@ -276,7 +276,9 @@ Flags: `--force-refresh` → `force_refresh`, `--force-reanalyze` → `force_rea
 [options]` to change fields only on that workspace's task; only the fields you
 pass are modified. Existing automation must add its chosen `--tenant` and run
 through an authenticated operator embedding; omitting the workspace or invoking
-the standalone shell now fails closed.
+the standalone shell now fails closed. For machine output, place
+`--output json` after `task` and before the subcommand; consume the versioned
+envelope and stable exit codes documented in the [CLI reference](CLI.md#task-command-output-and-exit-codes).
 
 Adding a job type means adding a function to the `HANDLERS` registry in
 `app/jobs/handlers.py`; `job_type` values are otherwise free-form strings, so

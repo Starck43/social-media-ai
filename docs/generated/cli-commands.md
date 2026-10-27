@@ -9,7 +9,7 @@ and execution permissions remain in the handwritten references and code.
 
 | Command | Help |
 | --- | --- |
-| python -m cli.main | AI Assistant CLI |
+| python -m cli.main | Privileged operator-only administration; not a customer or end-user CLI. |
 | python -m cli.main analyze | Run the analyze job handler (trigger evaluation + bot actions) directly. |
 | python -m cli.main chains | Manage topic chains |
 | python -m cli.main chains groups | Show duplicate normalized_label groups (read-only). |
@@ -46,7 +46,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main scenarios list | List agent scenarios for a workspace. |
 | python -m cli.main scenarios output-schema | Set an explicit output_schema for a scenario (dry-run unless --apply). The stored schema is extended with the requested fields; the derived contract of the scenario stays intact. Without --apply nothing is written. |
 | python -m cli.main scenarios seed-default | Seed a basic monitoring default scenario for a workspace. |
-| python -m cli.main task | Manage agent tasks |
+| python -m cli.main task | Operator-only task management. Requires an authenticated active platform admin context. |
 | python -m cli.main task add | Add a task. |
 | python -m cli.main task analyze | Run a analyze task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |
 | python -m cli.main task collect | Run a collect task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |
@@ -54,11 +54,11 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task entitlements | Inspect current product grants and availability; consume no usage. |
 | python -m cli.main task learn | Run a learn task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |
 | python -m cli.main task list | List all tasks. |
-| python -m cli.main task pause | Pause (or --resume) a task. |
+| python -m cli.main task pause | Pause or resume one task in the required workspace. |
 | python -m cli.main task plan | Preview a plan; --tenant adds a read-only workspace entitlement decision. |
 | python -m cli.main task prune | Run a prune task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |
 | python -m cli.main task reflect | Run a reflect task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |
-| python -m cli.main task remove | Remove a task by name (in every workspace that has one). |
+| python -m cli.main task remove | Remove one task by name in the required workspace. |
 | python -m cli.main task result | Read bounded task status and permitted analysis summaries. |
 | python -m cli.main task update | Update an existing task. Only provided fields are changed. |
 | python -m cli.main task vk-connections | Read connection metadata and capabilities without resolving tokens. |

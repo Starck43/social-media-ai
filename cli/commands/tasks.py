@@ -7,10 +7,13 @@ operator transport.
 
 from __future__ import annotations
 
+from functools import wraps
 import secrets
 from typing import Callable
 
 import typer
+
+from .task_output import emit_task_json, is_json_output, set_task_output_format
 
 
 EXIT_OK = 0
@@ -18,6 +21,47 @@ EXIT_COMMAND_FAILED = 1
 EXIT_USAGE = 2
 EXIT_TARGET_UNRESOLVED = 3
 EXIT_OPERATOR_REQUIRED = 4
+
+
+def _json_command(command: str):
+    """Wrap a task command in the stable JSON/exit-code contract."""
+
+    def decorate(function):
+        @wraps(function)
+        def wrapped(*args, **kwargs):
+            if not is_json_output():
+                return function(*args, **kwargs)
+            try:
+                result = function(*args, **kwargs)
+            except typer.Exit as error:
+                try:
+                    exit_code = int(error.exit_code)
+                except (TypeError, ValueError):
+                    exit_code = EXIT_COMMAND_FAILED
+                emit_task_json(command, exit_code)
+                raise
+            except Exception:
+                emit_task_json(command, EXIT_COMMAND_FAILED)
+                raise typer.Exit(EXIT_COMMAND_FAILED) from None
+            safe_result = result
+            if command in {"task collect", "task digest", "task analyze", "task prune", "task learn", "task reflect"}:
+                status = result.get("status") if isinstance(result, dict) else None
+                allowed_statuses = {
+                    "done",
+                    "failed",
+                    "partial",
+                    "partial_success",
+                    "requires_review",
+                    "not_claimed",
+                    "unknown",
+                }
+                safe_result = {"status": status if status in allowed_statuses else "unknown"}
+            emit_task_json(command, EXIT_OK, safe_result)
+            return result
+
+        return wrapped
+
+    return decorate
 
 
 def _run_platform(coro):
@@ -132,7 +176,7 @@ def _run_task_platform(coro):
         with tenant_scope(bypass=True), operator_permission_scope():
             return asyncio.run(_authenticated())
     except OperatorIdentityRequired:
-        from rich import print as rprint
+        from .task_output import task_print as rprint
 
         rprint("[red]An authenticated active platform admin context is required.[/red]")
         raise typer.Exit(EXIT_OPERATOR_REQUIRED) from None
@@ -144,15 +188,31 @@ task_app = typer.Typer(
 
 
 @task_app.callback()
-def _task_operator_boundary() -> None:
+def _task_operator_boundary(
+    output: str = typer.Option("human", "--output", help="Output format: human or json"),
+) -> None:
     """Label and gate the group before any task subcommand can execute."""
+    if output not in {"human", "json"}:
+        from .task_output import task_print
+
+        task_print("[red]--output must be human or json[/red]")
+        raise typer.Exit(EXIT_USAGE)
+    set_task_output_format(output)
     try:
         _require_operator_context()
     except OperatorIdentityRequired:
-        from rich import print as rprint
+        if is_json_output():
+            emit_task_json("task", EXIT_OPERATOR_REQUIRED)
+        else:
+            from .task_output import task_print
 
-        rprint("[red]An authenticated active platform admin context is required.[/red]")
+            task_print("[red]An authenticated active platform admin context is required.[/red]")
         raise typer.Exit(EXIT_OPERATOR_REQUIRED) from None
+    except Exception:
+        if is_json_output():
+            emit_task_json("task", EXIT_COMMAND_FAILED)
+            raise typer.Exit(EXIT_COMMAND_FAILED) from None
+        raise
 
 
 async def _require_explicit_tenant(tenant: str | None) -> int:
@@ -160,19 +220,19 @@ async def _require_explicit_tenant(tenant: str | None) -> int:
     from .._tenant import resolve_tenant_id
 
     if not isinstance(tenant, str) or not tenant.strip():
-        from rich import print as rprint
+        from .task_output import task_print as rprint
 
         rprint("[red]Specify --tenant to target exactly one workspace.[/red]")
         raise typer.Exit(EXIT_USAGE)
     try:
         tenant_id = await resolve_tenant_id(tenant)
     except ValueError:
-        from rich import print as rprint
+        from .task_output import task_print as rprint
 
         rprint("[red]Workspace not found.[/red]")
         raise typer.Exit(EXIT_TARGET_UNRESOLVED) from None
     if tenant_id is None:
-        from rich import print as rprint
+        from .task_output import task_print as rprint
 
         rprint("[red]Specify --tenant to target exactly one workspace.[/red]")
         raise typer.Exit(EXIT_USAGE)
@@ -180,6 +240,7 @@ async def _require_explicit_tenant(tenant: str | None) -> int:
 
 
 @task_app.command("vk-connections")
+@_json_command("task vk-connections")
 def task_vk_connections_cmd(
     tenant: str = typer.Option(..., "--tenant", help="Workspace slug or ID"),
     user: int = typer.Option(..., "--user", help="Active workspace member; only their own connections"),
@@ -187,7 +248,7 @@ def task_vk_connections_cmd(
     """Read connection metadata and capabilities without resolving tokens."""
     import json
 
-    from rich import print as rprint
+    from .task_output import task_print as rprint
 
     async def _catalog():
         from app.core.permissions import permission_scope
@@ -208,9 +269,11 @@ def task_vk_connections_cmd(
         rprint("[red]VK connection access denied[/red]")
         raise typer.Exit(1) from None
     rprint(json.dumps(catalog, ensure_ascii=False, indent=2))
+    return catalog
 
 
 @task_app.command("plan")
+@_json_command("task plan")
 def task_plan_cmd(
     plan_json: str = typer.Argument(..., help="Canonical social task plan as JSON"),
     job_type: str = typer.Option("analyze", "--job-type", help="collect or analyze"),
@@ -220,7 +283,7 @@ def task_plan_cmd(
     """Preview a plan; --tenant adds a read-only workspace entitlement decision."""
     import json as _json
 
-    from rich import print as rprint
+    from .task_output import task_print as rprint
 
     from app.services.task_plans import apply_task_plan
 
@@ -262,24 +325,25 @@ def task_plan_cmd(
                     return entitlements, await preview_vk_access(payload["task_plan"])
 
         entitlement_preview, vk_access_preview = _run_task_platform(_preview())
-    rprint(
-        _json.dumps(
-            {"task_plan": payload["task_plan"], "entitlements": entitlement_preview, "vk_access": vk_access_preview},
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    result = {
+        "task_plan": payload["task_plan"],
+        "entitlements": entitlement_preview,
+        "vk_access": vk_access_preview,
+    }
+    rprint(_json.dumps(result, ensure_ascii=False, indent=2))
     rprint("[dim]Preview only. Access, payer eligibility and platform coverage are checked at execution.[/dim]")
+    return result
 
 
 @task_app.command("entitlements")
+@_json_command("task entitlements")
 def task_entitlements_cmd(
     tenant: str = typer.Option(..., "--tenant", help="Workspace slug or ID"),
 ):
     """Inspect current product grants and availability; consume no usage."""
     import json as _json
 
-    from rich import print as rprint
+    from .task_output import task_print as rprint
 
     from app.core.tenant_context import tenant_scope
     from app.models.managers.entitlement_manager import EntitlementManager
@@ -289,14 +353,17 @@ def task_entitlements_cmd(
         with tenant_scope(tenant_id):
             return await EntitlementManager().inspect()
 
-    rprint(_json.dumps(_run_task_platform(_inspect()), ensure_ascii=False, indent=2))
+    result = _run_task_platform(_inspect())
+    rprint(_json.dumps(result, ensure_ascii=False, indent=2))
+    return result
 
 
 @task_app.command("list")
+@_json_command("task list")
 def task_list():
     """List all tasks."""
 
-    from rich import print as rprint
+    from .task_output import task_print as rprint
     from rich.table import Table
 
     from app.models import AgentTask
@@ -307,9 +374,24 @@ def task_list():
         slugs = {t.id: t.slug for t in await tenants.all()}
         rows: list[AgentTask] = await AgentTask.objects.order_by(AgentTask.id)  # type: ignore[misc]
         table = Table(title="AgentTasks (all workspaces)")
+        json_rows = []
         for col in ("id", "workspace", "name", "cron", "job", "active", "next_run_at", "last_status"):
             table.add_column(col)
         for s in rows:
+            status = s.last_status if s.last_status in {"ok", "failed", "skipped", "queued"} else None
+            next_run_at = s.next_run_at.isoformat() if s.next_run_at else None
+            json_rows.append(
+                {
+                    "id": s.id,
+                    "workspace": slugs.get(s.tenant_id, "?"),
+                    "name": s.name,
+                    "cron": s.cron_expr,
+                    "job": s.job_type,
+                    "active": s.is_active,
+                    "next_run_at": next_run_at,
+                    "last_status": status,
+                }
+            )
             table.add_row(
                 str(s.id),
                 slugs.get(s.tenant_id, "?"),
@@ -321,11 +403,13 @@ def task_list():
                 s.last_status or "—",
             )
         rprint(table)
+        return json_rows
 
-    _run_task_platform(_run())
+    return _run_task_platform(_run())
 
 
 @task_app.command("result")
+@_json_command("task result")
 def task_result_cmd(
     task_id: int = typer.Argument(..., help="AgentTask ID"),
     job_id: int = typer.Option(None, "--job-id", help="Read one retained run instead of the latest run"),
@@ -333,7 +417,7 @@ def task_result_cmd(
     tenant: str = typer.Option(..., "--tenant", help="Workspace slug or ID"),
 ):
     """Read bounded task status and permitted analysis summaries."""
-    from rich import print as rprint
+    from .task_output import task_print as rprint
     from rich.table import Table
 
     from app.core.tenant_context import tenant_scope
@@ -368,8 +452,9 @@ def task_result_cmd(
             rprint(table)
         else:
             rprint("No analysis summaries are available to this operator.")
+        return result
 
-    _run_task_platform(_run())
+    return _run_task_platform(_run())
 
 
 async def _add_task(
@@ -387,7 +472,7 @@ async def _add_task(
     """
     from datetime import datetime, timedelta, timezone
 
-    from rich import print as rprint
+    from .task_output import task_print as rprint
 
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
@@ -521,6 +606,7 @@ async def _add_task(
 
 
 @task_app.command("add")
+@_json_command("task add")
 def task_add(
     name: str = typer.Argument(..., help="Unique task name"),
     cron: str = typer.Argument(..., help="Cron expression, e.g. '0 9 * * *' (or @once)"),
@@ -562,7 +648,7 @@ def task_add(
     """Add a task."""
     import json as _json
 
-    from rich import print as rprint
+    from .task_output import task_print as rprint
 
     from app.models.managers.agent_task_manager import AgentTaskManager
 
@@ -647,7 +733,7 @@ def task_add(
         end = AgentTaskManager.parse_date(end_date) if end_date else None
         parsed_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=force_refresh))
 
-    _run_task_platform(
+    task = _run_task_platform(
         _add_task(
             name=name,
             cron=cron,
@@ -658,11 +744,18 @@ def task_add(
             tenant=tenant,
         )
     )
+    return {
+        "task_id": task.id,
+        "tenant_id": task.tenant_id,
+        "name": task.name,
+        "job_type": task.job_type,
+        "active": task.is_active,
+    }
 
 
 async def _remove_task(name: str, tenant: str | None) -> int:
     """Delete exactly one named task inside an explicitly selected workspace."""
-    from rich import print as rprint
+    from .task_output import task_print as rprint
 
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
@@ -685,16 +778,18 @@ async def _remove_task(name: str, tenant: str | None) -> int:
 
 
 @task_app.command("remove")
+@_json_command("task remove")
 def task_remove(
     name: str = typer.Argument(..., help="Task name in the selected workspace"),
     tenant: str = typer.Option(..., "--tenant", help="Required target workspace slug or ID"),
 ):
     """Remove one task by name in the required workspace."""
 
-    _run_task_platform(_remove_task(name, tenant))
+    return {"deleted": _run_task_platform(_remove_task(name, tenant)), "name": name}
 
 
 @task_app.command("pause")
+@_json_command("task pause")
 def task_pause(
     name: str = typer.Argument(..., help="Task name in the selected workspace"),
     tenant: str = typer.Option(..., "--tenant", help="Required target workspace slug or ID"),
@@ -702,7 +797,7 @@ def task_pause(
 ):
     """Pause or resume one task in the required workspace."""
 
-    from rich import print as rprint
+    from .task_output import task_print as rprint
 
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
@@ -719,15 +814,21 @@ def task_pause(
             if len(matches) != 1:
                 rprint("[red]Task name is ambiguous in the selected workspace[/red]")
                 raise typer.Exit(EXIT_TARGET_UNRESOLVED)
-                raise typer.Exit(EXIT_TARGET_UNRESOLVED)
             await AgentTask.objects.update_by_id(matches[0].id, is_active=resume)
             where = await tenant_label(tenant_id)
         rprint(f"[green]{'Resumed' if resume else 'Paused'} '{name}'[/green] in {where}")
+        return {
+            "task_id": matches[0].id,
+            "tenant_id": tenant_id,
+            "name": name,
+            "active": resume,
+        }
 
-    _run_task_platform(_run())
+    return _run_task_platform(_run())
 
 
 @task_app.command("update")
+@_json_command("task update")
 def task_update(
     name: str = typer.Argument(..., help="Task name to update"),
     job_type: str = typer.Option(
@@ -762,7 +863,7 @@ def task_update(
     """Update an existing task. Only provided fields are changed."""
     import json as _json
 
-    from rich import print as rprint
+    from .task_output import task_print as rprint
 
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask, Tenant
@@ -950,8 +1051,15 @@ def task_update(
                     if {k: {"job_type": job_type, "cron": cron, "scenario": scenario_id}.get(k)}
                 ]
                 rprint(f"[green]Updated '{name}' in {where}[/green]")
+                return {
+                    "task_id": task.id,
+                    "tenant_id": task.tenant_id,
+                    "name": name,
+                    "job_type": new_job_type,
+                    "cron": new_cron,
+                }
 
-    _run_task_platform(_run())
+    return _run_task_platform(_run())
 
 
 async def _run_task(
@@ -986,7 +1094,7 @@ async def _run_task(
     unless the command-line flags override them (the stored values flow through
     the task payload either way).
     """
-    from rich import print as rprint
+    from .task_output import task_print as rprint
 
     from app.core.tenant_context import tenant_scope
     from app.jobs.dispatcher import run_job_now
@@ -1109,7 +1217,7 @@ def _make_task_run_command(job_type: str) -> Callable:
         influencers: str = typer.Option(None, "--influencers", help="Authors/influencers to analyze (one-off run)"),
         topics: str = typer.Option(None, "--topics", help="Topics to analyze (one-off run)"),
     ):
-        _run_task_platform(
+        return _run_task_platform(
             _run_task(
                 task=task,
                 job_type=job_type,
@@ -1136,6 +1244,6 @@ def _make_task_run_command(job_type: str) -> Callable:
 
 
 for _jt in ("collect", "digest", "analyze", "prune", "learn", "reflect"):
-    task_app.command(name=_jt)(_make_task_run_command(_jt))
+    task_app.command(name=_jt)(_json_command(f"task {_jt}")(_make_task_run_command(_jt)))
 
 

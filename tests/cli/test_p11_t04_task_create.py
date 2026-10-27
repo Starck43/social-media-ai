@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -43,6 +44,13 @@ def test_task_add_passes_canonical_plan_fields_to_persistence(monkeypatch, fixed
 
     async def capture_add(**values):
         captured.update(values)
+        return SimpleNamespace(
+            id=1,
+            tenant_id=2,
+            name=values["name"],
+            job_type=values["job_type"],
+            is_active=True,
+        )
 
     monkeypatch.setattr(task_commands, "_add_task", capture_add)
     result = CliRunner().invoke(

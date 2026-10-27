@@ -28,4 +28,4 @@ contract before enabling; `action_send` remains preview-only.
 
 - [P9-T07](../audit/p9-t07.md) — actor-scoped admin catalogs and selected-workspace authorization · 2026-10-27 · `1c760960dfe871693d54ca5ac4e4459140e345f3`
 
-**Phase status:** Active phase; close only after every plan item is accepted.
+**Phase status:** Phase P9 completed and closed (P9-T01 to P9-T08 accepted and integrated).

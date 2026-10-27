@@ -41,8 +41,6 @@ means not recorded; source recovery links remain in the card.
 - [P8-T40](docs/tasks/p8-t40.md) Compose collection, analysis and digest schedules — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 
-## [P9](docs/phases/p9-safe-activation.md)
-
 ## [P11](docs/phases/p11-structure.md)
 
 - [P11-T01](docs/tasks/p11-t01.md) Critical structural audit, refactoring plan and task-card reconciliation — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=4066ba0cf6d880aba81600a9789b6feb)

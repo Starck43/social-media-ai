@@ -8,10 +8,17 @@ operator transport.
 from __future__ import annotations
 
 import secrets
-from contextlib import nullcontext
 from typing import Callable
 
 import typer
+
+
+EXIT_OK = 0
+EXIT_COMMAND_FAILED = 1
+EXIT_USAGE = 2
+EXIT_TARGET_UNRESOLVED = 3
+EXIT_OPERATOR_REQUIRED = 4
+
 
 def _run_platform(coro):
     """Run an async command with the tenant guard switched off (developer mode).
@@ -83,7 +90,93 @@ async def _set_task_sources(task_id: int, source_ids: list[int], tenant_id: int)
     await AgentTaskManager().add_sources(task_id, source_ids)
 
 
-task_app = typer.Typer(help="Manage agent tasks")
+class OperatorIdentityRequired(PermissionError):
+    """The task operator surface needs a fresh authenticated platform admin."""
+
+
+def _require_operator_context() -> None:
+    """Fail closed unless the caller supplied an authenticated operator context."""
+    from app.core.permissions import get_current_user
+
+    actor = get_current_user()
+    if (
+        actor is None
+        or type(getattr(actor, "id", None)) is not int
+        or actor.id <= 0
+        or not getattr(actor, "is_active", False)
+        or not getattr(actor, "is_platform_admin", False)
+    ):
+        raise OperatorIdentityRequired
+
+
+def _run_task_platform(coro):
+    """Revalidate the ambient operator and bind the fresh actor for audit."""
+    import asyncio
+
+    from app.core.permissions import get_current_user, operator_permission_scope, permission_scope
+    from app.core.tenant_context import tenant_scope
+    from app.models import User
+
+    async def _authenticated():
+        actor = get_current_user()
+        actor_id = getattr(actor, "id", None)
+        if type(actor_id) is not int or actor_id <= 0:
+            raise OperatorIdentityRequired
+        fresh_actor = await User.objects.prefetch_related("role").get(id=actor_id, is_active=True)
+        if fresh_actor is None or not fresh_actor.is_platform_admin:
+            raise OperatorIdentityRequired
+        with permission_scope(fresh_actor), operator_permission_scope():
+            return await coro
+
+    try:
+        with tenant_scope(bypass=True), operator_permission_scope():
+            return asyncio.run(_authenticated())
+    except OperatorIdentityRequired:
+        from rich import print as rprint
+
+        rprint("[red]An authenticated active platform admin context is required.[/red]")
+        raise typer.Exit(EXIT_OPERATOR_REQUIRED) from None
+
+
+task_app = typer.Typer(
+    help="Operator-only task management. Requires an authenticated active platform admin context."
+)
+
+
+@task_app.callback()
+def _task_operator_boundary() -> None:
+    """Label and gate the group before any task subcommand can execute."""
+    try:
+        _require_operator_context()
+    except OperatorIdentityRequired:
+        from rich import print as rprint
+
+        rprint("[red]An authenticated active platform admin context is required.[/red]")
+        raise typer.Exit(EXIT_OPERATOR_REQUIRED) from None
+
+
+async def _require_explicit_tenant(tenant: str | None) -> int:
+    """Resolve a concrete workspace; mutations never use bypass/bootstrap scope."""
+    from .._tenant import resolve_tenant_id
+
+    if not isinstance(tenant, str) or not tenant.strip():
+        from rich import print as rprint
+
+        rprint("[red]Specify --tenant to target exactly one workspace.[/red]")
+        raise typer.Exit(EXIT_USAGE)
+    try:
+        tenant_id = await resolve_tenant_id(tenant)
+    except ValueError:
+        from rich import print as rprint
+
+        rprint("[red]Workspace not found.[/red]")
+        raise typer.Exit(EXIT_TARGET_UNRESOLVED) from None
+    if tenant_id is None:
+        from rich import print as rprint
+
+        rprint("[red]Specify --tenant to target exactly one workspace.[/red]")
+        raise typer.Exit(EXIT_USAGE)
+    return tenant_id
 
 
 @task_app.command("vk-connections")
@@ -102,9 +195,7 @@ def task_vk_connections_cmd(
         from app.models import User
         from app.services.social.vk_connections import connection_catalog
 
-        from .._tenant import resolve_tenant_id
-
-        tenant_id = await resolve_tenant_id(tenant)
+        tenant_id = await _require_explicit_tenant(tenant)
         actor = await User.objects.get(id=user, is_active=True)
         if actor is None:
             raise PermissionError("vk_access_actor_required")
@@ -112,7 +203,7 @@ def task_vk_connections_cmd(
             return await connection_catalog(tenant_id=tenant_id, actor_id=user)
 
     try:
-        catalog = _run_platform(_catalog())
+        catalog = _run_task_platform(_catalog())
     except PermissionError:
         rprint("[red]VK connection access denied[/red]")
         raise typer.Exit(1) from None
@@ -154,9 +245,7 @@ def task_plan_cmd(
         from app.services.collection.entitlement_policy import preview_entitlements
 
         async def _preview():
-            from .._tenant import resolve_tenant_id
-
-            tenant_id = await resolve_tenant_id(tenant)
+            tenant_id = await _require_explicit_tenant(tenant)
             with tenant_scope(tenant_id):
                 from app.services.social.vk_task_access import preview_vk_access
 
@@ -172,7 +261,7 @@ def task_plan_cmd(
                 with permission_scope(actor):
                     return entitlements, await preview_vk_access(payload["task_plan"])
 
-        entitlement_preview, vk_access_preview = _run_platform(_preview())
+        entitlement_preview, vk_access_preview = _run_task_platform(_preview())
     rprint(
         _json.dumps(
             {"task_plan": payload["task_plan"], "entitlements": entitlement_preview, "vk_access": vk_access_preview},
@@ -196,13 +285,11 @@ def task_entitlements_cmd(
     from app.models.managers.entitlement_manager import EntitlementManager
 
     async def _inspect():
-        from .._tenant import resolve_tenant_id
-
-        tenant_id = await resolve_tenant_id(tenant)
+        tenant_id = await _require_explicit_tenant(tenant)
         with tenant_scope(tenant_id):
             return await EntitlementManager().inspect()
 
-    rprint(_json.dumps(_run_platform(_inspect()), ensure_ascii=False, indent=2))
+    rprint(_json.dumps(_run_task_platform(_inspect()), ensure_ascii=False, indent=2))
 
 
 @task_app.command("list")
@@ -235,7 +322,7 @@ def task_list():
             )
         rprint(table)
 
-    _run_platform(_run())
+    _run_task_platform(_run())
 
 
 @task_app.command("result")
@@ -253,17 +340,12 @@ def task_result_cmd(
     from app.services.task_results import task_result
 
     async def _run():
-        from .._tenant import resolve_tenant_id
-
-        tenant_id = await resolve_tenant_id(tenant)
-        if tenant_id is None:
-            rprint("[red]Specify --tenant to keep task results workspace-scoped.[/red]")
-            raise typer.Exit(1)
+        tenant_id = await _require_explicit_tenant(tenant)
         with tenant_scope(tenant_id):
             result = await task_result(task_id, job_id=job_id, limit=limit)
         if result is None:
             rprint("[yellow]Task or run not found[/yellow]")
-            raise typer.Exit(1)
+            raise typer.Exit(EXIT_TARGET_UNRESOLVED)
         rprint(
             f"Task {result['task_id']} · status={result['status'] or 'unknown'} · "
             f"job={result['job_id'] or '—'} ({result['job_status']}) · coverage={result['coverage']}"
@@ -287,7 +369,7 @@ def task_result_cmd(
         else:
             rprint("No analysis summaries are available to this operator.")
 
-    _run_platform(_run())
+    _run_task_platform(_run())
 
 
 async def _add_task(
@@ -318,7 +400,7 @@ async def _add_task(
     )
     from app.tasks.cron import next_run_at
 
-    from .._tenant import resolve_tenant_id, tenant_label
+    from .._tenant import tenant_label
 
     if not isinstance(parsed_payload, dict):
         rprint("[red]Payload must be a JSON object[/red]")
@@ -333,11 +415,11 @@ async def _add_task(
         rprint(f"[red]{collection_error_message(str(error))}[/red]")
         raise typer.Exit(1) from error
 
-    tenant_id = await resolve_tenant_id(tenant)
-    with tenant_scope(tenant_id) if tenant_id else nullcontext():
+    tenant_id = await _require_explicit_tenant(tenant)
+    with tenant_scope(tenant_id):
         if await AgentTask.objects.get(name=name):
             rprint(f"[red]AgentTask '{name}' already exists[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(EXIT_TARGET_UNRESOLVED)
         # Checked before the insert: a rejected source must not leave a task
         # behind that silently runs "all active sources".
         await _check_task_sources(parsed_source_ids, tenant_id)
@@ -463,7 +545,7 @@ def task_add(
     task_plan: str = typer.Option(
         None, "--task-plan", help="Canonical social task plan JSON; source scope is explicit"
     ),
-    tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id to create the task in"),
+    tenant: str = typer.Option(..., "--tenant", help="Required target workspace slug or ID"),
     # Specific analysis targets — they belong on the task (payload), not the
     # scenario (methodology), see app/services/ai/param_registry.py.
     brands: str = typer.Option(None, "--brands", help="Comma/space separated brands to track (brand_mentions)"),
@@ -565,7 +647,7 @@ def task_add(
         end = AgentTaskManager.parse_date(end_date) if end_date else None
         parsed_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=force_refresh))
 
-    _run_platform(
+    _run_task_platform(
         _add_task(
             name=name,
             cron=cron,
@@ -578,57 +660,71 @@ def task_add(
     )
 
 
-async def _remove_task(name: str) -> int:
-    """Delete every task with this name, naming the workspaces it touched.
-
-    Task names are unique per workspace, not globally, and the CLI is developer
-    mode — so a name can legitimately exist in several workspaces. Deleting them
-    all is the intended behaviour; staying silent about it is not.
-    """
+async def _remove_task(name: str, tenant: str | None) -> int:
+    """Delete exactly one named task inside an explicitly selected workspace."""
     from rich import print as rprint
 
+    from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
 
     from .._tenant import tenant_label
 
-    matches = await AgentTask.objects.filter(name=name)
-    if not matches:
-        rprint("[yellow]Not found[/yellow]")
-        return 0
-    where = ", ".join(sorted({await tenant_label(s.tenant_id) for s in matches}))
-    deleted = await AgentTask.objects.delete(name=name)
+    tenant_id = await _require_explicit_tenant(tenant)
+    with tenant_scope(tenant_id):
+        matches = await AgentTask.objects.filter(name=name, tenant_id=tenant_id)
+        if not matches:
+            rprint("[yellow]Not found[/yellow]")
+            raise typer.Exit(EXIT_TARGET_UNRESOLVED)
+        if len(matches) != 1:
+            rprint("[red]Task name is ambiguous in the selected workspace[/red]")
+            raise typer.Exit(EXIT_TARGET_UNRESOLVED)
+        where = await tenant_label(tenant_id)
+        deleted = await AgentTask.objects.delete(id=matches[0].id)
     rprint(f"[green]Deleted {deleted} task(s)[/green] in {where}")
     return deleted
 
 
 @task_app.command("remove")
-def task_remove(name: str = typer.Argument(...)):
-    """Remove a task by name (in every workspace that has one)."""
+def task_remove(
+    name: str = typer.Argument(..., help="Task name in the selected workspace"),
+    tenant: str = typer.Option(..., "--tenant", help="Required target workspace slug or ID"),
+):
+    """Remove one task by name in the required workspace."""
 
-    _run_platform(_remove_task(name))
+    _run_task_platform(_remove_task(name, tenant))
 
 
 @task_app.command("pause")
-def task_pause(name: str = typer.Argument(...), resume: bool = typer.Option(False, "--resume")):
-    """Pause (or --resume) a task."""
+def task_pause(
+    name: str = typer.Argument(..., help="Task name in the selected workspace"),
+    tenant: str = typer.Option(..., "--tenant", help="Required target workspace slug or ID"),
+    resume: bool = typer.Option(False, "--resume"),
+):
+    """Pause or resume one task in the required workspace."""
 
     from rich import print as rprint
 
+    from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
 
     async def _run():
+        tenant_id = await _require_explicit_tenant(tenant)
         from .._tenant import tenant_label
 
-        matches: list[AgentTask] = await AgentTask.objects.filter(name=name)
-        if not matches:
-            rprint("[yellow]Not found[/yellow]")
-            raise typer.Exit(1)
-        for s in matches:
-            await AgentTask.objects.update_by_id(s.id, is_active=resume)
-        where = ", ".join(sorted({await tenant_label(s.tenant_id) for s in matches}))
+        with tenant_scope(tenant_id):
+            matches: list[AgentTask] = await AgentTask.objects.filter(name=name, tenant_id=tenant_id)
+            if not matches:
+                rprint("[yellow]Not found[/yellow]")
+                raise typer.Exit(EXIT_TARGET_UNRESOLVED)
+            if len(matches) != 1:
+                rprint("[red]Task name is ambiguous in the selected workspace[/red]")
+                raise typer.Exit(EXIT_TARGET_UNRESOLVED)
+                raise typer.Exit(EXIT_TARGET_UNRESOLVED)
+            await AgentTask.objects.update_by_id(matches[0].id, is_active=resume)
+            where = await tenant_label(tenant_id)
         rprint(f"[green]{'Resumed' if resume else 'Paused'} '{name}'[/green] in {where}")
 
-    _run_platform(_run())
+    _run_task_platform(_run())
 
 
 @task_app.command("update")
@@ -661,7 +757,7 @@ def task_update(
     influencers: str = typer.Option(None, "--influencers", help="New comma/space separated authors/influencers"),
     keywords: str = typer.Option(None, "--keywords", help="New comma/space separated keywords"),
     topics: str = typer.Option(None, "--topics", help="New comma/space separated topics"),
-    tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (for global lookup)"),
+    tenant: str = typer.Option(..., "--tenant", help="Required target workspace slug or ID"),
 ):
     """Update an existing task. Only provided fields are changed."""
     import json as _json
@@ -678,7 +774,7 @@ def task_update(
     )
     from app.tasks.cron import next_run_at, resolve_tz
 
-    from .._tenant import resolve_tenant_id, tenant_label
+    from .._tenant import tenant_label
 
     parsed_patch: dict | None = None
     parsed_plan: dict | None = None
@@ -702,12 +798,15 @@ def task_update(
             raise typer.Exit(1)
 
     async def _run():
-        tenant_id = await resolve_tenant_id(tenant)
-        with tenant_scope(tenant_id) if tenant_id else nullcontext():
-            matches: list[AgentTask] = await AgentTask.objects.filter(name=name)
+        tenant_id = await _require_explicit_tenant(tenant)
+        with tenant_scope(tenant_id):
+            matches: list[AgentTask] = await AgentTask.objects.filter(name=name, tenant_id=tenant_id)
             if not matches:
                 rprint("[yellow]Not found[/yellow]")
-                raise typer.Exit(1)
+                raise typer.Exit(EXIT_TARGET_UNRESOLVED)
+            if len(matches) != 1:
+                rprint("[red]Task name is ambiguous in the selected workspace[/red]")
+                raise typer.Exit(EXIT_TARGET_UNRESOLVED)
 
             from app.jobs.handlers import HANDLERS
 
@@ -852,7 +951,7 @@ def task_update(
                 ]
                 rprint(f"[green]Updated '{name}' in {where}[/green]")
 
-    _run_platform(_run())
+    _run_task_platform(_run())
 
 
 async def _run_task(
@@ -895,19 +994,25 @@ async def _run_task(
     from app.models import AgentTask
     from app.models.managers.agent_task_manager import AgentTaskManager
 
-    from .._tenant import resolve_tenant_id, tenant_label
+    from .._tenant import tenant_label
 
+    tenant_id = await _require_explicit_tenant(tenant)
     if task:
-        target = await AgentTask.objects.get(id=int(task)) if task.isdigit() else None
+        with tenant_scope(tenant_id):
+            if task.isdigit():
+                target = await AgentTask.objects.get(id=int(task), tenant_id=tenant_id)
+            else:
+                matches = await AgentTask.objects.filter(name=task, tenant_id=tenant_id)
+                if len(matches) > 1:
+                    rprint("[red]Task name is ambiguous in the selected workspace[/red]")
+                    raise typer.Exit(EXIT_TARGET_UNRESOLVED)
+                target = matches[0] if matches else None
         if target is None:
-            target = await AgentTask.objects.get(name=task)
-        if target is None:
-            rprint(f"[red]Task '{task}' not found[/red]")
-            raise typer.Exit(1)
+            rprint("[yellow]Task not found in the selected workspace[/yellow]")
+            raise typer.Exit(EXIT_TARGET_UNRESOLVED)
     else:
         from datetime import datetime, timezone
 
-        tenant_id = await resolve_tenant_id(tenant)
         payload: dict = {}
         if tracked:
             from app.services.monitoring.selection import SelectionError
@@ -939,7 +1044,7 @@ async def _run_task(
         ):
             if raw:
                 payload[key] = [t.strip() for t in raw.replace(",", " ").split() if t.strip()]
-        with tenant_scope(tenant_id) if tenant_id else nullcontext():
+        with tenant_scope(tenant_id):
             # `@once` is created disarmed: a still-armed one-shot would be picked
             # up by the scheduler tick and enqueue a duplicate job. The name
             # carries a timestamp and a random suffix because task names are
@@ -968,9 +1073,10 @@ async def _run_task(
             refresh_extra["force_reanalyze"] = True
 
     where = await tenant_label(target.tenant_id)
-    job = await enqueue_task_run(target, extra_payload=refresh_extra, supersede_unfinished=True)
-    rprint(f"[green]Job {job.id} enqueued for task '{target.name}'[/green] in {where}")
-    outcome = await run_job_now(job.id, allow_retry=False) or {}
+    with tenant_scope(target.tenant_id):
+        job = await enqueue_task_run(target, extra_payload=refresh_extra, supersede_unfinished=True)
+        rprint(f"[green]Job {job.id} enqueued for task '{target.name}'[/green] in {where}")
+        outcome = await run_job_now(job.id, allow_retry=False) or {}
     if outcome.get("status") == "done":  # "done" is the terminal success status
         rprint(f"[bold green]Finished[/bold green]: {outcome.get('result')}")
     else:
@@ -989,7 +1095,7 @@ def _make_task_run_command(job_type: str) -> Callable:
         keywords: str = typer.Option(None, "--keywords", help="Text scope phrases (one-off run)"),
         scenario: int = typer.Option(None, "--scenario", help="AgentScenario ID (one-off run)"),
         period: str = typer.Option(None, "--period", help="Period for digest/collect: day | week | last month etc."),
-        tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id for a one-off run"),
+        tenant: str = typer.Option(..., "--tenant", help="Required target workspace slug or ID"),
         force_refresh: bool = typer.Option(
             False,
             "--force-refresh",
@@ -1003,7 +1109,7 @@ def _make_task_run_command(job_type: str) -> Callable:
         influencers: str = typer.Option(None, "--influencers", help="Authors/influencers to analyze (one-off run)"),
         topics: str = typer.Option(None, "--topics", help="Topics to analyze (one-off run)"),
     ):
-        _run_platform(
+        _run_task_platform(
             _run_task(
                 task=task,
                 job_type=job_type,

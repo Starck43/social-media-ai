@@ -1,23 +1,24 @@
 # CLI Reference
 
-AI Assistant administration CLI built with Typer.
+AI Assistant's privileged operator/developer CLI, built with Typer.
 
 ```bash
 python -m cli.main <command> <subcommand> [options]
 ```
 
-The CLI is the **developer console**: it runs every command with
-`tenant_scope(bypass=True)`, so it reads and writes across all workspaces and a
-create without `--tenant` lands in the bootstrap workspace. End users never
-reach this path — API and web requests are pinned to their own workspace.
+The CLI is **operator-only**: it is not an end-user/customer client or a
+token-authenticated HTTP adapter. Some entrypoints use
+`tenant_scope(bypass=True)` for fleet operations; every command must still
+enforce its documented identity and workspace boundary. The `task` group
+requires a fresh authenticated active platform-admin context from an in-process
+embedding. A standalone shell has no sign-in or impersonation option and fails
+closed for this group.
 
-Commands that must act *inside* one workspace take `--tenant <slug|id>` and
-switch the scope on for that block (`task add`, one-off `task <job_type>`, `credentials`,
-`scenarios`). A task's own workspace always wins over any flag: `task <job_type> --task
-<id>` uses the workspace stored on the task row.
-
-Output that spans workspaces names them: `task list` has a `workspace` column and
-`task remove` reports every workspace it deleted from.
+Every task mutation and manual run requires an explicit
+`--tenant <slug|id>`. Names and IDs resolve only inside that workspace; there
+is no global fallback. `task list` remains an operator-wide read and includes a
+`workspace` column. A future customer CLI must use a selected token-authenticated
+HTTP/API contract, never this database-bypass path.
 
 ---
 
@@ -171,40 +172,44 @@ python -m cli.main task add <name> <cron_expr> <job_type> [options]
 | `--influencers` | — | Comma/space separated authors/influencers (influencer scenario) |
 | `--topics` | — | Comma/space separated topics (topics scenario) |
 | `--payload`, `-p` | `{}` | Extra JSON payload, e.g. `'{"period": "week"}'` (flat keys; sources/scenario are set separately). `collection` is validated through the shared parser; a malformed block stops the command before a task is created. |
+| `--tenant` | required | Exact workspace slug or ID in which to create the task |
 
 **Examples:**
 ```bash
 # Hourly collection
-python -m cli.main task add hourly-collect "0 * * * *" collect
+python -m cli.main task add hourly-collect "0 * * * *" collect --tenant owner
 
 # Daily digest at 9 AM
-python -m cli.main task add daily-digest "0 9 * * *" digest
+python -m cli.main task add daily-digest "0 9 * * *" digest --tenant owner
 
 # Weekly digest on Mondays
-python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
+python -m cli.main task add weekly-digest "0 9 * * 1" digest --tenant owner -p '{"period": "week"}'
 
 # Collect from specific sources, keeping only tracked authors and matching phrases
 python -m cli.main task add hourly-collect "0 * * * *" collect \
-  --sources "1 2" --tracked "vk:123456" --keywords "Киров, дизайн" --excluded "spam"
+  --tenant owner --sources "1 2" --tracked "vk:123456" --keywords "Киров, дизайн" --excluded "spam"
 
 # Analyze with a scenario
-python -m cli.main task add daily-analyze "0 2 * * *" analyze --sources "1" --scenario 5
+python -m cli.main task add daily-analyze "0 2 * * *" analyze --tenant owner --sources "1" --scenario 5
 
 # Collect posts and comments, with a page limit and a mention phrase
-python -m cli.main task add kirov-monitor "0 9 * * *" analyze --sources "3" \
+python -m cli.main task add kirov-monitor "0 9 * * *" analyze --tenant owner --sources "3" \
   -p '{"collection": {"content_types": ["posts", "comments"], "limit": 250, "queries": ["доставка"]}}'
 ```
 
 ### Remove Task
 
 ```bash
-python -m cli.main task remove <name>
+python -m cli.main task remove <name> --tenant <workspace>
 ```
+
+Only the task in the selected workspace is removed; a same-named task in any
+other workspace is left untouched.
 
 ### Update Task
 
 ```bash
-python -m cli.main task update <name> [options]
+python -m cli.main task update <name> --tenant <workspace> [options]
 ```
 
 Only provided options are changed; all others keep their current values.
@@ -230,18 +235,19 @@ Only provided options are changed; all others keep their current values.
 | `--influencers` | New comma/space separated authors/influencers (influencer scenario) |
 | `--topics` | New comma/space separated topics (topics scenario) |
 | `--payload`, `-p` | JSON object merged into the task payload. `collection` is validated by the shared parser; omit it to keep the stored block, `null` clears it, an object replaces it. |
+| `--tenant` | Required | Exact workspace slug or ID; lookup and update stay inside it |
 
 **Example:**
 
 ```bash
 # Change schedule and add brands for an existing task
-python -m cli.main task update nightly-analyze --cron "0 3 * * *" --brands "Coca-Cola, Sprite"
+python -m cli.main task update nightly-analyze --tenant owner --cron "0 3 * * *" --brands "Coca-Cola, Sprite"
 
 # Switch scenario and add competitors
-python -m cli.main task update brand-watch --scenario 7 --competitors "Pepsi, Fanta"
+python -m cli.main task update brand-watch --tenant owner --scenario 7 --competitors "Pepsi, Fanta"
 
 # Narrow collection to comments and drop the stored mention phrase
-python -m cli.main task update kirov-monitor -p '{"collection": {"content_types": ["comments"], "limit": 100}}'
+python -m cli.main task update kirov-monitor --tenant owner -p '{"collection": {"content_types": ["comments"], "limit": 100}}'
 ```
 
 ### Run Task
@@ -266,13 +272,14 @@ where `<job_type>` is `collect`, `digest`, `analyze`, `prune`, `learn` or
 | `--excluded` | — | Usernames to skip (one-off run) |
 | `--scenario` | — | `AgentScenario` ID (one-off run) |
 | `--period` | — | Period for digest/collect: `day`, `week`, `month` etc. |
-| `--tenant` | — | Workspace slug or id for a one-off run |
+| `--tenant` | required | Exact target workspace for both named-task and one-off runs |
 | `--force-refresh` | `false` | Direct CLI collection may re-fetch a window; it does not bypass analysis receipts |
 | `--start-date` | — | Content start date `DD-MM-YYYY` (one-off only) |
 | `--end-date` | — | Content end date `DD-MM-YYYY` (one-off only) |
 
-A task's own workspace always wins over `--tenant`. Running a task executes
-*its own* job — it never drains an unrelated pending job.
+The selected workspace must contain the named task. A cross-workspace ID or
+name is reported as not found; there is no global lookup fallback. Running a
+task executes *its own* job — it never drains an unrelated pending job.
 
 For direct collection, `--force-refresh` can re-fetch the requested window but
 does not bypass durable analysis receipts. Web task force controls were removed;
@@ -287,13 +294,13 @@ successful save, while normal receipt and provider rules still apply.
 **Examples:**
 ```bash
 # Run an existing collect task
-python -m cli.main task collect --task 524
+python -m cli.main task collect --task 524 --tenant owner
 
 # Run an existing digest task with a period
-python -m cli.main task digest --task 524 --period week
+python -m cli.main task digest --task 524 --tenant owner --period week
 
 # One-off analyze run
-python -m cli.main task analyze --sources 739 --scenario 3
+python -m cli.main task analyze --tenant owner --sources 739 --scenario 3
 
 # Direct collect command: re-fetch a collection window; receipts still apply
 python -m cli.main collect --src 739 --force-refresh --start-date 01-05-2025
@@ -302,8 +309,8 @@ python -m cli.main collect --src 739 --force-refresh --start-date 01-05-2025
 ### Pause / Resume Task
 
 ```bash
-python -m cli.main task pause <name>       # pause
-python -m cli.main task pause <name> --resume  # resume
+python -m cli.main task pause <name> --tenant <workspace>              # pause
+python -m cli.main task pause <name> --tenant <workspace> --resume      # resume
 ```
 
 ---

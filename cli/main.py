@@ -19,8 +19,8 @@ from .commands.tasks import (
 )
 
 app = typer.Typer(
-    name="AI Assistant CLI",
-    help="AI Assistant CLI",
+    name="AI Assistant operator CLI",
+    help="Privileged operator-only administration; not a customer or end-user CLI.",
     no_args_is_help=True,
 )
 

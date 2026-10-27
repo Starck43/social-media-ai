@@ -1,5 +1,6 @@
 """P11-T04 task-plan creation keeps CLI transport mapping and scope checks."""
 
+import asyncio
 import json
 
 import pytest
@@ -26,6 +27,11 @@ def _plan(*, fixed_window: bool) -> dict:
     }
 
 
+def _allow_operator_cli(monkeypatch):
+    monkeypatch.setattr(task_commands, "_require_operator_context", lambda: None)
+    monkeypatch.setattr(task_commands, "_run_task_platform", lambda coro: asyncio.run(coro))
+
+
 @pytest.mark.parametrize(
     ("fixed_window", "cron"),
     [(False, "@once"), (True, "0 6 * * *")],
@@ -33,6 +39,7 @@ def _plan(*, fixed_window: bool) -> dict:
 )
 def test_task_add_passes_canonical_plan_fields_to_persistence(monkeypatch, fixed_window, cron):
     captured = {}
+    _allow_operator_cli(monkeypatch)
 
     async def capture_add(**values):
         captured.update(values)
@@ -46,6 +53,8 @@ def test_task_add_passes_canonical_plan_fields_to_persistence(monkeypatch, fixed
             "research",
             cron,
             "collect",
+            "--tenant",
+            "owner",
             "--task-plan",
             json.dumps(_plan(fixed_window=fixed_window)),
         ],
@@ -61,6 +70,7 @@ def test_task_add_passes_canonical_plan_fields_to_persistence(monkeypatch, fixed
 
 
 def test_task_add_rejects_source_conflict_before_persistence(monkeypatch):
+    _allow_operator_cli(monkeypatch)
     async def fail_if_persisted(**_values):
         pytest.fail("conflicting source selection must be rejected before persistence")
 
@@ -73,6 +83,8 @@ def test_task_add_rejects_source_conflict_before_persistence(monkeypatch):
             "research",
             "@once",
             "collect",
+            "--tenant",
+            "owner",
             "--sources",
             "18",
             "--task-plan",
@@ -85,6 +97,7 @@ def test_task_add_rejects_source_conflict_before_persistence(monkeypatch):
 
 
 def test_task_add_reports_unknown_job_type_before_parsing_a_valid_plan(monkeypatch):
+    _allow_operator_cli(monkeypatch)
     async def fail_if_persisted(**_values):
         pytest.fail("an unsupported task type must not reach persistence")
 
@@ -97,6 +110,8 @@ def test_task_add_reports_unknown_job_type_before_parsing_a_valid_plan(monkeypat
             "research",
             "@once",
             "unsupported",
+            "--tenant",
+            "owner",
             "--task-plan",
             json.dumps(_plan(fixed_window=False)),
         ],

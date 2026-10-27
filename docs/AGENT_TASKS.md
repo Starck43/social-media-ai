@@ -243,16 +243,22 @@ in `Europe/Moscow` therefore means 06:00 UTC.
 
 ## Adding a task
 
+The task CLI is operator-only. These command shapes require an in-process
+authenticated active platform-admin context; a standalone shell cannot log in
+or impersonate an operator. Supply `--tenant` for every create, update, pause,
+resume, remove and manual run. Task names and IDs resolve only inside that
+workspace, so scripts must carry the workspace chosen for the operation.
+
 ```bash
-python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
+python -m cli.main task add weekly-digest "0 9 * * 1" digest --tenant owner -p '{"period": "week"}'
 python -m cli.main task add hourly-collect "0 * * * *" collect \
-  --sources "1 2 3" --tracked "vk:123456, vk:7890" --keywords "Киров, дизайн" --dry-on
+  --tenant owner --sources "1 2 3" --tracked "vk:123456, vk:7890" --keywords "Киров, дизайн"
 python -m cli.main task add nightly-analyze "0 2 * * *" analyze \
-  --sources "1" --scenario 5 --brands "Coca-Cola, Sprite"
+  --tenant owner --sources "1" --scenario 5 --brands "Coca-Cola, Sprite"
 python -m cli.main task list
-python -m cli.main task pause weekly-digest
-python -m cli.main task remove weekly-digest
-python -m cli.main task update hourly-collect --brands "Coca-Cola, Fanta" --cron "0 */2 * * *"
+python -m cli.main task pause weekly-digest --tenant owner
+python -m cli.main task remove weekly-digest --tenant owner
+python -m cli.main task update hourly-collect --tenant owner --brands "Coca-Cola, Fanta" --cron "0 */2 * * *"
 ```
 
 Task sources are linked via the `agent_task_sources` m2m table
@@ -266,8 +272,11 @@ Task sources are linked via the `agent_task_sources` m2m table
 shared scenario. Date window: `--start-date`/`--end-date` →
 `cli_dates.start_date`/`end_date`.
 Flags: `--force-refresh` → `force_refresh`, `--force-reanalyze` → `force_reanalyze`,
-`--analyze-inline` → `analyze_inline`. Use `task update <name> [options]` to change any field on an existing task —
-only the fields you pass are modified.
+`--analyze-inline` → `analyze_inline`. Use `task update <name> --tenant <workspace>
+[options]` to change fields only on that workspace's task; only the fields you
+pass are modified. Existing automation must add its chosen `--tenant` and run
+through an authenticated operator embedding; omitting the workspace or invoking
+the standalone shell now fails closed.
 
 Adding a job type means adding a function to the `HANDLERS` registry in
 `app/jobs/handlers.py`; `job_type` values are otherwise free-form strings, so

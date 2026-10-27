@@ -7,7 +7,6 @@ workspace web application and not an editor for every ORM table.
 - Registration: [setup.py](../app/admin/setup.py); views: [views.py](../app/admin/views.py).
 - Enabled by `ADMIN_ENABLED` (default true) in [app.main](../app/main.py).
 
-
 ## Admin actor scope
 
 Analytics routes `/dashboard` and `/dashboard/*` use the same selected-workspace
@@ -279,13 +278,14 @@ Additional restrictions:
 - External FastAPI dashboards use `require_admin_perm()` explicitly. Password
   administration has its additional self/cross-account checks below.
 
-The main app's `PlatformScopeMiddleware` supplies the tenant bypass for
-`/static` and `/health`, while `/app` and `/api` have their own scope middleware.
-`/admin` is excluded from it: `AdminScopeMiddleware` decides the console request
-([actor scope](#admin-actor-scope)). Admin listings are therefore filtered by the
-actor's scope — the selected active membership for workspace rows, the own
-catalogue for personal rows — never by the `/app` workspace selector. Actions
-that execute a task re-enter the selected task's owning workspace.
+The main app's `PlatformScopeMiddleware` leaves infrastructure paths outside
+data scoping, while `/app` and `/api` have their own scope middleware. `/admin`
+and `/dashboard` are excluded from its operator bypass: `AdminScopeMiddleware`
+binds their requests to the actor ([actor scope](#admin-actor-scope)). Admin
+listings use the validated selected membership for workspace rows and the actor's
+own personal catalogue. Users select the shared workspace through `/app`;
+console middleware rechecks membership before using it. Manual task actions
+look up the task inside that scope before admission into its owning workspace.
 
 ## Role permission picker
 

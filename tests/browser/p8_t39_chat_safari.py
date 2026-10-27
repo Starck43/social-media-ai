@@ -7,6 +7,9 @@ configured or enabled by this script.
 
 from __future__ import annotations
 
+import argparse
+import functools
+import http.server
 import json
 import os
 import re
@@ -14,6 +17,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -27,6 +31,37 @@ from app.web.deps import templates
 from app.web.nav import NAV_ITEMS
 
 DRIVER = "/usr/bin/safaridriver"
+
+_APPLESCRIPT_DESKTOP = r"""on run argv
+    set ownedID to missing value
+    tell application "Safari" to set beforeIDs to id of every window
+    try
+        tell application "Safari" to make new document with properties {URL:(item 1 of argv)}
+        delay 1
+        tell application "Safari" to set afterIDs to id of every window
+        set addedIDs to {}
+        repeat with candidateID in afterIDs
+            if beforeIDs does not contain (contents of candidateID) then set end of addedIDs to contents of candidateID
+        end repeat
+        if (count of addedIDs) is not 1 then error "Could not identify exactly one Safari-owned window"
+        set ownedID to item 1 of addedIDs
+        tell application "Safari" to set bounds of (window id ownedID) to {0, 0, 1600, 1000}
+        set resultText to ""
+        repeat 10 times
+            delay 0.5
+            tell application "Safari" to set resultText to do JavaScript "document.readyState + '|' + (document.querySelector('#p8t39-result')?.textContent || '')" in current tab of (window id ownedID)
+            if resultText contains "|{" then exit repeat
+        end repeat
+        if not (resultText contains "|{") then error "Safari localhost page did not expose its DOM result: " & resultText
+        log "Safari desktop result: " & resultText
+    on error errorMessage number errorNumber
+        if ownedID is not missing value then try
+            tell application "Safari" to close (window id ownedID)
+        end try
+        error errorMessage number errorNumber
+    end try
+    if ownedID is not missing value then tell application "Safari" to close (window id ownedID)
+end run"""
 
 
 def _free_port() -> int:
@@ -204,9 +239,52 @@ def main() -> int:
                     print(diagnostic)
 
 
+def _run_applescript_desktop() -> int:
+    with tempfile.TemporaryDirectory(prefix="p8-t39-safari-http-") as scratch:
+        fixture = Path(scratch) / "chat.html"
+        _render_chat(fixture)
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=scratch)
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        url = f"http://127.0.0.1:{server.server_port}/chat.html"
+        try:
+            result = subprocess.run(
+                ["osascript", "-", url],
+                input=_APPLESCRIPT_DESKTOP,
+                text=True,
+                capture_output=True,
+                timeout=20,
+                check=False,
+            )
+            output = result.stdout + result.stderr
+            print(output[-3000:].strip())
+            if result.returncode:
+                raise RuntimeError(f"Safari AppleScript desktop check failed with exit {result.returncode}")
+            match = re.search(r"Safari desktop result: complete\|(\{[^\n]*\})", output)
+            if not match:
+                raise RuntimeError("Safari AppleScript did not report a completed desktop DOM result")
+            browser_result = json.loads(match.group(1))
+            if browser_result.get("count") != 15 or int(browser_result.get("width", 0)) < 640:
+                raise RuntimeError(f"Safari desktop checks failed: {browser_result!r}")
+            print(f"PASS Safari desktop: {browser_result['count']} checks at viewport {browser_result['width']}px")
+            return 0
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
 if __name__ == "__main__":
     try:
-        raise SystemExit(main())
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument(
+            "--applescript-desktop",
+            action="store_true",
+            help="Use a temporary loopback fixture and an ID-tracked Safari window for desktop checks.",
+        )
+        arguments = parser.parse_args()
+        raise SystemExit(_run_applescript_desktop() if arguments.applescript_desktop else main())
     except TimeoutError:
         print("BLOCKED: Safari WebDriver session creation timed out; browser checks did not run.")
         raise SystemExit(2)

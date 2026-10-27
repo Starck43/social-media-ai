@@ -248,7 +248,7 @@ LOG_LEVEL=INFO
 
 | Variable | Default | Description |
 |---|---|---|
-| `REDIS_URL` | `redis://localhost:6379/0` | Only needed by frozen Celery / sqladmin storage. Optional. |
+| `REDIS_URL` | `redis://localhost:6379/0` | Active admin SlowAPI rate-limit storage and frozen Celery compatibility. The Redis Python dependency remains core; this does not authorize starting Redis/Celery. |
 
 ### JWT / Authentication
 
@@ -420,6 +420,23 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 3. Default values in `Settings` class
 
 Extra variables in `.env` are ignored (`extra="ignore"`).
+
+Programmatic constructor values retain Pydantic's precedence above environment
+variables. The import-time `load_dotenv()` compatibility behavior is unchanged;
+no nested env prefixes or renamed keys are introduced.
+
+`Settings.database`, `.security`, `.collection` and `.llm` return fresh frozen
+subsystem snapshots. Their fields are projections of already-resolved flat
+settings, not new env/default declarations. Secret-bearing view fields use
+`SecretStr` and require explicit `.get_secret_value()` at an execution boundary.
+Views intentionally exclude tenant plans, member ceilings and billing policy.
+
+For logs/diagnostics use `settings.safe_dict()`, not `model_dump()` or the raw
+flat secret attributes. Sensitive fields are hidden from Settings repr; legacy
+attribute types and `model_dump()` semantics remain compatible (and therefore
+are **not** a safe logging API). The existing payment secret remains excluded
+from dumps. Do not persist or expose unwrapped secret values.
+
 
 ---
 

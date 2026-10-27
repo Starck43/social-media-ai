@@ -30,7 +30,7 @@ means not recorded; source recovery links remain in the card.
 ## [P8](docs/phases/p8-first-value-ui.md)
 
 - [P8-T10](docs/tasks/p8-t10.md) runtime freshness identity — **READY** · notion-ai (remote executor / owner-authorized custodian) · [PR #248 evidence; independent review / owner choice pending](https://github.com/Starck43/social-media-ai/pull/248#issuecomment-6422065238)
-- [P8-T13](docs/tasks/p8-t13.md) named support/escalation + pilot measures — **TODO** · unassigned · —
+- [P8-T13](docs/tasks/p8-t13.md) named support/escalation + pilot measures — **IN_PROGRESS** · notion-ai (remote executor) · [owner assignment](https://app.notion.com/chat?t=405ddbde02368016884300a9d7865ea6)
 - [P8-T15](docs/tasks/p8-t15.md) Admin API connectivity, mock and real checks — **BLOCKED** · codex · —
 - [P8-T17](docs/tasks/p8-t17.md) Model response diagnostics and consent — **BLOCKED** · codex · —
 - [P8-T18](docs/tasks/p8-t18.md) Model tests in single-owner mode — **BLOCKED** · codex · —

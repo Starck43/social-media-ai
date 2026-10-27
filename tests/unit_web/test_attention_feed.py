@@ -121,7 +121,9 @@ def feed(repo, perms=None, *, user=101, workspace=7):
 
 
 def test_notification_controller_partial_snapshot_contracts():
-    result = subprocess.run(["node", "tests/js/web_shell_state.cjs"], cwd=ROOT, capture_output=True, text=True, timeout=30)
+    result = subprocess.run(
+        ["node", "tests/js/web_shell_state.cjs"], cwd=ROOT, capture_output=True, text=True, timeout=30
+    )
     assert result.returncode == 0, result.stdout + result.stderr
 
 

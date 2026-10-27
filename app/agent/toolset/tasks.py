@@ -26,6 +26,18 @@ def _get_job_types() -> tuple[str, ...]:
 # a half-configured task.
 _REQUIRED_START_DATE = ("start_date", "с какой даты собирать контент")
 _MAX_PG_INTEGER = 2_147_483_647
+_TASK_READ_ERRORS = {
+    "task_read_forbidden": "Нет доступа к задаче этого workspace.",
+    "task_result_invalid": "Укажите сохранённую задачу этого workspace.",
+    "task_read_unconfirmed": "Не удалось безопасно прочитать задачу. Попробуйте позже.",
+}
+
+
+def _task_read_error(code: str) -> dict[str, str]:
+    """Use fixed messages so DB and provider exception text stays private."""
+    if code not in _TASK_READ_ERRORS:
+        code = "task_read_unconfirmed"
+    return {"error": _TASK_READ_ERRORS[code], "code": code}
 
 
 def _missing_task_fields(
@@ -925,8 +937,12 @@ async def task_result(task_id: int, job_id: int | None = None, limit: int = 5) -
 
     try:
         result = await read_result(task_id, job_id=job_id, limit=limit)
-    except ValueError as error:
-        return {"error": str(error), "code": "task_result_invalid"}
+    except PermissionError:
+        return _task_read_error("task_read_forbidden")
+    except ValueError:
+        return _task_read_error("task_result_invalid")
+    except Exception:
+        return _task_read_error("task_read_unconfirmed")
     return result if result is not None else {"error": "Задача или запуск не найдены", "code": "task_not_found"}
 
 
@@ -949,8 +965,12 @@ async def task_get(task_id: int) -> dict[str, Any]:
 
     try:
         result = await task_configuration(task_id)
+    except PermissionError:
+        return _task_read_error("task_read_forbidden")
     except ValueError:
-        return {"error": "Укажите сохранённую задачу этого workspace", "code": "task_result_invalid"}
+        return _task_read_error("task_result_invalid")
+    except Exception:
+        return _task_read_error("task_read_unconfirmed")
     return result if result is not None else {"error": "Задача не найдена", "code": "task_not_found"}
 
 

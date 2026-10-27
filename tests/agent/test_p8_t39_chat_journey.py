@@ -143,3 +143,34 @@ async def test_task_configuration_hides_source_scope_without_source_view(monkeyp
     assert result["plan"] is None
     assert result["plan_status"] == "source_access_required"
     get_sources.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("service_name", "handler_name", "arguments"),
+    [
+        ("task_configuration", "task_get", {"task_id": 4}),
+        ("task_result", "task_result", {"task_id": 4}),
+    ],
+)
+async def test_task_reader_tools_redact_permission_and_database_errors(
+    monkeypatch, service_name, handler_name, arguments
+):
+    import app.agent.toolset.tasks as task_tools
+    import app.services.task_results as result_service
+
+    async def denied(*args, **kwargs):
+        raise PermissionError("PRIVATE_DB_SECRET_SENTINEL")
+
+    async def unavailable(*args, **kwargs):
+        raise RuntimeError("PRIVATE_DATABASE_URL_SENTINEL")
+
+    handler = getattr(task_tools, handler_name)
+    monkeypatch.setattr(result_service, service_name, denied)
+    forbidden = await handler(**arguments)
+    assert forbidden["code"] == "task_read_forbidden"
+    assert "PRIVATE" not in str(forbidden)
+
+    monkeypatch.setattr(result_service, service_name, unavailable)
+    failed = await handler(**arguments)
+    assert failed["code"] == "task_read_unconfirmed"
+    assert "PRIVATE" not in str(failed)

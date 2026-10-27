@@ -2,6 +2,7 @@
    canonical block; this summary only reads the flat view the handler builds,
    so a task with no block still shows the parser defaults. #}
 {% if collection and task.job_type in ('collect', 'analyze') %}
+{% set show_queries = show_task_queries is not defined or show_task_queries %}
 <div>
     <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Сбор</dt>
     <dd class="mt-1 space-y-1 text-slate-700 dark:text-slate-300">
@@ -19,16 +20,16 @@
             ({% if collection.collection_city_mode == 'require' %}требовать{% elif collection.collection_city_mode == 'review' %}на проверку{% else %}предпочитать{% endif %})
         </div>
         {% endif %}
-        {% if collection.collection_queries %}
+        {% if collection.collection_queries and show_queries %}
         <div>Фразы: {{ collection.collection_queries }}</div>
         {% endif %}
-        {% if collection.collection_people or collection.collection_communities or collection.collection_discovery_queries %}
+        {% if collection.collection_people or collection.collection_communities or (collection.collection_discovery_queries and show_queries) %}
         <div>
             Кого искать:
             {% if collection.collection_people %}люди{% endif %}
             {% if collection.collection_people and collection.collection_communities %}, {% endif %}
             {% if collection.collection_communities %}сообщества{% endif %}
-            {% if collection.collection_discovery_queries %} · {{ collection.collection_discovery_queries }}{% endif %}
+            {% if collection.collection_discovery_queries and show_queries %} · {{ collection.collection_discovery_queries }}{% endif %}
         </div>
         {% endif %}
         {% if collection.collection_content_types and 'comments' in collection.collection_content_types %}

@@ -219,6 +219,11 @@ async def test_foreign_workspace_source_rolls_back_task_and_same_name_is_tenant_
 
             shared_name = f"p11-t05-tenant-name-{secrets.token_hex(3)}"
             with tenant_scope(tenant_a):
+                with pytest.raises(ValueError, match="workspace changed"):
+                    await create_task_with_sources(
+                        task_values=_task_values(shared_name), source_ids=None, tenant_id=tenant_b
+                    )
+                assert await AgentTaskManager().filter(name=shared_name).first() is None
                 with pytest.raises(ValueError, match="same workspace"):
                     await create_task_with_sources(
                         task_values=_task_values(shared_name),
@@ -380,3 +385,35 @@ async def test_persist_task_create_requires_caller_owned_transaction() -> None:
     session = SimpleNamespace(in_transaction=lambda: False)
     with pytest.raises(RuntimeError, match="active transaction"):
         await persist_task_create(session, task_values=_task_values("must-not-write"), source_ids=None)
+
+
+async def test_legacy_cli_create_rolls_back_task_when_source_link_write_fails(monkeypatch) -> None:
+    """The CLI legacy create path keeps task and source association in one transaction."""
+    from app.models import AgentTask
+    from cli.main import _add_task
+
+    async with await _client() as client:
+        owner = None
+        tenant_id = None
+        source_id = None
+        name = f"p11-t05-cli-rollback-{secrets.token_hex(4)}"
+        try:
+            owner, tenant_id = await _register_owner(client, "P11T05CLI")
+            headers = await _auth_headers(client, owner.username)
+            source_id = await _create_source(client, headers)
+            original_set_sources = AgentTaskManager.set_sources
+
+            async def fail_after_links(self, task_id, source_ids, session=None):
+                await original_set_sources(self, task_id, source_ids, session=session)
+                raise ValueError("injected CLI link failure")
+
+            monkeypatch.setattr(AgentTaskManager, "set_sources", fail_after_links)
+            with tenant_scope(tenant_id), pytest.raises(ValueError, match="injected CLI link failure"):
+                await _add_task(name, "0 9 * * *", "collect", {}, [source_id], None, str(tenant_id))
+            with tenant_scope(tenant_id):
+                assert await AgentTask.objects.filter(name=name).first() is None
+        finally:
+            if source_id is not None and owner is not None:
+                headers = await _auth_headers(client, owner.username)
+                await client.delete(f"/api/v1/sources/{source_id}", headers=headers)
+            await _drop(owner, tenant_id)

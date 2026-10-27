@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}AI Monitor{% endblock %}</title>
+    <title>{% block title %}AI Assistant{% endblock %}</title>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>tailwind.config = { darkMode: 'class' };</script>
@@ -22,7 +22,7 @@
     </div>
     <a href="/app/" class="mb-6 flex items-center justify-center gap-2 text-xl font-semibold tracking-tight">
         <span class="h-2.5 w-2.5 rounded-full bg-cyan-500 dark:bg-cyan-400"></span>
-        AI Monitor
+        AI Assistant
     </a>
 
     {% include "web/_flashes.html" %}

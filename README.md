@@ -43,3 +43,15 @@ Python **3.12** is the minimum supported baseline. The [offline CI profile](.ci/
 installs only hash-locked tools and runs a reviewed no-DB subset, syntax/import
 boundaries, an AST-only Alembic graph check and formatting/secret baselines. It
 does not load project DB fixtures or certify DB/runtime/provider behavior.
+
+## Package and configuration contract
+
+Use the [generated runtime/optional/dev profiles](requirements/README.md), not
+hand-edited parallel dependency lists. `pyproject.toml` declares direct
+requirements; the compiler produces pinned transitive exports. The package/API
+version comes from `app/version.py`; no repository/DB identifier is renamed.
+
+Existing flat environment keys/defaults remain supported. `Settings.database`,
+`.security`, `.collection` and `.llm` expose frozen subsystem snapshots from the
+resolved settings object, with no second environment reader. See
+[configuration precedence and safe diagnostics](docs/CONFIGURATION.md#configuration-precedence).

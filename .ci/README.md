@@ -11,8 +11,8 @@
   install, `.env`, deployment secret, database driver or application dependency.
   Downloads are needed for installation; checks need no external service.
 - **Application/development:** existing `requirements.txt` and project `dev`
-  extras remain separate. Their full dependency reconciliation belongs to
-  P11-T15, not to this tool-only safety net. No DB fixtures in the offline lane.
+  extras remain separate. Canonical application/optional/dev profiles and generated exports are documented
+  in [requirements/README](../requirements/README.md); they are not installed here. No DB fixtures in the offline lane.
 - Regenerate the tooling lock deliberately using
   `uv==0.6.17 pip compile --python 3.12 --generate-hashes --no-emit-index-url
   -o .ci/requirements.txt .ci/requirements.in`; review all version/hash changes.

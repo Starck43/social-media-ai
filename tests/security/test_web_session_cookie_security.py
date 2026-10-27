@@ -57,6 +57,7 @@ def application_for(environment, *, debug=False, cors=False):
     }
     namespace = {
         **tokens,
+        "__version__": "test-version",
         "FastAPI": ApplicationDouble,
         "settings": settings,
         "entry": SimpleNamespace(router=object()),

@@ -275,7 +275,7 @@ async def task_add(
             return {"error": str(error)}
 
     missing = _missing_task_fields(cron=cron, job_type=job_type, start_date=start_date)
-    if plan_block is not None and parsed_plan.window and parsed_plan.window.type == "rolling":
+    if plan_block is not None and prepared_plan.plan.window and prepared_plan.plan.window.type == "rolling":
         missing = [item for item in missing if not item.startswith("start_date ")]
     if missing:
         # Refused before anything is written: the same turn asks the owner for

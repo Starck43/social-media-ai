@@ -127,6 +127,7 @@ async def test_collect_discovery_launch_replays_and_projects_partial_results(lau
             intent=parse_collection_intent({"collection": task.payload["collection"]}),
             platform="vk",
             dry_run=False,
+            job_id=first["job_id"],
             owner_user_id=launch_workspace.user.id,
         )
         lane = await Source.objects.get(id=population.created_source_ids[0])

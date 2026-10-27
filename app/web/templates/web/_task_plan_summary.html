@@ -67,7 +67,8 @@
         <div>
             <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Ограничения</dt>
             <dd class="mt-1 text-slate-700 dark:text-slate-300">
-                До {{ plan.collection.get('limit', 'стандартного лимита') }} материалов в одном запуске.
+                Лимит материалов на источник или поисковый поток: {{ plan.collection.get('limit', 'стандартный') }}.
+                Комментарии и кандидаты ограничиваются отдельно.
                 {% if plan.collection.get('comments', {}).get('total') %}
                     Всего комментариев: {{ plan.collection.get('comments', {}).get('total') }}.
                 {% endif %}
@@ -86,9 +87,9 @@
                 {% endif %}
             </dd>
         </div>
-    </dl>
     {% set show_task_queries = false %}
     {% include "web/_task_collection_summary.html" %}
+    </dl>
     {% else %}
         {% if task_definition.plan_status == 'legacy' %}
         <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">Для этой старой задачи сохранён только набор настроек ниже.</p>

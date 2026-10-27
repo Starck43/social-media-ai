@@ -22,7 +22,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 12. [P11-T12](../tasks/p11-t12.md) — Durable action-audit contract and support correlation (R-10).
 13. [P11-T13](../tasks/p11-t13.md) — Manager and execution-module decomposition (R-11).
 14. [P11-T14](../tasks/p11-t14.md) — Canonical model imports and semantic helper reuse (R-12).
-15. [P11-T15](../tasks/p11-t15.md) — Reproducible package and configuration contract (R-13).
+15. [P11-T15](../audit/p11-t15.md) — Reproducible package and configuration contract (R-13) — DONE 2026-10-27 (accepted `2c4c6e5566a61f6a9b02967db1a152e4fa1140e7`).
 16. [P11-T16](../tasks/p11-t16.md) — Test and reference navigation without evidence loss (R-14).
 17. [P11-T17](../tasks/p11-t17.md) — Localizable presentation boundaries (R-15).
 18. [P11-T18](../tasks/p11-t18.md) — Typed connector and job extension seams (R-16).

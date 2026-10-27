@@ -128,7 +128,7 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
 POSTGRES_URL=postgresql://user:pass@localhost:5432/social_media
 DB_SCHEMA=public
 
-# ─── Redis (optional — only for frozen Celery / sqladmin storage) ─
+# ─── Redis (active admin rate-limit storage; Celery remains optional) ─
 REDIS_URL=redis://localhost:6379/0
 
 # ─── JWT / Auth ───────────────────────────────────────────────
@@ -245,6 +245,10 @@ LOG_LEVEL=INFO
 | `DB_POOL` | `pool` | Async engine connection reuse: `pool` reuses connections, `null` opens one per session. A pooled asyncpg connection belongs to the event loop that opened it, so a process that runs parts of its work in another loop (the test suite runs several unittest-style cases in a loop of their own) must use `null`. |
 
 ### Redis
+
+The active admin SlowAPI limiter constructs Redis storage during ASGI import,
+so the Redis Python client is part of the core package. Celery remains a frozen,
+optional compatibility profile.
 
 | Variable | Default | Description |
 |---|---|---|

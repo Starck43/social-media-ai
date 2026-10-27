@@ -42,7 +42,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P1
 
-- [P11-T03](docs/tasks/p11-t03.md) Offline CI safety net and supported baseline — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C3`
+- [P11-T03](docs/tasks/p11-t03.md) Offline CI safety net and supported baseline — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=406ddbde0236803dacf000a9462f4309) · `P1` · `C3`
 - [P11-T04](docs/tasks/p11-t04.md) Shared task application orchestration — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C4`
 - [P11-T05](docs/tasks/p11-t05.md) Explicit task transaction ownership — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C4`
 - [P11-T06](docs/tasks/p11-t06.md) Typed use-case contracts, safe errors and presenters — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C4`

@@ -32,6 +32,7 @@ def test_task_plan_core_imports_match_the_reviewed_contract():
         "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    import app.api.endpoint",
         "import importlib\nimportlib.import_module('app.api.endpoint')",
         "import importlib as loader\nloader.import_module('app.api.endpoint')",
+        "import importlib.util\nimportlib.import_module('app.api.endpoint')",
         "from importlib import import_module as load\nload('app.api.endpoint')",
         "__import__('app.api.endpoint')",
         "__import__('app.api', fromlist=['endpoint'])",

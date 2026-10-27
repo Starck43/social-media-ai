@@ -198,6 +198,37 @@ except task_preparation.TaskPlanCreateConflict as error:
     assert error.field == "source_ids"
 else:
     raise AssertionError("Task-create legacy conflict was not preserved")
+from app.services.task_plans import TaskPlanError
+
+fixed = task_preparation.prepare_task_plan_create(
+    {}, dict(raw, window={"type": "fixed", "start": "2026-01-02", "end": "2026-01-04"}),
+    job_type="collect",
+)
+assert fixed.payload["cli_dates"] == {"start_date": "2026-01-02", "end_date": "2026-01-04"}
+for kwargs, field in (
+    ({"requested_cron": "0 8 * * *"}, "cron_expr"),
+    ({"requested_scenario_id": 7}, "scenario_id"),
+    ({"requested_source_ids": [], "enforce_source_match": True}, "source_ids"),
+):
+    try:
+        task_preparation.prepare_task_plan_create({}, raw, job_type="collect", **kwargs)
+    except task_preparation.TaskPlanCreateConflict as error:
+        assert error.field == field
+    else:
+        raise AssertionError(f"Missing legacy conflict: {field}")
+try:
+    task_preparation.prepare_task_plan_create({}, dict(raw, source_ids=[]), job_type="collect")
+except TaskPlanError as error:
+    assert error.code == "task_plan_selected_sources_required"
+else:
+    raise AssertionError("Empty selected source scope was accepted")
+resolved = task_preparation.resolve_task_plan_create(raw, requested_cron="0 9 * * *")
+try:
+    task_preparation.project_task_plan_create({}, resolved, job_type="digest")
+except TaskPlanError as error:
+    assert error.code == "task_plan_requires_collect_or_analyze"
+else:
+    raise AssertionError("Invalid job type was accepted at projection")
 assert {"app.models", "app.agent", "app.channels", "app.api", "app.web", "app.admin"}.isdisjoint(sys.modules)
 
 from app.utils.crypto import decrypt_secret, encrypt_secret

@@ -66,8 +66,8 @@ def imports(module: str, path: Path, modules: dict[str, Path]) -> set[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 names.add(alias.name)
-                if alias.name in {"importlib", "builtins"}:
-                    dynamic_modules.add(alias.asname or alias.name)
+                if alias.name.split(".")[0] in {"importlib", "builtins"}:
+                    dynamic_modules.add(alias.asname or alias.name.split(".")[0])
         elif isinstance(node, ast.ImportFrom):
             base = relative_name(module, path, node.level, node.module or "")
             names.add(base)

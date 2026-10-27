@@ -479,23 +479,35 @@ async def _seed_legacy_catalog_owner() -> None:
     synthetic placeholder hash: no credential, no platform permission, no
     tenant membership.
     """
+    from app.core.database import async_engine
     from app.core.tenant_context import tenant_scope
     from app.models import PlatformRole, User
     from app.types import PlatformRoleType
 
     with tenant_scope(bypass=True):
-        if await User.objects.get(id=LEGACY_CATALOG_OWNER_ID) is not None:
-            return
-        role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
-        if role is None:
-            raise RuntimeError("Legacy catalog owner seeding requires the 'user' platform role row.")
-        await User.objects.create(
-            id=LEGACY_CATALOG_OWNER_ID,
-            username="legacy_catalog_owner",
-            email="legacy-catalog-owner@localhost.invalid",
-            hashed_password="synthetic-hash-never-a-credential",
-            role_id=role.id,
-            is_active=True,
+        if await User.objects.get(id=LEGACY_CATALOG_OWNER_ID) is None:
+            role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
+            if role is None:
+                raise RuntimeError("Legacy catalog owner seeding requires the 'user' platform role row.")
+            await User.objects.create(
+                id=LEGACY_CATALOG_OWNER_ID,
+                username="legacy_catalog_owner",
+                email="legacy-catalog-owner@localhost.invalid",
+                hashed_password="synthetic-hash-never-a-credential",
+                role_id=role.id,
+                is_active=True,
+            )
+
+    # Explicit fixture IDs do not advance PostgreSQL sequences. Reconcile even
+    # on repeated seeding, without moving an already-ahead sequence backwards.
+    # The engine's redirected search_path keeps both lookups in the test schema.
+    async with async_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "SELECT setval(pg_get_serial_sequence('users', 'id'), "
+                "GREATEST((SELECT MAX(id) FROM users), "
+                "nextval(pg_get_serial_sequence('users', 'id'))), true)"
+            )
         )
 
 

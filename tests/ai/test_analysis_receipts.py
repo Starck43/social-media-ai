@@ -373,6 +373,7 @@ async def test_receipt_only_handler_skip_does_not_replay_actions(receipt_context
     from app.jobs import handlers
     from app.models import AgentTask, BotAction, CollectedItem
     from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.models.managers.entitlement_manager import EntitlementManager
     from app.services.ai import analyzer as analyzer_module
     from app.services.ai.dedup import item_hash
     from app.services.ai.trigger_evaluator import trigger_evaluator
@@ -419,6 +420,9 @@ async def test_receipt_only_handler_skip_does_not_replay_actions(receipt_context
         monkeypatch.setattr(trigger_evaluator, "should_analyze", AsyncMock(side_effect=lambda content, _task: content))
         monkeypatch.setattr(trigger_evaluator, "should_act", AsyncMock(return_value=True))
         monkeypatch.setattr(guards_checker, "check", AsyncMock(return_value=(True, None)))
+        # This handler-level regression is about receipt skips and action replay;
+        # execution-job capability admission is covered at its own boundary.
+        monkeypatch.setattr(EntitlementManager, "admit_execution", AsyncMock(return_value=None))
         action_create = AsyncMock(side_effect=AssertionError("receipt-only skip replayed an old action"))
         monkeypatch.setattr(BotAction.objects, "create", action_create)
         try:

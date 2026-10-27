@@ -4,9 +4,9 @@
 
 **Goal:** Typed output and hostile input stay within deterministic authorization and execution limits.
 
-**Plan — active task cards:**
+**Accepted outcome:**
 
-- [P5-T04](../tasks/p5-t04.md) — remove web duplicate-analysis force bypasses and persist context-scoped success receipts
+- [P5-T04](../audit/p5-t04.md) — DONE 2026-10-27; accepted source `0da58c70628dc4b849296b59b527c1063e50c799` (commit date 2026-10-27).
 
 **Accepted history:**
 
@@ -22,4 +22,4 @@
 - [P5-T13](../audit/phase-p5-history.md#p5-t13) — VK search sources and safe collection bounds: add `SourceType.SEARCH` (`newsfeed.search` with `q`, date window and optional…
 - [P5-T01](../audit/p5-t01.md) — one bounded typed-output / hostile-input gap · 2026-10-26 · `9dd6927`
 
-**Phase status:** Active phase; close only after every plan item is accepted.
+**Phase status:** DONE (2026-10-27); all registered P5 work is accepted. Historical outcomes: [phase history](../audit/phase-p5-history.md).

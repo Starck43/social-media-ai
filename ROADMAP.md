@@ -62,7 +62,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P11-T12](docs/tasks/p11-t12.md) Durable action-audit contract and support correlation — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
 - [P11-T13](docs/tasks/p11-t13.md) Manager and execution-module decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
 - [P11-T14](docs/tasks/p11-t14.md) Canonical model imports and semantic helper reuse — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
-- [P11-T15](docs/tasks/p11-t15.md) Reproducible package and configuration contract — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=406ddbde0236803dacf000a9462f4309) · `P2` · `C3`
+- [P11-T15](docs/tasks/p11-t15.md) Reproducible package and configuration contract — **READY** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=406ddbde0236803dacf000a9462f4309) · `P2` · `C3`
 - [P11-T16](docs/tasks/p11-t16.md) Test and reference navigation without evidence loss — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`

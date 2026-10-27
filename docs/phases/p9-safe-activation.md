@@ -6,16 +6,20 @@
 
 **Plan — active task cards:**
 
-- [P9-T01](../tasks/p9-t01.md) — one capability-specific activation contract
 - [P9-T08](../audit/p9-t08.md) — approval-bound action ledger (BotAction → outbound action); accepted 2026-10-27, integrated in PR #246 (merge `4e74318c`) with migrations 0113–0116
 
 P9-T08 shipped the sealed-approval ledger (actor-bound approvals with
-expiry, atomic transitions, durable claim/outcome, read-only admin). The
-capability-neutral extension still designs with P9-T01 before enabling any
-new external write; `action_send` remains preview-only.
+expiry, atomic transitions, durable claim/outcome, read-only admin).
+P9-T01 shipped the single default-off capability
+[`telegram.bound_message.v1`](../audit/p9-t01.md): one manually proposed,
+owner-reviewed plain-text channel message through that ledger with its own
+operator allowlist, committed one-attempt fencing and kill switches.
+Every other new external write still needs its own capability-specific
+contract before enabling; `action_send` remains preview-only.
 
 **Accepted history:**
 
+- [P9-T01](../audit/p9-t01.md) — one capability-specific activation contract (`telegram.bound_message.v1`, default-off) · 2026-10-27 · `03649f62` (integrated in merge `7805682d`)
 - [P9-T02](../audit/phase-p9-history.md#p9-t02) — platform-owner role `SUPERUSER` with a guarded assignment · 2026-10-25 · `e3943f0`
 - [P9-T03](../audit/phase-p9-history.md#p9-t03) — owner-level gates built on the new role · 2026-10-25
 - [P9-T04](../audit/phase-p9-history.md#p9-t04) — read-only table registry for the platform owner · 2026-10-25

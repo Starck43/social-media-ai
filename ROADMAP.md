@@ -43,8 +43,6 @@ means not recorded; source recovery links remain in the card.
 
 ## [P9](docs/phases/p9-safe-activation.md)
 
-- [P9-T01](docs/tasks/p9-t01.md) one capability-specific activation contract — **IN_PROGRESS** · notion-ai (remote executor) · [owner assignment](https://app.notion.com/chat?t=4066f4961afe80079abc00a9667bb4b9)
-
 ## Questions
 
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · —

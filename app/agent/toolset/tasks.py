@@ -936,6 +936,10 @@ async def task_result(task_id: int, job_id: int | None = None, limit: int = 5) -
             "source_scope": {"type": "string", "enum": ["selected", "discovery", "all"]},
             "source_ids": {"type": "array", "items": {"type": "integer"}},
             "city": {"type": "string", "description": "Необязательный географический фильтр"},
+            "vk_access": {
+                "type": "object",
+                "description": "Необязательный закреплённый доступ: mode=api либо mode=user и credential_id",
+            },
         },
         "required": ["goal", "platform", "source_scope"],
     },
@@ -947,6 +951,7 @@ async def search_plan(
     queries: list[str] | None = None,
     source_ids: list[int] | None = None,
     city: str | None = None,
+    vk_access: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate and return a bounded search proposal without platform access."""
     if not isinstance(goal, str) or not goal.strip() or len(goal) > 2_000:
@@ -973,6 +978,13 @@ async def search_plan(
         return {"error": "Укажите не более пяти непустых запросов длиной до 200 символов", "code": "queries_invalid"}
     if city is not None and (not isinstance(city, str) or not city.strip() or len(city.strip()) > 120):
         return {"error": "Некорректное название города", "code": "city_invalid"}
+    if vk_access is not None:
+        from app.services.social.vk_access import VKSelectionError, parse_vk_selection
+
+        try:
+            vk_access = parse_vk_selection(vk_access).to_dict()
+        except (VKSelectionError, TypeError, AttributeError):
+            return {"error": "Некорректный выбор подключения ВКонтакте", "code": "vk_access_selection_invalid"}
     from app.services.collection.entitlement_policy import preview_entitlements
 
     entitlement_preview = await preview_entitlements({
@@ -982,8 +994,24 @@ async def search_plan(
         },
         "collection": {"queries": queries},
     })
+    from app.services.social.vk_task_access import preview_vk_access
+
+    preview_plan = {
+        "version": 1,
+        "goal": goal.strip(),
+        "platforms": [platform],
+        "source_scope": source_scope,
+        "source_ids": ids,
+        "collection": {"queries": queries},
+        "window": {"type": "rolling", "days": 1},
+        "trigger": {"type": "once"},
+    }
+    if vk_access is not None:
+        preview_plan["vk_access"] = vk_access
+    vk_access_preview = await preview_vk_access(preview_plan)
     return {
         "entitlements": entitlement_preview,
+        "vk_access": vk_access_preview,
         "status": "proposal",
         "goal": goal.strip(),
         "platform": platform,
@@ -1013,6 +1041,7 @@ async def search_plan(
                 "type": "object",
                 "description": (
                     "version, goal, platforms, source_scope, source_ids, collection, "
+                    "vk_access {mode: api|user, credential_id?}, "
                     "window {type: fixed|rolling, start, end, days}, scenario_id, "
                     "trigger {type: once|schedule, cron, timezone}"
                 ),
@@ -1056,7 +1085,10 @@ async def task_plan(plan: dict[str, Any]) -> dict[str, Any]:
     entitlements = await preview_entitlements(
         {"task_plan": normalized, "collection": normalized.get("collection", {})}
     )
+    from app.services.social.vk_task_access import preview_vk_access
+
+    vk_access_preview = await preview_vk_access(normalized)
     return {
         "status": "validated_preview", "plan": normalized, "writes": False,
-        "run_created": False, "entitlements": entitlements,
+        "run_created": False, "entitlements": entitlements, "vk_access": vk_access_preview,
     }

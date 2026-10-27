@@ -74,6 +74,23 @@ def _request_collection(request, payload: dict | None) -> dict | None:
 router = APIRouter(tags=["tasks"])
 
 
+@router.get("/vk-connections", response_model=dict)
+async def get_vk_connections(
+    _user = Depends(require_model_perm("agenttask", ActionType.VIEW)),
+):
+    """List caller-owned VK connections and safe capability metadata."""
+    from app.core.tenant_context import current_tenant_id
+    from app.services.social.vk_connections import connection_catalog
+
+    tenant_id = current_tenant_id()
+    if type(tenant_id) is not int or type(getattr(_user, "id", None)) is not int:
+        raise HTTPException(status_code=403, detail="An active workspace member is required")
+    try:
+        return await connection_catalog(tenant_id=tenant_id, actor_id=_user.id)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="vk_access_unavailable") from None
+
+
 @router.get("/entitlements", response_model=dict)
 async def get_task_entitlements(
     _user = Depends(require_model_perm("agenttask", ActionType.VIEW)),
@@ -105,11 +122,14 @@ async def preview_task_plan(
     if request.job_type not in {"collect", "analyze"}:
         raise HTTPException(status_code=400, detail="Unsupported job type for a social task plan")
     normalized = task_plan_block(plan)
+    from app.services.social.vk_task_access import preview_vk_access
+
     return TaskPlanPreviewResponse(
         task_plan=normalized,
         collection=normalized.get("collection", {}),
         warnings=["VK search availability depends on the configured application profile."],
         entitlements=await _preview_entitlements(normalized),
+        vk_access=await preview_vk_access(normalized),
     )
 
 

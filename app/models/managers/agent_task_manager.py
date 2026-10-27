@@ -196,6 +196,11 @@ class AgentTaskManager(BaseManager):
             kwargs.get("payload", current.payload),
             kwargs.get("cron_expr", current.cron_expr),
         )
+        from app.services.task_plans import validate_vk_access_retained
+
+        validate_vk_access_retained(
+            current.payload, kwargs.get("payload", current.payload), job_type=kwargs.get("job_type", current.job_type)
+        )
         self._validate_task_plan_binding(
             kwargs.get("job_type", current.job_type),
             kwargs.get("payload", current.payload),
@@ -270,6 +275,13 @@ class AgentTaskManager(BaseManager):
                         values.get("job_type", task.job_type),
                         values.get("payload", task.payload),
                         values.get("cron_expr", task.cron_expr),
+                    )
+                    from app.services.task_plans import validate_vk_access_retained
+
+                    validate_vk_access_retained(
+                        task.payload,
+                        values.get("payload", task.payload),
+                        job_type=values.get("job_type", task.job_type),
                     )
                     self._validate_task_plan_binding(
                         values.get("job_type", task.job_type),
@@ -1247,6 +1259,19 @@ class AgentTaskManager(BaseManager):
                             source_ids = list(dict.fromkeys(source.id for source in source_rows))
                         if not source_ids and not can_discover_without_existing_source:
                             raise ValueError("Source task has no effective sources to snapshot")
+                        if plan and "vk_access" in plan:
+                            from app.services.social.vk_task_access import authorized_vk_task_scope
+
+                            connection_actor_id = initiated_by_user_id
+                            if scheduled or connection_actor_id is None:
+                                from app.services.billing.payer import resolve_scheduled_task_payer
+
+                                payer = await resolve_scheduled_task_payer(task_id=row.id, tenant_id=tenant_id)
+                                connection_actor_id = payer.user_id
+                            async with authorized_vk_task_scope(
+                                plan, tenant_id=tenant_id, actor_id=connection_actor_id
+                            ):
+                                pass  # Admission is a check, never a cached execution permit.
                         from app.models.managers.entitlement_manager import EntitlementManager
                         from app.services.tenancy.entitlements import EntitlementDenied
 

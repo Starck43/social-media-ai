@@ -103,11 +103,45 @@ async def _set_task_sources(task_id: int, source_ids: list[int], tenant_id: int)
 task_app = typer.Typer(help="Manage agent tasks")
 
 
+@task_app.command("vk-connections")
+def task_vk_connections_cmd(
+    tenant: str = typer.Option(..., "--tenant", help="Workspace slug or ID"),
+    user: int = typer.Option(..., "--user", help="Active workspace member; only their own connections"),
+):
+    """Read connection metadata and capabilities without resolving tokens."""
+    import json
+
+    from rich import print as rprint
+
+    async def _catalog():
+        from app.core.permissions import permission_scope
+        from app.core.tenant_context import tenant_scope
+        from app.models import User
+        from app.services.social.vk_connections import connection_catalog
+
+        from ._tenant import resolve_tenant_id
+
+        tenant_id = await resolve_tenant_id(tenant)
+        actor = await User.objects.get(id=user, is_active=True)
+        if actor is None:
+            raise PermissionError("vk_access_actor_required")
+        with tenant_scope(tenant_id), permission_scope(actor):
+            return await connection_catalog(tenant_id=tenant_id, actor_id=user)
+
+    try:
+        catalog = _run_platform(_catalog())
+    except PermissionError:
+        rprint("[red]VK connection access denied[/red]")
+        raise typer.Exit(1) from None
+    rprint(json.dumps(catalog, ensure_ascii=False, indent=2))
+
+
 @task_app.command("plan")
 def task_plan_cmd(
     plan_json: str = typer.Argument(..., help="Canonical social task plan as JSON"),
     job_type: str = typer.Option("analyze", "--job-type", help="collect or analyze"),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or ID for a live entitlement preview"),
+    user: int | None = typer.Option(None, "--user", help="Active member for a read-only VK connection preview"),
 ):
     """Preview a plan; --tenant adds a read-only workspace entitlement decision."""
     import json as _json
@@ -127,6 +161,11 @@ def task_plan_cmd(
         rprint(f"[red]Invalid task plan: {error}[/red]")
         raise typer.Exit(1) from None
     entitlement_preview = {"allowed": None, "reason": "workspace_required", "checked": False}
+    vk_access_preview = {
+        "checked": False,
+        "reason": "workspace_required",
+        "selection": payload["task_plan"].get("vk_access"),
+    }
     if tenant:
         from app.core.tenant_context import tenant_scope
         from app.services.collection.entitlement_policy import preview_entitlements
@@ -136,11 +175,24 @@ def task_plan_cmd(
 
             tenant_id = await resolve_tenant_id(tenant)
             with tenant_scope(tenant_id):
-                return await preview_entitlements(payload)
+                from app.services.social.vk_task_access import preview_vk_access
 
-        entitlement_preview = _run_platform(_preview())
+                entitlements = await preview_entitlements(payload)
+                if user is None:
+                    return entitlements, await preview_vk_access(payload["task_plan"])
+                from app.core.permissions import permission_scope
+                from app.models import User
+
+                actor = await User.objects.get(id=user, is_active=True)
+                if actor is None:
+                    raise ValueError("vk_access_actor_required")
+                with permission_scope(actor):
+                    return entitlements, await preview_vk_access(payload["task_plan"])
+
+        entitlement_preview, vk_access_preview = _run_platform(_preview())
     rprint(_json.dumps(
-        {"task_plan": payload["task_plan"], "entitlements": entitlement_preview}, ensure_ascii=False, indent=2
+        {"task_plan": payload["task_plan"], "entitlements": entitlement_preview, "vk_access": vk_access_preview},
+        ensure_ascii=False, indent=2
     ))
     rprint("[dim]Preview only. Access, payer eligibility and platform coverage are checked at execution.[/dim]")
 

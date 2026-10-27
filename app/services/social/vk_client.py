@@ -71,6 +71,42 @@ class VKClient(BaseClient):
 	# mistaken for a missing community.
 	RESOLVE_NOT_FOUND_CODES = frozenset({100, 770})
 
+	async def _make_request(self, method: str, params: dict) -> dict:
+		from app.services.social.vk_task_access import selected_request_token, selected_task_access
+
+		if selected_task_access() is None:
+			return await super()._make_request(method, params)
+		# Never send a token from cached state, source mode or legacy resolution.
+		token = await selected_request_token(method)
+		try:
+			response = await super()._make_request(method, {**params, "access_token": token}, form_data=True)
+		except Exception as error:
+			import httpx
+
+			from app.services.social.rate_limit import http_rate_limit
+
+			limit = http_rate_limit(error)
+			if limit is not None:
+				# Preserve bounded 429 retry/defer without retaining the original
+				# request, provider body, token or exception message.
+				request = httpx.Request("POST", "https://vk.invalid/selected")
+				headers = {"Retry-After": str(limit[1])} if limit[1] is not None else {}
+				response = httpx.Response(429, headers=headers, request=request)
+				raise httpx.HTTPStatusError("vk_selected_rate_limited", request=request, response=response) from None
+			raise RuntimeError("vk_selected_request_failed") from None
+		error = response.get("error") if isinstance(response, dict) else None
+		if isinstance(error, dict):
+			code = error.get("error_code")
+			code = code if type(code) is int else None
+			if method in {"users.get", "groups.getById"} and code in self.RESOLVE_NOT_FOUND_CODES:
+				return {"response": []}
+			if code in {6, 9, 29}:
+				return {"error": {"error_code": code, "error_msg": "rate_limited"}}
+			# Provider descriptions can echo a token; only fixed codes may escape.
+			reason = {5: "authorization", 7: "permission", 15: "access", 6: "rate_limit", 1051: "profile"}.get(code, "provider")
+			raise RuntimeError("vk_selected_" + reason + "_error")
+		return response
+
 	async def collect_data(self, source: Source, content_type: str = "posts") -> list[dict]:
 		"""
 		Resolve the tenant's VK token and the source's external_id, then
@@ -88,6 +124,24 @@ class VKClient(BaseClient):
 		error is re-raised so the caller can record the source as failed rather
 		than silently returning an empty result.
 		"""
+		from app.services.social.vk_task_access import selected_task_access
+
+		if selected_task_access() is not None:
+			# The request boundary resolves the pinned credential afresh. Skip
+			# legacy L1/L2 retries, including implicit owner/newest-row selection.
+			self._access_token = "selected-connection"
+			self._profile_names = {}
+			self._group_names = {}
+			owner_ids = (source.params or {}).get("owner_ids")
+			self._owner_ids_filter = {str(value) for value in owner_ids} if isinstance(owner_ids, list) and owner_ids else None
+			self._resolved_external_id = (
+				source.external_id if source.source_type == SourceType.SEARCH
+				else await self._resolve_external_id(source.external_id)
+			)
+			try:
+				return await super().collect_data(source, content_type)
+			finally:
+				self._access_token = None
 		mode = (source.params or {}).get("mode", self.MODE_AUTO)
 		if mode not in (self.MODE_API, self.MODE_USER, self.MODE_AUTO):
 			logger.warning(f"Unknown VK mode {mode!r} for source {source.id} - treating as {self.MODE_AUTO}")
@@ -835,6 +889,10 @@ class VKClient(BaseClient):
 		`database.getCities` is the opposite case: a user token answers error
 		1051, so its caller asks for the service key first.
 		"""
+		from app.services.social.vk_task_access import selected_task_access
+
+		if selected_task_access() is not None:
+			return "selected-connection"
 		wanted = kinds or (("user_token",) if require_user else ("user_token", "service_token"))
 		token = await resolve_token("vk", kinds=wanted, owner_user_id=owner_user_id)
 		if not token:
@@ -967,7 +1025,12 @@ class VKClient(BaseClient):
 		goes through `_raise_api_error`, so an auth or transport error
 		propagates instead of reading as a missing entry.
 		"""
-		token = await resolve_token("vk", kinds=("service_token", "user_token"))
+		from app.services.social.vk_task_access import selected_task_access
+
+		token = (
+			"selected-connection" if selected_task_access() is not None
+			else await resolve_token("vk", kinds=("service_token", "user_token"))
+		)
 		if not token:
 			raise AuthorizationRequired(
 				"Нужен токен ВКонтакте, чтобы распознать сообщество или человека",

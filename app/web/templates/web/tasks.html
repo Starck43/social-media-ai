@@ -256,6 +256,19 @@
                         <label class="mr-4 text-sm"><input type="checkbox" name="platforms" value="vk" checked> VK</label>
                         <label class="text-sm"><input type="checkbox" name="platforms" value="telegram"> Telegram</label>
                     </fieldset>
+                    <label class="block text-sm text-slate-700 dark:text-slate-300">Подключение ВКонтакте
+                        <select name="vk_access" x-model="task.vk_access_json" class="{{ control() }} mt-1">
+                            <option value="">Сохранить текущий выбор (для новой задачи — режим источника)</option>
+                            <template x-if="task.vk_access_json && !vkConnections.some((item) => JSON.stringify(item.selection) === task.vk_access_json)">
+                                <option :value="task.vk_access_json" x-text="'Сохранённое подключение ' + task.vk_access_json + ' (состояние недоступно)'" selected></option>
+                            </template>
+                            <template x-for="connection in vkConnections" :key="connection.mode + ':' + (connection.credential_id || '')">
+                                <option :value="JSON.stringify(connection.selection)"
+                                        x-text="connection.label + ' · ' + connection.state_label"></option>
+                            </template>
+                        </select>
+                        <span class="mt-1 block text-xs text-slate-500">Явный выбор закрепляет способ доступа за задачей; доступ проверяется при каждом запуске.</span>
+                    </label>
                 </div>
 
                 <div>
@@ -658,7 +671,29 @@
                                                     <span class="block text-slate-800 dark:text-slate-200" x-text="c.label"></span>
                                                     <span class="block text-xs text-slate-600 dark:text-slate-400" x-text="c.hint"></span>
                                                 </span>
-                                            </label>
+
+                            </select>
+                            <span class="mt-1 block text-xs text-slate-500">Выбор закрепляется за задачей. Перед каждым запуском заново проверяются участник, разрешённые методы и scopes. Вход OAuth сам по себе не подтверждает доступность методов VK.</span>
+                            <div x-show="task.vk_access_json" x-cloak class="mt-2 rounded border p-2 text-xs">
+                                <template x-if="selectedVkConnection()">
+                                    <div>
+                                        <p x-text="'Состояние: ' + selectedVkConnection().state_label"></p>
+                                        <p x-text="'Аккаунт VK ID: ' + (selectedVkConnection().account_id || 'не определён')"></p>
+                                        <p x-text="'Выданные scopes: ' + (selectedVkConnection().scopes || []).join(', ')"></p>
+                                        <p x-text="'Разрешённые методы: ' + (selectedVkConnection().allowed_methods || []).join(', ')"></p>
+                                        <p x-text="'Требования к scopes методов: ' + JSON.stringify(selectedVkConnection().method_scopes)"></p>
+                                        <p x-text="'Срок действия: ' + (selectedVkConnection().expires_at || 'не задан')"></p>
+                                        <a x-show="selectedVkConnection().reauthorization_required || selectedVkConnection().state === 'renewal_available'"
+                                           href="/app/connections/vk/authorize?next=/app/tasks" class="text-cyan-700 underline">Продлить или подключить VK заново</a>
+                                    </div>
+                                </template>
+                                <p x-show="!selectedVkConnection()" class="text-amber-700">Подключение не найдено; запуск будет запрещён до восстановления доступа.</p>
+                                <p class="mt-1">Матрица показывает поддерживаемые маршруты клиента; фактическая доступность VK зависит от профиля приложения и проверок Q-5.</p>
+                                <template x-for="row in vkMethodRows()" :key="row.method">
+                                    <p x-text="row.method + ': ' + row.modes.join(', ')"></p>
+                                </template>
+                            </div>
+                            </label>
                                         </template>
                                     </fieldset>
                                 </template>
@@ -868,12 +903,14 @@
     function addTaskForm() {
         return {
             sending: false,
+            vkConnections: [],
             schedOnce: false,
             task: {
                 source_ids: PREFILL_SOURCE_IDS.slice(),
                 source_scope: PREFILL_SOURCE_IDS.length ? "selected" : "all",
                 job_type: PREFILL_JOB_TYPE,
                 scenario_id: PREFILL_SCENARIO_ID || "",
+                vk_access_json: "",
                 window_type: "rolling",
                 start_date: "",
                 end_date: "",
@@ -1087,7 +1124,19 @@
                         this.runModal.cancelError = "Нет связи с сервером — попробуйте ещё раз."
                     })
             },
+            vkCatalog: null,
+            selectedVkConnection() {
+                if (!this.task.vk_access_json) return null;
+                return this.vkConnections.find((item) => JSON.stringify(item.selection) === this.task.vk_access_json) || null;
+            },
+            vkMethodRows() {
+                return Object.entries((this.vkCatalog || {}).method_modes || {}).map(([method, modes]) => ({ method, modes }));
+            },
             init() {
+                fetch('/app/tasks/vk-connections', { headers: { "Accept": "application/json" } })
+                    .then(response => response.ok ? response.json() : null)
+                    .then(data => { if (data && Array.isArray(data.connections)) { this.vkConnections = data.connections; this.vkCatalog = data } })
+                    .catch(() => {});
                 if (RUN_JOB_ID !== null) this.pollRun()
                 else this.watchRunningJobs()
             },

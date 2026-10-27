@@ -949,6 +949,31 @@ async def _record_lane_evidence(
 
 
 async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -> dict[str, Any]:
+    """Bind an admitted selected connection through discovery and all read lanes."""
+    from app.core.tenant_context import current_tenant_id
+    from app.services.social.vk_task_access import authorized_vk_task_scope
+
+    snapshot = _effective_replay_snapshot(payload)
+    task = None if snapshot else await _load_task(payload.get("agent_task_id"))
+    task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
+    resolved_context = (snapshot, task, task_payload)
+    plan = task_payload.get("task_plan")
+    if not isinstance(plan, dict) or "vk_access" not in plan:
+        return await _handle_collect_with_access(payload, stage_only=stage_only, _resolved_context=resolved_context)
+    if task is None:
+        from types import SimpleNamespace
+
+        task = SimpleNamespace(id=(snapshot or {}).get("task_id"), tenant_id=current_tenant_id())
+    actor_id, error = await _task_personal_owner(task, payload)
+    if error:
+        raise PermissionError("vk_task_actor_unavailable")
+    async with authorized_vk_task_scope(plan, tenant_id=current_tenant_id(), actor_id=actor_id):
+        return await _handle_collect_with_access(payload, stage_only=stage_only, _resolved_context=resolved_context)
+
+
+async def _handle_collect_with_access(
+    payload: dict[str, Any], *, stage_only: bool = False, _resolved_context=None
+) -> dict[str, Any]:
     """
     Collect content from sources.
 
@@ -970,9 +995,12 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     from app.services.monitoring.collector import ContentCollector
     from app.services.social.rate_limit import SourceRateLimited
 
-    snapshot = _effective_replay_snapshot(payload)
-    task = None if snapshot else await _load_task(payload.get("agent_task_id"))
-    task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
+    if _resolved_context is None:
+        snapshot = _effective_replay_snapshot(payload)
+        task = None if snapshot else await _load_task(payload.get("agent_task_id"))
+        task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
+    else:
+        snapshot, task, task_payload = _resolved_context
     has_task_context = task is not None or snapshot is not None
     # A rehearsal writes no raw rows, calls no model and leaves the collection
     # cursor where it was. A task carries the flag (an admin's toggle); a

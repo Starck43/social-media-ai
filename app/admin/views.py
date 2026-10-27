@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Union
 
 from fastapi import HTTPException
-from sqladmin import action
+from sqladmin import action, expose
 from sqladmin.fields import SelectField
 from sqladmin.forms import get_model_form
 from sqlalchemy import Select
@@ -2255,6 +2255,29 @@ class BotActionAdmin(BaseAdmin, model=BotAction):
 
 
 class AgentTaskAdmin(BaseAdmin, model=AgentTask):
+    @expose("/vk-connections", methods=["GET"])
+    async def vk_connections(self, request: Request):
+        """Metadata for the signed-in operator's own workspace connection only."""
+        from starlette.responses import JSONResponse
+
+        from app.core.permissions import permission_scope
+        from app.core.tenant_context import tenant_scope
+        from app.services.social.vk_connections import connection_catalog
+
+        actor = self.get_admin_user(request)
+        try:
+            tenant_id = int(request.query_params.get("tenant_id", ""))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="workspace_required") from None
+        if actor is None or type(getattr(actor, "id", None)) is not int:
+            raise HTTPException(status_code=403, detail="workspace_actor_required")
+        try:
+            with tenant_scope(tenant_id), permission_scope(actor):
+                catalog = await connection_catalog(tenant_id=tenant_id, actor_id=actor.id)
+        except PermissionError:
+            raise HTTPException(status_code=403, detail="vk_access_unavailable") from None
+        return JSONResponse(catalog)
+
     name = "Задача"
     name_plural = "Задачи"
     icon = "fa fa-clock"
@@ -2368,7 +2391,11 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "payload": {
             "label": "Параметры",
             "description": (
-                'JSON задачи, например {"period": "day"}. Сбор (job_type=analyze): collection — '
+                'JSON задачи, например {"period": "day"}. VK: task_plan.vk_access = '
+                '{"mode":"api"} либо {"mode":"user","credential_id":ID}. '
+                "Режим, аккаунт, scopes, срок и матрица методов: "
+                "/admin/agent-task/vk-connections?tenant_id=ID (только свои подключения). "
+                "Сбор (job_type=analyze): collection — "
                 "content_types (posts|comments), engagement_types (likes|reposts), limit, queries, "
                 "city {name, mode}, discovery {people, communities, queries}, comments "
                 "{max_per_post, total}, candidates {limit, confirm}, date_window {start, end}. "
@@ -2446,6 +2473,9 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                 if plan.source_scope != "selected":
                     data["sources"] = []
                 payload = apply_task_plan(payload, plan_raw, job_type=job_type)
+            from app.services.task_plans import validate_vk_access_retained
+
+            validate_vk_access_retained(getattr(model, "payload", None), payload, job_type=job_type)
             data["payload"] = payload
         except CollectionIntentError as exc:
             raise ValueError(collection_error_message(str(exc))) from None

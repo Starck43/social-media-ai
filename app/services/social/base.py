@@ -213,7 +213,7 @@ class BaseClient(ABC):
 				filtered.append(item)
 		return filtered
 
-	async def _make_request(self, method: str, params: dict) -> dict:
+	async def _make_request(self, method: str, params: dict, *, form_data: bool = False) -> dict:
 		"""
 		Asynchronous HTTP request logic using httpx
 
@@ -241,11 +241,16 @@ class BaseClient(ABC):
 
 		timeout = getattr(settings, "VK_REQUEST_TIMEOUT", settings.SOCIAL_REQUEST_TIMEOUT)
 		async with httpx.AsyncClient() as client:
-			response = await client.get(
-				f"{api_base_url}/{method}",
-				params=params,
-				timeout=timeout
-			)
+			if form_data:
+				# Credential-bearing operations keep secrets out of the request
+				# URL and the HTTP client's standard request log messages.
+				response = await client.post(f"{api_base_url}/{method}", data=params, timeout=timeout)
+			else:
+				response = await client.get(
+					f"{api_base_url}/{method}",
+					params=params,
+					timeout=timeout
+				)
 			response.raise_for_status()
 			return response.json()
 

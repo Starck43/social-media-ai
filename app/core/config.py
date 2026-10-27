@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     # L2 secrets (VK user_token, Telegram MTProto parts) live in `user_credentials`.
     VK_APP_ID: Optional[str] = None
     VK_SERVICE_KEY: Optional[str] = None  # VK console "Сервисный ключ доступа" — L1 service token
+    # Explicit deployment-owned VK grant metadata. Empty means unknown/no grant;
+    # never infer these from a token's presence or OAuth login scopes.
+    VK_SERVICE_METHOD_GRANTS: Optional[list[str]] = None
+    VK_SERVICE_GRANTED_SCOPES: Optional[list[str]] = None
+    VK_SERVICE_METHOD_SCOPES: dict[str, list[str]] = Field(default_factory=dict)
     VK_CLIENT_ACCESS_KEY: Optional[str] = None  # VK console "Защищённый ключ" — OAuth client secret
     VK_API_BASE_URL: str = "https://api.vk.com/method"
     VK_OAUTH_BASE_URL: str = "https://id.vk.ru"  # VK ID (OAuth 2.1): /authorize + /oauth2/auth

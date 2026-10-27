@@ -52,6 +52,26 @@ router = APIRouter(prefix="/tasks")
 logger = logging.getLogger(__name__)
 
 
+@router.get("/vk-connections")
+async def web_vk_connections(request: Request):
+	"""Return safe VK connection options for the authenticated task editor."""
+	denied = guard_web(request, "agenttask", "view", back="/app/tasks")
+	if denied is not None:
+		return denied
+	from app.core.permissions import get_current_user
+	from app.services.social.vk_connections import connection_catalog
+
+	actor = get_current_user()
+	tenant_id = action_tenant_id(request)
+	actor_id = getattr(actor, "id", None)
+	if type(tenant_id) is not int or type(actor_id) is not int:
+		return Response(status_code=403)
+	try:
+		return await connection_catalog(tenant_id=tenant_id, actor_id=actor_id)
+	except PermissionError:
+		return Response(status_code=403, content="vk_access_unavailable")
+
+
 def _split_names(raw: str) -> list[str]:
 	"""Split a comma/space separated username string into a clean list.
 
@@ -440,7 +460,7 @@ def _payload_from_form(
 
 def _task_plan_from_form(
 		goal, platforms, source_scope, source_ids, scenario_id, job_type, cron_expr, payload,
-		window_type, rolling_days, trigger_timezone="",
+		window_type, rolling_days, trigger_timezone="", vk_access_raw="", existing_vk_access=None,
 ) -> dict | None:
 	"""Build the additive canonical plan from the current task form."""
 	if source_scope == "legacy":
@@ -458,6 +478,17 @@ def _task_plan_from_form(
 		cli_dates = payload.get("cli_dates") if isinstance(payload.get("cli_dates"), dict) else {}
 		window = {"type": "fixed", "start": cli_dates.get("start_date"), "end": cli_dates.get("end_date")}
 	trigger = {"type": "once"} if cron_expr == "@once" else {"type": "schedule", "cron": cron_expr}
+	selection_raw = vk_access_raw.strip() if isinstance(vk_access_raw, str) else ""
+	if selection_raw:
+		import json
+		try:
+			vk_access = json.loads(selection_raw)
+		except (TypeError, ValueError):
+			raise TaskPlanError("Некорректно выбрано подключение ВКонтакте") from None
+	else:
+		vk_access = existing_vk_access
+		if vk_access is None:
+			vk_access = (payload.get("task_plan") or {}).get("vk_access")
 	if trigger["type"] == "schedule" and trigger_timezone.strip():
 		trigger["timezone"] = trigger_timezone.strip()
 	raw = {
@@ -471,6 +502,8 @@ def _task_plan_from_form(
 		"scenario_id": scenario_id,
 		"trigger": trigger,
 	}
+	if vk_access is not None:
+		raw["vk_access"] = vk_access
 	return task_plan_block(parse_task_plan(raw))
 
 
@@ -554,6 +587,9 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 			"source_scope", "selected" if source_ids else "all"
 		),
 		"platforms": (payload.get("task_plan") or {}).get("platforms") or ["vk"],
+		"vk_access_json": __import__("json").dumps(
+			(payload.get("task_plan") or {}).get("vk_access"), separators=(",", ":")
+		) if (payload.get("task_plan") or {}).get("vk_access") else "",
 		"window_type": ((payload.get("task_plan") or {}).get("window") or {}).get(
 			"type", "fixed" if payload.get("cli_dates") else "rolling"
 		),
@@ -962,6 +998,7 @@ async def task_create(
 		source_scope: str = Form("legacy"),
 		task_goal: str = Form(""),
 		platforms: list[str] = Form([]),
+		vk_access: str = Form(""),
 		window_type: str = Form("fixed"),
 		rolling_days: int | None = Form(default=None),
 		trigger_timezone: str = Form(""),
@@ -1138,7 +1175,7 @@ async def task_create(
 		try:
 			task_plan = _task_plan_from_form(
 				task_goal, platforms, source_scope, parsed_source_ids, scenario_id,
-				job_type, cron_expr, payload, window_type, rolling_days, trigger_timezone,
+				job_type, cron_expr, payload, window_type, rolling_days, trigger_timezone, vk_access,
 			)
 			if task_plan is not None:
 				from app.services.task_plans import apply_task_plan
@@ -1964,6 +2001,7 @@ async def task_update(
 		source_scope: str = Form("legacy"),
 		task_goal: str = Form(""),
 		platforms: list[str] = Form([]),
+		vk_access: str = Form(""),
 		window_type: str = Form("fixed"),
 		rolling_days: int | None = Form(default=None),
 		trigger_timezone: str = Form(""),
@@ -2173,7 +2211,8 @@ async def task_update(
 		try:
 			task_plan = _task_plan_from_form(
 				task_goal, platforms, source_scope, parsed_source_ids, scenario_id,
-				job_type, cron_expr, payload, window_type, rolling_days, trigger_timezone,
+				job_type, cron_expr, payload, window_type, rolling_days, trigger_timezone, vk_access,
+				existing_vk_access=((task.payload or {}).get("task_plan") or {}).get("vk_access"),
 			)
 			if task_plan is not None:
 				from app.services.task_plans import apply_task_plan

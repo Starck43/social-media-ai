@@ -243,6 +243,59 @@ owning account sees (closed communities the account joined, walls it can view).
 A wall hidden even from the account itself is not reachable by any token —
 layer 2 is the ceiling, not a way around VK privacy.
 
+### Explicit task connections (P8-T38)
+
+A version-1 task plan may pin `vk_access: {"mode": "api"}` or
+`vk_access: {"mode": "user", "credential_id": 7}`. The latter selects that
+exact personal vault row, owned by the authenticated initiator (the stored payer
+for scheduled runs). The owner must remain an active workspace member with
+source-analysis and task-execution rights. Ordinary edits retain a pin; per-run
+overrides cannot replace it. Deliberate task edits may select a different
+connection. Source/scenario/plan bindings and product entitlements remain separate.
+
+The web task editor shows the connection selector, local state, numeric account,
+OAuth scopes, expiry, explicit method grants and method/mode matrix. Read-only
+catalogs share `vk_connections.connection_catalog`:
+
+- API: `GET /api/v1/tasks/vk-connections` in an authenticated workspace.
+- CLI: `task vk-connections --tenant <workspace> --user <member>`;
+  `task plan '<JSON>' --tenant <workspace> --user <member>` adds a safe preview.
+- Admin: `/admin/agent-task/vk-connections?tenant_id=<workspace>` returns only the
+  signed-in operator's own member connections. Plan JSON uses the same selector.
+- Agent: `task_plan` and `search_plan` show the same safe connection preview;
+  pass `vk_access` to select a connection. A preview never reveals a token.
+
+Capability metadata is conservative. OAuth `meta.scope` records returned scopes,
+not requested scopes; OAuth login does not imply a social API grant. Personal
+rows use explicit trusted `meta.vk_method_grants` (known method names only)
+and `meta.vk_method_scopes` (method-to-required-scope arrays). Service access uses
+`VK_SERVICE_METHOD_GRANTS` / `VK_SERVICE_GRANTED_SCOPES` JSON arrays and the
+`VK_SERVICE_METHOD_SCOPES` JSON object, empty by default. These are operator
+assertions from separately reviewed application-profile evidence, never
+user-authored plan fields or product entitlements. Missing or unknown grants
+or method scope requirements fail closed; an explicitly reviewed empty scope
+array is distinct from an absent method declaration. This implementation does not turn Q-5 into a live availability
+claim. No method-to-scope relationship is inferred from a token type. The
+policy unions the trusted method requirements with any additional caller scopes
+and checks them against the actual granted scopes at every selected request.
+
+Admission checks fresh facts before queueing; execution reloads them before
+population/collection and before every VK HTTP request, including each page,
+lookup, comment and candidate lane. The request boundary replaces any cached or
+legacy token with the exact selected credential, and emits fixed errors without
+provider text or token-bearing URLs. Selected requests send tokens in POST
+bodies so standard HTTP request logs do not include them. Sanitized HTTP 429 and
+VK 6/9/29 responses retain the existing bounded retry/defer behavior. Only
+identity lookups normalize not-found codes to empty. Unknown profile errors such as 1051 cannot
+switch credentials. Existing unselected source `auto` semantics remain as above.
+
+For explicit tasks, an expired row is denied until renewed through the existing
+OAuth path or reauthorized. It is never silently renewed by selecting the newest
+row. Revoking/disabling the selected row stops later requests; a refreshable row
+is shown as requiring renewal, not as an execution permit. Grant metadata must
+be reviewed again after reauthorization replaces it. Catalogs never return
+refresh tokens, device IDs, arbitrary provider metadata or encrypted secrets.
+
 ## Telegram
 
 The Bot API **cannot read a channel's or a chat's history**: a bot only receives

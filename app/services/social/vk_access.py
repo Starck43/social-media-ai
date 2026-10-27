@@ -89,6 +89,9 @@ class VKAccessSnapshot:
     allowed_methods: frozenset[str] | None = None
     # No default live-verified claim: method evidence is external to this policy.
     live_verified_methods: frozenset[str] = frozenset()
+    # Production adapters always supply this mapping, even when empty/unknown.
+    # None retains the original pure-policy contract for explicit caller scopes.
+    method_scopes: Mapping[str, frozenset[str]] | None = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +170,10 @@ def decide_vk_access(
         return deny("method_grants_unknown")
     if not required_methods.issubset(snapshot.allowed_methods):
         return deny("method_not_granted")
+    if snapshot.method_scopes is not None:
+        if any(method not in snapshot.method_scopes for method in required_methods):
+            return deny("scope_requirements_unknown")
+        required_scopes = required_scopes.union(*(snapshot.method_scopes[method] for method in required_methods))
     if not required_scopes.issubset(snapshot.granted_scopes):
         return deny("scope_missing")
     return VKAccessDecision(

@@ -13,6 +13,7 @@ from typing import Any, Literal, Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.services.collection.intent import CollectionIntent, collection_block, parse_collection_intent
+from app.services.social.vk_access import VKSelection, VKSelectionError, parse_vk_selection
 
 TaskSourceScope = Literal["selected", "discovery", "all"]
 TaskWindowType = Literal["fixed", "rolling"]
@@ -50,6 +51,7 @@ class TaskPlan:
     window: TaskWindow | None
     scenario_id: int | None
     trigger: TaskTrigger
+    vk_access: VKSelection | None = None
 
 
 _PLATFORMS = frozenset({"vk", "telegram"})
@@ -142,6 +144,15 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
     trigger = _parse_trigger(raw.get("trigger"))
     if trigger.type == "schedule" and trigger.cron == "@once":
         raise TaskPlanError("task_plan_schedule_requires_recurring_cron")
+    vk_access_raw = raw.get("vk_access")
+    if vk_access_raw is not None and "vk" not in platforms:
+        raise TaskPlanError("task_plan_vk_access_requires_vk")
+    try:
+        vk_access = parse_vk_selection(vk_access_raw) if vk_access_raw is not None else None
+    except (VKSelectionError, TypeError) as error:
+        # Policy errors use fixed codes; never expose caller-supplied token or
+        # metadata text through task-plan errors.
+        raise TaskPlanError("task_plan_vk_access_invalid") from error
     return TaskPlan(
         goal=goal,
         platforms=tuple(platforms),
@@ -151,6 +162,7 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
         window=window,
         scenario_id=scenario_id,
         trigger=trigger,
+        vk_access=vk_access,
     )
 
 
@@ -177,6 +189,8 @@ def task_plan_block(plan: TaskPlan) -> dict[str, Any]:
         block["window"] = window
     if plan.scenario_id is not None:
         block["scenario_id"] = plan.scenario_id
+    if plan.vk_access is not None:
+        block["vk_access"] = plan.vk_access.to_dict()
     if plan.trigger.type == "schedule":
         block["trigger"].update(cron=plan.trigger.cron, timezone=plan.trigger.timezone)
     return block
@@ -199,7 +213,36 @@ def apply_task_plan(
         for key in ("task_plan", "collection", "cli_dates", "scenario_id"):
             result.pop(key, None)
         return result
+    if not isinstance(raw, Mapping):
+        raise TaskPlanError("task_plan_invalid")
+    existing_raw = (payload or {}).get("task_plan")
+    if isinstance(existing_raw, Mapping) and existing_raw.get("vk_access") is not None:
+        if "vk_access" not in raw:
+            raw = {**raw, "vk_access": existing_raw["vk_access"]}
+        elif raw["vk_access"] is None:
+            raise TaskPlanError("task_plan_vk_access_clear_requires_explicit_selection")
     return apply_parsed_task_plan(payload, parse_task_plan(raw), job_type=job_type)
+
+
+def validate_vk_access_retained(
+    existing_payload: Mapping[str, Any] | None,
+    candidate_payload: Mapping[str, Any] | None,
+    *,
+    job_type: str,
+) -> None:
+    """Reject ordinary collecting-task writes that silently drop a VK pin.
+
+    A caller may intentionally select a different valid connection in the
+    candidate plan. Non-collecting transitions may retire collection plans.
+    """
+    if job_type not in _COLLECTING_JOB_TYPES:
+        return
+    existing_plan = (existing_payload or {}).get("task_plan")
+    if not isinstance(existing_plan, Mapping) or existing_plan.get("vk_access") is None:
+        return
+    candidate_plan = (candidate_payload or {}).get("task_plan")
+    if not isinstance(candidate_plan, Mapping) or candidate_plan.get("vk_access") is None:
+        raise TaskPlanError("task_plan_vk_access_retention_required")
 
 
 def apply_parsed_task_plan(payload: Mapping[str, Any] | None, plan: TaskPlan, *, job_type: str) -> dict[str, Any]:
@@ -268,6 +311,12 @@ def prepare_task_plan_update(
         return TaskPlanUpdate(changes, None, cleared=True)
     if supplied and raw is None:
         raise TaskPlanError("task_plan cannot be null; omit it to preserve the plan")
+    if supplied and isinstance(raw, Mapping) and isinstance(stored, Mapping) and stored.get("vk_access") is not None:
+        if "vk_access" not in raw:
+            # An ordinary task edit must not drop a previously pinned connection.
+            raw = {**raw, "vk_access": stored["vk_access"]}
+        elif raw["vk_access"] is None:
+            raise TaskPlanError("task_plan_vk_access_clear_requires_explicit_selection")
     plan = parse_task_plan(raw if supplied else stored)
     canonical = apply_parsed_task_plan({}, plan, job_type=job_type)
     expected = {
@@ -386,8 +435,14 @@ def apply_task_plan_override(payload: Mapping[str, Any], raw: Mapping[str, Any],
     if not isinstance(existing_raw, Mapping):
         raise TaskPlanError("task_plan_override_requires_persisted_plan")
     existing = parse_task_plan(existing_raw)
+    if not isinstance(raw, Mapping):
+        raise TaskPlanError("task_plan_invalid")
+    if "vk_access" not in raw and existing.vk_access is not None:
+        # A per-run override may refine collection details, but omission is not
+        # a request to drop or replace the task's saved connection.
+        raw = {**raw, "vk_access": existing.vk_access.to_dict()}
     proposed = parse_task_plan(raw)
-    fixed_fields = ("platforms", "source_scope", "source_ids", "scenario_id", "trigger")
+    fixed_fields = ("platforms", "source_scope", "source_ids", "scenario_id", "trigger", "vk_access")
     if any(getattr(existing, field) != getattr(proposed, field) for field in fixed_fields):
         raise TaskPlanError("task_plan_override_changes_persisted_scope")
     return apply_task_plan(payload, raw, job_type=job_type)

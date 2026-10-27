@@ -13,6 +13,7 @@
   day); accepted 2026-10-27 at `1f816ce2`, integrated via merge `e2183fe7`
   (PR #259).
 - [P6-T05](../audit/p6-t05.md) — Administrator deletion and source admission; accepted 2026-10-27 at `5112dbec`, integrated via merge `9367fb73` (PR #257).
+- [P6-T06](../tasks/p6-t06.md) — Close the registered P6-T05 catalog/tenant-test follow-ups.
 
 **Accepted history:**
 

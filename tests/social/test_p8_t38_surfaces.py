@@ -18,7 +18,7 @@ def _actual_function(path: str, function_name: str, namespace: dict, imports: di
     tree = ast.parse((ROOT / path).read_text())
     function = next(
         node
-        for node in tree.body
+        for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name
     )
     function.decorator_list = []
@@ -185,6 +185,35 @@ class ConnectionCatalogRouteTests(unittest.IsolatedAsyncioTestCase):
         denied = await route()
         self.assertEqual(denied["code"], "vk_access_unavailable")
         self.assertNotIn("private-sentinel", str(denied))
+
+    async def test_admin_catalog_cannot_switch_selected_workspace_via_query(self):
+        class HTTPException(Exception):
+            def __init__(self, *, status_code, detail):
+                self.status_code = status_code
+                self.detail = detail
+
+        read = AsyncMock()
+        route = _actual_function(
+            "app/admin/views.py",
+            "vk_connections",
+            {"__name__": "isolated_admin_catalog", "HTTPException": HTTPException},
+            {
+                "app.core.permissions": types.SimpleNamespace(permission_scope=lambda *_: None),
+                "app.core.tenant_context": types.SimpleNamespace(
+                    tenant_scope=lambda *_: None,
+                    current_tenant_id=lambda: 10,
+                    is_bypass=lambda: False,
+                ),
+                "app.services.social.vk_connections": types.SimpleNamespace(connection_catalog=read),
+            },
+        )
+        view = types.SimpleNamespace(get_admin_user=lambda request: types.SimpleNamespace(id=7))
+        request = types.SimpleNamespace(query_params={"tenant_id": "11"})
+        with self.assertRaises(HTTPException) as caught:
+            await route(view, request)
+        self.assertEqual(caught.exception.status_code, 403)
+        self.assertEqual(caught.exception.detail, "workspace_selection_mismatch")
+        read.assert_not_awaited()
 
     async def test_catalog_metadata_in_both_editors_stays_safe_and_explicit(self):
         for filename in ("tasks.html", "task_edit.html"):

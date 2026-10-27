@@ -2261,7 +2261,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         from starlette.responses import JSONResponse
 
         from app.core.permissions import permission_scope
-        from app.core.tenant_context import tenant_scope
+        from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
         from app.services.social.vk_connections import connection_catalog
 
         actor = self.get_admin_user(request)
@@ -2269,6 +2269,8 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             tenant_id = int(request.query_params.get("tenant_id", ""))
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="workspace_required") from None
+        if not is_bypass() and current_tenant_id() != tenant_id:
+            raise HTTPException(status_code=403, detail="workspace_selection_mismatch")
         if actor is None or type(getattr(actor, "id", None)) is not int:
             raise HTTPException(status_code=403, detail="workspace_actor_required")
         try:

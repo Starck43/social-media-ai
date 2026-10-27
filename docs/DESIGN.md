@@ -28,6 +28,10 @@ PostgreSQL/SQLAlchemy/Alembic own persistence; Celery/Redis and Streamlit are fr
 | Reports / delivery | `app/services/digest/`, `app/services/notifications/`, `app/channels/` | [DIGEST](DIGEST.md), [NOTIFICATIONS](NOTIFICATIONS.md), [CHANNELS](CHANNELS.md) |
 | Data / access | `app/models/`, `app/schemas/`, `app/services/tenancy/`, `app/core/` | [MODELS](MODELS.md), [TENANCY](TENANCY.md) |
 
+The task-plan CREATE core has a [scoped package import contract](PACKAGE_BOUNDARIES.md)
+separate from its compatibility/persistence shell. Other aggregates are not assigned
+blanket layer rules.
+
 ## Development hierarchy
 
 Product direction → numbered phase plan → active task card → accepted audit summary.

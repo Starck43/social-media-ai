@@ -82,6 +82,8 @@ allowed = {
     "app.services.social.vk_access",
     "app.services.task_plans",
     "app.services.task_contracts",
+    "app.services.task_preparation",
+    "app.services.task_creation",
     "app.utils",
     "app.utils.crypto",
     "app.jobs",
@@ -141,6 +143,8 @@ modules = (
     # It does not classify all of app.agent or app.core as a particular layer.
     "app.services.task_plans",
     "app.services.task_contracts",
+    "app.services.task_preparation",
+    "app.services.task_creation",
     "cli.commands.llm",
 )
 for name in modules:
@@ -155,6 +159,46 @@ assert {
     "app.web",
     "app.admin",
 }.isdisjoint(sys.modules), "Task-plan imports loaded an unreviewed model or adapter graph"
+
+# Import the compatibility shell without exercising its lazy persistence paths.
+# Existing adapters must keep the same pure functions/classes by identity.
+from app.services import task_creation, task_preparation
+
+for name in (
+    "TaskPlanCreate", "TaskPlanCreateConflict", "resolve_task_plan_create",
+    "project_task_plan_create", "prepare_task_plan_create",
+):
+    assert getattr(task_creation, name) is getattr(task_preparation, name), name
+
+# Exercise the real installed core, not mocks: selected/all/discovery, recurring
+# and one-off triggers, payload context and legacy-field conflict ordering.
+raw = {
+    "version": 1, "platforms": ["vk"], "source_scope": "selected", "source_ids": [4],
+    "collection": {"queries": ["repair"]}, "window": {"type": "rolling", "days": 3},
+    "trigger": {"type": "schedule", "cron": "0 9 * * *", "timezone": "UTC"},
+}
+for scope in ("selected", "all", "discovery"):
+    ids = [4] if scope == "selected" else []
+    prepared = task_preparation.prepare_task_plan_create(
+        {"payer_receipt": {"id": 99}}, dict(raw, source_scope=scope, source_ids=ids),
+        job_type="analyze", requested_source_ids=ids, enforce_source_match=True,
+    )
+    assert prepared.source_scope == scope and prepared.source_ids == tuple(ids)
+    assert prepared.payload["payer_receipt"] == {"id": 99}
+    assert prepared.cron_expr == "0 9 * * *"
+    assert prepared.payload["task_plan"]["window"] == {"type": "rolling", "days": 3}
+once = task_creation.prepare_task_plan_create({}, dict(raw, trigger={"type": "once"}), job_type="collect")
+assert once.cron_expr == "@once" and once.payload["task_plan"]["trigger"] == {"type": "once"}
+try:
+    task_preparation.prepare_task_plan_create(
+        {}, raw, job_type="collect", requested_cron="0 8 * * *", requested_source_ids=[],
+        enforce_source_match=True, conflict_order=("source_ids", "cron_expr", "scenario_id"),
+    )
+except task_preparation.TaskPlanCreateConflict as error:
+    assert error.field == "source_ids"
+else:
+    raise AssertionError("Task-create legacy conflict was not preserved")
+assert {"app.models", "app.agent", "app.channels", "app.api", "app.web", "app.admin"}.isdisjoint(sys.modules)
 
 from app.utils.crypto import decrypt_secret, encrypt_secret
 

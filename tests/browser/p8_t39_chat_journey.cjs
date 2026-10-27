@@ -75,10 +75,12 @@ try {
     fs.writeFileSync(fixture, html);
 
     const browser = process.env.CHROMIUM_BIN || 'chromium';
+    const profile = path.join(scratch, 'chrome-profile');
+    fs.mkdirSync(profile);
     for (const [width, columns] of [[1280, 2], [390, 1]]) {
         const run = spawnSync(browser, [
             '--headless', '--no-sandbox', '--disable-gpu', '--disable-network',
-            `--window-size=${width},900`, '--dump-dom', pathToFileURL(fixture).href,
+            `--user-data-dir=${profile}`, `--window-size=${width},900`, '--dump-dom', pathToFileURL(fixture).href,
         ], { encoding: 'utf8', timeout: 30000 });
         if (run.error) throw run.error;
         const dom = run.stdout || '';

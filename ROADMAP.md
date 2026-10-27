@@ -23,7 +23,6 @@ means not recorded; source recovery links remain in the card.
 ## [P6](docs/phases/p6-lifecycle-privacy.md)
 
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · —
-- [P6-T02](docs/tasks/p6-t02.md) VK OAuth refresh log privacy — **IN_PROGRESS** · notion-ai (remote executor / owner-authorized scoped registry coordination) · [owner dialogue](https://app.notion.com/chat?t=405ddbde02368016884300a9d7865ea6)
 ## [P7](docs/phases/p7-operations.md)
 
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · —

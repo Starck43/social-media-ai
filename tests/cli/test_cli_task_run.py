@@ -153,7 +153,7 @@ async def test_task_run_uses_the_workspace_of_the_task():
     await _make_source(other.id)
     task = await _make_task(other.id, _uniq("run-scoped-"))
 
-    await _cli(_run_task, task=str(task.id), **RUN_ARGS)
+    await _cli(_run_task, task=str(task.id), **{**RUN_ARGS, "tenant": other.slug})
 
     with tenant_scope(bypass=True):
         jobs = await Job.objects.filter(agent_task_id=task.id)

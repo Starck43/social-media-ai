@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-MAIN = ROOT / "cli" / "main.py"
+MAIN = ROOT / "cli" / "commands" / "tasks.py"
 COLLECT = ROOT / "cli" / "commands" / "collect.py"
 WRITER_MODULE = ROOT / "app" / "models" / "managers" / "agent_task_manager.py"
 

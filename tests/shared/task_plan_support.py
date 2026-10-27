@@ -204,7 +204,7 @@ def adapter_update(surface, payload, changes):
             "_split_ints": lambda text: [int(x) for x in text.split(",") if x],
             "_check_task_sources": AsyncMock(),
         }
-        module = source_functions("cli/main.py", ["task_update"], imports, namespace, package="cli")
+        module = source_functions("cli/commands/tasks.py", ["task_update"], imports, namespace, package="cli.commands")
         import inspect
         import json
 

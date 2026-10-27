@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from cli import main as cli_main
+from cli.commands import tasks as task_commands
 
 
 def _plan(*, fixed_window: bool) -> dict:
@@ -36,7 +37,7 @@ def test_task_add_passes_canonical_plan_fields_to_persistence(monkeypatch, fixed
     async def capture_add(**values):
         captured.update(values)
 
-    monkeypatch.setattr(cli_main, "_add_task", capture_add)
+    monkeypatch.setattr(task_commands, "_add_task", capture_add)
     result = CliRunner().invoke(
         cli_main.app,
         [
@@ -63,7 +64,7 @@ def test_task_add_rejects_source_conflict_before_persistence(monkeypatch):
     async def fail_if_persisted(**_values):
         pytest.fail("conflicting source selection must be rejected before persistence")
 
-    monkeypatch.setattr(cli_main, "_add_task", fail_if_persisted)
+    monkeypatch.setattr(task_commands, "_add_task", fail_if_persisted)
     result = CliRunner().invoke(
         cli_main.app,
         [
@@ -87,7 +88,7 @@ def test_task_add_reports_unknown_job_type_before_parsing_a_valid_plan(monkeypat
     async def fail_if_persisted(**_values):
         pytest.fail("an unsupported task type must not reach persistence")
 
-    monkeypatch.setattr(cli_main, "_add_task", fail_if_persisted)
+    monkeypatch.setattr(task_commands, "_add_task", fail_if_persisted)
     result = CliRunner().invoke(
         cli_main.app,
         [

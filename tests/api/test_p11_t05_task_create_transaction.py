@@ -313,3 +313,50 @@ async def test_legacy_oneoff_rolls_back_source_failure_and_keeps_inactive_task_o
                 if source_id is not None:
                     await client.delete(f"/api/v1/sources/{source_id}", headers=headers)
             await _drop(owner, tenant_id)
+
+
+async def test_payer_consent_failure_keeps_committed_plan_inactive(monkeypatch) -> None:
+    """A post-commit payer failure leaves a recoverable inactive draft."""
+    from unittest.mock import AsyncMock
+
+    from app.models import AgentTask
+    from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
+
+    async with await _client() as client:
+        owner = None
+        tenant_id = None
+        task_id = None
+        try:
+            owner, tenant_id = await _register_owner(client, "P11T05Payer")
+            headers = await _auth_headers(client, owner.username)
+            monkeypatch.setattr(
+                "app.services.billing.consent_current_user_as_task_payer",
+                AsyncMock(side_effect=PersonalBillingUnavailable("billing unavailable")),
+            )
+            name = f"p11-t05-payer-{secrets.token_hex(4)}"
+            response = await client.post(
+                "/api/v1/tasks",
+                json={
+                    "name": name,
+                    "job_type": "collect",
+                    "task_plan": _plan(
+                        scope="all",
+                        source_ids=[],
+                        trigger={"type": "once"},
+                    ),
+                    "is_active": True,
+                },
+                headers=headers,
+            )
+            assert response.status_code == 409, response.text
+            with tenant_scope(tenant_id):
+                task = await AgentTask.objects.filter(name=name).first()
+                assert task is not None
+                task_id = task.id
+                assert task.is_active is False
+                assert await AgentTaskManager().get_sources(task.id) == []
+        finally:
+            if task_id is not None and owner is not None:
+                headers = await _auth_headers(client, owner.username)
+                await client.delete(f"/api/v1/tasks/{task_id}", headers=headers)
+            await _drop(owner, tenant_id)

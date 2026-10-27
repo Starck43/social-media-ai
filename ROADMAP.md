@@ -35,7 +35,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P11-T01](docs/tasks/p11-t01.md) Critical structural audit, refactoring plan and task-card reconciliation — **READY** · notion-ai (remote executor, resumed) · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P0` · `C2`
 - [P11-T02](docs/tasks/p11-t02.md) Register structural follow-ups and prioritize the active queue — **READY** · notion-ai · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P0` · `C2`
-- [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **BLOCKED** · codex-analysis-receipts · — · `P0` · `C3`
+- [P5-T04](docs/tasks/p5-t04.md) remove web duplicate-analysis force bypasses and persist context-scoped success receipts — **IN_PROGRESS** · codex · `codex current session (2026-10-27)` · `P0` · `C3`
 - P6-T05 audit follow-up: stale catalog assertion `tests/admin/test_admin_authorization.py::test_the_catalogue_reads_the_model_name_off_the_views` fails on dev (`KeyError: 'mark-read'` after the #246 notification-action removal) — **OPEN** · unassigned · [P6-T05 audit](docs/audit/p6-t05.md) · `P0` · `C1`
 - P6-T05 audit follow-up: `tests/models/test_llm_models_manager.py::test_delete_reports_workspace_that_lost_its_agent_model` leaks its tenant (no cleanup) — **OPEN** · unassigned · [P6-T05 audit](docs/audit/p6-t05.md) · `P0` · `C2`
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · — · `P0` · `C3`

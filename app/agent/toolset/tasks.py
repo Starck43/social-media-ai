@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.agent.tools import tool
-from app.services.task_contracts import TaskLaunchArguments
+from app.services.task_contracts import TaskLaunchArguments, task_launch_tool_error
 
 
 def _get_job_types() -> tuple[str, ...]:

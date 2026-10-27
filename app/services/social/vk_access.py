@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-
 # Supported client routes, NOT a declaration that VK grants these methods.
 METHOD_MODES: Mapping[str, frozenset[str]] = {
     "wall.get": frozenset({"api", "user"}),

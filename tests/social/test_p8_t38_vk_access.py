@@ -53,13 +53,20 @@ class VKAccessPolicyTests(unittest.TestCase):
         decision = policy.decide_vk_access(
             policy.VKSelection("api"),
             policy.VKAccessSnapshot(10, "api", allowed_methods=METHODS),
-            tenant_id=10, active_member_ids=frozenset(), required_methods=METHODS, now=NOW,
+            tenant_id=10,
+            active_member_ids=frozenset(),
+            required_methods=METHODS,
+            now=NOW,
         )
         self.assertTrue(decision.allowed)
 
     def test_missing_connection_never_falls_back(self):
         result = policy.decide_vk_access(
-            self.selection, None, tenant_id=10, active_member_ids=frozenset({3}), required_methods=METHODS,
+            self.selection,
+            None,
+            tenant_id=10,
+            active_member_ids=frozenset({3}),
+            required_methods=METHODS,
         )
         self.assertEqual(result.reason, "connection_missing")
         self.assertFalse(result.allowed)
@@ -117,8 +124,12 @@ class VKAccessPolicyTests(unittest.TestCase):
     def test_service_mode_does_not_gain_personal_search_route(self):
         methods = frozenset({"users.search"})
         result = policy.decide_vk_access(
-            policy.VKSelection("api"), policy.VKAccessSnapshot(10, "api", allowed_methods=methods),
-            tenant_id=10, active_member_ids=frozenset(), required_methods=methods, now=NOW,
+            policy.VKSelection("api"),
+            policy.VKAccessSnapshot(10, "api", allowed_methods=methods),
+            tenant_id=10,
+            active_member_ids=frozenset(),
+            required_methods=methods,
+            now=NOW,
         )
         self.assertEqual(result.reason, "method_mode_unsupported")
 
@@ -137,9 +148,15 @@ class VKAccessPolicyTests(unittest.TestCase):
         for raw in ({"mode": "user", "credential_id": 7}, {"mode": "api"}):
             self.assertEqual(policy.parse_vk_selection(raw).to_dict(), raw)
         for raw in (
-            {"mode": "auto"}, {"mode": "user"}, {"mode": "user", "credential_id": True},
-            {"mode": "api", "credential_id": 7}, {"mode": "api", "token": "DO_NOT_ECHO"},
-            {"mode": "user", "credential_id": 7, "owner_user_id": 3}, None, "api", [],
+            {"mode": "auto"},
+            {"mode": "user"},
+            {"mode": "user", "credential_id": True},
+            {"mode": "api", "credential_id": 7},
+            {"mode": "api", "token": "DO_NOT_ECHO"},
+            {"mode": "user", "credential_id": 7, "owner_user_id": 3},
+            None,
+            "api",
+            [],
         ):
             with self.subTest(raw=raw):
                 with self.assertRaises(policy.VKSelectionError) as caught:

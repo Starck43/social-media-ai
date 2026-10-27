@@ -1,6 +1,6 @@
 # CLI Reference
 
-ИИ Ассистент administration CLI built with Typer.
+AI Assistant administration CLI built with Typer.
 
 ```bash
 python -m cli.main <command> <subcommand> [options]
@@ -21,20 +21,13 @@ Output that spans workspaces names them: `task list` has a `workspace` column an
 
 ---
 
-## Top-Level Commands
+## Registered commands and parameters
 
-| Command | Description |
-|---|---|
-| `collect` | Run manual content collection & analysis (debug/analyst tool) |
-| `analyze` | Run the analyze handler directly (triggers + bot actions) |
-| `digest` | Digest operations |
-| `prune` | Trim old finished jobs directly |
-| `learn` | Extract durable facts from chat into memory directly |
-| `reflect` | Weekly memory hygiene + prompt-evolution proposals directly |
-| `task` | Manage agent tasks (cron) |
-| `credentials` | Manage platform credentials (tenant vault) |
-| `roles` | Manage roles and permissions |
-| `scenarios` | Manage agent scenarios |
+The [generated command index](generated/cli-commands.md) and
+[parameter index](generated/cli-options.md) are derived from the actual Typer
+registration. They replace the manually duplicated top-level inventory; they do
+not certify authorization or grant permission to execute commands. The policy,
+workflow explanations and examples below remain handwritten.
 
 ---
 

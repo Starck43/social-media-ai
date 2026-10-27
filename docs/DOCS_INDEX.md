@@ -36,3 +36,10 @@ for the operation, not all parents/related/history links.
 
 Link to the owner of a fact instead of duplicating it. Phase history records
 what changed/why, date and source SHA; use Git/PRs for full retrospective diffs.
+
+## Mechanical reference and test resources
+
+- [Generated OpenAPI/Typer tables](generated/README.md) — reproducible metadata,
+  not policy or execution permission.
+- [Test resources and relocation map](../tests/README.md) — explicit offline,
+  core-template, browser and DB/external boundaries; audit history remains intact.

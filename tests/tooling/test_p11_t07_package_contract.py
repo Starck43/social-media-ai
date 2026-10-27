@@ -34,6 +34,7 @@ def test_task_plan_core_imports_match_the_reviewed_contract():
         "import importlib as loader\nloader.import_module('app.api.endpoint')",
         "from importlib import import_module as load\nload('app.api.endpoint')",
         "__import__('app.api.endpoint')",
+        "__import__('app.api', fromlist=['endpoint'])",
         "from builtins import __import__ as load\nload('app.api.endpoint')",
         "import importlib\nimportlib.import_module('.endpoint', 'app.api')",
     ],
@@ -164,3 +165,24 @@ def test_actual_contract_rejects_adapter_parent_cycle_and_provider_drift(tmp_pat
     target.write_text(target.read_text() + extra)
     with pytest.raises(AssertionError, match="contract changed|Unreviewed external import"):
         check_contract(tmp_path)
+
+
+def test_namespace_import_does_not_skip_its_parent_initializer(tmp_path):
+    _sources(
+        tmp_path,
+        {
+            "app/core.py": "import app.providers.namespace",
+            "app/providers/__init__.py": "import app.adapter",
+            "app/providers/namespace/helper.py": "",
+            "app/adapter.py": "",
+        },
+    )
+    graph = dependency_graph(tmp_path, {"app.core"})
+    assert graph["app.providers"] == {"app.adapter"}
+    assert "app.adapter" in graph
+
+
+def test_computed_dynamic_fromlist_requires_review(tmp_path):
+    _sources(tmp_path, {"app/core.py": "__import__('app', fromlist=names)"})
+    with pytest.raises(AssertionError, match="Unreviewed dynamic import fromlist"):
+        dependency_graph(tmp_path, {"app.core"})

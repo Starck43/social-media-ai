@@ -105,6 +105,18 @@ def imports(module: str, path: Path, modules: dict[str, Path]) -> set[str]:
             level = len(name) - len(name.lstrip("."))
             name = relative_name(package.value, Path("__init__.py"), level, name.lstrip("."))
         names.add(name)
+        fromlist = next((k.value for k in node.keywords if k.arg == "fromlist"), None)
+        if fromlist is None and len(node.args) > 3:
+            fromlist = node.args[3]
+        if fromlist is not None:
+            if not isinstance(fromlist, (ast.List, ast.Tuple)) or not all(
+                isinstance(item, ast.Constant) and isinstance(item.value, str) for item in fromlist.elts
+            ):
+                raise AssertionError(f"Unreviewed dynamic import fromlist in {module}:{node.lineno}")
+            for item in fromlist.elts:
+                child = f"{name}.{item.value}"
+                if child in modules or any(key.startswith(child + ".") for key in modules):
+                    names.add(child)
 
     local = set()
     for name in names:
@@ -127,12 +139,12 @@ def dependency_graph(root: Path, roots=CORE_ROOTS) -> dict[str, set[str]]:
         if module in graph:
             continue
         if module not in modules:
-            if root.joinpath(*module.split(".")).is_dir():
-                # A real namespace package has no Python initializer to inspect.
-                graph[module] = set()
-                continue
-            raise AssertionError(f"Missing application module: {module}")
-        graph[module] = imports(module, modules[module], modules)
+            if not root.joinpath(*module.split(".")).is_dir():
+                raise AssertionError(f"Missing application module: {module}")
+            # Namespace packages have no code, but their parents can still run.
+            graph[module] = set()
+        else:
+            graph[module] = imports(module, modules[module], modules)
         # Python executes each existing parent initializer too. Namespace
         # packages have no initializer, but their existing ancestors still do.
         parts = module.split(".")

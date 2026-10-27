@@ -33,7 +33,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
-- [P11-T02](docs/tasks/p11-t02.md) Register structural follow-ups and prioritize the active queue — **READY** · notion-ai · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P0` · `C2`
 
 - [P6-T06](docs/tasks/p6-t06.md) Close P6-T05 test follow-ups: verify catalog diagnostic and clean up the created tenant — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=40636385470c802da6c300a99fd79436) · `P0` · `C2`
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · — · `P0` · `C3`
@@ -68,7 +67,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P11-T14](docs/tasks/p11-t14.md) Canonical model imports and semantic helper reuse — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
 - [P11-T15](docs/tasks/p11-t15.md) Reproducible package and configuration contract — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
 - [P11-T16](docs/tasks/p11-t16.md) Test and reference navigation without evidence loss — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
-- [P11-T21](docs/tasks/p11-t21.md) Minimize task-reading context and retire the redundant root plan — **READY** · notion-ai · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C2`
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`

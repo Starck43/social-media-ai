@@ -1,0 +1,109 @@
+{% if task_definition %}
+<section class="ui-card" data-task-plan-summary aria-label="Сохранённый план задачи">
+    <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">План задачи</h2>
+    {% set plan = task_definition.plan %}
+    {% if task_definition.plan_status == 'available' and plan %}
+    <dl class="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+        <div>
+            <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Цель</dt>
+            <dd class="mt-1 whitespace-pre-wrap text-slate-700 dark:text-slate-300">{{ plan.goal or task.name }}</dd>
+        </div>
+        <div>
+            <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Данные</dt>
+            <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                {% for platform in plan.platforms %}
+                    {% if not loop.first %}, {% endif %}{{ {'vk': 'ВКонтакте', 'telegram': 'Telegram'}.get(platform, 'Другая платформа') }}
+                {% endfor %}
+                {% if plan.source_scope == 'selected' %}
+                    <span> · выбранные источники</span>
+                    <ul class="mt-1 list-inside list-disc">
+                        {% for source in sources if source.id in plan.source_ids %}<li>{{ source.name }}</li>{% endfor %}
+                    </ul>
+                {% elif plan.source_scope == 'discovery' %}
+                    <span> · поиск по запросам</span>
+                {% else %}
+                    <span> · все разрешённые источники</span>
+                {% endif %}
+                {% if plan.collection.get('queries') %}
+                    <div class="mt-1">Фразы для публикаций: {{ plan.collection.get('queries')|join(', ') }}</div>
+                {% endif %}
+                {% set discovery = plan.collection.get('discovery', {}) %}
+                {% if discovery.get('queries') %}
+                    <div class="mt-1">Запросы для обнаружения источников: {{ discovery.get('queries')|join(', ') }}</div>
+                {% endif %}
+            </dd>
+        </div>
+        <div>
+            <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Обработка</dt>
+            <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                {% if task.job_type == 'analyze' %}
+                    {% if scenario %}Сценарий «{{ scenario.name }}»{% else %}Сценарий анализа недоступен{% endif %}
+                {% else %}
+                    Только сбор
+                {% endif %}
+            </dd>
+        </div>
+        <div>
+            <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Результат</dt>
+            <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                {{ plan.goal or 'Собранные материалы' }}{% if task.job_type == 'analyze' and scenario %}; формат по сценарию «{{ scenario.name }}»{% endif %}
+            </dd>
+        </div>
+        <div>
+            <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Срок данных и запуск</dt>
+            <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                {% if plan.window and plan.window.type == 'rolling' %}
+                    Последние {{ plan.window.days }} дн.
+                {% elif plan.window and plan.window.type == 'fixed' %}
+                    {{ plan.window.start or 'с начала' }} — {{ plan.window.end or 'по текущую дату' }}
+                {% else %}
+                    Период не указан
+                {% endif %}
+                · {% if plan.trigger.type == 'schedule' %}
+                    {{ cron_to_human(task.cron_expr) }}{% if plan.trigger.timezone %} · {{ plan.trigger.timezone }}{% endif %}
+                  {% else %}разово{% endif %}
+            </dd>
+        </div>
+        <div>
+            <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Ограничения</dt>
+            <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                Лимит материалов на источник или поисковый поток: {{ plan.collection.get('limit', 'стандартный') }}.
+                Комментарии и кандидаты ограничиваются отдельно.
+                {% if plan.collection.get('comments', {}).get('total') %}
+                    Всего комментариев: {{ plan.collection.get('comments', {}).get('total') }}.
+                {% endif %}
+                {% if plan.collection.get('candidates', {}).get('limit') %}
+                    Кандидатов не более {{ plan.collection.get('candidates', {}).get('limit') }}.
+                {% endif %}
+                {% if plan.vk_access %}
+                <div class="mt-1">
+                    Подключение VK:
+                    {% if plan.vk_access.mode == 'user' %}
+                        персональное{% if plan.vk_access.credential_id %} №{{ plan.vk_access.credential_id }}{% endif %}
+                    {% else %}
+                        приложение
+                    {% endif %}
+                </div>
+                {% endif %}
+            </dd>
+        </div>
+    {% set show_task_queries = false %}
+    {% include "web/_task_collection_summary.html" %}
+    </dl>
+    {% else %}
+        {% if task_definition.plan_status == 'legacy' %}
+        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">Для этой старой задачи сохранён только набор настроек ниже.</p>
+        {% elif task_definition.plan_status == 'source_access_required' %}
+        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">План скрыт: для его просмотра нужно право на просмотр источников.</p>
+        {% elif task_definition.plan_status == 'scenario_access_required' %}
+        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">План скрыт: для просмотра сценария нужно соответствующее право.</p>
+        {% elif task_definition.plan_status == 'scope_changed' %}
+        <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">Связанные источники изменились. Проверьте план перед следующим запуском.</p>
+        {% elif task_definition.plan_status == 'source_unavailable' %}
+        <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">Один из выбранных источников больше недоступен. Проверьте план перед запуском.</p>
+        {% else %}
+        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">Не удалось безопасно открыть сохранённый план. Доступные параметры можно проверить в редакторе.</p>
+        {% endif %}
+    {% endif %}
+</section>
+{% endif %}

@@ -15,7 +15,7 @@ def test_launch_argument_schema_is_the_agent_tool_schema() -> None:
 
     assert _task_tools.task_execute_once is get_tool("task_execute_once").handler
     assert get_tool("task_execute_once").parameters == TaskLaunchArguments.model_json_schema()
-    assert set(TaskLaunchArguments.model_json_schema()["properties"]) == {"request_id", "plan"}
+    assert set(TaskLaunchArguments.model_json_schema()["properties"]) == {"request_id", "plan", "job_type"}
     assert TaskLaunchArguments.model_json_schema()["required"] == ["request_id", "plan"]
 
 
@@ -45,6 +45,24 @@ def test_launch_arguments_build_a_fixed_job_command() -> None:
     request = TaskLaunchArguments.model_validate({"request_id": "request-123", "plan": {"version": 1}})
 
     assert request.to_command() == TaskLaunchCommand(request_id="request-123", plan={"version": 1}, job_type="analyze")
+
+
+def test_launch_arguments_allow_collect_only_without_changing_the_default() -> None:
+    from app.services.task_contracts import TaskLaunchArguments, TaskLaunchCommand
+
+    request = TaskLaunchArguments.model_validate(
+        {"request_id": "request-123", "plan": {"version": 1}, "job_type": "collect"}
+    )
+
+    assert request.to_command() == TaskLaunchCommand(request_id="request-123", plan={"version": 1}, job_type="collect")
+    assert TaskLaunchArguments(request_id="request-123", plan={"version": 1}).job_type == "analyze"
+
+
+def test_launch_arguments_reject_unsupported_job_type() -> None:
+    from app.services.task_contracts import TaskLaunchArguments
+
+    with pytest.raises(ValidationError):
+        TaskLaunchArguments.model_validate({"request_id": "request-123", "plan": {"version": 1}, "job_type": "digest"})
 
 
 def test_launch_result_presenter_returns_only_the_transport_allowlist() -> None:

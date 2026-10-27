@@ -25,6 +25,10 @@ class TaskLaunchArguments(BaseModel):
     plan: dict[str, Any] = Field(
         description="Versioned task plan to execute once; recurring schedules require a separate confirmation."
     )
+    job_type: Literal["collect", "analyze"] = Field(
+        default="analyze",
+        description="Whether to collect permitted content only or collect and analyze it.",
+    )
 
     @field_validator("request_id")
     @classmethod
@@ -34,8 +38,9 @@ class TaskLaunchArguments(BaseModel):
             raise ValueError("request_id must contain 8–128 supported ASCII characters")
         return value
 
-    def to_command(self, *, job_type: str = "analyze") -> "TaskLaunchCommand":
+    def to_command(self, *, job_type: str | None = None) -> "TaskLaunchCommand":
         """Build an immutable use-case command after strict envelope validation."""
+        job_type = self.job_type if job_type is None else job_type
         if job_type not in {"collect", "analyze"}:
             raise ValueError("Unsupported social task job type")
         return TaskLaunchCommand(request_id=self.request_id, plan=self.plan, job_type=job_type)

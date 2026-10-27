@@ -32,7 +32,9 @@ def test_execute_once_is_unconfirmed_while_recurring_and_external_actions_stay_c
     assert get_tool("task_add").confirm is True
     assert get_tool("digest_send_now").handler is reports.digest_send_now
     assert get_tool("digest_send_now").confirm is True
-    assert "job_type" not in get_tool("task_execute_once").parameters["properties"]
+    job_type = get_tool("task_execute_once").parameters["properties"]["job_type"]
+    assert job_type["enum"] == ["collect", "analyze"]
+    assert job_type["default"] == "analyze"
 
 
 async def test_execute_once_delegates_fixed_job_and_request_key(monkeypatch) -> None:

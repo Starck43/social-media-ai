@@ -481,8 +481,8 @@ through management forms. Source, scenario, task, schedule and digest pages stay
 independently accessible for setup, review and direct editing. Web forms, API,
 CLI, admin and agent tools use shared validation/services and the same persisted
 definitions. Existing components and navigation remain; no redesign. The
-remaining chat-first journey and standalone management checks are tracked in
-[P8-T39](tasks/p8-t39.md).
+accepted chat-first journey and standalone management evidence are in
+[P8-T39](audit/p8-t39.md).
 
 - Sources: platform, external identity, connection/mode, collection settings,
   health and related tasks. Label temporary task-owned discovery sources.

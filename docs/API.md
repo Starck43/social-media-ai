@@ -692,8 +692,8 @@ Attention is implemented in the unified bell, not a second home block (see
 analysis/digest feed and truly upcoming schedules remain deferred in [the phase tasks](phases/p8-first-value-ui.md).
 The current task preview is recent-by-creation, not a nearest-run claim. This
 source change is not evidence of deployment or completed runtime validation.
-The chat-primary home/entry journey is a product target tracked in
-[P8-T39](tasks/p8-t39.md); the overview description here records the current
+The permission-gated chat entry and permitted social-task journey are accepted in
+[P8-T39](audit/p8-t39.md); the overview description here records the current
 route behavior.
 
 ### Get Dashboard Stats
@@ -1673,8 +1673,8 @@ Current chat and task endpoints are part of the shared implementation described
 in [P8-T29](tasks/p8-t29.md); this documents code surfaces, not completion of the
 product journey. The target is the chat as the primary workspace for
 clarification, preview, execution, progress, results and follow-up, while the
-dedicated management pages remain directly usable. Completing that interaction
-contract is tracked in [P8-T39](tasks/p8-t39.md). Keep recurring-task creation
+dedicated management pages remain directly usable. The permitted collect/analyze interaction
+contract is accepted in [P8-T39](audit/p8-t39.md). Keep recurring-task creation
 and digest sending confirmation-gated.
 
 API and web/CLI/admin/agent tools preserve identical source-scope, scenario and

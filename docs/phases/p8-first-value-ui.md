@@ -19,9 +19,9 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
    remaining work items are listed in the
    [audit note](../audit/p8-t38-integration.md).
    Mocked work can proceed while Q-5 is open; live capability claims cannot.
-3. [P8-T39](../tasks/p8-t39.md) — primary chat lifecycle and independently usable
-   source/scenario/task/schedule/digest management journeys. It may complete
-   before composition in T40.
+3. [P8-T39](../audit/p8-t39.md) — DONE 2026-10-28: chat collect/analyze lifecycle,
+   saved-plan follow-up and direct management; accepted
+   `eef36492ea7bed5a683806c5d9cbbc7985fa8d0c`, PR #270.
 4. [P8-T40](../tasks/p8-t40.md) — compose collect, analyze and digest generation
    for one-off and scheduled runs, reusing existing jobs and digest services.
 5. [P8-T41](../tasks/p8-t41.md) — accept one bounded, evidence-linked

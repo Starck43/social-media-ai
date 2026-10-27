@@ -168,14 +168,18 @@ async def test_duplicate_concurrent_creates_commit_one_task() -> None:
     async with await _client() as client:
         owner = None
         tenant_id = None
+        source_id = None
+        name = None
         try:
             owner, tenant_id = await _register_owner(client, "P11T05Duplicate")
+            headers = await _auth_headers(client, owner.username)
+            source_id = await _create_source(client, headers)
             name = f"p11-t05-concurrent-{secrets.token_hex(4)}"
 
             async def create_once():
                 with tenant_scope(tenant_id):
                     return await create_task_with_sources(
-                        task_values=_task_values(name), source_ids=None, tenant_id=tenant_id
+                        task_values=_task_values(name), source_ids=[source_id], tenant_id=tenant_id
                     )
 
             results = await asyncio.gather(create_once(), create_once(), return_exceptions=True)
@@ -184,12 +188,17 @@ async def test_duplicate_concurrent_creates_commit_one_task() -> None:
             with tenant_scope(tenant_id):
                 matches = await AgentTaskManager().filter(name=name).all()
                 assert len(matches) == 1
+                assert await AgentTaskManager().get_sources(matches[0].id) == [source_id]
         finally:
             if owner is not None:
                 headers = await _auth_headers(client, owner.username)
-                matches = await AgentTaskManager().filter(name=name).all()
-                for task in matches:
-                    await client.delete(f"/api/v1/tasks/{task.id}", headers=headers)
+                if name is not None:
+                    with tenant_scope(tenant_id):
+                        matches = await AgentTaskManager().filter(name=name).all()
+                    for task in matches:
+                        await client.delete(f"/api/v1/tasks/{task.id}", headers=headers)
+                if source_id is not None:
+                    await client.delete(f"/api/v1/sources/{source_id}", headers=headers)
             await _drop(owner, tenant_id)
 
 
@@ -360,3 +369,14 @@ async def test_payer_consent_failure_keeps_committed_plan_inactive(monkeypatch) 
                 headers = await _auth_headers(client, owner.username)
                 await client.delete(f"/api/v1/tasks/{task_id}", headers=headers)
             await _drop(owner, tenant_id)
+
+
+async def test_persist_task_create_requires_caller_owned_transaction() -> None:
+    """The explicit-session primitive refuses work without an active UoW."""
+    from types import SimpleNamespace
+
+    from app.services.task_creation import persist_task_create
+
+    session = SimpleNamespace(in_transaction=lambda: False)
+    with pytest.raises(RuntimeError, match="active transaction"):
+        await persist_task_create(session, task_values=_task_values("must-not-write"), source_ids=None)

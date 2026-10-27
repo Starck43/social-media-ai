@@ -473,9 +473,14 @@ def prepare_task_plan_update(
     if markers:
         raise TaskPlanError("Collection and dates belong to task_plan; omit conflicting legacy fields")
     if not supplied:
-        for key in ("task_plan", "collection", "cli_dates", "scenario_id", "collect_before_analyze"):
+        for key in ("task_plan", "collection", "cli_dates", "scenario_id"):
             if key in candidate and candidate[key] != canonical.get(key):
                 raise TaskPlanError(f"Use the task_plan field to change a planned task's {key}")
+    existing_plan = parse_task_plan(stored) if isinstance(stored, Mapping) else None
+    if supplied and existing_plan is not None and existing_plan.pipeline is not None and plan.pipeline is None:
+        # A composed-stage projection has no meaning after an explicit downgrade
+        # to the legacy single collect/analyze task contract.
+        candidate.pop("collect_before_analyze", None)
     changes["payload"] = apply_parsed_task_plan(candidate, plan, job_type=job_type)
     if supplied:
         changes.update(expected)
@@ -626,7 +631,7 @@ def materialize_task_plan_window(payload: Mapping[str, Any], now: Any, *, timezo
     job so retries use the same date bounds.
     """
     from datetime import datetime, timedelta
-    from zoneinfo import ZoneInfo
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
     result = dict(payload)
     raw = result.get("task_plan")
@@ -645,7 +650,7 @@ def materialize_task_plan_window(payload: Mapping[str, Any], now: Any, *, timezo
     zone_name = zone_name or timezone
     try:
         zone = ZoneInfo(zone_name)
-    except (TypeError, ValueError) as error:
+    except (TypeError, ValueError, ZoneInfoNotFoundError) as error:
         raise TaskPlanError("task_plan_timezone_invalid") from error
     local_day = now.astimezone(zone).date()
 

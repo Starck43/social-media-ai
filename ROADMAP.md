@@ -38,7 +38,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P1
 
-- [P11-T22](docs/tasks/p11-t22.md) Host shared working principles in the project rules — **IN_PROGRESS** · opencode · [audit request](docs/tasks/p11-t22.md) · `P2` · `C1`
+- [P11-T22](docs/tasks/p11-t22.md) Host shared working principles in the project rules — **READY** · opencode · [session request](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C1`
 - [P11-T04](docs/tasks/p11-t04.md) Shared task application orchestration — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C4`
 - [P11-T05](docs/tasks/p11-t05.md) Explicit task transaction ownership — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C4`
 - [P11-T06](docs/tasks/p11-t06.md) Typed use-case contracts, safe errors and presenters — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C4`

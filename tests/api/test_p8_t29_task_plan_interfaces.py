@@ -31,7 +31,16 @@ def _plan() -> dict:
     }
 
 
-async def test_preview_returns_canonical_plan_and_collection() -> None:
+async def test_preview_returns_canonical_plan_and_collection(monkeypatch) -> None:
+    async def entitlements(_payload):
+        return {"allowed": True}
+
+    async def vk_access(_plan):
+        return {"reason": "legacy_source_access", "checked": False}
+
+    monkeypatch.setattr("app.services.collection.entitlement_policy.preview_entitlements", entitlements)
+    monkeypatch.setattr("app.services.social.vk_task_access.preview_vk_access", vk_access)
+
     response = await preview_task_plan(
         TaskPlanPreviewRequest(job_type="collect", task_plan=_plan()),
         _user=SimpleNamespace(id=1),
@@ -41,6 +50,8 @@ async def test_preview_returns_canonical_plan_and_collection() -> None:
     assert response.task_plan["window"] == {"type": "rolling", "days": 1}
     assert response.collection["queries"] == ["delivery"]
     assert response.warnings
+    assert response.entitlements == {"allowed": True}
+    assert response.vk_access == {"reason": "legacy_source_access", "checked": False}
 
 
 @pytest.mark.parametrize("job_type", ["digest", "send", "prune"])

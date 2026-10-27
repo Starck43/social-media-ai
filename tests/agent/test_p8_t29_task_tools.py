@@ -161,6 +161,15 @@ async def test_execute_once_hides_known_and_unknown_external_error_text(monkeypa
 async def test_plan_previews_are_bounded_and_do_not_start_platform_work(monkeypatch) -> None:
     from app.agent.toolset import tasks
 
+    async def entitlements(_payload):
+        return {"allowed": True}
+
+    async def vk_access(_plan):
+        return {"reason": "legacy_source_access", "checked": False}
+
+    monkeypatch.setattr("app.services.collection.entitlement_policy.preview_entitlements", entitlements)
+    monkeypatch.setattr("app.services.social.vk_task_access.preview_vk_access", vk_access)
+
     result = await tasks.search_plan(
         goal="Find recent posts",
         platform="vk",
@@ -171,6 +180,8 @@ async def test_plan_previews_are_bounded_and_do_not_start_platform_work(monkeypa
     assert result["status"] == "proposal"
     assert result["execution"] == "not_started"
     assert result["queries"] == ["repair", "renovation"]
+    assert result["entitlements"] == {"allowed": True}
+    assert result["vk_access"] == {"reason": "legacy_source_access", "checked": False}
 
     invalid = await tasks.search_plan(
         goal="Find recent posts",

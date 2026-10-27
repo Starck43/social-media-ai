@@ -37,7 +37,6 @@ means not recorded; source recovery links remain in the card.
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · —
 - [P8-T34](docs/tasks/p8-t34.md) Non-social connector pilot — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 
-- [P8-T38](docs/tasks/p8-t38.md) VK connection capabilities and access selection — **IN_PROGRESS** · Codex · session `01a17d52-e51c-7072-81ee-de09e21c0f5f` · [policy increment in dev (PR #258, merge `5848c216`); acceptance incomplete — audit note](docs/audit/p8-t38-integration.md) · [remaining work on PR #256](https://github.com/Starck43/social-media-ai/pull/256)
 - [P8-T39](docs/tasks/p8-t39.md) Complete chat-first and standalone task journeys — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 - [P8-T40](docs/tasks/p8-t40.md) Compose collection, analysis and digest schedules — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c`

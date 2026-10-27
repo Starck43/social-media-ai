@@ -13,7 +13,7 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
 
 1. [P8-T29](../tasks/p8-t29.md) — shared task foundation and bounded VK collection;
    its open method/profile evidence gate is recorded in Q-5 and its own card.
-2. [P8-T38](../tasks/p8-t38.md) — visible VK connection/access capabilities.
+2. [P8-T38](../audit/p8-t38.md) — DONE 2026-10-27: selected VK connections, fresh request access checks and safe catalogs; accepted `c0aa1c9de18962b6fe86405daedbdb4bf5a01bda`.
    The isolated selection-policy increment was pre-integrated into dev on
    2026-10-27 (PR #258, merge `5848c216`) with acceptance deferred — its six
    remaining work items are listed in the

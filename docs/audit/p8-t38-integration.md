@@ -1,5 +1,7 @@
 # P8-T38 — VK selection policy increment integrated; acceptance deferred
 
+Historical increment note; superseded by [final task acceptance](p8-t38.md).
+
 **Increment integration — accepted as dev content, task NOT accepted, 2026-10-27**
 (owner-authorized interim merge of the delivered policy increment to keep it
 from being lost). Integrated via PR

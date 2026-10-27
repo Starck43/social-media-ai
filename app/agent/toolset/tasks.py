@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError
+
 from app.agent.tools import tool
+from app.services.task_contracts import TaskLaunchArguments
 
 
 def _get_job_types() -> tuple[str, ...]:
@@ -853,40 +856,47 @@ async def task_pause(name: str, pause: bool = True) -> dict[str, Any]:
     ),
     required_permission="scheduling.task.create",
     parameters={
-        "type": "object",
-        "properties": {
-            "request_id": {
-                "type": "string",
-                "description": "Стабильный уникальный ключ этого намерения; сохрани его для повторной попытки",
-            },
-            "plan": {
-                "type": "object",
-                "description": (
-                    "Утверждённый task_plan для разового запуска: version, goal, platforms, "
-                    "source_scope, source_ids, collection, window, scenario_id, trigger={type: once}"
-                ),
-            },
-        },
-        "required": ["request_id", "plan"],
+        **TaskLaunchArguments.model_json_schema(),
     },
 )
-async def task_execute_once(request_id: str, plan: dict[str, Any]) -> dict[str, Any]:
+async def task_execute_once(
+    request_id: str | None = None,
+    plan: dict[str, Any] | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
     """Queue one bounded analyze run through the shared admission/deduplication service."""
-    if not isinstance(request_id, str) or not 8 <= len(request_id) <= 128:
-        return {"error": "request_id должен содержать от 8 до 128 символов", "code": "request_id_invalid"}
     try:
-        from app.services.task_launch import launch_social_task
+        command = TaskLaunchArguments.model_validate({"request_id": request_id, "plan": plan, **extra}).to_command()
+    except ValidationError:
+        return task_launch_tool_error("request_invalid")
 
-        return await launch_social_task(plan, request_id=request_id, job_type="analyze")
-    except (TypeError, ValueError) as error:
-        return {"error": str(error), "code": "task_plan_invalid"}
-    except PermissionError:
-        return {"error": "Нет доступа к запуску задачи или личному плательщику", "code": "task_launch_forbidden"}
-    except RuntimeError:
+    from app.jobs.source_activity import SourceJobBusy
+    from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
+    from app.services.task_contracts import TaskLaunchError, task_plan_tool_error
+    from app.services.task_launch import launch_social_task
+    from app.services.task_plans import TaskPlanError
+    from app.services.tenancy.entitlements import EntitlementDenied
+
+    try:
+        return await launch_social_task(command.plan, request_id=command.request_id, job_type=command.job_type)
+    except TaskPlanError as error:
+        return task_plan_tool_error(error.code)
+    except TaskLaunchError as error:
+        return task_launch_tool_error(error.code)
+    except EntitlementDenied as error:
         return {
-            "error": "Запуск недоступен: проверьте личный AI-бюджет и состояние источников на странице задачи",
-            "code": "task_launch_unavailable",
+            "error": "Task launch is denied by workspace policy.",
+            "code": "entitlement_denied",
+            "decision": error.decision.to_dict(),
         }
+    except PermissionError:
+        return task_launch_tool_error("launch_forbidden")
+    except SourceJobBusy:
+        return task_launch_tool_error("source_busy")
+    except PersonalBillingUnavailable:
+        return task_launch_tool_error("billing_unavailable")
+    except Exception:
+        return task_launch_tool_error("launch_unconfirmed")
 
 
 @tool(

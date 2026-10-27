@@ -12,12 +12,22 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from pydantic import ValidationError
+
 from app.core.permissions import get_current_user, has_permission, permission_scope
 from app.core.tenant_context import current_tenant_id, is_bypass
+from app.services.task_contracts import (
+    TASK_REQUEST_ID_PATTERN,
+    TaskLaunchArguments,
+    TaskLaunchCommand,
+    TaskLaunchError,
+    TaskLaunchResult,
+    present_task_launch_result,
+)
 from app.services.task_plans import apply_task_plan, parse_task_plan, task_plan_block
 from app.types import ActionType
 
-_REQUEST_KEY = re.compile(r"[A-Za-z0-9_.:-]{8,128}\Z")
+_REQUEST_KEY = re.compile(TASK_REQUEST_ID_PATTERN.removeprefix("^").removesuffix("$"))
 
 
 def launch_identity(tenant_id: int, actor_id: int, request_id: str, plan: Mapping, job_type: str) -> tuple[str, str]:
@@ -56,15 +66,23 @@ async def _fresh_actor():
     return user, tenant, grants
 
 
-async def launch_social_task(
-    raw_plan: Mapping[str, Any], *, request_id: str, job_type: str = "analyze"
-) -> dict[str, Any]:
-    """Save and queue a bounded read-only task, or return its original receipt.
+async def execute_task_launch(command: TaskLaunchCommand) -> TaskLaunchResult:
+    """Save and queue one typed bounded task command, or return its receipt.
 
     No action/payload/recipient overrides are accepted. Recurrence and sends
     stay on their existing confirmed paths. An inactive draft is retained when
     personal payer setup fails so the user can inspect and retry the same key.
     """
+    try:
+        arguments = TaskLaunchArguments(request_id=command.request_id, plan=dict(command.plan))
+    except (TypeError, ValidationError) as error:
+        raise TaskLaunchError("request_invalid", cause=error) from None
+    if command.job_type not in {"collect", "analyze"}:
+        raise TaskLaunchError("request_invalid")
+
+    raw_plan = arguments.plan
+    request_id = arguments.request_id
+    job_type = command.job_type
     from sqlalchemy import func, select
 
     from app.core.database import async_session_maker
@@ -74,13 +92,11 @@ async def launch_social_task(
     from app.models.managers.job_manager import JobManager
     from app.services.billing.payer import consent_current_user_as_task_payer
 
-    if job_type not in {"collect", "analyze"}:
-        raise ValueError("Only collect and analyze are available for automatic research")
     plan = parse_task_plan(raw_plan)
     if plan.trigger.type != "once":
-        raise ValueError("Recurring tasks require explicit schedule confirmation")
+        raise TaskLaunchError("schedule_confirmation_required")
     if job_type == "analyze" and plan.scenario_id is None:
-        raise ValueError("Select an analysis scenario before launching")
+        raise TaskLaunchError("scenario_required")
     canonical = task_plan_block(plan)
     actor, tenant, grants = await _fresh_actor()
     key, fingerprint = launch_identity(tenant.id, actor.id, request_id, canonical, job_type)
@@ -104,7 +120,7 @@ async def launch_social_task(
                 ).scalar_one_or_none()
                 if task is not None:
                     if task.launch_fingerprint != fingerprint:
-                        raise ValueError("request_id was already used for different task conditions")
+                        raise TaskLaunchError("request_id_conflict")
                     task_id = task.id
                     already_launched = task.launch_job_id is not None
                 else:
@@ -121,7 +137,7 @@ async def launch_social_task(
                             )
                         ).scalar_one()
                         if count >= ceiling:
-                            raise ValueError("Workspace task limit reached; review your tasks or plan")
+                            raise TaskLaunchError("workspace_task_limit")
                     if plan.scenario_id is not None:
                         scenario = (
                             await session.execute(
@@ -133,7 +149,7 @@ async def launch_social_task(
                             )
                         ).scalar_one_or_none()
                         if scenario is None:
-                            raise ValueError("Scenario is unavailable in this workspace")
+                            raise TaskLaunchError("scenario_unavailable")
                     if plan.source_ids:
                         selected = (
                             (
@@ -152,7 +168,7 @@ async def launch_social_task(
                             .all()
                         )
                         if set(selected) != set(plan.source_ids):
-                            raise ValueError("Selected sources are inactive or outside the task's platform/workspace")
+                            raise TaskLaunchError("source_unavailable")
                     task = await AgentTask.objects.create(
                         name=f"{(plan.goal or 'Social research')[:65]} [{key[:12]}]",
                         cron_expr="@once",
@@ -178,17 +194,37 @@ async def launch_social_task(
             task_id, now=datetime.now(timezone.utc), initiated_by_user_id=actor.id, launch_request_key=key
         )
         if receipt is None:
-            raise ValueError("Task run was not admitted")
+            raise TaskLaunchError("launch_unconfirmed")
         if receipt.get("status") == "busy":
             raise SourceJobBusy(receipt["job"])
         if receipt.get("status") not in {"enqueued", "replayed"}:
-            raise ValueError("Task run was not admitted")
+            raise TaskLaunchError("launch_unconfirmed")
         job = receipt.get("job")
         job_id = getattr(job, "id", None) or receipt.get("job_id")
-        return {
-            "task_id": task_id,
-            "job_id": job_id,
-            "status": "replayed" if receipt["status"] == "replayed" else "queued",
-            "job_status": getattr(job, "status", None) or "unavailable",
-            "task_url": f"/app/tasks/{task_id}",
-        }
+        raw_job_status = getattr(job, "status", None) if job is not None else None
+        if raw_job_status is None:
+            normalized_job_status = "unavailable"
+        elif raw_job_status in {"pending", "running", "done", "failed"}:
+            normalized_job_status = raw_job_status
+        else:
+            normalized_job_status = "unknown"
+        return TaskLaunchResult(
+            task_id=task_id,
+            job_id=job_id,
+            status="replayed" if receipt["status"] == "replayed" else "queued",
+            job_status=normalized_job_status,
+        )
+
+
+async def launch_social_task(
+    raw_plan: Mapping[str, Any], *, request_id: str, job_type: str = "analyze"
+) -> dict[str, Any]:
+    """Compatibility adapter returning the existing task-launch receipt shape."""
+    try:
+        arguments = TaskLaunchArguments(request_id=request_id, plan=dict(raw_plan))
+        command = arguments.to_command(job_type=job_type)
+    except (TypeError, ValidationError, ValueError) as error:
+        if isinstance(error, TaskLaunchError):
+            raise
+        raise TaskLaunchError("request_invalid", cause=error) from None
+    return present_task_launch_result(await execute_task_launch(command))

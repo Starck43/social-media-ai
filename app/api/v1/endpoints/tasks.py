@@ -139,10 +139,14 @@ async def run_task_plan(
     _user=Depends(require_model_perm("agenttask", ActionType.CREATE)),
 ):
     """Launch one explicit social plan through the common idempotent runner."""
+    from pydantic import ValidationError
+
     from app.core.permissions import has_permission
     from app.jobs.source_activity import SourceJobBusy
     from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
+    from app.services.task_contracts import TaskLaunchArguments, TaskLaunchError
     from app.services.task_launch import launch_social_task
+    from app.services.task_plans import TaskPlanError
 
     # One-off plans create a task receipt, so callers need both rights even
     # though the legacy task-run route only requires update.
@@ -150,25 +154,42 @@ async def run_task_plan(
         raise HTTPException(status_code=403, detail="Missing permission: agenttask.update")
 
     try:
-        return await launch_social_task(
-            request.task_plan,
-            request_id=request.request_id,
-            job_type=request.job_type,
+        command = TaskLaunchArguments(request_id=request.request_id, plan=request.task_plan).to_command(
+            job_type=request.job_type
         )
+        return await launch_social_task(
+            command.plan,
+            request_id=command.request_id,
+            job_type=command.job_type,
+        )
+    except TaskLaunchError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.safe_message) from None
+    except TaskPlanError as error:
+        raise HTTPException(status_code=400, detail=f"Invalid task plan ({error.code}).") from None
+    except ValidationError:
+        raise HTTPException(status_code=400, detail="The task launch request is invalid.") from None
     except ValueError as error:
         from app.services.tenancy.entitlements import EntitlementDenied
 
         if isinstance(error, EntitlementDenied):
             raise HTTPException(status_code=403, detail=error.decision.to_dict()) from None
-        raise HTTPException(status_code=400, detail=str(error)) from None
-    except PermissionError as error:
-        raise HTTPException(status_code=403, detail=str(error)) from None
+        raise HTTPException(
+            status_code=500,
+            detail="The launch result is unconfirmed; inspect the task before retrying.",
+        ) from None
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Task launch is not permitted for this workspace member.") from None
     except SourceJobBusy:
         raise HTTPException(status_code=409, detail="A source in this plan already has an active job") from None
     except PersonalBillingUnavailable:
         raise HTTPException(
             status_code=409,
             detail="Task was saved inactive; configure personal billing before retrying this request.",
+        ) from None
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="The launch result is unconfirmed; inspect the task before retrying.",
         ) from None
 
 

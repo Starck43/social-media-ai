@@ -12,7 +12,12 @@ from datetime import date
 from typing import Any, Literal, Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from app.services.collection.intent import CollectionIntent, collection_block, parse_collection_intent
+from app.services.collection.intent import (
+    COLLECTION_ERROR_TEXT,
+    CollectionIntent,
+    collection_block,
+    parse_collection_intent,
+)
 from app.services.social.vk_access import VKSelection, VKSelectionError, parse_vk_selection
 
 TaskSourceScope = Literal["selected", "discovery", "all"]
@@ -20,8 +25,53 @@ TaskWindowType = Literal["fixed", "rolling"]
 TaskTriggerType = Literal["once", "schedule"]
 
 
+_TASK_PLAN_ERROR_CODES = frozenset(
+    {
+        "task_plan_collection_invalid",
+        "task_plan_discovery_queries_required",
+        "task_plan_fixed_start_required",
+        "task_plan_goal_invalid",
+        "task_plan_invalid",
+        "task_plan_override_changes_persisted_scope",
+        "task_plan_override_requires_persisted_plan",
+        "task_plan_payload_invalid",
+        "task_plan_platform_unsupported",
+        "task_plan_platforms_invalid",
+        "task_plan_query_limit_exceeded",
+        "task_plan_requires_collect_or_analyze",
+        "task_plan_rolling_days_invalid",
+        "task_plan_run_time_invalid",
+        "task_plan_scenario_invalid",
+        "task_plan_schedule_cron_invalid",
+        "task_plan_schedule_requires_recurring_cron",
+        "task_plan_selected_sources_required",
+        "task_plan_source_ids_invalid",
+        "task_plan_source_ids_scope_conflict",
+        "task_plan_source_ids_too_many",
+        "task_plan_source_scope_invalid",
+        "task_plan_timezone_invalid",
+        "task_plan_trigger_invalid",
+        "task_plan_version_unsupported",
+        "task_plan_vk_access_clear_requires_explicit_selection",
+        "task_plan_vk_access_invalid",
+        "task_plan_vk_access_requires_vk",
+        "task_plan_vk_access_retention_required",
+        "task_plan_window_collection_mismatch",
+        "task_plan_window_invalid",
+        "task_plan_window_reversed",
+        "task_plan_window_type_invalid",
+    }
+)
+
+
 class TaskPlanError(ValueError):
     """A task request cannot be represented safely as a canonical plan."""
+
+    def __init__(self, message: str) -> None:
+        self.code = (
+            message if message in _TASK_PLAN_ERROR_CODES or message in COLLECTION_ERROR_TEXT else "task_plan_invalid"
+        )
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -164,6 +214,15 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
         trigger=trigger,
         vk_access=vk_access,
     )
+
+
+def read_saved_task_plan(payload: Any) -> TaskPlan | None:
+    """Read a persisted versioned plan without fabricating one for legacy rows."""
+    if not isinstance(payload, Mapping):
+        return None
+    if "task_plan" not in payload:
+        return None
+    return parse_task_plan(payload["task_plan"])
 
 
 def task_plan_block(plan: TaskPlan) -> dict[str, Any]:

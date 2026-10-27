@@ -13,6 +13,8 @@ PR body. Send all coordination, questions and status changes as PR comments.
 The designated custodian synchronizes ROADMAP/task records; do not publish stale
 registry copies. Claim = PR comment request to the custodian before edits, not a
 card/ROADMAP write and not something deferred to the solution merge. For local DB/environment checks, request them in a PR comment
-and link the revision-specific result in the PR body. Report unrun checks. Do not
-merge or close a PR without the owner’s explicit choice; use PR comments for the
-choice and handoff. Preserve the branch/PR if work will continue or be deferred.
+and link the revision-specific result in the PR body. Report unrun checks.
+Report READY in a PR comment only when every required acceptance check passed;
+the custodian applies the row change. Do not merge or close a PR without the
+owner's explicit choice; use PR comments for the choice and handoff. Preserve
+the branch/PR if work will continue or be deferred.

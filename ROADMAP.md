@@ -2,7 +2,8 @@
 
 Status/owner are authoritative here; scope, documents read and checks live only
 in the linked task card. Open one card, not the entire docs tree.
-Lifecycle: [COLLABORATION](docs/COLLABORATION.md#tasks). Legacy dialogue “—”
+Lifecycle: [COLLABORATION](docs/COLLABORATION.md#tasks); status set:
+[state machine](docs/COLLABORATION.md#state-machine). Legacy dialogue “—”
 means not recorded; source recovery links remain in the card.
 
 ## [P2](docs/phases/p2-usage-spend.md)

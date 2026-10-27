@@ -16,8 +16,14 @@ implementation beyond authorized corrections/refactoring/docs.
 On acceptance, update the parent phase with completion date, accepted SHA and a
 brief result linked to `docs/audit/<id>.md`; remove the task card and ROADMAP row
 for a closed task. An orphan leaves only its audit summary. Return concrete
-findings, required checks and a recommended fix when not accepted. Session or
-worktree cleanup never makes a resolved task BLOCKED.
+findings, required checks and a recommended fix when not accepted: correctable
+findings return the row to IN_PROGRESS, and remote findings ride PR comments,
+never the PR body. A cannot-proceed task becomes BLOCKED with reason,
+passed/failed/unrun checks and the recommended fix in the linked audit
+diagnostic. An explicit owner defer becomes DEFERRED with the choice and resume
+branch/PR in the row, never BLOCKED. An owner descope without acceptance is
+recorded in the audit note or a Questions row and the row is removed. Session
+or worktree cleanup never makes a resolved task BLOCKED.
 
 At closeout, inventory worktrees and report removed/retained candidates under
 [cleanup rules](../../../docs/COLLABORATION.md#git-and-cleanup). Preserve dirty,

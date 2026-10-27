@@ -11,8 +11,9 @@ linked contracts needed. Use a task-ID branch. Put the direct repository/PR link
 solution, source revision, actual documents read, checks and limitations in the
 PR body. Send all coordination, questions and status changes as PR comments.
 The designated custodian synchronizes ROADMAP/task records; do not publish stale
-registry copies. Claim = PR comment request to the custodian before edits, not a
-card/ROADMAP write and not something deferred to the solution merge. For local DB/environment checks, request them in a PR comment
+registry copies. Claim = the scoped claim commit you publish to origin/dev yourself before
+edits, never deferred to the solution merge. Do not stop or wait for a custodian
+or the owner between steps; ask a question only when you decide one is needed. For local DB/environment checks, request them in a PR comment
 and link the revision-specific result in the PR body. Report unrun checks.
 Report READY in a PR comment only when every required acceptance check passed;
 the custodian applies the row change. Do not merge or close a PR without the

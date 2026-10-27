@@ -210,7 +210,10 @@ def test_the_catalogue_reads_the_model_name_off_the_views():
     assert model_by_identity["agent-task"] == "agenttask"
     assert model_by_identity["ai-analytics"] == "aianalytics"
     assert model_by_identity["llm-provider"] == "llmprovider"
-    assert custom["notification"]["mark-read"] is ActionType.UPDATE
+    # Notifications expose only the technical archive/send path now; personal
+    # receipt-read state is not a shared admin action.
+    assert "mark-read" not in custom.get("notification", {})
+    assert custom["notification"]["send-to-messenger"] is ActionType.UPDATE
     assert custom["llm-provider"]["test-connection"] is ActionType.CONFIGURE
     assert custom["agent-scenario"]["view-prompts"] is ActionType.VIEW
 

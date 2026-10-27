@@ -11,7 +11,7 @@ from starlette.datastructures import FormData
 
 ROOT = Path(__file__).resolve().parents[2]
 load = runpy.run_path(str(ROOT / "tests/source_import_isolation.py"))["load_isolated_source"]
-fixtures = runpy.run_path(str(ROOT / "tests/settings_llm_fixtures.py"))
+fixtures = runpy.run_path(str(ROOT / "tests/shared/settings_llm_fixtures.py"))
 
 
 def source():

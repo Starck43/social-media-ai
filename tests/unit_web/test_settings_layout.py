@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-fixtures = runpy.run_path(str(ROOT / "tests/settings_layout_fixtures.py"))
+fixtures = runpy.run_path(str(ROOT / "tests/shared/settings_layout_fixtures.py"))
 
 
 class Document(HTMLParser):

@@ -21,7 +21,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "app/web/settings.py"
 USER_SOURCE = ROOT / "app/models/identity/user.py"
-TEMPLATE_FIXTURES = runpy.run_path(str(ROOT / "tests/settings_layout_fixtures.py"))
+TEMPLATE_FIXTURES = runpy.run_path(str(ROOT / "tests/shared/settings_layout_fixtures.py"))
 TREE = ast.parse(SOURCE.read_text())
 
 

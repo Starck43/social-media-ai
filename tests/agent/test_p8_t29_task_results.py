@@ -41,13 +41,32 @@ class Query:
 def _models(monkeypatch):
     import app.models
 
-    task_get = AsyncMock(return_value=SimpleNamespace(id=4, launch_job_id=9, last_status="ok"))
+    task_get = AsyncMock(
+        return_value=SimpleNamespace(
+            id=4,
+            launch_job_id=9,
+            last_status="ok",
+            name="Research",
+            job_type="analyze",
+            is_active=False,
+            cron_expr="@once",
+            payload={},
+        )
+    )
     job = SimpleNamespace(
         id=9,
         status="done",
+        attempts=2,
         result={
             "items": 2,
             "analyzed": 1,
+            "progress": {
+                "attempt": 2,
+                "phase": "collection",
+                "total": 2,
+                "completed": 1,
+                "items": [{"name": "Public VK group", "source_id": 37, "state": "running"}],
+            },
             "prompt": "PRIVATE_PROMPT_SENTINEL",
             "per_source": [{"source_id": 3, "analytics_ids": [10]}],
         },
@@ -84,6 +103,7 @@ async def test_task_view_without_analytics_rights_gets_status_and_counts_only(mo
         result = await task_result(4)
     assert result["job_status"] == "done"
     assert result["counts"] == {"items": 2, "analyzed": 1}
+    assert result["progress"] == {"phase": "collection", "total": 2, "completed": 1, "updated_at": None}
     assert result["analyses"] == []
     assert "PRIVATE" not in str(result)
 
@@ -97,6 +117,7 @@ async def test_permitted_results_include_summary_links_but_no_raw_diagnostics(mo
     assert result["analyses"] == [
         {"id": 10, "title": "Research", "summary": "A matching request", "url": "/app/analytics/10"}
     ]
+    assert result["progress"]["items"] == [{"name": "Public VK group", "source_id": 37, "state": "running"}]
     assert "PRIVATE" not in str(result)
     assert "provider_body" not in str(result)
 

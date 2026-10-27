@@ -20,10 +20,75 @@ def outcome_counts(result: Any) -> dict[str, int]:
     }
 
 
+async def _task_definition(task: Any) -> dict[str, Any]:
+    """Return an allowlisted task view and its canonical saved plan only."""
+    from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.services.task_plans import TaskPlanError, read_saved_task_plan, task_plan_block
+
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    result: dict[str, Any] = {
+        "id": task.id,
+        "name": task.name,
+        "job_type": task.job_type,
+        "active": task.is_active is True,
+        "last_status": task.last_status,
+        "cron": task.cron_expr,
+        "task_url": f"/app/tasks/{task.id}",
+        "plan": None,
+        "plan_status": "legacy",
+    }
+    try:
+        parsed = read_saved_task_plan(payload)
+    except (TaskPlanError, TypeError, ValueError):
+        result["plan_status"] = "unavailable"
+        return result
+    if parsed is None:
+        return result
+
+    actor = get_current_user()
+    if not has_permission(actor, "source", ActionType.VIEW):
+        result["plan_status"] = "source_access_required"
+        return result
+    if parsed.scenario_id is not None and not has_permission(actor, "agentscenario", ActionType.VIEW):
+        result["plan_status"] = "scenario_access_required"
+        return result
+
+    plan = task_plan_block(parsed)
+    # The relationship table is the execution source of truth. Refuse to hand
+    # a stale persisted plan back as editable when it disagrees with the links.
+    if parsed.source_scope == "selected":
+        linked_ids = await AgentTaskManager().get_sources(task.id)
+        if sorted(parsed.source_ids) != linked_ids:
+            result["plan_status"] = "scope_changed"
+            return result
+        from app.models import Source
+
+        visible_sources = await Source.objects.filter(id__in=linked_ids, is_active=True)
+        if {source.id for source in visible_sources} != set(linked_ids):
+            result["plan_status"] = "source_unavailable"
+            return result
+    result["plan"] = plan
+    result["plan_status"] = "available"
+    return result
+
+
+@require_permission("agenttask", ActionType.VIEW)
+async def task_configuration(task_id: int) -> dict | None:
+    """Read task-editing inputs without returning raw payload/provider fields."""
+    from app.models import AgentTask
+
+    if type(task_id) is not int or task_id <= 0:
+        raise ValueError("A persisted task ID is required")
+    if type(current_tenant_id()) is not int or is_bypass():
+        raise PermissionError("A concrete workspace is required")
+    task = await AgentTask.objects.get(id=task_id)
+    return await _task_definition(task) if task is not None else None
+
+
 @require_permission("agenttask", ActionType.VIEW)
 async def task_result(task_id: int, *, job_id: int | None = None, limit: int = 5) -> dict | None:
     """Read one task's retained run and permitted analyses without launching work."""
-    from app.models import AIAnalytics, AgentTask, Job
+    from app.models import AgentTask, AIAnalytics, Job
 
     if type(task_id) is not int or task_id <= 0:
         raise ValueError("A persisted task ID is required")
@@ -49,11 +114,21 @@ async def task_result(task_id: int, *, job_id: int | None = None, limit: int = 5
         "counts": {},
         "analyses": [],
         "coverage": "not_available" if job is None else "partial_or_bounded",
+        "task": await _task_definition(task),
     }
     if job is None:
         return result
     raw = job.result if isinstance(job.result, dict) else {}
     result["counts"] = outcome_counts(raw)
+    from app.jobs.progress import read_snapshot
+
+    progress = read_snapshot(raw, getattr(job, "attempts", None))
+    if progress is not None:
+        if has_permission(get_current_user(), "source", ActionType.VIEW):
+            result["progress"] = progress
+        else:
+            # Keep useful aggregate status while hiding source identities.
+            result["progress"] = {key: progress[key] for key in ("phase", "total", "completed", "updated_at")}
     actor = get_current_user()
     if not (has_permission(actor, "source", ActionType.VIEW) and has_permission(actor, "aianalytics", ActionType.VIEW)):
         return result

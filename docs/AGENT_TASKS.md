@@ -470,7 +470,7 @@ version-1 `payload.task_plan`; existing collection intent and jobs execute it.
 `POST /api/v1/tasks/plan` previews; `POST /api/v1/tasks/run/plan` admits a keyed
 one-off; `GET /api/v1/tasks/{id}/result` reads bounded permitted outcomes.
 CLI exposes `task plan`, `task result` and `--task-plan` for task writes; chat
-adds `search_plan`, `task_plan`, `task_execute_once` and `task_result`.
+adds `search_plan`, `task_plan`, `task_execute_once`, `task_get` and `task_result`.
 Implementation status and exact checks remain in the task card.
 
 ### User input and surfaces
@@ -481,8 +481,8 @@ through management forms. Source, scenario, task, schedule and digest pages stay
 independently accessible for setup, review and direct editing. Web forms, API,
 CLI, admin and agent tools use shared validation/services and the same persisted
 definitions. Existing components and navigation remain; no redesign. The
-remaining chat-first journey and standalone management checks are tracked in
-[P8-T39](tasks/p8-t39.md).
+accepted chat-first journey and standalone management evidence are in
+[P8-T39](audit/p8-t39.md).
 
 - Sources: platform, external identity, connection/mode, collection settings,
   health and related tasks. Label temporary task-owned discovery sources.
@@ -502,6 +502,36 @@ Example: "Find recent VK posts requesting renovation in Kazan; exclude ads and
 return links with reasons." The assistant may derive bounded queries and use
 temporary sources. Clarify material omissions; show applied defaults/coverage.
 Topic location, community location and author profile city remain distinct.
+
+### Chat task journey (P8-T39)
+
+The conversational composer uses the existing version-1 definition; the six
+input groups are concepts over its typed fields, not six new payload objects:
+
+| Input group | Persisted representation |
+| --- | --- |
+| Goal | `goal` |
+| Data | `platforms`, `source_scope`, `source_ids`, collection queries/filters and selected connection |
+| Processing | `job_type=collect` or `analyze`, and `scenario_id` methodology |
+| Result | Requested answer in `goal`, with the selected scenario defining analysis output; unsupported formats are clarified rather than stored as ignored fields |
+| Timing | `window` for data, `trigger` for once/schedule and timezone |
+| Limits | Validated `collection` item/comment/candidate limits plus existing permission and personal-spending admission |
+
+Chat clarifies missing material inputs, previews with `task_plan`, then admits
+one `task_execute_once` using a stable request ID. `job_type` defaults to
+`analyze`; `collect` needs no analysis scenario and uses the same admission
+policy. Queue admission is not completion. `task_result` reads current-attempt
+bounded progress and permitted outcomes on request; it does not start work or
+poll indefinitely. `task_get` reopens the canonical saved definition for a
+follow-up preview or confirmed edit. A new intent uses a new launch key.
+
+Readers omit raw payloads, provider diagnostics and unknown plan extensions.
+Unavailable or changed selected-source bindings hide the editable plan; preview
+and execution recheck permissions and selected connections. Discovery creates
+existing task-owned lanes, not permanent shared monitoring sources. Recurring
+mutations and external sends keep their confirmation gates. `/app/` remains the
+overview with a permission-gated chat entry; direct management and deep links
+remain available. Live platform capability evidence is a separate gate.
 
 ### Product capabilities
 

@@ -153,6 +153,9 @@ def adapter_update(surface, payload, changes):
         "app.models.managers.tenant_manager": NS(tenants=NS(get=AsyncMock(return_value=NS(timezone="UTC")))),
         "app.services.monitoring.selection": NS(SelectionError=ValueError),
         "app.tasks.cron": NS(next_run_at=lambda cron, zone: NS(cron=cron, zone=zone), resolve_tz=lambda *a: "UTC"),
+        # AST-isolated CLI commands retain decorators/local output imports,
+        # while this helper deliberately skips CLI module initialization.
+        "cli.commands.task_output": NS(task_print=lambda *_args, **_kwargs: None),
     }
     if surface == "api":
         namespace = {
@@ -199,6 +202,7 @@ def adapter_update(surface, payload, changes):
         namespace = {
             "task_app": NS(command=lambda *a, **kw: lambda f: f),
             "typer": typer,
+            "_json_command": lambda _command: lambda function: function,
             "_run_task_platform": asyncio.run,
             "_require_explicit_tenant": AsyncMock(return_value=2),
             "EXIT_TARGET_UNRESOLVED": 3,

@@ -43,7 +43,7 @@ means not recorded; source recovery links remain in the card.
 
 ## [P11](docs/phases/p11-structure.md)
 
-- [P11-T01](docs/tasks/p11-t01.md) Critical structural audit, refactoring plan and task-card reconciliation — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=4066ba0cf6d880aba81600a9789b6feb)
+- [P11-T01](docs/tasks/p11-t01.md) Critical structural audit, refactoring plan and task-card reconciliation — **IN_PROGRESS** · notion-ai (remote executor, resumed) · [Notion chat](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556)
 
 ## Questions
 

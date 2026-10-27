@@ -14,13 +14,12 @@ license = {text = "MIT"}
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Framework :: FastAPI",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Communications :: Social Media",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     # Web Framework
     "fastapi>=0.95.0",
@@ -101,7 +100,7 @@ app = ["static/**/*", "templates/**/*", "web/templates/**/*"]
 
 [tool.black]
 line-length = 120
-target-version = ['py310']
+target-version = ['py312']
 include = '\.pyi?$'
 
 [tool.isort]

@@ -36,3 +36,10 @@ required. Use [CONFIGURATION](docs/CONFIGURATION.md) for settings and
 Configure providers/models through the supported admin interfaces; external
 publication remains gated. Never infer permission to change a public/production
 schema from a quick-start command; follow [database policy](docs/COLLABORATION.md#database).
+
+## Offline verification
+
+Python **3.12** is the minimum supported baseline. The [offline CI profile](.ci/README.md)
+installs only hash-locked tools and runs a reviewed no-DB subset, syntax/import
+boundaries, an AST-only Alembic graph check and formatting/secret baselines. It
+does not load project DB fixtures or certify DB/runtime/provider behavior.

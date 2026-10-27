@@ -500,14 +500,17 @@ async def _seed_legacy_catalog_owner() -> None:
 
     # Explicit fixture IDs do not advance PostgreSQL sequences. Reconcile even
     # on repeated seeding, without moving an already-ahead sequence backwards.
-    # The engine's redirected search_path keeps both lookups in the test schema.
+    # DB_SCHEMA qualifies ORM tables, not PostgreSQL's search_path. Qualify
+    # the relation explicitly so a shared database cannot target public.users.
+    table_name = async_engine.dialect.identifier_preparer.format_table(User.__table__)
     async with async_engine.begin() as conn:
         await conn.execute(
             text(
-                "SELECT setval(pg_get_serial_sequence('users', 'id'), "
-                "GREATEST((SELECT MAX(id) FROM users), "
-                "nextval(pg_get_serial_sequence('users', 'id'))), true)"
-            )
+                "SELECT setval(pg_get_serial_sequence(:table_name, 'id'), "
+                f"GREATEST((SELECT MAX(id) FROM {table_name}), "
+                "nextval(pg_get_serial_sequence(:table_name, 'id'))), true)"
+            ),
+            {"table_name": table_name},
         )
 
 

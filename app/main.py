@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.database import async_engine, init_db
 from app.core.health import router as health_router
 from app.core.tenant_context import PlatformScopeMiddleware, tenant_scope
+from app.version import __version__
 from app.web import web_router
 from app.web.middleware import TenantUIMiddleware
 
@@ -78,9 +79,9 @@ async def lifespan(_: FastAPI):
 
 def create_application() -> FastAPI:
     application = FastAPI(
-        title="ИИ Ассистент",
+        title="AI Assistant",
         description="API для управления социальными сетями с ИИ-аналитикой",
-        version="0.4.0",
+        version=__version__,
         debug=settings.DEBUG,
         lifespan=lifespan,
     )

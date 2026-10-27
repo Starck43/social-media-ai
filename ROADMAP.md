@@ -34,7 +34,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P0
 
 
-- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · — · `P0` · `C3`
+- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (awaiting VK support reply on 1051) · — · `P0` · `C3`
 
 ### Priority P1
 

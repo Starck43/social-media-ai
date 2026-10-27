@@ -19,8 +19,12 @@ and VK collection slice; its remaining evidence gates are open. Follow-up work i
 P8-T38–P8-T41, additional VK categories are P8-T33, and non-social connectors
 P8-T34 are deferred beyond the social milestone.
 
-Registered-user purchase of service plans and plan-based connector entitlements
-are future work in [P2-T15](tasks/p2-t15.md). The P2-T16 configuration
+The general capability-entitlement foundation is integrated through
+[P2-T15](tasks/p2-t15.md), but its validation and independent acceptance remain
+owner-deferred to project end; see [ENTITLEMENTS](ENTITLEMENTS.md). Catalog v1
+grants all known capabilities on the existing plans, not paid-plan packaging.
+Registered-user service-plan purchase and commercial connector packaging are
+not shipped or authorized by that foundation. The P2-T16 configuration
 foundation (YooKassa provider selection and env field contract) was accepted
 2026-10-27 ([audit](audit/p2-t16.md)); the broader checkout and lifecycle scope
 closed with that decision and is not tracked as an open task. Existing personal

@@ -365,35 +365,28 @@ async def task_add(
             tz = task_plan_timezone(plan_block, tz)
         except ValueError as error:
             return {"error": str(error)}
-    from app.core.database import new_session
-
-    session = new_session()
     try:
-        async with session.begin():
-            from app.models.managers.job_manager import JobManager
+        if source_ids is not None and any(
+            type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
+        ):
+            return {"error": "Source ids must be positive PostgreSQL INTEGER values"}
+        from app.services.task_creation import create_task_with_sources
 
-            if source_ids is not None and any(
-                type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
-            ):
-                return {"error": "Source ids must be positive PostgreSQL INTEGER values"}
-            await JobManager.lock_source_admission(session, current_tenant_id())
-            task = await AgentTask.objects.create(
-                session=session,
-                name=name,
-                cron_expr=cron,
-                job_type=job_type,
-                payload=payload,
-                agent_scenario_id=scenario_id,
-                is_active=plan_block is None,
-                next_run_at=next_run_at(cron, tz),
-            )
-            if source_ids is not None:
-                await AgentTaskManager().set_sources(task.id, source_ids, session=session)
+        task = await create_task_with_sources(
+            task_values={
+                "name": name,
+                "cron_expr": cron,
+                "job_type": job_type,
+                "payload": payload,
+                "agent_scenario_id": scenario_id,
+                "is_active": plan_block is None,
+                "next_run_at": next_run_at(cron, tz),
+            },
+            source_ids=source_ids,
+            tenant_id=current_tenant_id(),
+        )
     except ValueError as error:
         return {"error": str(error)}
-    finally:
-        await session.close()
-
     result: dict[str, Any] = {
         "status": "created",
         "id": task.id,

@@ -388,15 +388,21 @@ async def _add_task(
             session = new_session()
             try:
                 async with session.begin():
-                    task = await AgentTaskManager().create(
+                    from app.services.task_creation import persist_task_create
+
+                    task = await persist_task_create(
                         session=session,
-                        name=name,
-                        cron_expr=cron,
-                        job_type=job_type,
-                        payload=parsed_payload,
-                        agent_scenario_id=scenario_id,
-                        is_active=False,
-                        next_run_at=next_run,
+                        task_values={
+                            "name": name,
+                            "cron_expr": cron,
+                            "job_type": job_type,
+                            "payload": parsed_payload,
+                            "agent_scenario_id": scenario_id,
+                            "is_active": False,
+                            "next_run_at": next_run,
+                        },
+                        source_ids=None,
+                        tenant_id=tenant_id,
                     )
                     with service_permission_scope("agenttask", "update"):
                         await AgentTaskManager().set_sources(task.id, parsed_source_ids, session=session)
@@ -406,17 +412,31 @@ async def _add_task(
                 "[yellow]Universal-plan task was saved inactive. Activate it from the workspace after the owner configures payer consent.[/yellow]"
             )
         else:
-            task = await AgentTaskManager().create(
-                name=name,
-                cron_expr=cron,
-                job_type=job_type,
-                payload=parsed_payload,
-                agent_scenario_id=scenario_id,
-                is_active=True,
-                next_run_at=next_run,
-            )
-            if parsed_source_ids:
-                await _set_task_sources(task.id, parsed_source_ids, task.tenant_id)
+            from app.core.database import new_session
+            from app.models.managers.agent_task_manager import AgentTaskManager
+            from app.services.task_creation import persist_task_create
+
+            session = new_session()
+            try:
+                async with session.begin():
+                    task = await persist_task_create(
+                        session,
+                        task_values={
+                            "name": name,
+                            "cron_expr": cron,
+                            "job_type": job_type,
+                            "payload": parsed_payload,
+                            "agent_scenario_id": scenario_id,
+                            "is_active": True,
+                            "next_run_at": next_run,
+                        },
+                        source_ids=None,
+                        tenant_id=tenant_id,
+                    )
+                    if parsed_source_ids:
+                        await AgentTaskManager().set_sources(task.id, parsed_source_ids, session=session)
+            finally:
+                await session.close()
 
         # Hint when the bound scenario wants specific targets the task does not
         # carry — the analysis would otherwise have nothing to aim at.

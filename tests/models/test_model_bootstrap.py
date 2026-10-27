@@ -14,6 +14,7 @@ DOMAINS = {
         "agent_message": "AgentMessage",
         "agent_session": "AgentSession",
     },
+    "actions": {"agent_action": "BotAction"},
     "analysis": {"agent_scenario": "AgentScenario", "ai_analytics": "AIAnalytics"},
     "billing": {
         "billing": "PersonalBillingAccount",
@@ -39,8 +40,9 @@ DOMAINS = {
         "digest_run": "DigestRun",
         "notification": "Notification",
         "notification_preference": "NotificationPreference",
+        "notification_receipt": "NotificationReceipt",
     },
-    "scheduling": {"agent_task": "AgentTask", "bot_action": "BotAction", "job": "Job"},
+    "scheduling": {"agent_task": "AgentTask", "job": "Job"},
     "tenancy": {
         "tenant": "Tenant",
         "tenant_user": "TenantUser",
@@ -53,6 +55,8 @@ DOMAINS = {
 # New domain modules have no legacy flat `app.models.<module>` facade for the
 # canonical class; their domain/package identity is still asserted below.
 NO_LEGACY_FLAT_MODULE = {
+    ("actions", "agent_action"),
+    ("notifications", "notification_receipt"),
     ("billing", "billing"),
     ("billing", "dispatch"),
     ("notifications", "notification_preference"),

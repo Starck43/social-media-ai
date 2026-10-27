@@ -9,7 +9,9 @@ Alembic version table alone. Schema separation is not a privilege sandbox.
 
 Fresh tables come from Base.metadata.create_all because the early migration
 chain expects existing tables. Reference roles, permissions, platforms and the
-bootstrap tenant are seeded with the canonical setup scripts. Existing drift
+bootstrap tenant are seeded with the canonical setup scripts; the committed
+legacy catalog owner (migration 0109) is restored directly because the
+create_all path never executes migration data changes. Existing drift
 is checked before schema creation, reset or seeding and is never automatically
 repaired. A branch missing live table metadata must stop, not remove evidence.
 
@@ -46,6 +48,12 @@ _PLATFORM_SEED = (
     ("vk", "ВКонтакте", "https://vk.com"),
     ("telegram", "Телеграм", "https://t.me"),
 )
+
+# Committed legacy catalog owner: migration 0109 assigns the personal catalog
+# to this stable user id and refuses to run unless the user pre-exists and
+# is active. The create_all + stamp head path never executes that data
+# change, so the documented re-seed restores the FK target.
+LEGACY_CATALOG_OWNER_ID = 2
 
 
 def database_name(url: str) -> str:
@@ -300,12 +308,20 @@ def _stamp_head(url: str) -> None:
     command.stamp(config, "head")
 
 
-async def _truncate_all() -> None:
-    """Destructive reset of the redirected test schema; never a normal test step."""
+async def _truncate_all(schema: str | None = None) -> None:
+    """Destructive reset of the redirected test schema; never a normal test step.
+
+    A schema aligned through migrations carries guards that refuse
+    truncation (``*_no_truncate`` on the immutable evidence tables, 0093–0100).
+    The reset is this script's own operation, so those ``BEFORE TRUNCATE``
+    triggers are disabled around the ``TRUNCATE`` and re-enabled before the
+    commit; the whole reset runs in one transaction, so a failure anywhere on
+    the path rolls back both, leaving the guards installed as found.
+    """
     from app.core.config import settings
     from app.core.database import async_engine
 
-    schema = settings.DB_SCHEMA
+    schema = schema or settings.DB_SCHEMA
     async with async_engine.begin() as conn:
         result = await conn.execute(
             text(
@@ -317,7 +333,26 @@ async def _truncate_all() -> None:
         )
         tables = [f'"{schema}"."{name}"' for name in result.scalars().all()]
         if tables:
-            await conn.execute(text(f"truncate table {', '.join(tables)} restart identity cascade"))
+            # TRUNCATE-firing user triggers (pg_trigger.tgtype bit 5); system
+            # triggers and constraints stay untouched.
+            guards = (
+                await conn.execute(
+                    text(
+                        "select c.relname, t.tgname from pg_catalog.pg_trigger t "
+                        "join pg_catalog.pg_class c on c.oid = t.tgrelid "
+                        "join pg_catalog.pg_namespace n on n.oid = c.relnamespace "
+                        "where n.nspname = :schema and not t.tgisinternal and (t.tgtype & 32) > 0"
+                    ),
+                    {"schema": schema},
+                )
+            ).all()
+            for table, trigger in guards:
+                await conn.execute(text(f'alter table "{schema}"."{table}" disable trigger "{trigger}"'))
+            try:
+                await conn.execute(text(f"truncate table {', '.join(tables)} restart identity cascade"))
+            finally:
+                for table, trigger in guards:
+                    await conn.execute(text(f'alter table "{schema}"."{table}" enable trigger "{trigger}"'))
 
 
 async def _seed_reference_rows() -> None:
@@ -334,6 +369,7 @@ async def _seed_reference_rows() -> None:
     await _seed_bootstrap_tenant()
     await _seed_permissions()
     await _seed_role_grants()
+    await _seed_legacy_catalog_owner()
 
 
 async def _seed_platforms() -> None:
@@ -432,6 +468,37 @@ async def _seed_role_grants() -> None:
                 conn.execute(_insert_ignoring_conflicts(workspace_role_permission), rows)
 
 
+async def _seed_legacy_catalog_owner() -> None:
+    """Restore the committed legacy catalog owner after a reset.
+
+    Migration 0109 assigns the personal catalog rows to the active user with
+    this stable id and refuses to run unless the user pre-exists, but the
+    create_all + stamp head test path never executes that data change. The
+    FK-pinned suites insert providers and models owned by this id, so the
+    row must be a documented committed fixture of the re-seed. It carries a
+    synthetic placeholder hash: no credential, no platform permission, no
+    tenant membership.
+    """
+    from app.core.tenant_context import tenant_scope
+    from app.models import PlatformRole, User
+    from app.types import PlatformRoleType
+
+    with tenant_scope(bypass=True):
+        if await User.objects.get(id=LEGACY_CATALOG_OWNER_ID) is not None:
+            return
+        role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
+        if role is None:
+            raise RuntimeError("Legacy catalog owner seeding requires the 'user' platform role row.")
+        await User.objects.create(
+            id=LEGACY_CATALOG_OWNER_ID,
+            username="legacy_catalog_owner",
+            email="legacy-catalog-owner@localhost.invalid",
+            hashed_password="synthetic-hash-never-a-credential",
+            role_id=role.id,
+            is_active=True,
+        )
+
+
 def resolve_and_redirect() -> tuple[str, str, str]:
     """Validate isolation before app imports or changing URL/schema variables.
 
@@ -526,7 +593,7 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
         await check_existing_schema(conn, Base.metadata, settings.DB_SCHEMA, require_all_tables=True)
 
     await _seed_reference_rows()
-    say("reference rows seeded (roles, permissions, platforms, bootstrap tenant)")
+    say("reference rows seeded (roles, permissions, platforms, bootstrap tenant, legacy catalog owner)")
 
     await async_engine.dispose()
 

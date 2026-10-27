@@ -20,14 +20,23 @@ push requires fetch/reconcile and rechecking the claim; never force-push. Claim
 publication to `origin/dev` is authorized by this workflow; solution publication
 and merge still require the owner’s explicit choice. An offline/unpublishable claim
 is local only: report the coordination limitation, never pretend it is visible.
-Remote agents do not write the registry: they request the claim via PR comments
-and one custodian publishes it. The claim reaches `origin/dev` through that
-custodian, not later with the solution. The custodian refreshes both directions
-before each transition.
+Remote agents self-publish their scoped claim commit to `origin/dev` under the
+same rules as local claims, always before any solution edit and never later with
+the solution; they do not publish the solution, unrelated registry rows or
+competing registry copies, and they never stop to wait for a custodian or the
+owner between steps. A designated custodian may instead apply PR-comment status
+requests and refreshes both directions before each transition.
 
 Create `type/<task-id>-<topic>` from the agreed source revision. Independent
 writers use exclusive paths and separate worktrees. Keep task implementation out
 of integration `dev`; registry-only synchronization is the exception above.
+
+The primary checkout is the owner's interactive workspace: agents never
+switch, move or commit branches in it, and never leave it on an agent branch.
+When the owner's checkout sits on a branch an agent needs, the agent opens a
+worktree for that branch instead of moving the checkout. Verify the current
+branch and dirty state before any commit; a commit belongs only in the
+agent's own task worktree.
 
 `docs/tasks/<id>.md` contains scope/acceptance, parent phase (or explicit orphan),
 related task links, owned paths/dependencies, branch/PR, documents read and checks.
@@ -35,6 +44,33 @@ It links ROADMAP instead of copying current status. Phases live in `docs/phases/
 product-parent backlink, goal, numbered plan, active-card links and accepted audit
 links. Plan substantial work by creating/revising a numbered phase with continuity
 and reasons; keep short standalone tasks as cards, not artificial stages.
+
+## State machine
+
+Open row statuses: `TODO`, `IN_PROGRESS`, `READY`, `BLOCKED`, `DEFERRED`;
+questions use `TODO`/`OPEN`/`DEFERRED`. `DONE` is not a row status: acceptance
+removes the row, and the audit record plus the phase line carry the DONE/date
+summary.
+
+- `TODO → IN_PROGRESS`: the claim commit is published as under Tasks, before any
+  solution edit. A remote executor self-publishes its scoped claim commit (a
+  designated custodian may instead apply the PR-comment request); the executor
+  never idles waiting for either.
+- `IN_PROGRESS → READY`: the executor (for remote work, the custodian from the
+  PR comment) publishes the switch only when every required acceptance check
+  passed, with the [Evidence](#evidence) record in the card or linked PR body.
+  Actionable failure keeps the row IN_PROGRESS.
+- `READY → DONE`: the auditor applies the [Acceptance](#acceptance) steps; the
+  row and card are removed, the audit record and phase line remain.
+- rejected, correctable: back to IN_PROGRESS; the auditor returns findings,
+  required checks and a recommended fix. Remote findings ride PR comments,
+  never the PR body, which stays executor-owned.
+- rejected, cannot proceed: BLOCKED with reason, passed/failed/unrun checks and
+  recommended fix in the linked audit diagnostic.
+- owner defer: DEFERRED with the explicit choice, reason and resume branch/PR in
+  the row; never BLOCKED solely for being postponed.
+- owner descope without acceptance: only the owner's explicit decision; record
+  it in the audit note or a Questions row, remove the row, keep the note.
 
 ## Evidence
 

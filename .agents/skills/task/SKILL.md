@@ -11,7 +11,9 @@ unresolvable details. Read AGENTS, ROADMAP and the card, then only linked
 contracts needed for the change. Claim the task before editing and update its
 status, owner and dialogue link in the shared registry through its custodian.
 
-Work only on assigned paths in a task-ID branch/worktree. Record source revision,
+Work only on assigned paths in a task-ID branch/worktree. The primary checkout
+is the owner's: never switch, move or commit branches in it; open a worktree
+instead. Record source revision,
 documents actually read (path/section and purpose), checks and outcomes in the
 card or PR body. Report READY only when required checks pass. Continue
 IN_PROGRESS on actionable failures; use BLOCKED only when the solution/required acceptance cannot proceed,

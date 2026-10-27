@@ -973,7 +973,17 @@ async def search_plan(
         return {"error": "Укажите не более пяти непустых запросов длиной до 200 символов", "code": "queries_invalid"}
     if city is not None and (not isinstance(city, str) or not city.strip() or len(city.strip()) > 120):
         return {"error": "Некорректное название города", "code": "city_invalid"}
+    from app.services.collection.entitlement_policy import preview_entitlements
+
+    entitlement_preview = await preview_entitlements({
+        "task_plan": {
+            "platforms": [platform], "source_scope": source_scope, "source_ids": ids,
+            "collection": {"queries": queries},
+        },
+        "collection": {"queries": queries},
+    })
     return {
+        "entitlements": entitlement_preview,
         "status": "proposal",
         "goal": goal.strip(),
         "platform": platform,
@@ -1041,4 +1051,12 @@ async def task_plan(plan: dict[str, Any]) -> dict[str, Any]:
         scenario = await AgentScenario.objects.get(id=scenario_id)
         if scenario is None or not scenario.is_active:
             return {"error": "Сценарий не найден или отключён в этом workspace", "code": "scenario_unavailable"}
-    return {"status": "validated_preview", "plan": normalized, "writes": False, "run_created": False}
+    from app.services.collection.entitlement_policy import preview_entitlements
+
+    entitlements = await preview_entitlements(
+        {"task_plan": normalized, "collection": normalized.get("collection", {})}
+    )
+    return {
+        "status": "validated_preview", "plan": normalized, "writes": False,
+        "run_created": False, "entitlements": entitlements,
+    }

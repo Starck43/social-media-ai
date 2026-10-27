@@ -11,7 +11,7 @@ from app.models.managers.base_manager import BaseManager
 from app.types import ActionType, PlatformRoleType, can_assign_platform_role
 
 if TYPE_CHECKING:
-    from app.models.user import User
+    from app.models.identity.user import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class UserManager(BaseManager):
     """Manager for User model operations."""
 
     def __init__(self):
-        from app.models.user import User
+        from app.models.identity.user import User
 
         super().__init__(User)
 

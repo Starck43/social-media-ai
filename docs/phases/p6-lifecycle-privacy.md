@@ -7,8 +7,12 @@
 **Plan — active task cards:**
 
 - [P6-T01](../tasks/p6-t01.md) — Deploy-gated retention rollout
-- [P6-T02](../tasks/p6-t02.md) — One retention/export/offboarding contract
-- [P6-T05](../tasks/p6-t05.md) — Administrator deletion and source admission
+- [P6-T02](../audit/p6-t02.md) — VK OAuth refresh-failure log-privacy contract
+  (scoped 2026-10-27 from the legacy one-choice contract; the legacy
+  retention-purging item was explicitly descoped by the owner the same
+  day); accepted 2026-10-27 at `1f816ce2`, integrated via merge `e2183fe7`
+  (PR #259).
+- [P6-T05](../audit/p6-t05.md) — Administrator deletion and source admission; accepted 2026-10-27 at `5112dbec`, integrated via merge `9367fb73` (PR #257).
 
 **Accepted history:**
 

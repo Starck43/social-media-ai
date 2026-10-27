@@ -1,0 +1,13 @@
+{% extends "web/base.html" %}
+{% block page_heading %}Предложение #{{ action.id }}{% endblock %}
+{% block content %}<div class="ui-card"><h2>{{ action.capability }} · {{ action.status.label }}</h2>
+<p>Адресат: {{ action.target_ref or 'Историческая запись' }}</p>
+<p class="ui-muted">Внешнее выполнение отключено. Одобрение действует ограниченное время и только для показанного содержимого.</p>
+<pre class="overflow-auto">{{ action.payload|tojson(indent=2) }}</pre>
+{% if perms and perms.can('botaction','update') %}
+{% for decision,label in [('approve','Одобрить'),('reject','Отклонить'),('cancel','Отменить')] %}
+{% if (action.status.name == 'PENDING') or (decision == 'cancel' and action.status.name == 'APPROVED') %}
+<form method="post" action="/app/actions/{{ action.id }}/{{ decision }}" class="inline-block mt-3">
+<input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="payload_hash" value="{{ review_hash }}">
+<button class="ui-control">{{ label }}</button></form>{% endif %}{% endfor %}{% endif %}
+</div>{% endblock %}

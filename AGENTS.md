@@ -23,7 +23,11 @@ sections. Record documents actually read and checks in the card/PR. Shared
   checks, approvals, dialogue links or completion. READY requires required checks
   PASS. Before solution merge or deferral ask the owner to choose; preserve the
   branch/PR until then. Acceptance and integration are separate. BLOCKED concerns
-  the solution/acceptance, never a decision wait or housekeeping.
+  the solution/acceptance, never a decision wait or housekeeping. Open row
+  statuses: TODO, IN_PROGRESS, READY, BLOCKED, DEFERRED — DONE is not a row
+  status; acceptance removes the row. DEFERRED is only an explicit owner choice,
+  recorded with reason and resume branch/PR; postponement is never BLOCKED.
+  Transition rules: [state machine](docs/COLLABORATION.md#state-machine).
 - Resolve DB target/schema before access. Test-schema setup/migrations are allowed;
   serialize shared DB work and remove/verify all synthetic records afterward.
   Public test records require explicit Superuser approval. Public migrations need

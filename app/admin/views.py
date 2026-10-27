@@ -297,6 +297,13 @@ class PlatformAdmin(BaseAdmin, model=Platform):
     name = "Платформа"
     name_plural = "Платформы"
     icon = "fa fa-globe"
+    # A platform cascade cannot run the per-workspace source-admission policy.
+    # Disable both the SQLAdmin route/buttons and direct view-method callers.
+    can_delete = False
+
+    async def delete_model(self, request: Request, pk: Any) -> None:
+        raise HTTPException(status_code=403, detail="admin_platform_delete_disabled")
+
     inline_columns = ["id", "name", "platform_type", "is_active"]
     column_list = ["id", "name", "platform_type", "is_active"]
     column_searchable_list = ["name"]
@@ -368,6 +375,12 @@ class SourceAdmin(BaseAdmin, model=Source):
     name = "Источник"
     name_plural = "Источники"
     icon = "fa fa-rss"
+    # Generic SQLAdmin deletion bypasses the admission lock and task-scope guard.
+    # Use the existing workspace source-deletion surfaces instead.
+    can_delete = False
+
+    async def delete_model(self, request: Request, pk: Any) -> None:
+        raise HTTPException(status_code=403, detail="admin_source_delete_disabled")
 
     # Проверка источника ставит задачу сбора и пишет в карточку источника.
     action_permissions = {"check-source": ActionType.UPDATE}
@@ -1116,13 +1129,15 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 
 
 class NotificationAdmin(BaseAdmin, model=Notification):
+    can_create = False
+    can_edit = False
+    can_delete = False
     name = "Уведомление"
     name_plural = "Уведомления"
     icon = "fa fa-bell"
 
-    # Обе кнопки меняют состояние уведомления (локально и в мессенджере).
+    # Technical archive only. No action acknowledges any User receipt.
     action_permissions = {
-        "mark-read": ActionType.UPDATE,
         "send-to-messenger": ActionType.UPDATE,
     }
     inline_columns = ["id", "title", "notification_type", "is_read", "created_at"]
@@ -1136,7 +1151,7 @@ class NotificationAdmin(BaseAdmin, model=Notification):
             "title": "Заголовок",
             "message": "Сообщение",
             "notification_type": "Тип уведомления",
-            "is_read": "Прочитано",
+            "is_read": "Исторический общий флаг (не личное прочтение)",
             "related_entity_type": "Тип сущности",
             "related_entity_id": "ID сущности",
         },
@@ -1194,37 +1209,6 @@ class NotificationAdmin(BaseAdmin, model=Notification):
         },
         **BaseAdmin.form_args,
     }
-
-    @action(
-        name="mark_read",
-        label="Пометить прочитанным",
-        add_in_list=True,
-        add_in_detail=True,
-    )
-    async def mark_read_action(self, request: Request):
-        """Mark notifications as read."""
-
-        pks = request.query_params.get("pks", "")
-        if not pks:
-            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
-
-        count = 0
-        for pk in pks.split(","):
-            try:
-                notification = await Notification.objects.get(id=int(pk))
-                if notification and not notification.is_read:
-                    await Notification.objects.update_by_id(int(pk), is_read=True)
-                    count += 1
-                    logger.info(f"Notification {pk} marked as read")
-            except Exception as e:
-                logger.error(f"Error marking notification {pk} as read: {e}")
-
-        logger.info(f"Marked {count} notifications as read")
-
-        return RedirectResponse(
-            url=request.url_for("admin:list", identity=self.identity),
-            status_code=303,
-        )
 
     @action(
         name="send_to_messenger",
@@ -1930,12 +1914,15 @@ class TenantAdmin(BaseAdmin, model=Tenant):
         "name",
         "slug",
         "plan",
+        "plan_expires_at",
+        "entitlement_policy",
         "timezone",
         "is_active",
         "max_sources",
         "daily_cost_limit",
         "updated_at",
     ]
+    column_details_list = column_list + ["agent_style"]
     column_searchable_list = ["name", "slug"]
     column_sortable_list = ["name", "slug", "plan", "is_active"]
     column_labels = dict(
@@ -1944,6 +1931,8 @@ class TenantAdmin(BaseAdmin, model=Tenant):
             "name": "Название",
             "slug": "Слаг",
             "plan": "Тариф",
+            "plan_expires_at": "Plan expires at (UTC)",
+            "entitlement_policy": "Product capabilities (static policy)",
             "timezone": "Часовой пояс",
             "is_active": "Активно",
             "daily_cost_limit": "Дневной лимит затрат, $",
@@ -2191,18 +2180,19 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
 
 
 class BotActionAdmin(BaseAdmin, model=BotAction):
+    identity = "bot-action"
+    can_edit = False
+    can_delete = False
     """
-    Ledger of bot actions, written by the analyze job and action_send.
-
-    Read + delete in admin; only the status can be adjusted manually (e.g. to
-    cancel a stale PENDING row). payload/result/confirmed_* stay untouched.
+    Read-only capability-neutral proposal/audit ledger. action_send only previews.
+    Approval/cancel transitions must go through the actor-bound manager.
     """
 
     name = "Действие бота"
     name_plural = "Действия ботов"
     icon = "fa fa-bolt"
     can_create = False
-    form_columns = ["status"]
+    form_columns = []
 
     inline_columns = ["id", "action_type", "status", "dry_run", "created_at"]
     column_list = ["id", "agent_scenario_id", "source_id", "action_type", "status", "dry_run", "created_at"]

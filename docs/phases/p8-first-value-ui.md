@@ -14,6 +14,10 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
 1. [P8-T29](../tasks/p8-t29.md) — shared task foundation and bounded VK collection;
    its open method/profile evidence gate is recorded in Q-5 and its own card.
 2. [P8-T38](../tasks/p8-t38.md) — visible VK connection/access capabilities.
+   The isolated selection-policy increment was pre-integrated into dev on
+   2026-10-27 (PR #258, merge `5848c216`) with acceptance deferred — its six
+   remaining work items are listed in the
+   [audit note](../audit/p8-t38-integration.md).
    Mocked work can proceed while Q-5 is open; live capability claims cannot.
 3. [P8-T39](../tasks/p8-t39.md) — primary chat lifecycle and independently usable
    source/scenario/task/schedule/digest management journeys. It may complete
@@ -36,14 +40,14 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 
 **Other active P8 cards:**
 
-- [P8-T10](../tasks/p8-t10.md) — runtime freshness identity
-- [P8-T11](../tasks/p8-t11.md) — incomplete-delivery aggregate signal
-- [P8-T13](../tasks/p8-t13.md) — named support/escalation + pilot measures
+- [P8-T10](../audit/p8-t10.md) — runtime freshness identity; accepted 2026-10-27, integrated in PR #248 (merge `d7213c6b`)
+- [P8-T11](../audit/p8-t11.md) — incomplete-delivery aggregate signal; accepted 2026-10-27, integrated in PR #252 (merge `83c1f79a`)
+- [P8-T13](../audit/p8-t13.md) — named support/escalation + pilot measures; accepted 2026-10-27, integrated in PR #260 (merge `5f1066b5`)
 - [P8-T15](../tasks/p8-t15.md) — Admin API connectivity, mock and real checks
 - [P8-T17](../tasks/p8-t17.md) — Model response diagnostics and consent
 - [P8-T18](../tasks/p8-t18.md) — Model tests in single-owner mode
 - [P8-T20](../tasks/p8-t20.md) — Provider cost evidence and diagnostic controls
-- [P8-T36](../tasks/p8-t36.md) — reusable horizontal relationship picker
+- [P8-T36](../audit/p8-t36.md) — reusable horizontal relationship picker; accepted 2026-10-27, integrated in PR #244 (merge `682dbe37`)
 **Deferred beyond the social milestone:** [P8-T34](../tasks/p8-t34.md) keeps the
 future non-social connector direction. It is not a current P8 social release
 gate. P8 cannot be marked fully closed while this deferred item remains attached

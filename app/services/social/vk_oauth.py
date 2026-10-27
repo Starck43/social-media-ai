@@ -41,6 +41,7 @@ from typing import Any, Optional
 import httpx
 
 from app.core.config import settings
+from app.services.social.credential_diagnostics import credential_exception_status
 from app.services.social.credentials import resolve_token
 
 logger = logging.getLogger(__name__)
@@ -307,7 +308,11 @@ async def refresh_user_token(user_id: int) -> Optional[str]:
     try:
         data = await _post_form(payload)
     except Exception as exc:
-        logger.warning("VK ID refresh failed for user %s: %s", user_id, exc)
+        logger.warning(
+            "VK ID refresh failed user_id=%s code=%s",
+            user_id if type(user_id) is int and user_id > 0 else None,
+            credential_exception_status(exc),
+        )
         await _mark_refresh_failed(user_credentials, row, meta)
         return None
 
@@ -342,8 +347,12 @@ async def _mark_refresh_failed(user_credentials, row, meta: dict[str, Any]) -> N
     meta["refresh_failed_at"] = datetime.now(timezone.utc).isoformat()
     try:
         await user_credentials.update_by_id(row.id, meta=meta)
-    except Exception:  # noqa: BLE001 — bookkeeping must never raise
-        logger.warning("Could not record VK ID refresh failure for user %s", row.user_id, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 — bookkeeping must never raise
+        logger.warning(
+            "VK ID refresh failure bookkeeping failed user_id=%s code=%s",
+            row.user_id if type(row.user_id) is int and row.user_id > 0 else None,
+            credential_exception_status(exc),
+        )
 
 
 async def renew_if_expiring(user_id: int, *, margin: timedelta = _RENEW_MARGIN) -> Optional[str]:

@@ -24,7 +24,7 @@ class AgentScenarioManager(BaseManager):
 
     def __init__(self):
         # Use string literal to avoid circular import
-        from ..agent_scenario import AgentScenario as B
+        from ..analysis.agent_scenario import AgentScenario as B
 
         super().__init__(B)
 

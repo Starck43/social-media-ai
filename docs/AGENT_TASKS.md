@@ -492,6 +492,15 @@ return links with reasons." The assistant may derive bounded queries and use
 temporary sources. Clarify material omissions; show applied defaults/coverage.
 Topic location, community location and author profile city remain distinct.
 
+### Product capabilities
+
+The [P2-T15 foundation](ENTITLEMENTS.md) adds a shared entitlement decision to
+preview and task admission, and rechecks queued collection/analysis at execution.
+API/CLI/chat previews expose required capabilities and denial reasons; they do
+not reserve usage or replace source access, payer consent or provider scopes.
+Catalog v1 leaves product grants unrestricted across existing plans. Migration,
+application tests and independent acceptance remain deferred; see the task PR.
+
 ### Policy
 
 One-off read/search/analyse runs may execute without another confirmation within

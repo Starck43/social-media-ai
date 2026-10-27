@@ -6,6 +6,7 @@ from __future__ import annotations
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 # isort: split
+from .actions import AgentAction
 from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 from .analysis.agent_scenario import AgentScenario
 from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
@@ -42,9 +43,9 @@ from .llm import (
     LLMOutcomeEvent,
     LLMProvider,
 )
-from .notifications import DigestRun, Notification, NotificationPreference
+from .notifications import DigestRun, Notification, NotificationPreference, NotificationReceipt
 from .scheduling import AgentTask, BotAction, Job
-from .tenancy import Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
+from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
 __all__ = [
     # Base classes
@@ -61,6 +62,7 @@ __all__ = [
     "LoginAttempt",
     # Multi-tenant
     "Tenant",
+    "EntitlementUsage",
     "TenantUser",
     "TenantInvite",
     "TenantChannel",
@@ -82,6 +84,7 @@ __all__ = [
     "Source",
     "AgentScenario",
     "BotAction",
+    "AgentAction",
     # AI models
     "LLMProvider",
     "LLMModel",
@@ -105,6 +108,7 @@ __all__ = [
     # Notification models
     "Notification",
     "NotificationPreference",
+    "NotificationReceipt",
     # Raw collected content
     "CollectedItem",
     "CollectionSeen",

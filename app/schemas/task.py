@@ -90,6 +90,7 @@ class TaskPlanPreviewResponse(BaseModel):
     task_plan: dict[str, Any]
     collection: dict[str, Any]
     warnings: list[str] = Field(default_factory=list)
+    entitlements: dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskPlanRunRequest(BaseModel):

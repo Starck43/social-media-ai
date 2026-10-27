@@ -271,6 +271,36 @@
                     </label>
                 </div>
 
+                <div x-show="task.job_type === 'analyze'" x-cloak class="rounded-lg border border-cyan-200 dark:border-cyan-900 p-3 space-y-3">
+                    <label class="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                        <input type="checkbox" name="compose_digest" value="true" x-model="task.compose_digest" class="mt-1">
+                        <span>После сбора и анализа подготовить дайджест. Текст появится в результатах; отправка потребует отдельного подтверждённого действия.</span>
+                    </label>
+                    <div x-show="task.compose_digest" class="space-y-3">
+                        <label class="block text-sm">Период отчёта
+                            <select name="digest_window_type" x-model="task.digest_window_type" class="{{ control() }} mt-1">
+                                <option value="rolling">Скользящий период</option>
+                                <option value="fixed">Фиксированные даты</option>
+                            </select>
+                        </label>
+                        <label x-show="task.digest_window_type === 'rolling'" class="block text-sm">Дней в отчёте
+                            <input name="digest_rolling_days" type="number" min="1" max="365" x-model="task.digest_rolling_days" class="{{ control() }} mt-1">
+                        </label>
+                        <div x-show="task.digest_window_type === 'fixed'" class="grid gap-3 sm:grid-cols-2">
+                            <label class="block text-sm">Начало отчёта<input name="digest_start_date" type="date" x-model="task.digest_start_date" class="{{ control() }} mt-1"></label>
+                            <label class="block text-sm">Конец отчёта<input name="digest_end_date" type="date" x-model="task.digest_end_date" class="{{ control() }} mt-1"></label>
+                        </div>
+                        <label class="block text-sm">Группировка
+                            <select name="digest_group_by" x-model="task.digest_group_by" class="{{ control() }} mt-1">
+                                <option value="themes">По темам</option><option value="sources">По источникам</option>
+                                <option value="entities">По упоминаниям</option><option value="intent">По намерению</option>
+                                <option value="topic_chains">Тематические цепочки</option>
+                            </select>
+                        </label>
+                        <label class="text-sm"><input type="checkbox" name="digest_time_breakdown" value="true" x-model="task.digest_report_time_breakdown"> Разбивка групп по дням</label>
+                    </div>
+                </div>
+
                 <div>
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Расписание</label>
                     <div x-data="scheduleBuilder()"
@@ -917,6 +947,13 @@
                 digest_period: "day",
                 digest_group_by: "themes",
                 digest_time_breakdown: false,
+                compose_digest: false,
+                digest_window_type: "rolling",
+                digest_rolling_days: 7,
+                digest_start_date: "",
+                digest_end_date: "",
+                digest_group_by: "themes",
+                digest_report_time_breakdown: false,
                 tracked_users: "",
                 brands: "",
                 competitors: "",

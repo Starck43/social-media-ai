@@ -466,7 +466,7 @@ Future local gateways expose explicitly granted resources, not arbitrary shell
 or network access. No non-social connector is implemented in this package.
 
 Implemented interface names: `parse_task_plan`/`apply_task_plan` normalize the
-version-1 `payload.task_plan`; existing collection intent and jobs execute it.
+versioned `payload.task_plan`; existing collection intent and jobs execute it.
 `POST /api/v1/tasks/plan` previews; `POST /api/v1/tasks/run/plan` admits a keyed
 one-off; `GET /api/v1/tasks/{id}/result` reads bounded permitted outcomes.
 CLI exposes `task plan`, `task result` and `--task-plan` for task writes; chat
@@ -532,6 +532,24 @@ existing task-owned lanes, not permanent shared monitoring sources. Recurring
 mutations and external sends keep their confirmation gates. `/app/` remains the
 overview with a permission-gated chat entry; direct management and deep links
 remain available. Live platform capability evidence is a separate gate.
+
+### Composed research and digest plans (P8-T40)
+
+Version-2 plans opt into an ordered `pipeline.stages` of `collect`, `analyze`,
+and `digest` (or `analyze`, `digest` when the saved run uses already collected
+content). The typed `digest.window` is independent of the collection `window`
+and accepts fixed dates or a bounded rolling day count. `digest.group_by` and
+`digest.time_breakdown` configure the report. Existing version-1 and legacy
+tasks retain their prior meaning. Digest generation records a report preview and
+its date window; delivery remains a separate, explicitly confirmed operation.
+Run history reports collection, analysis, generation, and delivery states
+separately. Unknown or interrupted stage outcomes require review rather than
+being represented as successful or safe to repeat.
+
+The web task editor presents the collection window and report window separately.
+Recurring schedules use the workspace timezone unless the task specifies one;
+each occurrence records the resolved report dates in that run's effective
+snapshot.
 
 ### Product capabilities
 

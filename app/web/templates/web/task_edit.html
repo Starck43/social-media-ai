@@ -253,6 +253,34 @@
                 </div>
             </label>
         </div>
+        <div x-show="editing.job_type === 'analyze'" x-cloak class="rounded-lg border border-cyan-200 dark:border-cyan-900 p-3 space-y-3">
+            <label class="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input type="checkbox" name="compose_digest" value="true" x-model="editing.compose_digest" {% if edit.compose_digest %}checked{% endif %} class="mt-1">
+                <span>После сбора и анализа подготовить дайджест. Отправка текста остаётся отдельным подтверждённым действием.</span>
+            </label>
+            <div x-show="editing.compose_digest" class="space-y-3">
+                <label class="block text-sm">Период отчёта
+                    <select name="digest_window_type" x-model="editing.digest_window_type" class="{{ control() }} mt-1">
+                        <option value="rolling" {% if edit.digest_window_type == 'rolling' %}selected{% endif %}>Скользящий период</option><option value="fixed" {% if edit.digest_window_type == 'fixed' %}selected{% endif %}>Фиксированные даты</option>
+                    </select>
+                </label>
+                <label x-show="editing.digest_window_type === 'rolling'" class="block text-sm">Дней в отчёте
+                    <input name="digest_rolling_days" type="number" min="1" max="365" value="{{ edit.digest_rolling_days }}" x-model="editing.digest_rolling_days" class="{{ control() }} mt-1">
+                </label>
+                <div x-show="editing.digest_window_type === 'fixed'" class="grid gap-3 sm:grid-cols-2">
+                    <label class="block text-sm">Начало отчёта<input name="digest_start_date" type="date" value="{{ edit.digest_start_date }}" x-model="editing.digest_start_date" class="{{ control() }} mt-1"></label>
+                    <label class="block text-sm">Конец отчёта<input name="digest_end_date" type="date" value="{{ edit.digest_end_date }}" x-model="editing.digest_end_date" class="{{ control() }} mt-1"></label>
+                </div>
+                <label class="block text-sm">Группировка
+                    <select name="digest_group_by" x-model="editing.digest_group_by" class="{{ control() }} mt-1">
+                        <option value="themes" {% if edit.digest_group_by == 'themes' %}selected{% endif %}>По темам</option><option value="sources" {% if edit.digest_group_by == 'sources' %}selected{% endif %}>По источникам</option>
+                        <option value="entities" {% if edit.digest_group_by == 'entities' %}selected{% endif %}>По упоминаниям</option><option value="intent" {% if edit.digest_group_by == 'intent' %}selected{% endif %}>По намерению</option>
+                        <option value="topic_chains" {% if edit.digest_group_by == 'topic_chains' %}selected{% endif %}>Тематические цепочки</option>
+                    </select>
+                </label>
+                <label class="text-sm"><input type="checkbox" name="digest_time_breakdown" value="true" {% if edit.digest_time_breakdown %}checked{% endif %} x-model="editing.digest_time_breakdown"> Разбивка групп по дням</label>
+            </div>
+        </div>
         {% if sources %}
         {# Compact inline source picker: selected sources are chips with a
            remove (×) control; adding goes through a same-style "+ Добавить"
@@ -537,6 +565,11 @@
             digest_period: "day",
             digest_group_by: "themes",
             digest_time_breakdown: false,
+            compose_digest: false,
+            digest_window_type: "rolling",
+            digest_rolling_days: 7,
+            digest_start_date: "",
+            digest_end_date: "",
             trigger_type: "",
             trigger_keywords: "",
             trigger_match: "any",
@@ -644,6 +677,11 @@
                     digest_period: TASK_EDIT.digest_period || "day",
                     digest_group_by: TASK_EDIT.digest_group_by || "themes",
                     digest_time_breakdown: TASK_EDIT.digest_time_breakdown || false,
+                    compose_digest: TASK_EDIT.compose_digest || false,
+                    digest_window_type: TASK_EDIT.digest_window_type || "rolling",
+                    digest_rolling_days: TASK_EDIT.digest_rolling_days || 7,
+                    digest_start_date: TASK_EDIT.digest_start_date || "",
+                    digest_end_date: TASK_EDIT.digest_end_date || "",
                     trigger_keywords: TASK_EDIT.trigger_keywords || "",
                     trigger_usernames: TASK_EDIT.trigger_usernames || "",
                     dry_run: TASK_EDIT.dry_run || false,

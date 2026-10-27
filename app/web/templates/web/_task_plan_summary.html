@@ -41,6 +41,10 @@
                 {% else %}
                     Только сбор
                 {% endif %}
+                {% set pipeline = plan.get('pipeline', {}) %}
+                {% if pipeline.get('stages') %}
+                    <div class="mt-1">Этапы: {{ pipeline.get('stages')|join(' → ') }}. Дайджест формируется без отправки.</div>
+                {% endif %}
             </dd>
         </div>
         <div>
@@ -62,6 +66,16 @@
                 · {% if plan.trigger.type == 'schedule' %}
                     {{ cron_to_human(task.cron_expr) }}{% if plan.trigger.timezone %} · {{ plan.trigger.timezone }}{% endif %}
                   {% else %}разово{% endif %}
+                {% set digest = plan.get('digest', {}) %}
+                {% if digest %}
+                    {% set report_window = digest.get('window', {}) %}
+                    <div class="mt-1">Окно дайджеста:
+                        {% if report_window.get('type') == 'rolling' %}последние {{ report_window.get('days') }} дн.
+                        {% else %}{{ report_window.get('start') }} — {{ report_window.get('end') }}{% endif %}
+                        · {{ {'themes': 'по темам', 'sources': 'по источникам', 'entities': 'по упоминаниям', 'intent': 'по намерению', 'topic_chains': 'по тематическим цепочкам'}.get(digest.get('group_by'), 'по темам') }}
+                        {% if digest.get('time_breakdown') %}· по дням{% endif %}
+                    </div>
+                {% endif %}
             </dd>
         </div>
         <div>

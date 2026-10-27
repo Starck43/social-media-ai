@@ -11,8 +11,9 @@
 
 P4-T02 shipped the recipient-specific inbox semantics decided in the PR #246
 coordination: `notification_receipts` per user, `severity`, addressed
-delivery and per-recipient read state; retention purging stays a P6
-lifecycle-and-privacy phase contract item (legacy P6-T02 scope).
+delivery and per-recipient read state. The former retention-purging contract
+item (legacy P6-T02 scope) was explicitly descoped by the owner on
+2026-10-27.
 
 **Accepted history:**
 

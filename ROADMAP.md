@@ -34,7 +34,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P0
 
 
-- [P6-T06](docs/tasks/p6-t06.md) Close P6-T05 test follow-ups: verify catalog diagnostic and clean up the created tenant — **IN_PROGRESS** · Codex (owner-authorized completion/audit) · `codex resume 01a17d52-e51c-7072-81ee-de09e21c0f5f` · `P0` · `C2`
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · unassigned · — · `P0` · `C3`
 
 ### Priority P1
@@ -121,5 +120,4 @@ Use the P11 cards in the execution queue or the linked parent plan.
 ## Questions
 
 Q-2/Q-5/Q-10 are ordered in the execution queue; Q-12 remains owner-deferred.
-The P6-T05 audit's two test follow-ups are tracked under P6-T06; the original
-audit remains historical evidence.
+The P6-T05 audit's two test follow-ups were accepted under [P6-T06](docs/audit/p6-t06.md); the original audit remains historical evidence.

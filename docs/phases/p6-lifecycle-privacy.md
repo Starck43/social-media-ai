@@ -13,7 +13,7 @@
   day); accepted 2026-10-27 at `1f816ce2`, integrated via merge `e2183fe7`
   (PR #259).
 - [P6-T05](../audit/p6-t05.md) — Administrator deletion and source admission; accepted 2026-10-27 at `5112dbec`, integrated via merge `9367fb73` (PR #257).
-- [P6-T06](../tasks/p6-t06.md) — Close the registered P6-T05 catalog/tenant-test follow-ups.
+- [P6-T06](../audit/p6-t06.md) — Catalog diagnostic verified and test-owned tenant cleanup accepted 2026-10-27 at `602b5f9344f573babaa5d98ee27a1efa27d17670`; integrated via merge `ca5bacdc3cf96de7c128181ce411fe8f0cd88d0f` (PR #262).
 
 **Accepted history:**
 

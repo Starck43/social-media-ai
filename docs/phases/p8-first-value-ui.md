@@ -43,8 +43,8 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 - [P8-T10](../audit/p8-t10.md) — runtime freshness identity; accepted 2026-10-27, integrated in PR #248 (merge `d7213c6b`)
 - [P8-T11](../audit/p8-t11.md) — incomplete-delivery aggregate signal; accepted 2026-10-27, integrated in PR #252 (merge `83c1f79a`)
 - [P8-T13](../audit/p8-t13.md) — named support/escalation + pilot measures; accepted 2026-10-27, integrated in PR #260 (merge `5f1066b5`)
-- [P8-T15](../tasks/p8-t15.md) — Admin API connectivity, mock and real checks
-- [P8-T17](../tasks/p8-t17.md) — Model response diagnostics and consent
+- [P8-T15](../audit/p8-t15.md) — Admin API connectivity, mock and real checks; accepted 2026-10-28, evidence commit `738d14dc`
+- [P8-T17](../audit/p8-t17.md) — Model response diagnostics and consent; accepted 2026-10-28, evidence commit `738d14dc`
 - [P8-T18](../audit/p8-t18.md) — Model tests in single-owner mode; accepted 2026-10-28, integrated in dev (cherry-pick `4616c583`)
 - [P8-T20](../audit/p8-t20.md) — Provider cost evidence and diagnostic controls; accepted 2026-10-28, integrated in dev (cherry-pick `4d3ce50e`)
 - [P8-T36](../audit/p8-t36.md) — reusable horizontal relationship picker; accepted 2026-10-27, integrated in PR #244 (merge `682dbe37`)

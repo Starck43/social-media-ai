@@ -39,8 +39,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P1
 
 - [P11-T07](docs/tasks/p11-t07.md) Incremental package-boundary enforcement — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C3`
-- [P8-T15](docs/tasks/p8-t15.md) Admin API connectivity, mock and real checks — **IN_PROGRESS** · opencode · — · `P1` · `C3`
-- [P8-T17](docs/tasks/p8-t17.md) Model response diagnostics and consent — **IN_PROGRESS** · opencode · — · `P1` · `C3`
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
 - [P8-T39](docs/tasks/p8-t39.md) Complete chat-first and standalone task journeys — **IN_PROGRESS** · Codex · `codex resume 01a17d52-e51c-7072-81ee-de09e21c0f5f` · `P1` · `C5`
 - [P8-T40](docs/tasks/p8-t40.md) Compose collection, analysis and digest schedules — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P1` · `C5`

@@ -43,6 +43,10 @@ means not recorded; source recovery links remain in the card.
 
 ## [P9](docs/phases/p9-safe-activation.md)
 
+## [P11](docs/phases/p11-structure.md)
+
+- [P11-T01](docs/tasks/p11-t01.md) Critical structural audit, refactoring plan and task-card reconciliation — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=4066ba0cf6d880aba81600a9789b6feb)
+
 ## Questions
 
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · —

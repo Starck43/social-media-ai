@@ -46,7 +46,7 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 - [P8-T15](../tasks/p8-t15.md) — Admin API connectivity, mock and real checks
 - [P8-T17](../tasks/p8-t17.md) — Model response diagnostics and consent
 - [P8-T18](../tasks/p8-t18.md) — Model tests in single-owner mode
-- [P8-T20](../tasks/p8-t20.md) — Provider cost evidence and diagnostic controls
+- [P8-T20](../audit/p8-t20.md) — Provider cost evidence and diagnostic controls; accepted 2026-10-28, integrated in dev (cherry-pick `4d3ce50e`)
 - [P8-T36](../audit/p8-t36.md) — reusable horizontal relationship picker; accepted 2026-10-27, integrated in PR #244 (merge `682dbe37`)
 **Deferred beyond the social milestone:** [P8-T34](../tasks/p8-t34.md) keeps the
 future non-social connector direction. It is not a current P8 social release

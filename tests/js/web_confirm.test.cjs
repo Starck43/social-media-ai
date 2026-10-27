@@ -122,7 +122,13 @@ test('template consumers reuse one shell and no native confirms', () => {
         assert.match(text, /data-confirm/); assert.match(text, /name="_csrf"/);
     }
     const source = fs.readFileSync(path.join(root, 'source_detail.html'), 'utf8');
-    assert.match(source, /analytics_count/); assert.match(source, /usage_count/);
+    assert.match(source, /analytics_count/);
+    // Current deletion readiness is computed upstream, not by a raw usage count.
+    assert.match(source, /if can_delete and delete_blocker/);
+    assert.match(source, /disabled title="\{\{ delete_blocker \}\}"/);
+    assert.match(source, /elif can_delete/);
+    assert.match(source, /if is_superuser[^\n]+name="tenant_id"/);
+    assert.match(source, /будет удалён безвозвратно вместе с его аналитикой/);
 });
 
 test('queued close from an earlier use does not dismiss a newly opened dialog', () => {

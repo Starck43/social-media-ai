@@ -138,6 +138,7 @@ def context(mode):
         plan_labels={"free": "Базовый", "pro": "Профессиональный"},
         plan_rows=[dict(key="max_sources", label="Источники", free=3, pro=30)],
         plan_usage={"max_sources": 2},
+        entitlement_policy="synthetic-fixture-policy",
         agent_model_options=[
             dict(id=31, label="Provider / Chat model ($0.0010/$0.0020/1K)", is_default=True, is_effective_default=True),
             dict(id=32, label="ДлинноеНазваниеМодели" * 5, is_default=False, is_effective_default=False),

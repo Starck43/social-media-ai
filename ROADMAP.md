@@ -38,7 +38,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P1
 
-- [P11-T06](docs/tasks/p11-t06.md) Typed use-case contracts, safe errors and presenters — **IN_PROGRESS** · Codex · `codex resume 01a17d52-e51c-7072-81ee-de09e21c0f5f` · `P1` · `C4`
 - [P11-T07](docs/tasks/p11-t07.md) Incremental package-boundary enforcement — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P1` · `C3`
 - [P8-T15](docs/tasks/p8-t15.md) Admin API connectivity, mock and real checks — **BLOCKED** · codex · — · `P1` · `C3`
 - [P8-T17](docs/tasks/p8-t17.md) Model response diagnostics and consent — **BLOCKED** · codex · — · `P1` · `C3`

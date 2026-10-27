@@ -74,3 +74,14 @@ async def test_chat_rolling_plan_is_saved_atomically_then_activated_after_consen
     links.assert_awaited_once_with(12, [4], session=session)
     consent.assert_awaited_once_with(12)
     activate.assert_awaited_once_with(12, is_active=True)
+
+
+async def test_chat_rejects_unknown_job_type_before_plan_projection(monkeypatch):
+    get = AsyncMock()
+    monkeypatch.setattr(tasks, "_get_job_types", lambda: ("collect",))
+    monkeypatch.setattr(AgentTask.objects, "get", get)
+
+    result = await tasks.task_add("Research", "0 9 * * *", "unsupported", task_plan=_plan())
+
+    assert "Unknown job_type" in result["error"]
+    get.assert_not_awaited()

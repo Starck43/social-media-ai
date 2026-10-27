@@ -2458,7 +2458,13 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                 from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
 
                 plan_raw = raw_payload["task_plan"]
-                plan = parse_task_plan(plan_raw)
+                if is_created:
+                    from app.services.task_creation import resolve_task_plan_create
+
+                    creation = resolve_task_plan_create(plan_raw)
+                    plan = creation.plan
+                else:
+                    plan = parse_task_plan(plan_raw)
                 planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
                 cron_value = data.get("cron_expr") or getattr(model, "cron_expr", None)
                 if cron_value != planned_cron:
@@ -2474,7 +2480,12 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                     raise TaskPlanError("Admin scenario must match task_plan.scenario_id")
                 if plan.source_scope != "selected":
                     data["sources"] = []
-                payload = apply_task_plan(payload, plan_raw, job_type=job_type)
+                if is_created:
+                    from app.services.task_creation import project_task_plan_create
+
+                    payload = project_task_plan_create(payload, creation, job_type=job_type).payload
+                else:
+                    payload = apply_task_plan(payload, plan_raw, job_type=job_type)
             from app.services.task_plans import validate_vk_access_retained
 
             validate_vk_access_retained(getattr(model, "payload", None), payload, job_type=job_type)

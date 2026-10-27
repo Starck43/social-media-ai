@@ -493,21 +493,33 @@ def task_add(
         raise typer.Exit(1)
     parsed_source_ids = _split_ints(source_ids)
     if task_plan is not None:
-        from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+        from app.services.task_creation import TaskPlanCreateConflict, prepare_task_plan_create
+        from app.services.task_plans import TaskPlanError
 
         try:
             raw_plan = _json.loads(task_plan)
-            plan = parse_task_plan(raw_plan)
-            planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
-            if cron != planned_cron:
-                raise TaskPlanError("cron must match task_plan.trigger")
-            if source_ids is not None and parsed_source_ids != list(plan.source_ids):
-                raise TaskPlanError("--sources must match task_plan.source_scope and source_ids")
-            if scenario_id is not None and scenario_id != plan.scenario_id:
-                raise TaskPlanError("--scenario must match task_plan.scenario_id")
-            parsed_source_ids = list(plan.source_ids)
-            scenario_id = plan.scenario_id
-            parsed_payload = apply_task_plan(parsed_payload, raw_plan, job_type=job_type)
+            try:
+                prepared = prepare_task_plan_create(
+                    parsed_payload,
+                    raw_plan,
+                    job_type=job_type,
+                    requested_cron=cron,
+                    requested_scenario_id=scenario_id,
+                    requested_source_ids=parsed_source_ids if source_ids is not None else None,
+                    enforce_source_match=True,
+                    conflict_order=("cron_expr", "source_ids", "scenario_id"),
+                )
+            except TaskPlanCreateConflict as error:
+                messages = {
+                    "cron_expr": "cron must match task_plan.trigger",
+                    "scenario_id": "--scenario must match task_plan.scenario_id",
+                    "source_ids": "--sources must match task_plan.source_scope and source_ids",
+                }
+                raise TaskPlanError(messages[error.field]) from None
+            cron = prepared.cron_expr
+            parsed_source_ids = list(prepared.source_ids)
+            scenario_id = prepared.scenario_id
+            parsed_payload = prepared.payload
         except (ValueError, TypeError) as error:
             rprint(f"[red]Invalid task plan: {error}[/red]")
             raise typer.Exit(1) from error

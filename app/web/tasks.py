@@ -1178,10 +1178,13 @@ async def task_create(
 				job_type, cron_expr, payload, window_type, rolling_days, trigger_timezone, vk_access,
 			)
 			if task_plan is not None:
-				from app.services.task_plans import apply_task_plan
+				from app.services.task_creation import prepare_task_plan_create
 
-				payload = apply_task_plan(payload, task_plan, job_type=job_type)
-				parsed_source_ids = list(task_plan["source_ids"])
+				prepared = prepare_task_plan_create(payload, task_plan, job_type=job_type)
+				payload = prepared.payload
+				cron_expr = prepared.cron_expr
+				scenario_id = prepared.scenario_id
+				parsed_source_ids = list(prepared.source_ids)
 		except ValueError as error:
 			add_flash(request, "error", f"Проверьте план задачи: {error}")
 			return RedirectResponse(back, status_code=302)

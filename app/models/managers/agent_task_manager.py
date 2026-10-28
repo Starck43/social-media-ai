@@ -33,9 +33,20 @@ class _RetryAdmissionBusy(Exception):
 class _RetryAdmissionTransaction:
     """Convert retry-busy only after the database transaction rolls back."""
 
-    def __init__(self, session: Any) -> None:
+    def __init__(self, session: Any, *, audit_context: dict[str, Any] | None = None) -> None:
         self.transaction = session.begin()
         self.busy_job = None
+        self.audit_context = audit_context
+
+    def _log(self, method: str, reason_code: str) -> None:
+        if not self.audit_context:
+            return
+        try:
+            from app.services import action_audit
+
+            getattr(action_audit, method)(**self.audit_context, reason_code=reason_code)
+        except Exception:  # noqa: BLE001 - diagnostics must not change transaction outcomes
+            pass
 
     async def __aenter__(self):
         await self.transaction.__aenter__()
@@ -43,10 +54,33 @@ class _RetryAdmissionTransaction:
 
     async def __aexit__(self, exc_type, exc, traceback):
         if isinstance(exc, _RetryAdmissionBusy):
-            await self.transaction.__aexit__(exc_type, exc, traceback)
+            try:
+                await self.transaction.__aexit__(exc_type, exc, traceback)
+            except BaseException:
+                self._log("log_unknown", "commit_ack_unknown")
+                raise
             self.busy_job = exc.job
+            self._log("log_rolled_back", "admission_busy")
             return True
-        return await self.transaction.__aexit__(exc_type, exc, traceback)
+        if exc_type is None:
+            try:
+                return await self.transaction.__aexit__(exc_type, exc, traceback)
+            except BaseException:
+                # A failed commit acknowledgement does not prove rollback.
+                self._log("log_unknown", "commit_ack_unknown")
+                raise
+        try:
+            result = await self.transaction.__aexit__(exc_type, exc, traceback)
+        except BaseException:
+            self._log("log_unknown", "commit_ack_unknown")
+            raise
+        if isinstance(exc, PermissionError):
+            self._log("log_denied", "permission_denied")
+        elif isinstance(exc, ValueError):
+            self._log("log_denied", "operation_refused")
+        else:
+            self._log("log_rolled_back", "transaction_rolled_back")
+        return result
 
 
 def _busy_admission_receipt(task_id: int, job: Any) -> dict[str, Any]:
@@ -982,8 +1016,15 @@ class AgentTaskManager(BaseManager):
             raise ValueError("Task admission requires an aware timestamp")
         if scheduled and (not isinstance(expected_next_run_at, datetime) or expected_next_run_at.utcoffset() is None):
             raise ValueError("Scheduled admission requires an aware observed due timestamp")
+        trusted_user_actor = type(trusted_actor_id) is int and 0 < trusted_actor_id <= 2147483647
+        audit_context = {
+            "tenant_id": tenant_id,
+            "actor_kind": "scheduler" if scheduled else ("user" if trusted_user_actor else "service"),
+            "actor_id": ("scheduler" if scheduled else (trusted_actor_id if trusted_user_actor else "task_runner")),
+            "task_id": task_id,
+        }
         async with async_session_maker() as session:
-            async with _RetryAdmissionTransaction(session) as retry_transaction:
+            async with _RetryAdmissionTransaction(session, audit_context=audit_context) as retry_transaction:
                 # One lock order with direct source admission and staging:
                 # workspace admission gate, then task/staged rows.
                 await JobManager.lock_source_admission(session, tenant_id)
@@ -1380,6 +1421,17 @@ class AgentTaskManager(BaseManager):
                     row.last_error = None
                     if once:
                         row.is_active = False
+                    from ..audit.action_audit_event import ActionAuditEvent
+
+                    await ActionAuditEvent.objects.record_success(
+                        session=session,
+                        actor_kind=audit_context["actor_kind"],
+                        actor_id=audit_context["actor_id"],
+                        action="scheduling.task_admit",
+                        resource_kind="agent_task",
+                        resource_id=row.id,
+                        job_id=job.id,
+                    )
                     receipt = {
                         "status": "enqueued",
                         "task_id": row.id,

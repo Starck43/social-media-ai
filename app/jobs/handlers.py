@@ -1453,17 +1453,165 @@ async def _handle_collect_with_access(
 
 
 async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:
-    """Compatibility entry point; implementation lives in job_handlers.digest."""
-    from app.jobs.job_handlers.digest import handle_digest as execute
+    """Build a digest and publish it to configured channels.
 
-    return await execute(payload, load_task=_load_task, task_payload=_task_payload)
+    Payload:
+        period: 'day' | 'week' | 'month' (default 'day')
+        agent_task_id: int | None — set when triggered by a task (idempotency)
+        scenario_id: int | None — explicit scenario override
+        group_by: str | None — grouping axis override (themes|sources|entities|sentiment|content_type|intent)
+        time_breakdown: bool — enable per-date sub-entries within each group
+
+    Hybrid flow: step 1 builds the algorithmic brief from the task's own sources
+    grouped by the `group_by` axis, step 2 asks the LLM for a narrative over
+    that brief, step 3 publishes the result to every tenant channel with
+    `is_digest_target=True` (plus env-configured channels).
+
+    # TODO(future): per-source digest. If task.sources is non-empty — filter the
+    # aggregation by them (source_ids support is wired into ReportAggregator).
+    # Empty sources list = the whole workspace (current behaviour).
+    """
+    from app.services.digest.builder import build_and_publish
+
+    task = await _load_task(payload.get("agent_task_id"))
+    task_payload = _task_payload(task)
+
+    period = task_payload.get("period", payload.get("period", "day"))
+    if period not in ("day", "week", "month"):
+        return {"status": "failed", "error": f"Invalid period: {period}"}
+    # The task's own sources scope the aggregation; None = whole workspace (the
+    # ReportAggregator reads through the tenant guard either way).
+    source_ids = [s.id for s in (task.sources or [])] if task is not None else None
+
+    # The group_by axis tells the aggregator how to group the brief.
+    scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
+    if not scenario_id and task is not None:
+        scenario_id = getattr(task, "agent_scenario_id", None)
+    group_by = task_payload.get("group_by") or payload.get("group_by") or "themes"
+    time_breakdown = bool(task_payload.get("time_breakdown") or payload.get("time_breakdown"))
+
+    # `--force-refresh` re-sends the digest even when it was already sent for
+    # this task+period (skips the idempotency check).
+    force = bool(task_payload.get("force_refresh") or payload.get("force_refresh"))
+    return await build_and_publish(
+        period=period,
+        agent_task_id=payload.get("agent_task_id"),
+        force=force,
+        source_ids=source_ids,
+        group_by=group_by,
+        time_breakdown=time_breakdown,
+        scenario_id=scenario_id,
+    )
 
 
 async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
-    """Compatibility entry point; implementation lives in job_handlers.prune."""
-    from app.jobs.job_handlers.prune import handle_prune as execute
+    """Retention: trim old finished jobs (default: older than 7 days).
 
-    return await execute(payload, logger=logger, log_id=_log_id, error_kind=_error_kind)
+    Analysis results older than `DATA_RETENTION_MONTHS` calendar months (by
+    last write) are deleted in the current workspace, except rows a bot action
+    still references; unanalysed raw content never outlives that same cutoff.
+
+    Also sweeps raw content nobody ever analysed. `collected_items` is a
+    write-ahead copy, so a collection whose analysis keeps failing (or a run
+    with no job behind it, whose `run_id` is NULL) would keep its rows for
+    ever; this is the ceiling on that. The sweep the table's own docstrings
+    promise was never wired to anything — without it, "a failed analysis keeps
+    the content" quietly becomes "keeps it until the disk fills".
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.config import settings
+    from app.core.database import new_session
+    from app.models import ActionAuditEvent, AIAnalytics, CollectedItem
+    from app.utils.retention import months_before
+
+    now = datetime.now(timezone.utc)
+    action_audit_deleted = 0
+    action_audit_retention_failed = False
+    try:
+        action_audit_deleted = await ActionAuditEvent.objects.delete_expired(now=now)
+    except Exception as error:  # noqa: BLE001 - report a safe lifecycle failure
+        action_audit_retention_failed = True
+        from app.core.tenant_context import current_tenant_id
+
+        logger.warning(
+            "action_audit_retention_failed tenant_id=%s job_id=%s error_code=%s",
+            _log_id(current_tenant_id()),
+            _log_id(payload.get("job_id")),
+            _error_kind(error),
+        )
+    if payload.get("mode") == "job_history":
+        # The active payload configures built-in retention independently of
+        # cron; an explicit run also applies that policy immediately.
+        from app.jobs.lifecycle import retention_policy
+
+        policy = retention_policy(payload)
+        if policy is None:
+            raise ValueError("Некорректный срок хранения истории заданий")
+        from app.core.tenant_context import current_tenant_id
+        from app.jobs.lifecycle import cleanup_terminal_job_history
+
+        deleted_jobs = await cleanup_terminal_job_history(tenant_id=current_tenant_id())
+        return {
+            "status": "policy_saved",
+            "success_hours": policy[0],
+            "failure_hours": policy[1],
+            "deleted": deleted_jobs,
+            "action_audit_deleted": action_audit_deleted,
+            "action_audit_retention_failed": action_audit_retention_failed,
+        }
+
+    retention_months = settings.DATA_RETENTION_MONTHS
+    retention_cutoff = months_before(now, retention_months)
+    # Job history retention is a built-in lifecycle policy. Legacy prune tasks
+    # continue to manage raw and analytics data, but cannot bypass that policy.
+    deleted = 0
+    days = max(1, int(payload.get("days", 7)))
+
+    # Unanalysed raw content: same age budget as the job history. Raw text is
+    # kept only while an analysis might still want it, so `staged_days` follows
+    # `days` unless the task says otherwise.
+    staged_days = min(int(payload.get("staged_days", days)), (now - retention_cutoff).days)
+    staged_deleted = 0
+    session = new_session()
+    try:
+        async with session.begin():
+            staged_deleted = await CollectedItem.objects.delete_older_than(session, staged_days)
+    except Exception as e:  # noqa: BLE001 — a sweep failure must not fail the prune
+        logger.warning(
+            "staged_retention_failed job_id=%s error_code=%s",
+            _log_id(payload.get("job_id")),
+            _error_kind(e),
+        )
+    finally:
+        await session.close()
+
+    # Analysis results: the configured data retention, not the job-history age.
+    analytics_deleted = 0
+    analytics_retention_failed = False
+    try:
+        analytics_deleted = await AIAnalytics.objects.delete_expired(retention_cutoff)
+    except Exception as e:  # noqa: BLE001 — reported in the result, never silently "0 deleted"
+        analytics_retention_failed = True
+        logger.warning(
+            "analytics_retention_failed job_id=%s error_code=%s",
+            _log_id(payload.get("job_id")),
+            _error_kind(e),
+        )
+
+    result = {
+        "deleted": deleted,
+        "staged_deleted": staged_deleted,
+        "staged_days": staged_days,
+        "analytics_deleted": analytics_deleted,
+        "retention_months": retention_months,
+        "action_audit_deleted": action_audit_deleted,
+    }
+    if action_audit_retention_failed:
+        result["action_audit_retention_failed"] = True
+    if analytics_retention_failed:
+        result["analytics_retention_failed"] = True
+    return result
 
 
 async def handle_analyze(

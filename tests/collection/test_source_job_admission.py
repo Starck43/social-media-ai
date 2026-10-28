@@ -17,12 +17,11 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
 
 import pytest
+from source_import_isolation import load_isolated_source
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Table
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import operators
-
-from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 activity = load_isolated_source("isolated_source_activity", ROOT / "app/jobs/source_activity.py")
@@ -103,6 +102,14 @@ class Job(Base):
 
 
 class ContextError(RuntimeError):
+    pass
+
+
+class TaskPlanError(ValueError):
+    pass
+
+
+class EntitlementDenied(RuntimeError):
     pass
 
 
@@ -308,6 +315,26 @@ class Fixture:
                 return job
 
         config = NS(settings=NS(JOB_MAX_ATTEMPTS=3, SCHEDULER_TIMEZONE="UTC"))
+
+        async def required_capabilities(_session, _payload, *, sources=None):
+            tenant_id = TENANT.get()
+            assert type(tenant_id) is int and tenant_id > 0
+            assert all(source.tenant_id == tenant_id for source in (sources or []))
+            return frozenset()
+
+        class EntitlementManager:
+            async def evaluate(self, session, required):
+                assert session.locked == TENANT.get()
+                assert required == frozenset()
+                return NS(allowed=True)
+
+        task_plans = NS(
+            TaskPlanError=TaskPlanError,
+            apply_parsed_task_plan=lambda *_args, **_kwargs: {},
+            read_saved_task_plan=lambda _payload: None,
+            task_plan_timezone=lambda _payload, fallback: fallback,
+            validate_vk_access_retained=lambda *_args, **_kwargs: None,
+        )
         context = NS(
             current_tenant_id=TENANT.get,
             is_bypass=BYPASS.get,
@@ -322,6 +349,10 @@ class Fixture:
                 with_db_session=with_db_session_double(lambda: Session(self)),
             ),
             "app.models.managers.base_manager": NS(BaseManager=ManagerBase),
+            "app.models.managers.entitlement_manager": NS(EntitlementManager=EntitlementManager),
+            "app.services.collection.entitlement_policy": NS(required_capabilities=required_capabilities),
+            "app.services.task_plans": task_plans,
+            "app.services.tenancy.entitlements": NS(EntitlementDenied=EntitlementDenied),
             **dict.fromkeys(("app.models.job", "app.models.scheduling.job"), NS(Job=Job)),
             **dict.fromkeys(("app.models.tenant", "app.models.tenancy.tenant"), NS(Tenant=Tenant)),
             **dict.fromkeys(("app.models.agent_task", "app.models.scheduling.agent_task"), NS(AgentTask=Task)),
@@ -595,7 +626,7 @@ async def test_web_queue_reports_existing_job_without_claiming_it():
     # at application boundaries are replaced; execute/claim is not invoked.
     import ast
 
-    tree = ast.parse((ROOT / "app/web/tasks.py").read_text())
+    tree = ast.parse((ROOT / "app/web/task_use_cases.py").read_text())
     function = next(
         node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "queue_task_now"
     )
@@ -613,7 +644,8 @@ async def test_web_queue_reports_existing_job_without_claiming_it():
         scope,
     )
     assert await scope["queue_task_now"](
-        NS(id=10, tenant_id=7, job_type="collect", payload={}, agent_scenario_id=None)
+        NS(id=10, tenant_id=7, job_type="collect", payload={}, agent_scenario_id=None),
+        initiated_by_user_id=12,
     ) == {"job_id": 9, "status": "running", "already_running": True}
 
 

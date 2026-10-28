@@ -913,12 +913,12 @@ Saved legacy task payloads with `sentiment` or `content_type` normalize to theme
 
 ## Universal social task parity (P8-T29)
 
-Expose the [shared task plan](AGENT_TASKS.md#explicit-task-plans) through existing task commands with read-only preview and canonical input. Keep explicit workspace selection, one-off and recurring tasks, source/scenario management and digest commands. CLI execution does not bypass collection rights or external-send safeguards. See P8-T29 for actual implementation and evidence.
+Expose the [shared task plan](AGENT_TASKS_PLAN.md#explicit-task-plans) through existing task commands with read-only preview and canonical input. Keep explicit workspace selection, one-off and recurring tasks, source/scenario management and digest commands. CLI execution does not bypass collection rights or external-send safeguards. See P8-T29 for actual implementation and evidence.
 
 ### Composed research plans (P8-T40)
 
 `task plan`, `task add --task-plan` and `task update --task-plan` accept the shared
-[version-2 definition](AGENT_TASKS.md#composed-research-and-digest-plans-p8-t40), with
+[version-2 definition](AGENT_TASKS_PLAN.md#composed-research-and-digest-plans-p8-t40), with
 `job_type=analyze`, independent collection/report windows and once/cron triggers.
 Use existing run/pause/update commands for lifecycle control and `task result`
 for retained stage outcomes. A schedule generates a report without sending it.

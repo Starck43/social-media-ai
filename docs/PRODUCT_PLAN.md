@@ -10,7 +10,7 @@ propose → approve when required → deliver/execute → follow up.
 ## Universal social tasks
 
 The owner-approved first vertical and cross-surface contract are in
-[universal tasks](AGENT_TASKS.md#explicit-task-plans). The AI chat is the primary
+[universal tasks](AGENT_TASKS_PLAN.md#explicit-task-plans). The AI chat is the primary
 workspace for the full task lifecycle: request, clarification, preview,
 execution, progress, results and follow-up. Dedicated source, scenario, task,
 schedule and digest pages remain first-class, directly accessible management

@@ -6,7 +6,7 @@ results belong to their original commits and do not certify the integrated `dev`
 revision or the remaining user journeys.
 
 Registry: [ROADMAP](../../ROADMAP.md#p8); status/owner live there.
-Parent: [P8](../phases/p8-first-value-ui.md). Contract: [Universal tasks](../AGENT_TASKS.md#explicit-task-plans).
+Parent: [P8](../phases/p8-first-value-ui.md). Contract: [Universal tasks](../AGENT_TASKS_PLAN.md#explicit-task-plans).
 
 ## Owner decisions and acceptance
 
@@ -162,7 +162,7 @@ available parallel lanes. Refresh ROADMAP before claiming any task.
 
 - `README.md`, `AGENTS.md`, `.agents/skills/task/SKILL.md`: project hierarchy,
   branch ownership and task evidence.
-- `docs/tasks/p8-t29.md`, `docs/AGENT_TASKS.md#explicit-task-plans`: goal, shared contract
+- `docs/tasks/p8-t29.md`, `docs/AGENT_TASKS_PLAN.md#explicit-task-plans`: goal, shared contract
   and acceptance boundary.
 - `docs/COLLABORATION.md` sections Tests, Database and Git and cleanup;
   `tests/AGENTS.md`; `.agents/skills/test-runner/SKILL.md`: runner isolation,

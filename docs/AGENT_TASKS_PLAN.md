@@ -215,3 +215,8 @@ falling back to the workspace timezone when absent. A new paid task is first
 saved inactive; existing personal-payer consent must succeed before activation.
 The explicit launch fixes its goal in the admitted analysis prompt even when
 the reusable scenario template omits the payload placeholder.
+
+---
+
+**Queue/runtime architecture:** For the queue, workers and job execution details,
+see [Agent Tasks and Job Queue](AGENT_TASKS_QUEUE.md).

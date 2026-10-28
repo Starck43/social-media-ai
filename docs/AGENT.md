@@ -176,7 +176,7 @@ PR #22 is integrated, while full durable approval lifecycle work remains open.
 Каждый факт несёт provenance: `source` (`manual`|`learn`|`reflect`),
 `confidence` (0.1–1.0), `evidence_message_id` (сообщение-основание, FK SET NULL).
 
-Обучение — два фоновых jobs (см. `docs/AGENT_TASKS.md`):
+Обучение — два фоновых jobs (см. `docs/AGENT_TASKS_QUEUE.md`):
 
 - `learn` (`app/agent/learning.py::run_learn`) — вытаскивает
   устойчивые факты/предпочтения из новых реплик чата. Watermark в
@@ -289,7 +289,7 @@ for the fresh RuntimeIdentity (PR #22 and later tenancy follow-ups).
 Тарифы — из `llm_models` (`llm_client.price_usage_usd`),
 столько же записывает `analyze()` в top-level `usage` дайджеста. Дайджест и
 `learn`/`reflect` при исчерпанном лимите пропускают LLM-вызов (дайджест при
-этом публикуется без LLM-сводки). См. `docs/AGENT_TASKS.md` для
+этом публикуется без LLM-сводки). См. `docs/AGENT_TASKS_QUEUE.md` для
 общей картины очереди.
 
 ## Tenancy
@@ -347,7 +347,7 @@ or whole-gate acceptance claim.
 
 ## Universal social task interface (P8-T29)
 
-Target contract: [universal tasks](AGENT_TASKS.md#explicit-task-plans). Chat is
+Target contract: [universal tasks](AGENT_TASKS_PLAN.md#explicit-task-plans). Chat is
 the primary workspace for the task lifecycle; dedicated pages remain directly
 accessible for source, scenario, task, schedule and digest management. Current
 chat task tools edit the same configuration as those pages; the permitted
@@ -356,7 +356,7 @@ previews and one-off research keep recurring-task and digest-send confirmation
 gates intact. Chat can collect without analysis via
 `task_execute_once(job_type="collect")`, reopen a saved plan via `task_get`, and
 request bounded progress/results via `task_result`; see the
-[field mapping and lifecycle](AGENT_TASKS.md#chat-task-journey-p8-t39).
+[field mapping and lifecycle](AGENT_TASKS_PLAN.md#chat-task-journey-p8-t39).
 The integrated foundation and its evidence are in
 [P8-T29](tasks/p8-t29.md).
 

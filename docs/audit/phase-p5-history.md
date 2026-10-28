@@ -12,7 +12,7 @@ safely.
 
 ## Social execution boundary
 
-The [universal task contract](../AGENT_TASKS.md#explicit-task-plans) reuses collection lanes and typed analysis. One-off research stays inside fresh rights and payer limits; schedules and sends retain confirmation. Retrieved content cannot grant authority. This direction is not new acceptance evidence.
+The [universal task contract](../AGENT_TASKS_PLAN.md#explicit-task-plans) reuses collection lanes and typed analysis. One-off research stays inside fresh rights and payer limits; schedules and sends retain confirmation. Retrieved content cannot grant authority. This direction is not new acceptance evidence.
 
 ## Closed tasks
 

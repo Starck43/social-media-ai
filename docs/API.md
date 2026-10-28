@@ -1705,7 +1705,7 @@ authorization and budget admission; existing task routes remain compatible.
 
 The same task create/update and `/api/v1/tasks/plan` / `/run/plan` routes accept
 version-2 definitions with bounded `pipeline.stages` and an independent
-`digest.window`; see the [composed contract](AGENT_TASKS.md#composed-research-and-digest-plans-p8-t40).
+`digest.window`; see the [composed contract](AGENT_TASKS_PLAN.md#composed-research-and-digest-plans-p8-t40).
 Use `job_type=analyze`. Scheduled definitions generate reports without sending.
 `GET /api/v1/tasks/{task_id}/result?job_id={job_id}` returns permitted stage
 receipts and a bounded report preview.

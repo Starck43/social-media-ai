@@ -430,3 +430,8 @@ retries, and an inspectable history with no extra service. It does **not** give
 distributed workers across machines or priority queues — if that is ever
 needed, revisit this decision. `app/celery/` is superseded and not started by
 any entrypoint.
+
+---
+
+**Task plan contract:** For the explicit task-plan contract and versioned payload
+schema, see [Agent Task Plans](AGENT_TASKS_PLAN.md).

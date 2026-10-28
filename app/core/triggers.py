@@ -6,7 +6,7 @@ editor renders, and what `describe()` puts in a prompt. One place, so a hint
 cannot describe a rule the evaluator does not apply — or the reverse.
 
 The conditions belong to a *task*: a task says when to look and what to do about
-a match, while a scenario only says how to analyse. See `docs/AGENT_TASKS.md`.
+a match, while a scenario only says how to analyse. See `docs/AGENT_TASKS_QUEUE.md`.
 """
 
 from dataclasses import dataclass, field

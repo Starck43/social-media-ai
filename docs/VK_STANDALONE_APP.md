@@ -63,4 +63,4 @@ Tracked as [Q-5](tasks/q-5.md) in [ROADMAP](../ROADMAP.md#questions).
 
 ## P8-T29 activation evidence
 
-The [universal task contract](AGENT_TASKS.md#explicit-task-plans) requires separate evidence for social API search and known-wall access. Historical profile error 1051 remains tracked in Q-5. Do not assume a Standalone profile change or token refresh resolves it without a bounded real method call. Use official APIs for collection; interactive OAuth authorization is not browser collection.
+The [universal task contract](AGENT_TASKS_PLAN.md#explicit-task-plans) requires separate evidence for social API search and known-wall access. Historical profile error 1051 remains tracked in Q-5. Do not assume a Standalone profile change or token refresh resolves it without a bounded real method call. Use official APIs for collection; interactive OAuth authorization is not browser collection.

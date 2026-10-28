@@ -462,7 +462,7 @@ Every table below inherits tenant_id and timestamps, except agent_task_sources.
 
 [Source](../app/models/scheduling/agent_task.py). Fields: `id`, `name` String(100), `cron_expr` String(100), `job_type` String(20), `payload` JSON; `is_active`; nullable `next_run_at`/`last_run_at` timezone-aware DateTime, `last_status` String(20), `last_error` Text; nullable native `trigger_type`/`action_type` enums and `trigger_config` JSON; nullable `rate_limit_per_hour`/`cooldown_seconds` Integer; nullable `blacklist`/`whitelist` JSON; nullable `agent_scenario_id` FK SET NULL. Migration 0088 removed the unused `requires_approval` column; approval and dry-run behavior belongs to action/runtime contracts, including `BotAction` state.
 
-Unique (`tenant_id`, `name`); relationships: tenant, scenario, sources through association. job_type/payload and textual last_status are application contracts, not DB enums. See [task reference](AGENT_TASKS.md) for supported operations.
+Unique (`tenant_id`, `name`); relationships: tenant, scenario, sources through association. job_type/payload and textual last_status are application contracts, not DB enums. See [task reference](AGENT_TASKS_QUEUE.md) for supported operations.
 
 ### `agent_task_sources`
 

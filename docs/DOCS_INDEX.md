@@ -11,7 +11,7 @@ for the operation, not all parents/related/history links.
 | Role / short task prompts | [PROMPT_EXAMPLES](PROMPT_EXAMPLES.md) → selected shared skill |
 | Claim, READY, audit, synchronization, cleanup | [COLLABORATION](COLLABORATION.md), selected section |
 | Chat tools / sessions / memory | [AGENT](AGENT.md) |
-| Jobs / schedules / typed task plans | [AGENT_TASKS](AGENT_TASKS.md) |
+| Jobs / schedules / typed task plans | [AGENT_TASKS_PLAN](AGENT_TASKS_PLAN.md) |
 | Collection / selection / VK authorization | [COLLECTION](COLLECTION.md), [VK application](VK_STANDALONE_APP.md) |
 | Structured analysis / LLM contracts | [AI pipeline](AI_PIPELINE_AND_PROMPTS.md) |
 | Analytics / reports / delivery | [Analytics](ANALYTICS_AGGREGATION_SYSTEM.md), [DIGEST](DIGEST.md), [CHANNELS](CHANNELS.md), [NOTIFICATIONS](NOTIFICATIONS.md) |

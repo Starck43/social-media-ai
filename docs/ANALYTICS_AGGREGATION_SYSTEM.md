@@ -206,7 +206,7 @@ assertion that analysis never ran or that every absent field should exist.
   sources resolved from task links or all active workspace sources. The shared
   manager admission gate serializes check-and-insert across explicit task/source
   starts; the read-only page hint is not the enforcement boundary. See
-  [source-aware admission](AGENT_TASKS.md#source-aware-run-admission) for lock order,
+  [source-aware admission](AGENT_TASKS_QUEUE.md#source-aware-run-admission) for lock order,
   busy-task bookkeeping and the distinct new-input wakeup boundary.
 - Attempt reset and enqueue share a transaction. Reset failure is not swallowed,
   and enqueue failure cannot commit the reset or report successful admission.

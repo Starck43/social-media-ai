@@ -9,9 +9,10 @@ metadata only; it does not describe authorization or hidden legacy routes.
 `app.main.create_application()` mounts `app.api.v1.entry.router` at `/api/v1`.
 Its router groups are `/auth`, `/users`, `/users/roles`, `/monitoring`, `/ai`,
 `/notifications`, `/dashboard`, `/llm`, `/social`, `/sources`, `/tasks`, and
-`/credentials`. `/health` is mounted separately at `/api/v1/health`. Root
-infrastructure probes are separate paths (`/livez`, `/readyz`, `/health`,
-`/runtimez`).
+`/credentials`. The entry router contributes `/api/v1/health`. A separate
+infrastructure router is mounted without a prefix and serves `/livez`,
+`/readyz`, `/health`, and `/runtimez`; its `/health` does not collide with the
+prefixed API route.
 
 `ApiScopeMiddleware` permits only exact normalized paths in
 `PUBLIC_API_PATHS`: login, registration, refresh-token, health, and the social
@@ -34,7 +35,7 @@ The current route/auth groups are:
 | LLM providers/models | Authenticated owner-scoped personal catalog endpoints; workspace membership is not required. |
 | Credentials | Authenticated, owner-scoped credential operations with endpoint credential permissions. Secrets are not returned. |
 | Social OAuth | Start is authenticated; callback is exact-path middleware-public and validates signed state. |
-| Health and legacy probes | `/api/v1/health` is middleware-public; `/api/v1/test-db` is authenticated; root probes are outside `/api/*`. |
+| Health and legacy probes | `/api/v1/health` is middleware-public; `/api/v1/test-db` is authenticated; root `/health`, `/livez`, `/readyz`, and `/runtimez` are outside `/api/*`. |
 
 ## Compatibility and error behavior
 
@@ -75,38 +76,49 @@ compatibility decision. `/api/v1/health` is distinct from the root `/health`.
 
 ## Bounds and request admission
 
-Some collection responses have explicit bounds: notifications cap `limit` at
-100; dashboard source and analytics lists cap at 100, recent notifications at
-50, topic chains at 200, aggregate top topics at 50, and task-result summaries
-at 10. The users list caps `limit` at 100. In contrast, sources, tasks, and
-scenarios return a complete workspace list without pagination; this can grow
-with tenant data and should receive backward-compatible pagination before
-unbounded growth becomes a resource risk. Preserve existing response shapes
-while adding optional query parameters, then document a migration to a paged
-response if required.
+Existing bounded responses include notifications (max 100), dashboard sources
+and analytics (max 100), recent notifications (max 50), topic chains (max 200),
+aggregate top topics (max 50), task-result summaries (max 10), and users (max
+100). The P11-T08 implementation adds optional `limit` (default 50, max 100) and
+`offset` (default 0) to source, task, credential, and scenario lists, retaining
+their list response shape. LLM provider/model catalog lists already return an
+object with `total`; they now accept the same bounds and keep `total` as the
+filtered count before pagination. Clients that previously received every row
+must page through results to retrieve the full set.
 
 Expensive or externally observable operations include monitoring collection,
 task creation/run/plan execution, digest send, credential diagnostics and
 interactive credential login, OAuth start, and LLM provider/model testing or
-calls. Current application-level `@limiter.limit` use is limited to the admin
-change-password route; there is no general per-actor/workspace admission policy
-or request-correlation middleware. A future limit should key by authenticated
-actor and resolved workspace, return 429 with a stable code and `Retry-After`,
-and use a store with consistent multi-process behavior. Redis must not be enabled
-by default while it is frozen.
+calls. The P11-T08 implementation adds a per-actor active-launch cap of 3 to
+typed one-off task-plan execution. It checks a same-key receipt before applying
+the cap and serializes the count/admission inside the existing workspace
+PostgreSQL admission lock. A cap rejection is HTTP 429 with `Retry-After: 30`.
+This is a database-backed active-work budget, not a general request-rate limit;
+there is no new shared Redis dependency.
 
-Correlation IDs are for tracing only and must never serve as idempotency keys.
-Task plan launch already has a request key/receipt contract; preserve its
-atomic actor/workspace/payload binding and replay semantics. Do not assume the
-one-off `POST /tasks/run` or other side-effecting routes have the same typed
-validation or replay guarantees. Add idempotency only with explicit payload
-binding, expiry, concurrent replay/conflict, in-flight and unknown-effect
-semantics; do not infer success when an external effect is uncertain.
+`RequestContextMiddleware` now echoes a valid `X-Request-ID` containing 1–128
+ASCII letters, digits, underscore, dot, colon, or hyphen, and generates a UUID
+for absent or invalid values. It wraps API authentication so denied responses
+also carry the correlation header. Correlation IDs are for tracing only and
+must never serve as idempotency keys.
+
+Task plan launch has a request key/receipt contract; the admission lock checks
+same-key replay before the active-work budget, and different-payload reuse
+remains a conflict. Do not assume the separate legacy one-off `POST /tasks/run`
+or other side-effecting routes have the same typed validation or replay
+guarantees. Do not infer success when an external effect is uncertain.
+
+The API path boundary now matches `/api` itself or `/api/…`, rather than any
+path that merely starts with those three characters. Operator user-route
+classification likewise uses the `/users` segment boundary, so similarly
+prefixed unrelated paths do not inherit the operator exception.
 
 ## Source references
 
-Inventory checked at `5fd91abd2ed9a2f8dc0a845b459caa8e7fd8d1de` before the
-P11-T08 task claim. Relevant sources: `app/main.py`, `app/api/v1/entry.py`,
+The route/auth baseline was inventoried at
+`5fd91abd2ed9a2f8dc0a845b459caa8e7fd8d1de`; implementation details above
+reflect subsequent P11-T08 edits under review. Relevant sources:
+`app/main.py`, `app/api/v1/entry.py`,
 `app/core/api_scope.py`, `app/api/v1/endpoints/{auth,user,roles,monitoring,
 scenarios,notifications,dashboard,llm_providers,llm_models,social,sources,
 tasks,credentials}.py`, and `app/services/task_contracts.py`.

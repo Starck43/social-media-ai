@@ -4,58 +4,33 @@ Fixes identified issues and improves API consistency.
 """
 
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import Any, Generic, TypeVar, Type, Optional, Sequence, cast, Callable
 
 from fastapi import HTTPException
 from sqlalchemy import ColumnElement, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload, QueryableAttribute, InstrumentedAttribute
+from sqlalchemy.orm import QueryableAttribute
 from sqlalchemy.sql import and_, exists, select, Select
 
 from app.core.database import async_session_maker, with_db_session
 from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
 from app.schemas.common import PaginationResult
 
+from .lookup_compiler import LookupCompiler
+from .query_compilation import QueryCompilationMixin
+from .relation_loading import Prefetch, RelationLoadingMixin, prefetch, relation_path_parts
+
 M = TypeVar("M")
 
 
-@dataclass
-class Prefetch:
-    """Descriptor for a prefetch with optional filters and criteria."""
-
-    path: str | QueryableAttribute[Any]
-    queryset: Optional["QuerySet[Any]"] = None
-    filters: Optional[dict[str, Any]] = None
-    criteria: Sequence[ColumnElement[bool]] = field(default_factory=tuple)
 
 
-def prefetch(
-    path: str | QueryableAttribute[Any],
-    *,
-    queryset: Optional["QuerySet[Any]"] = None,
-    filters: Optional[dict[str, Any]] = None,
-    criteria: Optional[Sequence[ColumnElement[bool]]] = None,
-) -> Prefetch:
-    """Helper to create Prefetch descriptors with optional filters/criteria."""
-    return Prefetch(path=path, queryset=queryset, filters=filters, criteria=criteria or tuple())
 
 
-def relation_path_parts(relation: str) -> list[str]:
-    """Split a relation path into its segments, accepting both spellings.
-
-    `select_related` nested with Django's `"source__platform"` while
-    `prefetch_related` nested with SQLAlchemy's `"role.permissions"`, and each
-    silently ignored the other's spelling: the eager load simply did not happen
-    and the caller met a `DetachedInstanceError` much later, far from the typo.
-    Both spellings now mean the same thing in both methods, and a path that does
-    not resolve raises at the call site instead of loading nothing.
-    """
-    return [part for part in relation.replace(".", "__").split("__") if part]
 
 
-class QuerySet(Generic[M]):
+class QuerySet(QueryCompilationMixin, Generic[M]):
     """
     Lazy query builder supporting method chaining and awaiting.
 
@@ -576,72 +551,6 @@ class QuerySet(Generic[M]):
         """Allow awaiting QuerySet directly."""
         return self.all().__await__()
 
-    def _build_statement_sync(self, *, apply_pagination: bool = True) -> Select[tuple[M]]:
-        """
-        Build the SQLAlchemy Select statement from accumulated parameters (sync version).
-
-        This is a synchronous version for use in admin views where async is not supported.
-        """
-        if self._select_columns is not None:
-            stmt = select(*self._select_columns)
-        else:
-            stmt = select(self._manager.model)
-
-        # Apply explicit joins first, so the where-clause may reference columns
-        # coming from a joined table.
-        for target, onclause, is_outer in self._join_specs:
-            if onclause is not None:
-                stmt = stmt.join(target, onclause, isouter=is_outer)
-            else:
-                stmt = stmt.join(target, isouter=is_outer)
-
-        # Apply a criterion (expressions)
-        if self._criterion:
-            stmt = stmt.where(and_(*self._criterion))
-
-        # Apply keyword filters
-        if self._kw_filters:
-            conditions = LookupCompiler.compile_filters(self._manager.model, self._kw_filters)
-            if conditions:
-                stmt = stmt.where(and_(*conditions))
-
-        # Grouping and aggregate filtering
-        if self._group_by_clauses:
-            stmt = stmt.group_by(*self._group_by_clauses)
-
-        if self._havings:
-            stmt = stmt.having(and_(*self._havings))
-
-        # Apply eager loading (joinedload). Only valid for whole-model rows:
-        # an explicit `values()` list is not an entity result set.
-        if self._eager_loads and self._select_columns is None:
-            for rel in self._eager_loads:
-                # Spelling and typo handling live in one place: a name the model
-                # does not have raises there instead of being skipped here.
-                eager_option = self._manager.build_eager_option(rel)
-                if eager_option is not None:
-                    stmt = stmt.options(eager_option)
-
-        # Apply prefetch loading (selectinload) — whole-model rows only, for the
-        # same reason as joinedload above.
-        if self._prefetch_loads and self._select_columns is None:
-            for pref in self._prefetch_loads:
-                pref_option = self._manager.build_prefetch_option(pref)
-                if pref_option is not None:
-                    stmt = stmt.options(pref_option)
-
-        # Apply ordering
-        if self._orderings:
-            stmt = stmt.order_by(*self._orderings)
-
-        # Apply pagination
-        if apply_pagination:
-            if self._offset_value is not None:
-                stmt = stmt.offset(self._offset_value)
-            if self._limit_value is not None:
-                stmt = stmt.limit(self._limit_value)
-
-        return stmt
 
     async def _build_statement(self, *, apply_pagination: bool = True) -> Select[tuple[M]]:
         """Build the SQLAlchemy Select statement (async version for compatibility)."""
@@ -656,7 +565,7 @@ class QuerySet(Generic[M]):
         return self._kw_filters
 
 
-class BaseManager(Generic[M]):
+class BaseManager(RelationLoadingMixin, Generic[M]):
     """
     Async manager providing query methods for SQLAlchemy models.
 
@@ -1218,205 +1127,9 @@ class BaseManager(Generic[M]):
                     raise
 
     # Helper methods for building queries
-    @staticmethod
-    def resolve_relation_chain(model: Type[Any], path: str) -> list[QueryableAttribute[Any]] | None:
-        """The relationship attributes a relation path names, or None.
-
-        None means "this path is not a chain of relationships on this model" —
-        a typo, or a column where a relationship is expected. Callers raise with
-        the offending name; they must not skip the load quietly.
-        """
-        chain: list[QueryableAttribute[Any]] = []
-        current: Type[Any] = model
-        for part in relation_path_parts(path):
-            attr = getattr(current, part, None)
-            mapper = getattr(getattr(attr, "property", None), "mapper", None)
-            if attr is None or mapper is None:
-                return None
-            chain.append(cast(QueryableAttribute[Any], attr))
-            current = mapper.class_
-        return chain or None
-
-    @staticmethod
-    def _unknown_relation(relation: str, method: str) -> str:
-        return (
-            f"{method}({relation!r}): no such relation on this model. Nested paths "
-            f"may be written 'a.b' or 'a__b'; an unknown name raises instead of "
-            f"quietly loading nothing."
-        )
-
-    def build_prefetch_option(self, relation: str | QueryableAttribute[Any] | InstrumentedAttribute[Any] | Prefetch):
-        """Create the selectinload option for a relation path or Prefetch descriptor."""
-        if isinstance(relation, Prefetch):
-            return self.build_prefetch_from_descriptor(relation)
-
-        if isinstance(relation, (QueryableAttribute, InstrumentedAttribute)):
-            return selectinload(relation)
-
-        if isinstance(relation, str):
-            chain = self.resolve_relation_chain(self.model, relation)
-            if chain is None:
-                raise ValueError(self._unknown_relation(relation, "prefetch_related"))
-            option = selectinload(chain[0])
-            for attr in chain[1:]:
-                option = option.selectinload(attr)
-            return option
-
-        return None
-
-    def build_eager_option(self, relation: str | QueryableAttribute[Any] | InstrumentedAttribute[Any]):
-        """Create the joinedload option for a relation path.
-
-        The joinedload twin of `build_prefetch_option`, with the same spelling
-        rules: `"source__platform"` and `"source.platform"` both resolve, and a
-        name the model does not have raises instead of being skipped.
-        """
-        if isinstance(relation, (QueryableAttribute, InstrumentedAttribute)):
-            return joinedload(relation)
-
-        if isinstance(relation, str):
-            chain = self.resolve_relation_chain(self.model, relation)
-            if chain is None:
-                raise ValueError(self._unknown_relation(relation, "select_related"))
-            option = joinedload(chain[0])
-            for attr in chain[1:]:
-                option = option.joinedload(attr)
-            return option
-
-        return None
-
-    def build_prefetch_from_descriptor(self, descriptor: Prefetch):
-        """Build selectinload with filters from Prefetch descriptor."""
-        path = descriptor.path
-        filters = descriptor.filters or {}
-        criteria = list(descriptor.criteria)
-        queryset = descriptor.queryset
-
-        if isinstance(path, (QueryableAttribute, InstrumentedAttribute)):
-            attr = path
-            mapper = cast(Type[Any], attr.property.mapper.class_)
-        elif isinstance(path, str):
-            if len(relation_path_parts(path)) > 1:
-                if filters or criteria or queryset:
-                    raise ValueError("Filtered prefetch is not supported for nested relation paths")
-                chain = self.resolve_relation_chain(self.model, path)
-                if chain is None:
-                    raise ValueError(self._unknown_relation(path, "prefetch_related"))
-                option = selectinload(chain[0])
-                for nested in chain[1:]:
-                    option = option.selectinload(nested)
-                return option
-            chain = self.resolve_relation_chain(self.model, path)
-            if chain is None:
-                # Was a silent `return None`: a typo'd name loaded nothing and
-                # the failure surfaced later as a DetachedInstanceError.
-                raise ValueError(self._unknown_relation(path, "prefetch_related"))
-            attr = chain[0]
-            mapper = cast(Type[Any], attr.property.mapper.class_)
-        else:
-            return None
-
-        # Build conditions from different sources
-        conditions: list[ColumnElement[bool]] = []
-
-        # 1. From queryset (Django-style)
-        if queryset is not None:
-            if queryset.criterion:
-                conditions.extend(queryset.criterion)
-            if queryset.kw_filters:
-                conditions.extend(LookupCompiler.compile_filters(mapper, queryset.kw_filters))
-
-        # 2. From filters
-        if filters:
-            conditions.extend(LookupCompiler.compile_filters(mapper, filters))
-
-        # 3. From criteria
-        conditions.extend(criteria)
-
-        if conditions:
-            prefetch_attr = attr.and_(*conditions)
-            return selectinload(prefetch_attr)
-
-        return selectinload(attr)
 
 
-class LookupCompiler:
-    """Компилятор lookup-выражений в SQLAlchemy условия."""
 
-    @staticmethod
-    def compile_lookup(model: Type[Any], key: str, value: Any) -> ColumnElement[bool]:
-        """
-        Компилирует lookup выражение в SQLAlchemy условие.
 
-        Поддерживаемые lookups:
-        - field (равенство)
-        - field__in (вхождение в список)
-        - field__isnull (проверка на NULL)
-        - field__contains (подстрока)
-        - field__icontains (подстрока без учета регистра)
-        - field__startswith (начинается с)
-        - field__endswith (заканчивается на)
-        - field__gt (больше)
-        - field__gte (больше или равно)
-        - field__lt (меньше)
-        - field__lte (меньше или равно)
-        - field__ne (не равно)
-        """
-        if "__" in key:
-            field_name, lookup = key.rsplit("__", 1)
-            f = getattr(model, field_name, None)
-            if f is None:
-                raise AttributeError(f"Model {model.__name__} has no attribute '{field_name}'")
 
-            return LookupCompiler._apply_lookup(f, lookup, value)
-        else:
-            f = getattr(model, key, None)
-            if f is None:
-                raise AttributeError(f"Model {model.__name__} has no attribute '{key}'")
-            return f == value
 
-    @staticmethod
-    def _apply_lookup(f: Any, lookup: str, value: Any) -> ColumnElement[bool]:
-        """Применяет конкретный lookup к полю."""
-        if lookup == "in":
-            if not isinstance(value, (list, tuple, set)):
-                raise ValueError(f"'in' lookup requires list, tuple or set, got {type(value).__name__}")
-            return cast(ColumnElement[bool], f.in_(value))
-
-        elif lookup == "isnull":
-            return cast(ColumnElement[bool], f.is_(None) if value else f.is_not(None))
-
-        elif lookup == "contains":
-            return cast(ColumnElement[bool], f.contains(str(value)))
-
-        elif lookup == "icontains":
-            return cast(ColumnElement[bool], f.ilike(f"%{value}%"))
-
-        elif lookup == "startswith":
-            return cast(ColumnElement[bool], f.startswith(str(value)))
-
-        elif lookup == "endswith":
-            return cast(ColumnElement[bool], f.endswith(str(value)))
-
-        elif lookup == "gt":
-            return f > value
-
-        elif lookup == "gte":
-            return f >= value
-
-        elif lookup == "lt":
-            return f < value
-
-        elif lookup == "lte":
-            return f <= value
-
-        elif lookup == "ne":
-            return f != value
-
-        else:
-            raise ValueError(f"Unsupported lookup: {lookup}")
-
-    @staticmethod
-    def compile_filters(model: Type[Any], filters: dict[str, Any]) -> list[ColumnElement[bool]]:
-        """Компилирует словарь фильтров в список условий."""
-        return [LookupCompiler.compile_lookup(model, key, value) for key, value in filters.items()]

@@ -43,7 +43,9 @@ def test_preview_serializes_only_once():
     import asyncio
 
     plans, _ = load_plans()
+    parse = Mock(wraps=plans.parse_task_plan)
     serialize = Mock(wraps=plans.task_plan_block)
+    plans.parse_task_plan = parse
     plans.task_plan_block = serialize
     entitlements = AsyncMock(return_value={"allowed": True})
     vk_access = AsyncMock(return_value={"available": True})
@@ -65,6 +67,7 @@ def test_preview_serializes_only_once():
     )
     response = asyncio.run(module.preview_task_plan(NS(task_plan=plan(), job_type="collect")))
     assert response.task_plan["source_ids"] == [11]
+    assert parse.call_count == 1
     assert serialize.call_count == 1
     entitlements.assert_awaited_once_with(
         {"task_plan": response.task_plan, "collection": response.task_plan["collection"]}

@@ -113,16 +113,15 @@ async def preview_task_plan(
     _user=Depends(require_model_perm("agenttask", ActionType.CREATE)),
 ):
     """Normalize a social-task request without writing rows or calling a platform."""
-    from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan, task_plan_block
+    from app.services.task_plans import TaskPlanError, apply_parsed_task_plan, parse_task_plan
 
     try:
         plan = parse_task_plan(request.task_plan)
-        apply_task_plan({}, request.task_plan, job_type=request.job_type)
+        normalized = apply_parsed_task_plan({}, plan, job_type=request.job_type)["task_plan"]
     except (TaskPlanError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
     if request.job_type not in {"collect", "analyze"}:
         raise HTTPException(status_code=400, detail="Unsupported job type for a social task plan")
-    normalized = task_plan_block(plan)
     from app.services.social.vk_task_access import preview_vk_access
 
     return TaskPlanPreviewResponse(

@@ -22,8 +22,9 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
 3. [P8-T39](../audit/p8-t39.md) — DONE 2026-10-28: chat collect/analyze lifecycle,
    saved-plan follow-up and direct management; accepted
    `eef36492ea7bed5a683806c5d9cbbc7985fa8d0c`, PR #270.
-4. [P8-T40](../tasks/p8-t40.md) — compose collect, analyze and digest generation
-   for one-off and scheduled runs, reusing existing jobs and digest services.
+4. [P8-T40](../audit/p8-t40.md) — DONE 2026-10-28: composed collect/analyze/digest
+   runs and schedules, separate report windows and confirmed frozen-report delivery;
+   accepted `f66795cf0242200a53853bb2b1e9b01da595394d`, PR #271.
 5. [P8-T41](../tasks/p8-t41.md) — accept one bounded, evidence-linked
    VK research-to-digest journey at the exact integrated revision.
 6. [P8-T33](../tasks/p8-t33.md) — optional extension beyond the minimum pilot:

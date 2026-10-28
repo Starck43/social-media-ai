@@ -21,7 +21,7 @@ STAGED_LABEL = "ошибок обработки накопленных данн�
 
 
 def load_summary_functions():
-    path = ROOT / "app/web/tasks.py"
+    path = ROOT / "app/web/task_presenters.py"
     tree = ast.parse(path.read_text())
     functions = {
         "_plural", "_stat", "_as_int", "_run_outcome", "_job_summary", "_cancel_info",

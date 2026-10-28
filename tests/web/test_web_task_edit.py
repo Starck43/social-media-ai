@@ -578,7 +578,7 @@ async def test_the_task_row_rolls_back_when_only_the_link_write_fails(
     with no links, i.e. pointed at every active source.
     """
     from app.models.managers.agent_task_manager import AgentTaskManager
-    from app.web import tasks as tasks_web
+    from app.web import task_routes as tasks_web
 
     user, tenant_id = await _register(client, "EditRollback")
     scenario = task = source = surviving_source = None

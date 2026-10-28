@@ -1,8 +1,9 @@
 """Source-isolated P11-T09 checks: actual policy, contracts and one-use approval.
 
 Run with Python directly (unittest): no root DB conftest, app bootstrap, sockets,
-paid providers, migrations or runtime startup. Toolset declaration coverage uses
-AST bodies replaced by inert stubs; this is NOT application/DB acceptance.
+paid providers, migrations or runtime startup. Declaration coverage includes AST
+stubs and real toolset lazy imports with infrastructure doubles/network traps;
+this is NOT application/DB acceptance.
 """
 
 from __future__ import annotations
@@ -239,6 +240,110 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("PRIVATE", await self.tools.execute(spec.name, {"value": 1}))
         with self.assertRaises(self.contracts.ToolInputError):
             spec.contract.arguments({"value": 1234567890123456789012345}, budget)
+
+    async def test_nested_non_json_values_never_reach_handler(self):
+        async def payload(value: dict[str, Any]) -> dict[str, Any]:
+            return await self.handler(value=value)
+
+        self.tools.tool(
+            name="payload",
+            description="Nested JSON boundary",
+            parameters={"type": "object", "properties": {"value": {"type": "object"}}, "required": ["value"]},
+            required_permission="collection.source.update",
+        )(payload)
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+            for value in ({"nested": {1: "coerced key"}}, {"nested": (1, 2)}, {"nested": float("nan")}):
+                with self.subTest(value=value):
+                    with self.assertRaises(self.contracts.ToolInputError):
+                        await self.tools.call_tool("payload", {"value": value})
+                    self.assertEqual(
+                        json.loads(await self.tools.execute("payload", {"value": value}))["code"], "invalid_arguments"
+                    )
+        self.handler.assert_not_awaited()
+
+    async def test_nested_non_json_results_are_rejected(self):
+        spec = self.register()
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+            for value in ({"nested": {1: "coerced key"}}, {"nested": (1, 2)}):
+                self.handler.return_value = value
+                with self.subTest(value=value):
+                    with self.assertRaises(self.contracts.ToolResultError):
+                        await self.tools.call_tool(spec.name, {"value": 1})
+                    self.assertEqual(
+                        json.loads(await self.tools.execute(spec.name, {"value": 1}))["code"], "tool_contract_error"
+                    )
+
+    def test_real_toolset_lazy_import_and_cache_with_infrastructure_doubles(self):
+        import importlib
+        from pathlib import Path
+        from types import ModuleType
+
+        root = Path(__file__).resolve().parents[2]
+
+        def package(name, path):
+            module = ModuleType(name)
+            module.__path__ = [str(path)]
+            return module
+
+        class Model:
+            pass
+
+        tree = ast.parse((root / "app/jobs/handlers.py").read_text())
+        handler_map = next(
+            n.value
+            for n in tree.body
+            if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "HANDLERS" for t in n.targets)
+        )
+        job_names = [ast.literal_eval(k) for k in handler_map.keys]
+        launch = load_source("_p11_t09_real_launch", "app/services/task_contracts.py")
+        modules = {
+            "app": package("app", root / "app"),
+            "app.agent": package("app.agent", root / "app/agent"),
+            "app.core": package("app.core", root / "app/core"),
+            "app.services": package("app.services", root / "app/services"),
+            "app.services.ai": package("app.services.ai", root / "app/services/ai"),
+            "app.core.permissions": self.perms,
+            "app.core.access_catalog": self.catalog,
+            "app.agent.confirmation": self.confirmation,
+            "app.agent.tool_contracts": self.contracts,
+            "app.services.llm_tool_serialization": self.wire,
+            "app.models": module_with(AgentScenario=Model, LLMModel=Model, LLMProvider=Model),
+            "app.models.managers": package("app.models.managers", root / "app/models/managers"),
+            "app.models.managers.llm_model_manager": module_with(LLMModelManager=Model),
+            "app.services.ai.llm_client": module_with(LLMClientFactory=Model, journal_chat_attempt=AsyncMock()),
+            "app.services.ai.reporting": module_with(ReportAggregator=Model),
+            "app.services.task_contracts": launch,
+            "app.jobs": package("app.jobs", root / "app/jobs"),
+            "app.jobs.handlers": module_with(HANDLERS=dict.fromkeys(job_names)),
+        }
+        with (
+            patch.dict(sys.modules, modules),
+            patch("socket.socket.connect", side_effect=AssertionError("No network")),
+            patch("socket.getaddrinfo", side_effect=AssertionError("No DNS")),
+        ):
+            for name in list(sys.modules):
+                if name == "app.agent.tools" or name.startswith("app.agent.toolset"):
+                    sys.modules.pop(name)
+            tools = importlib.import_module("app.agent.tools")
+            toolset = importlib.import_module("app.agent.toolset")
+            expected = set()
+            for path in (root / "app/agent/toolset").glob("*.py"):
+                for node in ast.walk(ast.parse(path.read_text())):
+                    if isinstance(node, ast.AsyncFunctionDef):
+                        for decorator in node.decorator_list:
+                            if isinstance(decorator, ast.Call) and getattr(decorator.func, "id", "") == "tool":
+                                expected.add(
+                                    next(ast.literal_eval(k.value) for k in decorator.keywords if k.arg == "name")
+                                )
+            self.assertEqual(set(tools.TOOL_REGISTRY), expected)
+            for spec in tools.all_tools():
+                module = sys.modules[spec.handler.__module__]
+                self.assertTrue(spec.handler.__module__.startswith("app.agent.toolset."))
+                self.assertIs(spec.handler, getattr(module, spec.handler.__name__))
+            before = dict(tools.TOOL_REGISTRY)
+            self.assertIs(importlib.import_module("app.agent.toolset"), toolset)
+            self.assertEqual(dict(tools.TOOL_REGISTRY), before)
+            self.assertNotIn("app.core.config", set(sys.modules) - set(modules))
 
     def test_all_real_declarations_register_without_app_or_db_bootstrap(self):
         from pathlib import Path

@@ -69,7 +69,9 @@ execution. Nested unstructured JSON objects remain use-case validated. Inputs
 are copied without coercion/default insertion, preserving confirmation digests.
 Results retain their annotated container contract (existing dict[Any] payloads
 are not newly claimed to have field-by-field DTO validation) and must be finite
-JSON-serializable values. `call_tool` preserves raising/error-dict semantics;
+JSON values. Python-only tuples and non-string object keys are rejected at every
+depth, including nested `Any` payloads; serialization must not silently normalize
+what the handler receives. `call_tool` preserves raising/error-dict semantics;
 `execute` returns fixed, payload-free contract/permission/failure messages.
 
 Every declaration has a `ToolBudget`: defaults are 64 KiB arguments, 1 MiB result

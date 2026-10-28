@@ -40,7 +40,33 @@ class ToolBudget:
             raise ValueError("Invalid tool budget")
 
 
+def _check_json_value(value: Any) -> None:
+    """Reject Python-only values before json.dumps can silently coerce them.
+
+    In particular, integer object keys and tuples nested under Any otherwise
+    become strings/arrays despite input validation returning the original object.
+    """
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("Non-finite JSON number")
+        return
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if not isinstance(key, str):
+                raise TypeError("JSON object keys must be strings")
+            _check_json_value(child)
+        return
+    if isinstance(value, list):
+        for child in value:
+            _check_json_value(child)
+        return
+    raise TypeError("Unsupported JSON value")
+
+
 def json_size(value: Any) -> int:
+    _check_json_value(value)
     return len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8"))
 
 

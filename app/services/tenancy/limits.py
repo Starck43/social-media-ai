@@ -81,7 +81,7 @@ async def check_source_limit(tenant: Any) -> Optional[str]:
     Deactivated rows still count: the user can bring one back, so ignoring them
     would let a workspace sit over its quota invisibly.
     """
-    from app.models.source import Source
+    from app.models.collection.source import Source
 
     total = await Source.objects.count()
     reason = _over_limit(tenant, "max_sources", total)
@@ -225,7 +225,7 @@ async def plan_overage(tenant_id: int, plan: str) -> list[str]:
     from app.models.agent_scenario import AgentScenario
     from app.models.agent_task import AgentTask
     from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager, tenants
-    from app.models.source import Source
+    from app.models.collection.source import Source
 
     tenant = await tenants.get(id=tenant_id)
     if tenant is None:

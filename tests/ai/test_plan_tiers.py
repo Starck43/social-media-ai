@@ -244,7 +244,7 @@ async def _platform():
 async def _source(tenant_id: int, platform, suffix: str, *, arrange_user):
     """A source row in `tenant_id`, for filling a workspace up to its ceiling."""
     from app.core.tenant_context import tenant_scope
-    from app.models.source import Source
+    from app.models.collection.source import Source
     from app.types import SourceType
 
     previous_user = get_current_user()
@@ -302,7 +302,7 @@ async def test_a_deactivated_source_still_holds_its_slot(plan_ws, plan_arrange_u
     leaving 4 rows against a ceiling of 3 once the old one is reactivated.
     """
     from app.core.tenant_context import tenant_scope
-    from app.models.source import Source
+    from app.models.collection.source import Source
 
     platform = await _platform()
 

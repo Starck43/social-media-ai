@@ -7,6 +7,7 @@
     "tests/security/test_web_session_cookie_security.py": "AST-extracted factory with in-memory doubles; no app import.",
     "tests/web/test_web_task_selection_form.py": "AST/text-only form and template assertions; pytest fixtures only.",
     "tests/tooling/test_p11_t03_offline_ci.py": "Stdlib/tool-only regression checks of CI guards and static inspection.",
+    "tests/tooling/test_p11_t07_package_contract.py": "Stdlib AST-only CREATE-core contract and import-form/parent/transitive drift fixtures; no application imports.",
     "tests/tooling/test_p11_t15_package_contract.py": "Tool-only TOML/AST/locked export checks; no app imports, env loading, resolver or DB fixtures.",
     "tests/tooling/test_p11_t16_navigation.py": "Stdlib/tool-only generated-table rendering and AST/path contracts; no app imports, framework dependencies, resolver or DB fixtures."
   },

@@ -257,6 +257,33 @@
                                 {% set r = job.result if job.result is mapping else {} %}
                                 {% set items = r.get('items', r.get('new_items', '—')) %}
                                 {{ items }}
+                                {% set pipeline = pipeline_outcomes.get(job.id) %}
+                                {% if pipeline %}
+                                    <div class="mt-2 space-y-1 text-xs">
+                                        {% for stage_name, title in [('collect', 'Сбор'), ('analyze', 'Анализ'), ('digest', 'Дайджест')] %}
+                                            {% set stage = pipeline.stages.get(stage_name) %}
+                                            {% if stage %}
+                                                <div>{{ title }}: {{ {'complete': 'готово', 'started': 'выполняется', 'failed': 'ошибка', 'skipped': 'пропущено', 'unknown': 'статус неизвестен'}.get(stage.status, stage.status) }}
+                                                    {% if stage.counts %}· {{ stage.counts }}{% endif %}
+                                                    {% if stage.status == 'review_required' %}· требуется проверка{% endif %}
+                                                    {% if stage_name == 'digest' and stage.generated %}· создан без отправки{% endif %}
+                                                    {% if stage_name == 'digest' and stage.report_start %}· {{ stage.report_start }} — {{ stage.report_end }}{% endif %}
+                                                    {% if stage.delivery %}· доставка: {{ stage.delivery.status }} ({{ stage.delivery.sent_parts|default(0) }}/{{ stage.delivery.total_parts|default(0) }} частей){% endif %}
+                                                </div>
+                                                {% if stage.preview_text %}<details class="mt-1"><summary class="cursor-pointer">Предпросмотр дайджеста</summary><pre class="mt-1 whitespace-pre-wrap font-sans">{{ stage.preview_text }}</pre></details>{% endif %}
+                                                {% if stage_name == 'digest' and stage.generated and stage.preview_text and perms_can(request, 'digestrun', 'create') %}
+                                                    <form method="post" action="/app/tasks/{{ task.id }}/digest/{{ job.id }}/send"
+                                                          data-confirm="Отправить сохранённый дайджест адресатам этого workspace?"
+                                                          data-confirm-title="Подтвердить отправку" data-confirm-label="Отправить дайджест">
+                                                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                                        <input type="hidden" name="confirmed" value="true">
+                                                        <button type="submit" class="mt-1 rounded border border-cyan-500 px-2 py-1 text-cyan-700 dark:text-cyan-300">Отправить дайджест…</button>
+                                                    </form>
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
                             {% else %}
                                 —
                             {% endif %}

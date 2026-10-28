@@ -462,7 +462,8 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
         # A policy refusal is confirmed and terminal, not uncertain provider work.
         entitlement_denied = isinstance(error, EntitlementDenied)
         stored_error = (
-            str(error) if known_delivery_failure or entitlement_denied
+            str(error)
+            if known_delivery_failure or entitlement_denied
             else f"{OUTCOME_UNCONFIRMED_PREFIX}{_error_kind(error)}"
         )
         try:
@@ -507,6 +508,8 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
     payload = dict(job.payload or {})
     payload["agent_task_id"] = job.agent_task_id
     payload["job_id"] = job.id
+    payload["attempts"] = job.attempts
+    payload["_prior_result"] = dict(job.result) if isinstance(getattr(job, "result", None), dict) else {}
     payload["_trusted_initiated_by_user_id"] = job.initiated_by_user_id
     with tenant_scope(job.tenant_id):
         checkpoint_mode = False

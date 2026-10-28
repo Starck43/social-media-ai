@@ -189,6 +189,10 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task digest | --hashtags | option | str | no | null |
 | python -m cli.main task digest | --influencers | option | str | no | null |
 | python -m cli.main task digest | --topics | option | str | no | null |
+| python -m cli.main task digest-send | task_id | argument | int | yes | null |
+| python -m cli.main task digest-send | --job-id | option | int | yes | null |
+| python -m cli.main task digest-send | --tenant | option | str | yes | null |
+| python -m cli.main task digest-send | --confirm | option | boolean | no | false |
 | python -m cli.main task entitlements | --tenant | option | str | yes | null |
 | python -m cli.main task learn | --task, -t | option | str | no | null |
 | python -m cli.main task learn | --sources, -s | option | str | no | null |

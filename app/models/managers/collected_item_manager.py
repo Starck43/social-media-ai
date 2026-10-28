@@ -8,15 +8,25 @@ has consumed them — so every method is either "put", "what is waiting" or
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
-from sqlalchemy import JSON, and_, bindparam, case, func, or_, select, text as sa_text
+from sqlalchemy import JSON, and_, bindparam, case, func, or_, select
+from sqlalchemy import text as sa_text
 
 from app.core.config import settings
 from app.utils.content_attachments import normalize_attachments
 
 from .base_manager import BaseManager
+
+
+def _bounded_content_hashes(values: Sequence[str] | None) -> list[str]:
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        return []
+    return list(
+        dict.fromkeys(value for value in values if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value))
+    )[:2000]
 
 
 def _staged_mutation_scope() -> tuple[str, dict[str, int]]:
@@ -125,10 +135,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             count_params[f"tenant_id_{index}"] = tenant_id
             count_params[f"source_id_{index}"] = source_id
         stored = await session.execute(
-            sa_text(
-                f"SELECT count(*) FROM {table} WHERE run_id = :run_id "
-                f"AND ({' OR '.join(scope_clauses)})"
-            ),
+            sa_text(f"SELECT count(*) FROM {table} WHERE run_id = :run_id " f"AND ({' OR '.join(scope_clauses)})"),
             count_params,
         )
         return int(stored.scalar() or 0)
@@ -179,13 +186,21 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             else:
                 clause.extend((model.external_id.is_(None), model.content_hash == anonymous_hash))
             identity_clauses.append(and_(*clause))
-        persisted = (await session.execute(
-            select(model).where(
-                model.tenant_id == tenant_id,
-                model.source_id == source_id,
-                or_(*identity_clauses),
-            ).with_for_update()
-        )).scalars().all()
+        persisted = (
+            (
+                await session.execute(
+                    select(model)
+                    .where(
+                        model.tenant_id == tenant_id,
+                        model.source_id == source_id,
+                        or_(*identity_clauses),
+                    )
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
         by_identity: dict[tuple[str, str | None, str | None], Any] = {}
         for stored in persisted:
             key = (
@@ -228,6 +243,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         """
         from sqlalchemy import cast, select
         from sqlalchemy.dialects.postgresql import JSONB, array, insert
+
         from app.core.tenant_context import current_tenant_id, is_bypass
         from app.models import AIAnalytics
 
@@ -263,11 +279,20 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             expected[identity] = row
         model = self.model
         scope = (model.tenant_id == tenant_id, model.source_id == source_id)
-        existing = (await session.execute(select(
-            model.external_id, model.content_hash, model.selection_status,
-        ).where(
-            *scope, model.external_id.in_(list(expected)),
-        ).with_for_update())).all()
+        existing = (
+            await session.execute(
+                select(
+                    model.external_id,
+                    model.content_hash,
+                    model.selection_status,
+                )
+                .where(
+                    *scope,
+                    model.external_id.in_(list(expected)),
+                )
+                .with_for_update()
+            )
+        ).all()
         present = {external_id: (digest, status) for external_id, digest, status in existing}
         missing = []
         for identity, row in expected.items():
@@ -286,34 +311,74 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         # One scoped coverage lookup for the whole batch, not one round trip per
         # post. JSONB ?| is only a prefilter; malformed/non-array ledgers cannot
         # become receipt evidence when decoding the returned summaries below.
-        summaries = (await session.execute(select(AIAnalytics.summary_data).where(
-            AIAnalytics.tenant_id == tenant_id, AIAnalytics.source_id == source_id,
-            cast(AIAnalytics.summary_data, JSONB)["content_hashes"].has_any(
-                array(list(dict.fromkeys(row["content_hash"] for row in missing)))
-            ),
-        ))).scalars().all()
+        summaries = (
+            (
+                await session.execute(
+                    select(AIAnalytics.summary_data).where(
+                        AIAnalytics.tenant_id == tenant_id,
+                        AIAnalytics.source_id == source_id,
+                        cast(AIAnalytics.summary_data, JSONB)["content_hashes"].has_any(
+                            array(list(dict.fromkeys(row["content_hash"] for row in missing)))
+                        ),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         covered = {
-            digest for summary in summaries if type(summary) is dict
-            and type(summary.get("content_hashes")) is list
-            for digest in summary["content_hashes"] if type(digest) is str
+            digest
+            for summary in summaries
+            if type(summary) is dict and type(summary.get("content_hashes")) is list
+            for digest in summary["content_hashes"]
+            if type(digest) is str
         }
-        pending = [await self._apply_tenant(session, {
-            **row, "attachments": normalize_attachments(row.get("attachments")),
-        }) for row in missing if row["content_hash"] not in covered]
+        pending = [
+            await self._apply_tenant(
+                session,
+                {
+                    **row,
+                    "attachments": normalize_attachments(row.get("attachments")),
+                },
+            )
+            for row in missing
+            if row["content_hash"] not in covered
+        ]
         if not pending:
             return 0
-        inserted = (await session.execute(insert(model).values(pending).on_conflict_do_nothing(
-            index_elements=[model.source_id, model.content_type, model.external_id],
-        ).returning(model.external_id))).scalars().all()
+        inserted = (
+            (
+                await session.execute(
+                    insert(model)
+                    .values(pending)
+                    .on_conflict_do_nothing(
+                        index_elements=[model.source_id, model.content_type, model.external_id],
+                    )
+                    .returning(model.external_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         # A concurrent non-admission writer must not turn a conflicting identity
         # into a successful receipt. Read every pending identity back exactly.
-        stored = {external_id: (digest, status) for external_id, digest, status in (
-            await session.execute(select(
-                model.external_id, model.content_hash, model.selection_status,
-            ).where(
-                *scope, model.external_id.in_([row["external_id"] for row in pending]),
-            ).with_for_update())
-        ).all()}
+        stored = {
+            external_id: (digest, status)
+            for external_id, digest, status in (
+                await session.execute(
+                    select(
+                        model.external_id,
+                        model.content_hash,
+                        model.selection_status,
+                    )
+                    .where(
+                        *scope,
+                        model.external_id.in_([row["external_id"] for row in pending]),
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        }
         for row in pending:
             record = stored.get(row["external_id"])
             if record is None or record[0] != row["content_hash"]:
@@ -331,6 +396,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         include_review: bool = False,
         start_date: Any = None,
         end_date: Any = None,
+        content_hashes: Sequence[str] | None = None,
     ) -> list[CollectedItem]:
         """The raw items waiting for this source, newest first.
 
@@ -348,7 +414,12 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         """
         from app.models.collection.collected_item import CollectedItem
 
+        hashes = _bounded_content_hashes(content_hashes) if content_hashes is not None else None
+        if hashes == []:
+            return []
         query = self.filter(source_id=source_id)
+        if hashes is not None:
+            query = query.filter(CollectedItem.content_hash.in_(hashes))
         if not include_exhausted:
             query = query.filter(CollectedItem.analyze_attempts < CollectedItem.give_up_after_attempts)
         if not include_review:
@@ -363,9 +434,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             query = query.filter(CollectedItem.published_at <= end_date)
         return list(await query.order_by(CollectedItem.published_at.desc().nullslast()).limit(limit))
 
-    async def exhausted_count(
-        self, source_id: int, *, start_date: Any = None, end_date: Any = None
-    ) -> int:
+    async def exhausted_count(self, source_id: int, *, start_date: Any = None, end_date: Any = None) -> int:
         """How many staged rows for a source have burned their ceiling.
 
         `start_date`/`end_date` scope the count to a content window — the same
@@ -391,11 +460,17 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         include_review: bool = False,
         start_date: Any = None,
         end_date: Any = None,
+        content_hashes: Sequence[str] | None = None,
     ) -> int:
         """Count the fixed staged window, including exhausted rows."""
         from app.models.collection.collected_item import CollectedItem
 
+        hashes = _bounded_content_hashes(content_hashes) if content_hashes is not None else None
+        if hashes == []:
+            return 0
         query = self.filter(source_id=source_id)
+        if hashes is not None:
+            query = query.filter(CollectedItem.content_hash.in_(hashes))
         if not include_review:
             query = query.filter(
                 or_(CollectedItem.selection_status.is_(None), CollectedItem.selection_status == "selected")
@@ -475,9 +550,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         from app.models.collection.collected_item import CollectedItem
 
         return list(
-            await self.filter(run_id=run_id)
-            .order_by(CollectedItem.published_at.desc().nullslast())
-            .limit(limit)
+            await self.filter(run_id=run_id).order_by(CollectedItem.published_at.desc().nullslast()).limit(limit)
         )
 
     async def hashes_for_source(self, source_id: int) -> set[str]:
@@ -520,9 +593,9 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         tenant_clause, tenant_params = _staged_mutation_scope()
         from app.models import Source
 
-        source_tenant_id = (await session.execute(
-            select(Source.tenant_id).where(Source.id == source_id)
-        )).scalar_one_or_none()
+        source_tenant_id = (
+            await session.execute(select(Source.tenant_id).where(Source.id == source_id))
+        ).scalar_one_or_none()
         if type(source_tenant_id) is not int or source_tenant_id <= 0:
             raise ValueError("content_source_invalid")
         if tenant_id is None:
@@ -594,10 +667,15 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         from app.services.ai.scenario_schema import compile_scenario_output
         from app.utils.date_parsing import universal_date_parser
 
-        rows = (await session.execute(select(CollectedItem.content_hash, CollectedItem.published_at).where(
-            CollectedItem.tenant_id == tenant_id, CollectedItem.source_id == source_id,
-            CollectedItem.content_hash.in_(list(hashes)),
-        ))).all()
+        rows = (
+            await session.execute(
+                select(CollectedItem.content_hash, CollectedItem.published_at).where(
+                    CollectedItem.tenant_id == tenant_id,
+                    CollectedItem.source_id == source_id,
+                    CollectedItem.content_hash.in_(list(hashes)),
+                )
+            )
+        ).all()
         dates = {digest: (published.date() if published is not None else None) for digest, published in rows}
         contexts: list[tuple[Any, dict[str, Any], dict[str, Any]]] = []
         task_manager = AgentTaskManager()
@@ -609,9 +687,13 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         ).limit(200)
         queued_task_ids = {job.agent_task_id for job in jobs if job.agent_task_id}
         queued_payloads = {job.agent_task_id: job.payload for job in jobs if job.agent_task_id}
-        queued = await task_manager.filter(
-            tenant_id=tenant_id, id__in=list(queued_task_ids), job_type__in=["analyze", "collect"]
-        ).prefetch_related("sources", "agent_scenario") if queued_task_ids else []
+        queued = (
+            await task_manager.filter(
+                tenant_id=tenant_id, id__in=list(queued_task_ids), job_type__in=["analyze", "collect"]
+            ).prefetch_related("sources", "agent_scenario")
+            if queued_task_ids
+            else []
+        )
         known_ids = set()
         for task in scheduled:
             if task.id in known_ids:
@@ -689,7 +771,8 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
                 start = start_value.date() if start_value else None
                 end = end_value.date() if end_value else None
             eligible = {
-                digest for digest in hashes
+                digest
+                for digest in hashes
                 if dates.get(digest) is None
                 or ((start is None or dates[digest] >= start) and (end is None or dates[digest] <= end))
             }
@@ -744,10 +827,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             params["tenant_id"] = tenant_id
         params["cutoff"] = datetime.now(timezone.utc) - timedelta(days=days)
         result = await session.execute(
-            sa_text(
-                f"DELETE FROM {settings.DB_SCHEMA}.collected_items "
-                "WHERE created_at < :cutoff" + tenant_clause
-            ),
+            sa_text(f"DELETE FROM {settings.DB_SCHEMA}.collected_items " "WHERE created_at < :cutoff" + tenant_clause),
             params,
         )
         return int(result.rowcount or 0)

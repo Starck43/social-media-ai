@@ -38,11 +38,7 @@ def web_attention_criteria(job_model):
         value("status").in_(("partial", "partial_success", "failed", "error", "requires_review")),
         *(value(key).notin_(("", "0", "false", "null", "none")) for key in counters),
         *(value(key).in_(("true", "1", "yes")) for key in review_flags),
-        *(
-            value(key).contains(code)
-            for key in code_fields
-            for code in review_codes
-        ),
+        *(value(key).contains(code) for key in code_fields for code in review_codes),
     )
 
 
@@ -329,9 +325,9 @@ class JobManager(BaseManager["Job"]):
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
 
+        from app.models.collection.source import Source
         from app.models.scheduling.agent_task import AgentTask
         from app.models.scheduling.job import Job
-        from app.models.collection.source import Source
 
         jobs = list(
             (
@@ -374,9 +370,7 @@ class JobManager(BaseManager["Job"]):
         task_sources = {
             task.id: {source.id for source in task.sources if source.tenant_id == tenant_id} for task in tasks
         }
-        task_payloads = {
-            task.id: task.payload if isinstance(task.payload, dict) else {} for task in tasks
-        }
+        task_payloads = {task.id: task.payload if isinstance(task.payload, dict) else {} for task in tasks}
         for job in jobs:
             if job.job_type == "collect":
                 payload = job.payload if isinstance(job.payload, dict) else {}
@@ -405,8 +399,8 @@ class JobManager(BaseManager["Job"]):
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
         from app.jobs.replay_policy import replay_block_reason
         from app.jobs.source_activity import SOURCE_JOB_TYPES, source_conflict
-        from app.models.scheduling.job import Job as JobModel
         from app.models.collection.source import Source
+        from app.models.scheduling.job import Job as JobModel
 
         tenant_id = current_tenant_id()
         actor = get_current_user()
@@ -425,9 +419,7 @@ class JobManager(BaseManager["Job"]):
                 await self.lock_source_admission(session, tenant_id)
                 parent = (
                     await session.execute(
-                        select(JobModel)
-                        .where(JobModel.id == job_id, JobModel.tenant_id == tenant_id)
-                        .with_for_update()
+                        select(JobModel).where(JobModel.id == job_id, JobModel.tenant_id == tenant_id).with_for_update()
                     )
                 ).scalar_one_or_none()
                 block_reason = replay_block_reason(parent)
@@ -461,9 +453,13 @@ class JobManager(BaseManager["Job"]):
                         or any(type(source_id) is not int or source_id <= 0 for source_id in source_ids)
                         or len(source_ids) != len(set(source_ids))
                     ):
-                        raise ValueError("У старого запуска нет надёжного снимка источников. Создайте новый запуск из задачи.")
+                        raise ValueError(
+                            "У старого запуска нет надёжного снимка источников. Создайте новый запуск из задачи."
+                        )
                     if snapshot.get("action_type"):
-                        raise ValueError("У задачи настроено внешнее действие. Проверьте результат и запустите её со страницы задачи.")
+                        raise ValueError(
+                            "У задачи настроено внешнее действие. Проверьте результат и запустите её со страницы задачи."
+                        )
                     existing_sources = set(
                         (
                             await session.execute(
@@ -480,7 +476,9 @@ class JobManager(BaseManager["Job"]):
                     if source_conflict(payload, None, jobs, task_sources, active) is not None:
                         raise ValueError("Для источника уже есть ожидающая или выполняющаяся задача.")
                 elif parent.agent_task_id is not None:
-                    raise ValueError("Для повтора задачи откройте её страницу: там будут использованы сохранённые настройки.")
+                    raise ValueError(
+                        "Для повтора задачи откройте её страницу: там будут использованы сохранённые настройки."
+                    )
 
                 payload.pop("agent_task_id", None)
                 payload["retry_of_job_id"] = parent.id
@@ -538,23 +536,32 @@ class JobManager(BaseManager["Job"]):
         async with async_session_maker() as session:
             jobs, task_sources, active = await self._source_activity_context(session, tenant_id)
             recorded_source = cast(Job.result, JSONB)
-            history = list((await session.execute(
-                select(Job).where(
-                    Job.tenant_id == tenant_id,
-                    Job.job_type.in_(("collect", "analyze")),
-                    Job.status.not_in(("pending", "running")),
-                    or_(
-                        and_(
-                            Job.status == "done",
-                            recorded_source.contains({"per_source": [{"source_id": source_id}]}),
-                        ),
-                        and_(
-                            recorded_source.contains({"progress": {"items": [{"source_id": source_id}]}}),
-                            recorded_source["progress"]["attempt"].astext == cast(Job.attempts, String),
-                        ),
-                    ),
-                ).order_by(Job.created_at.desc()).limit(max(1, min(limit, 20)))
-            )).scalars().all())
+            history = list(
+                (
+                    await session.execute(
+                        select(Job)
+                        .where(
+                            Job.tenant_id == tenant_id,
+                            Job.job_type.in_(("collect", "analyze")),
+                            Job.status.not_in(("pending", "running")),
+                            or_(
+                                and_(
+                                    Job.status == "done",
+                                    recorded_source.contains({"per_source": [{"source_id": source_id}]}),
+                                ),
+                                and_(
+                                    recorded_source.contains({"progress": {"items": [{"source_id": source_id}]}}),
+                                    recorded_source["progress"]["attempt"].astext == cast(Job.attempts, String),
+                                ),
+                            ),
+                        )
+                        .order_by(Job.created_at.desc())
+                        .limit(max(1, min(limit, 20)))
+                    )
+                )
+                .scalars()
+                .all()
+            )
         matched = []
         for job in jobs:
             if job.status in ("pending", "running"):
@@ -567,9 +574,13 @@ class JobManager(BaseManager["Job"]):
                 matched.append(job)
         return sorted(
             matched,
-            key=lambda job: (job.status in ("pending", "running"), job.created_at or datetime.min.replace(tzinfo=timezone.utc), job.id),
+            key=lambda job: (
+                job.status in ("pending", "running"),
+                job.created_at or datetime.min.replace(tzinfo=timezone.utc),
+                job.id,
+            ),
             reverse=True,
-        )[:max(1, min(limit, 20))]
+        )[: max(1, min(limit, 20))]
 
     @staticmethod
     async def _claim(where_clause, now: Optional[datetime] = None) -> Optional["Job"]:
@@ -727,6 +738,35 @@ class JobManager(BaseManager["Job"]):
                     return False
                 result = dict(current.result) if isinstance(current.result, dict) else {}
                 result["progress"] = {**progress, "attempt": claim.attempts}
+                await session.execute(
+                    update(JobModel)
+                    .where(*predicates)
+                    .values(result=result, updated_at=JobModel.updated_at)
+                    .execution_options(synchronize_session=False)
+                )
+        return True
+
+    async def record_pipeline_checkpoint(self, claim: "JobClaim", checkpoint: dict) -> bool:
+        """Persist a bounded composed-task stage receipt under the live claim."""
+        from sqlalchemy import select, update
+
+        from app.core.database import async_session_maker
+
+        from ..scheduling.job import Job as JobModel
+
+        self._require_claim_tenant(claim, "Pipeline checkpoint does not match the current tenant")
+        if claim.job_type != "analyze" or not isinstance(checkpoint, dict):
+            raise ValueError("A composed analyze claim and checkpoint are required")
+        predicates = (*self._claim_predicates(JobModel, claim), JobModel.status == "running")
+        async with async_session_maker() as session:
+            async with session.begin():
+                current = (
+                    await session.execute(select(JobModel.id, JobModel.result).where(*predicates).with_for_update())
+                ).one_or_none()
+                if current is None:
+                    return False
+                result = dict(current.result) if isinstance(current.result, dict) else {}
+                result["pipeline"] = checkpoint
                 await session.execute(
                     update(JobModel)
                     .where(*predicates)
@@ -1228,8 +1268,8 @@ class JobManager(BaseManager["Job"]):
         """
         if not task_id:
             return
-        from app.models.scheduling.agent_task import AgentTask
         from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.models.scheduling.agent_task import AgentTask
 
         task = await AgentTask.objects.get(id=task_id)
         if task is None or not AgentTaskManager.wants_deactivate_after_success(task.payload):
@@ -1249,12 +1289,12 @@ class JobManager(BaseManager["Job"]):
         from sqlalchemy import and_, func, or_, update
 
         from app.core.database import async_session_maker
-        from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
         from app.jobs.attempt_budget import (
             ATTEMPT_BUDGET_STOP_PREFIX,
             available_attempt_budget,
             unavailable_attempt_budget,
         )
+        from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
 
         from ..scheduling.job import Job as JobModel
 
@@ -1392,8 +1432,10 @@ class JobManager(BaseManager["Job"]):
 
             query = query.filter(web_page_status_criteria(JobModel, statuses, include_attention))
         total = await query.count()
-        rows = await query.order_by(self.model.created_at.desc(), self.model.id.desc()).limit(page_size).offset(
-            (page - 1) * page_size
+        rows = (
+            await query.order_by(self.model.created_at.desc(), self.model.id.desc())
+            .limit(page_size)
+            .offset((page - 1) * page_size)
         )
         return rows, total
 
@@ -1405,6 +1447,7 @@ class JobManager(BaseManager["Job"]):
         from app.core.tenant_context import current_tenant_id, is_bypass
         from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
         from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR, OUTCOME_UNCONFIRMED_PREFIX
+
         from ..scheduling.job import Job as JobModel
 
         if type(tenant_id) is not int or tenant_id <= 0:

@@ -17,7 +17,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional, Sequence
 
-from app.jobs.progress_metrics import record_metrics, read_metrics
+from app.jobs.progress_metrics import read_metrics, record_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ def build_snapshot(
         "completed": position,
         "current": items[position]["name"] if position < total else None,
         "first": first,
-        "items": items[first:first + MAX_ITEMS],
+        "items": items[first : first + MAX_ITEMS],
         "updated_at": (now or datetime.now(timezone.utc)).isoformat(),
     }
 
@@ -120,6 +120,12 @@ async def _default_settler(claim: Any) -> Any:
     from app.models.managers.job_manager import JobManager
 
     return await JobManager().settle_cancelled_discard(claim)
+
+
+async def _default_pipeline_writer(claim: Any, checkpoint: dict) -> bool:
+    from app.models.managers.job_manager import JobManager
+
+    return await JobManager().record_pipeline_checkpoint(claim, checkpoint)
 
 
 class ProgressSession:
@@ -140,6 +146,7 @@ class ProgressSession:
         self._last_sources = ()
         self._last_rows = ()
         self._writer = writer or _default_writer
+        self._pipeline_writer = _default_pipeline_writer
         self._settler = settler or _default_settler
 
     @property
@@ -191,8 +198,23 @@ class ProgressSession:
         except ProgressStopped:
             raise
         except Exception as error:  # noqa: BLE001 — progress must never fail a run
-            logger.warning("job_progress_write_failed job_id=%s error_kind=%s", getattr(self.claim, "job_id", None), type(error).__name__[:40])
+            logger.warning(
+                "job_progress_write_failed job_id=%s error_kind=%s",
+                getattr(self.claim, "job_id", None),
+                type(error).__name__[:40],
+            )
             return
+        if written is False:
+            self.lost = True
+            raise ProgressStopped()
+
+    async def pipeline_checkpoint(self, checkpoint: dict) -> None:
+        """Persist a composed stage receipt under the live job claim."""
+        if self.lost:
+            raise ProgressStopped()
+        if not isinstance(checkpoint, dict):
+            raise ValueError("Pipeline checkpoint must be a mapping")
+        written = await self._pipeline_writer(self.claim, checkpoint)
         if written is False:
             self.lost = True
             raise ProgressStopped()
@@ -201,8 +223,10 @@ class ProgressSession:
         # Keep references to the handler-owned list: its last source is appended
         # before begin_phase, even when no extra step() call follows the loop.
         self._last_sources, self._last_rows = sources, rows
-        phase = self.phase if self.phase != "processing" else (
-            "collection" if self.claim.job_type == "collect" else "analysis"
+        phase = (
+            self.phase
+            if self.phase != "processing"
+            else ("collection" if self.claim.job_type == "collect" else "analysis")
         )
         self._phase_records[phase] = record_metrics(sources, rows, phase, current=current)
         snapshot["records"] = dict(self._phase_records)
@@ -225,12 +249,12 @@ class ProgressSession:
         if self.lost:
             raise ProgressStopped()
         if self._last_sources:
-            previous = self.phase if self.phase != "processing" else (
-                "collection" if self.claim.job_type == "collect" else "analysis"
+            previous = (
+                self.phase
+                if self.phase != "processing"
+                else ("collection" if self.claim.job_type == "collect" else "analysis")
             )
-            self._phase_records[previous] = record_metrics(
-                self._last_sources, self._last_rows, previous, complete=True
-            )
+            self._phase_records[previous] = record_metrics(self._last_sources, self._last_rows, previous, complete=True)
         self.phase = phase if phase in {"collection", "analysis"} else "processing"
         self.calls = 0
         self._last_sources, self._last_rows = (), ()
@@ -264,6 +288,14 @@ async def begin_phase(phase: str) -> None:
     session = _current.get()
     if session is not None:
         await session.begin_phase(phase)
+
+
+async def pipeline_checkpoint(checkpoint: dict) -> None:
+    """Handler hook for durable, claim-fenced composed-stage receipts."""
+    session = _current.get()
+    if session is None:
+        raise RuntimeError("Composed task execution requires an active job claim")
+    await session.pipeline_checkpoint(checkpoint)
 
 
 def read_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
@@ -303,9 +335,15 @@ def read_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
         items.append(item)
     current = progress.get("current")
     return {
-        "records": {key: metrics for key in ("collection", "analysis")
-                    if (metrics := read_metrics((progress.get("records") or {}).get(key))) is not None}
-                    if isinstance(progress.get("records"), dict) else {},
+        "records": (
+            {
+                key: metrics
+                for key in ("collection", "analysis")
+                if (metrics := read_metrics((progress.get("records") or {}).get(key))) is not None
+            }
+            if isinstance(progress.get("records"), dict)
+            else {}
+        ),
         "phase": progress.get("phase") if progress.get("phase") in {"collection", "analysis"} else "processing",
         "total": total,
         "completed": completed,

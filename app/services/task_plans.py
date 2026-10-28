@@ -35,6 +35,8 @@ _TASK_PLAN_ERROR_CODES = frozenset(
         "task_plan_override_changes_persisted_scope",
         "task_plan_override_requires_persisted_plan",
         "task_plan_payload_invalid",
+        "task_plan_pipeline_invalid",
+        "task_plan_digest_invalid",
         "task_plan_platform_unsupported",
         "task_plan_platforms_invalid",
         "task_plan_query_limit_exceeded",
@@ -90,6 +92,23 @@ class TaskTrigger:
 
 
 @dataclass(frozen=True)
+class DigestWindow:
+    """Digest reporting period, independent of the social collection window."""
+
+    type: TaskWindowType
+    start: date | None = None
+    end: date | None = None
+    days: int | None = None
+
+
+@dataclass(frozen=True)
+class TaskPipeline:
+    """The bounded composed stages; delivery is intentionally outside this plan."""
+
+    stages: tuple[Literal["collect", "analyze", "digest"], ...]
+
+
+@dataclass(frozen=True)
 class TaskPlan:
     """A normalized user-authored plan, before source/permission resolution."""
 
@@ -102,6 +121,10 @@ class TaskPlan:
     scenario_id: int | None
     trigger: TaskTrigger
     vk_access: VKSelection | None = None
+    pipeline: TaskPipeline | None = None
+    digest_window: DigestWindow | None = None
+    digest_group_by: str = "themes"
+    digest_time_breakdown: bool = False
 
 
 _PLATFORMS = frozenset({"vk", "telegram"})
@@ -109,6 +132,7 @@ _MAX_PLAN_PLATFORMS = 2
 _MAX_PLAN_QUERIES = 5
 _WINDOW_DAYS_MAX = 365
 _COLLECTING_JOB_TYPES = frozenset({"collect", "analyze"})
+_DIGEST_GROUPS = frozenset({"themes", "sources", "entities", "intent", "topic_chains"})
 
 
 def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan:
@@ -121,7 +145,7 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
     if not isinstance(raw, Mapping):
         raise TaskPlanError("task_plan_invalid")
     version = raw.get("version", 1)
-    if type(version) is not int or version != 1:
+    if type(version) is not int or version not in {1, 2}:
         raise TaskPlanError("task_plan_version_unsupported")
 
     goal = raw.get("goal")
@@ -203,6 +227,39 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
         # Policy errors use fixed codes; never expose caller-supplied token or
         # metadata text through task-plan errors.
         raise TaskPlanError("task_plan_vk_access_invalid") from error
+    pipeline = None
+    digest_window = None
+    digest_group_by = "themes"
+    digest_time_breakdown = False
+    if version == 1 and ("pipeline" in raw or "digest" in raw):
+        raise TaskPlanError("task_plan_version_unsupported")
+    if version == 2:
+        pipeline_raw = raw.get("pipeline")
+        digest_raw = raw.get("digest")
+        if not isinstance(pipeline_raw, Mapping) or not isinstance(digest_raw, Mapping):
+            raise TaskPlanError("task_plan_pipeline_invalid")
+        if set(pipeline_raw) != {"stages"}:
+            raise TaskPlanError("task_plan_pipeline_invalid")
+        stages_raw = pipeline_raw.get("stages")
+        if not isinstance(stages_raw, (list, tuple)) or any(not isinstance(stage, str) for stage in stages_raw):
+            raise TaskPlanError("task_plan_pipeline_invalid")
+        stages = tuple(stages_raw)
+        if stages not in {
+            ("analyze", "digest"),
+            ("collect", "analyze", "digest"),
+        }:
+            raise TaskPlanError("task_plan_pipeline_invalid")
+        if set(digest_raw) != {"window", "group_by", "time_breakdown"}:
+            raise TaskPlanError("task_plan_digest_invalid")
+        digest_window = _parse_digest_window(digest_raw.get("window"))
+        digest_group_by = digest_raw.get("group_by")
+        digest_time_breakdown = digest_raw.get("time_breakdown")
+        if not isinstance(digest_group_by, str) or digest_group_by not in _DIGEST_GROUPS:
+            raise TaskPlanError("task_plan_digest_invalid")
+        if type(digest_time_breakdown) is not bool:
+            raise TaskPlanError("task_plan_digest_invalid")
+        if scenario_id is None:
+            raise TaskPlanError("task_plan_scenario_invalid")
     return TaskPlan(
         goal=goal,
         platforms=tuple(platforms),
@@ -213,6 +270,10 @@ def parse_task_plan(raw: Mapping[str, Any], *, legacy: bool = False) -> TaskPlan
         scenario_id=scenario_id,
         trigger=trigger,
         vk_access=vk_access,
+        pipeline=pipeline if version == 1 else TaskPipeline(stages),
+        digest_window=digest_window,
+        digest_group_by=digest_group_by,
+        digest_time_breakdown=digest_time_breakdown,
     )
 
 
@@ -228,7 +289,7 @@ def read_saved_task_plan(payload: Any) -> TaskPlan | None:
 def task_plan_block(plan: TaskPlan) -> dict[str, Any]:
     """Serialize the canonical plan without DB identities for discovered rows."""
     block: dict[str, Any] = {
-        "version": 1,
+        "version": 2 if plan.pipeline is not None else 1,
         "platforms": list(plan.platforms),
         "source_scope": plan.source_scope,
         "source_ids": list(plan.source_ids),
@@ -250,6 +311,20 @@ def task_plan_block(plan: TaskPlan) -> dict[str, Any]:
         block["scenario_id"] = plan.scenario_id
     if plan.vk_access is not None:
         block["vk_access"] = plan.vk_access.to_dict()
+    if plan.pipeline is not None and plan.digest_window is not None:
+        block["pipeline"] = {"stages": list(plan.pipeline.stages)}
+        window: dict[str, Any] = {"type": plan.digest_window.type}
+        if plan.digest_window.start is not None:
+            window["start"] = plan.digest_window.start.isoformat()
+        if plan.digest_window.end is not None:
+            window["end"] = plan.digest_window.end.isoformat()
+        if plan.digest_window.days is not None:
+            window["days"] = plan.digest_window.days
+        block["digest"] = {
+            "window": window,
+            "group_by": plan.digest_group_by,
+            "time_breakdown": plan.digest_time_breakdown,
+        }
     if plan.trigger.type == "schedule":
         block["trigger"].update(cron=plan.trigger.cron, timezone=plan.trigger.timezone)
     return block
@@ -269,7 +344,7 @@ def apply_task_plan(
     """
     if raw is None:
         result = dict(payload or {})
-        for key in ("task_plan", "collection", "cli_dates", "scenario_id"):
+        for key in ("task_plan", "collection", "cli_dates", "scenario_id", "collect_before_analyze"):
             result.pop(key, None)
         return result
     if not isinstance(raw, Mapping):
@@ -308,9 +383,13 @@ def apply_parsed_task_plan(payload: Mapping[str, Any] | None, plan: TaskPlan, *,
     """Project an already parsed plan; persistence/execution still validate it."""
     if job_type not in _COLLECTING_JOB_TYPES:
         raise TaskPlanError("task_plan_requires_collect_or_analyze")
+    if plan.pipeline is not None and job_type != "analyze":
+        raise TaskPlanError("task_plan_requires_collect_or_analyze")
     result = dict(payload or {})
     result["task_plan"] = task_plan_block(plan)
     result["collection"] = collection_block(plan.collection)
+    if plan.pipeline is not None:
+        result["collect_before_analyze"] = "collect" in plan.pipeline.stages
     if plan.window is not None and plan.window.type == "fixed":
         result["cli_dates"] = {
             "start_date": plan.window.start.isoformat() if plan.window.start else None,
@@ -397,6 +476,11 @@ def prepare_task_plan_update(
         for key in ("task_plan", "collection", "cli_dates", "scenario_id"):
             if key in candidate and candidate[key] != canonical.get(key):
                 raise TaskPlanError(f"Use the task_plan field to change a planned task's {key}")
+    existing_plan = parse_task_plan(stored) if isinstance(stored, Mapping) else None
+    if supplied and existing_plan is not None and existing_plan.pipeline is not None and plan.pipeline is None:
+        # A composed-stage projection has no meaning after an explicit downgrade
+        # to the legacy single collect/analyze task contract.
+        candidate.pop("collect_before_analyze", None)
     changes["payload"] = apply_parsed_task_plan(candidate, plan, job_type=job_type)
     if supplied:
         changes.update(expected)
@@ -434,6 +518,27 @@ def _parse_window(raw: Any, collection: CollectionIntent) -> TaskWindow | None:
             raise TaskPlanError("task_plan_window_collection_mismatch")
         return TaskWindow("rolling", days=days)
     raise TaskPlanError("task_plan_window_type_invalid")
+
+
+def _parse_digest_window(raw: Any) -> DigestWindow:
+    """Parse a reporting window without coupling it to collection dates."""
+    if not isinstance(raw, Mapping):
+        raise TaskPlanError("task_plan_digest_invalid")
+    window_type = raw.get("type")
+    if window_type == "rolling" and set(raw) == {"type", "days"}:
+        days = raw.get("days")
+        if type(days) is not int or not 1 <= days <= _WINDOW_DAYS_MAX:
+            raise TaskPlanError("task_plan_digest_invalid")
+        return DigestWindow("rolling", days=days)
+    if window_type == "fixed" and set(raw) == {"type", "start", "end"}:
+        start = _parse_iso_date(raw.get("start"), "start")
+        end = _parse_iso_date(raw.get("end"), "end")
+        if start is None or end is None or start > end:
+            raise TaskPlanError("task_plan_digest_invalid")
+        if (end - start).days + 1 > _WINDOW_DAYS_MAX:
+            raise TaskPlanError("task_plan_digest_invalid")
+        return DigestWindow("fixed", start=start, end=end)
+    raise TaskPlanError("task_plan_digest_invalid")
 
 
 def _parse_iso_date(value: Any, field: str) -> date | None:
@@ -501,40 +606,83 @@ def apply_task_plan_override(payload: Mapping[str, Any], raw: Mapping[str, Any],
         # a request to drop or replace the task's saved connection.
         raw = {**raw, "vk_access": existing.vk_access.to_dict()}
     proposed = parse_task_plan(raw)
-    fixed_fields = ("platforms", "source_scope", "source_ids", "scenario_id", "trigger", "vk_access")
+    fixed_fields = (
+        "platforms",
+        "source_scope",
+        "source_ids",
+        "scenario_id",
+        "trigger",
+        "vk_access",
+        "pipeline",
+        "digest_window",
+        "digest_group_by",
+        "digest_time_breakdown",
+    )
     if any(getattr(existing, field) != getattr(proposed, field) for field in fixed_fields):
         raise TaskPlanError("task_plan_override_changes_persisted_scope")
     return apply_task_plan(payload, raw, job_type=job_type)
 
 
-def materialize_task_plan_window(payload: Mapping[str, Any], now: Any) -> dict[str, Any]:
-    """Resolve a rolling window once for this run, preserving replay bounds."""
-    from datetime import datetime, timedelta, timezone
+def materialize_task_plan_window(payload: Mapping[str, Any], now: Any, *, timezone: str = "UTC") -> dict[str, Any]:
+    """Resolve rolling collection and digest windows once in the task's zone.
+
+    The effective digest dates stay in ``task_plan.digest.window`` and never
+    overwrite collection dates. Persist this returned payload on the admitted
+    job so retries use the same date bounds.
+    """
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
     result = dict(payload)
     raw = result.get("task_plan")
     if not isinstance(raw, Mapping):
         return result
-    window = raw.get("window")
-    if not isinstance(window, Mapping) or window.get("type") != "rolling":
+    collection_window = raw.get("window")
+    digest_window = raw.get("digest", {}).get("window") if isinstance(raw.get("digest"), Mapping) else None
+    collection_rolling = isinstance(collection_window, Mapping) and collection_window.get("type") == "rolling"
+    digest_rolling = isinstance(digest_window, Mapping) and digest_window.get("type") == "rolling"
+    if not collection_rolling and not digest_rolling:
         return result
-    days = window.get("days")
-    if type(days) is not int or not 1 <= days <= _WINDOW_DAYS_MAX:
-        raise TaskPlanError("task_plan_rolling_days_invalid")
     if not isinstance(now, datetime) or now.utcoffset() is None:
         raise TaskPlanError("task_plan_run_time_invalid")
-    end = now.astimezone(timezone.utc).date()
-    start = end - timedelta(days=days - 1)
     plan = dict(raw)
-    plan["window"] = {"type": "fixed", "start": start.isoformat(), "end": end.isoformat()}
-    collection = plan.get("collection")
-    if not isinstance(collection, Mapping):
-        raise TaskPlanError("task_plan_collection_invalid")
-    collection_copy = dict(collection)
-    collection_copy["date_window"] = {"start": start.isoformat(), "end": end.isoformat()}
-    plan["collection"] = collection_copy
+    zone_name = plan.get("trigger", {}).get("timezone") if isinstance(plan.get("trigger"), Mapping) else None
+    zone_name = zone_name or timezone
+    try:
+        zone = ZoneInfo(zone_name)
+    except (TypeError, ValueError, ZoneInfoNotFoundError) as error:
+        raise TaskPlanError("task_plan_timezone_invalid") from error
+    local_day = now.astimezone(zone).date()
+
+    window = plan.get("window")
+    if isinstance(window, Mapping) and window.get("type") == "rolling":
+        days = window.get("days")
+        if type(days) is not int or not 1 <= days <= _WINDOW_DAYS_MAX:
+            raise TaskPlanError("task_plan_rolling_days_invalid")
+        end = local_day
+        start = end - timedelta(days=days - 1)
+        plan["window"] = {"type": "fixed", "start": start.isoformat(), "end": end.isoformat()}
+        collection = plan.get("collection")
+        if not isinstance(collection, Mapping):
+            raise TaskPlanError("task_plan_collection_invalid")
+        collection_copy = dict(collection)
+        collection_copy["date_window"] = {"start": start.isoformat(), "end": end.isoformat()}
+        plan["collection"] = collection_copy
+        intent = parse_collection_intent({"collection": collection_copy})
+        result["collection"] = collection_block(intent)
+        result["cli_dates"] = {"start_date": start.isoformat(), "end_date": end.isoformat()}
+
+    digest = plan.get("digest")
+    if isinstance(digest, Mapping):
+        digest_copy = dict(digest)
+        report_window = digest_copy.get("window")
+        if isinstance(report_window, Mapping) and report_window.get("type") == "rolling":
+            days = report_window.get("days")
+            if type(days) is not int or not 1 <= days <= _WINDOW_DAYS_MAX:
+                raise TaskPlanError("task_plan_digest_invalid")
+            end = local_day
+            start = end - timedelta(days=days - 1)
+            digest_copy["window"] = {"type": "fixed", "start": start.isoformat(), "end": end.isoformat()}
+            plan["digest"] = digest_copy
     result["task_plan"] = plan
-    intent = parse_collection_intent({"collection": collection_copy})
-    result["collection"] = collection_block(intent)
-    result["cli_dates"] = {"start_date": start.isoformat(), "end_date": end.isoformat()}
     return result

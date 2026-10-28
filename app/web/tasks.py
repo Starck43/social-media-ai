@@ -476,6 +476,14 @@ def _task_plan_from_form(
     trigger_timezone="",
     vk_access_raw="",
     existing_vk_access=None,
+    compose_digest=False,
+    digest_window_type="rolling",
+    digest_rolling_days=7,
+    digest_start_date="",
+    digest_end_date="",
+    digest_group_by="themes",
+    digest_time_breakdown=False,
+    include_collection=True,
 ) -> dict | None:
     """Build the additive canonical plan from the current task form."""
     if source_scope == "legacy":
@@ -508,7 +516,7 @@ def _task_plan_from_form(
     if trigger["type"] == "schedule" and trigger_timezone.strip():
         trigger["timezone"] = trigger_timezone.strip()
     raw = {
-        "version": 1,
+        "version": 2 if compose_digest else 1,
         "goal": goal.strip() or None,
         "platforms": list(dict.fromkeys(platforms or ["vk"])),
         "source_scope": source_scope,
@@ -520,6 +528,19 @@ def _task_plan_from_form(
     }
     if vk_access is not None:
         raw["vk_access"] = vk_access
+    if compose_digest:
+        if job_type != "analyze":
+            raise TaskPlanError("A digest pipeline requires an analysis task")
+        if digest_window_type == "fixed":
+            digest_window = {"type": "fixed", "start": digest_start_date or None, "end": digest_end_date or None}
+        else:
+            digest_window = {"type": "rolling", "days": digest_rolling_days}
+        raw["pipeline"] = {"stages": (["collect"] if include_collection else []) + ["analyze", "digest"]}
+        raw["digest"] = {
+            "window": digest_window,
+            "group_by": digest_group_by or "themes",
+            "time_breakdown": digest_time_breakdown is True or digest_time_breakdown == "true",
+        }
     return task_plan_block(parse_task_plan(raw))
 
 
@@ -588,6 +609,10 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
     which has already resolved the lazy m2m on the detached row.
     """
     payload = task.payload if isinstance(task.payload, dict) else {}
+    saved_plan = payload.get("task_plan") if isinstance(payload.get("task_plan"), dict) else {}
+    digest_plan = saved_plan.get("digest") if isinstance(saved_plan.get("digest"), dict) else {}
+    digest_window = digest_plan.get("window") if isinstance(digest_plan.get("window"), dict) else {}
+    pipeline = saved_plan.get("pipeline") if isinstance(saved_plan.get("pipeline"), dict) else {}
     collection_edit = _collection_edit(payload)
     trigger_config = task.trigger_config if isinstance(task.trigger_config, dict) else {}
     edit: dict[str, Any] = {
@@ -616,8 +641,14 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
         "start_date": collection_edit["start_date"],
         "end_date": collection_edit["end_date"],
         "digest_period": payload.get("period") or "day",
-        "digest_group_by": payload.get("group_by") or "themes",
-        "digest_time_breakdown": bool(payload.get("time_breakdown")),
+        "compose_digest": bool(saved_plan.get("pipeline")),
+        "include_collection": "collect" in pipeline.get("stages", []),
+        "digest_window_type": digest_window.get("type", "rolling"),
+        "digest_rolling_days": digest_window.get("days", 7),
+        "digest_start_date": digest_window.get("start", "") or "",
+        "digest_end_date": digest_window.get("end", "") or "",
+        "digest_group_by": digest_plan.get("group_by", payload.get("group_by") or "themes"),
+        "digest_time_breakdown": digest_plan.get("time_breakdown", bool(payload.get("time_breakdown"))),
         "retention_success_hours": payload.get("success_hours", 24),
         "retention_failure_hours": payload.get("failure_hours", 24),
         "trigger_type": getattr(task, "trigger_type", None).name if getattr(task, "trigger_type", None) else "",
@@ -1031,6 +1062,12 @@ async def task_create(
     digest_period: str = Form(""),
     digest_group_by: str = Form(""),
     digest_time_breakdown: str = Form(""),
+    compose_digest: str = Form(""),
+    digest_window_type: str = Form("rolling"),
+    digest_rolling_days: int = Form(7),
+    digest_start_date: str = Form(""),
+    digest_end_date: str = Form(""),
+    include_collection: str = Form(""),
     retention_success_hours: int = Form(24),
     retention_failure_hours: int = Form(24),
     trigger_type: str = Form(""),
@@ -1203,6 +1240,14 @@ async def task_create(
                 rolling_days,
                 trigger_timezone,
                 vk_access,
+                compose_digest=compose_digest == "true",
+                digest_window_type=digest_window_type,
+                digest_rolling_days=digest_rolling_days,
+                digest_start_date=digest_start_date,
+                digest_end_date=digest_end_date,
+                digest_group_by=digest_group_by or "themes",
+                digest_time_breakdown=digest_time_breakdown == "true",
+                include_collection=include_collection == "true",
             )
             if task_plan is not None:
                 from app.services.task_creation import prepare_task_plan_create
@@ -1452,6 +1497,16 @@ async def task_detail(request: Request, task_id: int):
     # the same on this page and in the modal: a half-broken collect is not a
     # green "готово" in one place and "частично" in the other.
     job_outcomes = {job.id: _run_outcome(job.job_type, job.result or {}) for job in recent_jobs if job.status == "done"}
+    pipeline_outcomes = {}
+    if perms_can(request, "source", "view") and perms_can(request, "aianalytics", "view"):
+        from app.services.task_results import task_pipeline_outcome
+
+        can_view_digest = perms_can(request, "digestrun", "view")
+        with tenant_scope(source.tenant_id):
+            for job in recent_jobs:
+                projected = await task_pipeline_outcome(job.result, can_view_preview=can_view_digest)
+                if projected:
+                    pipeline_outcomes[job.id] = projected
     run_scope = await _task_run_scope(source, include_sources=perms_can(request, "source", "view"))
     latest_job = next((item for item in recent_jobs if item.id == running_job_id), None)
     if latest_job is None:
@@ -1483,6 +1538,7 @@ async def task_detail(request: Request, task_id: int):
         running_job_id=running_job_id,
         running_job_status=running_job_status,
         job_outcomes=job_outcomes,
+        pipeline_outcomes=pipeline_outcomes,
         effective_active=effective_active,
         latest_run=latest_run,
         sources=linked_sources,
@@ -2052,6 +2108,52 @@ async def task_retry_analysis(
     return RedirectResponse(back, status_code=302)
 
 
+@router.post("/{task_id}/digest/{job_id}/send")
+async def task_send_generated_digest(
+    request: Request,
+    task_id: int,
+    job_id: int,
+    confirmed: str = Form(""),
+    token: str = Form("", alias="_csrf"),
+):
+    """Send one already generated task digest after a separate confirmation."""
+    back = f"/app/tasks/{task_id}"
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(back, status_code=302)
+    denied = guard_web(request, "digestrun", "create", back=back)
+    if denied is not None:
+        return denied
+    if confirmed != "true":
+        add_flash(request, "info", "Подтвердите отдельную отправку дайджеста")
+        return RedirectResponse(back, status_code=302)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if type(tenant_id) is not int:
+        return Response(status_code=403)
+    from app.core.tenant_context import tenant_scope
+    from app.services.task_digest_delivery import send_task_digest
+
+    try:
+        with tenant_scope(tenant_id):
+            outcome = await send_task_digest(task_id=task_id, job_id=job_id)
+    except Exception:
+        add_flash(request, "error", "Не удалось отправить сохранённый дайджест; проверьте результат задачи")
+    else:
+        if isinstance(outcome, dict) and outcome.get("status") == "sent":
+            add_flash(request, "success", "Дайджест отправлен")
+        elif isinstance(outcome, dict) and outcome.get("status") == "skipped":
+            add_flash(request, "info", "Эта отправка уже обработана")
+        elif isinstance(outcome, dict) and outcome.get("status") == "uncertain":
+            add_flash(request, "error", "Подтверждение доставки не получено. Проверьте журнал отправки перед повтором")
+        elif isinstance(outcome, dict) and outcome.get("status") == "partial":
+            add_flash(request, "error", "Дайджест доставлен частично. Проверьте журнал перед повторной отправкой")
+        elif isinstance(outcome, dict) and outcome.get("status") == "blocked":
+            add_flash(request, "error", "Отправка заблокирована текущими правами или настройками адресатов")
+        else:
+            add_flash(request, "error", "Дайджест не отправлен; проверьте его состояние")
+    return RedirectResponse(back, status_code=302)
+
+
 @router.post("/{task_id}")
 async def task_update(
     request: Request,
@@ -2082,6 +2184,12 @@ async def task_update(
     digest_period: str = Form(""),
     digest_group_by: str = Form(""),
     digest_time_breakdown: str = Form(""),
+    compose_digest: str = Form(""),
+    digest_window_type: str = Form("rolling"),
+    digest_rolling_days: int = Form(7),
+    digest_start_date: str = Form(""),
+    digest_end_date: str = Form(""),
+    include_collection: str = Form(""),
     retention_success_hours: int = Form(24),
     retention_failure_hours: int = Form(24),
     trigger_type: str = Form(""),
@@ -2290,6 +2398,14 @@ async def task_update(
                 trigger_timezone,
                 vk_access,
                 existing_vk_access=((task.payload or {}).get("task_plan") or {}).get("vk_access"),
+                compose_digest=compose_digest == "true",
+                digest_window_type=digest_window_type,
+                digest_rolling_days=digest_rolling_days,
+                digest_start_date=digest_start_date,
+                digest_end_date=digest_end_date,
+                digest_group_by=digest_group_by or "themes",
+                digest_time_breakdown=digest_time_breakdown == "true",
+                include_collection=include_collection == "true",
             )
             if task_plan is not None:
                 from app.services.task_plans import apply_task_plan

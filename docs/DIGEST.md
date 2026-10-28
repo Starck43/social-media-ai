@@ -312,3 +312,17 @@ external-write activation policy.
 ## Shared social task contract (P8-T29)
 
 Keep the standalone digest page, preview, manual send and scheduled tasks under the [universal task contract](AGENT_TASKS.md#explicit-task-plans). Report generation and external delivery remain separate actions; automatic research does not authorize a send. Digests consume stored analytics unless preceding collection/analysis is explicit. P10-T07 owns consistent source/scenario/window/row scope across report sections; P3-T01 retains its permission acceptance owner.
+
+### Composed research runs (P8-T40)
+
+A version-2 task plan may run collection, analysis, and digest generation in
+order. Its digest reporting window is separate from the collection date window
+and accepts fixed dates or a rolling day count. A scheduled occurrence resolves
+rolling dates using the task or workspace timezone and keeps those effective
+dates with that run. The generated report is a preview in task results; delivery
+remains separate and needs the existing fresh recipient permission and explicit
+confirmation. Run history distinguishes collection, analysis, generation, and
+delivery outcomes. Unknown or partial upstream coverage stays visible and cannot
+be reported as a complete digest. Q-5's global-search capability remains
+unverified; focused collection checks use mocked VK responses until support
+clarifies the available API methods.

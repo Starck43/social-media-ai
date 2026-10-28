@@ -88,6 +88,7 @@ and execution permissions remain in the handwritten references and code.
 | PATCH | /api/v1/tasks/{task_id}/pause | pause_task_api_v1_tasks__task_id__pause_patch |
 | GET | /api/v1/tasks/{task_id}/result | get_task_result_api_v1_tasks__task_id__result_get |
 | POST | /api/v1/tasks/{task_id}/run | run_task_api_v1_tasks__task_id__run_post |
+| POST | /api/v1/tasks/{task_id}/runs/{job_id}/digest/send | send_composed_task_digest_api_v1_tasks__task_id__runs__job_id__digest_send_post |
 | GET | /api/v1/users | get_users_api_v1_users_get |
 | GET | /api/v1/users/me | get_current_user_api_v1_users_me_get |
 | PUT | /api/v1/users/me | update_my_profile_api_v1_users_me_put |

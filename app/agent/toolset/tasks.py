@@ -1180,3 +1180,29 @@ async def task_plan(plan: dict[str, Any]) -> dict[str, Any]:
         "entitlements": entitlements,
         "vk_access": vk_access_preview,
     }
+
+
+@tool(
+    name="task_digest_send",
+    description="Отправить уже сформированный дайджест выбранного запуска после подтверждения. Повтор использует квитанции частей.",
+    confirm=True,
+    required_permission="notifications.digest_run.create",
+    parameters={
+        "type": "object",
+        "properties": {"task_id": {"type": "integer", "minimum": 1}, "job_id": {"type": "integer", "minimum": 1}},
+        "required": ["task_id", "job_id"],
+        "additionalProperties": False,
+    },
+)
+async def task_digest_send(task_id: int, job_id: int) -> dict[str, Any]:
+    from app.services.task_digest_delivery import send_task_digest
+
+    try:
+        return await send_task_digest(task_id, job_id)
+    except PermissionError:
+        return {"error": "Report delivery is not permitted.", "code": "task_digest_forbidden"}
+    except Exception:
+        return {
+            "error": "Inspect the retained delivery receipts before retrying.",
+            "code": "task_digest_requires_review",
+        }

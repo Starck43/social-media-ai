@@ -134,7 +134,7 @@ def test_agent_task_manager_uses_versioned_reader_without_changing_legacy_payloa
 @pytest.mark.parametrize(
     ("plan", "expected_code"),
     [
-        ({"version": 2}, "task_plan_version_unsupported"),
+        ({"version": 99}, "task_plan_version_unsupported"),
         (
             {
                 "version": 1,

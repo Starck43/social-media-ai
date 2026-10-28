@@ -115,6 +115,8 @@ async def aggregate(
     group_by: str = "themes",
     time_breakdown: bool = False,
     scenario_id: int | None = None,
+    *,
+    report_scope: ReportScope | None = None,
 ) -> tuple[dict[str, Any], date, date]:
     # "days" is a web-only grouping for the Chronology view; it must not be used
     # for digest generation (the API and CLI should reject it before reaching here).
@@ -122,7 +124,7 @@ async def aggregate(
     if group_by == "days":
         raise ValueError("group_by='days' is web-only; use themes, sources, entities, intent, or topic_chains")
 
-    start, end = period_bounds(period)
+    start, end = (report_scope.start, report_scope.end) if report_scope is not None else period_bounds(period)
     days = (end - start).days + 1
     agg = ReportAggregator()
 
@@ -134,7 +136,7 @@ async def aggregate(
     # read is reused by all sections instead of re-materializing per section.
     from app.core.tenant_context import current_tenant_id
 
-    scope = ReportScope(
+    scope = report_scope or ReportScope(
         start=start,
         end=end,
         source_ids=frozenset(source_ids) if source_ids else None,
@@ -169,7 +171,7 @@ async def aggregate(
     # Scenario is not a rollup dimension: rollups fold per
     # (source, analysis_fingerprint) context, and the base-row-kind filter in
     # scoped reads keeps them out of every later digest sum.
-    if period in ("week", "month"):
+    if report_scope is None and period in ("week", "month"):
         from app.models.managers.ai_analytics_manager import AIAnalyticsManager
         from app.types import PeriodType
 

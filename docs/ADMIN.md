@@ -794,3 +794,9 @@ multi-select deletion as one atomic transaction.
 Task plans follow the shared [task contract](AGENT_TASKS.md#explicit-task-plans).
 Console forms do not edit collector/runtime evidence or secrets; Run now uses the
 standard admission path. Implementation evidence belongs to the task record.
+
+Version-2 `payload.task_plan` uses the same bounded composed research parser:
+select `analyze`, matching sources/scenario and trigger, then supply the separate
+`pipeline` and `digest.window` fields from the [shared contract](AGENT_TASKS.md#composed-research-and-digest-plans-p8-t40).
+Run now and schedules generate a digest only. External delivery is a separate
+confirmed task action with fresh rights and frozen per-part receipts.

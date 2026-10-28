@@ -51,6 +51,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task analyze | Run a analyze task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |
 | python -m cli.main task collect | Run a collect task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |
 | python -m cli.main task digest | Run a digest task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |
+| python -m cli.main task digest-send | Send an existing report with per-part receipts; never regenerate it. |
 | python -m cli.main task entitlements | Inspect current product grants and availability; consume no usage. |
 | python -m cli.main task learn | Run a learn task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |
 | python -m cli.main task list | List all tasks. |

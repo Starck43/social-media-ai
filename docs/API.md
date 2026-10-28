@@ -1680,3 +1680,20 @@ and digest sending confirmation-gated.
 API and web/CLI/admin/agent tools preserve identical source-scope, scenario and
 data-window semantics. Preview is read-only; execution performs fresh
 authorization and budget admission; existing task routes remain compatible.
+
+### Composed research and confirmed report delivery (P8-T40)
+
+The same task create/update and `/api/v1/tasks/plan` / `/run/plan` routes accept
+version-2 definitions with bounded `pipeline.stages` and an independent
+`digest.window`; see the [composed contract](AGENT_TASKS.md#composed-research-and-digest-plans-p8-t40).
+Use `job_type=analyze`. Scheduled definitions generate reports without sending.
+`GET /api/v1/tasks/{task_id}/result?job_id={job_id}` returns permitted stage
+receipts and a bounded report preview.
+
+`POST /api/v1/tasks/{task_id}/runs/{job_id}/digest/send?confirmed=true` explicitly
+authorizes delivery of that retained generated report. Missing confirmation
+returns 400, revoked membership/rights 403, and unavailable or unconfirmed
+delivery 409. The service rechecks the caller and each frozen destination,
+reuses per-part digest receipts, and never rebuilds the report. Sent parts are
+skipped; uncertain parts require review. This does not enable automatic sends
+or live VK search.

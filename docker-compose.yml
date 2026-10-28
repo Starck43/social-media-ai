@@ -1,0 +1,25 @@
+services:
+  web:
+    build: .
+    image: ai-assistant-web:latest
+    container_name: ai-assistant-web
+    restart: always
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    expose:
+      - "3000"
+    networks:
+      - app-network
+
+  nginx:
+    build: ./nginx
+    image: ai-assistant-nginx:latest
+    container_name: ai-assistant-nginx
+    ports:
+      - "127.0.0.1:8226:80"
+    depends_on:
+      - web
+    restart: always

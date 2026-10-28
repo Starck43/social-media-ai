@@ -179,9 +179,10 @@ async def test_expiry_uses_workspace_plan_and_update_is_rejected():
 
             with tenant_scope(tenant_id), permission_scope(owner, is_owner=True):
                 deleted = await ActionAuditEventManager().delete_expired()
+                window_end = datetime.now(timezone.utc)
                 remaining = await ActionAuditEvent.objects.list_events(
-                    since=datetime.now(timezone.utc) - timedelta(days=90),
-                    until=datetime.now(timezone.utc) + timedelta(seconds=1),
+                    since=window_end - timedelta(days=89),
+                    until=window_end,
                 )
             assert deleted == 1  # default Pro plan retains 30 days
             assert old.event_id not in {event.event_id for event in remaining}

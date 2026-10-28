@@ -15,7 +15,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 5. [P11-T05](../audit/p11-t05.md) — Explicit CREATE transaction ownership and recoverable post-commit steps — DONE 2026-10-27 (accepted `393b73bb15cddf57e23b0b8a15514aea8e1286e5`, integrated `bb8d4385cee477fab39d52ad73a68936400f0ab6`; PR #264).
 6. [P11-T06](../audit/p11-t06.md) — Typed launch contracts, safe errors and allowlisted receipts — DONE 2026-10-27 (accepted `d2c5c91936766715c71dbdebb559aaa814dae346`, integrated `1ce7dcb8d53faaa1b6b6a3bb7e4e086d60c8bfba`; PR #266).
 7. [P11-T07](../audit/p11-t07.md) — Incremental package-boundary enforcement (R-05) — DONE 2026-10-28 (accepted `f6fbbdaf`, integrated `5eb9c5f6`; PR #268).
-8. [P11-T08](../tasks/p11-t08.md) — Public API compatibility and bounded request policy (R-06).
+8. [P11-T08](../audit/p11-t08.md) — Bounded API lists, safe request correlation and atomic actor/workspace launch budgets — DONE 2026-10-29 (accepted `d1657d1691c4a71570162a1c795d5cafa44a5f49`; PR #278).
 9. [P11-T09](../audit/p11-t09.md) — Fail-closed typed agent-tool registration (R-07) — DONE 2026-10-28 (accepted `937a435083e99aa80546510f2cf275fc8101eca9`, integrated `7a89a2b0510ec1588535d80a7adeed0f15ea025f`; PR #273).
 10. [P11-T10](../audit/p11-t10.md) — Operator CLI boundaries and machine-output contract — DONE 2026-10-28 (accepted `e1dec81d`, integrated `1506d98d`; PR #267).
 11. [P11-T11](../audit/p11-t11.md) — **DONE 2026-10-29**: web/admin decomposition accepted; loader/type-introspection corrections and application/HTTP/DB checks PASS. Accepted `3c793a24c5c9f4c2356663db1dc3f1c4480973fc`; merged `edfd34e321a54147b7d2969418738f0e5f712a8f` without deployment.

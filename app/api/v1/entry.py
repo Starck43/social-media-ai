@@ -2,14 +2,24 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.api.v1.endpoints import (
+    action_audit,
+    auth,
+    credentials,
+    dashboard,
+    llm_models,
+    llm_providers,
+    monitoring,
+    notifications,
+    roles,
+    scenarios,
+    social,
+    sources,
+    tasks,
+    user,
+)
 from app.models import Permission, User
 from app.services.user.auth import get_authenticated_user
-
-from app.api.v1.endpoints import (
-	auth, user, roles, monitoring, scenarios, 
-	notifications, dashboard, llm_providers, social,
-    sources, tasks, credentials, llm_models
-)
 
 router = APIRouter()
 DB_PROBE_TIMEOUT_SECONDS = 2.0
@@ -34,6 +44,7 @@ router.include_router(social.router, prefix="/social", tags=["social"])
 router.include_router(sources.router, prefix="/sources", tags=["sources"], dependencies=API_AUTH)
 router.include_router(tasks.router, prefix="/tasks", tags=["tasks"], dependencies=API_AUTH)
 router.include_router(credentials.router, prefix="/credentials", tags=["credentials"], dependencies=API_AUTH)
+router.include_router(action_audit.router, prefix="/audit", tags=["action-audit"], dependencies=API_AUTH)
 
 
 # Keep the test endpoints for backward compatibility.
@@ -63,7 +74,7 @@ async def test_database():
 
 @router.get("/test-auth", include_in_schema=False)
 async def test_auth(current_user: User = Depends(get_authenticated_user)):
-	return {"message": "Auth endpoint works", "user_id": current_user.id}
+    return {"message": "Auth endpoint works", "user_id": current_user.id}
 
 
 @router.get("/health", tags=["Health"])

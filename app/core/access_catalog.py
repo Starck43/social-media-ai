@@ -61,6 +61,7 @@ RESOURCES = (
     _resource("agent.feedback", "AgentFeedback", "agent_feedback", "VIEW CREATE UPDATE DELETE", True, True),
     _resource("notifications.notification", "Notification", "notifications", "VIEW CREATE UPDATE DELETE", True),
     _resource("notifications.digest_run", "DigestRun", "digest_runs", "VIEW CREATE UPDATE DELETE EXPORT", True),
+    _resource("audit.action_audit", "ActionAuditEvent", "action_audit_events", "VIEW EXPORT", True),
 )
 _BY_KEY = {r.key: r for r in RESOURCES}
 _BY_MODEL = {r.model_name: r for r in RESOURCES}
@@ -90,6 +91,7 @@ _OLD_DOMAINS = {
     "scheduling": ("social",),
     "agent": ("social",),
     "notifications": ("social",),
+    "audit": (),
 }
 _ALIASES = {
     f"{old}.{r.model_name}.{a.db_value}": (r, a)

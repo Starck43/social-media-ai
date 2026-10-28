@@ -1,10 +1,11 @@
 # Action audit and support correlation contract (P11-T12)
 
-**State:** contract proposal only. The durable store, hooks, support UI/export,
-retention enforcement and migrations are not implemented by this document.
-The owner authorized an Alembic migration only against `test_schema`; no
-production/public-schema apply or backfill is authorized. Cleanup checks remain
-separately gated.
+**State:** implementation in progress in [PR #272](https://github.com/Starck43/social-media-ai/pull/272).
+The implementation adds tenant-scoped persistence, task-admission hooks,
+read-only API views/export, and plan-aligned retention. Alembic revision `0118`
+is authorized only against `test_schema`; no production/public-schema apply or
+backfill is authorized. Database-backed acceptance and cleanup verification
+remain pending.
 
 ## Purpose and boundaries
 
@@ -26,7 +27,7 @@ Keep existing records authoritative:
 
 ## Minimal event envelope
 
-A future persisted event contains only these allowlisted fields:
+The persisted `action_audit_events` row contains only these allowlisted fields:
 
 | Field | Contract |
 | --- | --- |
@@ -34,7 +35,7 @@ A future persisted event contains only these allowlisted fields:
 | `tenant_id` | Owning workspace identifier; every read and export is scoped to it. |
 | `occurred_at` | UTC time the event is recorded; a transactional `succeeded` event is authoritative only if its transaction commits. |
 | `actor_kind`, `actor_id` | Authenticated user, service or scheduler identity captured from trusted execution context, never copied from request arguments. Preserve only the minimum identifier needed for support correlation. |
-| `action` | Stable, bounded `domain.operation` code from an allowlist. |
+| `action` | Stable, bounded `domain.operation` code from an allowlist. The current hook uses `scheduling.task_admit`. |
 | `resource_kind`, `resource_id` | Optional type and opaque identifier; never a name, URL with credentials, message body or raw resource content. |
 | `outcome` | Exactly one of `succeeded`, `denied`, `rolled_back`, or `unknown`. Do not collapse an uncertain external/commit result into success or failure. |
 | `reason_code` | Optional bounded safe code from an allowlist; no exception text or provider response. |
@@ -56,16 +57,20 @@ second billing/delivery ledger.
 - **Succeeded:** for a transactional state change, insert the event in the same
   transaction as the business change. Both commit or both roll back. This is the
   transactional audit-evidence path; a successful commit is the only basis for
-  `succeeded`.
+  `succeeded`. The current hook records task admission in the same transaction
+  that saves the job/task admission result, using the existing job ID.
 - **Denied and rolled back:** use a distinct, safe structured logging path after
   the refusal or rollback. Do not claim a failed/denied attempt was written as a
   successful durable audit event, and never include rejected arguments,
-  authorization material, secrets, or exception/provider text.
+  authorization material, secrets, or exception/provider text. These outcomes
+  are diagnostic logs, not rows in the durable event table.
 - **Unknown:** use a separate outcome category/path when commit or external
   dispatch cannot be established. Keep it distinguishable from both success and
   failure; preserve existing idempotency fences and billing/delivery identities,
   and do not automatically retry an uncertain external effect. A correlation ID
-  is not a replay key.
+  is not a replay key. Unknown task-admission observations are persisted as
+  `unknown` events and sent to a separate logger; if that write fails, the logger
+  emits an explicit `unknown_persistence_gap` signal without exception text.
 
 Do not collapse the three paths into one undifferentiated stream or outcome.
 Shared validation/helpers may be reused only if distinct routing, storage
@@ -75,8 +80,9 @@ business transaction committed.
 
 If durable audit writing fails, the system must expose that evidence gap through
 an explicit safe operational signal; it must never silently report the event as
-recorded. A later implementation must specify its failure policy for each
-use-case before enabling the hook.
+recorded. Successful task admission fails atomically if its event cannot be
+inserted. For unknown task admission, failure to persist the event is reported
+through the separate safe persistence-gap log.
 
 ## Access, views and export
 
@@ -89,6 +95,12 @@ use-case before enabling the hook.
   windows and page sizes, and apply the same tenant and permission checks. Export
   must not include raw payloads, prompts, message contents, provider responses,
   secrets or exception text.
+- Implemented JSON endpoints are `GET /api/v1/audit/events` (`VIEW`) and
+  `GET /api/v1/audit/events/export` (`EXPORT`). Both require an authenticated
+  active workspace member, fence every query to the selected workspace, default
+  to the last 30 days, reject windows over 90 days, and cap results at 100 and
+  1,000 rows respectively. `before_id` provides bounded descending pagination.
+  The migration grants these permissions to workspace owners and admins only.
 - Cross-workspace/global support access is not implied. If later required, it
   needs an explicit actor-bound permission, reason and separately reviewed scope.
 
@@ -107,16 +119,25 @@ and job identities as references; existing business receipts remain the source
 of provider, payment and delivery facts.
 
 Classify these rows as the **action-audit** data class in the PRD-06 lifecycle
-policy. Retention must be finite and owner-approved before enforcement; preserve
-records needed for unresolved external effects, billing disputes and legal holds.
-Offboarding/export and backup expiry must follow the workspace's approved
-lifecycle rules. No numeric retention period is specified here because the
-current source policy does not provide one. Retention deletion, legal-hold
-handling and cleanup verification require separate authorization and tests.
+policy. Retention uses the existing workspace-plan `retention_days` values
+(Starter 7, Pro 30, Business 90) in `Tenant.PLAN_LIMITS`; no duplicate setting
+was introduced in `config.py`. The regular prune handler applies this limit per
+workspace. This only deletes audit rows: it does not delete or replace task,
+billing, entitlement or delivery records, which retain their own identities and
+facts. Offboarding/export and backup expiry still follow the workspace's
+approved lifecycle rules.
+
+The database trigger blocks ordinary row updates/deletes and truncation, while
+the explicit retention path uses a transaction-local marker. This is an
+application-level guard, not cryptographic/database-role tamper-proof storage:
+a database role able to issue arbitrary SQL can set the marker. External log
+sink retention is not controlled by this application. No legal-hold workflow is
+implemented here; production lifecycle acceptance must verify the applicable
+hold/offboarding policy before enabling destructive cleanup.
 
 ## Required verification before implementation acceptance
 
-A future implementation must prove, at minimum:
+A complete acceptance run must prove, at minimum:
 
 1. A committed mutation and its `succeeded` event are atomic.
 2. Denied and rolled-back outcomes use the distinct safe path and never contain
@@ -127,5 +148,6 @@ A future implementation must prove, at minimum:
 5. Attempts to mutate/delete an event through application support interfaces are
    refused; the limits of database-level immutability are stated accurately.
 6. Retention settings, legal holds, offboarding/export and backup expiry are
-   covered by an owner-approved policy. No migration or cleanup acceptance is
-   claimed by this contract-only slice.
+   covered by an owner-approved policy. Current source-only checks and offline
+   migration generation do not substitute for test-schema migration, database
+   tests, cleanup verification or production lifecycle approval.

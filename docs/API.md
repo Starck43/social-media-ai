@@ -1669,6 +1669,24 @@ provider/model editing is exposed by this section.
 See [tenancy boundaries](TENANCY.md#web-settings-and-ownedgranted-workspace-context)
 and [deletion policy](MODEL_DELETION.md).
 
+### Action-audit support reads (P11-T12)
+
+Authenticated workspace owners and admins may use the read-only endpoints:
+
+- `GET /api/v1/audit/events` — requires `audit.action_audit` `VIEW`; returns at
+  most 100 events.
+- `GET /api/v1/audit/events/export` — requires `EXPORT`; returns at most 1,000
+  events.
+
+Both accept optional ISO timestamps `since` and `until` (default: the last 30
+days; maximum range: 90 days), `before_id` for descending pagination, and
+allowlisted `outcome` (`succeeded` or `unknown`) and `action` filters. Responses
+contain only the safe audit envelope; denied/rolled-back diagnostics are not
+exposed as durable rows. Every query is tenant-fenced. These endpoints do not
+mutate business state, authorize cross-workspace support, or return
+payment/delivery receipts. See the
+[action-audit contract](ACTION_AUDIT.md) for retention and security limits.
+
 ## Universal social task parity (P8-T29)
 
 Current chat and task endpoints are part of the shared implementation described

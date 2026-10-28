@@ -21,7 +21,8 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 11. [P11-T11](../tasks/p11-t11.md) — Web and admin use-case decomposition (R-09).
 12. [P11-T12](../audit/p11-t12.md) — Durable action-audit contract and support correlation (R-10) — DONE 2026-10-28 (accepted `b59877ea`, integrated `c8d019ae`; PR #269; contract slice only — persistence, hooks, support reads/export, retention and migration stay open).
 13. [P11-T13](../tasks/p11-t13.md) — Manager and execution-module decomposition (R-11).
-14. [P11-T14](../tasks/p11-t14.md) — Canonical model imports and semantic helper reuse (R-12).
+14. [P11-T14](../audit/p11-t14.md) — Canonical model imports and semantic helper reuse (R-12) — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`,
+    merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
 15. [P11-T15](../audit/p11-t15.md) — Reproducible package and configuration contract (R-13) — DONE 2026-10-27 (accepted `2c4c6e5566a61f6a9b02967db1a152e4fa1140e7`).
 16. [P11-T16](../audit/p11-t16.md) — Test and reference navigation without evidence loss (R-14) — DONE 2026-10-27 (accepted `bd6120cfb698f0bc71481660c4356312985068cf`).
 17. [P11-T17](../tasks/p11-t17.md) — Localizable presentation boundaries (R-15).
@@ -33,7 +34,8 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 22. [P11-T22](../audit/p11-t22.md) — host shared working principles in the project rules — DONE 2026-10-27 (accepted `59027292`).
 23. [P11-T23](../tasks/p11-t23.md) — Split agent-task documentation by reader — TODO (registered 2026-10-27; waits for P11-T16, P8-T40 and P8-T41).
 24. [P11-T24](../audit/p11-t24.md) — Reproduce schema guard objects in the metadata-built test schema — DONE 2026-10-28 (rebuilt-schema billing 46/46, drift test deterministic).
-25. [P11-T25](../tasks/p11-t25.md) — Realign the model-layout fixtures with the migrated schema — TODO (registered 2026-10-28: 10 existing failures on `dev`, outside the offline manifest).
+25. [P11-T25](../audit/p11-t25.md) — Realign the model-layout fixtures with the migrated schema — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`,
+    merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
 
 ## Sequencing and continuity
 

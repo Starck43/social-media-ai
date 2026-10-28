@@ -7,7 +7,6 @@ import unittest
 
 from scripts.check_p8_t41 import source_only_guard
 
-
 _RUNTIME_MODULE_ROOTS = {
     "app",
     "cli",

@@ -21,11 +21,6 @@ from .task_shared import (
 )
 
 from .task_forms import (
-    AgentScenario,
-    AgentTask,
-    AgentTaskManager,
-    RedirectResponse,
-    Request,
     _activate_selected_sources,
     _apply_targets,
     _can_activate,
@@ -39,22 +34,11 @@ from .task_forms import (
     _task_plan_from_form,
     _trigger_and_action_fields,
     _unified_analysis_scenario_block,
-    add_flash,
     apply_selection,
 )
 
 from .task_use_cases import (
-    AgentTaskManager,
-    _can_activate,
     queue_task_now,
-)
-
-from .task_presenters import (
-    AgentTaskManager,
-    Request,
-    datetime,
-    timedelta,
-    timezone,
 )
 
 
@@ -166,8 +150,6 @@ async def task_create(
     clash = await _duplicate_name(request, back, name.strip()[:100])
     if clash is not None:
         return clash
-
-    from app.models.managers.agent_task_manager import AgentTaskManager
 
     tasks_mgr = AgentTaskManager()
     if not tasks_mgr.validate_cron(cron_expr):

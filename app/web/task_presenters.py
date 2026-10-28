@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .task_shared import (
     AgentTaskManager,
+    Job,
     Any,
     CANCELLED_BEFORE_START_ERROR,
     OPERATOR_CANCELLED_ERROR,

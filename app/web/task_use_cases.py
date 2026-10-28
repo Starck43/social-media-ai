@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .task_shared import (
+    AgentTask,
     AgentTaskManager,
     Any,
 )

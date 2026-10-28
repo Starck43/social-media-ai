@@ -85,4 +85,3 @@ class LookupCompiler:
     def compile_filters(model: Type[Any], filters: dict[str, Any]) -> list[ColumnElement[bool]]:
         """Компилирует словарь фильтров в список условий."""
         return [LookupCompiler.compile_lookup(model, key, value) for key, value in filters.items()]
-

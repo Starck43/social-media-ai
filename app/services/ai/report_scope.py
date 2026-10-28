@@ -59,4 +59,3 @@ class ReportScope:
 def normalize_digest_axis(group_by: str | None) -> str:
     """Compatibility for saved tasks; public grouping APIs reject old axes."""
     return "themes" if not group_by or group_by in REMOVED_GROUPING_AXES else group_by
-

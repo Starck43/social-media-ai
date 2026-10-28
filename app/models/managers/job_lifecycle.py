@@ -57,7 +57,6 @@ class JobLifecycleMixin:
                 # Detach-safe: return after commit, expire_on_commit handles state
                 return job
 
-
     @classmethod
     async def claim_next(cls, now: Optional[datetime] = None) -> Optional["Job"]:
         """
@@ -67,7 +66,6 @@ class JobLifecycleMixin:
         from sqlalchemy import and_
 
         return await cls._claim(and_(True), now=now)
-
 
     @classmethod
     async def claim_job(cls, job_id: int, now: Optional[datetime] = None) -> Optional["Job"]:
@@ -80,7 +78,6 @@ class JobLifecycleMixin:
         from ..scheduling.job import Job as JobModel
 
         return await cls._claim(JobModel.id == job_id, now=now)
-
 
     async def renew_claim(self, claim: "JobClaim", now: Optional[datetime] = None) -> bool:
         """Acknowledge a heartbeat for exactly this running generation.
@@ -128,7 +125,6 @@ class JobLifecycleMixin:
                 ).scalar_one_or_none()
         return changed == claim.job_id
 
-
     @staticmethod
     def _claim_predicates(model, claim: "JobClaim") -> tuple:
         return (
@@ -140,7 +136,6 @@ class JobLifecycleMixin:
             model.started_at == claim.started_at,
         )
 
-
     @staticmethod
     def _require_claim_tenant(claim: "JobClaim", message: str) -> None:
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
@@ -150,7 +145,6 @@ class JobLifecycleMixin:
             raise ValueError("A validated acquired claim is required")
         if not is_bypass() and current_tenant_id() != claim.tenant_id:
             raise TenantContextError(message)
-
 
     async def record_progress(self, claim: "JobClaim", progress: dict) -> bool:
         """Store a bounded progress snapshot for exactly this running generation.
@@ -186,7 +180,6 @@ class JobLifecycleMixin:
                 )
         return True
 
-
     async def record_pipeline_checkpoint(self, claim: "JobClaim", checkpoint: dict) -> bool:
         """Persist a bounded composed-task stage receipt under the live claim."""
         from sqlalchemy import select, update
@@ -215,7 +208,6 @@ class JobLifecycleMixin:
                     .execution_options(synchronize_session=False)
                 )
         return True
-
 
     async def delete_unfinished_for_task(self, session: "AsyncSession", *, tenant_id: int, task_id: int) -> int:
         """Remove this task's queued/running rows before a manual re-run.
@@ -252,7 +244,6 @@ class JobLifecycleMixin:
         for row in rows:
             await session.delete(row)
         return len(rows)
-
 
     async def delete_pending_for_task(self, session: "AsyncSession", *, tenant_id: int, task_id: int) -> int:
         """Remove this task's queued occurrences that never started.
@@ -296,7 +287,6 @@ class JobLifecycleMixin:
             removed += 1
         return removed
 
-
     async def cancel_pending(self, job_id: int) -> bool:
         """Cancel a queued row that no worker has claimed yet (it never ran).
 
@@ -324,7 +314,6 @@ class JobLifecycleMixin:
                     )
                 ).scalar_one_or_none()
         return changed == job_id
-
 
     async def settle_cancelled_discard(self, claim: "JobClaim") -> Optional[int]:
         """After a cancelled collect drained: remove rows it staged after the cancel.
@@ -376,7 +365,6 @@ class JobLifecycleMixin:
                     },
                 }
         return removed
-
 
     async def cancel_running(self, claim: "JobClaim", *, discard_collected: Optional[bool] = None) -> bool:
         """Cancel only the running generation observed by an authorized operator.
@@ -435,7 +423,6 @@ class JobLifecycleMixin:
             # Return success only after the cancellation commit is acknowledged.
         return True
 
-
     async def _record_task_result(self, job: "Job", status: str, error: Optional[str] = None) -> None:
         """Mirror the job outcome onto its AgentTask (if any) so the task's
         `last_status`/`last_error`/`last_run_at` reflect the real run result."""
@@ -444,7 +431,6 @@ class JobLifecycleMixin:
         from app.models.managers.agent_task_manager import AgentTaskManager
 
         await AgentTaskManager().record_result(job.agent_task_id, status=status, error=error)
-
 
     @classmethod
     async def start_running(cls, job_id: int, now: Optional[datetime] = None) -> bool:
@@ -488,7 +474,6 @@ class JobLifecycleMixin:
                 )
                 return bool(result.rowcount)
 
-
     @staticmethod
     async def _write_task_outcome(
         session: "AsyncSession",
@@ -527,7 +512,6 @@ class JobLifecycleMixin:
             # still scheduled to fire again.
             task.is_active = False
             task.next_run_at = None
-
 
     async def _finalize_claim(
         self,
@@ -612,7 +596,6 @@ class JobLifecycleMixin:
             # A receipt is returned only after BOTH rows' commit is acknowledged.
         return receipt
 
-
     async def mark_done(
         self,
         job_id: int,
@@ -640,7 +623,6 @@ class JobLifecycleMixin:
         if job:
             await self._record_task_result(job, status="ok")
             await self._stop_trial_task(job.agent_task_id)
-
 
     async def mark_failed(
         self,
@@ -705,7 +687,6 @@ class JobLifecycleMixin:
         await self._record_task_result(job, status="failed", error=error[:2000])
         return False
 
-
     async def _stop_trial_task(self, task_id: Optional[int]) -> None:
         """Close a trial task after its success in the legacy ID-only path.
 
@@ -721,7 +702,6 @@ class JobLifecycleMixin:
         if task is None or not AgentTaskManager.wants_deactivate_after_success(task.payload):
             return
         await AgentTask.objects.update_by_id(task_id, is_active=False, next_run_at=None)
-
 
     async def reap_stale(self, timeout_minutes: int = 30) -> int:
         """Stop unavailable budgets and quarantine stale owned executions.
@@ -798,7 +778,6 @@ class JobLifecycleMixin:
             # The count is returned only after the Job and Task writes commit together.
         return len(quarantined)
 
-
     @staticmethod
     def _recovery_scope(model) -> list:
         """Tenant predicate for recovery writes; explicit bypass is cross-workspace.
@@ -813,7 +792,6 @@ class JobLifecycleMixin:
         if type(tenant_id) is not int or tenant_id <= 0:
             raise TenantContextError("Stale recovery requires a tenant scope or an explicit bypass")
         return [model.tenant_id == tenant_id]
-
 
     @staticmethod
     async def _write_stopped_task_outcome(
@@ -847,4 +825,3 @@ class JobLifecycleMixin:
             .values(last_status="failed", last_error=error, last_run_at=now)
             .execution_options(synchronize_session=False)
         )
-

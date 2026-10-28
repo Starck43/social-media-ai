@@ -83,4 +83,3 @@ def extract_cost_info(raw_response: Any) -> dict[str, Any]:
         },
         "has_cost_report": has_report,
     }
-

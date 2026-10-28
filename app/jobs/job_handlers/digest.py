@@ -53,4 +53,3 @@ async def handle_digest(payload: dict[str, Any], *, load_task, task_payload) -> 
         time_breakdown=time_breakdown,
         scenario_id=scenario_id,
     )
-

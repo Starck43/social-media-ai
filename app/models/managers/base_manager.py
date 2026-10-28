@@ -4,14 +4,14 @@ Fixes identified issues and improves API consistency.
 """
 
 from contextlib import asynccontextmanager
-from datetime import datetime, date
-from typing import Any, Generic, TypeVar, Type, Optional, Sequence, cast, Callable
+from datetime import date, datetime
+from typing import Any, Callable, Generic, Optional, Sequence, Type, TypeVar, cast
 
 from fastapi import HTTPException
 from sqlalchemy import ColumnElement, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute
-from sqlalchemy.sql import and_, exists, select, Select
+from sqlalchemy.sql import Select, and_, exists, select
 
 from app.core.database import async_session_maker, with_db_session
 from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
@@ -22,12 +22,6 @@ from .query_compilation import QueryCompilationMixin
 from .relation_loading import Prefetch, RelationLoadingMixin, prefetch, relation_path_parts
 
 M = TypeVar("M")
-
-
-
-
-
-
 
 
 class QuerySet(QueryCompilationMixin, Generic[M]):
@@ -342,7 +336,11 @@ class QuerySet(QueryCompilationMixin, Generic[M]):
 
         if "tenant_id" in values and getattr(self._manager.model, "__tenant_scoped__", False):
             raise ValueError("Workspace ownership is immutable")
-        if getattr(self._manager.model, "__personal_scoped__", False) and set(values) & {"owner_user_id", "provider_id", "is_default"}:
+        if getattr(self._manager.model, "__personal_scoped__", False) and set(values) & {
+            "owner_user_id",
+            "provider_id",
+            "is_default",
+        }:
             raise ValueError("Use the validated personal catalog service")
         conditions: list[ColumnElement[bool]] = list(self._criterion)
         if self._kw_filters:
@@ -551,7 +549,6 @@ class QuerySet(QueryCompilationMixin, Generic[M]):
         """Allow awaiting QuerySet directly."""
         return self.all().__await__()
 
-
     async def _build_statement(self, *, apply_pagination: bool = True) -> Select[tuple[M]]:
         """Build the SQLAlchemy Select statement (async version for compatibility)."""
         return self._build_statement_sync(apply_pagination=apply_pagination)
@@ -623,12 +620,14 @@ class BaseManager(RelationLoadingMixin, Generic[M]):
         if not getattr(self.model, "__personal_scoped__", False):
             return []
         from app.core.personal_catalog_context import current_catalog_owner_id
+
         return [self.model.owner_user_id == current_catalog_owner_id()]
 
     def _personal_values(self, values):
         if not getattr(self.model, "__personal_scoped__", False):
             return values
         from app.core.personal_catalog_context import current_catalog_owner_id
+
         if values.get("is_default"):
             raise ValueError("Use the atomic personal default service")
         explicit = values.get("owner_user_id")
@@ -1074,7 +1073,8 @@ class BaseManager(RelationLoadingMixin, Generic[M]):
         open their own session and hand-roll delete+insert-on-conflict, which
         duplicated the same logic in three places.
         """
-        from sqlalchemy import delete as sa_delete, insert as sa_insert
+        from sqlalchemy import delete as sa_delete
+        from sqlalchemy import insert as sa_insert
 
         async with self._get_owned_session(session) as db:
             await db.execute(sa_delete(table).where(table.c[key_column] == key_value))
@@ -1127,9 +1127,3 @@ class BaseManager(RelationLoadingMixin, Generic[M]):
                     raise
 
     # Helper methods for building queries
-
-
-
-
-
-

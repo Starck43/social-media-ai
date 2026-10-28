@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Type, cast
 
 from sqlalchemy import ColumnElement
-from sqlalchemy.orm import QueryableAttribute, InstrumentedAttribute, joinedload, selectinload
+from sqlalchemy.orm import InstrumentedAttribute, QueryableAttribute, joinedload, selectinload
 
 from .lookup_compiler import LookupCompiler
 
@@ -46,7 +46,6 @@ def relation_path_parts(relation: str) -> list[str]:
     return [part for part in relation.replace(".", "__").split("__") if part]
 
 
-
 class RelationLoadingMixin:
     """Loader-option behavior shared by the stable BaseManager facade."""
 
@@ -69,7 +68,6 @@ class RelationLoadingMixin:
             current = mapper.class_
         return chain or None
 
-
     @staticmethod
     def _unknown_relation(relation: str, method: str) -> str:
         return (
@@ -77,7 +75,6 @@ class RelationLoadingMixin:
             f"may be written 'a.b' or 'a__b'; an unknown name raises instead of "
             f"quietly loading nothing."
         )
-
 
     def build_prefetch_option(self, relation: str | QueryableAttribute[Any] | InstrumentedAttribute[Any] | Prefetch):
         """Create the selectinload option for a relation path or Prefetch descriptor."""
@@ -97,7 +94,6 @@ class RelationLoadingMixin:
             return option
 
         return None
-
 
     def build_eager_option(self, relation: str | QueryableAttribute[Any] | InstrumentedAttribute[Any]):
         """Create the joinedload option for a relation path.
@@ -119,7 +115,6 @@ class RelationLoadingMixin:
             return option
 
         return None
-
 
     def build_prefetch_from_descriptor(self, descriptor: Prefetch):
         """Build selectinload with filters from Prefetch descriptor."""
@@ -174,4 +169,3 @@ class RelationLoadingMixin:
             return selectinload(prefetch_attr)
 
         return selectinload(attr)
-

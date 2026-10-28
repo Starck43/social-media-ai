@@ -78,4 +78,3 @@ class QueryCompilationMixin:
                 stmt = stmt.limit(self._limit_value)
 
         return stmt
-

@@ -22,7 +22,6 @@ class TaskInputsMixin:
         ):
             raise ValueError("Настройка хранения истории должна быть повторяемой, например ежедневно.")
 
-
     @staticmethod
     def _validate_task_plan_binding(job_type: str | None, payload: Any, cron_expr: str | None, scenario_id: int | None):
         """Keep typed plan, persisted scenario and scheduler trigger aligned."""
@@ -47,12 +46,10 @@ class TaskInputsMixin:
             if payload.get(key) != canonical.get(key):
                 raise ValueError(f"Task plan and {key} must be stored together in canonical form")
 
-
     @staticmethod
     def requires_sources(job_type: str) -> bool:
         """Whether a task of this job type needs at least one active source."""
         return job_type in SOURCE_BASED_JOB_TYPES
-
 
     @staticmethod
     def wants_deactivate_after_success(payload: Any) -> bool:
@@ -64,7 +61,6 @@ class TaskInputsMixin:
         """
         return isinstance(payload, dict) and payload.get("deactivate_after_success") is True
 
-
     @staticmethod
     def requires_content_dates(job_type: str) -> bool:
         """Whether a task of this job type needs a content start date.
@@ -75,7 +71,6 @@ class TaskInputsMixin:
         post. digest/prune/learn/reflect work on what is already stored.
         """
         return job_type in SOURCE_BASED_JOB_TYPES
-
 
     @staticmethod
     def parse_date(value: str | None):
@@ -91,7 +86,6 @@ class TaskInputsMixin:
 
         parsed = universal_date_parser(value)
         return parsed.date() if parsed else None
-
 
     @classmethod
     def resolve_cli_date_window(cls, primary: Any, fallback: Any = None) -> tuple[Any, Any]:
@@ -113,7 +107,6 @@ class TaskInputsMixin:
             raise ValueError("Invalid content date window")
         return start, end
 
-
     @staticmethod
     def build_dates_payload(start_date, end_date=None, force_refresh: bool = True) -> dict:
         """The payload keys a collect/analyze run needs for its date window.
@@ -132,7 +125,6 @@ class TaskInputsMixin:
         if cli_dates:
             payload["cli_dates"] = cli_dates
         return payload
-
 
     @staticmethod
     def build_selection_payload(
@@ -181,7 +173,6 @@ class TaskInputsMixin:
         selection.build_scope(payload)
         return payload
 
-
     @staticmethod
     def validate_cron(cron_expr: str) -> bool:
         """Return True if cron expression is valid (5-field) or @once."""
@@ -193,7 +184,6 @@ class TaskInputsMixin:
         except (ValueError, KeyError):
             return False
 
-
     @staticmethod
     def next_run_at(cron_expr: str, timezone_name: str, after: Optional[datetime] = None) -> datetime:
         """Compute next run time for cron expression in the given timezone (UTC returned).
@@ -204,4 +194,3 @@ class TaskInputsMixin:
         from app.tasks.cron import next_run_at as compute_next_run
 
         return compute_next_run(cron_expr, timezone_name, after=after)
-

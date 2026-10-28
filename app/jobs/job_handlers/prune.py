@@ -92,4 +92,3 @@ async def handle_prune(payload: dict[str, Any], *, logger, log_id, error_kind) -
     if analytics_retention_failed:
         result["analytics_retention_failed"] = True
     return result
-

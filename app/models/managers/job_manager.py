@@ -583,35 +583,12 @@ class JobManager(JobLifecycleMixin, BaseManager["Job"]):
             reverse=True,
         )[: max(1, min(limit, 20))]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     async def cost_today(self, now: Optional[datetime] = None) -> float:
         """Total USD spent on learning/reflect LLM calls today (UTC day) — the daily cap check."""
         now = now or datetime.now(timezone.utc)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         rows = await self.filter(created_at__gte=day_start)
         return sum(float(row.llm_cost or 0.0) for row in rows)
-
-
-
-
-
-
-
-
-
 
     async def page_for_web(
         self,

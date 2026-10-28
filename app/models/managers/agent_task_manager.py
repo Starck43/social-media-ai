@@ -67,8 +67,6 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         if not has_permission(user, "job", ActionType.UPDATE):
             raise PermissionDeniedError("Missing permission: job.update")
 
-
-
     # --- permission-gated writes (user surfaces: web, agent tools, CLI) ----
 
     @require_permission("agenttask", ActionType.CREATE)
@@ -436,15 +434,6 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
                         .on_conflict_do_nothing()
                     )
             return len(values)
-
-
-
-
-
-
-
-
-
 
     async def get_active(self) -> list["AgentTask"]:
         """All active tasks."""

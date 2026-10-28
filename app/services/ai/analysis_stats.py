@@ -129,7 +129,6 @@ class AnalysisStatsMixin:
             "comments_to_others_count": 0,  # Данные о комментариях к чужим постам недоступны
         }
 
-
     def _make_json_serializable(self, obj):
         """Recursively convert non-JSON serializable objects to strings/primitives."""
         from datetime import date, datetime
@@ -149,4 +148,3 @@ class AnalysisStatsMixin:
             return [self._make_json_serializable(v) for v in obj]
 
         return obj
-

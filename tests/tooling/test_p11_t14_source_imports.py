@@ -77,7 +77,7 @@ def import_only_ast(source: str) -> str:
 class SourceImportGuardTests(unittest.TestCase):
     def test_consumers_do_not_import_legacy_leaf(self):
         failures = []
-        for top in ("app", "cli", "scripts", "tests"):
+        for top in ("app", "cli", "scripts", "migrations", "tests"):
             for path in (ROOT / top).rglob("*.py"):
                 relative = path.relative_to(ROOT)
                 # Compatibility tests intentionally resolve old paths dynamically.

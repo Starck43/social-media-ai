@@ -138,6 +138,30 @@ async def test_deleted_or_revoked_actor_is_rejected_by_fresh_user_lookup(monkeyp
     assert looked_up_ids == [123]
 
 
+async def test_inactive_actor_token_is_rejected_as_unauthorized(monkeypatch) -> None:
+    app = FastAPI()
+    middleware = ApiScopeMiddleware(app)
+    token = jwt.encode(
+        {"sub": "123", "type": "access"},
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+    inactive = SimpleNamespace(id=123, is_active=False)
+
+    async def fresh_inactive_actor(*, id: int):
+        assert id == 123
+        return inactive
+
+    monkeypatch.setattr(
+        "app.models.User.objects.prefetch_related", lambda *_args: SimpleNamespace(get=fresh_inactive_actor)
+    )
+    async with AsyncClient(transport=ASGITransport(app=middleware), base_url="http://testserver") as client:
+        response = await client.get("/api/v1/sources", headers={"authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
 async def test_revoked_workspace_membership_is_rechecked_for_selector(monkeypatch) -> None:
     """A previously selected workspace is denied after its membership disappears."""
     from app.models.managers.tenant_manager import TenantUserManager
@@ -329,7 +353,10 @@ async def test_invalid_list_bounds_return_422_without_running_list_queries(monke
         ("/api/v1/users/roles/?page=0", 422),
         ("/api/v1/users/roles/?size=101", 422),
     )
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+    scoped_app = ApiScopeMiddleware(app)
+    scoped_app._authenticate = _authenticated_user
+    scoped_app._resolve_tenant = _tenant_allowed
+    async with AsyncClient(transport=ASGITransport(app=scoped_app), base_url="http://testserver") as client:
         for path, expected_status in bad_queries:
             response = await client.get(path)
             assert response.status_code == expected_status, (path, response.text)

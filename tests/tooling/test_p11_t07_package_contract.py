@@ -151,6 +151,9 @@ def test_compatibility_exports_and_lazy_persistence_are_explicit():
         ("app/services/__init__.py", "\nimport app.api.endpoint\n"),
         ("app/core/settings_views.py", "\nimport app.services.task_preparation\n"),
         ("app/services/task_preparation.py", "\nimport telethon\n"),
+        ("app/utils/identifiers.py", "\nimport app.api.endpoint\n"),
+        ("app/utils/__init__.py", "\nimport app.api.endpoint\n"),
+        ("app/utils/identifiers.py", "\nimport sqlalchemy\n"),
     ],
 )
 def test_actual_contract_rejects_adapter_parent_cycle_and_provider_drift(tmp_path, path, extra):

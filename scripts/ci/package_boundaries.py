@@ -23,10 +23,13 @@ EXPECTED_IMPORTS = {
     "app.services": set(),
     "app.services.collection": set(),
     "app.services.collection.intent": {"app.core.config"},
-    "app.services.social.vk_access": set(),
+    "app.services.social.vk_access": {"app.utils.identifiers"},
     "app.services.task_contracts": {"app.services.task_plans"},
     "app.services.task_plans": {"app.services.collection.intent", "app.services.social.vk_access"},
     "app.services.task_preparation": {"app.services.task_plans"},
+    # P11-T14: one reviewed pure edge, including its empty parent initializer.
+    "app.utils": set(),
+    "app.utils.identifiers": set(),
 }
 # Explicit per-module third-party dependencies, never an app-wide exemption.
 EXTERNAL_IMPORTS = {

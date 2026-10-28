@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -49,6 +49,7 @@ from app.models import (
     User,
     WorkspaceRole,
 )
+from app.models.managers.action_audit_event_manager import ActionAuditEventManager
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.models.managers.tenant_manager import tenant_users, tenants
 from app.services.billing.payer import configure_current_personal_account
@@ -170,6 +171,19 @@ class AdmissionWorkspace:
             for job in reversed(jobs):
                 await Job.objects.delete_by_id(job.id)
             assert await Job.objects.filter(tenant_id=self.tenant.id) == []
+            assert Tenant.PLAN_LIMITS["business"]["retention_days"] < 400
+            audit = ActionAuditEventManager()
+            with tenant_scope(self.tenant.id):
+                expiry_now = datetime.now(timezone.utc) + timedelta(days=400)
+                while await audit.delete_expired(now=expiry_now):
+                    pass
+                window_end = datetime.now(timezone.utc) + timedelta(seconds=1)
+                remaining_events = await audit.list_events(
+                    since=window_end - timedelta(days=90),
+                    until=window_end,
+                    limit=1000,
+                )
+                assert remaining_events == []
             for scenario_id in reversed(self.scenario_ids):
                 await AgentScenario.objects.delete_by_id(scenario_id)
             for source_id in reversed(self.source_ids):

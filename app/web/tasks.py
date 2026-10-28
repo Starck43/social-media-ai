@@ -535,9 +535,7 @@ def _task_plan_from_form(
             digest_window = {"type": "fixed", "start": digest_start_date or None, "end": digest_end_date or None}
         else:
             digest_window = {"type": "rolling", "days": digest_rolling_days}
-        raw["pipeline"] = {
-            "stages": (["collect"] if include_collection else []) + ["analyze", "digest"]
-        }
+        raw["pipeline"] = {"stages": (["collect"] if include_collection else []) + ["analyze", "digest"]}
         raw["digest"] = {
             "window": digest_window,
             "group_by": digest_group_by or "themes",

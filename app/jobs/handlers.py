@@ -6,11 +6,11 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from app.jobs.source_activity import source_in_task_platform_scope as _source_in_task_platform_scope
-from app.services.social.credentials import AuthorizationRequired
 
 # Selection is a task property applied to staged content; `handlers` owns when
 # it runs, `selection` owns what it means (docs/COLLECTION.md#task-selection-contract).
 from app.services.monitoring import selection
+from app.services.social.credentials import AuthorizationRequired
 
 if TYPE_CHECKING:
     from app.types import AgentActionType
@@ -88,8 +88,10 @@ def _provider_error(error: BaseException) -> tuple[str, str | None]:
 def _task_plan_platforms(plan: dict[str, Any]) -> set[str] | None:
     """Return a validated platform allowlist, or None for malformed plans."""
     raw = plan.get("platforms")
-    if not isinstance(raw, list) or not raw or any(
-        not isinstance(value, str) or value not in {"vk", "telegram"} for value in raw
+    if (
+        not isinstance(raw, list)
+        or not raw
+        or any(not isinstance(value, str) or value not in {"vk", "telegram"} for value in raw)
     ):
         return None
     return set(raw)
@@ -146,12 +148,9 @@ def _runtime_source(
         params["force_refresh"] = True
     if cli_dates:
         params["cli_dates"] = dict(cli_dates)
-    if (
-        task_plan_enabled
-        and (
-            (task_id is not None and getattr(source, "owner_task_id", None) == task_id)
-            or _log_id(getattr(source, "id", None)) in (generated_source_ids or set())
-        )
+    if task_plan_enabled and (
+        (task_id is not None and getattr(source, "owner_task_id", None) == task_id)
+        or _log_id(getattr(source, "id", None)) in (generated_source_ids or set())
     ):
         # Generated discovery/mention lanes belong to this run's actor/payer.
         # A missing owner is pinned to an impossible member id so the resolver
@@ -272,8 +271,9 @@ async def _resolve_sources(
             if not allowed:
                 return []
             rows = list(
-                await Source.objects.filter(is_active=True, id__in=allowed, tenant_id=task.tenant_id)
-                .select_related("platform")
+                await Source.objects.filter(is_active=True, id__in=allowed, tenant_id=task.tenant_id).select_related(
+                    "platform"
+                )
             )
             return [source for source in rows if _source_in_task_platform_scope(source, platforms)]
         logger.info(f"_resolve_sources: task={task.id} has {len(task_sources)} sources: {[s.id for s in task_sources]}")
@@ -282,9 +282,7 @@ async def _resolve_sources(
         logger.info("_resolve_sources: task has no sources, falling back to all active")
         # A task-scoped query lane is owned by its task and must never leak into
         # another task's "all active sources" shortcut (or a taskless run).
-        return list(
-            await Source.objects.filter(is_active=True, owner_task_id__isnull=True).select_related("platform")
-        )
+        return list(await Source.objects.filter(is_active=True, owner_task_id__isnull=True).select_related("platform"))
 
     source_ids = (payload or {}).get("source_ids") or []
     plan = (payload or {}).get("task_plan")
@@ -306,9 +304,7 @@ async def _resolve_sources(
         allowed_ids.update(value for value in discovered_source_ids or () if type(value) is int and value > 0)
         if not allowed_ids:
             return []
-        rows = list(
-            await Source.objects.filter(is_active=True, id__in=allowed_ids).select_related("platform")
-        )
+        rows = list(await Source.objects.filter(is_active=True, id__in=allowed_ids).select_related("platform"))
         return [source for source in rows if _source_in_task_platform_scope(source, platforms)]
     if source_ids:
         return list(await Source.objects.filter(id__in=source_ids).select_related("platform"))
@@ -483,7 +479,8 @@ async def _count_failed_staged(source_id: int, staged: list, completed_hashes: s
 
     completed_hashes = completed_hashes or set()
     hashes = [
-        row.content_hash for row in staged
+        row.content_hash
+        for row in staged
         if getattr(row, "content_hash", None) and row.content_hash not in completed_hashes
     ]
     if not hashes:
@@ -949,7 +946,9 @@ async def _record_lane_evidence(
         )
 
 
-async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False, _resolved_context=None) -> dict[str, Any]:
+async def handle_collect(
+    payload: dict[str, Any], *, stage_only: bool = False, _resolved_context=None
+) -> dict[str, Any]:
     """Bind an admitted selected connection through discovery and all read lanes."""
     from app.core.tenant_context import current_tenant_id
     from app.services.social.vk_task_access import authorized_vk_task_scope
@@ -1097,15 +1096,11 @@ async def _handle_collect_with_access(
             task = await _load_task(payload.get("agent_task_id")) or task
 
     discovered_source_ids = list(
-        dict.fromkeys(
-            (*(population or {}).get("source_ids", []), *(mention or {}).get("source_ids", []))
-        )
+        dict.fromkeys((*(population or {}).get("source_ids", []), *(mention or {}).get("source_ids", [])))
     )
     sources = await _resolve_sources(None if snapshot else task, payload, discovered_source_ids=discovered_source_ids)
     generated_source_ids = {
-        value
-        for value in (snapshot or {}).get("generated_source_ids", [])
-        if type(value) is int and value > 0
+        value for value in (snapshot or {}).get("generated_source_ids", []) if type(value) is int and value > 0
     }
     if task_plan_enabled and connection_owner_error:
         # Existing selected sources keep their configured mode. Generated lanes
@@ -1121,9 +1116,7 @@ async def _handle_collect_with_access(
 
     # Expiry/downgrade can change while discovery is running. Existing job usage
     # is idempotent, but never bypasses current grants or expiry.
-    await entitlements.admit_execution(
-        required_capabilities | source_capabilities(sources), job_id=run_id
-    )
+    await entitlements.admit_execution(required_capabilities | source_capabilities(sources), job_id=run_id)
 
     collector = ContentCollector()
 
@@ -1164,6 +1157,7 @@ async def _handle_collect_with_access(
         # in a dry run, how many phrases still have no lane.
         stats["mention_lanes"] = mention
     from app.jobs import progress as job_progress
+
     if stage_only:
         await job_progress.begin_phase("collection")
 
@@ -1403,16 +1397,8 @@ async def _handle_collect_with_access(
                     # collection from re-reporting the same wall as new.
                     "content_hashes": list((result or {}).get("content_hashes") or []),
                     "dry_run": bool((result or {}).get("dry_run")),
-                    **(
-                        {"preview": (result or {}).get("preview")}
-                        if (result or {}).get("dry_run")
-                        else {}
-                    ),
-                    **(
-                        {"selection": (result or {}).get("selection")}
-                        if (result or {}).get("selection")
-                        else {}
-                    ),
+                    **({"preview": (result or {}).get("preview")} if (result or {}).get("dry_run") else {}),
+                    **({"selection": (result or {}).get("selection")} if (result or {}).get("selection") else {}),
                 }
             )
             if analysis_errors:
@@ -1562,8 +1548,8 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
         policy = retention_policy(payload)
         if policy is None:
             raise ValueError("Некорректный срок хранения истории заданий")
-        from app.jobs.lifecycle import cleanup_terminal_job_history
         from app.core.tenant_context import current_tenant_id
+        from app.jobs.lifecycle import cleanup_terminal_job_history
 
         deleted_jobs = await cleanup_terminal_job_history(tenant_id=current_tenant_id())
         return {
@@ -1665,9 +1651,11 @@ async def handle_analyze(
     collection_stats = (
         collection_stats_override
         if collection_stats_override is not None
-        else await handle_collect(payload, stage_only=True, _resolved_context=(snapshot, task, task_payload))
-        if unified_run
-        else None
+        else (
+            await handle_collect(payload, stage_only=True, _resolved_context=(snapshot, task, task_payload))
+            if unified_run
+            else None
+        )
     )
     collection_by_source = {
         row["source_id"]: row
@@ -1678,11 +1666,11 @@ async def handle_analyze(
     if collection_stats_override is not None:
         for source_id, row in collection_by_source.items():
             hashes = row.get("content_hashes") if isinstance(row, dict) else None
-            collected_hashes_by_source[source_id] = set(
-                value
-                for value in hashes
-                if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
-            ) if isinstance(hashes, list) else set()
+            collected_hashes_by_source[source_id] = (
+                set(value for value in hashes if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value))
+                if isinstance(hashes, list)
+                else set()
+            )
     from app.jobs import progress as job_progress
 
     if unified_run or collection_stats_override is not None:
@@ -1850,7 +1838,8 @@ async def handle_analyze(
                     raw_total = None
                     logger.warning(
                         "analyze_staged_count_failed source_id=%s error_code=%s",
-                        _log_id(source.id), _error_kind(count_error),
+                        _log_id(source.id),
+                        _error_kind(count_error),
                     )
                 staged = await CollectedItem.objects.for_source(
                     source.id,
@@ -1883,9 +1872,7 @@ async def handle_analyze(
                         for row, item in zip(staged, analyzed_items)
                         if getattr(row, "selection_status", None) is None
                     ]
-                    legacy_selected = (
-                        selection.select_items(legacy_items, staged_scope) if legacy_items else None
-                    )
+                    legacy_selected = selection.select_items(legacy_items, staged_scope) if legacy_items else None
                     items = status_items + (legacy_selected.eligible if legacy_selected is not None else [])
                     reasons = dict(legacy_selected.reasons) if legacy_selected is not None else {}
                     if status_items:
@@ -1954,12 +1941,16 @@ async def handle_analyze(
                     # came from: rows staged by an API/CLI run carry no run id at
                     # all, and a partial analysis must leave the rest alone.
                     completed_hashes = getattr(analyzer, "completed_hashes", set())
-                    deleted = 0 if keep_raw else await _retire_staged(
-                        fresh,
-                        source.id,
-                        source.tenant_id,
-                        completed_hashes=completed_hashes,
-                        analysis_fingerprint=getattr(analyzer, "current_fingerprint", None),
+                    deleted = (
+                        0
+                        if keep_raw
+                        else await _retire_staged(
+                            fresh,
+                            source.id,
+                            source.tenant_id,
+                            completed_hashes=completed_hashes,
+                            analysis_fingerprint=getattr(analyzer, "current_fingerprint", None),
+                        )
                     )
                     # Only rows from this exact batch can count as processed.
                     # `fresh` is persisted coverage; intersect its hashes with
@@ -1967,11 +1958,7 @@ async def handle_analyze(
                     from app.services.ai.dedup import analysed_hashes
 
                     covered = analysed_hashes(fresh) | completed_hashes
-                    per["raw_processed"] = sum(
-                        1
-                        for item in items
-                        if item.get("content_hash") in covered
-                    )
+                    per["raw_processed"] = sum(1 for item in items if item.get("content_hash") in covered)
                     await job_progress.update_current(sources, stats["per_source"], per)
                     if deleted:
                         logger.info(f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}")
@@ -2016,7 +2003,8 @@ async def handle_analyze(
             if analytics is None and not (unified_run and not staged):
                 analytics = (
                     await AIAnalytics.objects.filter(source_id=source.id)
-                    .order_by(AIAnalytics.created_at.desc()).limit(10)
+                    .order_by(AIAnalytics.created_at.desc())
+                    .limit(10)
                 )
 
             if not analytics:
@@ -2094,10 +2082,13 @@ async def handle_analyze(
                     idempotency_key=f"analysis:{analytics_id}:task:{task.id if task is not None else 0}:scenario:{scenario.id}:source:{source.id}",
                     capability=f"social.{action_type.db_value}",
                     target_ref=f"source:{source.id}:analytics:{analytics_id}",
-                    origin="task", agent_scenario_id=scenario.id,
+                    origin="task",
+                    agent_scenario_id=scenario.id,
                     agent_task_id=task.id if task is not None else None,
-                    source_id=source.id, analytics_id=analytics_id,
-                    action_type=action_type, payload=action_payload,
+                    source_id=source.id,
+                    analytics_id=analytics_id,
+                    action_type=action_type,
+                    payload=action_payload,
                 )
                 if not created:
                     continue
@@ -2106,10 +2097,17 @@ async def handle_analyze(
                     try:
                         from app.services.notifications.service import notify
                         from app.types import NotificationType
-                        await notify.create(title="Предложение действия требует проверки",
+
+                        await notify.create(
+                            title="Предложение действия требует проверки",
                             message="Откройте предложение и проверьте содержимое. Внешнее выполнение отключено.",
-                            ntype=NotificationType.BOT_COMMENT, entity_type="action", entity_id=action.id,
-                            recipient_user_ids=[recipient], severity="action_required", dedup_key=f"action-proposal:{action.id}")
+                            ntype=NotificationType.BOT_COMMENT,
+                            entity_type="action",
+                            entity_id=action.id,
+                            recipient_user_ids=[recipient],
+                            severity="action_required",
+                            dedup_key=f"action-proposal:{action.id}",
+                        )
                     except Exception:
                         logger.warning("action_proposal_notification_failed error_code=notification_write_failed")
                 stats["actions_created"] += 1
@@ -2154,11 +2152,14 @@ async def handle_analyze(
                     if key in collection_row
                 }
                 if collection_row.get("error") is True or collection_row.get("outcome") in {
-                    "error", "auth_required", "rate_limited"
+                    "error",
+                    "auth_required",
+                    "rate_limited",
                 }:
                     per["collection_error"] = True
                     if collection_row.get("error") is True or collection_row.get("outcome") in {
-                        "error", "auth_required"
+                        "error",
+                        "auth_required",
                     }:
                         per["error"] = True
             if not progress_attempted and "raw_total" not in per:

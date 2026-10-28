@@ -17,7 +17,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional, Sequence
 
-from app.jobs.progress_metrics import record_metrics, read_metrics
+from app.jobs.progress_metrics import read_metrics, record_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ def build_snapshot(
         "completed": position,
         "current": items[position]["name"] if position < total else None,
         "first": first,
-        "items": items[first:first + MAX_ITEMS],
+        "items": items[first : first + MAX_ITEMS],
         "updated_at": (now or datetime.now(timezone.utc)).isoformat(),
     }
 
@@ -198,7 +198,11 @@ class ProgressSession:
         except ProgressStopped:
             raise
         except Exception as error:  # noqa: BLE001 — progress must never fail a run
-            logger.warning("job_progress_write_failed job_id=%s error_kind=%s", getattr(self.claim, "job_id", None), type(error).__name__[:40])
+            logger.warning(
+                "job_progress_write_failed job_id=%s error_kind=%s",
+                getattr(self.claim, "job_id", None),
+                type(error).__name__[:40],
+            )
             return
         if written is False:
             self.lost = True
@@ -219,8 +223,10 @@ class ProgressSession:
         # Keep references to the handler-owned list: its last source is appended
         # before begin_phase, even when no extra step() call follows the loop.
         self._last_sources, self._last_rows = sources, rows
-        phase = self.phase if self.phase != "processing" else (
-            "collection" if self.claim.job_type == "collect" else "analysis"
+        phase = (
+            self.phase
+            if self.phase != "processing"
+            else ("collection" if self.claim.job_type == "collect" else "analysis")
         )
         self._phase_records[phase] = record_metrics(sources, rows, phase, current=current)
         snapshot["records"] = dict(self._phase_records)
@@ -243,12 +249,12 @@ class ProgressSession:
         if self.lost:
             raise ProgressStopped()
         if self._last_sources:
-            previous = self.phase if self.phase != "processing" else (
-                "collection" if self.claim.job_type == "collect" else "analysis"
+            previous = (
+                self.phase
+                if self.phase != "processing"
+                else ("collection" if self.claim.job_type == "collect" else "analysis")
             )
-            self._phase_records[previous] = record_metrics(
-                self._last_sources, self._last_rows, previous, complete=True
-            )
+            self._phase_records[previous] = record_metrics(self._last_sources, self._last_rows, previous, complete=True)
         self.phase = phase if phase in {"collection", "analysis"} else "processing"
         self.calls = 0
         self._last_sources, self._last_rows = (), ()
@@ -329,9 +335,15 @@ def read_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
         items.append(item)
     current = progress.get("current")
     return {
-        "records": {key: metrics for key in ("collection", "analysis")
-                    if (metrics := read_metrics((progress.get("records") or {}).get(key))) is not None}
-                    if isinstance(progress.get("records"), dict) else {},
+        "records": (
+            {
+                key: metrics
+                for key in ("collection", "analysis")
+                if (metrics := read_metrics((progress.get("records") or {}).get(key))) is not None
+            }
+            if isinstance(progress.get("records"), dict)
+            else {}
+        ),
         "phase": progress.get("phase") if progress.get("phase") in {"collection", "analysis"} else "processing",
         "total": total,
         "completed": completed,

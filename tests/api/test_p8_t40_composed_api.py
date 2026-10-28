@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from app.api.v1.endpoints import tasks as task_api
 from app.schemas.task import TaskPlanPreviewRequest
 from app.services.task_creation import prepare_task_plan_create
-from app.services.task_plans import prepare_task_plan_update, parse_task_plan, task_plan_block
+from app.services.task_plans import parse_task_plan, prepare_task_plan_update, task_plan_block
 
 __source_only__ = True
 
@@ -88,7 +88,10 @@ def test_api_create_and_update_preparation_roundtrip_the_canonical_v2_plan():
     assert ordinary_update.changes["payload"]["task_plan"] == canonical
     assert ordinary_update.changes["payload"]["collect_before_analyze"] is False
 
-    replacement = _plan(stages=("collect", "analyze", "digest"), digest_window={"type": "fixed", "start": "2026-02-01", "end": "2026-02-05"})
+    replacement = _plan(
+        stages=("collect", "analyze", "digest"),
+        digest_window={"type": "fixed", "start": "2026-02-01", "end": "2026-02-05"},
+    )
     replaced = prepare_task_plan_update(
         created.payload,
         {"task_plan": replacement},

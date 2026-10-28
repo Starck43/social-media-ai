@@ -255,15 +255,11 @@ async def test_web_digest_send_requires_explicit_confirmation_and_create_permiss
     monkeypatch.setattr(tasks, "guard_web", allow)
     request = SimpleNamespace(state=SimpleNamespace(tenant_id=77))
 
-    refused = await tasks.task_send_generated_digest(
-        request, task_id=31, job_id=42, confirmed="", token="csrf"
-    )
+    refused = await tasks.task_send_generated_digest(request, task_id=31, job_id=42, confirmed="", token="csrf")
     assert refused.status_code == 302
     assert calls == []
 
-    response = await tasks.task_send_generated_digest(
-        request, task_id=31, job_id=42, confirmed="true", token="csrf"
-    )
+    response = await tasks.task_send_generated_digest(request, task_id=31, job_id=42, confirmed="true", token="csrf")
     assert response.status_code == 302
     assert calls == [(31, 42)]
     assert permission_checks == [
@@ -278,8 +274,6 @@ async def test_web_digest_send_requires_explicit_confirmation_and_create_permiss
         "guard_web",
         lambda *_args, **_kwargs: RedirectResponse("/app/tasks/31", status_code=302),
     )
-    denied = await tasks.task_send_generated_digest(
-        request, task_id=31, job_id=43, confirmed="true", token="csrf"
-    )
+    denied = await tasks.task_send_generated_digest(request, task_id=31, job_id=43, confirmed="true", token="csrf")
     assert denied.status_code == 302
     assert calls == [(31, 42)]

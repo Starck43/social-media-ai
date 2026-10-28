@@ -43,8 +43,14 @@ async def test_digest_send_delegates_only_the_selected_saved_run(monkeypatch):
 @pytest.mark.parametrize(
     ("failure", "expected"),
     [
-        (PermissionError("foreign workspace"), {"error": "Report delivery is not permitted.", "code": "task_digest_forbidden"}),
-        (RuntimeError("secret destination"), {"error": "Inspect the retained delivery receipts before retrying.", "code": "task_digest_requires_review"}),
+        (
+            PermissionError("foreign workspace"),
+            {"error": "Report delivery is not permitted.", "code": "task_digest_forbidden"},
+        ),
+        (
+            RuntimeError("secret destination"),
+            {"error": "Inspect the retained delivery receipts before retrying.", "code": "task_digest_requires_review"},
+        ),
     ],
 )
 async def test_digest_send_hides_permission_and_delivery_error_details(monkeypatch, failure, expected):

@@ -57,9 +57,27 @@ def _job_payload(snapshot):
     "pipeline",
     [
         {"version": 2, "job_id": 99, "task_id": 7, "attempt": 1, "stages": {"collect": {"state": "completed"}}},
-        {"version": 1, "job_id": 99, "task_id": 7, "attempt": 1, "stages": {"collect": {"state": "completed", "attempt": 1}}},
-        {"version": 1, "job_id": 99, "task_id": 7, "attempt": 1, "stages": {"future": {"state": "started", "attempt": 1}}},
-        {"version": 1, "job_id": 99, "task_id": 7, "attempt": 1, "stages": {"collect": {"state": "unknown", "attempt": 1}}},
+        {
+            "version": 1,
+            "job_id": 99,
+            "task_id": 7,
+            "attempt": 1,
+            "stages": {"collect": {"state": "completed", "attempt": 1}},
+        },
+        {
+            "version": 1,
+            "job_id": 99,
+            "task_id": 7,
+            "attempt": 1,
+            "stages": {"future": {"state": "started", "attempt": 1}},
+        },
+        {
+            "version": 1,
+            "job_id": 99,
+            "task_id": 7,
+            "attempt": 1,
+            "stages": {"collect": {"state": "unknown", "attempt": 1}},
+        },
     ],
 )
 def test_malformed_persisted_checkpoint_fails_closed(pipeline):

@@ -462,7 +462,8 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
         # A policy refusal is confirmed and terminal, not uncertain provider work.
         entitlement_denied = isinstance(error, EntitlementDenied)
         stored_error = (
-            str(error) if known_delivery_failure or entitlement_denied
+            str(error)
+            if known_delivery_failure or entitlement_denied
             else f"{OUTCOME_UNCONFIRMED_PREFIX}{_error_kind(error)}"
         )
         try:

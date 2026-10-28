@@ -1096,9 +1096,12 @@ class AgentTaskManager(BaseManager):
                         from app.models.tenancy.tenant import Tenant
                         from app.services.task_plans import materialize_task_plan_window, task_plan_timezone
 
-                        workspace_timezone = timezone_name or (
-                            await session.execute(select(Tenant.timezone).where(Tenant.id == tenant_id))
-                        ).scalar_one_or_none()
+                        workspace_timezone = (
+                            timezone_name
+                            or (
+                                await session.execute(select(Tenant.timezone).where(Tenant.id == tenant_id))
+                            ).scalar_one_or_none()
+                        )
                         effective_timezone = task_plan_timezone(
                             payload["task_plan"], workspace_timezone or settings.SCHEDULER_TIMEZONE
                         )

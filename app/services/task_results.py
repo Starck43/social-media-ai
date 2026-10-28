@@ -37,12 +37,30 @@ def _pipeline_outcome(raw: Any, *, can_view_preview: bool) -> dict[str, Any] | N
         if not isinstance(value, dict):
             continue
         state = value.get("state", value.get("status"))
-        if state not in {"started", "complete", "completed", "failed", "partial", "skipped", "review_required", "unknown"}:
+        if state not in {
+            "started",
+            "complete",
+            "completed",
+            "failed",
+            "partial",
+            "skipped",
+            "review_required",
+            "unknown",
+        }:
             state = "unknown"
         receipt = value.get("result") if isinstance(value.get("result"), dict) else value
         stage: dict[str, Any] = {"status": "complete" if state == "completed" else state}
         reported_status = receipt.get("status")
-        if reported_status in {"started", "complete", "completed", "failed", "partial", "skipped", "review_required", "unknown"}:
+        if reported_status in {
+            "started",
+            "complete",
+            "completed",
+            "failed",
+            "partial",
+            "skipped",
+            "review_required",
+            "unknown",
+        }:
             stage["status"] = "complete" if reported_status == "completed" else reported_status
         counts = outcome_counts(receipt)
         nested_counts = receipt.get("counts")
@@ -90,7 +108,13 @@ async def task_pipeline_outcome(raw: Any, *, can_view_preview: bool = False) -> 
         return result
     run_id = reference.get("run_id")
     generation = reference.get("generation")
-    if type(run_id) is not int or run_id <= 0 or not isinstance(generation, str) or not generation or len(generation) > 128:
+    if (
+        type(run_id) is not int
+        or run_id <= 0
+        or not isinstance(generation, str)
+        or not generation
+        or len(generation) > 128
+    ):
         return result
     from app.services.task_digest_delivery import read_task_digest_delivery
 

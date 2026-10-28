@@ -9,11 +9,11 @@ from types import ModuleType, SimpleNamespace
 
 from typer.testing import CliRunner
 
-from cli import main as cli_main
-from cli.commands import tasks as task_commands
 from app.core.tenant_context import current_tenant_id
 from app.services.task_creation import prepare_task_plan_create
-from app.services.task_plans import prepare_task_plan_update, task_plan_block, parse_task_plan
+from app.services.task_plans import parse_task_plan, prepare_task_plan_update, task_plan_block
+from cli import main as cli_main
+from cli.commands import tasks as task_commands
 
 __source_only__ = True
 

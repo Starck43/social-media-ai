@@ -199,9 +199,7 @@ async def test_claimed_once_task_survives_admission_deactivation_but_rechecks_pa
         assert task_row.is_active is False
 
     payer = SimpleNamespace(user_id=workspace.user.id)
-    monkeypatch.setattr(
-        "app.services.billing.payer.resolve_scheduled_task_payer", AsyncMock(return_value=payer)
-    )
+    monkeypatch.setattr("app.services.billing.payer.resolve_scheduled_task_payer", AsyncMock(return_value=payer))
     monkeypatch.setattr("app.core.personal_catalog_context.current_catalog_owner_id", lambda: workspace.user.id)
     task_view = SimpleNamespace(
         id=task.id,

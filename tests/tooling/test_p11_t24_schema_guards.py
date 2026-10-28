@@ -379,7 +379,9 @@ def _statements(sql, unresolved, function, tree):
     if not bindings:
         bindings = _call_sites(tree, function, _reachable_functions(tree)) if function else []
     if not bindings:
-        raise ValueError(f"Cannot resolve migration call arguments for {function!r}")
+        if _GUARD_DDL.match(sql):
+            raise ValueError(f"Cannot resolve migration call arguments for guard DDL in {function!r}")
+        return set()
     # Locals of this function that are built from its parameters
     for binding in bindings:
         for name in sorted(names):
@@ -592,6 +594,24 @@ def test_migration_helper_arguments_follow_upgrade_reachability():
     reversed_tree = ast.Module(body=list(reversed(tree.body)), type_ignores=[])
     reversed_sites = _call_sites(reversed_tree, "_replace_validator", _reachable_functions(reversed_tree))
     assert [site.flags for site in reversed_sites] == [site.flags for site in sites]
+
+
+def test_unresolved_dml_without_call_bindings_is_not_guard_ddl():
+    tree = ast.parse("body = dynamic_value\ndef upgrade():\n    pass\n")
+    unresolved = [ast.Name(id="body", ctx=ast.Load())]
+    statements = _statements("UPDATE example SET tenant_id = ", unresolved, "upgrade", tree)
+    assert statements == set()
+
+
+def test_unresolved_guard_ddl_without_call_bindings_fails_closed():
+    tree = ast.parse("body = dynamic_value\ndef upgrade():\n    pass\n")
+    unresolved = [ast.Name(id="body", ctx=ast.Load())]
+    try:
+        _statements("CREATE FUNCTION x.guard() RETURNS trigger AS ", unresolved, "upgrade", tree)
+    except ValueError as error:
+        assert "guard DDL" in str(error)
+    else:
+        raise AssertionError("Unresolved guard function body was silently ignored")
 
 
 def test_function_bodies_match_the_final_migration_bodies():

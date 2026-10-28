@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import jwt
 import pytest
 from fastapi import FastAPI, Request
+from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
 from starlette.responses import JSONResponse
 
@@ -234,7 +235,7 @@ async def test_request_id_is_bounded_validated_and_echoed(value: str, is_preserv
 
     app = RequestContextMiddleware(endpoint)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        response = await client.get("/", headers={"x-request-id": value})
+        response = await client.get("/", headers={"x-request-id": value.encode("utf-8")})
 
     request_id = response.headers["x-request-id"]
     assert response.json() == {"request_id": request_id}
@@ -249,31 +250,89 @@ async def test_request_id_is_bounded_validated_and_echoed(value: str, is_preserv
 
 def test_expensive_list_routes_expose_bounded_pagination() -> None:
     schema = create_application().openapi()
-    list_paths = (
-        "/api/v1/sources",
-        "/api/v1/tasks",
-        "/api/v1/credentials",
-        "/api/v1/ai/scenarios",
-        "/api/v1/llm/llm-models/",
-        "/api/v1/llm/llm-providers/",
-        "/api/v1/users",
-        "/api/v1/users/roles/",
-    )
+    expected = {
+        "/api/v1/sources": {"limit": (1, 100), "offset": (0, None)},
+        "/api/v1/tasks": {"limit": (1, 100), "offset": (0, None)},
+        "/api/v1/credentials": {"limit": (1, 100), "offset": (0, None)},
+        "/api/v1/ai/scenarios": {"limit": (1, 100), "offset": (0, None)},
+        "/api/v1/llm/llm-models/": {"limit": (1, 100), "offset": (0, None)},
+        "/api/v1/llm/llm-providers/": {"limit": (1, 100), "offset": (0, None)},
+        "/api/v1/users": {"limit": (1, 100), "skip": (0, None)},
+        "/api/v1/users/roles/": {"page": (1, None), "size": (1, 100)},
+    }
 
-    for path in list_paths:
+    for path, bounds in expected.items():
         parameters = {
             parameter["name"]: parameter["schema"] for parameter in schema["paths"][path]["get"]["parameters"]
         }
-        if "limit" in parameters:
-            assert parameters["limit"]["minimum"] == 1, path
-            assert parameters["limit"]["maximum"] == 100, path
-        if "offset" in parameters:
-            assert parameters["offset"]["minimum"] == 0, path
-        if "page" in parameters:
-            assert parameters["page"]["minimum"] == 1, path
-        if "size" in parameters:
-            assert parameters["size"]["minimum"] == 1, path
-            assert parameters["size"]["maximum"] == 100, path
+        assert set(bounds).issubset(parameters), path
+        for name, (minimum, maximum) in bounds.items():
+            assert parameters[name].get("minimum") == minimum, (path, name)
+            assert parameters[name].get("maximum") == maximum, (path, name)
+
+
+async def test_invalid_list_bounds_return_422_without_running_list_queries(monkeypatch) -> None:
+    """HTTP validation rejects out-of-range values before an endpoint touches a manager."""
+    from app.api.v1.endpoints import credentials, llm_models, llm_providers, roles, scenarios, sources, tasks
+    from app.api.v1.endpoints import user as user_endpoints
+    from app.models import AgentScenario, AgentTask, PlatformRole, Source, User
+    from app.models.managers.user_credential_manager import user_credentials
+
+    app = FastAPI()
+    app.include_router(sources.router, prefix="/api/v1/sources")
+    app.include_router(tasks.router, prefix="/api/v1/tasks")
+    app.include_router(credentials.router, prefix="/api/v1/credentials")
+    app.include_router(scenarios.router, prefix="/api/v1/ai")
+    app.include_router(llm_models.router, prefix="/api/v1/llm")
+    app.include_router(llm_providers.router, prefix="/api/v1/llm")
+    app.include_router(user_endpoints.router, prefix="/api/v1/users")
+    app.include_router(roles.router, prefix="/api/v1/users/roles")
+
+    fake_actor = SimpleNamespace(id=7)
+
+    async def override_dependency():
+        return fake_actor
+
+    def install_overrides(dependant) -> None:
+        if dependant.call is not None:
+            app.dependency_overrides[dependant.call] = override_dependency
+        for nested in dependant.dependencies:
+            install_overrides(nested)
+
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            install_overrides(route.dependant)
+
+    def unexpected_manager_query(*_args, **_kwargs):
+        raise AssertionError("invalid pagination must fail before endpoint manager access")
+
+    monkeypatch.setattr(Source.objects, "filter", unexpected_manager_query)
+    monkeypatch.setattr(AgentTask.objects, "filter", unexpected_manager_query)
+    monkeypatch.setattr(AgentScenario.objects, "filter", unexpected_manager_query)
+    monkeypatch.setattr(User.objects, "get_active_users", unexpected_manager_query)
+    monkeypatch.setattr(PlatformRole.objects, "prefetch_related", unexpected_manager_query)
+    monkeypatch.setattr(user_credentials, "filter", unexpected_manager_query)
+    monkeypatch.setattr(llm_models.LLMModel.objects, "select_related", unexpected_manager_query)
+    monkeypatch.setattr(llm_providers.LLMProvider.objects, "filter", unexpected_manager_query)
+
+    bad_queries = (
+        ("/api/v1/sources?limit=0", 422),
+        ("/api/v1/sources?limit=101", 422),
+        ("/api/v1/sources?offset=-1", 422),
+        ("/api/v1/tasks?limit=101", 422),
+        ("/api/v1/credentials?limit=0", 422),
+        ("/api/v1/ai/scenarios?offset=-1", 422),
+        ("/api/v1/llm/llm-models/?limit=101", 422),
+        ("/api/v1/llm/llm-providers/?offset=-1", 422),
+        ("/api/v1/users?limit=0", 422),
+        ("/api/v1/users?skip=-1", 422),
+        ("/api/v1/users/roles/?page=0", 422),
+        ("/api/v1/users/roles/?size=101", 422),
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        for path, expected_status in bad_queries:
+            response = await client.get(path)
+            assert response.status_code == expected_status, (path, response.text)
 
 
 async def test_task_admission_429_has_retry_hint_and_safe_detail(monkeypatch) -> None:

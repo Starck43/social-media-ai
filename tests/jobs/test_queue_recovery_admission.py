@@ -835,6 +835,10 @@ class ProjectionAndRetentionTests(unittest.IsolatedAsyncioTestCase):
             "_closure_prune",
             "app/jobs/handlers.py",
             {
+                "app.core.config": SimpleNamespace(settings=SimpleNamespace(DATA_RETENTION_MONTHS=3)),
+                "app.services.monitoring": SimpleNamespace(
+                    selection=load("_closure_selection", "app/services/monitoring/selection.py")
+                ),
                 "app.services.social.credentials": SimpleNamespace(
                     AuthorizationRequired=type("AuthorizationRequired", (Exception,), {})
                 ),

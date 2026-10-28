@@ -242,6 +242,7 @@ async def replay_actor(workspace):
     try:
         with tenant_scope(workspace.id):
             await BaseManager(TenantUser).create(
+                tenant_id=workspace.id,
                 channel="web",
                 external_user_id=str(user.id),
                 user_id=user.id,

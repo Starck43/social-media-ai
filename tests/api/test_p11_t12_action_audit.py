@@ -176,7 +176,11 @@ async def test_expiry_uses_workspace_plan_and_update_is_rejected():
                 async with ActionAuditEvent.objects._get_owned_session() as session:
                     session.add(old)
                     await session.flush()
-
+                listed = await ActionAuditEvent.objects.list_events(
+                    since=datetime.now(timezone.utc) - timedelta(days=89),
+                    until=datetime.now(timezone.utc),
+                )
+            assert old.event_id in {event.event_id for event in listed}, "the seeded expired row must exist first"
             with tenant_scope(tenant_id), permission_scope(owner, is_owner=True):
                 deleted = await ActionAuditEventManager().delete_expired()
                 window_end = datetime.now(timezone.utc)
@@ -186,6 +190,51 @@ async def test_expiry_uses_workspace_plan_and_update_is_rejected():
                 )
             assert deleted == 1  # default Pro plan retains 30 days
             assert old.event_id not in {event.event_id for event in remaining}
+        finally:
+            if tenant_id is not None:
+                await _purge([tenant_id])
+            await _drop(owner, tenant_id)
+
+
+async def test_expired_cleanup_deletes_the_whole_batch_in_one_pass():
+    """More expired rows than the requested batch still leave in that one call.
+
+    Retention runs from a periodic job, so a cleanup that quietly removed only
+    one row per pass would keep evidence far past the plan window while
+    reporting success.
+    """
+    async with await _client() as client:
+        owner = None
+        tenant_id = None
+        try:
+            owner, tenant_id = await _register_owner(client, "P11T12AuditBatch")
+            aged = datetime.now(timezone.utc) - timedelta(days=31)
+            with tenant_scope(tenant_id), permission_scope(owner, is_owner=True):
+                async with ActionAuditEvent.objects._get_owned_session() as session:
+                    for index in range(3):
+                        session.add(
+                            ActionAuditEvent(
+                                tenant_id=tenant_id,
+                                event_id=secrets.token_hex(16),
+                                occurred_at=aged,
+                                actor_kind="user",
+                                actor_id=str(owner.id),
+                                action="scheduling.task_admit",
+                                resource_kind="agent_task",
+                                resource_id=str(2000 + index),
+                                outcome="succeeded",
+                            )
+                        )
+                    await session.flush()
+
+            with tenant_scope(tenant_id), permission_scope(owner, is_owner=True):
+                deleted = await ActionAuditEventManager().delete_expired(batch_size=10)
+                remaining = await ActionAuditEvent.objects.list_events(
+                    since=datetime.now(timezone.utc) - timedelta(days=89),
+                    until=datetime.now(timezone.utc),
+                )
+            assert deleted == 3
+            assert remaining == []
         finally:
             if tenant_id is not None:
                 await _purge([tenant_id])

@@ -11,9 +11,9 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from urllib.parse import urlsplit
 from uuid import uuid4
-from unittest.mock import AsyncMock
 
 _conftest_path = Path(__file__).resolve().parents[1] / "conftest.py"
 _conftest = next(
@@ -31,6 +31,7 @@ if (
     raise RuntimeError("STOP: only the approved local social_manager/test_schema is allowed")
 
 import pytest
+
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import (
@@ -41,17 +42,18 @@ from app.models import (
     Platform,
     PlatformRole,
     Source,
-    Tenant,
     TaskBillingPayer,
+    Tenant,
     User,
     WorkspaceRole,
 )
-from app.models.managers.tenant_manager import tenant_users, tenants
 from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
+from app.models.managers.tenant_manager import tenant_users, tenants
 from app.services.billing.payer import configure_current_personal_account
 from app.services.task_launch import launch_identity, launch_social_task
 from app.services.task_plans import apply_task_plan, materialize_task_plan_window, parse_task_plan, task_plan_block
 from app.types import SourceType
+from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 
@@ -136,6 +138,7 @@ class Workspace:
                 await Source.objects.delete_by_id(source_id)
             assert await TaskBillingPayer.objects.filter(tenant_id=self.tenant.id).count() == 0
             await PersonalBillingAccount.objects.delete(user_id=self.user.id)
+            await purge_tenant_audit_events(self.tenant.id)
             await tenants.delete_by_id(self.tenant.id)
             await User.objects.delete_by_id(self.user.id)
 

@@ -1293,6 +1293,7 @@ class AgentTaskManager(BaseManager):
                         payload["_effective_snapshot"] = {
                             "version": 1,
                             "task_id": row.id,
+                            "once": once,
                             "task_payload": dict(payload),
                             "generated_source_ids": [
                                 source.id for source in source_rows if source.owner_task_id == row.id

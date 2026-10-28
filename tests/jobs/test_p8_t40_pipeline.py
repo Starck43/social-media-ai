@@ -102,6 +102,7 @@ async def test_composed_pipeline_uses_admitted_scope_and_finishes_each_stage(mon
     source = SimpleNamespace(id=11)
     order = []
     checkpoints = []
+    authorization_stages = []
     monkeypatch.setattr(handlers, "_load_task", AsyncMock(return_value=task))
 
     async def resolve_sources(task_view, payload, discovered_source_ids=None):
@@ -150,6 +151,8 @@ async def test_composed_pipeline_uses_admitted_scope_and_finishes_each_stage(mon
         return {"status": "complete", "generated": True, "delivered": 0, "text": "report"}
 
     async def allow(*args, **kwargs):
+        if kwargs.get("stage"):
+            authorization_stages.append(kwargs["stage"])
         return None
 
     async def write(checkpoint):
@@ -166,8 +169,16 @@ async def test_composed_pipeline_uses_admitted_scope_and_finishes_each_stage(mon
 
     with tenant_scope(3):
         result = await task_pipeline.execute_task_pipeline(_job_payload(task_snapshot))
+        checkpoint_count = len(checkpoints)
+        resumed_payload = _job_payload(task_snapshot)
+        resumed_payload["attempts"] = 2
+        resumed_payload["_prior_result"] = result
+        resumed = await task_pipeline.execute_task_pipeline(resumed_payload)
 
     assert order == ["collect", "analyze", "digest"]
+    assert resumed["pipeline"] == result["pipeline"]
+    assert len(checkpoints) == checkpoint_count
+    assert authorization_stages == ["collect", "analyze", "digest", "collect", "analyze", "digest"]
     assert [checkpoints[-1]["stages"][name]["state"] for name in ("collect", "analyze", "digest")] == [
         "completed",
         "completed",
@@ -178,6 +189,77 @@ async def test_composed_pipeline_uses_admitted_scope_and_finishes_each_stage(mon
     assert result["per_source"][0]["analytics_ids"] == [123]
     assert result["digest"]["delivered"] == 0
     assert result["digest"]["text"] == "report"
+
+
+@pytest.mark.asyncio
+async def test_task_view_restores_snapshot_enums_for_trigger_evaluation(task_snapshot):
+    from app.services.ai.trigger_evaluator import TriggerEvaluator
+    from app.types import AgentActionType, BotTriggerType
+
+    task = SimpleNamespace(id=7, tenant_id=3, sources=[])
+    snapshot = {
+        **task_snapshot,
+        "trigger_type": "KEYWORD_MATCH",
+        "trigger_config": {"keywords": ["deadline"]},
+        "action_type": "COMMENT",
+    }
+    view = task_pipeline._task_view(task, task_snapshot["task_payload"], snapshot)
+
+    assert view.trigger_type is BotTriggerType.KEYWORD_MATCH
+    assert view.action_type is AgentActionType.COMMENT
+    matched = await TriggerEvaluator().should_analyze([{"text": "deadline today"}, {"text": "unrelated"}], view)
+    assert matched == [{"text": "deadline today"}]
+
+
+def test_safe_analysis_result_marks_unprocessed_staged_backlog_partial():
+    result = task_pipeline._safe_analysis_result(
+        {
+            "sources": 1,
+            "analyzed": 50,
+            "skipped": 0,
+            "error": 0,
+            "staged_errors": 0,
+            "per_source": [
+                {
+                    "source_id": 11,
+                    "raw_total": 120,
+                    "raw_selected": 100,
+                    "raw_processed": 50,
+                    "analyzed": 50,
+                }
+            ],
+        }
+    )
+
+    assert result["status"] == "partial"
+    assert result["per_source"][0]["raw_total"] == 120
+
+
+@pytest.mark.asyncio
+async def test_digest_dry_run_does_not_aggregate_or_call_summary(monkeypatch, task_snapshot):
+    from app.services.digest import builder
+
+    aggregate = AsyncMock(side_effect=AssertionError("dry run aggregated report"))
+    summarize = AsyncMock(side_effect=AssertionError("dry run invoked paid summary"))
+    monkeypatch.setattr(builder, "aggregate", aggregate)
+    monkeypatch.setattr(builder, "_summarize", summarize)
+    plan = task_snapshot["task_payload"]["task_plan"]
+
+    result = await task_pipeline._generate_digest(
+        SimpleNamespace(id=7, dry_run=True),
+        plan,
+        {"task_plan": plan},
+        [11],
+        collection={},
+        analysis={},
+    )
+
+    assert result["status"] == "skipped"
+    assert result["generated"] is False
+    assert result["delivered"] == 0
+    assert "text" not in result
+    aggregate.assert_not_awaited()
+    summarize.assert_not_awaited()
 
 
 @pytest.mark.asyncio

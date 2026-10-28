@@ -167,7 +167,11 @@ def test_pipeline_result_projection_preserves_partial_counts_and_redacts_raw_err
             "stages": {
                 "collect": {
                     "state": "completed",
-                    "result": {"status": "partial", "counts": {"collected": 7}, "error": "provider secret"},
+                    "result": {
+                        "status": "partial",
+                        "counts": {"collected": 7, "private_provider_detail": 991},
+                        "error": "provider secret",
+                    },
                 },
                 "analyze": {"state": "completed", "result": {"status": "completed", "counts": {"analyzed": 5}}},
                 "digest": {

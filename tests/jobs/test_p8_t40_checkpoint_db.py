@@ -194,9 +194,9 @@ async def test_claimed_once_task_survives_admission_deactivation_but_rechecks_pa
         workspace.tasks.append(task)
         manager, job, claim = await _claimed_analyze(workspace, task_id=task.id)
         with tenant_scope(workspace.tenant.id):
-            await AgentTask.objects.filter(id=task.id).update(launch_job_id=job.id)
             task_row = await AgentTask.objects.get(id=task.id)
         assert task_row.is_active is False
+        assert task_row.launch_job_id is None
 
     payer = SimpleNamespace(user_id=workspace.user.id)
     monkeypatch.setattr("app.services.billing.payer.resolve_scheduled_task_payer", AsyncMock(return_value=payer))
@@ -212,6 +212,7 @@ async def test_claimed_once_task_survives_admission_deactivation_but_rechecks_pa
         "attempts": claim.attempts,
         "agent_task_id": task.id,
         "_trusted_initiated_by_user_id": workspace.user.id,
+        "_effective_snapshot": {"once": True},
     }
     with workspace.actor_scope():
         assert await task_pipeline._authorized_task(task_view, payload, stage="analyze") == workspace.user.id

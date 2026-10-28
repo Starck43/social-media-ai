@@ -82,12 +82,30 @@ def _safe_collection_result(value: dict) -> dict:
 
 
 def _safe_analysis_result(value: dict) -> dict:
+    per_source = value.get("per_source", [])
+    incomplete = any(
+        isinstance(row, dict)
+        and (
+            row.get("error") is True
+            or row.get("staged_error") is True
+            or row.get("collection_error") is True
+            or any(
+                type(row.get(total)) is int and type(row.get(processed)) is int and row[total] > row[processed]
+                for total, processed in (("raw_total", "raw_processed"), ("raw_selected", "raw_processed"))
+            )
+        )
+        for row in per_source
+    )
     result = {
-        "status": "partial" if value.get("error") or value.get("staged_errors") else "complete",
+        "status": (
+            "partial"
+            if value.get("error") or value.get("staged_errors") or value.get("skipped") or incomplete
+            else "complete"
+        ),
         "counts": _counts(value, ("sources", "analyzed", "skipped", "error", "staged_errors", "actions")),
         "per_source": [],
     }
-    for row in value.get("per_source", []):
+    for row in per_source:
         if not isinstance(row, dict):
             continue
         item = {"source_id": row.get("source_id") if type(row.get("source_id")) is int else None}
@@ -200,7 +218,13 @@ async def _authorized_task(task, payload: dict, *, stage: str) -> int:
     if not live_task.is_active:
         # Admission intentionally deactivates @once tasks in the same
         # transaction that enqueues them. Permit only that exact live claim.
-        if live_task.cron_expr != "@once" or payload.get("job_id") != live_task.launch_job_id:
+        snapshot = payload.get("_effective_snapshot")
+        if (
+            live_task.cron_expr != "@once"
+            or not isinstance(snapshot, dict)
+            or snapshot.get("once") is not True
+            or (live_task.launch_job_id is not None and payload.get("job_id") != live_task.launch_job_id)
+        ):
             raise PermissionError("pipeline_task_inactive")
         from app.models import Job
 
@@ -276,6 +300,11 @@ def _task_view(task, task_payload: dict, snapshot: dict):
     """Keep live task identity/relations while binding execution to admitted fields."""
     from types import SimpleNamespace
 
+    from app.types import AgentActionType, BotTriggerType
+
+    trigger_name = snapshot.get("trigger_type")
+    action_name = snapshot.get("action_type")
+
     return SimpleNamespace(
         id=task.id,
         tenant_id=task.tenant_id,
@@ -284,10 +313,10 @@ def _task_view(task, task_payload: dict, snapshot: dict):
         payload=task_payload,
         sources=task.sources,
         agent_scenario=None,  # The admitted scenario_id is resolved explicitly.
-        trigger_type=snapshot.get("trigger_type"),
+        trigger_type=BotTriggerType.get_by_name(trigger_name) if isinstance(trigger_name, str) else None,
         trigger_config=dict(snapshot.get("trigger_config") or {}),
         dry_run=bool(snapshot.get("dry_run")),
-        action_type=snapshot.get("action_type"),
+        action_type=AgentActionType.get_by_name(action_name) if isinstance(action_name, str) else None,
         rate_limit_per_hour=snapshot.get("rate_limit_per_hour"),
         cooldown_seconds=snapshot.get("cooldown_seconds"),
     )
@@ -326,6 +355,15 @@ async def _generate_digest(
     if not isinstance(digest, dict):
         raise ValueError("pipeline_digest_definition_invalid")
     start, end = _report_window(plan, task_payload)
+    if task_payload.get("dry_run") is True or getattr(task, "dry_run", False):
+        return {
+            "status": "skipped",
+            "error": "pipeline_digest_dry_run",
+            "report_start": start.isoformat(),
+            "report_end": end.isoformat(),
+            "generated": False,
+            "delivered": 0,
+        }
     if not source_ids:
         return {
             "status": "skipped",

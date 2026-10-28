@@ -8,6 +8,25 @@ from app.core.permissions import get_current_user, has_permission, require_permi
 from app.core.tenant_context import current_tenant_id, is_bypass
 from app.types import ActionType
 
+PIPELINE_COUNT_KEYS = {
+    "sources",
+    "items",
+    "new_items",
+    "collected",
+    "analyzed",
+    "skipped",
+    "error",
+    "staged_errors",
+    "actions",
+    "actions_created",
+    "rate_limited",
+    "raw_total",
+    "raw_selected",
+    "raw_processed",
+    "needs_review",
+    "rejected",
+}
+
 
 def outcome_counts(result: Any) -> dict[str, int]:
     """Expose counters only; diagnostics, prompts and provider bodies stay private."""
@@ -69,7 +88,7 @@ def _pipeline_outcome(raw: Any, *, can_view_preview: bool) -> dict[str, Any] | N
                 {
                     key: value
                     for key, value in nested_counts.items()
-                    if isinstance(key, str) and len(key) <= 80 and type(value) is int and 0 <= value <= 1_000_000_000
+                    if key in PIPELINE_COUNT_KEYS and type(value) is int and 0 <= value <= 1_000_000_000
                 }
             )
         if type(receipt.get("analysis_count")) is int and 0 <= receipt["analysis_count"] <= 1_000_000_000:

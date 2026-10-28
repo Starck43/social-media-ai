@@ -126,6 +126,18 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.tools.TOOL_REGISTRY["injected"] = spec
         with self.assertRaises(FrozenInstanceError):
             spec.required_permission = None
+        for attribute, replacement in (
+            ("_input_model", object()),
+            ("_result_adapter", object()),
+            ("input_model", object()),
+            ("result_adapter", object()),
+            ("arguments", lambda *_args: {}),
+            ("result", lambda *_args: None),
+        ):
+            with self.subTest(attribute=attribute), self.assertRaises(FrozenInstanceError):
+                setattr(spec.contract, attribute, replacement)
+        self.assertEqual(spec.contract.arguments({"value": 2}, self.contracts.ToolBudget()), {"value": 2})
+        self.assertEqual(spec.contract.result({"ok": True}, self.contracts.ToolBudget()), {"ok": True})
         self.spec_args["parameters"]["properties"]["value"]["type"] = "string"
         schema = spec.parameters
         schema["properties"].clear()
@@ -316,11 +328,15 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             "app.jobs": package("app.jobs", root / "app/jobs"),
             "app.jobs.handlers": module_with(HANDLERS=dict.fromkeys(job_names)),
         }
+        preloaded_config = sys.modules.get("app.core.config")
         with (
             patch.dict(sys.modules, modules),
             patch("socket.socket.connect", side_effect=AssertionError("No network")),
             patch("socket.getaddrinfo", side_effect=AssertionError("No DNS")),
         ):
+            # pytest's root conftest may have loaded settings before this source-only check.
+            # Remove that cached module to keep the import tripwire cold; patch.dict restores it.
+            sys.modules.pop("app.core.config", None)
             for name in list(sys.modules):
                 if name == "app.agent.tools" or name.startswith("app.agent.toolset"):
                     sys.modules.pop(name)
@@ -344,6 +360,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertIs(importlib.import_module("app.agent.toolset"), toolset)
             self.assertEqual(dict(tools.TOOL_REGISTRY), before)
             self.assertNotIn("app.core.config", set(sys.modules) - set(modules))
+        self.assertIs(sys.modules.get("app.core.config"), preloaded_config)
 
     def test_all_real_declarations_register_without_app_or_db_bootstrap(self):
         from pathlib import Path

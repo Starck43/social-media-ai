@@ -204,8 +204,13 @@ def _compatible_schema(declared: dict, typed: dict) -> bool:
     return True
 
 
+@dataclass(frozen=True, init=False, eq=False)
 class ToolContract:
     """Derive strict input/result adapters from the actual async handler's annotations."""
+
+    _parameters: dict[str, Any]
+    _input_model: Any
+    _result_adapter: Any
 
     def __init__(self, handler, parameters):
         validate_schema(parameters)
@@ -213,7 +218,7 @@ class ToolContract:
             raise ValueError("Tool parameters must declare object properties")
         if not inspect.iscoroutinefunction(handler):
             raise ValueError("Tool handler must be async")
-        self._parameters = deepcopy(parameters)
+        object.__setattr__(self, "_parameters", deepcopy(parameters))
         signature = inspect.signature(handler)
         hints = get_type_hints(handler)
         named = {k: p for k, p in signature.parameters.items() if p.kind != p.VAR_KEYWORD}
@@ -230,10 +235,12 @@ class ToolContract:
             fields[name] = (hints[name], ... if param.default is inspect.Parameter.empty else param.default)
         if "return" not in hints or hints["return"] is Any:
             raise ValueError("Tool result annotation required")
-        self.input_model = create_model(
-            f"{handler.__name__}Input", __config__=ConfigDict(extra="forbid", strict=True), **fields
+        object.__setattr__(
+            self,
+            "_input_model",
+            create_model(f"{handler.__name__}Input", __config__=ConfigDict(extra="forbid", strict=True), **fields),
         )
-        self.result_adapter = TypeAdapter(hints["return"])
+        object.__setattr__(self, "_result_adapter", TypeAdapter(hints["return"]))
 
     @property
     def parameters(self):
@@ -244,7 +251,7 @@ class ToolContract:
             if json_size(value) > budget.max_argument_bytes:
                 raise ToolInputError("Tool argument budget exceeded")
             validate_value(value, self._parameters)
-            self.input_model.model_validate(value, strict=True)
+            self._input_model.model_validate(value, strict=True)
             # No coercion, default insertion or normalization before confirmation hashing.
             return deepcopy(value)
         except (ValidationError, TypeError, ValueError, OverflowError, RecursionError):
@@ -252,7 +259,7 @@ class ToolContract:
 
     def result(self, value: Any, budget: ToolBudget) -> Any:
         try:
-            self.result_adapter.validate_python(value, strict=True)
+            self._result_adapter.validate_python(value, strict=True)
             if json_size(value) > budget.max_result_bytes:
                 raise ToolResultError("Tool result budget exceeded")
             return value

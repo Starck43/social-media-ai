@@ -276,11 +276,26 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["error"], "invalid_structured_output")
 
     async def test_payload_identity_comes_from_claimed_columns(self):
-        self.job.payload = {"agent_task_id": 999, "job_id": 999}
+        self.job.attempts = 2
+        self.job.result = {"persisted": "claimed-column"}
+        self.job.initiated_by_user_id = 11
+        self.job.payload = {
+            "agent_task_id": 999,
+            "job_id": 999,
+            "attempts": 999,
+            "_prior_result": {"spoofed": True},
+            "_trusted_initiated_by_user_id": 999,
+        }
         await self.dispatcher.execute_job(self.job, self.handler)
         self.assertEqual(
             self.handler.await_args.args[0],
-            {"agent_task_id": 9, "job_id": 7, "_trusted_initiated_by_user_id": None},
+            {
+                "agent_task_id": 9,
+                "job_id": 7,
+                "attempts": 2,
+                "_prior_result": {"persisted": "claimed-column"},
+                "_trusted_initiated_by_user_id": 11,
+            },
         )
         self.assertEqual(self.scopes, [31])
 

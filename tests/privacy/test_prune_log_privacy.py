@@ -131,11 +131,13 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assert_private(logs, 31, "runtime_error")
         self.assertEqual(
             result,
-            {"deleted": 5, "staged_deleted": 0, "staged_days": 9, "analytics_deleted": 4, "retention_months": 1},
+            {"deleted": 0, "staged_deleted": 0, "staged_days": 9, "analytics_deleted": 4, "retention_months": 1},
         )
         self.sweep.assert_awaited_once_with(self.session, 9)
         self.session.close.assert_awaited_once_with()
         self.assertEqual(self.session.exits, [RuntimeError])
+        self.query.delete.assert_not_awaited()
+        self.assertEqual(self.query.criteria, [])
 
     async def test_hostile_exception_is_not_formatted(self):
         class HostileError(Exception):
@@ -169,13 +171,12 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             result = await self.prune({"job_id": 31})
         self.assertEqual(
             result,
-            {"deleted": 5, "staged_deleted": 3, "staged_days": 7, "analytics_deleted": 4, "retention_months": 1},
+            {"deleted": 0, "staged_deleted": 3, "staged_days": 7, "analytics_deleted": 4, "retention_months": 1},
         )
         self.sweep.assert_awaited_once_with(self.session, 7)
         self.session.close.assert_awaited_once_with()
-        self.query.delete.assert_awaited_once_with()
-        self.assertEqual(len(self.query.criteria), 3)
-        self.assertEqual(self.query.criteria[0][1], {"status__in": ["done", "failed"]})
+        self.query.delete.assert_not_awaited()
+        self.assertEqual(self.query.criteria, [])
 
     async def test_transaction_entry_error_is_private_and_session_closes(self):
         self.session.enter_error = TimeoutError(SECRET)

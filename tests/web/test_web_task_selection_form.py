@@ -62,7 +62,29 @@ class TestTaskFormUsesSelection:
         """Страница редактирования показывает сохранённый отбор задачи."""
         source = _text(WEB / "task_routes.py") + _text(WEB / "task_create_routes.py")
         assert "monitored_users" not in source
-        assert '"tracked_users"' in source or "'tracked_users'" in source
+        edit_payload = next(
+            node
+            for node in _tree(WEB / "task_forms.py").body
+            if isinstance(node, ast.FunctionDef) and node.name == "_edit_payload"
+        )
+        keys = {
+            key.value
+            for node in ast.walk(edit_payload)
+            if isinstance(node, ast.Dict)
+            for key in node.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        }
+        assert "tracked_users" in keys
+        assert "monitored_users" not in keys
+        edit_page = next(
+            node
+            for node in _tree(WEB / "task_routes.py").body
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "task_edit_page"
+        )
+        assert any(
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_edit_payload"
+            for node in ast.walk(edit_page)
+        )
 
 
 class TestTaskTemplates:

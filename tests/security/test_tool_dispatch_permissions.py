@@ -33,6 +33,10 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
         HELPERS.BoundaryTests.setUp(self)
         # Isolate toolset registration; handlers below are mocks, no live effects.
         modules = {
+            "app.agent.tool_contracts": load_source("_dispatch_contracts", "app/agent/tool_contracts.py"),
+            "app.services.llm_tool_serialization": load_source(
+                "_dispatch_wire", "app/services/llm_tool_serialization.py"
+            ),
             "app.core.permissions": self.perms,
             "app.core.tenant_context": self.tenant,
             "app.agent": HELPERS.module_with(toolset=HELPERS.module_with()),
@@ -49,15 +53,16 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.handler = AsyncMock(return_value={"ok": True})
 
     def register(self, permission="collection.source.update"):
-        spec = self.tools.Tool(
+        async def handler(value: int | None = None) -> dict:
+            return await self.handler(**({} if value is None else {"value": value}))
+
+        self.tools.tool(
             name="test_write",
             description="Test-only handler",
-            parameters={},
-            handler=self.handler,
+            parameters={"type": "object", "properties": {"value": {"type": "integer"}}},
             required_permission=permission,
-        )
-        self.tools.TOOL_REGISTRY[spec.name] = spec
-        return spec
+        )(handler)
+        return self.tools.get_tool("test_write")
 
     def register_collect(self):
         # Load the real declaration/handler, but never run a real collection job.
@@ -193,13 +198,10 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(json.loads(await self.tools.execute("test_write", {}))["code"], "permission_denied")
         self.handler.assert_not_awaited()
 
-    async def test_malformed_declared_right_is_not_an_undeclared_tool(self):
-        with self.tenant.tenant_scope(bypass=True):
-            for permission in ("", "collection.source.unknown", "a.source.update", "source.create"):
+    async def test_malformed_declared_right_rejected_at_registration(self):
+        for permission in ("", "collection.source.unknown", "a.source.update", "source.create"):
+            with self.subTest(permission=permission), self.assertRaises(ValueError):
                 self.register(permission)
-                with self.assertRaises(self.perms.PermissionDeniedError):
-                    await self.tools.call_tool("test_write", {})
-                self.assertEqual(json.loads(await self.tools.execute("test_write", {}))["code"], "permission_denied")
         self.handler.assert_not_awaited()
 
     async def test_local_owner_allowed_and_result_contracts_preserved(self):
@@ -225,25 +227,25 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.user.role = SimpleNamespace(codename="operator")
         with self.tenant.tenant_scope(bypass=True), self.perms.permission_scope(self.user):
             await self.tools.call_tool("test_write", {})
-            spec.required_permission = "llm.model.delete"
-            with self.assertRaises(self.perms.PermissionDeniedError):
-                await self.tools.call_tool("test_write", {})
-            spec.required_permission = "llm.model.view"
+            # Registry/spec mutation is no longer a supported authorization path.
+            with self.assertRaises(AttributeError):
+                spec.required_permission = "llm.model.delete"
             self.user.has_perm_for = lambda *args: False
             with self.assertRaises(self.perms.PermissionDeniedError):
                 await self.tools.call_tool("test_write", {})
         self.handler.assert_awaited_once_with()
 
-    async def test_undeclared_right_contract_is_preserved_not_claimed_secure(self):
-        self.register(None)
-        self.assertEqual(await self.tools.call_tool("test_write", {}), {"ok": True})
-        self.assertEqual(json.loads(await self.tools.execute("test_write", {})), {"ok": True})
+    async def test_undeclared_right_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.register(None)
+        self.handler.assert_not_awaited()
 
     async def test_unknown_tool_and_handler_error_contracts_preserved(self):
         with self.assertRaises(LookupError):
             await self.tools.call_tool("missing", {})
         self.assertIn("error", json.loads(await self.tools.execute("missing", {})))
-        self.register(None)
+        self.register()
+        self.tools.has_permission_by_codename = lambda *args: True
         self.handler.return_value = {"error": "test-only failure"}
         with self.assertRaises(self.tools.ToolError):
             await self.tools.call_tool("test_write", {})

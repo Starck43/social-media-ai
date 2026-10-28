@@ -508,15 +508,14 @@ async def execute_task_pipeline(payload: dict) -> dict:
     run_payload["job_id"] = job_id
     run_payload["source_ids"] = list(task_payload.get("source_ids") or [])
     run_payload["task_plan"] = plan
-    checkpoint = _valid_checkpoint(
-        (
-            (payload.get("_prior_result") or {}).get("pipeline")
-            if isinstance(payload.get("_prior_result"), dict)
-            else None
-        ),
-        job_id=job_id,
-        task_id=task_id,
-    ) or _checkpoint_base(job_id=job_id, task_id=task_id, attempt=attempt)
+    prior_result = payload.get("_prior_result", {})
+    if not isinstance(prior_result, dict):
+        raise PipelineReviewRequired("pipeline_checkpoint_invalid_requires_review")
+    checkpoint = (
+        _valid_checkpoint(prior_result["pipeline"], job_id=job_id, task_id=task_id)
+        if "pipeline" in prior_result
+        else _checkpoint_base(job_id=job_id, task_id=task_id, attempt=attempt)
+    )
 
     collection = checkpoint["stages"].get("collect", {}).get("result", {})
     if "collect" in stages:

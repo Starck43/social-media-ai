@@ -56,6 +56,7 @@ def _job_payload(snapshot):
 @pytest.mark.parametrize(
     "pipeline",
     [
+        None,
         {"version": 2, "job_id": 99, "task_id": 7, "attempt": 1, "stages": {"collect": {"state": "completed"}}},
         {
             "version": 1,
@@ -198,7 +199,7 @@ async def test_task_view_restores_snapshot_enums_for_trigger_evaluation(task_sna
     from app.services.ai.trigger_evaluator import TriggerEvaluator
     from app.types import AgentActionType, BotTriggerType
 
-    task = SimpleNamespace(id=7, tenant_id=3, sources=[])
+    task = SimpleNamespace(id=7, tenant_id=3, sources=[], cron_expr="@once", launch_job_id=99)
     snapshot = {
         **task_snapshot,
         "trigger_type": "KEYWORD_MATCH",

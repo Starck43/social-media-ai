@@ -1232,7 +1232,6 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         provisional value and may be overwritten.
         """
         from .base_manager import BaseManager
-from .task_inputs import SOURCE_BASED_JOB_TYPES, TaskInputsMixin
 
         await BaseManager.update_by_id(
             self,
@@ -1251,7 +1250,6 @@ from .task_inputs import SOURCE_BASED_JOB_TYPES, TaskInputsMixin
         that the job was enqueued. Must run inside the task's tenant scope.
         """
         from .base_manager import BaseManager
-from .task_inputs import SOURCE_BASED_JOB_TYPES, TaskInputsMixin
 
         await BaseManager.update_by_id(
             self,

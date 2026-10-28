@@ -308,7 +308,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 
         # Setup templates
         sqladmin_path = Path(sqladmin.__file__).parent
-        template_dirs = [str(Path(__file__).parent.parent / "templates"), str(sqladmin_path / "templates")]
+        template_dirs = [str(Path(__file__).resolve().parents[2] / "templates"), str(sqladmin_path / "templates")]
         templates = Jinja2Templates(directory=template_dirs)
 
         # Prepare scope for display

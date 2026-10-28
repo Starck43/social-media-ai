@@ -74,9 +74,21 @@ def _render_pages(destination: Path, source_root: Path) -> None:
         return ""
 
     for name in (
-        "static_v", "bound_popover_select", "control", "switch_toggle", "check_card",
-        "task_collection_fields", "task_retention_fields", "task_targets", "task_trigger_actions",
-        "task_fields", "tenant_field", "cron_to_human", "icon", "empty_state", "empty_state_cta",
+        "static_v",
+        "bound_popover_select",
+        "control",
+        "switch_toggle",
+        "check_card",
+        "task_collection_fields",
+        "task_retention_fields",
+        "task_targets",
+        "task_trigger_actions",
+        "task_fields",
+        "tenant_field",
+        "cron_to_human",
+        "icon",
+        "empty_state",
+        "empty_state_cta",
         "url_for",
     ):
         env.globals[name] = blank
@@ -90,70 +102,153 @@ def _render_pages(destination: Path, source_root: Path) -> None:
     tenant = SimpleNamespace(id=1, name="Fixture workspace")
     common = {
         "request": SimpleNamespace(query_params={}, state=SimpleNamespace()),
-        "section": "tasks", "csrf": "fixture-token", "user": user, "tenant": tenant,
-        "nav": [], "mobile_nav": [], "unread_notifications": 0, "connection_alerts": [],
-        "flashes": [], "plan_labels": {}, "_tz": "Europe/Kirov", "perms": perms,
-        "is_superuser": False, "filter_tenant_id": None,
+        "section": "tasks",
+        "csrf": "fixture-token",
+        "user": user,
+        "tenant": tenant,
+        "nav": [],
+        "mobile_nav": [],
+        "unread_notifications": 0,
+        "connection_alerts": [],
+        "flashes": [],
+        "plan_labels": {},
+        "_tz": "Europe/Kirov",
+        "perms": perms,
+        "is_superuser": False,
+        "filter_tenant_id": None,
     }
 
     # New-task form: assert the real create template exposes every composed
     # control. The visible current values are represented by the edit form.
     create_html = env.get_template("web/tasks.html").render(
-        **common, tasks=[], sources=[], source_groups=[], collection_defaults={}, target_fields=[],
-        scenarios=[], scenario_analysis={}, prefill_source_ids=[], prefill_scenario_id=None,
-        prefill_job_type="analyze", prefill_retention=False, open_add_modal=True,
-        effective_active=set(), unconfirmed_tasks=set(), running_jobs={},
+        **common,
+        tasks=[],
+        sources=[],
+        source_groups=[],
+        collection_defaults={},
+        target_fields=[],
+        scenarios=[],
+        scenario_analysis={},
+        prefill_source_ids=[],
+        prefill_scenario_id=None,
+        prefill_job_type="analyze",
+        prefill_retention=False,
+        open_add_modal=True,
+        effective_active=set(),
+        unconfirmed_tasks=set(),
+        running_jobs={},
         job_types=[("analyze", "Анализ соцсетей"), ("collect", "Сбор данных")],
-        trigger_types=[], action_types=[], cron_to_human=blank, job_id=None, tenants=[],
+        trigger_types=[],
+        action_types=[],
+        cron_to_human=blank,
+        job_id=None,
+        tenants=[],
     )
 
     plan = {
         "goal": "Проверить отчёт <безопасно> & аккуратно",
-        "platforms": ["vk"], "source_scope": "all", "source_ids": [],
-        "collection": {"limit": 10}, "window": {"type": "rolling", "days": 7},
+        "platforms": ["vk"],
+        "source_scope": "all",
+        "source_ids": [],
+        "collection": {"limit": 10},
+        "window": {"type": "rolling", "days": 7},
         "trigger": {"type": "schedule", "timezone": "Europe/Kirov"},
         "pipeline": {"stages": ["analyze", "digest"]},
         "digest": {
             "window": {"type": "fixed", "start": "2026-10-01", "end": "2026-10-28"},
-            "group_by": "themes", "time_breakdown": True,
+            "group_by": "themes",
+            "time_breakdown": True,
         },
     }
     task = SimpleNamespace(
-        id=740, name="Fixture & composed task", job_type="analyze", cron_expr="0 9 * * *",
-        next_run_at=None, agent_scenario_id=2, scenario=None, tenant=tenant, sources=[],
-        source_ids=[], payload={"task_plan": plan}, is_active=True,
+        id=740,
+        name="Fixture & composed task",
+        job_type="analyze",
+        cron_expr="0 9 * * *",
+        next_run_at=None,
+        agent_scenario_id=2,
+        scenario=None,
+        tenant=tenant,
+        sources=[],
+        source_ids=[],
+        payload={"task_plan": plan},
+        is_active=True,
     )
     edit = {
-        "id": task.id, "name": task.name, "job_type": "analyze", "cron_expr": task.cron_expr,
-        "trigger_timezone": "Europe/Kirov", "task_goal": plan["goal"], "source_scope": "all",
-        "platforms": ["vk"], "window_type": "rolling", "rolling_days": 7,
-        "scenario_id": 2, "compose_digest": True, "include_collection": False,
-        "digest_window_type": "fixed", "digest_rolling_days": 7,
-        "digest_start_date": "2026-10-01", "digest_end_date": "2026-10-28",
-        "digest_group_by": "themes", "digest_time_breakdown": True,
-        "source_ids": [], "is_active": True,
+        "id": task.id,
+        "name": task.name,
+        "job_type": "analyze",
+        "cron_expr": task.cron_expr,
+        "trigger_timezone": "Europe/Kirov",
+        "task_goal": plan["goal"],
+        "source_scope": "all",
+        "platforms": ["vk"],
+        "window_type": "rolling",
+        "rolling_days": 7,
+        "scenario_id": 2,
+        "compose_digest": True,
+        "include_collection": False,
+        "digest_window_type": "fixed",
+        "digest_rolling_days": 7,
+        "digest_start_date": "2026-10-01",
+        "digest_end_date": "2026-10-28",
+        "digest_group_by": "themes",
+        "digest_time_breakdown": True,
+        "source_ids": [],
+        "is_active": True,
     }
     edit_html = env.get_template("web/task_edit.html").render(
-        **common, task=task, edit=edit, sources=[], source_groups=[], task_sources=[], target_fields=[],
-        scenarios=[], scenario_analysis={}, job_types=[("analyze", "Анализ соцсетей")],
-        trigger_types=[], action_types=[], can_dry_run=False,
+        **common,
+        task=task,
+        edit=edit,
+        sources=[],
+        source_groups=[],
+        task_sources=[],
+        target_fields=[],
+        scenarios=[],
+        scenario_analysis={},
+        job_types=[("analyze", "Анализ соцсетей")],
+        trigger_types=[],
+        action_types=[],
+        can_dry_run=False,
     )
 
     stage = {
-        "status": "complete", "counts": {"analyzed": 2}, "generated": True,
-        "report_start": "2026-10-01", "report_end": "2026-10-28",
+        "status": "complete",
+        "counts": {"analyzed": 2},
+        "generated": True,
+        "report_start": "2026-10-01",
+        "report_end": "2026-10-28",
         "preview_text": "Report <script> & escaped safely",
     }
     pipeline = {"stages": {"analyze": {"status": "complete", "counts": {"analyzed": 2}}, "digest": stage}}
-    job = SimpleNamespace(id=990, status="done", result={"items": 2}, created_at=None, started_at=None, finished_at=None)
+    job = SimpleNamespace(
+        id=990, status="done", result={"items": 2}, created_at=None, started_at=None, finished_at=None
+    )
     detail_html = env.get_template("web/task_detail.html").render(
-        **common, task=task, task_definition=SimpleNamespace(plan=plan, plan_status="available"),
-        sources=[], scenario=None, recent_jobs=[job], job_outcomes={}, pipeline_outcomes={job.id: pipeline},
+        **common,
+        task=task,
+        task_definition=SimpleNamespace(plan=plan, plan_status="available"),
+        sources=[],
+        scenario=None,
+        recent_jobs=[job],
+        job_outcomes={},
+        pipeline_outcomes={job.id: pipeline},
         latest_run=SimpleNamespace(
-            job=None, summary={}, sources=[], can_view_sources=True, run_scope=None,
-            legacy_status_label=None, run_progress=None,
-        ), effective_active={task.id}, running_job_id=None, running_job_status=None,
-        task_sources=[], job_type_labels={}, job_type_titles={},
+            job=None,
+            summary={},
+            sources=[],
+            can_view_sources=True,
+            run_scope=None,
+            legacy_status_label=None,
+            run_progress=None,
+        ),
+        effective_active={task.id},
+        running_job_id=None,
+        running_job_status=None,
+        task_sources=[],
+        job_type_labels={},
+        job_type_titles={},
     )
 
     pages = []
@@ -212,7 +307,8 @@ def main() -> int:
         template_root.mkdir()
         archive = subprocess.run(
             ["git", "-C", str(SOURCE_REPO), "archive", "--format=tar", EXPECTED_SOURCE, "app/web/templates"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         ).stdout
         import tarfile
 
@@ -227,8 +323,12 @@ def main() -> int:
         url = f"http://127.0.0.1:{server.server_port}/fixture.html"
         try:
             result = subprocess.run(
-                ["osascript", "-", url], input=_APPLESCRIPT, text=True,
-                capture_output=True, timeout=25, check=False,
+                ["osascript", "-", url],
+                input=_APPLESCRIPT,
+                text=True,
+                capture_output=True,
+                timeout=25,
+                check=False,
             )
             output = result.stdout + result.stderr
             print(output[-3000:].strip())

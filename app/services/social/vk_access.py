@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from app.utils.identifiers import strict_positive_int as _positive_id
+
 # Supported client routes, NOT a declaration that VK grants these methods.
 METHOD_MODES: Mapping[str, frozenset[str]] = {
     "wall.get": frozenset({"api", "user"}),
@@ -30,10 +32,6 @@ METHOD_MODES: Mapping[str, frozenset[str]] = {
 
 class VKSelectionError(ValueError):
     """Malformed explicit selection; messages are fixed, secret-free codes."""
-
-
-def _positive_id(value: object) -> bool:
-    return type(value) is int and value > 0
 
 
 @dataclass(frozen=True)

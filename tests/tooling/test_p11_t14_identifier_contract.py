@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.abc
 import importlib.util
 import sys
 import unittest
@@ -67,6 +68,38 @@ class IdentifierContractTests(unittest.TestCase):
         ):
             with self.subTest(value=type(value).__name__, expected=expected):
                 self.assertIs(self.ids.strict_positive_int(value), expected)
+
+    def test_installed_wheel_guard_reviews_only_exact_pure_helper(self):
+        outer = ast.parse((ROOT / "tests/wheel_runtime_smoke.py").read_text())
+        source = next(
+            ast.literal_eval(node.value)
+            for node in outer.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "INSTALLED_CHECK" for target in node.targets)
+        )
+        tree = ast.parse(source)
+        allowed = next(
+            ast.literal_eval(node.value)
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "allowed" for target in node.targets)
+        )
+        self.assertIn("app.utils.identifiers", allowed)
+        node = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "SafeImports")
+        scope = {"importlib": importlib, "allowed": allowed}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "<wheel import guard>", "exec"), scope)
+        finder = scope["SafeImports"]()
+        self.assertIsNone(finder.find_spec("app.utils.identifiers", None))
+        for name in (
+            "app.utils.unreviewed",
+            "app.utils.identifiers.adapter",
+            "app.models",
+            "app.web",
+            "app.agent",
+            "cli.unreviewed",
+        ):
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, "Unreviewed application import"):
+                finder.find_spec(name, None)
 
     def test_selected_consumers_reuse_same_predicate_and_keep_errors(self):
         imports = {"app.utils.identifiers": self.ids}

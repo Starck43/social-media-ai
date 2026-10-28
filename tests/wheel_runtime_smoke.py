@@ -86,6 +86,7 @@ allowed = {
     "app.services.task_creation",
     "app.utils",
     "app.utils.crypto",
+    "app.utils.identifiers",
     "app.jobs",
     "app.jobs.progress",
     "app.jobs.progress_metrics",

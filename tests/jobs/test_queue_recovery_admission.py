@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
+from tests.shared.job_catalog_double import run_with_job_catalog
 
 ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
@@ -57,7 +58,17 @@ class Task:
     agent_scenario = Column("agent_scenario")
 
 
+class Loader:
+    def __init__(self, relationship):
+        self.relationships = [relationship]
+
+    def selectinload(self, relationship):
+        self.relationships.append(relationship)
+        return self
+
+
 class Source:
+    platform = Column("platform")
     id = Column("source_id")
     tenant_id = Column("tenant_id")
     is_active = Column("is_active")
@@ -108,6 +119,7 @@ class Transaction:
     async def __aenter__(self):
         self.before = copy.deepcopy(vars(self.session.fixture.row))
         self.jobs_before = list(self.session.fixture.jobs)
+        self.audit_before = list(self.session.fixture.audit_events)
 
     async def __aexit__(self, kind, error, traceback):
         fixture = self.session.fixture
@@ -117,6 +129,7 @@ class Transaction:
                     vars(fixture.row).clear()
                     vars(fixture.row).update(self.before)
                     fixture.jobs[:] = self.jobs_before
+                    fixture.audit_events[:] = self.audit_before
                 if not kind:
                     raise fixture.commit_error
             else:
@@ -145,7 +158,9 @@ class Session:
         self.fixture.queries.append(query)
         if query.target is Source:
             rows = [
-                SimpleNamespace(id=source_id, tenant_id=self.fixture.tenant, is_active=True, params={})
+                SimpleNamespace(
+                    id=source_id, tenant_id=self.fixture.tenant, is_active=True, params={}, owner_task_id=None
+                )
                 for source_id in self.fixture.active_sources
             ]
             return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: rows))
@@ -271,6 +286,7 @@ class Fixture:
         self.tenant = 31
         self.bypass = False
         self.jobs = []
+        self.audit_events = []
         self.queries = []
         self.sessions = 0
         self.commits = 0
@@ -336,7 +352,41 @@ class Fixture:
                 raise ValueError("bad cron")
             return after + timedelta(hours=1)
 
+        async def record_success(*, session, **event):
+            assert session.fixture is self and session.locked
+            assert event["action"] == "scheduling.task_admit"
+            assert event["resource_kind"] == "agent_task" and event["resource_id"] == self.row.id
+            assert any(job.id == event["job_id"] and job.tenant_id == self.tenant for job in self.jobs)
+            self.audit_events.append(event)
+
+        async def required_capabilities(session, payload, *, sources):
+            assert session.fixture is self and session.locked
+            assert all(source.tenant_id == self.tenant for source in sources)
+            return frozenset()
+
+        class EntitlementManager:
+            async def evaluate(inner, session, required):
+                assert session.fixture is self and session.locked and required == frozenset()
+                return SimpleNamespace(allowed=True)
+
         imports = imports | {
+            "app.services.task_plans": SimpleNamespace(
+                TaskPlanError=ValueError,
+                read_saved_task_plan=lambda _payload: None,
+                apply_parsed_task_plan=lambda *_args, **_kwargs: {},
+                task_plan_timezone=lambda _payload, fallback: fallback,
+            ),
+            "app.models.managers.entitlement_manager": SimpleNamespace(EntitlementManager=EntitlementManager),
+            "app.services.collection.entitlement_policy": SimpleNamespace(required_capabilities=required_capabilities),
+            "app.services.tenancy.entitlements": SimpleNamespace(EntitlementDenied=EntitlementDenied),
+            "app.models.audit.action_audit_event": SimpleNamespace(
+                ActionAuditEvent=SimpleNamespace(objects=SimpleNamespace(record_success=record_success))
+            ),
+            "app.services": SimpleNamespace(
+                action_audit=SimpleNamespace(
+                    log_unknown=lambda **_: None, log_rolled_back=lambda **_: None, log_denied=lambda **_: None
+                )
+            ),
             "croniter": SimpleNamespace(croniter=lambda *a: None),
             "app.core.permissions": SimpleNamespace(
                 require_permission=lambda *a: lambda f: f, get_current_user=lambda: None
@@ -353,7 +403,7 @@ class Fixture:
             "app.core.database": SimpleNamespace(
                 async_session_maker=lambda: Session(self), with_db_session=with_db_session_double(lambda: Session(self))
             ),
-            "sqlalchemy.orm": SimpleNamespace(selectinload=lambda value: value),
+            "sqlalchemy.orm": SimpleNamespace(selectinload=Loader),
             "app.tasks.cron": SimpleNamespace(next_run_at=cron),
         }
         self.module = load("app.models.managers._closure_tasks", "app/models/managers/agent_task_manager.py", imports)
@@ -375,6 +425,9 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(f.row.next_run_at, NOW + timedelta(hours=1))
         self.assertEqual(f.row.last_status, "queued")
         self.assertEqual(f.commits, 1)
+        self.assertEqual(len(f.audit_events), 1)
+        self.assertEqual(f.audit_events[0]["actor_kind"], "scheduler")
+        self.assertEqual(f.audit_events[0]["job_id"], f.jobs[0].id)
         self.assertEqual(f.sessions, 1)
         self.assertIsInstance(f.create_calls[0][0], Session)
         self.assertEqual(f.jobs[0].run_at, NOW)
@@ -413,6 +466,7 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
             await f.admit()
         self.assertEqual(vars(f.row), before)
         self.assertEqual(f.jobs, [])
+        self.assertEqual(f.audit_events, [])
         self.assertEqual(f.commits, 0)
 
     async def test_commit_error_never_returns_receipt_or_second_write(self):
@@ -423,6 +477,7 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
             await f.admit()
         self.assertEqual(vars(f.row), before)
         self.assertEqual(f.jobs, [])
+        self.assertEqual(f.audit_events, [])
         self.assertEqual(f.sessions, 1)
 
     async def test_once_insert_disable_and_clear_are_atomic(self):
@@ -639,6 +694,10 @@ class DeliveryFailure(RuntimeError):
         super().__init__("known_delivery_failure")
 
 
+class EntitlementDenied(ValueError):
+    pass
+
+
 class ProgressStopped(RuntimeError):
     pass
 
@@ -694,10 +753,14 @@ class DispatcherPolicyTests(unittest.IsolatedAsyncioTestCase):
                 "app.jobs.handlers": SimpleNamespace(HANDLERS={}),
                 "app.models.managers.job_manager": SimpleNamespace(JobManager=lambda: jobs),
                 "app.services.digest.delivery_outcomes": SimpleNamespace(DeliveryFailure=DeliveryFailure),
+                "app.services.ai.catalog_execution": SimpleNamespace(run_with_job_catalog=run_with_job_catalog),
+                "app.services.tenancy.entitlements": SimpleNamespace(EntitlementDenied=EntitlementDenied),
             },
         )
         module._notify_job_result = AsyncMock()
-        receipt = await module.execute_job(job, AsyncMock(side_effect=error), allow_retry=allow_retry)
+        handler = AsyncMock(side_effect=error)
+        receipt = await module.execute_job(job, handler, allow_retry=allow_retry)
+        handler.assert_awaited_once()
         return receipt, jobs, module
 
     async def test_generic_failure_is_unknown_terminal_without_raw_error(self):
@@ -783,6 +846,7 @@ class ProjectionAndRetentionTests(unittest.IsolatedAsyncioTestCase):
                     Job=SimpleNamespace(objects=query, created_at=Job.created_at, error=Job.error),
                     CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=AsyncMock(return_value=0))),
                     AIAnalytics=SimpleNamespace(objects=SimpleNamespace(delete_expired=AsyncMock(return_value=0))),
+                    ActionAuditEvent=SimpleNamespace(objects=SimpleNamespace(delete_expired=AsyncMock(return_value=0))),
                 ),
             },
         )

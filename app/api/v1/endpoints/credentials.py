@@ -2,11 +2,11 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import require_model_perm
-from app.models import User
-from app.schemas.credential import CredentialResponse, CredentialLoginRequest, CredentialOauthRequest
+from app.models import User, UserCredential
+from app.schemas.credential import CredentialLoginRequest, CredentialOauthRequest, CredentialResponse
 from app.types import ActionType
 
 router = APIRouter(tags=["credentials"])
@@ -14,12 +14,16 @@ router = APIRouter(tags=["credentials"])
 
 @router.get("", response_model=list[CredentialResponse])
 async def list_credentials(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(require_model_perm("credential", ActionType.VIEW)),
 ):
     """List the current user's personal credentials (secrets are encrypted, never returned)."""
     from app.models.managers.user_credential_manager import user_credentials
 
-    rows = await user_credentials.filter(user_id=current_user.id)
+    rows = (
+        await user_credentials.filter(user_id=current_user.id).order_by(UserCredential.id).limit(limit).offset(offset)
+    )
     return [
         CredentialResponse(
             id=r.id,
@@ -66,7 +70,7 @@ async def login_credential(
 
     api_id_raw = await resolve_token("telegram", kinds=("api_id",))
     api_hash = await resolve_token("telegram", kinds=("api_hash",))
-    
+
     if api_id_raw and api_hash:
         api_id = int(api_id_raw)
     else:
@@ -85,6 +89,7 @@ async def login_credential(
 
     # Return the stored credential
     from app.models.managers.user_credential_manager import user_credentials
+
     rows = await user_credentials.filter(user_id=current_user.id, platform="telegram")
     if rows:
         row = rows[-1]
@@ -112,8 +117,8 @@ async def oauth_credential(
     if request.platform.strip().lower() != "vk":
         raise HTTPException(status_code=400, detail="Only 'vk' supports OAuth via API")
 
-    from app.services.social.vk_oauth import build_authorize_url
     from app.core.tenant_context import current_tenant_id
+    from app.services.social.vk_oauth import build_authorize_url
 
     tid = current_tenant_id()
     if tid is None:
@@ -132,6 +137,9 @@ async def test_credentials(
     current_user: User = Depends(require_model_perm("credential", ActionType.VIEW)),
 ):
     """Test all platform credentials and report status."""
+    import httpx
+
+    from app.core.config import settings
     from app.services.social.credential_diagnostics import (
         credential_exception_status,
         credential_http_error,
@@ -139,8 +147,6 @@ async def test_credentials(
     )
     from app.services.social.credentials import credential_status, resolve_token
     from app.services.social.tg_session import check_session, load_session
-    import httpx
-    from app.core.config import settings
 
     results = []
     for platform, source in (await credential_status(owner_user_id=current_user.id)).items():

@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi_pagination import Page, paginate
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi_pagination import Page, Params, paginate
 
 from app.api.deps import require_model_perm, require_platform_role
 from app.core.permissions import permission_scope
@@ -20,6 +20,8 @@ def _canonical_role_code(role_name: str) -> str:
 
 @router.get("/", response_model=Page[RoleResponse])
 async def list_roles(
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=100),
     _current_user=Depends(require_model_perm("identity.platform_role", ActionType.VIEW)),
 ) -> Page[RoleResponse]:
     """List the fixed platform roles for authorized operators."""
@@ -27,7 +29,7 @@ async def list_roles(
     # walks the sequence, and the relationships it does not see are exactly
     # the ones a reader needs — the role came back with an empty grant list.
     roles = await PlatformRole.objects.prefetch_related("permissions").order_by(PlatformRole.id).all()
-    return paginate(roles)
+    return paginate(roles, params=Params(page=page, size=size))
 
 
 @router.get("/{role_name}", response_model=RoleResponse)

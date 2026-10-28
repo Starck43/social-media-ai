@@ -166,7 +166,8 @@ async def run_task_plan(
             job_type=command.job_type,
         )
     except TaskLaunchError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.safe_message) from None
+        headers = {"Retry-After": "30"} if error.code in {"actor_task_limit", "workspace_admission_limit"} else None
+        raise HTTPException(status_code=error.status_code, detail=error.safe_message, headers=headers) from None
     except TaskPlanError as error:
         raise HTTPException(status_code=400, detail=f"Invalid task plan ({error.code}).") from None
     except ValidationError:
@@ -216,10 +217,12 @@ def _task_response(t: AgentTask) -> TaskResponse:
 
 @router.get("", response_model=list[TaskResponse])
 async def list_tasks(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     _user=Depends(require_model_perm("agenttask", ActionType.VIEW)),
 ):
     """List all tasks in the current workspace."""
-    tasks = await AgentTask.objects.filter().order_by(AgentTask.id)
+    tasks = await AgentTask.objects.filter().order_by(AgentTask.id).limit(limit).offset(offset)
     return [_task_response(t) for t in tasks]
 
 

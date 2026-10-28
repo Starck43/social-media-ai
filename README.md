@@ -30,7 +30,7 @@ lazy task-reading rule rather than loading every ancestor.
 
 ## Run locally
 
-Python 3.12+, PostgreSQL 14+, a private `.env` and configured encryption keys are
+Python 3.14+, PostgreSQL 14+, a private `.env` and configured encryption keys are
 required. Use [CONFIGURATION](docs/CONFIGURATION.md) for settings and
 [DEPLOYMENT](docs/DEPLOYMENT.md) for supported setup/migrations/runtime commands.
 Configure providers/models through the supported admin interfaces; external
@@ -39,7 +39,7 @@ schema from a quick-start command; follow [database policy](docs/COLLABORATION.m
 
 ## Offline verification
 
-Python **3.12** is the minimum supported baseline. The [offline CI profile](.ci/README.md)
+Python **3.14** is the minimum supported baseline. The [offline CI profile](.ci/README.md)
 installs only hash-locked tools and runs a reviewed no-DB subset, syntax/import
 boundaries, an AST-only Alembic graph check and formatting/secret baselines. It
 does not load project DB fixtures or certify DB/runtime/provider behavior.

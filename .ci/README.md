@@ -2,7 +2,7 @@
 
 ## Supported baseline and install profiles
 
-- Supported minimum: **Python 3.12** (README and package metadata agree). The
+- Supported minimum: **Python 3.14** (README and package metadata agree). The
   offline workflow tests this minor; newer Python/application installations are
   not certified by this lane. No claim of full application/runtime acceptance.
 - **Offline tooling:** clean virtual environment, then
@@ -14,7 +14,7 @@
   extras remain separate. Canonical application/optional/dev profiles and generated exports are documented
   in [requirements/README](../requirements/README.md); they are not installed here. No DB fixtures in the offline lane.
 - Regenerate the tooling lock deliberately using
-  `uv==0.6.17 pip compile --python 3.12 --generate-hashes --no-emit-index-url
+  `uv==0.6.17 pip compile --python 3.14 --generate-hashes --no-emit-index-url
   -o .ci/requirements.txt .ci/requirements.in`; review all version/hash changes.
 
 ## Required checks
@@ -52,7 +52,7 @@ authorized. Do not install the app merely to make an offline import succeed.
 `baseline.json` records initial **P11-T03** ownership/source; the inventories
 are `format-baseline.json` and `secret-baseline.json`. It does not disable
 Black/isort or secret detectors by directory. Tools remain Black 25.1.0 and
-isort 6.0.1, line length 120, Python target 3.12. Formatting exceptions identify
+isort 6.0.1, line length 120, Python target 3.14. Formatting exceptions identify
 each pre-existing file by exact SHA-256 and failing tools. Unchanged exceptions
 are validated by hash; all other files run through the formatters. A changed/new file
 must pass both formatters, and deletions/fixes are allowed. Do not auto-refresh

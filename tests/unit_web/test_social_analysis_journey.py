@@ -84,7 +84,9 @@ def _load_recent_collections():
         node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "_recent_collections"
     )
     function.body = [
-        node for node in function.body if not (isinstance(node, ast.ImportFrom) and node.module == "app.models.job")
+        node
+        for node in function.body
+        if not (isinstance(node, ast.ImportFrom) and node.module == "app.models.scheduling.job")
     ]
     module = ast.Module(body=[function], type_ignores=[])
     scope = {

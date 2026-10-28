@@ -41,7 +41,12 @@ def journey_plan():
 
 def load_plan_modules():
     """Execute real parsers/preparation, replacing only collection settings."""
-    policy = load_isolated_source("_p8_t41_policy", ROOT / "app/services/social/vk_access.py")
+    identifiers = load_isolated_source("_p8_t41_identifiers", ROOT / "app/utils/identifiers.py")
+    policy = load_isolated_source(
+        "_p8_t41_policy",
+        ROOT / "app/services/social/vk_access.py",
+        {"app.utils.identifiers": identifiers},
+    )
     intent = load_isolated_source(
         "_p8_t41_intent",
         ROOT / "app/services/collection/intent.py",

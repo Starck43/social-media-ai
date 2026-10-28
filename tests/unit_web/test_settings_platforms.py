@@ -38,7 +38,7 @@ def _platform_admin_property() -> type:
     module = ast.Module(
         body=[ast.ClassDef(name="Actor", bases=[], keywords=[], body=[method], decorator_list=[])], type_ignores=[]
     )
-    namespace = {"PlatformRoleType": NS(ADMIN="admin")}
+    namespace = {"PlatformRoleType": NS(ADMIN="admin", SUPERUSER="superuser")}
     exec(compile(ast.fix_missing_locations(module), str(USER_SOURCE), "exec"), namespace)
     return namespace["Actor"]
 
@@ -169,11 +169,11 @@ def gateway(monkeypatch):
         delete_by_id=Mock(side_effect=AssertionError("settings must not delete platforms")),
         delete=Mock(side_effect=AssertionError("settings must not delete platforms")),
     )
-    platform_module = ModuleType("app.models.platform")
+    platform_module = ModuleType("app.models.collection.platform")
     platform_module.Platform = NS(objects=manager, id="id")
     types_module = ModuleType("app.types")
     types_module.PlatformType = Kinds()
-    monkeypatch.setitem(sys.modules, "app.models.platform", platform_module)
+    monkeypatch.setitem(sys.modules, "app.models.collection.platform", platform_module)
     monkeypatch.setitem(sys.modules, "app.types", types_module)
     namespace = extracted()
     return namespace, manager, calls
@@ -192,7 +192,7 @@ async def save(namespace, **overrides):
     return await namespace["platform_save"](request(), **values)
 
 
-@pytest.mark.parametrize("role", ["admin", "operator", "user", None])
+@pytest.mark.parametrize("role", ["admin", "superuser", "operator", "user", "unknown", None])
 @pytest.mark.parametrize("active", [True, False])
 @pytest.mark.parametrize("membership", [True, False])
 @pytest.mark.parametrize("manage", [True, False])
@@ -200,12 +200,12 @@ def test_platforms_tab_needs_a_fresh_active_platform_admin(role, active, members
     namespace = extracted()
     req = request(role=role, active=active, membership=membership, manage=manage)
     tabs = namespace["_visible_tabs"](req, req.state.tenant_id)
-    expected = bool(active and role == "admin")
+    expected = bool(active and role in ("admin", "superuser"))
     assert ("platforms" in tabs) is expected
     if not active:
         assert tabs == ()
     elif not membership:
-        assert tabs == (("account", "platforms") if expected else ("account",))
+        assert tabs == (("account", "models", "platforms") if expected else ("account", "models"))
     elif manage:
         assert tabs == WORKSPACE_TABS + (("platforms",) if expected else ())
     else:
@@ -220,7 +220,7 @@ async def test_global_catalog_reads_without_workspace_and_loads_nothing_else(gat
     context = response.context
     assert context["tab"] == "platforms"
     assert context["settings_scope"] == "global"
-    assert context["visible_tabs"] == ("account", "platforms")
+    assert context["visible_tabs"] == ("account", "models", "platforms")
     assert context["settings_manage"] is False
     assert [row.id for row in context["platforms"]] == [7]
     assert context["platform_type_options"] == [("vk", "ВКонтакте", ""), ("telegram", "Telegram", "")]

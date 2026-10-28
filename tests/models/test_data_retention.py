@@ -90,10 +90,19 @@ def module_with(**values):
 def load_prune():
     path = ROOT / "app/jobs/handlers.py"
     tree = ast.parse(path.read_text())
-    names = {"handle_prune", "_log_id", "_error_kind"}
+    names = {"handle_prune", "_log_id"}
     nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
+    classifier_path = ROOT / "app/utils/error_kinds.py"
+    classifier_tree = ast.parse(classifier_path.read_text())
+    classifier_node = next(
+        n for n in classifier_tree.body if isinstance(n, ast.FunctionDef) and n.name == "classify_error"
+    )
+    classifier_namespace = {}
+    exec(
+        compile(ast.Module(body=[classifier_node], type_ignores=[]), str(classifier_path), "exec"), classifier_namespace
+    )
     logger = logging.getLogger("isolated_data_retention")
-    namespace = {"Any": Any, "logger": logger}
+    namespace = {"Any": Any, "logger": logger, "_error_kind": classifier_namespace["classify_error"]}
     exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), str(path), "exec"), namespace)
     return namespace["handle_prune"], logger
 

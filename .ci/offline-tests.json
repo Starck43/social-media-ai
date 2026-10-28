@@ -7,6 +7,8 @@
     "tests/security/test_web_session_cookie_security.py": "AST-extracted factory with in-memory doubles; no app import.",
     "tests/tooling/test_p11_t03_offline_ci.py": "Stdlib/tool-only regression checks of CI guards and static inspection.",
     "tests/tooling/test_p11_t07_package_contract.py": "Stdlib AST-only CREATE-core contract and import-form/parent/transitive drift fixtures; no application imports.",
+    "tests/tooling/test_p11_t14_identifier_contract.py": "Stdlib/source-only identifier reuse and intentional ID/truncation/plural differences; file-local dependency doubles, no app/ORM/settings/DB imports.",
+    "tests/tooling/test_p11_t14_source_imports.py": "Stdlib AST-only canonical Source import/registration guard; no app imports, ORM, settings or DB.",
     "tests/tooling/test_p11_t15_package_contract.py": "Tool-only TOML/AST/locked export checks; no app imports, env loading, resolver or DB fixtures.",
     "tests/tooling/test_p11_t16_navigation.py": "Stdlib/tool-only generated-table rendering and AST/path contracts; no app imports, framework dependencies, resolver or DB fixtures.",
     "tests/tooling/test_p11_t24_schema_guards.py": "Stdlib/AST-only guard inventory: parses migration history and loads scripts/schema_guards.py by file; no app import, settings or DB.",
@@ -15,6 +17,7 @@
   "source_modules": [
     "app/services/ai/analysis_context.py",
     "app/services/digest/delivery_outcomes.py",
-    "scripts/schema_guards.py"
+    "scripts/schema_guards.py",
+    "app/utils/identifiers.py"
   ]
 }

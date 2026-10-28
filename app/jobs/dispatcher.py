@@ -23,6 +23,7 @@ from app.jobs.handlers import HANDLERS
 from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX, outcome_unconfirmed
 from app.jobs.result_outcomes import reported_llm_cost, returned_failure
 from app.models.managers.job_manager import JobManager
+from app.utils.error_kinds import classify_error as _error_kind
 
 logger = logging.getLogger(__name__)
 
@@ -66,21 +67,6 @@ def _log_id(value: Any) -> int | None:
 
 def _log_job_type(value: Any) -> str:
     return value if type(value) is str and value in _LOG_JOB_TYPES else "unknown"
-
-
-def _error_kind(error: BaseException) -> str:
-    """Bounded categories, not exception messages, repr, args or tracebacks."""
-    if isinstance(error, TimeoutError):
-        return "timeout"
-    if isinstance(error, ConnectionError):
-        return "connection_error"
-    if isinstance(error, OSError):
-        return "io_error"
-    if isinstance(error, ValueError):
-        return "value_error"
-    if isinstance(error, RuntimeError):
-        return "runtime_error"
-    return "unexpected_error"
 
 
 def _log_job(level: int, event: str, job: Any, *, error_code: str = "none") -> None:

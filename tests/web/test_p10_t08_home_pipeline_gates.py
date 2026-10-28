@@ -154,11 +154,11 @@ def home(monkeypatch):
         "app/web/dashboard.py",
         {
             "_p10_t08_web.deps": deps,
-            "app.models.agent_task": NS(AgentTask=models["agenttask"]),
-            "app.models.ai_analytics": NS(AIAnalytics=models["aianalytics"]),
-            "app.models.source": NS(Source=models["source"]),
-            "app.models.collected_item": NS(CollectedItem=models["collecteditem"]),
-            "app.models.job": NS(Job=models["job"]),
+            "app.models.scheduling.agent_task": NS(AgentTask=models["agenttask"]),
+            "app.models.analysis.ai_analytics": NS(AIAnalytics=models["aianalytics"]),
+            "app.models.collection.source": NS(Source=models["source"]),
+            "app.models.collection.collected_item": NS(CollectedItem=models["collecteditem"]),
+            "app.models.scheduling.job": NS(Job=models["job"]),
         },
     )
     for helper in ("_recent_results", "_recent_digests", "_recent_tasks"):

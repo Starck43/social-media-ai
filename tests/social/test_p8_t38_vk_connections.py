@@ -30,6 +30,9 @@ def _load(name: str, path: Path):
     return result
 
 
+# Load the pure dependency before synthetic app packages hide real package paths.
+identifiers = _load("_vk_connection_identifiers", ROOT / "app/utils/identifiers.py")
+
 # Import the real modules with temporary package entries, then restore sys.modules.
 with patch.dict(
     sys.modules,
@@ -37,6 +40,7 @@ with patch.dict(
         "app": _module("app"),
         "app.services": _module("app.services"),
         "app.services.social": _module("app.services.social"),
+        "app.utils.identifiers": identifiers,
     },
 ):
     policy = _load("app.services.social.vk_access", ROOT / "app/services/social/vk_access.py")
@@ -170,6 +174,7 @@ class VKConnectionAdapterTests(unittest.IsolatedAsyncioTestCase):
             ),
             "app.services": _module("app.services"),
             "app.services.social": _module("app.services.social"),
+            "app.utils.identifiers": identifiers,
         }
         self.runtime_modules = patch.dict(sys.modules, fake_modules)
         self.runtime_modules.start()

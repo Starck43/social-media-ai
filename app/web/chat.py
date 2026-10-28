@@ -393,7 +393,7 @@ async def chat_message_delete(
         return RedirectResponse("/app/chat", status_code=302)
 
     from app.agent.runtime import web_session_id
-    from app.models.agent_message import AgentMessage
+    from app.models.agent.agent_message import AgentMessage
 
     msg = await AgentMessage.objects.filter(
         id=message_id,

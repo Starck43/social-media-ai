@@ -25,10 +25,10 @@ from ...types import AgentActionType, BotTriggerType
 from ..base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
-    from ..agent_scenario import AgentScenario
+    from ..analysis.agent_scenario import AgentScenario
+    from ..collection.source import Source
     from ..managers.agent_task_manager import AgentTaskManager
-    from ..source import Source
-    from ..tenant import Tenant
+    from ..tenancy.tenant import Tenant
 
 
 # Many-to-many between tasks and sources (replaces the old payload["source_ids"] list)

@@ -26,9 +26,10 @@ MODELS = {
     "TenantInvite": ("tenant_invite", "tenant_invites", "TenantInviteManager", "tenant_invites"),
     "TenantChannel": ("tenant_channel", "tenant_channels", "TenantChannelManager", "tenant_channels"),
 }
-# Fresh-dev b4fd0f0b (unchanged at cb1a0a04): schema-only snapshots, including defaults/FKs/indexes.
-# Re-pinned on the post-split tenancy layout (workspace role FK, platform split);
-# `TenantChannel` is unchanged, which is the control on this snapshot.
+# Historical schema-only snapshots include defaults/FKs/indexes. Tenant keeps
+# its pre-P2-T15 baseline here; the migrated `plan_expires_at` extension is
+# checked structurally below against P2-T15 commit `a160aa22` and migration
+# 0113 (renumbered/reparented as 0117 by `b6099820`/`227a8643`).
 SCHEMA_FINGERPRINTS = {
     "Tenant": "74698e6890c948cff88c0ec20e2778fb2893d8232e57aeb2c8a24508167c11e6",
     "TenantUser": "86d52baa67bbb8792f22cb6f1d149c7cdb01cd0c0ce05c5650c2c13189ed4c3f",
@@ -99,6 +100,22 @@ def test_existing_declarative_schema_expressions_are_unchanged(name):
             and node.annotation.value.id == "Mapped"
         )
     ]
+    if name == "Tenant":
+        plan_expiry = [
+            node
+            for node in statements
+            if isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "plan_expires_at"
+        ]
+        assert len(plan_expiry) == 1
+        # This is the exact mapped declaration from P2-T15's model change and
+        # migration 0113: nullable timezone-aware expiry, with no ORM default.
+        expected_plan_expiry = ast.parse(
+            "plan_expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)"
+        ).body[0]
+        assert _canonical_ast(plan_expiry[0]) == _canonical_ast(expected_plan_expiry)
+        statements.remove(plan_expiry[0])
     payload = _canonical_ast(ast.Module(body=statements, type_ignores=[]))
     fingerprint = hashlib.sha256(
         json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")

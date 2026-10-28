@@ -28,7 +28,7 @@ from typing import Any
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.models.tenant import Tenant
+from app.models.tenancy.tenant import Tenant
 from app.services.tenancy import member_roles
 from app.types import ActionType
 
@@ -95,7 +95,7 @@ PLAN_ROWS: tuple[dict[str, Any], ...] = (
 #: `PLAN_LIMITS` so a new tier appears without touching the template, and a
 #: changed number appears everywhere it is shown.
 def _plan_table() -> list[dict[str, Any]]:
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     rows = []
     for row in PLAN_ROWS:
@@ -110,16 +110,18 @@ def _plan_table() -> list[dict[str, Any]]:
         rows.append(entry)
     from app.services.tenancy.plan_catalog import CATALOG_VERSION, PLAN_CATALOG
 
-    rows.append({
-        "key": "product_capabilities",
-        "label": f"Product capabilities (catalog v{CATALOG_VERSION})",
-        **{plan: ", ".join(PLAN_CATALOG[plan].capabilities) for plan in Tenant.PLANS},
-    })
+    rows.append(
+        {
+            "key": "product_capabilities",
+            "label": f"Product capabilities (catalog v{CATALOG_VERSION})",
+            **{plan: ", ".join(PLAN_CATALOG[plan].capabilities) for plan in Tenant.PLANS},
+        }
+    )
     return rows
 
 
 def _plan_labels() -> dict[str, str]:
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     return {plan: Tenant.PLAN_LIMITS[plan]["label"] for plan in Tenant.PLANS}
 
@@ -221,7 +223,7 @@ async def settings_page(request: Request):
     }
 
     if tab == "platforms":
-        from app.models.platform import Platform
+        from app.models.collection.platform import Platform
         from app.types import PlatformType
 
         context.update(
@@ -246,6 +248,7 @@ async def settings_page(request: Request):
             context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
     elif tab == "agent" and manage:
         from app.services.ai.personal_catalog import chat_model_options
+
         context["agent_model_options"] = await chat_model_options(user_id=user.id, tenant_id=tenant_id)
 
         # Read the last probe result from session (set by /agent/model-probe).
@@ -269,8 +272,8 @@ async def settings_page(request: Request):
             # Explicit member read contract: no budget/prompt/channel/plan configuration.
             context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
     elif tab == "team" and manage:
+        from app.models.identity.user import User
         from app.models.managers.tenant_manager import TenantUserManager
-        from app.models.user import User
 
         memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
         member_ids = [m.user_id for m in memberships if m.user_id is not None]
@@ -283,6 +286,7 @@ async def settings_page(request: Request):
         )
     elif tab == "models":
         from .settings_llm import settings_llm_context
+
         context.update(await settings_llm_context(request))
     elif tab == "connections":
         from app.models.managers.user_credential_manager import user_credentials
@@ -334,7 +338,7 @@ async def platform_save(
 
     from sqlalchemy.exc import IntegrityError
 
-    from app.models.platform import Platform
+    from app.models.collection.platform import Platform
     from app.types import PlatformType
 
     name, base_url = name.strip(), base_url.strip()
@@ -371,10 +375,10 @@ async def platform_save(
 
 async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:
     """Manager-only quota projections; resource counts additionally require VIEW."""
-    from app.models.agent_scenario import AgentScenario
-    from app.models.agent_task import AgentTask
+    from app.models.analysis.agent_scenario import AgentScenario
+    from app.models.collection.source import Source
     from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager
-    from app.models.source import Source
+    from app.models.scheduling.agent_task import AgentTask
 
     counts = {}
     for key, model, model_name in (
@@ -506,6 +510,7 @@ async def agent_settings_update(
     try:
         selected_id = int(agent_model_id) if agent_model_id.strip() else None
         from app.services.ai.personal_catalog import validate_chat_model
+
         selected = await validate_chat_model(
             user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=selected_id
         )
@@ -557,6 +562,7 @@ async def agent_model_probe(
     if agent_model_id.strip():
         try:
             from app.services.ai.personal_catalog import validate_chat_model
+
             model = await validate_chat_model(
                 user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=int(agent_model_id)
             )

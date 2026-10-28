@@ -15,7 +15,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import and_, func
 
-from app.models.agent_scenario import AgentScenario
+from app.models.analysis.agent_scenario import AgentScenario
 from app.services.ai.scenario_schema import ScenarioSchemaError, validate_scenario_values
 
 from .deps import add_flash, ensure_csrf, guard_web, render
@@ -43,14 +43,14 @@ async def scenarios_list(request: Request):
             and_(AgentScenario.id == AgentTask.agent_scenario_id, AgentScenario.tenant_id == AgentTask.tenant_id),
         )
     fields = [
-            AgentScenario.id,
-            AgentScenario.name,
-            AgentScenario.description,
-            AgentScenario.is_default,
-            AgentScenario.is_active,
-            AgentScenario.analysis_types,
-            AgentScenario.content_types,
-        ]
+        AgentScenario.id,
+        AgentScenario.name,
+        AgentScenario.description,
+        AgentScenario.is_default,
+        AgentScenario.is_active,
+        AgentScenario.analysis_types,
+        AgentScenario.content_types,
+    ]
     if can_view_tasks:
         fields.append(func.count(AgentTask.id).label("task_count"))
     query = query.values(*fields).order_by(AgentScenario.is_default.desc(), AgentScenario.name)
@@ -370,9 +370,7 @@ def _draft_from_form(form) -> "ScenarioDraft":
     content_types = ScenarioBuilder.normalize_media_types([v for v in _getlist("content_types") if v])
     analysis_types = [v for v in _getlist("analysis_types") if v]
 
-    for raw, enum_cls, label in (
-        (analysis_types, AnalysisType, "тип анализа"),
-    ):
+    for raw, enum_cls, label in ((analysis_types, AnalysisType, "тип анализа"),):
         unknown = [v for v in raw if _enum_by_value(enum_cls, v) is None]
         if unknown:
             raise ValueError(f"Неизвестный {label}: {', '.join(unknown)}")
@@ -507,7 +505,7 @@ async def _remember_preferences(request: Request, scenario) -> None:
 async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: int | None = None):
     """Render the 4-step wizard for a new or existing scenario."""
     from app.core.analysis_constants import ANALYSIS_TYPE_DEFAULTS
-    from app.models.llm_model import LLMModel
+    from app.models.llm.llm_model import LLMModel
     from app.services.ai.scenario_builder import ScenarioBuilder
     from app.types import AnalysisType, LLMStrategyType, MediaType
     from app.web.deps import human_datetime
@@ -531,8 +529,8 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     can_view_tasks = perms is not None and perms.can("agenttask", "view")
     if not create and scenario_id is not None and can_view_tasks:
         from app.core.tenant_context import tenant_scope
-        from app.models.job import Job
         from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.models.scheduling.job import Job
 
         manager = AgentTaskManager()
         with tenant_scope(request.state.tenant_id):
@@ -553,16 +551,22 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
             "total": len(tasks),
             "active": sum(1 for task in tasks if effective.get(task.id)),
             "paused": sum(1 for task in tasks if not effective.get(task.id)),
-            "last_status": {
-                "done": "завершён",
-                "failed": "ошибка",
-                "pending": "в очереди",
-                "running": "выполняется",
-            }.get(str(last_job.status), str(last_job.status)) if last_job else None,
-            "next_run": human_datetime(min((t.next_run_at for t in tasks if effective.get(t.id) and t.next_run_at), default=None), empty="не запланирован"),
+            "last_status": (
+                {
+                    "done": "завершён",
+                    "failed": "ошибка",
+                    "pending": "в очереди",
+                    "running": "выполняется",
+                }.get(str(last_job.status), str(last_job.status))
+                if last_job
+                else None
+            ),
+            "next_run": human_datetime(
+                min((t.next_run_at for t in tasks if effective.get(t.id) and t.next_run_at), default=None),
+                empty="не запланирован",
+            ),
             "tasks": [
-                {"id": task.id, "name": task.name, "is_active": effective.get(task.id, False)}
-                for task in tasks[:5]
+                {"id": task.id, "name": task.name, "is_active": effective.get(task.id, False)} for task in tasks[:5]
             ],
         }
     # Scenario pickers must not offer models that only burn runs: safety
@@ -582,7 +586,8 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
         for model in llm_models
         if model["id"] in wired_ids
         or not (
-            is_classifier_like(model["model_id"], model["name"]) or never_succeeded(model["use_count"], model["fail_count"])
+            is_classifier_like(model["model_id"], model["name"])
+            or never_succeeded(model["use_count"], model["fail_count"])
         )
     ]
     return render(

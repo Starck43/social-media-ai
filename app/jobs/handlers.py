@@ -11,6 +11,7 @@ from app.jobs.source_activity import source_in_task_platform_scope as _source_in
 # it runs, `selection` owns what it means (docs/COLLECTION.md#task-selection-contract).
 from app.services.monitoring import selection
 from app.services.social.credentials import AuthorizationRequired
+from app.utils.error_kinds import classify_error as _error_kind
 
 if TYPE_CHECKING:
     from app.types import AgentActionType
@@ -38,21 +39,6 @@ def _fresh_analytics_ids(rows: Any) -> list[int]:
         if len(ids) >= ANALYZE_STAGE_BATCH:
             break
     return ids
-
-
-def _error_kind(error: BaseException) -> str:
-    """Bounded categories, not exception messages, repr, args or tracebacks."""
-    if isinstance(error, TimeoutError):
-        return "timeout"
-    if isinstance(error, ConnectionError):
-        return "connection_error"
-    if isinstance(error, OSError):
-        return "io_error"
-    if isinstance(error, ValueError):
-        return "value_error"
-    if isinstance(error, RuntimeError):
-        return "runtime_error"
-    return "unexpected_error"
 
 
 # A platform error code is a bounded, meaningful cause an operator can act on.

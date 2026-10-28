@@ -41,7 +41,7 @@ def extracted():
         node.args.defaults = [ast.Constant(None) for _ in node.args.defaults]
         node.args.kw_defaults = [ast.Constant(None) if n is not None else None for n in node.args.kw_defaults]
     ns = {
-        "TABS": ("account", "connections", "workspace", "team", "agent", "channels", "platforms"),
+        "TABS": ("account", "connections", "models", "workspace", "team", "agent", "channels", "platforms"),
         "MANAGER_TABS": frozenset({"agent", "channels"}),
         "BACK": "/app/settings",
         "HTMLResponse": HTMLResponse,
@@ -101,6 +101,7 @@ def request(
         is_active=tenant_active,
         name="Workspace",
         timezone="Europe/Kirov",
+        entitlement_policy={"catalog_version": "fixture"},
         effective_limits=lambda: {"max_sources": 3, "max_channels": 5, "max_team_members": 5},
     )
     user = NS(
@@ -173,6 +174,10 @@ def gateway(monkeypatch):
         calls.append(("statuses", uid))
         return [NS(platform="vk", state="reauth")]
 
+    async def model_options(*, user_id, tenant_id):
+        calls.append(("models", {"user_id": user_id, "tenant_id": tenant_id}))
+        return []
+
     fake_models = {
         key: NS(objects=Query(key), id="id") for key in ["source", "agenttask", "agentscenario", "models", "users"]
     }
@@ -180,17 +185,23 @@ def gateway(monkeypatch):
         "app.models.managers.tenant_manager": dict(
             TenantUserManager=Members, TenantChannelManager=lambda: Query("channels")
         ),
-        **dict.fromkeys(('app.models.user', 'app.models.identity.user'), dict(User=fake_models["users"])),
-        **dict.fromkeys(('app.models.llm_model', 'app.models.llm.llm_model'), dict(LLMModel=fake_models["models"])),
-        **dict.fromkeys(('app.models.agent_task', 'app.models.scheduling.agent_task'), dict(AgentTask=fake_models["agenttask"])),
-        **dict.fromkeys(('app.models.agent_scenario', 'app.models.analysis.agent_scenario'), dict(AgentScenario=fake_models["agentscenario"])),
-        **dict.fromkeys(('app.models.source', 'app.models.collection.source'), dict(Source=fake_models["source"])),
+        **dict.fromkeys(("app.models.user", "app.models.identity.user"), dict(User=fake_models["users"])),
+        **dict.fromkeys(("app.models.llm_model", "app.models.llm.llm_model"), dict(LLMModel=fake_models["models"])),
+        **dict.fromkeys(
+            ("app.models.agent_task", "app.models.scheduling.agent_task"), dict(AgentTask=fake_models["agenttask"])
+        ),
+        **dict.fromkeys(
+            ("app.models.agent_scenario", "app.models.analysis.agent_scenario"),
+            dict(AgentScenario=fake_models["agentscenario"]),
+        ),
+        **dict.fromkeys(("app.models.source", "app.models.collection.source"), dict(Source=fake_models["source"])),
         "app.models.managers.user_credential_manager": dict(user_credentials=Vault()),
         "app.services.social.connections": dict(
             CONNECTIONS=[NS(platform="vk", title="VK", purpose="Own", is_oauth=True, manual_hint="")],
             connection_statuses=statuses,
         ),
         "app.services.ai.llm_client": dict(default_model_sort_key=lambda m: m.name),
+        "app.services.ai.personal_catalog": dict(chat_model_options=model_options),
     }
     for name, values in modules.items():
         module = ModuleType(name)
@@ -266,7 +277,8 @@ async def test_manager_workspace_quota_queries_require_resource_view(gateway):
 async def test_stale_or_foreign_workspace_falls_back_to_own_account_without_queries(gateway, options):
     ns, calls = gateway
     response = await ns["settings_page"](request("agent", manage=True, **options))
-    assert response.context["visible_tabs"] == ("account",)
+    assert response.context["visible_tabs"] == ("account", "models")
+    assert not set(response.context["visible_tabs"]) & {"workspace", "team", "agent", "channels", "platforms"}
     assert response.context["settings_manage"] is False
     assert calls == []
 

@@ -18,7 +18,7 @@ from typing import Any, Optional, Union
 from markupsafe import Markup
 from sqladmin.formatters import bool_formatter
 
-from app.models.tenant import Tenant
+from app.models.tenancy.tenant import Tenant
 
 # Rendered instead of a blank cell or the literal "None" for missing values.
 EMPTY = "—"

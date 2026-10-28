@@ -2,8 +2,9 @@
 
 **State:** contract proposal only. The durable store, hooks, support UI/export,
 retention enforcement and migrations are not implemented by this document.
-P11-T12's task card reserves migration/cleanup checks for a separately authorized
-implementation task.
+The owner authorized an Alembic migration only against `test_schema`; no
+production/public-schema apply or backfill is authorized. Cleanup checks remain
+separately gated.
 
 ## Purpose and boundaries
 
@@ -19,7 +20,8 @@ Keep existing records authoritative:
   [action activation](ACTION_ACTIVATION.md#idempotency-audit-and-uncertain-effects).
 - Jobs, entitlement usage, delivery receipts and billing/LLM records keep their
   existing identities and facts. The audit stores references only; it does not
-  duplicate money, provider payloads, delivery results or job state.
+  duplicate money, provider payloads, delivery results or job state. In
+  particular, an audit or diagnostic log is never a payment/delivery receipt.
 - Application logs are diagnostics, not durable business receipts or audit proof.
 
 ## Minimal event envelope
@@ -45,19 +47,31 @@ authority grants. They must not be trusted to authorize an operation or bypass a
 fresh tenant/membership check. If referenced rows are pruned, the event must retain
 only the safe identifiers needed by the approved retention policy.
 
-## Outcome and transaction rules
+## Separate outcome paths
+
+The owner approved three distinct paths. Keep them semantically separate; this
+does not authorize treating every path as a durable audit row or inventing a
+second billing/delivery ledger.
 
 - **Succeeded:** for a transactional state change, insert the event in the same
-  transaction as the business change. Both commit or both roll back. A successful
-  commit is the only basis for `succeeded`.
-- **Denied:** record a minimal safe denial through a separate audit-write path;
-  never place rejected raw arguments or authorization material in the event.
-- **Rolled back:** the failed business transaction cannot contain its own durable
-  rollback record. Record the safe outcome only after rollback, through a separate
-  audit-write path, and do not claim that the business change committed.
-- **Unknown:** use when commit/dispatch outcome cannot be established. Preserve
-  existing idempotency fences and receipts; do not automatically retry an
-  uncertain external effect. A correlation ID is not a replay key.
+  transaction as the business change. Both commit or both roll back. This is the
+  transactional audit-evidence path; a successful commit is the only basis for
+  `succeeded`.
+- **Denied and rolled back:** use a distinct, safe structured logging path after
+  the refusal or rollback. Do not claim a failed/denied attempt was written as a
+  successful durable audit event, and never include rejected arguments,
+  authorization material, secrets, or exception/provider text.
+- **Unknown:** use a separate outcome category/path when commit or external
+  dispatch cannot be established. Keep it distinguishable from both success and
+  failure; preserve existing idempotency fences and billing/delivery identities,
+  and do not automatically retry an uncertain external effect. A correlation ID
+  is not a replay key.
+
+Do not collapse the three paths into one undifferentiated stream or outcome.
+Shared validation/helpers may be reused only if distinct routing, storage
+semantics, redaction and outcome guarantees remain explicit. Logging alone is
+diagnostic evidence, not a payment receipt, delivery receipt, or proof that a
+business transaction committed.
 
 If durable audit writing fails, the system must expose that evidence gap through
 an explicit safe operational signal; it must never silently report the event as
@@ -85,11 +99,12 @@ mutation API for events. This is not a claim of cryptographic or database-level
 tamper-proof storage; database-role enforcement is a separate design/verification
 item.
 
-Use an allowlist, not a denylist. Never persist credentials, access/session tokens,
-raw tool arguments, prompts, customer content, raw provider payloads, SQL or
-exception messages. Store only bounded safe action/resource identifiers and
-reason codes. Existing business receipts remain the source of provider and billing
-facts.
+Use an allowlist, not a denylist. Never persist or log credentials,
+access/session tokens, raw tool arguments, prompts, customer content, raw
+provider payloads, SQL or exception messages. Store only bounded safe
+action/resource identifiers and reason codes. Reuse existing billing, delivery
+and job identities as references; existing business receipts remain the source
+of provider, payment and delivery facts.
 
 Classify these rows as the **action-audit** data class in the PRD-06 lifecycle
 policy. Retention must be finite and owner-approved before enforcement; preserve

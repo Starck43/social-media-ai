@@ -236,6 +236,7 @@ def install(monkeypatch):
         monkeypatch.setattr(model_package, "AgentScenario", _model(scenario_store))
         monkeypatch.setattr(database_module, "new_session", lambda: session)
         monkeypatch.setattr("app.core.tenant_context.current_tenant_id", lambda: TENANT_ID)
+        monkeypatch.setattr("app.models.managers.base_manager.current_tenant_id", lambda: TENANT_ID)
 
         async def lock_task(manager_self, db_session, task_id):
             assert db_session is session

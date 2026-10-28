@@ -14,7 +14,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 4. [P11-T04](../audit/p11-t04.md) — Shared canonical task-plan CREATE preparation across five adapters — DONE 2026-10-27 (accepted `ef2f7030d9f5f8e6b8e3fe0e53c5734dbaf10cfe`, integrated `8fc84585a9f188b48799e02984fd12f4f2ac73da`; PR #263).
 5. [P11-T05](../audit/p11-t05.md) — Explicit CREATE transaction ownership and recoverable post-commit steps — DONE 2026-10-27 (accepted `393b73bb15cddf57e23b0b8a15514aea8e1286e5`, integrated `bb8d4385cee477fab39d52ad73a68936400f0ab6`; PR #264).
 6. [P11-T06](../audit/p11-t06.md) — Typed launch contracts, safe errors and allowlisted receipts — DONE 2026-10-27 (accepted `d2c5c91936766715c71dbdebb559aaa814dae346`, integrated `1ce7dcb8d53faaa1b6b6a3bb7e4e086d60c8bfba`; PR #266).
-7. [P11-T07](../tasks/p11-t07.md) — Incremental package-boundary enforcement (R-05).
+7. [P11-T07](../audit/p11-t07.md) — Incremental package-boundary enforcement (R-05) — DONE 2026-10-28 (accepted `f6fbbdaf`, integrated `5eb9c5f6`; PR #268).
 8. [P11-T08](../tasks/p11-t08.md) — Public API compatibility and bounded request policy (R-06).
 9. [P11-T09](../tasks/p11-t09.md) — Fail-closed typed agent-tool registration (R-07).
 10. [P11-T10](../audit/p11-t10.md) — Operator CLI boundaries and machine-output contract — DONE 2026-10-28 (accepted `e1dec81d`, integrated `1506d98d`; PR #267).

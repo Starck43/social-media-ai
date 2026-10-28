@@ -1,53 +1,85 @@
-"""Tool framework for the agent: registry, OpenAI schemas, dispatch.
+"""Fail-closed, typed tool registration and shared authorized dispatch.
 
-A tool is an async function exposed to the LLM through function calling.
-Tools marked `requires_confirmation=True` are never executed by the model
-directly — the runtime intercepts them and asks the owner to confirm in text
-before dispatch (works identically on Telegram and MAX, no inline buttons
-protocol per channel).
+OpenAI wire helpers remain compatibility wrappers at the provider boundary.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Awaitable, Callable
 
 from app.agent.confirmation import consume_tool_confirmation
+from app.agent.tool_contracts import ToolBudget, ToolContract, ToolInputError, ToolResultError
+from app.core.access_catalog import resolve_permission_key
 from app.core.permissions import PermissionDeniedError, get_current_user, has_permission_by_codename
+from app.services.llm_tool_serialization import tool_call, tool_schema
 
 logger = logging.getLogger(__name__)
-
 JSONSchema = dict[str, Any]
 
 
-@dataclass
+@dataclass(frozen=True, init=False)
 class Tool:
     name: str
     description: str
-    parameters: JSONSchema
     handler: Callable[..., Awaitable[Any]]
-    requires_confirmation: bool = False
-    required_permission: str | None = None  # catalog key: "scheduling.task.create", etc.
+    requires_confirmation: bool
+    required_permission: str
+    budget: ToolBudget
+    contract: ToolContract = field(repr=False)
+
+    def __init__(
+        self,
+        name,
+        description,
+        parameters,
+        handler,
+        requires_confirmation=False,
+        required_permission=None,
+        budget=None,
+    ):
+        if not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", name) is None:
+            raise ValueError("Invalid tool name")
+        resolved = resolve_permission_key(required_permission)
+        if resolved is None or required_permission != f"{resolved[0].key}.{resolved[1].db_value}":
+            raise ValueError("Tool requires a canonical catalog permission")
+        if not isinstance(description, str) or not description.strip() or type(requires_confirmation) is not bool:
+            raise ValueError("Invalid tool metadata")
+        budget = ToolBudget() if budget is None else budget
+        if not isinstance(budget, ToolBudget):
+            raise ValueError("Invalid tool budget")
+        contract = ToolContract(handler, parameters)
+        for key, value in (
+            ("name", name),
+            ("description", description),
+            ("handler", handler),
+            ("requires_confirmation", requires_confirmation),
+            ("required_permission", required_permission),
+            ("budget", budget),
+            ("contract", contract),
+        ):
+            object.__setattr__(self, key, value)
+
+    @property
+    def parameters(self) -> JSONSchema:
+        return self.contract.parameters
 
     @property
     def confirm(self) -> bool:
-        """Alias used by runtime.py for confirmation-gating."""
         return self.requires_confirmation
 
     def to_openai(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters,
-            },
-        }
+        """Compatibility shim; serialization belongs to the provider adapter."""
+        return tool_schema(self)
 
 
 _REGISTRY: dict[str, Tool] = {}
+TOOL_REGISTRY = MappingProxyType(_REGISTRY)
 
 
 def tool(
@@ -56,27 +88,20 @@ def tool(
     parameters: JSONSchema,
     confirm: bool = False,
     required_permission: str | None = None,
+    *,
+    budget: ToolBudget | None = None,
 ) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
-    """Register an async function as an agent tool.
+    """Register a typed async handler with a mandatory canonical permission.
 
-    ``required_permission`` is a catalog key, ``domain.resource.action``
-    (``"scheduling.task.create"``), checked by the runtime and both public
-    dispatch paths before the handler.
-    ``None`` (default) means
-    no permission gate — every workspace member may call the tool.
+    No implicit/public policy exists. A future open tool needs a separately reviewed
+    policy, not a sentinel or None. Invalid declarations never enter the registry.
     """
 
-    def decorator(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+    def decorator(fn):
         if name in _REGISTRY:
             raise ValueError(f"Duplicate tool name: {name}")
-        _REGISTRY[name] = Tool(
-            name=name,
-            description=description,
-            parameters=parameters,
-            handler=fn,
-            requires_confirmation=confirm,
-            required_permission=required_permission,
-        )
+        spec = Tool(name, description, parameters, fn, confirm, required_permission, budget)
+        _REGISTRY[name] = spec
         return fn
 
     return decorator
@@ -91,51 +116,23 @@ def all_tools() -> list[Tool]:
 
 
 def to_openai_schemas() -> list[dict[str, Any]]:
-    """Tool schemas for LLMClient.chat(tools=...)."""
-    return [t.to_openai() for t in _REGISTRY.values()]
+    return [tool_schema(t) for t in _REGISTRY.values()]
 
 
 def to_openai_call(call: dict[str, Any], call_id: str | None = None) -> dict[str, Any]:
-    """One tool call in the shape a chat API expects inside an assistant message.
-
-    Everywhere else in the agent a call is flat — `{"id", "name", "arguments"}`,
-    which is what tools dispatch on and what `agent_messages.tool_calls` stores.
-    A chat API wants the *wire* shape instead: `arguments` nested under
-    `function` and serialized to a JSON string, never a dict.
-
-    Sending the flat shape back makes the provider reject the whole request with
-    `messages[N].tool_calls[0].function must be an object`, which surfaces to the
-    user as a bare "Ошибка LLM: 400" after any tool call. Both the replayed
-    history and the in-flight loop of a single turn must go through here.
-    """
-    args = call.get("arguments")
-    if isinstance(args, str):
-        arguments = args
-    else:
-        arguments = json.dumps(args or {}, ensure_ascii=False)
-    return {
-        "id": call_id or call.get("id") or call.get("name") or "",
-        "type": "function",
-        "function": {"name": call.get("name") or "", "arguments": arguments},
-    }
-
-
-# Public aliases used by the runtime.
-TOOL_REGISTRY: dict[str, Tool] = _REGISTRY
+    return tool_call(call, call_id)
 
 
 def tool_specs() -> list[dict[str, Any]]:
-    """OpenAI-compatible schemas for every registered tool."""
     return to_openai_schemas()
 
 
 class ToolError(Exception):
-    """A tool returned an error dict — confirmation replay catches it."""
-    pass
+    """Handler error dict; confirmation replay treats this as failure."""
 
 
 class ToolConfirmationRequiredError(PermissionError):
-    """A confirmed tool was called without its exact one-use runtime grant."""
+    """A confirmed tool lacks its exact one-use runtime grant."""
 
 
 def _check_tool_confirmation(spec: Tool, arguments: dict[str, Any]) -> None:
@@ -144,61 +141,57 @@ def _check_tool_confirmation(spec: Tool, arguments: dict[str, Any]) -> None:
 
 
 def _check_tool_permission(spec: Tool) -> None:
-    """Recheck the current registry right before effects, not a cached approval.
-
-    This is authorization only. Confirmation still belongs to the runtime;
-    undeclared (None) tool rights retain the existing contract for now.
-    """
+    # Check fresh actor rights at every invocation, including confirmed dispatch.
     permission = spec.required_permission
-    if permission is not None and not has_permission_by_codename(get_current_user(), permission):
-        raise PermissionDeniedError(f"Missing permission: {permission}")
+    if resolve_permission_key(permission) is None or not has_permission_by_codename(get_current_user(), permission):
+        raise PermissionDeniedError("Permission denied")
+
+
+async def _invoke(spec: Tool, arguments: Any) -> Any:
+    outcome = "rejected"
+    try:
+        _check_tool_permission(spec)
+        checked = spec.contract.arguments(arguments, spec.budget)
+        _check_tool_confirmation(spec, checked)
+        async with asyncio.timeout(spec.budget.timeout_seconds):
+            result = await spec.handler(**checked)
+        result = spec.contract.result(result, spec.budget)
+        outcome = "handler_error" if isinstance(result, dict) and result.get("error") else "ok"
+        return result
+    finally:
+        # Deliberately excludes arguments, prompts, credentials, results and exception text.
+        logger.info("agent_tool_dispatch name=%s outcome=%s", spec.name, outcome)
 
 
 async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
-    """Dispatch a tool call, returning the raw handler result.
-
-    Unlike `execute`, errors propagate — the caller decides how to surface them.
-    Error dicts ({"error": "..."}) raise ToolError so confirmation replay
-    catches them as failures instead of treating them as successful results.
-    """
-    tool_obj = _REGISTRY.get(name)
-    if tool_obj is None:
-        raise LookupError(f"Unknown tool: {name}")
-    _check_tool_permission(tool_obj)
-    _check_tool_confirmation(tool_obj, arguments or {})
-    result = await tool_obj.handler(**(arguments or {}))
+    spec = get_tool(name)
+    if spec is None:
+        raise LookupError("Unknown tool")
+    result = await _invoke(spec, arguments)
     if isinstance(result, dict) and result.get("error"):
         raise ToolError(result["error"])
     return result
 
 
 async def execute(name: str, arguments: dict[str, Any]) -> str:
-    """
-    Run a tool and return a JSON string result (the `role=tool` payload).
-
-    Errors never propagate: the model sees them and can correct course.
-    """
-    t = _REGISTRY.get(name)
-    if t is None:
-        return json.dumps({"error": f"Unknown tool: {name}"}, ensure_ascii=False)
+    spec = get_tool(name)
+    if spec is None:
+        return json.dumps({"error": "Unknown tool", "code": "unknown_tool"})
     try:
-        _check_tool_permission(t)
-        _check_tool_confirmation(t, arguments or {})
+        result = await _invoke(spec, arguments)
     except ToolConfirmationRequiredError:
-        return json.dumps({"error": "Confirmation required", "code": "confirmation_required"}, ensure_ascii=False)
+        return json.dumps({"error": "Confirmation required", "code": "confirmation_required"})
     except PermissionDeniedError:
-        # Ordinary denial is not a handler failure; no traceback or private data.
-        return json.dumps({"error": "Permission denied", "code": "permission_denied"}, ensure_ascii=False)
-    try:
-        result = await t.handler(**(arguments or {}))
-    except TypeError as e:
-        return json.dumps({"error": f"Bad arguments for {name}: {e}"}, ensure_ascii=False)
-    except Exception as e:
-        logger.error(f"Tool {name} failed: {e}", exc_info=True)
-        return json.dumps({"error": str(e)}, ensure_ascii=False)
+        return json.dumps({"error": "Permission denied", "code": "permission_denied"})
+    except ToolInputError:
+        return json.dumps({"error": "Invalid tool arguments", "code": "invalid_arguments"})
+    except (ToolResultError, TimeoutError):
+        return json.dumps({"error": "Tool contract or budget exceeded", "code": "tool_contract_error"})
+    except Exception:
+        return json.dumps({"error": "Tool execution failed", "code": "tool_failed"})
     if isinstance(result, str):
         return result
-    return json.dumps(result, ensure_ascii=False, default=str)
+    return json.dumps(result, ensure_ascii=False)
 
 
 def confirmation_message(name: str, arguments: dict[str, Any]) -> str:

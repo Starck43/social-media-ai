@@ -399,7 +399,7 @@ async def task_edit_page(request: Request, task_id: int):
         task = (
             await AgentTask.objects.filter(id=task_id)
             .select_related("agent_scenario")
-            .prefetch_related("sources")
+            .prefetch_related("sources__platform")
             .first()
         )
         if task is not None and not is_superuser and task.tenant_id != request.state.tenant_id:

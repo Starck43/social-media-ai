@@ -128,6 +128,10 @@ def aliased_model_imports(path: Path, source: str, *, dynamic: bool = True) -> l
 
 def _module_import_targets(module: str) -> set[str]:
     path = ROOT.joinpath(*module.split(".")).with_suffix(".py")
+    if not path.exists():
+        path = ROOT.joinpath(*module.split("."), "__init__.py")
+    if not path.exists():
+        return set()
     package = module.rpartition(".")[0]
     targets = set()
     for node in ast.walk(ast.parse(path.read_text())):
@@ -148,7 +152,9 @@ def _alias_reaches_canonical(alias: str, canonical: str, seen: set[str] | None =
         return False
     seen.add(alias)
     return any(
-        target == canonical or (target in MODEL_ALIAS_MODULES and _alias_reaches_canonical(target, canonical, seen))
+        target == canonical
+        or (target in MODEL_ALIAS_MODULES or ROOT.joinpath(*target.split(".")).is_dir())
+        and _alias_reaches_canonical(target, canonical, seen)
         for target in _module_import_targets(alias)
     )
 

@@ -47,12 +47,14 @@ class SourceIdentityTests(unittest.TestCase):
         settings = SimpleNamespace(DB_SCHEMA="p11_t14_isolated")
         config = SimpleNamespace(settings=settings)
         bases = load("app.models.base", "app/models/base.py", {"app.core.config": config})
+        self.bases = bases
         self.base = bases.Base
         decorators = load("_source_identity_decorators", "app/core/decorators.py")
         enums = load("_source_identity_enums", "app/utils/db_enums.py", {"app.core.config": config})
         types = load(
             "_source_identity_platform_types", "app/types/enums/platform_types.py", {"app.utils.db_enums": enums}
         )
+        self.types = types
         self.leaf = load(
             "app.models.collection.source",
             "app/models/collection/source.py",
@@ -71,10 +73,18 @@ class SourceIdentityTests(unittest.TestCase):
             return value
 
         self.managers = SimpleNamespace(SourceManager=manager)
+        # The compatibility facade re-exports Base and the source types too.
+        # Bind the already isolated real modules explicitly so this test never
+        # falls through to application package initialization.
         self.legacy = load(
             "app.models.source",
             "app/models/source.py",
-            {"app.models.collection.source": self.leaf, "app.models.managers.source_manager": self.managers},
+            {
+                "app.models.base": bases,
+                "app.types": types,
+                "app.models.collection.source": self.leaf,
+                "app.models.managers.source_manager": self.managers,
+            },
         )
         self.domain = load("app.models.collection", "app/models/collection/__init__.py")
         self.domain.import_module = lambda relative, package: (
@@ -92,7 +102,14 @@ class SourceIdentityTests(unittest.TestCase):
         self.assertIs(self.domain.Source, cls)
         self.assertIs(self.domain.Source, cls)
         self.assertIn("Source", self.domain.__all__)
-        self.assertEqual(self.legacy.__all__, ["Source", "SourceManager"])
+        self.assertEqual(
+            self.legacy.__all__,
+            ["Base", "Source", "SourceManager", "SourceType", "TenantScopedMixin", "TimestampMixin"],
+        )
+        self.assertIs(self.legacy.Base, self.base)
+        self.assertIs(self.legacy.SourceType, self.types.SourceType)
+        self.assertIs(self.legacy.TenantScopedMixin, self.bases.TenantScopedMixin)
+        self.assertIs(self.legacy.TimestampMixin, self.bases.TimestampMixin)
         self.assertIs(self.legacy.SourceManager, self.managers.SourceManager)
         self.assertEqual(cls.__module__, "app.models.collection.source")
         self.assertEqual(cls._app_label, "collection")
@@ -122,6 +139,7 @@ class SourceIdentityTests(unittest.TestCase):
             {
                 "app.models.managers.base_manager": SimpleNamespace(BaseManager=generic),
                 "app.models.managers.role_manager": SimpleNamespace(RoleManager=generic),
+                "app.models.base": self.bases,
             },
         )
         bootstrap.import_module = lambda name: manager_module

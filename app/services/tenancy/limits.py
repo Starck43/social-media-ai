@@ -184,10 +184,7 @@ def check_feature(tenant: Any, feature: str, *, what: str) -> Optional[str]:
     """A plan boolean rendered as a message, or None when the tier includes it."""
     if tenant.has_feature(feature):
         return None
-    return (
-        f"Функция «{what}» доступна на тарифах Pro и Business. "
-        f"Текущий тариф: «{tenant.plan_label}»."
-    )
+    return f"Функция «{what}» доступна на тарифах Pro и Business. " f"Текущий тариф: «{tenant.plan_label}»."
 
 
 def check_daily_cost(tenant: Any, spent: float) -> Optional[str]:
@@ -202,10 +199,7 @@ def check_model_type(tenant: Any, model_type: str) -> Optional[str]:
     """Whether this tier may route calls to a model of that type."""
     if tenant.allows_model_type(model_type):
         return None
-    return (
-        f"Тип моделей «{model_type}» недоступен на тарифе «{tenant.plan_label}» "
-        f"(только text)."
-    )
+    return f"Тип моделей «{model_type}» недоступен на тарифе «{tenant.plan_label}» " f"(только text)."
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -224,8 +218,8 @@ async def plan_overage(tenant_id: int, plan: str) -> list[str]:
     from app.core.tenant_context import tenant_scope
     from app.models.agent_scenario import AgentScenario
     from app.models.agent_task import AgentTask
-    from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager, tenants
     from app.models.collection.source import Source
+    from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager, tenants
 
     tenant = await tenants.get(id=tenant_id)
     if tenant is None:

@@ -9,10 +9,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
 from app.models.base import Base
+from app.models.collection.source import Source
 from app.models.managers.base_manager import prefetch
 from app.models.platform import Platform
 from app.models.role import Role
-from app.models.collection.source import Source
 from app.models.user import User
 from app.types import PlatformRoleType, PlatformType, SourceType
 
@@ -47,8 +47,10 @@ async def async_session():
     for table in Base.metadata.tables.values():
         for constraint in list(table.constraints):
             sqltext = getattr(constraint, "sqltext", None)
-            if isinstance(constraint, CheckConstraint) and sqltext is not None and any(
-                marker in sqltext.text for marker in pg_only_markers
+            if (
+                isinstance(constraint, CheckConstraint)
+                and sqltext is not None
+                and any(marker in sqltext.text for marker in pg_only_markers)
             ):
                 table.constraints.discard(constraint)
                 stripped.append((table, constraint))

@@ -75,18 +75,26 @@ class AdmissionWorkspace:
         tenant = await tenants.create(
             slug=f"p11t08-{suffix}", name="P11-T08 admission test", plan="business", is_active=True
         )
-        user = await cls._create_user(suffix, platform_role.id)
-        with tenant_scope(tenant.id):
-            await tenant_users.create(
-                tenant_id=tenant.id,
-                channel="web",
-                external_user_id=str(user.id),
-                user_id=user.id,
-                role_id=owner_role.id,
-                ai_chat_enabled=True,
-                is_active=True,
-            )
-        return cls(tenant, [user])
+        user = None
+        try:
+            user = await cls._create_user(suffix, platform_role.id)
+            with tenant_scope(tenant.id):
+                await tenant_users.create(
+                    tenant_id=tenant.id,
+                    channel="web",
+                    external_user_id=str(user.id),
+                    user_id=user.id,
+                    role_id=owner_role.id,
+                    ai_chat_enabled=True,
+                    is_active=True,
+                )
+            return cls(tenant, [user])
+        except Exception:
+            with tenant_scope(bypass=True):
+                await tenants.delete_by_id(tenant.id)
+                if user is not None:
+                    await User.objects.delete_by_id(user.id)
+            raise
 
     @staticmethod
     async def _create_user(suffix: str, role_id: int) -> User:
@@ -107,16 +115,20 @@ class AdmissionWorkspace:
         assert role is not None and owner_role is not None
         suffix = uuid4().hex
         user = await self._create_user(suffix, role.id)
-        with tenant_scope(self.tenant.id):
-            await tenant_users.create(
-                tenant_id=self.tenant.id,
-                channel="web",
-                external_user_id=str(user.id),
-                user_id=user.id,
-                role_id=owner_role.id,
-                ai_chat_enabled=True,
-                is_active=True,
-            )
+        try:
+            with tenant_scope(self.tenant.id):
+                await tenant_users.create(
+                    tenant_id=self.tenant.id,
+                    channel="web",
+                    external_user_id=str(user.id),
+                    user_id=user.id,
+                    role_id=owner_role.id,
+                    ai_chat_enabled=True,
+                    is_active=True,
+                )
+        except Exception:
+            await User.objects.delete_by_id(user.id)
+            raise
         self.users.append(user)
         return user
 
@@ -256,6 +268,34 @@ async def _admit(workspace: AdmissionWorkspace, user: User, task: AgentTask, lau
         )
 
 
+async def test_same_key_concurrent_launch_creates_one_task_and_job(
+    admission_workspace: AdmissionWorkspace,
+):
+    workspace = admission_workspace
+    scenario = await workspace.scenario()
+    source = await workspace.source()
+    actor = workspace.users[0]
+    request_id = "p11t08-identical-race"
+    plan = _plan(scenario.id, source.id)
+    with workspace.actor_scope(actor):
+        await configure_current_personal_account("20")
+        first, second = await asyncio.gather(
+            launch_social_task(plan, request_id=request_id),
+            launch_social_task(plan, request_id=request_id),
+        )
+
+    assert {first["status"], second["status"]} == {"queued", "replayed"}
+    assert first["task_id"] == second["task_id"]
+    assert first["job_id"] == second["job_id"]
+    with tenant_scope(workspace.tenant.id):
+        task = await AgentTask.objects.get(id=first["task_id"])
+        tasks = await AgentTask.objects.filter(launch_key=task.launch_key)
+        jobs = await Job.objects.filter(agent_task_id=first["task_id"])
+    assert len(tasks) == 1
+    assert len(jobs) == 1
+    assert jobs[0].id == first["job_id"]
+
+
 async def test_actor_admission_serializes_distinct_requests_and_releases_terminal_capacity(
     admission_workspace: AdmissionWorkspace,
 ):
@@ -334,6 +374,10 @@ async def test_workspace_admission_uses_locked_active_job_count_and_fails_closed
         return {**limits, "max_tasks": 2} if tenant.id == workspace.tenant.id else limits
 
     monkeypatch.setattr(Tenant, "effective_limits", constrained_limits)
+    for user in users:
+        with workspace.actor_scope(user):
+            await configure_current_personal_account("20")
+
     first = await _admit(workspace, users[0], *receipt_tasks[0])
     second = await _admit(workspace, users[1], *receipt_tasks[1])
     assert first["status"] == second["status"] == "enqueued"

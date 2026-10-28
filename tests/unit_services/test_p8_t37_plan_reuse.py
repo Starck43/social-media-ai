@@ -1,7 +1,7 @@
 """No-DB actual-source checks for projection/serialization/platform reuse."""
 
 from types import SimpleNamespace as NS
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -45,10 +45,16 @@ def test_preview_serializes_only_once():
     plans, _ = load_plans()
     serialize = Mock(wraps=plans.task_plan_block)
     plans.task_plan_block = serialize
+    entitlements = AsyncMock(return_value={"allowed": True})
+    vk_access = AsyncMock(return_value={"available": True})
     module = source_functions(
         "app/api/v1/endpoints/tasks.py",
-        ["preview_task_plan"],
-        {"app.services.task_plans": plans},
+        ["preview_task_plan", "_preview_entitlements"],
+        {
+            "app.services.task_plans": plans,
+            "app.services.collection.entitlement_policy": NS(preview_entitlements=entitlements),
+            "app.services.social.vk_task_access": NS(preview_vk_access=vk_access),
+        },
         {
             "router": NS(post=lambda *a, **kw: lambda f: f),
             "TaskPlanPreviewResponse": NS,
@@ -60,6 +66,12 @@ def test_preview_serializes_only_once():
     response = asyncio.run(module.preview_task_plan(NS(task_plan=plan(), job_type="collect")))
     assert response.task_plan["source_ids"] == [11]
     assert serialize.call_count == 1
+    entitlements.assert_awaited_once_with(
+        {"task_plan": response.task_plan, "collection": response.task_plan["collection"]}
+    )
+    vk_access.assert_awaited_once_with(response.task_plan)
+    assert response.entitlements == {"allowed": True}
+    assert response.vk_access == {"available": True}
 
 
 @pytest.mark.parametrize(

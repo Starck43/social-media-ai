@@ -159,6 +159,7 @@ class Session:
         self.locked = None
         self.saved_jobs = None
         self.saved_tasks = None
+        self.saved_audit = None
 
     async def __aenter__(self):
         return self
@@ -181,6 +182,9 @@ class Session:
             try:
                 if s.locked is not None and (kind or s.f.commit_error):
                     s.f.jobs[:] = [job for job in s.f.jobs if job.tenant_id != s.locked] + s.saved_jobs
+                    s.f.audit_events[:] = [
+                        event for event in s.f.audit_events if event["tenant_id"] != s.locked
+                    ] + s.saved_audit
                     for task_id, attrs in s.saved_tasks.items():
                         task = s.f.tasks[task_id]
                         for key, value in attrs.items():
@@ -206,6 +210,7 @@ class Session:
                 await self.f.locks.setdefault(tid, asyncio.Lock()).acquire()
                 self.locked = tid
                 self.saved_jobs = [job for job in self.f.jobs if job.tenant_id == tid]
+                self.saved_audit = [event for event in self.f.audit_events if event["tenant_id"] == tid]
                 self.saved_tasks = {
                     key: {
                         name: getattr(task, name)
@@ -269,6 +274,7 @@ def with_db_session_double(session_factory):
 class Fixture:
     def __init__(self):
         self.jobs, self.tasks, self.sources, self.queries, self.events = [], {}, {}, [], []
+        self.audit_events = []
         self.tenants, self.locks = {7, 8}, {}
         self.commit_error = self.create_error = None
         self.isolation = "READ COMMITTED"
@@ -342,6 +348,25 @@ class Fixture:
             TenantContextError=ContextError,
             tenant_scope=tenant_scope,
         )
+
+        async def record_success(*, session, actor_kind, actor_id, action, resource_kind, resource_id, job_id):
+            tenant_id = TENANT.get()
+            assert session.f is fixture and session.locked == tenant_id
+            assert action == "scheduling.task_admit" and resource_kind == "agent_task"
+            assert fixture.tasks[resource_id].tenant_id == tenant_id
+            assert any(job.id == job_id and job.tenant_id == tenant_id for job in fixture.jobs)
+            event = dict(
+                tenant_id=tenant_id,
+                actor_kind=actor_kind,
+                actor_id=actor_id,
+                action=action,
+                resource_kind=resource_kind,
+                resource_id=resource_id,
+                job_id=job_id,
+            )
+            fixture.audit_events.append(event)
+            return NS(**event)
+
         self.imports = {
             "app.core.config": config,
             "app.core.tenant_context": context,
@@ -354,6 +379,14 @@ class Fixture:
             "app.services.collection.entitlement_policy": NS(required_capabilities=required_capabilities),
             "app.services.task_plans": task_plans,
             "app.services.tenancy.entitlements": NS(EntitlementDenied=EntitlementDenied),
+            "app.models.audit.action_audit_event": NS(ActionAuditEvent=NS(objects=NS(record_success=record_success))),
+            "app.services": NS(
+                action_audit=NS(
+                    log_unknown=lambda **_: None,
+                    log_rolled_back=lambda **_: None,
+                    log_denied=lambda **_: None,
+                )
+            ),
             **dict.fromkeys(("app.models.job", "app.models.scheduling.job"), NS(Job=Job)),
             **dict.fromkeys(("app.models.tenant", "app.models.tenancy.tenant"), NS(Tenant=Tenant)),
             **dict.fromkeys(("app.models.agent_task", "app.models.scheduling.agent_task"), NS(AgentTask=Task)),
@@ -540,6 +573,10 @@ async def test_new_task_admission_updates_only_after_unique_job_insert():
     assert task.last_status == "queued" and task.last_run_at == NOW
     assert not task.is_active and task.next_run_at is None
     assert len(f.jobs) == 1 and f.jobs[0].agent_task_id == task.id
+    assert len(f.audit_events) == 1
+    assert f.audit_events[0]["job_id"] == receipt["job"].id
+    assert f.audit_events[0]["tenant_id"] == task.tenant_id
+    assert f.audit_events[0]["actor_kind"] == "scheduler"
 
 
 @pytest.mark.asyncio
@@ -554,6 +591,7 @@ async def test_failed_admission_rolls_back_job_and_task_updates(failure):
     with pytest.raises(RuntimeError):
         await f.admit_task(task)
     assert not f.jobs
+    assert not f.audit_events
     assert task.is_active and task.next_run_at == NOW and task.last_status == "old"
     assert not f.locks[7].locked()
 

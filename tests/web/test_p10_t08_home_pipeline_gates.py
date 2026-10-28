@@ -156,7 +156,7 @@ def home(monkeypatch):
             "_p10_t08_web.deps": deps,
             "app.models.agent_task": NS(AgentTask=models["agenttask"]),
             "app.models.ai_analytics": NS(AIAnalytics=models["aianalytics"]),
-            "app.models.source": NS(Source=models["source"]),
+            "app.models.collection.source": NS(Source=models["source"]),
             "app.models.collected_item": NS(CollectedItem=models["collecteditem"]),
             "app.models.job": NS(Job=models["job"]),
         },

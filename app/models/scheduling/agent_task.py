@@ -27,7 +27,7 @@ from ..base import Base, TenantScopedMixin, TimestampMixin
 if TYPE_CHECKING:
     from ..agent_scenario import AgentScenario
     from ..managers.agent_task_manager import AgentTaskManager
-    from ..source import Source
+    from ..collection.source import Source
     from ..tenant import Tenant
 
 

@@ -70,3 +70,16 @@ The workflow has read-only permissions, SHA-pinned checkout/setup actions,
 no secrets, no service containers, no runtime startup and no migration apply.
 Rollback: disable/remove this one workflow and its tool-only files; no application
 behavior or DB state is modified. Keep Python metadata aligned with README.
+
+## P8-T41 source-only journey lane
+
+The separate `vk-journey-source-only` workflow job runs
+`python -m scripts.check_p8_t41` on Python 3.12 with the standard library alone.
+It does not extend `offline-tests.json` or bypass the pytest isolation review.
+It file-loads actual plan/pipeline/policy/result source with explicit dependency
+bindings; ORM managers, provider collection/analysis and report aggregation/model
+calls are in-memory doubles. Normal runtime/DB/provider imports, DNS and socket
+connections fail closed. The runner reports HEAD/dirty state and rejects skips.
+The guard is a tripwire, not an OS sandbox. Cross-surface seam checks are AST-only,
+not executed HTTP/browser/CLI/admin contracts. See
+[the matrix and remaining DB/live gates](../docs/checks/p8-t41.md).

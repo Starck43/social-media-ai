@@ -257,14 +257,38 @@ def _parameters(definition):
     return [argument.arg for argument in definition.args.args]
 
 
-def _call_sites(tree, name):
-    """``{parameter: literal or symbol}`` at each ``name(...)`` call."""
+def _reachable_functions(tree, entrypoint="upgrade"):
+    """Functions reachable from a migration entrypoint through direct calls."""
+    reachable = set()
+    pending = [entrypoint]
+    while pending:
+        name = pending.pop()
+        if name in reachable:
+            continue
+        reachable.add(name)
+        definition = _definition(tree, name)
+        if definition is None:
+            continue
+        for node in ast.walk(definition):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if _definition(tree, node.func.id) is not None:
+                    pending.append(node.func.id)
+    return reachable
+
+
+def _call_sites(tree, name, reachable=None):
+    """``{parameter: literal or symbol}`` at reachable calls to ``name``."""
     definition = _definition(tree, name)
     if definition is None:
         return []
     parameters = _parameters(definition)
     defaults = dict(zip(parameters[len(parameters) - len(definition.args.defaults) :], definition.args.defaults))
     scope = _Scope(tree)
+    owners = {}
+    for definition_node in ast.walk(tree):
+        if isinstance(definition_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for child in ast.walk(definition_node):
+                owners.setdefault(child, definition_node.name)
     sites = []
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name):
@@ -274,7 +298,9 @@ def _call_sites(tree, name):
         binding = _Binding()
         for parameter, value in arguments.items():
             binding.fill(parameter, value, scope)
-        sites.append(binding)
+        caller = owners.get(node)
+        if reachable is None or caller in reachable:
+            sites.append(binding)
     return sites
 
 
@@ -351,7 +377,9 @@ def _statements(sql, unresolved, function, tree):
     loops = _loop_values(tree, function, table_parameter)
     bindings = [_Binding({table_parameter: value}) for value in loops] if loops else []
     if not bindings:
-        bindings = _call_sites(tree, function) if function else []
+        bindings = _call_sites(tree, function, _reachable_functions(tree)) if function else []
+    if not bindings:
+        raise ValueError(f"Cannot resolve migration call arguments for {function!r}")
     # Locals of this function that are built from its parameters
     for binding in bindings:
         for name in sorted(names):
@@ -551,6 +579,19 @@ def test_every_guard_function_exists_in_migration_history():
 def test_every_migration_guard_function_is_in_the_module():
     extra = sorted(migration_function_names() - set(GUARDS.GUARD_FUNCTIONS))
     assert not extra, f"Migration guard functions missing from scripts/schema_guards.py: {extra}"
+
+
+def test_migration_helper_arguments_follow_upgrade_reachability():
+    """0103's installed body comes from upgrade even though downgrade calls its helper too."""
+    path = MIGRATIONS / "0103_allow_platform_task_initiator.py"
+    tree = ast.parse(path.read_text())
+    reachable = _reachable_functions(tree)
+    sites = _call_sites(tree, "_replace_validator", reachable)
+    assert len(sites) == 1, "Upgrade must resolve to one validator helper invocation"
+    assert sites[0].flags == {"allow_platform_operator": True}
+    reversed_tree = ast.Module(body=list(reversed(tree.body)), type_ignores=[])
+    reversed_sites = _call_sites(reversed_tree, "_replace_validator", _reachable_functions(reversed_tree))
+    assert [site.flags for site in reversed_sites] == [site.flags for site in sites]
 
 
 def test_function_bodies_match_the_final_migration_bodies():

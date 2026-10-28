@@ -3,6 +3,7 @@
 Run directly: python tests/test_prune_log_privacy.py
 Not a retention, PostgreSQL or fleet-wide logging acceptance test.
 """
+
 from __future__ import annotations
 
 import ast
@@ -28,12 +29,24 @@ def module_with(**values):
 def load_prune():
     path = ROOT / "app/jobs/handlers.py"
     tree = ast.parse(path.read_text())
-    names = {"handle_prune", "_log_id", "_error_kind"}
-    nodes = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names]
+    names = {"handle_prune", "_log_id"}
+    nodes = [
+        node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names
+    ]
     if {node.name for node in nodes} != names:
         raise RuntimeError("Required prune/log definitions missing")
+    classifier_path = ROOT / "app/utils/error_kinds.py"
+    classifier_tree = ast.parse(classifier_path.read_text())
+    classifier_node = next(
+        node for node in classifier_tree.body if isinstance(node, ast.FunctionDef) and node.name == "classify_error"
+    )
+    classifier_namespace = {}
+    exec(
+        compile(ast.Module(body=[classifier_node], type_ignores=[]), str(classifier_path), "exec"),
+        classifier_namespace,
+    )
     logger = logging.getLogger("isolated_prune_log_privacy")
-    namespace = {"Any": Any, "logger": logger}
+    namespace = {"Any": Any, "logger": logger, "_error_kind": classifier_namespace["classify_error"]}
     exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), str(path), "exec"), namespace)
     return namespace["handle_prune"], logger
 
@@ -128,6 +141,7 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         class HostileError(Exception):
             def __str__(self):
                 raise AssertionError("Raw errors must not be formatted")
+
         HostileError.__name__ = SECRET
         self.sweep.side_effect = HostileError()
         with self.assertLogs(self.logger, level="WARNING") as logs:
@@ -139,8 +153,10 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         class HostileId:
             def __str__(self):
                 raise AssertionError("Unexpected IDs must not be formatted")
+
             def __repr__(self):
                 raise AssertionError("Unexpected IDs must not be represented")
+
         for value in (SECRET, True, None, 0, -1, 2**63, HostileId()):
             with self.subTest(kind=type(value).__name__):
                 self.sweep.side_effect = RuntimeError(SECRET)

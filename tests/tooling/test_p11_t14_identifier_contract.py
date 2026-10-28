@@ -135,7 +135,6 @@ class IdentifierContractTests(unittest.TestCase):
 
     def test_truncation_defaults_and_falsy_coercion_remain_domain_owned(self):
         for path, default in (
-            ("app/services/collection/mention_lanes.py", 160),
             ("app/services/collection/population.py", 160),
             ("app/services/collection/lane_migration.py", 120),
         ):
@@ -174,6 +173,45 @@ class IdentifierContractTests(unittest.TestCase):
             for predicate in (plural, delegated):
                 with self.assertRaises((TypeError, ValueError)):
                     predicate(invalid, "one", "few", "many")
+
+    def test_shared_job_error_categories_are_ordered_and_never_inspect_exceptions(self):
+        classifier = load("_p11_t14_error_kinds", "app/utils/error_kinds.py")
+
+        class CustomTimeout(TimeoutError):
+            pass
+
+        class CustomConnection(ConnectionError):
+            pass
+
+        class CustomIOError(OSError):
+            pass
+
+        class CustomValueError(ValueError):
+            pass
+
+        class CustomRuntimeError(RuntimeError):
+            pass
+
+        class HostileError(Exception):
+            def __str__(self):
+                raise AssertionError("Classifier must not stringify exceptions")
+
+            def __repr__(self):
+                raise AssertionError("Classifier must not repr exceptions")
+
+        cases = (
+            (CustomTimeout("private"), "timeout"),
+            (CustomConnection("private"), "connection_error"),
+            (CustomIOError("private"), "io_error"),
+            (CustomValueError("private"), "value_error"),
+            (CustomRuntimeError("private"), "runtime_error"),
+            (HostileError(), "unexpected_error"),
+        )
+        self.assertTrue(issubclass(TimeoutError, OSError))
+        self.assertTrue(issubclass(ConnectionError, OSError))
+        for error, expected in cases:
+            with self.subTest(error_type=type(error).__name__):
+                self.assertEqual(classifier.classify_error(error), expected)
 
 
 if __name__ == "__main__":

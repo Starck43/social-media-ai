@@ -48,11 +48,45 @@ Runtime допускает только активного участника с
 Owner в runtime — только явная membership-роль SUPERUSER, не NULL и не env-флаг.
 Owner override ограничен source/agenttask/agentscenario; глобальные права не даёт.
 
-Оба registry-пути `call_tool`/`execute` проверяют `required_permission` до handler.
-Отсутствующее объявление пока не означает полное покрытие: такие инструменты и
-raw manager writes требуют отдельного аудита. Trusted service/operator scopes
-не используются как замена интерактивной identity. `confirm=True` требует
-одноразовый approval даже при прямом registry-вызове с правами.
+Both registry paths (`call_tool`/`execute`) recheck the current actor's catalog
+permission before invoking a handler. Registration rejects missing, unknown or
+alias permissions; there is no PUBLIC/None policy. Names are unique, bounded
+identifiers. `TOOL_REGISTRY` is a read-only mapping of frozen specs; parameters
+and provider schemas are defensive copies. Raw manager writes remain outside
+this registry boundary and still need their own authorization review.
+Trusted service/operator scopes do not replace interactive identity.
+`confirm=True` still requires the exact one-use, argument/actor/tenant-bound
+approval even for a direct registry call with permissions.
+
+`app/agent/tool_contracts.py` derives strict Pydantic input/result adapters from
+handler annotations and checks the declared JSON schema at registration. The
+supported vocabulary is object/properties/required/additionalProperties (boolean),
+array/items, primitive/nullable types, enum, numeric bounds, string pattern and
+metadata (title/description/default); unsupported keywords fail registration.
+Top-level unknown arguments, coercions (including bool-as-int), missing required
+fields and schema violations fail before confirmation consumption and handler
+execution. Nested unstructured JSON objects remain use-case validated. Inputs
+are copied without coercion/default insertion, preserving confirmation digests.
+Results retain their annotated container contract (existing dict[Any] payloads
+are not newly claimed to have field-by-field DTO validation) and must be finite
+JSON-serializable values. `call_tool` preserves raising/error-dict semantics;
+`execute` returns fixed, payload-free contract/permission/failure messages.
+
+Every declaration has a `ToolBudget`: defaults are 64 KiB arguments, 1 MiB result
+and a 120-second cooperative async timeout. A tool may explicitly override these
+positive finite limits at registration. JSON byte counts use UTF-8. A timeout or
+invalid/oversize result is a failure, not a rollback or proof that no external
+effect occurred; never automatically replay a consumed confirmation. The timeout
+cannot preempt blocking synchronous work or an adapter suppressing cancellation.
+Metadata logging emits only the registered name and a fixed outcome, never
+arguments, prompts, credentials, results or exception bodies.
+
+Provider wire serialization lives in `app/services/llm_tool_serialization.py`;
+legacy helpers in `tools.py` delegate there so existing runtime/history callers
+remain compatible. Registration does not change advertised built-in schemas or
+add a new public API/version. Revert this scoped change together (contracts,
+registry, serializer and associated tests) to roll back; no DB
+migration or persisted confirmation-format change is involved.
 
 ### Confirmation flow
 

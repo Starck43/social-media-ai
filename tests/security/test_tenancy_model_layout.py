@@ -26,11 +26,13 @@ MODELS = {
     "TenantInvite": ("tenant_invite", "tenant_invites", "TenantInviteManager", "tenant_invites"),
     "TenantChannel": ("tenant_channel", "tenant_channels", "TenantChannelManager", "tenant_channels"),
 }
-# Fresh-dev b4fd0f0b (unchanged at cb1a0a04): schema-only snapshots, including defaults/FKs/indexes.
-# Re-pinned on the post-split tenancy layout (workspace role FK, platform split);
-# `TenantChannel` is unchanged, which is the control on this snapshot.
+# These schema-only snapshots include defaults/FKs/indexes. The Tenant snapshot
+# includes the nullable `plan_expires_at` column introduced by P2-T15 in
+# `a160aa22` and migration 0113, later renumbered/reparented as 0117 by
+# `b6099820`/`227a8643`. The other three remain the post-split tenancy values;
+# TenantChannel is unchanged and remains the control snapshot.
 SCHEMA_FINGERPRINTS = {
-    "Tenant": "74698e6890c948cff88c0ec20e2778fb2893d8232e57aeb2c8a24508167c11e6",
+    "Tenant": "5be207ae9140cc4b61e43579f08c8f707011e793631583e7a8b0d184ec8b2eae",
     "TenantUser": "86d52baa67bbb8792f22cb6f1d149c7cdb01cd0c0ce05c5650c2c13189ed4c3f",
     "TenantInvite": "f9144e043251acb50d00b938e2932d121a572f93e81195c734fe6a26ab1b37e3",
     "TenantChannel": "0a171a5d6bf6ea2a95efc08bfd4f6a7252457600b918fdb82d6a583ebf2b84b4",

@@ -8,6 +8,9 @@ def bind_managers(models):
     from .managers.role_manager import RoleManager
 
     models.PlatformRole.objects = RoleManager(models.PlatformRole)
+    models.ActionAuditEvent.objects = import_module(
+        "app.models.managers.action_audit_event_manager"
+    ).ActionAuditEventManager()
     models.WorkspaceRole.objects = BaseManager(models.WorkspaceRole)
     models.ModelType.objects = BaseManager(models.ModelType)
     models.LoginAttempt.objects = BaseManager(models.LoginAttempt)

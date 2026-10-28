@@ -1545,10 +1545,24 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
 
     from app.core.config import settings
     from app.core.database import new_session
-    from app.models import AIAnalytics, CollectedItem
+    from app.models import AIAnalytics, ActionAuditEvent, CollectedItem
     from app.utils.retention import months_before
 
     now = datetime.now(timezone.utc)
+    action_audit_deleted = 0
+    action_audit_retention_failed = False
+    try:
+        action_audit_deleted = await ActionAuditEvent.objects.delete_expired(now=now)
+    except Exception as error:  # noqa: BLE001 - report a safe lifecycle failure
+        action_audit_retention_failed = True
+        from app.core.tenant_context import current_tenant_id
+
+        logger.warning(
+            "action_audit_retention_failed tenant_id=%s job_id=%s error_code=%s",
+            _log_id(current_tenant_id()),
+            _log_id(payload.get("job_id")),
+            _error_kind(error),
+        )
     if payload.get("mode") == "job_history":
         # The active payload configures built-in retention independently of
         # cron; an explicit run also applies that policy immediately.
@@ -1566,6 +1580,8 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
             "success_hours": policy[0],
             "failure_hours": policy[1],
             "deleted": deleted_jobs,
+            "action_audit_deleted": action_audit_deleted,
+            "action_audit_retention_failed": action_audit_retention_failed,
         }
 
     retention_months = settings.DATA_RETENTION_MONTHS
@@ -1612,7 +1628,10 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
         "staged_days": staged_days,
         "analytics_deleted": analytics_deleted,
         "retention_months": retention_months,
+        "action_audit_deleted": action_audit_deleted,
     }
+    if action_audit_retention_failed:
+        result["action_audit_retention_failed"] = True
     if analytics_retention_failed:
         result["analytics_retention_failed"] = True
     return result

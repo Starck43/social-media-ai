@@ -8,7 +8,7 @@ from app.services.user.auth import get_authenticated_user
 from app.api.v1.endpoints import (
 	auth, user, roles, monitoring, scenarios, 
 	notifications, dashboard, llm_providers, social,
-    sources, tasks, credentials, llm_models
+    sources, tasks, credentials, llm_models, action_audit
 )
 
 router = APIRouter()
@@ -34,6 +34,7 @@ router.include_router(social.router, prefix="/social", tags=["social"])
 router.include_router(sources.router, prefix="/sources", tags=["sources"], dependencies=API_AUTH)
 router.include_router(tasks.router, prefix="/tasks", tags=["tasks"], dependencies=API_AUTH)
 router.include_router(credentials.router, prefix="/credentials", tags=["credentials"], dependencies=API_AUTH)
+router.include_router(action_audit.router, prefix="/audit", tags=["action-audit"], dependencies=API_AUTH)
 
 
 # Keep the test endpoints for backward compatibility.

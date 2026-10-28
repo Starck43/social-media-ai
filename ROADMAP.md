@@ -50,7 +50,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P11-T11](docs/tasks/p11-t11.md) Web and admin use-case decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
 - [P11-T12](docs/tasks/p11-t12.md) Durable action-audit implementation and support correlation — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=40652eb6491780269c1c00a9d89825d9) · `P2` · `C4`
 - [P11-T13](docs/tasks/p11-t13.md) Manager and execution-module decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
-- [P11-T14](docs/tasks/p11-t14.md) Canonical model imports and semantic helper reuse — **IN_PROGRESS** · Codex (completion/audit; implementation notion-ai-p11-t14) · [PR #275](https://github.com/Starck43/social-media-ai/pull/275) · `P2` · `C3`
+- [P11-T14](docs/tasks/p11-t14.md) Canonical model imports and semantic helper reuse — **READY** · Codex (completion/audit; implementation notion-ai-p11-t14) · [Acceptance](https://github.com/Starck43/social-media-ai/pull/275#issuecomment-6474670669) · `P2` · `C3`
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
@@ -61,7 +61,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P11-T17](docs/tasks/p11-t17.md) Localizable presentation boundaries — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C3`
 - [P11-T18](docs/tasks/p11-t18.md) Typed connector and job extension seams — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 - [P11-T23](docs/tasks/p11-t23.md) Split agent-task documentation by reader — **TODO** · unassigned · — · `P3` · `C2`
-- [P11-T25](docs/tasks/p11-t25.md) Realign the model-layout fixtures with the migrated schema — **IN_PROGRESS** · Codex · [P11-T14 acceptance](https://github.com/Starck43/social-media-ai/pull/275) · `P3` · `C2`
+- [P11-T25](docs/tasks/p11-t25.md) Realign the model-layout fixtures with the migrated schema — **READY** · Codex · [Acceptance](https://github.com/Starck43/social-media-ai/pull/275#issuecomment-6474670669) · `P3` · `C2`
 - [P11-T19](docs/tasks/p11-t19.md) Capacity telemetry and reproducible scale evidence — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 
 ## Deferred by explicit owner decision

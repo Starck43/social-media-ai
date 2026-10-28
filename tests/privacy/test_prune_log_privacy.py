@@ -143,7 +143,14 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assert_private(logs, 31, "runtime_error")
         self.assertEqual(
             result,
-            {"deleted": 0, "staged_deleted": 0, "staged_days": 9, "analytics_deleted": 4, "retention_months": 1},
+            {
+                "deleted": 0,
+                "staged_deleted": 0,
+                "staged_days": 9,
+                "analytics_deleted": 4,
+                "retention_months": 1,
+                "action_audit_deleted": 0,
+            },
         )
         self.sweep.assert_awaited_once_with(self.session, 9)
         self.session.close.assert_awaited_once_with()
@@ -183,7 +190,14 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             result = await self.prune({"job_id": 31})
         self.assertEqual(
             result,
-            {"deleted": 0, "staged_deleted": 3, "staged_days": 7, "analytics_deleted": 4, "retention_months": 1},
+            {
+                "deleted": 0,
+                "staged_deleted": 3,
+                "staged_days": 7,
+                "analytics_deleted": 4,
+                "retention_months": 1,
+                "action_audit_deleted": 0,
+            },
         )
         self.sweep.assert_awaited_once_with(self.session, 7)
         self.session.close.assert_awaited_once_with()

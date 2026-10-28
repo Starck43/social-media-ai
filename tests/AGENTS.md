@@ -18,7 +18,10 @@ relevant [test](../docs/COLLABORATION.md#tests) or
   root conftest, validated `test_schema` and serialized exclusive ownership.
   Never create test records in public schema without explicit Superuser approval.
   Remove and verify all synthetic test-schema records after tests, including
-  committed fixtures. Do not bypass `conftest` or parallelize without proving
+  committed fixtures. Snapshot the target schema layout before and after a DB
+  run with `scripts/ci/schema_inventory.py <schema> <file>` and compare with
+  `--diff`; a spot check of "existing objects still present" does not prove the
+  run added nothing. Do not bypass `conftest` or parallelize without proving
   isolation. A suite whose own autouse guard forbids any `app` import cannot run
   under the root conftest; it is skipped there with that reason and runs as
   `PYTHONPATH=.:tests pytest <file> --noconftest -p no:cacheprovider -o addopts=""`

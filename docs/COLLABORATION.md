@@ -197,7 +197,12 @@ necessary destructive reset. Do not fake migration history or edit applied DDL.
 
 After success/failure/interruption, stop surviving processes, remove all synthetic
 records (including separately committed fixtures), and verify none remain.
-Rollback alone is insufficient. Never delete another active run's data; wait for
+Rollback alone is insufficient. Take a schema inventory (relations, types,
+functions, triggers and `alembic_version`) before and after every run and diff
+it; never accept a spot check such as "existing triggers still present" as
+evidence of a clean run. A new relation, type, permission/`model_types` row or a
+revision the target branch does not contain is a leftover, even when no test
+failed. Diffing also proves a run left nothing behind in a schema it did not own. Never delete another active run's data; wait for
 exclusive ownership. Report partial/interrupted runs honestly and resolve unknown
 target/data state before retry. Preserve migration metadata/non-test reference rows.
 Public migrations require full prior validation of the same revisions/behavior on

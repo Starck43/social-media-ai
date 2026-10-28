@@ -3,6 +3,12 @@ name: Test and reference navigation
 on:
   push:
     branches: [dev]
+    # Owner request 2026-10-28: agent branches push once per commit and the
+    # resulting failure mail is noise while nothing is deployed. dev keeps the
+    # full gate; agent branches are verified on demand or by the PR check.
+    branches-ignore:
+      - 'refactor/**'
+      - 'feat/**'
   pull_request:
     branches: [dev]
   workflow_dispatch:

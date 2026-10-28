@@ -9,7 +9,6 @@ from __future__ import annotations
 import secrets
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from app.models import Platform, Source
 from app.types import PlatformType, SourceType

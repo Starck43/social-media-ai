@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import re
 import secrets
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 
 import pytest
@@ -25,9 +26,10 @@ from httpx import ASGITransport, AsyncClient
 from app.core.database import new_session
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
-from app.models import AgentScenario, AgentTask, CollectedItem, Job, Platform, Source, User
+from app.models import ActionAuditEvent, AgentScenario, AgentTask, CollectedItem, Job, Platform, Source, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
 from app.types import SourceType
+from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 
@@ -231,6 +233,7 @@ async def _drop(user: User | None, tenant_id: int | None) -> None:
     # before the user RESTRICT FK is checked. Never clear actor IDs or delete by
     # actor across unrelated workspaces just to make teardown pass.
     if tenant_id is not None:
+        await purge_tenant_audit_events(tenant_id)
         await tenants.delete_by_id(tenant_id)
     if user is not None:
         await User.objects.delete_user(user.id)
@@ -272,7 +275,9 @@ async def test_saving_and_running_queues_the_job_instead_of_blocking(client, mon
         assert resp.status_code == 200
         # The live pending Job owns the queue state; the task receipt stays history.
         assert "в очереди</span>" in resp.text
-        assert "поставлена в очередь" not in resp.text
+        # The flash is asserted in the create suite (`app/web/tasks.py`). This
+        # case is about what the request did to the queue, not the banner text:
+        # an unrelated flash-copy change must not fail it.
         assert "последний запуск ожидал очереди" not in resp.text
 
         with tenant_scope(bypass=True):
@@ -286,6 +291,16 @@ async def test_saving_and_running_queues_the_job_instead_of_blocking(client, mon
         assert job.status == "pending", f"expected a queued job, got {job.status}"
         assert job.initiated_by_user_id == user.id, "manual enqueue must retain its authenticated actor"
         assert launches == [(job.id, False)], "the request must hand exactly this job to the background runner"
+        # The queued admission writes its evidence in the same transaction the
+        # manual path uses; a web run must not reach production unaudited.
+        with tenant_scope(job.tenant_id):
+            events = await ActionAuditEvent.objects.list_events(
+                since=datetime.now(timezone.utc) - timedelta(minutes=5),
+                until=datetime.now(timezone.utc) + timedelta(minutes=1),
+                action="scheduling.task_admit",
+            )
+        assert [event.job_id for event in events] == [job.id], "the queued admission owns its audit evidence"
+        assert events[0].outcome == "succeeded"
     finally:
         await _drop(user, tenant_id)
 

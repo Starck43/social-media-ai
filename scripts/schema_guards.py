@@ -375,6 +375,13 @@ GUARD_FUNCTIONS: dict[str, str] = {
         "          RETURN NEW;\n"
         "        END "
     ),
+    # 0118 - action-audit evidence is immutable outside the retention pass.
+    "guard_action_audit_mutation": (
+        " BEGIN IF TG_OP = 'DELETE' AND current_setting('app.action_audit_retention', true) = 'on' "
+        "THEN RETURN OLD; END IF; "
+        "RAISE EXCEPTION 'Action audit evidence is immutable outside retention cleanup' "
+        "USING ERRCODE = '55000'; END; "
+    ),
 }
 
 
@@ -552,6 +559,20 @@ GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
         function="guard_task_binding",
         events=("UPDATE",),
         columns=("tenant_id",),
+    ),
+    # 0118
+    GuardTrigger(
+        table="action_audit_events",
+        name="action_audit_events_immutable",
+        function="guard_action_audit_mutation",
+        events=("UPDATE", "DELETE"),
+    ),
+    GuardTrigger(
+        table="action_audit_events",
+        name="action_audit_events_no_truncate",
+        function="guard_action_audit_mutation",
+        events=("TRUNCATE",),
+        for_each_row=False,
     ),
 )
 

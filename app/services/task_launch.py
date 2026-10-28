@@ -30,6 +30,23 @@ from app.types import ActionType
 _REQUEST_KEY = re.compile(TASK_REQUEST_ID_PATTERN.removeprefix("^").removesuffix("$"))
 
 
+def _log_launch_denied(reason_code: str) -> None:
+    """Emit safe refusal metadata only; never serialize the launch request."""
+    from app.core.permissions import get_current_user
+    from app.services.action_audit import log_denied
+
+    actor = get_current_user()
+    tenant_id = current_tenant_id()
+    actor_id = getattr(actor, "id", None)
+    if type(tenant_id) is int and type(actor_id) is int and actor_id > 0:
+        log_denied(
+            tenant_id=tenant_id,
+            actor_kind="user",
+            actor_id=actor_id,
+            reason_code=reason_code,
+        )
+
+
 def launch_identity(tenant_id: int, actor_id: int, request_id: str, plan: Mapping, job_type: str) -> tuple[str, str]:
     """Scope a stable request key to the actor/workspace and bind its arguments."""
     if not isinstance(request_id, str) or not _REQUEST_KEY.fullmatch(request_id):
@@ -48,12 +65,14 @@ async def _fresh_actor():
     actor_id = getattr(actor, "id", None)
     tenant_id = current_tenant_id()
     if is_bypass() or type(tenant_id) is not int or type(actor_id) is not int or actor_id <= 0:
+        _log_launch_denied("permission_denied")
         raise PermissionError("An authenticated workspace member is required")
     user = await User.objects.get(id=actor_id, is_active=True)
     tenant = await Tenant.objects.get(id=tenant_id, is_active=True)
     members = await tenant_users.web_memberships(actor_id) if user is not None and tenant is not None else []
     member = next((item for item in members if item.tenant_id == tenant_id), None)
     if member is None:
+        _log_launch_denied("permission_denied")
         raise PermissionError("An active workspace membership is required")
     grants = await tenant_users.member_grants(member)
     required = {
@@ -62,6 +81,7 @@ async def _fresh_actor():
         ("source", ActionType.ANALYZE),
     }
     if not required.issubset(grants):
+        _log_launch_denied("permission_denied")
         raise PermissionError("Task creation, execution and source analysis permissions are required")
     return user, tenant, grants
 
@@ -76,8 +96,10 @@ async def execute_task_launch(command: TaskLaunchCommand) -> TaskLaunchResult:
     try:
         arguments = TaskLaunchArguments(request_id=command.request_id, plan=dict(command.plan))
     except (TypeError, ValidationError) as error:
+        _log_launch_denied("operation_refused")
         raise TaskLaunchError("request_invalid", cause=error) from None
     if command.job_type not in {"collect", "analyze"}:
+        _log_launch_denied("operation_refused")
         raise TaskLaunchError("request_invalid")
 
     raw_plan = arguments.plan
@@ -94,8 +116,10 @@ async def execute_task_launch(command: TaskLaunchCommand) -> TaskLaunchResult:
 
     plan = parse_task_plan(raw_plan)
     if plan.trigger.type != "once":
+        _log_launch_denied("operation_refused")
         raise TaskLaunchError("schedule_confirmation_required")
     if job_type == "analyze" and plan.scenario_id is None:
+        _log_launch_denied("operation_refused")
         raise TaskLaunchError("scenario_required")
     canonical = task_plan_block(plan)
     actor, tenant, grants = await _fresh_actor()
@@ -107,6 +131,7 @@ async def execute_task_launch(command: TaskLaunchCommand) -> TaskLaunchResult:
     with permission_scope(actor, member_grants=grants):
         # Preserve the manager's own permission checks even when called directly.
         if not has_permission(actor, "agenttask", ActionType.CREATE):
+            _log_launch_denied("permission_denied")
             raise PermissionError("Task creation is not permitted")
         async with async_session_maker() as session:
             async with session.begin():
@@ -194,10 +219,64 @@ async def execute_task_launch(command: TaskLaunchCommand) -> TaskLaunchResult:
             task_id, now=datetime.now(timezone.utc), initiated_by_user_id=actor.id, launch_request_key=key
         )
         if receipt is None:
+            from app.services.action_audit import log_persistence_gap, log_unknown
+
+            log_unknown(
+                tenant_id=tenant.id,
+                actor_kind="user",
+                actor_id=actor.id,
+                task_id=task_id,
+                reason_code="launch_unconfirmed",
+            )
+            from app.models import ActionAuditEvent
+
+            try:
+                await ActionAuditEvent.objects.record_unknown(
+                    actor_kind="user",
+                    actor_id=actor.id,
+                    action="scheduling.task_admit",
+                    resource_kind="agent_task",
+                    resource_id=task_id,
+                    reason_code="launch_unconfirmed",
+                )
+            except Exception:  # noqa: BLE001 - emit a safe evidence-gap signal, not exception text
+                log_persistence_gap(
+                    tenant_id=tenant.id,
+                    actor_kind="user",
+                    actor_id=actor.id,
+                    task_id=task_id,
+                )
             raise TaskLaunchError("launch_unconfirmed")
         if receipt.get("status") == "busy":
             raise SourceJobBusy(receipt["job"])
         if receipt.get("status") not in {"enqueued", "replayed"}:
+            from app.models import ActionAuditEvent
+            from app.services.action_audit import log_persistence_gap, log_unknown
+
+            log_unknown(
+                tenant_id=tenant.id,
+                actor_kind="user",
+                actor_id=actor.id,
+                task_id=task_id,
+                reason_code="launch_unconfirmed",
+            )
+            try:
+                await ActionAuditEvent.objects.record_unknown(
+                    actor_kind="user",
+                    actor_id=actor.id,
+                    action="scheduling.task_admit",
+                    resource_kind="agent_task",
+                    resource_id=task_id,
+                    reason_code="launch_unconfirmed",
+                )
+            except Exception:  # noqa: BLE001 - emit a safe evidence-gap signal, not exception text
+                log_persistence_gap(
+                    tenant_id=tenant.id,
+                    actor_kind="user",
+                    actor_id=actor.id,
+                    task_id=task_id,
+                    job_id=receipt.get("job_id") if isinstance(receipt, dict) else None,
+                )
             raise TaskLaunchError("launch_unconfirmed")
         job = receipt.get("job")
         job_id = getattr(job, "id", None) or receipt.get("job_id")

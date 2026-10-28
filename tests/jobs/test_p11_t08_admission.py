@@ -12,9 +12,9 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from urllib.parse import urlsplit
 from uuid import uuid4
-from unittest.mock import AsyncMock
 
 _conftest_path = Path(__file__).resolve().parents[1] / "conftest.py"
 _conftest = next(
@@ -33,6 +33,7 @@ if (
     raise RuntimeError("STOP: only approved local social_manager test schemas are allowed")
 
 import pytest
+
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import (

@@ -320,7 +320,7 @@ async def test_tasks_page_add_modal_offers_targets_and_digest_params(client: Asy
         assert "task.job_type === 'digest'" in page.text
         # Trigger fields are server-rendered and visibility-gated, not absent
         # from the POST: a save without JavaScript keeps their values.
-        assert 'x-show="task.job_type === \'analyze\'"' in page.text
+        assert "x-show=\"task.job_type === 'analyze'\"" in page.text
         # Repeat-policy controls are absent from the add form.
         assert 'name="force_reanalyze"' not in page.text
         assert 'name="force_refresh"' not in page.text

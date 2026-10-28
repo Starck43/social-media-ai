@@ -39,7 +39,6 @@ from sqladmin import ModelView
 from sqladmin.fields import SelectField
 from starlette.requests import Request
 
-from app.admin import views as console
 from app.admin.base import BaseAdmin
 from app.admin.views import LLMModelAdmin, LLMProviderAdmin
 from app.core.personal_catalog_context import _catalog_owner
@@ -91,8 +90,11 @@ def _view(cls=LLMProviderAdmin, model=PROVIDER_MODEL):
     instance._form_prop_names = list(cls.form_columns)
     instance.session_maker = None
     for name in ("_column_labels", "_form_args", "_form_widget_args", "_form_overrides", "_form_ajax_refs"):
-        setattr(instance, name, getattr(cls, name.lstrip("_") if name != "_column_labels" else "column_labels",
-                                        getattr(cls, name, {})))
+        setattr(
+            instance,
+            name,
+            getattr(cls, name.lstrip("_") if name != "_column_labels" else "column_labels", getattr(cls, name, {})),
+        )
     instance.form_base_class = getattr(cls, "form_base_class", None)
     instance.form_include_pk = getattr(cls, "form_include_pk", False)
     instance.form_converter = cls.form_converter
@@ -235,12 +237,11 @@ def _columns():
             )
         return SimpleNamespace(**fields)
 
-    target = "app.admin.views.get_model_form"
-
     async def fake(**kwargs):
         return build(**kwargs)
 
-    module = console
+    from app.admin.view_modules import llm_catalog as module
+
     original = module.get_model_form
     module.get_model_form = fake
     try:

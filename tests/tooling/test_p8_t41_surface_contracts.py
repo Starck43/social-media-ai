@@ -27,11 +27,11 @@ class SurfaceSeamTests(unittest.TestCase):
     def test_all_five_writers_retain_shared_plan_preparation(self):
         cases = (
             ("app/api/v1/endpoints/tasks.py", "create_task", None, {"prepare_task_plan_create"}),
-            ("app/web/tasks.py", "task_create", None, {"prepare_task_plan_create"}),
+            ("app/web/task_create_routes.py", "task_create", None, {"prepare_task_plan_create"}),
             ("cli/commands/tasks.py", "task_add", None, {"prepare_task_plan_create"}),
             ("app/agent/toolset/tasks.py", "task_add", None, {"resolve_task_plan_create", "project_task_plan_create"}),
             (
-                "app/admin/views.py",
+                "app/admin/view_modules/operations.py",
                 "on_model_change",
                 "AgentTaskAdmin",
                 {"resolve_task_plan_create", "project_task_plan_create"},
@@ -81,7 +81,7 @@ class SurfaceSeamTests(unittest.TestCase):
             ("app/api/v1/endpoints/tasks.py", "get_task_result", "task_result"),
             ("app/agent/toolset/tasks.py", "task_result", "read_result"),
             ("cli/commands/tasks.py", "task_result_cmd", "task_result"),
-            ("app/web/tasks.py", "task_detail", "task_configuration"),
+            ("app/web/task_routes.py", "task_detail", "task_configuration"),
         ):
             with self.subTest(path=path):
                 self.assertIn(expected, calls(function(path, name)))
@@ -101,7 +101,7 @@ class SurfaceSeamTests(unittest.TestCase):
     def test_web_and_api_send_guards_precede_delivery_call(self):
         for path, name, expected_test in (
             ("app/api/v1/endpoints/tasks.py", "send_composed_task_digest", "confirmed is not True"),
-            ("app/web/tasks.py", "task_send_generated_digest", "confirmed != 'true'"),
+            ("app/web/task_routes.py", "task_send_generated_digest", "confirmed != 'true'"),
         ):
             with self.subTest(path=path):
                 node = function(path, name)

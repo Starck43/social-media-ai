@@ -84,7 +84,7 @@ def console(user):
         },
     )
     # Read the real view's declaration; fail if it drifts away from CONFIGURE.
-    tree = ast.parse((ROOT / "app/admin/views.py").read_text())
+    tree = ast.parse((ROOT / "app/admin/view_modules/llm_catalog.py").read_text())
     view_node = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "LLMModelAdmin")
     declaration = next(
         n

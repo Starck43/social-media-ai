@@ -16,6 +16,7 @@ from app.services.ai.scenario_builder import ScenarioBuilder
 from app.types import MediaType
 from tests.admin.test_admin_authorization import (  # noqa: F401 — shared admin harness
     _operator,
+    _operator_with_workspace,
     _role,
     _signed_in,
     _uniq,
@@ -35,17 +36,31 @@ async def _scenario(**overrides) -> int:
     return row.id
 
 
+async def _workspace_operator(role) -> tuple[str, int]:
+    """Return an ADMIN actor and the workspace selected by the admin middleware."""
+    from app.models import User
+    from app.models.managers.tenant_manager import TenantUserManager
+
+    username = await _operator_with_workspace(role)
+    user = await User.objects.get(username=username)
+    memberships = await TenantUserManager().web_memberships(user.id)
+    assert len(memberships) == 1
+    return username, memberships[0].tenant_id
+
+
 # ── the action reuses the builder ──────────────────────────────────────────
 
 
 async def test_view_prompts_renders_the_shared_builder_prompt() -> None:
+    username, tenant_id = await _workspace_operator(await _role("ADMIN"))
     scenario_id = await _scenario(
+        tenant_id=tenant_id,
         content_types=["posts"],
         analysis_types=["sentiment", "keywords"],
         base_prompt="Тональность из {platform}: {text}",
     )
 
-    async with _signed_in(await _operator(await _role("ADMIN"))) as client:
+    async with _signed_in(username) as client:
         page = await client.get(f"/admin/agent-scenario/action/view-prompts?pks={scenario_id}")
 
     assert page.status_code == 200
@@ -56,13 +71,15 @@ async def test_view_prompts_renders_the_shared_builder_prompt() -> None:
 
 
 async def test_view_prompts_shows_scope_variables_split() -> None:
+    username, tenant_id = await _workspace_operator(await _role("ADMIN"))
     scenario_id = await _scenario(
+        tenant_id=tenant_id,
         content_types=["posts"],
         analysis_types=["sentiment"],
         scope={"sentiment": {"categories": ["Позитивный", "Негативный"]}, "brand_name": "VK"},
     )
 
-    async with _signed_in(await _operator(await _role("ADMIN"))) as client:
+    async with _signed_in(username) as client:
         page = await client.get(f"/admin/agent-scenario/action/view-prompts?pks={scenario_id}")
 
     assert page.status_code == 200
@@ -70,6 +87,15 @@ async def test_view_prompts_shows_scope_variables_split() -> None:
     assert "brand_name" in page.text
     # The analysis-type config is shown in its own section.
     assert '"categories"' in html_unescape(page.text)
+
+
+async def test_view_prompts_refuses_an_admin_without_workspace_membership() -> None:
+    scenario_id = await _scenario()
+
+    async with _signed_in(await _operator(await _role("ADMIN"))) as client:
+        page = await client.get(f"/admin/agent-scenario/action/view-prompts?pks={scenario_id}")
+
+    assert page.status_code == 403
 
 
 def test_admin_scenario_form_offers_media_and_maps_legacy_rows() -> None:
@@ -87,4 +113,4 @@ def test_admin_scenario_form_offers_media_and_maps_legacy_rows() -> None:
     source = open("app/templates/sqladmin/bot_scenario_form.html", encoding="utf-8").read()
     assert "Поддерживаемые типы медиа" in source
     assert "mediaByLegacyContent" in source
-    assert "posts: \"text\"" in source and "reels: \"video\"" in source
+    assert 'posts: "text"' in source and 'reels: "video"' in source

@@ -33,6 +33,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
+- [Q-13](docs/tasks/q-13.md) Restrict GitHub workflows to master pushes — **READY** · notion-ai-ci · [Execution](https://app.notion.com/chat?t=406ddbde023680ea8b8500a9fae66b8f) · `P0` · `C1`
+
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (awaiting VK support reply on 1051) · — · `P0` · `C3`
 
@@ -46,9 +48,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P11-T08](docs/tasks/p11-t08.md) Public API compatibility and bounded request policy — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
-- [P11-T11](docs/tasks/p11-t11.md) Web and admin use-case decomposition — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=40652eb6491780269c1c00a9d89825d9) · `P2` · `C4`
-- [P11-T12](docs/tasks/p11-t12.md) Durable action-audit implementation and support correlation — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=40652eb6491780269c1c00a9d89825d9) · `P2` · `C4`
+- [P11-T08](docs/tasks/p11-t08.md) Public API compatibility and bounded request policy — **IN_PROGRESS** · Codex · `session 01a17d52-e51c-7072-81ee-de09e21c0f5f` · `P2` · `C5`
+- [P11-T12](docs/tasks/p11-t12.md) Durable action-audit implementation and support correlation — **IN_PROGRESS** · Codex (independent audit/corrections) · [PR #277](https://github.com/Starck43/social-media-ai/pull/277) · `P2` · `C4`
 - [P11-T13](docs/tasks/p11-t13.md) Manager and execution-module decomposition — **IN_PROGRESS** · notion-ai-p11-t13 · [Execution](https://app.notion.com/chat?t=407218bd94b680609a7c00a918e9c486) · `P2` · `C5`
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`

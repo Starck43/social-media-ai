@@ -45,7 +45,7 @@ class AgentTask(Base):
 
 def source_configuration():
     """Execute only the real view's sources config, not app imports or methods."""
-    tree = ast.parse((ROOT / "app/admin/views.py").read_text())
+    tree = ast.parse((ROOT / "app/admin/view_modules/operations.py").read_text())
     view = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "AgentTaskAdmin")
     values = {}
     for node in view.body:

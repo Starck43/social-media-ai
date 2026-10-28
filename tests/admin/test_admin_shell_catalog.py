@@ -74,7 +74,7 @@ def source():
     backend = load_isolated_source(
         "_catalog_authorization", ROOT / "app/admin/authorization.py", {"app.models": models, "app.types": TYPES}
     )
-    tree = ast.parse((ROOT / "app/admin/views.py").read_text())
+    tree = ast.parse((ROOT / "app/admin/view_modules/users.py").read_text())
     nodes = [
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name in {"RoleAdmin", "PermissionAdmin"}
     ]

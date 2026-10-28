@@ -1,25 +1,27 @@
 """Standalone unit tests of the pure policy, no app/ORM/conftest imports.
 
 Run with stdlib unittest, not pytest with a disabled project bootstrap. Loading
-this one dependency-free module by path cannot initialize settings, DB or a
-provider. Surface/vault integration tests are separate required follow-up work.
+the policy and its pure identifier dependency by path cannot initialize settings,
+DB or a provider. Surface/vault integration tests are separate required follow-up work.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-_PATH = Path(__file__).resolve().parents[2] / "app/services/social/vk_access.py"
-_SPEC = importlib.util.spec_from_file_location("p8_t38_pure_vk_access", _PATH)
-policy = importlib.util.module_from_spec(_SPEC)
-sys.modules[_SPEC.name] = policy
-_SPEC.loader.exec_module(policy)
+from tests.source_import_isolation import load_isolated_source
+
+ROOT = Path(__file__).resolve().parents[2]
+identifiers = load_isolated_source("_p8_t38_identifiers", ROOT / "app/utils/identifiers.py")
+policy = load_isolated_source(
+    "p8_t38_pure_vk_access",
+    ROOT / "app/services/social/vk_access.py",
+    {"app.utils.identifiers": identifiers},
+)
 
 NOW = datetime(2026, 10, 27, tzinfo=timezone.utc)
 METHODS = frozenset({"wall.get"})

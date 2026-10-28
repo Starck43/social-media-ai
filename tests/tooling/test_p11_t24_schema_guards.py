@@ -39,9 +39,9 @@ SPEC.loader.exec_module(GUARDS)
 
 # Bulk-guarded tables and the guard each ``{table}_validate`` trigger executes.
 # Mirrors the module's ``_validate`` triggers one-for-one; the equality test
-# checks both directions. The ``llm_*`` tables are guarded one-off instead.
-# The ``llm_*`` tables carry their own immutable/no-truncate guards instead.
-ONE_OFF_TABLES = {"llm_dispatch_receipts", "llm_outcome_events", "llm_budget_reservations"}
+# checks both directions. The ``llm_*`` tables and ``action_audit_events``
+# carry their own immutable/no-truncate guards instead.
+ONE_OFF_TABLES = {"llm_dispatch_receipts", "llm_outcome_events", "llm_budget_reservations", "action_audit_events"}
 BULK_TABLES = {
     "personal_llm_dispatches": "check_personal_llm_dispatch_account",
     "task_billing_payers": "check_task_billing_payer_consent",

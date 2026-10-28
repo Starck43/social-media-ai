@@ -353,8 +353,12 @@ async def test_invalid_list_bounds_return_422_without_running_list_queries(monke
         ("/api/v1/users/roles/?page=0", 422),
         ("/api/v1/users/roles/?size=101", 422),
     )
+
+    async def authenticated_operator(_request):
+        return SimpleNamespace(id=7, is_active=True, has_admin_access=lambda: True)
+
     scoped_app = ApiScopeMiddleware(app)
-    scoped_app._authenticate = _authenticated_user
+    scoped_app._authenticate = authenticated_operator
     scoped_app._resolve_tenant = _tenant_allowed
     async with AsyncClient(transport=ASGITransport(app=scoped_app), base_url="http://testserver") as client:
         for path, expected_status in bad_queries:

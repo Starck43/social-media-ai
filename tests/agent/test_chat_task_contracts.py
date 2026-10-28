@@ -45,12 +45,16 @@ class _Transaction:
 
     async def __aenter__(self):
         self.snapshots = [(participant, participant.snapshot()) for participant in self.session.participants]
+        self.session.transaction_depth += 1
         return self
 
     async def __aexit__(self, exc_type, exc, traceback):
-        if exc_type is not None:
-            for participant, snapshot in self.snapshots:
-                participant.restore(snapshot)
+        try:
+            if exc_type is not None:
+                for participant, snapshot in self.snapshots:
+                    participant.restore(snapshot)
+        finally:
+            self.session.transaction_depth -= 1
         return False
 
 
@@ -61,10 +65,14 @@ class _SessionDouble:
         self.begins = 0
         self.closed = False
         self.participants = []
+        self.transaction_depth = 0
 
     def begin(self):
         self.begins += 1
         return _Transaction(self)
+
+    def in_transaction(self):
+        return self.transaction_depth > 0
 
     async def close(self):
         self.closed = True
@@ -256,6 +264,7 @@ def install(monkeypatch):
 async def test_task_list_reads_the_model_and_formats_rows(install) -> None:
     next_run = datetime(2026, 10, 22, 6, 30, tzinfo=timezone.utc)
     row = SimpleNamespace(
+        id=17,
         name="digest",
         cron_expr="0 8 * * *",
         job_type="digest",
@@ -267,6 +276,8 @@ async def test_task_list_reads_the_model_and_formats_rows(install) -> None:
 
     assert await tasks.task_list() == [
         {
+            "id": 17,
+            "task_url": "/app/tasks/17",
             "name": "digest",
             "cron": "0 8 * * *",
             "job_type": "digest",

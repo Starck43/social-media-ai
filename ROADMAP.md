@@ -39,7 +39,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P1
 
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
-- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P1` · `C4`
+- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **IN_PROGRESS** · notion-ai-p8-t41 · [Execution](https://app.notion.com/chat?t=407f6c0210d180caaa3400a9375b40cf) · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
@@ -62,7 +62,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P11-T17](docs/tasks/p11-t17.md) Localizable presentation boundaries — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C3`
 - [P11-T18](docs/tasks/p11-t18.md) Typed connector and job extension seams — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 - [P11-T23](docs/tasks/p11-t23.md) Split agent-task documentation by reader — **TODO** · unassigned · — · `P3` · `C2`
-- [P11-T24](docs/tasks/p11-t24.md) Reproduce schema guard objects in the metadata-built test schema — **IN_PROGRESS** · opencode · — · `P3` · `C2`
 - [P11-T19](docs/tasks/p11-t19.md) Capacity telemetry and reproducible scale evidence — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 
 ## Deferred by explicit owner decision

@@ -103,7 +103,10 @@ there is no new shared Redis dependency.
 `RequestContextMiddleware` now echoes a valid `X-Request-ID` containing 1–128
 ASCII letters, digits, underscore, dot, colon, or hyphen, and generates a UUID
 for absent or invalid values. It wraps API authentication so denied responses
-also carry the correlation header. Correlation IDs are for tracing only and
+also carry the correlation header. In production, the standard unhandled 500
+handler includes the ID. With debug mode enabled, Starlette's traceback
+response bypasses that handler, so an unhandled exception response is not
+guaranteed to include `X-Request-ID`. Correlation IDs are for tracing only and
 must never serve as idempotency keys.
 
 Task plan launch has a request key/receipt contract; the admission lock checks
@@ -115,9 +118,13 @@ canonical plan/job type; different-payload reuse retains HTTP 400
 `request_id_conflict` compatibility, and source contention retains HTTP 409.
 Concurrent same-key requests converge on one task/job receipt. There is no TTL:
 the receipt lasts for the task lifetime and survives job pruning. A pending or
-running receipt is replayed as such; it is not a completion claim. Missing/pruned
-jobs remain unavailable, and unknown-effect errors remain unconfirmed for
-operator reconciliation rather than triggering a new external execution.
+running receipt is replayed as such; it is not a completion claim. If the
+referenced job row was pruned, replay still returns the stored task/job IDs with
+`job_status: unavailable`. Unknown-effect errors remain unconfirmed for
+operator reconciliation rather than triggering a new external execution. A
+429 cap rejection can occur after the inactive task draft is saved; the caller
+can retry after capacity frees using the same request key to continue that
+draft's launch. The cap does not turn a rejected launch into an active job.
 No generalized idempotency layer is introduced.
 
 Before a future broad idempotency extension, define an atomic unique

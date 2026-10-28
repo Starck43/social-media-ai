@@ -200,7 +200,7 @@ def test_phase_handoff_includes_last_collection_row_and_cancellation_propagates(
 
 def test_handlers_and_mutation_admission_remain_existing_contracts():
     # Static guardrails, NOT endpoint/DB acceptance. No module import/startup.
-    source=(ROOT/'app/web/tasks.py').read_text(); tree=ast.parse(source)
+    source=(ROOT/'app/web/task_routes.py').read_text(); tree=ast.parse(source)
     functions={node.name:ast.get_source_segment(source,node) for node in tree.body if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef))}
     latest=functions['task_latest_progress']
     assert '"agenttask", "view"' in latest and 'tenant_id=tenant_id' in latest
@@ -214,14 +214,15 @@ def test_handlers_and_mutation_admission_remain_existing_contracts():
 
 
 def isolated_functions(*names):
-    tree = ast.parse((ROOT/'app/web/tasks.py').read_text())
     class WithoutImports(ast.NodeTransformer):
         def visit_ImportFrom(self, node): return None
         def visit_Import(self, node): return None
     nodes=[]
-    for node in tree.body:
-        if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and node.name in names:
-            node.decorator_list=[];nodes.append(WithoutImports().visit(node))
+    for path in (ROOT/'app/web/task_routes.py', ROOT/'app/web/task_presenters.py'):
+        tree = ast.parse(path.read_text())
+        for node in tree.body:
+            if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and node.name in names:
+                node.decorator_list=[];nodes.append(WithoutImports().visit(node))
     module=ast.Module(body=[ast.ImportFrom(module='__future__',names=[ast.alias(name='annotations')],level=0),*nodes],type_ignores=[])
     scope={};exec(compile(ast.fix_missing_locations(module),'isolated-tasks-functions','exec'),scope)
     return scope

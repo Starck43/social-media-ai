@@ -2,6 +2,7 @@
 
 import logging
 import math
+import re
 from typing import TYPE_CHECKING, Any
 
 from app.jobs.source_activity import source_in_task_platform_scope as _source_in_task_platform_scope
@@ -1835,9 +1836,15 @@ async def handle_analyze(
 
             attempt_journal_since = datetime.now(timezone.utc)
             try:
+                collected_hashes = None
+                if collection_stats_override is not None:
+                    collected_hashes = sorted(collected_hashes_by_source.get(source.id, set()))
                 try:
                     raw_total = await CollectedItem.objects.count_for_source(
-                        source.id, start_date=window.get("start_date"), end_date=window.get("end_date")
+                        source.id,
+                        start_date=window.get("start_date"),
+                        end_date=window.get("end_date"),
+                        content_hashes=collected_hashes,
                     )
                 except Exception as count_error:  # noqa: BLE001 — optional progress read
                     raw_total = None
@@ -1850,11 +1857,8 @@ async def handle_analyze(
                     limit=ANALYZE_STAGE_BATCH,
                     start_date=window.get("start_date"),
                     end_date=window.get("end_date"),
+                    content_hashes=collected_hashes,
                 )
-                if collection_stats_override is not None:
-                    current_hashes = collected_hashes_by_source.get(source.id, set())
-                    staged = [row for row in staged if getattr(row, "content_hash", None) in current_hashes]
-                    raw_total = None  # Exact selected hashes can exceed the bounded read batch.
                 per.update({"raw_total": raw_total, "raw_selected": len(staged), "raw_processed": 0})
                 await job_progress.update_current(sources, stats["per_source"], per)
                 progress_attempted = True

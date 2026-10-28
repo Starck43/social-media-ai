@@ -8,6 +8,7 @@ has consumed them — so every method is either "put", "what is waiting" or
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
@@ -17,6 +18,12 @@ from app.core.config import settings
 from app.utils.content_attachments import normalize_attachments
 
 from .base_manager import BaseManager
+
+
+def _bounded_content_hashes(values: Sequence[str] | None) -> list[str]:
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        return []
+    return list(dict.fromkeys(value for value in values if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)))[:2000]
 
 
 def _staged_mutation_scope() -> tuple[str, dict[str, int]]:
@@ -331,6 +338,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         include_review: bool = False,
         start_date: Any = None,
         end_date: Any = None,
+        content_hashes: Sequence[str] | None = None,
     ) -> list[CollectedItem]:
         """The raw items waiting for this source, newest first.
 
@@ -348,7 +356,12 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         """
         from app.models.collection.collected_item import CollectedItem
 
+        hashes = _bounded_content_hashes(content_hashes) if content_hashes is not None else None
+        if hashes == []:
+            return []
         query = self.filter(source_id=source_id)
+        if hashes is not None:
+            query = query.filter(CollectedItem.content_hash.in_(hashes))
         if not include_exhausted:
             query = query.filter(CollectedItem.analyze_attempts < CollectedItem.give_up_after_attempts)
         if not include_review:
@@ -391,11 +404,17 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         include_review: bool = False,
         start_date: Any = None,
         end_date: Any = None,
+        content_hashes: Sequence[str] | None = None,
     ) -> int:
         """Count the fixed staged window, including exhausted rows."""
         from app.models.collection.collected_item import CollectedItem
 
+        hashes = _bounded_content_hashes(content_hashes) if content_hashes is not None else None
+        if hashes == []:
+            return 0
         query = self.filter(source_id=source_id)
+        if hashes is not None:
+            query = query.filter(CollectedItem.content_hash.in_(hashes))
         if not include_review:
             query = query.filter(
                 or_(CollectedItem.selection_status.is_(None), CollectedItem.selection_status == "selected")

@@ -53,6 +53,20 @@ def _job_payload(snapshot):
     }
 
 
+@pytest.mark.parametrize(
+    "pipeline",
+    [
+        {"version": 2, "job_id": 99, "task_id": 7, "attempt": 1, "stages": {"collect": {"state": "completed"}}},
+        {"version": 1, "job_id": 99, "task_id": 7, "attempt": 1, "stages": {"collect": {"state": "completed", "attempt": 1}}},
+        {"version": 1, "job_id": 99, "task_id": 7, "attempt": 1, "stages": {"future": {"state": "started", "attempt": 1}}},
+        {"version": 1, "job_id": 99, "task_id": 7, "attempt": 1, "stages": {"collect": {"state": "unknown", "attempt": 1}}},
+    ],
+)
+def test_malformed_persisted_checkpoint_fails_closed(pipeline):
+    with pytest.raises(task_pipeline.PipelineReviewRequired, match="pipeline_checkpoint_invalid_requires_review"):
+        task_pipeline._valid_checkpoint(pipeline, job_id=99, task_id=7)
+
+
 @pytest.mark.asyncio
 async def test_composed_pipeline_uses_admitted_scope_and_finishes_each_stage(monkeypatch, task_snapshot):
     from app.jobs import handlers, progress

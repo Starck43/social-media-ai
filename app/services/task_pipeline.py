@@ -117,27 +117,38 @@ def _checkpoint_base(*, job_id: int, task_id: int, attempt: int) -> dict:
 
 
 def _valid_checkpoint(value: Any, *, job_id: int, task_id: int) -> dict | None:
+    """Validate the entire persisted receipt; never discard corrupt stage evidence."""
     if (
         not isinstance(value, dict)
         or value.get("version") != 1
         or value.get("job_id") != job_id
         or value.get("task_id") != task_id
         or not isinstance(value.get("stages"), dict)
+        or type(value.get("attempt")) is not int
+        or value["attempt"] < 0
     ):
-        return None
+        raise PipelineReviewRequired("pipeline_checkpoint_invalid_requires_review")
     stages = {}
     for name, row in value["stages"].items():
         if name not in {"collect", "analyze", "digest"} or not isinstance(row, dict):
-            continue
+            raise PipelineReviewRequired("pipeline_checkpoint_invalid_requires_review")
         state = row.get("state")
         if state not in {"started", "completed", "review_required"}:
-            continue
+            raise PipelineReviewRequired("pipeline_checkpoint_invalid_requires_review")
+        if type(row.get("attempt")) is not int or row["attempt"] < 1:
+            raise PipelineReviewRequired("pipeline_checkpoint_invalid_requires_review")
+        if state == "completed" and not isinstance(row.get("result"), dict):
+            raise PipelineReviewRequired("pipeline_checkpoint_invalid_requires_review")
+        if state == "started" and "result" in row:
+            raise PipelineReviewRequired("pipeline_checkpoint_invalid_requires_review")
+        if state == "review_required" and not isinstance(row.get("error"), str):
+            raise PipelineReviewRequired("pipeline_checkpoint_invalid_requires_review")
         stages[name] = row
     return {
         "version": 1,
         "job_id": job_id,
         "task_id": task_id,
-        "attempt": value.get("attempt") if type(value.get("attempt")) is int else 0,
+        "attempt": value["attempt"],
         "stages": stages,
     }
 
@@ -148,7 +159,10 @@ async def _stage(checkpoint: dict, name: str, operation, *, attempt: int) -> tup
     previous = checkpoint["stages"].get(name)
     if isinstance(previous, dict):
         if previous.get("state") == "completed":
-            return checkpoint, previous.get("result") if isinstance(previous.get("result"), dict) else {}
+            result = previous.get("result")
+            if not isinstance(result, dict):
+                raise PipelineReviewRequired("pipeline_checkpoint_invalid_requires_review")
+            return checkpoint, result
         if previous.get("state") in {"started", "review_required"}:
             checkpoint["attempt"] = attempt
             checkpoint["stages"][name] = {
@@ -180,14 +194,35 @@ async def _authorized_task(task, payload: dict, *, stage: str) -> int:
     tenant_id = current_tenant_id()
     if tenant_id != task.tenant_id:
         raise PermissionError("pipeline_workspace_mismatch")
-    live_task = await AgentTask.objects.filter(id=task.id, is_active=True).first()
-    if live_task is None or live_task.tenant_id != tenant_id:
+    live_task = await AgentTask.objects.filter(id=task.id, tenant_id=tenant_id).first()
+    if live_task is None:
         raise PermissionError("pipeline_task_inactive")
+    if not live_task.is_active:
+        # Admission intentionally deactivates @once tasks in the same
+        # transaction that enqueues them. Permit only that exact live claim.
+        if live_task.cron_expr != "@once" or payload.get("job_id") != live_task.launch_job_id:
+            raise PermissionError("pipeline_task_inactive")
+        from app.models import Job
+
+        running = await Job.objects.filter(
+            id=payload.get("job_id"),
+            tenant_id=tenant_id,
+            agent_task_id=live_task.id,
+            job_type="analyze",
+            status="running",
+            attempts=payload.get("attempts"),
+        ).first()
+        if running is None:
+            raise PermissionError("pipeline_task_inactive")
     from app.core.personal_catalog_context import current_catalog_owner_id
     from app.services.billing.payer import resolve_scheduled_task_payer
 
-    payer = await resolve_scheduled_task_payer(task_id=task.id, tenant_id=task.tenant_id)
-    if current_catalog_owner_id() != payer.user_id:
+    try:
+        payer = await resolve_scheduled_task_payer(task_id=task.id, tenant_id=task.tenant_id)
+        catalog_owner_id = current_catalog_owner_id()
+    except Exception:
+        raise PermissionError("pipeline_payer_unavailable") from None
+    if catalog_owner_id != payer.user_id:
         raise PermissionError("pipeline_payer_changed")
     actor_id = payload.get("_trusted_initiated_by_user_id") or payer.user_id
     if type(actor_id) is not int or actor_id <= 0:
@@ -244,6 +279,8 @@ def _task_view(task, task_payload: dict, snapshot: dict):
     return SimpleNamespace(
         id=task.id,
         tenant_id=task.tenant_id,
+        cron_expr=task.cron_expr,
+        launch_job_id=task.launch_job_id,
         payload=task_payload,
         sources=task.sources,
         agent_scenario=None,  # The admitted scenario_id is resolved explicitly.

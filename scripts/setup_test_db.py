@@ -8,8 +8,11 @@ are configured at import time. Shared-database bootstrap leaves the working
 Alembic version table alone. Schema separation is not a privilege sandbox.
 
 Fresh tables come from Base.metadata.create_all because the early migration
-chain expects existing tables. Reference roles, permissions, platforms and the
-bootstrap tenant are seeded with the canonical setup scripts; the committed
+chain expects existing tables. The metadata path emits no trigger or trigger
+function, so after the tables this script applies the guard objects that exist
+only in migration history (``scripts/schema_guards.py``); a failure there stops
+bootstrap. Reference roles, permissions, platforms and the bootstrap tenant are
+seeded with the canonical setup scripts; the committed
 legacy catalog owner (migration 0109) is restored directly because the
 create_all path never executes migration data changes. Existing drift
 is checked before schema creation, reset or seeding and is never automatically
@@ -152,6 +155,29 @@ async def _create_tables() -> None:
 
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def _apply_guards() -> int:
+    """Reproduce the migration-only guard objects the metadata path cannot create.
+
+    ``create_all`` emits no trigger and no trigger function, so a metadata-built
+    schema would accept evidence mutations the migrated schema refuses. The
+    guards come from ``scripts/schema_guards.py``; the whole application runs in
+    one transaction, so a failure leaves the schema exactly as found.
+    """
+    from sqlalchemy import text
+
+    from app.core.config import settings
+    from app.core.database import async_engine
+    from scripts.schema_guards import GUARD_FUNCTIONS, GUARD_TRIGGERS, apply_schema_guards
+
+    async with async_engine.begin() as conn:
+
+        def apply(sync_conn) -> None:
+            apply_schema_guards(sync_conn, settings.DB_SCHEMA, text)
+
+        await conn.run_sync(apply)
+    return len(GUARD_FUNCTIONS) + len(GUARD_TRIGGERS)
 
 
 async def _missing_columns(conn, metadata, schema: str, *, existing_tables: set[str] | None = None) -> list[str]:
@@ -420,17 +446,19 @@ async def _seed_role_grants() -> None:
     the administrator holds nothing — and every administrator-gated request
     answers 403 for a role that is supposed to pass.
     """
+    from sqlalchemy import select
+
     from app.core.access_catalog import workspace_grants
     from app.core.database import engine
     from app.models import ModelType, Permission, PlatformRole, WorkspaceRole
     from app.models.identity.role import role_permission
     from app.models.tenancy.workspace_role import workspace_role_permission
-    from sqlalchemy import select
 
     with engine.begin() as conn:
         permission_rows = conn.execute(
-            select(Permission.id, ModelType.resource_key, ModelType.model_name, Permission.action_type)
-            .join(ModelType, Permission.model_type_id == ModelType.id)
+            select(Permission.id, ModelType.resource_key, ModelType.model_name, Permission.action_type).join(
+                ModelType, Permission.model_type_id == ModelType.id
+            )
         ).all()
         by_resource = {
             (resource_key, str(action).lower()): permission_id
@@ -443,9 +471,7 @@ async def _seed_role_grants() -> None:
             (model_name, str(action).lower()): permission_id
             for permission_id, _resource_key, model_name, action in permission_rows
         }
-        admin_id = conn.execute(
-            select(PlatformRole.id).where(PlatformRole.codename == "admin")
-        ).scalar_one_or_none()
+        admin_id = conn.execute(select(PlatformRole.id).where(PlatformRole.codename == "admin")).scalar_one_or_none()
         if admin_id is not None:
             conn.execute(
                 _insert_ignoring_conflicts(role_permission),
@@ -455,15 +481,8 @@ async def _seed_role_grants() -> None:
                 ],
             )
         for role_id, codename in conn.execute(select(WorkspaceRole.id, WorkspaceRole.codename)).all():
-            pairs = {
-                (model_name, str(action).lower())
-                for model_name, action in workspace_grants(codename)
-            }
-            rows = [
-                {"role_id": role_id, "permission_id": by_model[pair]}
-                for pair in sorted(pairs)
-                if pair in by_model
-            ]
+            pairs = {(model_name, str(action).lower()) for model_name, action in workspace_grants(codename)}
+            rows = [{"role_id": role_id, "permission_id": by_model[pair]} for pair in sorted(pairs) if pair in by_model]
             if rows:
                 conn.execute(_insert_ignoring_conflicts(workspace_role_permission), rows)
 
@@ -606,6 +625,17 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
     async with async_engine.connect() as conn:
         await conn.execute(text("set transaction isolation level repeatable read, read only"))
         await check_existing_schema(conn, Base.metadata, settings.DB_SCHEMA, require_all_tables=True)
+
+    # Only tables and constraints come from the models; the guard functions and
+    # triggers exist in migration history alone and must be reproduced here.
+    try:
+        guard_count = await _apply_guards()
+    except Exception as exc:
+        raise RuntimeError(
+            "Test bootstrap refused: the migration-only guard functions/triggers could not be applied: "
+            f"{exc}. The schema would accept rows a migrated one refuses; no reference rows were seeded."
+        ) from exc
+    say(f"{guard_count} guard objects applied (functions and triggers from migration history)")
 
     await _seed_reference_rows()
     say("reference rows seeded (roles, permissions, platforms, bootstrap tenant, legacy catalog owner)")

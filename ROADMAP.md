@@ -38,7 +38,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P1
 
-- [P11-T07](docs/tasks/p11-t07.md) Incremental package-boundary enforcement — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=4069ac7bd6e5804189db00a95c3a97cc) · `P1` · `C3`
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
 - [P8-T40](docs/tasks/p8-t40.md) Compose collection, analysis and digest schedules — **IN_PROGRESS** · Codex · `codex resume 01a17d52-e51c-7072-81ee-de09e21c0f5f` · `P1` · `C5`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **TODO** · unassigned · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P1` · `C4`
@@ -49,9 +48,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P2
 
 - [P11-T08](docs/tasks/p11-t08.md) Public API compatibility and bounded request policy — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
-- [P11-T09](docs/tasks/p11-t09.md) Fail-closed typed agent-tool registration — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
+- [P11-T09](docs/tasks/p11-t09.md) Fail-closed typed agent-tool registration — **IN_PROGRESS** · notion-ai-p11-t09 · [Execution](https://app.notion.com/chat?t=406ddbde023680ea8b8500a9fae66b8f) · `P2` · `C3`
 - [P11-T11](docs/tasks/p11-t11.md) Web and admin use-case decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C4`
-- [P11-T12](docs/tasks/p11-t12.md) Durable action-audit contract and support correlation — **IN_PROGRESS** · notion-ai (remote executor) · [Notion chat](https://app.notion.com/chat?t=40652eb6491780269c1c00a9d89825d9) · `P2` · `C4`
 - [P11-T13](docs/tasks/p11-t13.md) Manager and execution-module decomposition — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C5`
 - [P11-T14](docs/tasks/p11-t14.md) Canonical model imports and semantic helper reuse — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P2` · `C3`
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`

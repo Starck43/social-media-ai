@@ -127,12 +127,15 @@ def aliased_model_imports(path: Path, source: str, *, dynamic: bool = True) -> l
 
 
 def _module_import_targets(module: str) -> set[str]:
-    path = ROOT.joinpath(*module.split(".")).with_suffix(".py")
-    if not path.exists():
+    module_path = ROOT.joinpath(*module.split("."))
+    is_package = module_path.is_dir()
+    if is_package:
         path = ROOT.joinpath(*module.split("."), "__init__.py")
-    if not path.exists():
+    else:
+        path = module_path.with_suffix(".py")
+    if not path.is_file():
         return set()
-    package = module.rpartition(".")[0]
+    package = module if is_package else module.rpartition(".")[0]
     targets = set()
     for node in ast.walk(ast.parse(path.read_text())):
         if isinstance(node, ast.ImportFrom):

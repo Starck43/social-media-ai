@@ -10,10 +10,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase
+
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
@@ -123,8 +124,10 @@ class ReapTests(unittest.IsolatedAsyncioTestCase):
             ROOT / "app/models/managers/job_manager.py",
             {
                 "app.models.managers.base_manager": SimpleNamespace(BaseManager=DummyBase),
-                **dict.fromkeys(('app.models.job', 'app.models.scheduling.job'), SimpleNamespace(Job=JobRow)),
-                **dict.fromkeys(('app.models.agent_task', 'app.models.scheduling.agent_task'), SimpleNamespace(AgentTask=TaskRow)),
+                **dict.fromkeys(("app.models.job", "app.models.scheduling.job"), SimpleNamespace(Job=JobRow)),
+                **dict.fromkeys(
+                    ("app.models.agent_task", "app.models.scheduling.agent_task"), SimpleNamespace(AgentTask=TaskRow)
+                ),
                 "app.core.database": SimpleNamespace(async_session_maker=session_maker),
                 "app.core.tenant_context": tenancy,
                 "app.jobs.attempt_budget": self.budget,

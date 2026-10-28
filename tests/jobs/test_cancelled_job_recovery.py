@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock
 
 import test_job_claim_outcomes as claim_fixtures
 import test_jobs_queue_signals as signal_fixtures
+
 from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]

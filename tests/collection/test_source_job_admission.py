@@ -17,11 +17,12 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
 
 import pytest
-from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Table
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import operators
+
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 activity = load_isolated_source("isolated_source_activity", ROOT / "app/jobs/source_activity.py")
@@ -321,10 +322,10 @@ class Fixture:
                 with_db_session=with_db_session_double(lambda: Session(self)),
             ),
             "app.models.managers.base_manager": NS(BaseManager=ManagerBase),
-            **dict.fromkeys(('app.models.job', 'app.models.scheduling.job'), NS(Job=Job)),
-            **dict.fromkeys(('app.models.tenant', 'app.models.tenancy.tenant'), NS(Tenant=Tenant)),
-            **dict.fromkeys(('app.models.agent_task', 'app.models.scheduling.agent_task'), NS(AgentTask=Task)),
-            **dict.fromkeys(('app.models.source', 'app.models.collection.source'), NS(Source=Source)),
+            **dict.fromkeys(("app.models.job", "app.models.scheduling.job"), NS(Job=Job)),
+            **dict.fromkeys(("app.models.tenant", "app.models.tenancy.tenant"), NS(Tenant=Tenant)),
+            **dict.fromkeys(("app.models.agent_task", "app.models.scheduling.agent_task"), NS(AgentTask=Task)),
+            **dict.fromkeys(("app.models.source", "app.models.collection.source"), NS(Source=Source)),
             "app.jobs.source_activity": activity,
         }
         self.module = load_isolated_source(

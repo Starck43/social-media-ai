@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
 
 import httpx
+
 from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]

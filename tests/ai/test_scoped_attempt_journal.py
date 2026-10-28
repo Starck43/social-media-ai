@@ -53,8 +53,13 @@ def chat_envelope(raw=None, failed=False, **kwargs):
     model_row_id = kwargs.pop("model_row_id", None)
     provider_name = kwargs.pop("provider_name", "prov")
     value = journal.chat_attempt_envelope(
-        model_id="m", provider_name=provider_name, dispatch_id=uuid4().hex, raw=raw, failed=failed,
-        model_row_id=model_row_id, **kwargs
+        model_id="m",
+        provider_name=provider_name,
+        dispatch_id=uuid4().hex,
+        raw=raw,
+        failed=failed,
+        model_row_id=model_row_id,
+        **kwargs,
     )
     # These fixtures pin legacy v1 behavior; production clients pass api_format
     # and persist v2 normalized cache evidence.
@@ -95,17 +100,24 @@ class ScopedAttemptJournalTests(unittest.IsolatedAsyncioTestCase):
         sink = Journal()
         identity = (22, "free", "m")
         paid_identity = (21, "paid", "m")
-        resolver = AsyncMock(return_value={
-            identity: {"id": 22, "input_cost_per_1k": Decimal("0"), "output_cost_per_1k": Decimal("0")},
-            paid_identity: {"id": 21, "input_cost_per_1k": Decimal("0.5"), "output_cost_per_1k": Decimal("1")},
-        })
+        resolver = AsyncMock(
+            return_value={
+                identity: {"id": 22, "input_cost_per_1k": Decimal("0"), "output_cost_per_1k": Decimal("0")},
+                paid_identity: {"id": 21, "input_cost_per_1k": Decimal("0.5"), "output_cost_per_1k": Decimal("1")},
+            }
+        )
         await journal.record_scoped_attempts(
-            {journal.STAGE_CHAT: chat_envelope(
-                {"usage": {"prompt_tokens": 1000, "completion_tokens": 100}},
-                provider_name="free",
-                model_row_id=22,
-            )},
-            purpose="agent_chat", tenant_id=7, journal=sink, tariff_resolver=resolver,
+            {
+                journal.STAGE_CHAT: chat_envelope(
+                    {"usage": {"prompt_tokens": 1000, "completion_tokens": 100}},
+                    provider_name="free",
+                    model_row_id=22,
+                )
+            },
+            purpose="agent_chat",
+            tenant_id=7,
+            journal=sink,
+            tariff_resolver=resolver,
         )
         resolver.assert_awaited_once_with({identity})
         self.assertEqual(sink.rows[0]["llm_model_row_id"], 22)

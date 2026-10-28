@@ -7,11 +7,11 @@ PostgreSQL deletion semantics live in tests/test_collected_items.py.
 from __future__ import annotations
 
 import ast
-from functools import partial
 import logging
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
@@ -107,10 +107,15 @@ def load_prune():
     logger = logging.getLogger("isolated_data_retention")
     namespace = {"Any": Any, "logger": logger, "_error_kind": classifier_namespace["classify_error"]}
     exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), str(path), "exec"), namespace)
-    return partial(
-        namespace["handle_prune"], logger=logger, log_id=namespace["_log_id"],
-        error_kind=classifier_namespace["classify_error"],
-    ), logger
+    return (
+        partial(
+            namespace["handle_prune"],
+            logger=logger,
+            log_id=namespace["_log_id"],
+            error_kind=classifier_namespace["classify_error"],
+        ),
+        logger,
+    )
 
 
 class Field:

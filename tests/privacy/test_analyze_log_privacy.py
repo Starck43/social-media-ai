@@ -100,13 +100,15 @@ class AnalyzeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                     created_at=SimpleNamespace(desc=lambda: None),
                 ),
                 BotAction=SimpleNamespace(objects=SimpleNamespace()),
-                CollectedItem=SimpleNamespace(objects=SimpleNamespace(
-                    for_source=self.for_source,
-                    # The handler reads the backlog size before draining it;
-                    # without the double that read fails and logs a warning
-                    # the test would then count as an extra record.
-                    count_for_source=AsyncMock(return_value=0),
-                )),
+                CollectedItem=SimpleNamespace(
+                    objects=SimpleNamespace(
+                        for_source=self.for_source,
+                        # The handler reads the backlog size before draining it;
+                        # without the double that read fails and logs a warning
+                        # the test would then count as an extra record.
+                        count_for_source=AsyncMock(return_value=0),
+                    )
+                ),
                 # The monitoring package reads the platform of a source.
                 Platform=SimpleNamespace(objects=SimpleNamespace()),
                 Source=SimpleNamespace(
@@ -118,9 +120,7 @@ class AnalyzeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             "app.services.ai.trigger_evaluator": module_with(
                 trigger_evaluator=SimpleNamespace(should_analyze=self.should_analyze)
             ),
-            "app.services.social.guards": module_with(
-                guards_checker=SimpleNamespace()
-            ),
+            "app.services.social.guards": module_with(guards_checker=SimpleNamespace()),
             "app.types": module_with(
                 BotActionStatus=SimpleNamespace(PENDING="pending"),
                 SourceType=SimpleNamespace(),

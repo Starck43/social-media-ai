@@ -10,7 +10,7 @@ execution, status, results and follow-up. Dedicated source, scenario, task,
 schedule and digest pages remain first-class, directly accessible settings and
 management surfaces over the same persisted state. Preserve the existing design.
 
-### Model
+## Model
 
 | Concept | Responsibility |
 | --- | --- |
@@ -53,19 +53,19 @@ definitions. Existing components and navigation remain; no redesign. The
 accepted chat-first journey and standalone management evidence are in
 [P8-T39](audit/p8-t39.md).
 
-- Sources: platform, external identity, connection/mode, collection settings,
+- **Sources:** platform, external identity, connection/mode, collection settings,
   health and related tasks. Label temporary task-owned discovery sources.
-- Scenarios: methodology, supported media and output structure. Concrete terms,
+- **Scenarios:** methodology, supported media and output structure. Concrete terms,
   brands, source lists and dates belong to the task.
-- Tasks: explicit selected/discovered/all-authorized scope, search phrases,
+- **Tasks:** explicit selected/discovered/all-authorized scope, search phrases,
   filters, scenario, limits and result. Empty new selections cannot silently
   expand to all sources. Preserve legacy empty-link behavior for old tasks.
-- Timing: once or recurring, timezone, next run and pause/resume. Distinguish
+- **Timing:** once or recurring, timezone, next run and pause/resume. Distinguish
   the execution trigger from a fixed or rolling data window. New plans default
   to a rolling one-day window when no window is supplied; show this in previews.
-- Digests: source/scenario/period/grouping, preview, destinations and manual or
+- **Digests:** source/scenario/period/grouping, preview, destinations and manual or
   scheduled send. A preview cannot send. Collection before digest is explicit.
-- Connections: personal access, capabilities, reauthorization and revocation.
+- **Connections:** personal access, capabilities, reauthorization and revocation.
 
 Example: "Find recent VK posts requesting renovation in Kazan; exclude ads and
 return links with reasons." The assistant may derive bounded queries and use

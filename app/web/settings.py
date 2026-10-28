@@ -28,7 +28,7 @@ from typing import Any
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.models.tenant import Tenant
+from app.models.tenancy.tenant import Tenant
 from app.services.tenancy import member_roles
 from app.types import ActionType
 
@@ -95,7 +95,7 @@ PLAN_ROWS: tuple[dict[str, Any], ...] = (
 #: `PLAN_LIMITS` so a new tier appears without touching the template, and a
 #: changed number appears everywhere it is shown.
 def _plan_table() -> list[dict[str, Any]]:
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     rows = []
     for row in PLAN_ROWS:
@@ -121,7 +121,7 @@ def _plan_table() -> list[dict[str, Any]]:
 
 
 def _plan_labels() -> dict[str, str]:
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     return {plan: Tenant.PLAN_LIMITS[plan]["label"] for plan in Tenant.PLANS}
 
@@ -223,7 +223,7 @@ async def settings_page(request: Request):
     }
 
     if tab == "platforms":
-        from app.models.platform import Platform
+        from app.models.collection.platform import Platform
         from app.types import PlatformType
 
         context.update(
@@ -273,7 +273,7 @@ async def settings_page(request: Request):
             context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
     elif tab == "team" and manage:
         from app.models.managers.tenant_manager import TenantUserManager
-        from app.models.user import User
+        from app.models.identity.user import User
 
         memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
         member_ids = [m.user_id for m in memberships if m.user_id is not None]
@@ -338,7 +338,7 @@ async def platform_save(
 
     from sqlalchemy.exc import IntegrityError
 
-    from app.models.platform import Platform
+    from app.models.collection.platform import Platform
     from app.types import PlatformType
 
     name, base_url = name.strip(), base_url.strip()
@@ -375,8 +375,8 @@ async def platform_save(
 
 async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:
     """Manager-only quota projections; resource counts additionally require VIEW."""
-    from app.models.agent_scenario import AgentScenario
-    from app.models.agent_task import AgentTask
+    from app.models.analysis.agent_scenario import AgentScenario
+    from app.models.scheduling.agent_task import AgentTask
     from app.models.collection.source import Source
     from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager
 

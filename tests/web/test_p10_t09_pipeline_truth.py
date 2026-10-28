@@ -70,11 +70,11 @@ def pipeline(monkeypatch):
         "_p10_t09_web.dashboard",
         ROOT / "app/web/dashboard.py",
         {
-            "app.models.agent_task": NS(AgentTask=model("agenttask")),
-            "app.models.ai_analytics": NS(AIAnalytics=model("aianalytics")),
+            "app.models.scheduling.agent_task": NS(AgentTask=model("agenttask")),
+            "app.models.analysis.ai_analytics": NS(AIAnalytics=model("aianalytics")),
             "app.models.collection.source": NS(Source=model("source")),
-            "app.models.collected_item": NS(CollectedItem=model("collecteditem")),
-            "app.models.job": NS(Job=model("job")),
+            "app.models.collection.collected_item": NS(CollectedItem=model("collecteditem")),
+            "app.models.scheduling.job": NS(Job=model("job")),
             "_p10_t09_web.deps": NS(render=None, tenant_filter_context=None),
         },
     )

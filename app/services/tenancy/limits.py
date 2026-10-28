@@ -23,7 +23,7 @@ import logging
 from typing import Any, Optional
 
 from app.core.config import settings
-from app.models.tenant import Tenant
+from app.models.tenancy.tenant import Tenant
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ async def check_channel_limit(tenant: Any) -> Optional[str]:
 
 async def check_scenario_limit(tenant: Any) -> Optional[str]:
     """May this workspace create one more agent scenario?"""
-    from app.models.agent_scenario import AgentScenario
+    from app.models.analysis.agent_scenario import AgentScenario
 
     total = await AgentScenario.objects.count()
     reason = _over_limit(tenant, "max_scenarios", total)
@@ -166,7 +166,7 @@ async def check_member_limit(tenant: Any) -> Optional[str]:
 
 async def check_task_limit(tenant: Any) -> Optional[str]:
     """May this workspace create one more scheduled task?"""
-    from app.models.agent_task import AgentTask
+    from app.models.scheduling.agent_task import AgentTask
 
     total = await AgentTask.objects.count()
     reason = _over_limit(tenant, "max_tasks", total)
@@ -216,8 +216,8 @@ async def plan_overage(tenant_id: int, plan: str) -> list[str]:
     which the admin shows before saving.
     """
     from app.core.tenant_context import tenant_scope
-    from app.models.agent_scenario import AgentScenario
-    from app.models.agent_task import AgentTask
+    from app.models.analysis.agent_scenario import AgentScenario
+    from app.models.scheduling.agent_task import AgentTask
     from app.models.collection.source import Source
     from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager, tenants
 

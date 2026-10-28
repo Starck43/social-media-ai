@@ -21,7 +21,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from app.models.digest_run import DigestRun
+from app.models.notifications.digest_run import DigestRun
 from app.services.digest.builder import DigestDeliveryError, build_and_publish
 from app.services.digest.render import render_digest
 

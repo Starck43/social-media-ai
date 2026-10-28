@@ -32,7 +32,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX, outcome_unconfirmed
-from app.models.job import Job
+from app.models.scheduling.job import Job
 
 from .deps import (
     action_tenant_id,
@@ -337,7 +337,7 @@ async def jobs_list(request: Request):
     stats, signals = await JobManager().overview_for_web(tenant_id)
     retention_policy = None
     if can_manage_retention and tenant_id is not None:
-        from app.models.agent_task import AgentTask
+        from app.models.scheduling.agent_task import AgentTask
         from app.jobs.lifecycle import retention_policy as parse_retention_policy
 
         with tenant_scope(tenant_id):

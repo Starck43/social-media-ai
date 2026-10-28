@@ -169,11 +169,11 @@ def gateway(monkeypatch):
         delete_by_id=Mock(side_effect=AssertionError("settings must not delete platforms")),
         delete=Mock(side_effect=AssertionError("settings must not delete platforms")),
     )
-    platform_module = ModuleType("app.models.platform")
+    platform_module = ModuleType("app.models.collection.platform")
     platform_module.Platform = NS(objects=manager, id="id")
     types_module = ModuleType("app.types")
     types_module.PlatformType = Kinds()
-    monkeypatch.setitem(sys.modules, "app.models.platform", platform_module)
+    monkeypatch.setitem(sys.modules, "app.models.collection.platform", platform_module)
     monkeypatch.setitem(sys.modules, "app.types", types_module)
     namespace = extracted()
     return namespace, manager, calls

@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 
-from app.models.agent_task import AgentTask
-from app.models.ai_analytics import AIAnalytics
+from app.models.scheduling.agent_task import AgentTask
+from app.models.analysis.ai_analytics import AIAnalytics
 from app.models.collection.source import Source
 
 from .deps import render, tenant_filter_context
@@ -90,7 +90,7 @@ def _digest_delivery_status(run) -> str:
 
 
 async def _recent_digests_in_scope(tenant_id: int | None) -> list[dict]:
-    from app.models.digest_run import DigestRun
+    from app.models.notifications.digest_run import DigestRun
 
     query = DigestRun.objects.filter()
     if tenant_id is not None:
@@ -218,13 +218,13 @@ async def _pipeline(tenant_id: int | None, is_superuser: bool, offer: dict) -> d
 
     pipeline = {"scope_all": False}
     if offer.get("collected_items"):
-        from app.models.collected_item import CollectedItem
+        from app.models.collection.collected_item import CollectedItem
 
         pipeline["staged"] = await CollectedItem.objects.filter(tenant_id=tenant_id).count()
     if offer.get("analytics"):
         pipeline["analyzed"] = await AIAnalytics.objects.filter(tenant_id=tenant_id).count()
     if offer.get("jobs"):
-        from app.models.job import Job
+        from app.models.scheduling.job import Job
 
         # This is a bounded recent-active preview, never a queue total.
         pipeline["preview_limit"] = 3

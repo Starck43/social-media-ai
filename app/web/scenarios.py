@@ -15,7 +15,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import and_, func
 
-from app.models.agent_scenario import AgentScenario
+from app.models.analysis.agent_scenario import AgentScenario
 from app.services.ai.scenario_schema import ScenarioSchemaError, validate_scenario_values
 
 from .deps import add_flash, ensure_csrf, guard_web, render
@@ -507,7 +507,7 @@ async def _remember_preferences(request: Request, scenario) -> None:
 async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: int | None = None):
     """Render the 4-step wizard for a new or existing scenario."""
     from app.core.analysis_constants import ANALYSIS_TYPE_DEFAULTS
-    from app.models.llm_model import LLMModel
+    from app.models.llm.llm_model import LLMModel
     from app.services.ai.scenario_builder import ScenarioBuilder
     from app.types import AnalysisType, LLMStrategyType, MediaType
     from app.web.deps import human_datetime
@@ -531,7 +531,7 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     can_view_tasks = perms is not None and perms.can("agenttask", "view")
     if not create and scenario_id is not None and can_view_tasks:
         from app.core.tenant_context import tenant_scope
-        from app.models.job import Job
+        from app.models.scheduling.job import Job
         from app.models.managers.agent_task_manager import AgentTaskManager
 
         manager = AgentTaskManager()

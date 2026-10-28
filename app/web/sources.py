@@ -26,7 +26,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func
 
-from app.models.collected_item import CollectedItem
+from app.models.collection.collected_item import CollectedItem
 from app.models.collection.source import Source
 from app.services.social.connections import source_connection_status, source_connection_statuses
 from app.types import SourceType
@@ -73,7 +73,7 @@ def _clean_params(base: dict | None = None) -> dict:
 async def _workspace_members(tenant_id: int) -> list:
     """Web members of a workspace — the only valid `token_owner` choices."""
     from app.models.managers.tenant_manager import tenant_users
-    from app.models.user import User
+    from app.models.identity.user import User
 
     memberships = await tenant_users.web_memberships_for_tenant(tenant_id)
     if not memberships:
@@ -103,13 +103,13 @@ def _validate_token_owner(form_value: str, member_ids: set[int]) -> tuple[int | 
 
 
 async def _platforms():
-    from app.models.platform import Platform
+    from app.models.collection.platform import Platform
 
     return await Platform.objects.order_by(Platform.id)
 
 
 async def _resolve_platform(form_value: str):
-    from app.models.platform import Platform
+    from app.models.collection.platform import Platform
     from app.types import PlatformType
 
     pt = PlatformType.get_by_value(form_value)
@@ -532,7 +532,7 @@ async def source_toggle(
 async def source_detail(request: Request, source_id: int):
     """Show source settings, source-level statistics, and linked tasks."""
     from app.core.tenant_context import tenant_scope
-    from app.models.ai_analytics import AIAnalytics
+    from app.models.analysis.ai_analytics import AIAnalytics
     from app.web.tasks import _diagnostics_admin
 
     is_superuser = False
@@ -919,7 +919,7 @@ async def _recent_collections(source_id: int) -> list[dict]:
     `collection` entry; standalone analysis jobs are ignored. Jobs written
     before the breakdown existed are skipped rather than shown as zero.
     """
-    from app.models.job import Job
+    from app.models.scheduling.job import Job
 
     rows = (
         await Job.objects.filter(job_type__in=("collect", "analyze"))

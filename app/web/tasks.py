@@ -975,7 +975,7 @@ async def tasks_list(request: Request):
     # button and point the user to the existing modal instead of creating a
     # duplicate job. The status rides along: a pending job has not been claimed
     # by any worker yet, and the row says "queued", not "running".
-    from app.models.job import Job
+    from app.models.scheduling.job import Job
 
     task_ids = [t.id for t in tasks]
     running_jobs: dict[int, dict[str, Any]] = {}  # task_id -> {id, status}
@@ -1419,10 +1419,10 @@ async def task_detail(request: Request, task_id: int):
     from contextlib import nullcontext
 
     from app.core.tenant_context import tenant_scope
-    from app.models.agent_scenario import AgentScenario
-    from app.models.agent_task import AgentTask
+    from app.models.analysis.agent_scenario import AgentScenario
+    from app.models.scheduling.agent_task import AgentTask
     from app.models.collection.source import Source
-    from app.models.job import Job
+    from app.models.scheduling.job import Job
 
     user = getattr(request.state, "web_user", None)
     is_superuser = False
@@ -1580,7 +1580,7 @@ async def _task_run_scope(
             for item in sorted(scoped, key=lambda item: (item.name, item.id))
         ]
     if include_raw and task.job_type == "analyze":
-        from app.models.collected_item import CollectedItem
+        from app.models.collection.collected_item import CollectedItem
         from app.models.managers.agent_task_manager import AgentTaskManager
 
         task_payload = task.payload if isinstance(task.payload, dict) else {}
@@ -1954,7 +1954,7 @@ async def _task_source_ids(task_id: int) -> list[int]:
     row comes back detached, so touching it without a prefetch raises
     `DetachedInstanceError` rather than issuing a query.
     """
-    from app.models.agent_task import AgentTask
+    from app.models.scheduling.agent_task import AgentTask
 
     task = await AgentTask.objects.filter(id=task_id).prefetch_related("sources").first()
     return [source.id for source in task.sources] if task else []

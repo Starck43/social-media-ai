@@ -14,7 +14,7 @@ from ..base import Base, TimestampMixin
 if TYPE_CHECKING:
     from ..managers.base_manager import BaseManager
     from ..managers.tenant_manager import TenantUserManager
-    from ..role import Role
+    from ..identity.role import Role
 
 
 @app_label("tenancy")

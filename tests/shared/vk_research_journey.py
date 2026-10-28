@@ -45,16 +45,24 @@ def load_plan_modules():
     intent = load_isolated_source(
         "_p8_t41_intent",
         ROOT / "app/services/collection/intent.py",
-        {"app.core.config": module("app.core.config", settings=SimpleNamespace(
-            SOCIAL_COLLECT_HARD_LIMIT=1000, SOCIAL_COLLECT_LIMIT=1000,
-        ))},
+        {
+            "app.core.config": module(
+                "app.core.config",
+                settings=SimpleNamespace(
+                    SOCIAL_COLLECT_HARD_LIMIT=1000,
+                    SOCIAL_COLLECT_LIMIT=1000,
+                ),
+            )
+        },
     )
     plans = load_isolated_source(
-        "_p8_t41_plans", ROOT / "app/services/task_plans.py",
+        "_p8_t41_plans",
+        ROOT / "app/services/task_plans.py",
         {"app.services.collection.intent": intent, "app.services.social.vk_access": policy},
     )
     preparation = load_isolated_source(
-        "_p8_t41_preparation", ROOT / "app/services/task_preparation.py",
+        "_p8_t41_preparation",
+        ROOT / "app/services/task_preparation.py",
         {"app.services.task_plans": plans},
     )
     return policy, plans, preparation

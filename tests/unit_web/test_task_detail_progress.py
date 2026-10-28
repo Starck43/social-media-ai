@@ -267,7 +267,20 @@ def test_task_detail_template_renders_task_run_actions_and_progress_counters():
         summary=summary,
         sources=[],
         can_view_sources=True,
-        run_progress={"state": "running", "phases": [{"key": "analysis", "label": "Анализ данных", "processed": 3, "total": 10, "percent": 30, "segments": [], "note": "Успешно обработано"}]},
+        run_progress={
+            "state": "running",
+            "phases": [
+                {
+                    "key": "analysis",
+                    "label": "Анализ данных",
+                    "processed": 3,
+                    "total": 10,
+                    "percent": 30,
+                    "segments": [],
+                    "note": "Успешно обработано",
+                }
+            ],
+        },
         _tz="UTC",
     )
     assert 'role="progressbar"' in output
@@ -425,8 +438,8 @@ def test_task_list_row_reports_queue_state_only_from_a_live_job():
 @pytest.mark.asyncio
 async def test_task_run_scope_reads_windowed_backlog_only_with_source_view(monkeypatch):
     from app.models.collected_item import CollectedItem
-    from app.models.managers.collected_item_manager import CollectedItemManager
     from app.models.collection.source import Source
+    from app.models.managers.collected_item_manager import CollectedItemManager
 
     sources = [
         SimpleNamespace(

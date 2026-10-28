@@ -1,6 +1,6 @@
 # Action audit and support correlation contract (P11-T12)
 
-**State:** implementation in progress in [PR #269](https://github.com/Starck43/social-media-ai/pull/269).
+**State:** implementation in progress in [PR #272](https://github.com/Starck43/social-media-ai/pull/272).
 The implementation adds tenant-scoped persistence, task-admission hooks,
 read-only API views/export, and plan-aligned retention. Alembic revision `0118`
 is authorized only against `test_schema`; no production/public-schema apply or

@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import delete, select, text
 
 from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+
 from .base_manager import BaseManager
 
 _ACTION = re.compile(r"^[a-z][a-z0-9_]{0,31}\.[a-z][a-z0-9_]{0,31}$", re.ASCII)

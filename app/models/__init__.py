@@ -6,12 +6,12 @@ from __future__ import annotations
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 # isort: split
-from .audit import ActionAuditEvent
 from .actions import AgentAction
 from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 from .analysis.agent_scenario import AgentScenario
-from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
 from .analysis.ai_analytics import AIAnalytics
+from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
+from .audit import ActionAuditEvent
 from .billing import (
     PersonalBillingAccount,
     PersonalBillingCutover,

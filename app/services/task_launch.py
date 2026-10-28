@@ -250,8 +250,8 @@ async def execute_task_launch(command: TaskLaunchCommand) -> TaskLaunchResult:
         if receipt.get("status") == "busy":
             raise SourceJobBusy(receipt["job"])
         if receipt.get("status") not in {"enqueued", "replayed"}:
-            from app.services.action_audit import log_persistence_gap, log_unknown
             from app.models import ActionAuditEvent
+            from app.services.action_audit import log_persistence_gap, log_unknown
 
             log_unknown(
                 tenant_id=tenant.id,

@@ -13,6 +13,7 @@ from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import ActionAuditEvent
 from app.models.managers.action_audit_event_manager import ActionAuditEventManager
+from app.types import WorkspaceRoleType
 from tests.api.test_api_permissions import (
     _auth_headers,
     _client,
@@ -20,7 +21,6 @@ from tests.api.test_api_permissions import (
     _invitee,
     _register_owner,
 )
-from app.types import WorkspaceRoleType
 
 pytestmark = pytest.mark.tenancy
 

@@ -1522,7 +1522,7 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
 
     from app.core.config import settings
     from app.core.database import new_session
-    from app.models import AIAnalytics, ActionAuditEvent, CollectedItem
+    from app.models import ActionAuditEvent, AIAnalytics, CollectedItem
     from app.utils.retention import months_before
 
     now = datetime.now(timezone.utc)

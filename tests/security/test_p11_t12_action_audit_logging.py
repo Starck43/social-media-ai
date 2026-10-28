@@ -6,8 +6,8 @@ import logging
 
 import pytest
 
-from app.services.action_audit import log_denied, log_rolled_back, log_unknown
 from app.models.managers.action_audit_event_manager import ActionAuditEventManager
+from app.services.action_audit import log_denied, log_rolled_back, log_unknown
 
 
 def test_denied_and_rollback_use_safe_distinct_outcomes(caplog):

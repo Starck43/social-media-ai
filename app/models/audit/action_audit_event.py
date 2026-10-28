@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
 from app.core.decorators import app_label
+
 from ..base import Base, TenantScopedMixin
 
 

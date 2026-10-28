@@ -1044,7 +1044,7 @@ class AgentTaskManager(BaseManager):
                             select(func.count(JobModel.id)).where(
                                 JobModel.tenant_id == tenant_id,
                                 JobModel.initiated_by_user_id == initiated_by_user_id,
-                                JobModel.status.in__(("pending", "running")),
+                                JobModel.status.in_(("pending", "running")),
                             )
                         )
                     ).scalar_one()
@@ -1052,7 +1052,7 @@ class AgentTaskManager(BaseManager):
                         await session.execute(
                             select(func.count(JobModel.id)).where(
                                 JobModel.tenant_id == tenant_id,
-                                JobModel.status.in__(("pending", "running")),
+                                JobModel.status.in_(("pending", "running")),
                             )
                         )
                     ).scalar_one()

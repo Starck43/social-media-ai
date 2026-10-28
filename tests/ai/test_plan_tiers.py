@@ -355,8 +355,27 @@ async def _web_user():
     )
 
 
+@pytest.fixture
+async def plan_web_user():
+    """Own every standalone account; deleting a workspace does not delete users."""
+    from app.models import User
+
+    created = []
+
+    async def make():
+        user = await _web_user()
+        created.append(user.id)
+        return user
+
+    try:
+        yield make
+    finally:
+        for user_id in created:
+            await User.objects.delete_user(user_id)
+
+
 @pytest.mark.asyncio
-async def test_the_team_ceiling_counts_web_memberships_only(plan_ws) -> None:
+async def test_the_team_ceiling_counts_web_memberships_only(plan_ws, plan_web_user) -> None:
     """A messenger chat is not a team seat — only /app memberships are.
 
     `tenant_users` holds two kinds of row: a web membership (a person with an
@@ -375,7 +394,7 @@ async def test_the_team_ceiling_counts_web_memberships_only(plan_ws) -> None:
         with tenant_scope(tenant.id):
             for i in range(5):
                 await tenant_users.add_member(tenant_id=tenant.id, channel="telegram", external_user_id=str(i))
-            user = await _web_user()
+            user = await plan_web_user()
             # Allowed: the single Starter seat is still unclaimed.
             await tenant_users.add_web_member(tenant_id=tenant.id, user_id=user.id, role="owner")
             # And now it is spent — a second seat is refused.
@@ -402,7 +421,7 @@ async def test_a_messenger_contact_is_not_charged_as_a_seat(plan_ws) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_second_web_member_is_refused_by_the_manager(plan_ws) -> None:
+async def test_a_second_web_member_is_refused_by_the_manager(plan_ws, plan_web_user) -> None:
     """The refusal is raised from the write path, not merely reported.
 
     Going through `add_web_member` rather than calling `limits.py` directly is
@@ -414,15 +433,15 @@ async def test_a_second_web_member_is_refused_by_the_manager(plan_ws) -> None:
 
     async with plan_ws("starter") as tenant:
         with tenant_scope(tenant.id):
-            owner = await _web_user()
+            owner = await plan_web_user()
             await tenant_users.add_web_member(tenant_id=tenant.id, user_id=owner.id, role="owner")
-            second = await _web_user()
+            second = await plan_web_user()
             with pytest.raises(PlanLimitError):
                 await tenant_users.add_web_member(tenant_id=tenant.id, user_id=second.id, role="member")
 
 
 @pytest.mark.asyncio
-async def test_an_invite_to_a_full_workspace_reports_rather_than_raises(plan_ws) -> None:
+async def test_an_invite_to_a_full_workspace_reports_rather_than_raises(plan_ws, plan_web_user) -> None:
     """A quota breach on the invite form is a page, not a 500.
 
     The code was valid and the person is already signed in, so there is nothing
@@ -434,12 +453,13 @@ async def test_an_invite_to_a_full_workspace_reports_rather_than_raises(plan_ws)
 
     async with plan_ws("starter") as tenant:
         with tenant_scope(tenant.id):
-            owner = await _web_user()
+            owner = await plan_web_user()
             await tenant_users.add_web_member(tenant_id=tenant.id, user_id=owner.id, role="owner")
 
             invites = TenantInviteManager()
-            invite, code = await invites.issue(tenant_id=tenant.id, role="member")
-            invited = await _web_user()
+            with permission_scope(owner, is_owner=True):
+                invite, code = await invites.issue(tenant_id=tenant.id, role="member")
+            invited = await plan_web_user()
             result = await invites.redeem_web(code=code, user_id=invited.id)
 
             assert result["status"] == "no_seat"
@@ -478,18 +498,24 @@ async def test_rebinding_an_owned_chat_is_not_a_second_channel(plan_ws) -> None:
 
 
 @pytest.mark.asyncio
-async def test_learn_and_reflect_stop_on_starter(plan_ws) -> None:
+async def test_learn_and_reflect_stop_on_starter(plan_ws, plan_arrange_user) -> None:
     """A tier without learning must refuse before it spends anything.
 
     Asserted on the skip *reason*: `cost_cap` would mean the budget was the
     thing that stopped it, which is a different message to the operator and a
     different thing to fix.
     """
+    from app.agent.identity import memory_actor_scope
     from app.agent.learning import run_learn, run_reflect
     from app.core.tenant_context import tenant_scope
+    from app.models import AgentSession
+    from app.models.managers.tenant_manager import tenant_users
 
     async with plan_ws("starter") as tenant:
         with tenant_scope(tenant.id):
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=plan_arrange_user.id, role="owner")
+            await AgentSession.objects.create(channel="web", chat_id=str(plan_arrange_user.id), kind="private")
+        with tenant_scope(tenant.id), memory_actor_scope(plan_arrange_user.id, True):
             result = await run_learn(min_messages=1)
             assert result["status"] == "skipped"
             assert result["reason"] == "plan"
@@ -585,7 +611,7 @@ async def test_a_plan_downgrade_reports_what_must_be_deleted(plan_ws, plan_arran
 
 
 @pytest.mark.asyncio
-async def test_the_deployment_member_ceiling_caps_every_tier(monkeypatch, plan_ws) -> None:
+async def test_the_deployment_member_ceiling_caps_every_tier(monkeypatch, plan_ws, plan_web_user) -> None:
     """`MAX_WORKSPACE_MEMBERS` (Q-11) applies on top of the tier, tighter wins.
 
     The pilot allows an owner plus one invited person whatever the tier says, so
@@ -598,9 +624,9 @@ async def test_the_deployment_member_ceiling_caps_every_tier(monkeypatch, plan_w
     monkeypatch.setattr(limits.settings, "MAX_WORKSPACE_MEMBERS", 2)
     async with plan_ws("business") as tenant:
         with tenant_scope(tenant.id):
-            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=(await _web_user()).id, role="owner")
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=(await plan_web_user()).id, role="owner")
             assert await limits.check_member_limit(tenant) is None, "the owner alone is under the ceiling"
-            second = await _web_user()
+            second = await plan_web_user()
             await tenant_users.add_web_member(tenant_id=tenant.id, user_id=second.id, role="viewer")
             blocked = await limits.check_member_limit(tenant)
             assert blocked is not None, "business has no tier cap; the deployment ceiling must still hold"
@@ -609,16 +635,16 @@ async def test_the_deployment_member_ceiling_caps_every_tier(monkeypatch, plan_w
     monkeypatch.setattr(limits.settings, "MAX_WORKSPACE_MEMBERS", 3)
     async with plan_ws("business") as tenant:
         with tenant_scope(tenant.id):
-            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=(await _web_user()).id, role="owner")
-            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=(await _web_user()).id, role="viewer")
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=(await plan_web_user()).id, role="owner")
+            await tenant_users.add_web_member(tenant_id=tenant.id, user_id=(await plan_web_user()).id, role="viewer")
             assert await limits.check_member_limit(tenant) is None, "three people fit the raised ceiling"
-            third = await _web_user()
+            third = await plan_web_user()
             await tenant_users.add_web_member(tenant_id=tenant.id, user_id=third.id, role="viewer")
             assert await limits.check_member_limit(tenant) is not None
 
 
 @pytest.mark.asyncio
-async def test_the_deployment_ceiling_refuses_an_invite_as_no_seat(monkeypatch, plan_ws) -> None:
+async def test_the_deployment_ceiling_refuses_an_invite_as_no_seat(monkeypatch, plan_ws, plan_web_user) -> None:
     """A full pilot workspace answers `no_seat` and does not burn the invite."""
     from app.core.tenant_context import tenant_scope
     from app.models.managers.tenant_manager import TenantInviteManager, tenant_users
@@ -626,14 +652,14 @@ async def test_the_deployment_ceiling_refuses_an_invite_as_no_seat(monkeypatch, 
     monkeypatch.setattr(limits.settings, "MAX_WORKSPACE_MEMBERS", 1)
     async with plan_ws("business") as tenant:
         with tenant_scope(tenant.id):
-            owner = await _web_user()
+            owner = await plan_web_user()
             await tenant_users.add_web_member(tenant_id=tenant.id, user_id=owner.id, role="owner")
             invites = TenantInviteManager()
             # The issue path rechecks the acting member's authority, so the
             # owner types the invite exactly as the settings page does.
             with permission_scope(owner, is_owner=True):
                 invite, code = await invites.issue(tenant_id=tenant.id, role="member")
-            result = await invites.redeem_web(code=code, user_id=(await _web_user()).id)
+            result = await invites.redeem_web(code=code, user_id=(await plan_web_user()).id)
             assert result["status"] == "no_seat", result
             refreshed = await invites.get(id=invite.id)
             assert refreshed.used_count == 0, "an invite refused for the ceiling stays usable"

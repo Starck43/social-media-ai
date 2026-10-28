@@ -143,7 +143,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 {"value": True},
                 {"value": "2"},
                 {"value": 0},
-                {"value": 1, "secret": "PRIVATE"},
+                {"value": 1, "unexpected": "PRIVATE"},
                 {"value": float("nan")},
             ):
                 with self.subTest(args=args):

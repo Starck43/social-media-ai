@@ -10,7 +10,7 @@ import pytest
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.services import task_results
-from app.web import tasks
+from app.web import task_routes as tasks
 
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES = ROOT / "app/web/templates"

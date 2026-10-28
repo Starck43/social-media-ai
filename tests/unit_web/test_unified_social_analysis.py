@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.models import AgentScenario
-from app.web import tasks as tasks_web
+from app.web import task_routes as tasks_web
 from app.web.tasks import (
     _normalize_web_job_type,
     _payload_from_form,

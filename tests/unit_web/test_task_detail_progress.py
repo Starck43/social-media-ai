@@ -14,7 +14,8 @@ from app.models.managers.agent_task_manager import (
     _RetryAdmissionBusy,
     _RetryAdmissionTransaction,
 )
-from app.web import tasks
+from app.web import task_routes as tasks
+from app.web import task_presenters
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -194,12 +195,14 @@ def test_task_run_panel_hides_admin_diagnostics_for_regular_operator(monkeypatch
     request = SimpleNamespace()
     task = SimpleNamespace(name="Scoped task")
     job = SimpleNamespace(id=44, job_type="analyze", status="done", result={})
-    monkeypatch.setattr(tasks, "_job_summary", lambda *_args: {"status": "done", "stats": [{"value": 2}]})
-    monkeypatch.setattr(tasks, "_source_links", lambda _job: [{"source_id": 8, "name": "Source"}])
-    monkeypatch.setattr(tasks, "_raw_coverage", lambda _job: [{"source_id": 8, "percent": 50}])
-    monkeypatch.setattr(tasks, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
-    monkeypatch.setattr(tasks, "perms_can", lambda _request, resource, action: (resource, action) == ("source", "view"))
-    monkeypatch.setattr(tasks, "_diagnostics_admin", lambda _request: False)
+    monkeypatch.setattr(task_presenters, "_job_summary", lambda *_args: {"status": "done", "stats": [{"value": 2}]})
+    monkeypatch.setattr(task_presenters, "_source_links", lambda _job: [{"source_id": 8, "name": "Source"}])
+    monkeypatch.setattr(task_presenters, "_raw_coverage", lambda _job: [{"source_id": 8, "percent": 50}])
+    monkeypatch.setattr(task_presenters, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
+    monkeypatch.setattr(
+        task_presenters, "perms_can", lambda _request, resource, action: (resource, action) == ("source", "view")
+    )
+    monkeypatch.setattr(task_presenters, "_diagnostics_admin", lambda _request: False)
 
     panel = tasks._task_run_panel_data(request, task, job)
 
@@ -212,7 +215,7 @@ def test_task_run_panel_hides_admin_diagnostics_for_regular_operator(monkeypatch
 def test_task_run_panel_keeps_legacy_status_and_scope_when_task_has_no_job(monkeypatch):
     request = SimpleNamespace(state=SimpleNamespace(web_user=None))
     task = SimpleNamespace(name="Scoped task", last_status="queued", last_run_at=datetime.now(timezone.utc))
-    monkeypatch.setattr(tasks, "perms_can", lambda *_args: False)
+    monkeypatch.setattr(task_presenters, "perms_can", lambda *_args: False)
 
     panel = tasks._task_run_panel_data(request, task, None, run_scope={"total": 4, "active": 3, "platforms": 2})
 
@@ -228,13 +231,13 @@ def test_task_run_panel_includes_allowlisted_diagnostics_only_for_admin(monkeypa
     task = SimpleNamespace(name="Scoped task")
     job = SimpleNamespace(id=44, job_type="analyze", status="failed", result={})
     monkeypatch.setattr(
-        tasks, "_job_summary", lambda *_args: {"status": "failed", "error": "secret raw provider exception"}
+        task_presenters, "_job_summary", lambda *_args: {"status": "failed", "error": "secret raw provider exception"}
     )
-    monkeypatch.setattr(tasks, "_source_links", lambda _job: [])
-    monkeypatch.setattr(tasks, "_raw_coverage", lambda _job: [])
-    monkeypatch.setattr(tasks, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
-    monkeypatch.setattr(tasks, "perms_can", lambda *_args: False)
-    monkeypatch.setattr(tasks, "_diagnostics_admin", lambda _request: True)
+    monkeypatch.setattr(task_presenters, "_source_links", lambda _job: [])
+    monkeypatch.setattr(task_presenters, "_raw_coverage", lambda _job: [])
+    monkeypatch.setattr(task_presenters, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
+    monkeypatch.setattr(task_presenters, "perms_can", lambda *_args: False)
+    monkeypatch.setattr(task_presenters, "_diagnostics_admin", lambda _request: True)
 
     panel = tasks._task_run_panel_data(request, task, job)
 
@@ -458,7 +461,7 @@ async def test_task_run_scope_reads_windowed_backlog_only_with_source_view(monke
         ),
     ]
     monkeypatch.setattr(Source, "objects", SimpleNamespace(filter=lambda **_kwargs: _Query(sources)))
-    monkeypatch.setattr(tasks, "_task_source_ids", lambda _task_id: _async_value([8, 9]))
+    monkeypatch.setattr(task_presenters, "_task_source_ids", lambda _task_id: _async_value([8, 9]))
     captured = {}
 
     async def aggregate(windows):
@@ -516,7 +519,7 @@ async def test_task_llm_diagnostics_are_loaded_only_for_admin_and_exact_task_job
         return {"model": "model-a", "provider": "provider-a", "succeeded": 2, "failed": 1}
 
     monkeypatch.setattr(LLMAttemptManager, "task_run_summary", summary)
-    monkeypatch.setattr(tasks, "_diagnostics_admin", lambda _request: True)
+    monkeypatch.setattr(task_presenters, "_diagnostics_admin", lambda _request: True)
     request = SimpleNamespace()
     task = SimpleNamespace(id=21)
     job = SimpleNamespace(id=31)

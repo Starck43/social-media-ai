@@ -23,7 +23,7 @@ def _function(path: Path, name: str) -> ast.AsyncFunctionDef | ast.FunctionDef:
 
 @pytest.mark.asyncio
 async def test_web_queue_explicitly_disables_force_flags_for_legacy_task():
-    function = _function(ROOT / "app/web/tasks.py", "queue_task_now")
+    function = _function(ROOT / "app/web/task_use_cases.py", "queue_task_now")
     function.decorator_list = []
     function.body = [node for node in function.body if not isinstance(node, ast.ImportFrom)]
     enqueue = AsyncMock(return_value=NS(id=12, status="pending"))

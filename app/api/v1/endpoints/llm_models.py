@@ -1,10 +1,11 @@
 """
 API endpoints for LLM Model management.
 """
+
 import logging
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import require_model_perm
 from app.models import LLMModel
@@ -69,7 +70,7 @@ def _raw_price_updates(data: dict, unit: int, *, create: bool = False) -> dict:
 @router.post("/", response_model=LLMModelResponse, status_code=status.HTTP_201_CREATED)
 async def create_llm_model(
     request: LLMModelCreate,
-    _user = Depends(require_model_perm("llmmodel", ActionType.CREATE)),
+    _user=Depends(require_model_perm("llmmodel", ActionType.CREATE)),
 ):
     """Create a new LLM model (default-uniqueness enforced by the manager)."""
     try:
@@ -93,7 +94,9 @@ async def list_llm_models(
     is_active: bool = None,
     provider_id: int = None,
     model_type: str = None,
-    _user = Depends(require_model_perm("llmmodel", ActionType.VIEW)),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _user=Depends(require_model_perm("llmmodel", ActionType.VIEW)),
 ):
     """List all LLM models with optional filters."""
     try:
@@ -105,8 +108,10 @@ async def list_llm_models(
         if model_type is not None:
             filters["model_type"] = model_type
 
-        models = await LLMModel.objects.select_related("provider").filter(**filters).order_by("name")
-        return LLMModelList(models=[_model_response(m) for m in models], total=len(models))
+        query = LLMModel.objects.select_related("provider").filter(**filters).order_by("name", "id")
+        total = await query.count()
+        models = await query.limit(limit).offset(offset)
+        return LLMModelList(models=[_model_response(m) for m in models], total=total)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Personal catalog access denied")
     except ValueError:
@@ -119,7 +124,7 @@ async def list_llm_models(
 @router.get("/{model_id}", response_model=LLMModelResponse)
 async def get_llm_model(
     model_id: int,
-    _user = Depends(require_model_perm("llmmodel", ActionType.VIEW)),
+    _user=Depends(require_model_perm("llmmodel", ActionType.VIEW)),
 ):
     """Get a specific LLM model by ID."""
     try:
@@ -142,7 +147,7 @@ async def get_llm_model(
 async def update_llm_model(
     model_id: int,
     request: LLMModelUpdate,
-    _user = Depends(require_model_perm("llmmodel", ActionType.UPDATE)),
+    _user=Depends(require_model_perm("llmmodel", ActionType.UPDATE)),
 ):
     """Update an LLM model (default-uniqueness enforced by the manager)."""
     try:
@@ -177,7 +182,7 @@ async def update_llm_model(
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_llm_model(
     model_id: int,
-    _user = Depends(require_model_perm("llmmodel", ActionType.DELETE)),
+    _user=Depends(require_model_perm("llmmodel", ActionType.DELETE)),
 ):
     """Delete an LLM model with default reassignment."""
     try:

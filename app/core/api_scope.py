@@ -74,7 +74,11 @@ class ApiScopeMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
-        if scope["type"] != "http" or not path.startswith(API_PREFIX) or _is_public(path):
+        if (
+            scope["type"] != "http"
+            or (path != API_PREFIX and not path.startswith(f"{API_PREFIX}/"))
+            or _is_public(path)
+        ):
             await self.app(scope, receive, send)
             return
 
@@ -109,8 +113,14 @@ class ApiScopeMiddleware:
                 await self.app(scope, receive, send)
             return
 
-        operator_path = path.startswith("/api/v1/users/roles") or (
-            path.startswith("/api/v1/users") and path.rstrip("/") != "/api/v1/users/me"
+        normalized_path = path.rstrip("/")
+        users_root = "/api/v1/users"
+        roles_root = f"{users_root}/roles"
+        under_users = normalized_path == users_root or normalized_path.startswith(f"{users_root}/")
+        operator_path = (
+            normalized_path == roles_root
+            or normalized_path.startswith(f"{roles_root}/")
+            or (under_users and normalized_path != f"{users_root}/me")
         )
         if operator_path:
             if not user.has_admin_access():

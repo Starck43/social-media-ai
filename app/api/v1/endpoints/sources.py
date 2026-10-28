@@ -1,10 +1,10 @@
 """Source CRUD API endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import require_model_perm
-from app.models import Source, Platform
-from app.schemas.source import SourceCreate, SourceUpdate, SourceResponse
+from app.models import Platform, Source
+from app.schemas.source import SourceCreate, SourceResponse, SourceUpdate
 from app.types import ActionType, SourceType
 
 router = APIRouter(tags=["sources"])
@@ -12,10 +12,12 @@ router = APIRouter(tags=["sources"])
 
 @router.get("", response_model=list[SourceResponse])
 async def list_sources(
-    _user = Depends(require_model_perm("source", ActionType.VIEW)),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _user=Depends(require_model_perm("source", ActionType.VIEW)),
 ):
     """List all sources in the current workspace."""
-    sources = await Source.objects.filter().order_by(Source.id)
+    sources = await Source.objects.filter().order_by(Source.id).limit(limit).offset(offset)
     return [
         SourceResponse(
             id=s.id,
@@ -37,7 +39,7 @@ async def list_sources(
 @router.get("/{source_id}", response_model=SourceResponse)
 async def get_source(
     source_id: int,
-    _user = Depends(require_model_perm("source", ActionType.VIEW)),
+    _user=Depends(require_model_perm("source", ActionType.VIEW)),
 ):
     """Get a specific source by ID."""
     source = await Source.objects.get(id=source_id)
@@ -62,7 +64,7 @@ async def get_source(
 @router.post("", response_model=SourceResponse, status_code=201)
 async def create_source(
     request: SourceCreate,
-    _user = Depends(require_model_perm("source", ActionType.CREATE)),
+    _user=Depends(require_model_perm("source", ActionType.CREATE)),
 ):
     """Create a new source in the current workspace."""
     # Verify platform exists
@@ -104,7 +106,7 @@ async def create_source(
 async def update_source(
     source_id: int,
     request: SourceUpdate,
-    _user = Depends(require_model_perm("source", ActionType.UPDATE)),
+    _user=Depends(require_model_perm("source", ActionType.UPDATE)),
 ):
     """Update a source — only provided fields are changed."""
     source = await Source.objects.get(id=source_id)
@@ -144,7 +146,7 @@ async def update_source(
 @router.delete("/{source_id}", status_code=204)
 async def delete_source(
     source_id: int,
-    _user = Depends(require_model_perm("source", ActionType.DELETE)),
+    _user=Depends(require_model_perm("source", ActionType.DELETE)),
 ):
     """Delete a source; refused while a linked task still depends on it."""
     from app.core.database import new_session
@@ -152,8 +154,8 @@ async def delete_source(
     from app.services.collection.source_deletion import (
         SourceDeleteBlocked,
         SourceDeleteScopeError,
-        delete_source as delete_workspace_source,
     )
+    from app.services.collection.source_deletion import delete_source as delete_workspace_source
 
     source = await Source.objects.get(id=source_id)
     if source is None:

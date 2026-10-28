@@ -986,7 +986,7 @@ class AgentTaskManager(BaseManager):
         the schedule backwards. Source-work conflicts return a busy receipt
         without recording a trigger or consuming the scheduled occurrence.
         """
-        from sqlalchemy import select
+        from sqlalchemy import func, select
         from sqlalchemy.orm import selectinload
 
         from app.core.config import settings
@@ -1064,6 +1064,54 @@ class AgentTaskManager(BaseManager):
                         "job": existing_job,
                         "once": True,
                     }
+                if launch_request_key is not None:
+                    # Typed HTTP launches use a stable receipt key. Enforce
+                    # actor and workspace concurrency in the same PostgreSQL
+                    # transaction that inserts the job, after receipt replay
+                    # handling and while the shared workspace gate is held.
+                    from app.models import Tenant
+                    from app.services.task_contracts import (
+                        MAX_ACTIVE_TASK_LAUNCHES_PER_ACTOR,
+                        MAX_ACTIVE_TASK_LAUNCHES_PER_WORKSPACE,
+                        TaskLaunchError,
+                    )
+
+                    from ..scheduling.job import Job as JobModel
+
+                    if initiated_by_user_id is None:
+                        raise ValueError("Keyed task admission requires an authenticated actor")
+                    active_actor = (
+                        await session.execute(
+                            select(func.count(JobModel.id)).where(
+                                JobModel.tenant_id == tenant_id,
+                                JobModel.initiated_by_user_id == initiated_by_user_id,
+                                JobModel.status.in_(("pending", "running")),
+                            )
+                        )
+                    ).scalar_one()
+                    active_workspace = (
+                        await session.execute(
+                            select(func.count(JobModel.id)).where(
+                                JobModel.tenant_id == tenant_id,
+                                JobModel.status.in_(("pending", "running")),
+                            )
+                        )
+                    ).scalar_one()
+                    workspace = (
+                        await session.execute(select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)))
+                    ).scalar_one_or_none()
+                    if workspace is None:
+                        raise PermissionError("Workspace is inactive")
+                    configured_limit = workspace.effective_limits().get("max_tasks")
+                    workspace_limit = (
+                        min(MAX_ACTIVE_TASK_LAUNCHES_PER_WORKSPACE, configured_limit)
+                        if type(configured_limit) is int
+                        else MAX_ACTIVE_TASK_LAUNCHES_PER_WORKSPACE
+                    )
+                    if active_actor >= MAX_ACTIVE_TASK_LAUNCHES_PER_ACTOR:
+                        raise TaskLaunchError("actor_task_limit")
+                    if active_workspace >= workspace_limit:
+                        raise TaskLaunchError("workspace_admission_limit")
                 if scheduled:
                     initiated_by_user_id = None
                 if not scheduled:

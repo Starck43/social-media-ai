@@ -2,6 +2,8 @@
 
 [Generated OpenAPI route index](generated/api-routes.md) covers schema-visible
 metadata only; the policies and examples below remain handwritten.
+P11-T08's [public route, compatibility, bounds and admission inventory](api-route-contract.md)
+records the mounted auth groups and known migration constraints.
 
 FastAPI application exposes REST endpoints under `/api/v1` and the sqladmin
 panel under `/admin`. Workspace data endpoints require an access Bearer JWT

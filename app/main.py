@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi_pagination import add_pagination
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import Response
+from starlette.responses import PlainTextResponse, Response
 from starlette.websockets import WebSocket
 
 from app.admin.csrf import CSRFTokenManager
@@ -20,6 +20,7 @@ from app.core.api_scope import ApiScopeMiddleware
 from app.core.config import settings
 from app.core.database import async_engine, init_db
 from app.core.health import router as health_router
+from app.core.request_context import RequestContextMiddleware
 from app.core.tenant_context import PlatformScopeMiddleware, tenant_scope
 from app.version import __version__
 from app.web import web_router
@@ -86,6 +87,18 @@ def create_application() -> FastAPI:
         lifespan=lifespan,
     )
 
+    async def _unhandled_error_with_request_id(request: Request, error: Exception) -> Response:
+        request_id = getattr(request.state, "request_id", None)
+        logger.error(
+            "unhandled_http_exception request_id=%s error_type=%s",
+            request_id or "unavailable",
+            type(error).__name__,
+        )
+        headers = {"X-Request-ID": request_id} if isinstance(request_id, str) else None
+        return PlainTextResponse("Internal Server Error", status_code=500, headers=headers)
+
+    application.add_exception_handler(Exception, _unhandled_error_with_request_id)
+
     # Include API routes with rate limiting
     application.include_router(entry.router, prefix="/api/v1")
     application.include_router(health_router)
@@ -105,6 +118,8 @@ def create_application() -> FastAPI:
     # Same trick for the machine API: /api/* is authenticated and scoped to a
     # workspace the caller is a member of (never bypass).
     application.add_middleware(ApiScopeMiddleware)
+    # Correlation wraps auth too, so denied requests receive the same safe ID.
+    application.add_middleware(RequestContextMiddleware)
 
     # Operator console only (static, health, docs): infrastructure runs as the
     # platform owner. `/admin/*` is excluded from the bypass — `AdminScopeMiddleware`

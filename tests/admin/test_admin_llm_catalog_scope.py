@@ -39,7 +39,6 @@ from sqladmin import ModelView
 from sqladmin.fields import SelectField
 from starlette.requests import Request
 
-from app.admin import views as console
 from app.admin.base import BaseAdmin
 from app.admin.views import LLMModelAdmin, LLMProviderAdmin
 from app.core.personal_catalog_context import _catalog_owner
@@ -235,12 +234,11 @@ def _columns():
             )
         return SimpleNamespace(**fields)
 
-    target = "app.admin.views.get_model_form"
-
     async def fake(**kwargs):
         return build(**kwargs)
 
-    module = console
+    from app.admin.view_modules import llm_catalog as module
+
     original = module.get_model_form
     module.get_model_form = fake
     try:

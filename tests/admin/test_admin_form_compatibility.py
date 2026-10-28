@@ -50,7 +50,7 @@ def tenant_case(base_source=None):
     base = admin_source(base_source)
     node = next(
         n
-        for n in ast.parse((ROOT / "app/admin/views.py").read_text()).body
+        for n in ast.parse((ROOT / "app/admin/view_modules/users.py").read_text()).body
         if isinstance(n, ast.ClassDef) and n.name == "TenantAdmin"
     )
     ns = {

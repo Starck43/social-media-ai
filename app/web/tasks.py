@@ -1420,8 +1420,8 @@ async def task_detail(request: Request, task_id: int):
 
     from app.core.tenant_context import tenant_scope
     from app.models.analysis.agent_scenario import AgentScenario
-    from app.models.scheduling.agent_task import AgentTask
     from app.models.collection.source import Source
+    from app.models.scheduling.agent_task import AgentTask
     from app.models.scheduling.job import Job
 
     user = getattr(request.state, "web_user", None)

@@ -531,8 +531,8 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     can_view_tasks = perms is not None and perms.can("agenttask", "view")
     if not create and scenario_id is not None and can_view_tasks:
         from app.core.tenant_context import tenant_scope
-        from app.models.scheduling.job import Job
         from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.models.scheduling.job import Job
 
         manager = AgentTaskManager()
         with tenant_scope(request.state.tenant_id):

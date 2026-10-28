@@ -12,9 +12,9 @@ from ...core.decorators import app_label
 from ..base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from ..identity.role import Role
     from ..managers.base_manager import BaseManager
     from ..managers.tenant_manager import TenantUserManager
-    from ..identity.role import Role
 
 
 @app_label("tenancy")

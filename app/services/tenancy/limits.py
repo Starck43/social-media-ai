@@ -217,9 +217,9 @@ async def plan_overage(tenant_id: int, plan: str) -> list[str]:
     """
     from app.core.tenant_context import tenant_scope
     from app.models.analysis.agent_scenario import AgentScenario
-    from app.models.scheduling.agent_task import AgentTask
     from app.models.collection.source import Source
     from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager, tenants
+    from app.models.scheduling.agent_task import AgentTask
 
     tenant = await tenants.get(id=tenant_id)
     if tenant is None:

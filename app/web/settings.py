@@ -272,8 +272,8 @@ async def settings_page(request: Request):
             # Explicit member read contract: no budget/prompt/channel/plan configuration.
             context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
     elif tab == "team" and manage:
-        from app.models.managers.tenant_manager import TenantUserManager
         from app.models.identity.user import User
+        from app.models.managers.tenant_manager import TenantUserManager
 
         memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
         member_ids = [m.user_id for m in memberships if m.user_id is not None]
@@ -376,9 +376,9 @@ async def platform_save(
 async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:
     """Manager-only quota projections; resource counts additionally require VIEW."""
     from app.models.analysis.agent_scenario import AgentScenario
-    from app.models.scheduling.agent_task import AgentTask
     from app.models.collection.source import Source
     from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager
+    from app.models.scheduling.agent_task import AgentTask
 
     counts = {}
     for key, model, model_name in (

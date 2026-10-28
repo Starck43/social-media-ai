@@ -26,10 +26,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, func, or_
-
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import and_, func, or_
 
 from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX, outcome_unconfirmed
 from app.models.scheduling.job import Job
@@ -337,8 +336,8 @@ async def jobs_list(request: Request):
     stats, signals = await JobManager().overview_for_web(tenant_id)
     retention_policy = None
     if can_manage_retention and tenant_id is not None:
-        from app.models.scheduling.agent_task import AgentTask
         from app.jobs.lifecycle import retention_policy as parse_retention_policy
+        from app.models.scheduling.agent_task import AgentTask
 
         with tenant_scope(tenant_id):
             prune_tasks = await AgentTask.objects.filter(job_type="prune", is_active=True).order_by(

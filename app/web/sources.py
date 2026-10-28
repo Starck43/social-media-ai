@@ -72,8 +72,8 @@ def _clean_params(base: dict | None = None) -> dict:
 
 async def _workspace_members(tenant_id: int) -> list:
     """Web members of a workspace — the only valid `token_owner` choices."""
-    from app.models.managers.tenant_manager import tenant_users
     from app.models.identity.user import User
+    from app.models.managers.tenant_manager import tenant_users
 
     memberships = await tenant_users.web_memberships_for_tenant(tenant_id)
     if not memberships:

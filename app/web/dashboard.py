@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 
-from app.models.scheduling.agent_task import AgentTask
 from app.models.analysis.ai_analytics import AIAnalytics
 from app.models.collection.source import Source
+from app.models.scheduling.agent_task import AgentTask
 
 from .deps import render, tenant_filter_context
 

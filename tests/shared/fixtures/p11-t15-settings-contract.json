@@ -36,13 +36,13 @@
     "required": false
   },
   "AGENT_MODEL": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
   },
   "AGENT_SYSTEM_PROMPT": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
@@ -87,7 +87,7 @@
     "required": false
   },
   "CREDENTIALS_KEY": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
@@ -213,7 +213,7 @@
     "required": false
   },
   "MAX_BOT_TOKEN": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
@@ -303,7 +303,7 @@
     "required": false
   },
   "RUNTIME_STATE_DIR": {
-    "annotation": "typing.Optional[pathlib.Path]",
+    "annotation": "pathlib.Path | None",
     "default": null,
     "factory": false,
     "required": false
@@ -411,7 +411,7 @@
     "required": false
   },
   "TELEGRAM_ADMIN_CHAT_ID": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
@@ -423,19 +423,19 @@
     "required": false
   },
   "TELEGRAM_API_HASH": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
   },
   "TELEGRAM_API_ID": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
   },
   "TELEGRAM_BOT_TOKEN": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
@@ -459,7 +459,7 @@
     "required": false
   },
   "TELEGRAM_SESSION": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
@@ -483,13 +483,13 @@
     "required": false
   },
   "VK_APP_ID": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
   },
   "VK_CLIENT_ACCESS_KEY": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
@@ -513,19 +513,19 @@
     "required": false
   },
   "VK_SERVICE_GRANTED_SCOPES": {
-    "annotation": "typing.Optional[list[str]]",
+    "annotation": "list[str] | None",
     "default": null,
     "factory": false,
     "required": false
   },
   "VK_SERVICE_KEY": {
-    "annotation": "typing.Optional[str]",
+    "annotation": "str | None",
     "default": null,
     "factory": false,
     "required": false
   },
   "VK_SERVICE_METHOD_GRANTS": {
-    "annotation": "typing.Optional[list[str]]",
+    "annotation": "list[str] | None",
     "default": null,
     "factory": false,
     "required": false

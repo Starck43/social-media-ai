@@ -90,7 +90,11 @@ Expensive or externally observable operations include monitoring collection,
 task creation/run/plan execution, digest send, credential diagnostics and
 interactive credential login, OAuth start, and LLM provider/model testing or
 calls. The P11-T08 implementation adds a per-actor active-launch cap of 3 to
-typed one-off task-plan execution. It checks a same-key receipt before applying
+typed one-off task-plan execution, plus a workspace cap of 20 active jobs or
+the workspace task ceiling, whichever is smaller. Counts include every pending
+or running workspace job; only keyed typed launches enforce these new caps.
+Legacy direct runs and scheduled admission retain their existing policies.
+It checks a same-key receipt before applying
 the cap and serializes the count/admission inside the existing workspace
 PostgreSQL admission lock. A cap rejection is HTTP 429 with `Retry-After: 30`.
 This is a database-backed active-work budget, not a general request-rate limit;
@@ -106,7 +110,33 @@ Task plan launch has a request key/receipt contract; the admission lock checks
 same-key replay before the active-work budget, and different-payload reuse
 remains a conflict. Do not assume the separate legacy one-off `POST /tasks/run`
 or other side-effecting routes have the same typed validation or replay
-guarantees. Do not infer success when an external effect is uncertain.
+guarantees. The durable key is bound atomically to actor, workspace and the
+canonical plan/job type; different-payload reuse retains HTTP 400
+`request_id_conflict` compatibility, and source contention retains HTTP 409.
+Concurrent same-key requests converge on one task/job receipt. There is no TTL:
+the receipt lasts for the task lifetime and survives job pruning. A pending or
+running receipt is replayed as such; it is not a completion claim. Missing/pruned
+jobs remain unavailable, and unknown-effect errors remain unconfirmed for
+operator reconciliation rather than triggering a new external execution.
+No generalized idempotency layer is introduced.
+
+Before a future broad idempotency extension, define an atomic unique
+actor/workspace/key plus payload hash reservation, explicit retention/expiry,
+409 payload conflict, 202 in-flight replay, and an unknown-effect state that
+requires reconciliation before retry. Correlation never creates this reservation.
+
+OpenAPI compatibility snapshots should cover normalized mounted paths, methods,
+operation IDs, parameter defaults/bounds, response schemas and error statuses.
+The generated route index remains navigation; focused executable P11-T08
+OpenAPI assertions pin the changed list bounds and legacy route decisions.
+A future serialized snapshot must be deterministic and reviewed before any v1
+removal or schema replacement; the additive error-envelope design above is a
+proposal, not a shipped replacement.
+
+JWT checks reload active accounts and current workspace memberships on every
+request, rejecting expired/wrong-type tokens and removed/inactive identities.
+Account/membership revocation is enforced; per-token logout revocation is not
+a newly supplied token blacklist.
 
 The API path boundary now matches `/api` itself or `/api/…`, rather than any
 path that merely starts with those three characters. Operator user-route

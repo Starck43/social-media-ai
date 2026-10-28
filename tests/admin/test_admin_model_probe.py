@@ -377,7 +377,7 @@ def test_actual_template_renders_partial_states_and_escapes(result):
 
 
 def test_model_view_display_and_telemetry_are_not_editable():
-    source = ast.parse((ROOT / "app/admin/views.py").read_text())
+    source = ast.parse((ROOT / "app/admin/view_modules/llm_catalog.py").read_text())
     view = next(c for c in source.body if isinstance(c, ast.ClassDef) and c.name == "LLMModelAdmin")
     form = next(
         ast.literal_eval(n.value)
@@ -459,7 +459,7 @@ async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_witho
 
     node = next(
         n
-        for n in ast.parse((ROOT / "app/admin/views.py").read_text()).body
+        for n in ast.parse((ROOT / "app/admin/view_modules/llm_catalog.py").read_text()).body
         if isinstance(n, ast.ClassDef) and n.name == "LLMModelAdmin"
     )
     ns = dict(

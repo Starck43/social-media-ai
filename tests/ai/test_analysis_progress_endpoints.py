@@ -8,7 +8,8 @@ import pytest
 from starlette.requests import Request
 
 from app.models.managers.job_manager import JobManager
-from app.web import sources, tasks
+from app.web import job_routes as tasks
+from app.web import sources
 
 SECRET = "PRIVATE-PROVIDER-DETAIL"
 

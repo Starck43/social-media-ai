@@ -26,11 +26,23 @@ import pytest
 from sqlalchemy import delete, text, update
 
 from app.core.database import new_session
-from app.core.permissions import service_permission_scope
+from app.core.permissions import permission_scope, service_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
-from app.models import ActionAuditEvent, AgentTask, Job, Platform, Source, Tenant
+from app.models import (
+    ActionAuditEvent,
+    AgentTask,
+    Job,
+    Platform,
+    PlatformRole,
+    Source,
+    Tenant,
+    TenantUser,
+    User,
+    WorkspaceRole,
+)
 from app.models.managers.agent_task_manager import AgentTaskManager
+from app.models.managers.base_manager import BaseManager
 from app.models.managers.job_manager import JobManager
 from app.types import AgentActionType, BotTriggerType, SourceType
 
@@ -211,6 +223,41 @@ async def workspace():
                 await session.execute(text("SELECT set_config('app.action_audit_retention', 'on', true)"))
                 await session.execute(delete(ActionAuditEvent).where(ActionAuditEvent.tenant_id == tenant.id))
         await Tenant.objects.delete_by_id(tenant.id)
+
+
+@pytest.fixture
+async def replay_actor(workspace):
+    """A real fixture-owned member for the authenticated keyed-admission boundary."""
+    platform_role = await PlatformRole.objects.filter(codename="user").first()
+    owner_role = await WorkspaceRole.objects.filter(codename="owner").first()
+    assert platform_role is not None and owner_role is not None
+    suffix = uuid4().hex
+    user = await User.objects.create_user(
+        username=f"occurrence-{suffix}",
+        email=f"occurrence-{suffix}@example.invalid",
+        password=uuid4().hex,
+        role_id=platform_role.id,
+        is_active=True,
+    )
+    try:
+        with tenant_scope(workspace.id):
+            await BaseManager(TenantUser).create(
+                channel="web",
+                external_user_id=str(user.id),
+                user_id=user.id,
+                role_id=owner_role.id,
+                is_active=True,
+            )
+        yield user
+    finally:
+        # Jobs restrict deletion of their initiator; remove only this fixture's
+        # task/billing bindings and jobs before its principal. The workspace
+        # fixture then clears its audit evidence and the workspace itself.
+        with tenant_scope(workspace.id), service_permission_scope("agenttask", "delete"):
+            for task in await AgentTask.objects.all():
+                await AgentTask.objects.delete_by_id(task.id)
+            await Job.objects.delete()
+        await User.objects.delete_by_id(user.id)
 
 
 async def test_editing_an_active_recurring_task_drops_only_its_stale_pending_job(workspace):
@@ -549,7 +596,7 @@ async def test_task_admission_and_audit_event_commit_or_rollback_together(worksp
     assert {event.event_id for event in remaining} == {matching[0].event_id}
 
 
-async def test_replayed_launch_receipt_does_not_duplicate_the_audit_event(workspace):
+async def test_replayed_launch_receipt_does_not_duplicate_the_audit_event(workspace, replay_actor):
     """A replay returns the stored job before the success write, so evidence stays single."""
     tenant = workspace
     key = f"p11t12-replay-{uuid4().hex[:12]}"
@@ -561,7 +608,7 @@ async def test_replayed_launch_receipt_does_not_duplicate_the_audit_event(worksp
             async with session.begin():
                 await session.execute(update(AgentTask).where(AgentTask.id == task.id).values(launch_key=key))
 
-    with tenant_scope(tenant.id):
+    with tenant_scope(tenant.id), permission_scope(replay_actor, is_owner=True):
         first = await AgentTaskManager()._admit_task_run(task.id, now=utc_now(), launch_request_key=key)
         replay = await AgentTaskManager()._admit_task_run(task.id, now=utc_now(), launch_request_key=key)
     assert first["status"] == "enqueued"
@@ -575,6 +622,8 @@ async def test_replayed_launch_receipt_does_not_duplicate_the_audit_event(worksp
         )
     matching = [event for event in events if event.resource_id == str(task.id)]
     assert len(matching) == 1 and matching[0].job_id == first["job"].id
+    assert matching[0].actor_kind == "user" and matching[0].actor_id == str(replay_actor.id)
+    assert first["job"].initiated_by_user_id == replay_actor.id
 
 
 async def test_saving_an_inactive_task_as_inactive_keeps_its_pending_occurrence(workspace):

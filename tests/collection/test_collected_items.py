@@ -92,6 +92,45 @@ def _collector(items, analyzer=None):
     return c
 
 
+def _allow_test_analysis_entitlements(monkeypatch):
+    """These staging tests exercise retirement, not job capability admission."""
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        "app.models.managers.entitlement_manager.EntitlementManager.admit_execution",
+        AsyncMock(return_value=None),
+    )
+
+
+async def test_for_source_filters_exact_hashes_before_applying_limit(source):
+    """A selected older hash is found even when an unrelated newer row fills the limit."""
+    await _collector(
+        [
+            {
+                "platform": "vk",
+                "external_id": "older-target",
+                "text": "selected old row",
+                "published_at": "2020-01-01T10:00:00Z",
+            },
+            {
+                "platform": "vk",
+                "external_id": "newer-other",
+                "text": "unrelated new row",
+                "published_at": "2026-10-01T10:00:00Z",
+            },
+        ]
+    ).collect_from_source(source, analyze=False, run_id=uuid.uuid4().int & 0x7FFFFFFF)
+
+    staged = await CollectedItem.objects.filter(source_id=source.id)
+    hashes = {row.external_id: row.content_hash for row in staged}
+    assert (await CollectedItem.objects.for_source(source.id, limit=1))[0].external_id == "newer-other"
+    selected = await CollectedItem.objects.for_source(source.id, content_hashes=[hashes["older-target"]], limit=1)
+    assert [row.external_id for row in selected] == ["older-target"]
+    assert await CollectedItem.objects.count_for_source(source.id, content_hashes=[hashes["older-target"]]) == 1
+    assert await CollectedItem.objects.for_source(source.id, content_hashes=[], limit=1) == []
+    assert await CollectedItem.objects.count_for_source(source.id, content_hashes=[]) == 0
+
+
 class _Row:
     """A stand-in for a saved AIAnalytics row.
 
@@ -464,9 +503,7 @@ async def test_engagement_candidates_are_stored_outside_the_text_batch(source):
     # Only the post is raw content; a candidate is not text.
     rows = await CollectedItem.objects.filter(source_id=source.id)
     assert [row.external_id for row in rows] == ["3_2"]
-    candidates = {
-        row.external_id: row for row in await CollectionCandidate.objects.filter(source_id=source.id)
-    }
+    candidates = {row.external_id: row for row in await CollectionCandidate.objects.filter(source_id=source.id)}
     assert set(candidates) == {"5", "6"}
     assert {row.kind for row in candidates.values()} == {"person"}
     assert {row.status for row in candidates.values()} == {"new"}
@@ -654,6 +691,7 @@ async def test_staged_items_count_as_seen_even_before_analysis(source):
     # Same content, different delivery: nothing new, yet nothing analysed either.
     assert await count_new_items(items, source.id) == 0
 
+
 async def _task_with_scenario(job_type="analyze"):
     """A task owning an active scenario, so handle_analyze gets past its gates."""
     from app.models import AgentScenario, AgentTask
@@ -679,6 +717,8 @@ async def test_analyze_retires_staged_rows_after_a_saved_analysis(source, monkey
     """Content the analysis has actually consumed is no longer kept around."""
     from app.jobs import handlers
     from app.services.ai import analyzer as analyzer_mod
+
+    _allow_test_analysis_entitlements(monkeypatch)
 
     c = _collector(_items(2))
     await c.collect_from_source(source, analyze=False, run_id=555)
@@ -714,6 +754,8 @@ async def test_failed_analysis_keeps_staged_rows(source, monkeypatch):
     from app.jobs import handlers
     from app.services.ai import analyzer as analyzer_mod
 
+    _allow_test_analysis_entitlements(monkeypatch)
+
     c = _collector(_items(3))
     await c.collect_from_source(source, analyze=False, run_id=666)
 
@@ -742,6 +784,8 @@ async def test_receipt_only_staged_skip_does_not_replay_old_analytics_actions(so
     from app.services.ai import analyzer as analyzer_mod
     from app.services.ai.dedup import item_hash
     from app.types import AgentActionType
+
+    _allow_test_analysis_entitlements(monkeypatch)
 
     items = _items(1)
     await _collector(items).collect_from_source(source, analyze=False, run_id=667)
@@ -849,6 +893,8 @@ async def test_analyze_window_filters_staged_items_by_published_at(source, monke
     from app.jobs import handlers
     from app.services.ai import analyzer as analyzer_mod
 
+    _allow_test_analysis_entitlements(monkeypatch)
+
     # Two batches: one inside the window, one outside.
     inside = [
         {"platform": "vk", "external_id": f"in_{i}", "text": f"внутри {i}", "published_at": "2026-06-15T10:00:00Z"}
@@ -894,6 +940,8 @@ async def test_analyze_without_window_drains_all_staged(source, monkeypatch):
     """No window configured → the old behaviour: drain everything staged."""
     from app.jobs import handlers
     from app.services.ai import analyzer as analyzer_mod
+
+    _allow_test_analysis_entitlements(monkeypatch)
 
     c = _collector(_items(3))
     await c.collect_from_source(source, analyze=False, run_id=222)

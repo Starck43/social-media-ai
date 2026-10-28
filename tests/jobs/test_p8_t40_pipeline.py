@@ -93,6 +93,8 @@ async def test_composed_pipeline_uses_admitted_scope_and_finishes_each_stage(mon
         id=7,
         tenant_id=3,
         payload={"task_plan": {"source_scope": "all", "scenario_id": 999}, "source_ids": [88]},
+        cron_expr="0 0 * * *",
+        launch_job_id=None,
         sources=[SimpleNamespace(id=88)],
         action_type="CHANGED",
         rate_limit_per_hour=99,
@@ -290,7 +292,15 @@ async def test_previous_started_stage_requires_review_without_repeating_work(mon
 async def test_payer_revocation_at_digest_boundary_prevents_report_generation(monkeypatch, task_snapshot):
     from app.jobs import handlers, progress
 
-    task = SimpleNamespace(id=7, tenant_id=3, payload={}, sources=[], is_active=True)
+    task = SimpleNamespace(
+        id=7,
+        tenant_id=3,
+        payload={},
+        sources=[],
+        cron_expr="0 0 * * *",
+        launch_job_id=None,
+        is_active=True,
+    )
     source = SimpleNamespace(id=11)
     generated = AsyncMock()
     monkeypatch.setattr(handlers, "_load_task", AsyncMock(return_value=task))

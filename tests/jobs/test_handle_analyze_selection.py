@@ -1,7 +1,7 @@
 """Отбор записей на уровне задачи перед платным анализом.
 
 Owner command:
-`.venv/bin/python -m pytest tests/test_handle_analyze_selection.py -q --noconftest -o addopts=`
+`python -m pytest tests/jobs/test_handle_analyze_selection.py -q` (keep the root conftest and its test-schema guard).
 
 Дизайн: `docs/COLLECTION.md#task-selection-contract`. Задача владеет отбором: слои
 применяются по порядку (источник → автор → текстовый скоуп), а сценарий
@@ -119,6 +119,10 @@ def analyze_env(monkeypatch):
         )
     )
     monkeypatch.setattr("app.models.CollectedItem", collected)
+    monkeypatch.setattr(
+        "app.models.managers.entitlement_manager.EntitlementManager.admit_execution",
+        AsyncMock(return_value=None),
+    )
     monkeypatch.setattr("app.services.ai.analyzer.AIAnalyzer", lambda: analyzer)
 
     trigger = SimpleNamespace(

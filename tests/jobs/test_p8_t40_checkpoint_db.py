@@ -8,6 +8,7 @@ is exercised here.
 from __future__ import annotations
 
 import sys
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -82,8 +83,10 @@ class Workspace:
             )
         return cls(tenant, user)
 
+    @contextmanager
     def actor_scope(self):
-        return permission_scope(self.user, is_owner=True)
+        with tenant_scope(self.tenant.id), permission_scope(self.user, is_owner=True):
+            yield
 
     async def cleanup(self):
         with tenant_scope(bypass=True):
@@ -178,7 +181,16 @@ async def test_checkpoint_survives_progress_retry_and_rejects_old_claim(workspac
         final = await manager.get(id=job.id)
     operation.assert_not_awaited()
     assert final.result["pipeline"]["stages"]["analyze"]["state"] == "review_required"
-    assert progress_module.read_snapshot(final.result, final.attempts) is not None
+    assert progress_module.read_snapshot(final.result, final.attempts) is None
+    with tenant_scope(workspace.tenant.id):
+        token = progress.bind(progress.ProgressSession(new_claim))
+        try:
+            await progress.step([SimpleNamespace(id=11, name="source")], [])
+        finally:
+            progress.unbind(token)
+        current = await manager.get(id=job.id)
+    assert current.result["pipeline"] == final.result["pipeline"]
+    assert progress_module.read_snapshot(current.result, current.attempts) is not None
 
 
 async def test_claimed_once_task_survives_admission_deactivation_but_rechecks_payer(workspace, monkeypatch):
@@ -205,7 +217,7 @@ async def test_claimed_once_task_survives_admission_deactivation_but_rechecks_pa
         id=task.id,
         tenant_id=workspace.tenant.id,
         cron_expr="@once",
-        launch_job_id=job.id,
+        launch_job_id=None,
     )
     payload = {
         "job_id": job.id,

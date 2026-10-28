@@ -118,6 +118,7 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                 Job=job,
                 CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=self.sweep)),
                 AIAnalytics=SimpleNamespace(objects=SimpleNamespace(delete_expired=self.expire)),
+                ActionAuditEvent=SimpleNamespace(objects=SimpleNamespace(delete_expired=AsyncMock(return_value=0))),
             ),
         }
         patcher = patch.dict(sys.modules, modules)

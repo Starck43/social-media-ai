@@ -1,10 +1,11 @@
-"""Actual per-job digest implementation and facade routing, no sends or DB."""
+"""Actual digest/prune implementations and facade routing, no sends or DB."""
 
 import ast
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from tests.source_import_isolation import load_isolated_source
 
@@ -75,6 +76,79 @@ class HandlerSeamTests(unittest.IsolatedAsyncioTestCase):
                 "learn": "handle_learn",
                 "reflect": "handle_reflect",
             },
+        )
+
+
+class PruneSeamTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.audit = AsyncMock(return_value=2)
+        self.staged = AsyncMock(return_value=1)
+        self.analytics = AsyncMock(return_value=3)
+        self.cleanup_jobs = AsyncMock(return_value=5)
+        self.logger = MagicMock()
+        self.session = MagicMock()
+        self.session.close = AsyncMock()
+        self.cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.module = load_isolated_source(
+            "_p11_prune",
+            ROOT / "app/jobs/job_handlers/prune.py",
+            {
+                "app.core.config": NS(settings=NS(DATA_RETENTION_MONTHS=1)),
+                "app.core.database": NS(new_session=lambda: self.session),
+                "app.core.tenant_context": NS(current_tenant_id=lambda: 7),
+                "app.models": NS(
+                    ActionAuditEvent=NS(objects=NS(delete_expired=self.audit)),
+                    CollectedItem=NS(objects=NS(delete_older_than=self.staged)),
+                    AIAnalytics=NS(objects=NS(delete_expired=self.analytics)),
+                ),
+                "app.utils.retention": NS(months_before=lambda *_: self.cutoff),
+                "app.jobs.lifecycle": NS(
+                    retention_policy=lambda _: (24, 72), cleanup_terminal_job_history=self.cleanup_jobs
+                ),
+            },
+        )
+
+    async def prune(self, payload):
+        return await self.module.handle_prune(
+            payload, logger=self.logger, log_id=lambda value: value, error_kind=lambda _: "runtime_error"
+        )
+
+    async def test_default_retention_keeps_audit_and_content_results(self):
+        result = await self.prune({"job_id": 23})
+        self.assertEqual(result["action_audit_deleted"], 2)
+        self.assertEqual(result["analytics_deleted"], 3)
+        self.assertEqual(result["staged_deleted"], 1)
+        self.audit.assert_awaited_once()
+        self.assertIsNotNone(self.audit.await_args.kwargs["now"].utcoffset())
+        self.analytics.assert_awaited_once_with(self.cutoff)
+        self.session.close.assert_awaited_once()
+        self.logger.warning.assert_not_called()
+
+    async def test_job_history_mode_keeps_audit_counts_and_policy(self):
+        result = await self.prune({"mode": "job_history"})
+        self.assertEqual(
+            result,
+            {
+                "status": "policy_saved",
+                "success_hours": 24,
+                "failure_hours": 72,
+                "deleted": 5,
+                "action_audit_deleted": 2,
+                "action_audit_retention_failed": False,
+            },
+        )
+        self.cleanup_jobs.assert_awaited_once_with(tenant_id=7)
+        self.staged.assert_not_awaited()
+
+    async def test_audit_failure_is_redacted_and_does_not_stop_content_retention(self):
+        self.audit.side_effect = RuntimeError("synthetic-private-provider-token")
+        result = await self.prune({"job_id": 23})
+        self.assertTrue(result["action_audit_retention_failed"])
+        self.assertEqual(result["action_audit_deleted"], 0)
+        self.assertEqual(result["staged_deleted"], 1)
+        self.assertEqual(result["analytics_deleted"], 3)
+        self.logger.warning.assert_called_once_with(
+            "action_audit_retention_failed tenant_id=%s job_id=%s error_code=%s", 7, 23, "runtime_error"
         )
 
 

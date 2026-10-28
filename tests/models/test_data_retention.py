@@ -168,6 +168,7 @@ class PruneWiringTests(unittest.IsolatedAsyncioTestCase):
                 Job=SimpleNamespace(objects=Query(), created_at=Field(), error=Field()),
                 CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=self.sweep)),
                 AIAnalytics=SimpleNamespace(objects=SimpleNamespace(delete_expired=self.expire)),
+                ActionAuditEvent=SimpleNamespace(objects=SimpleNamespace(delete_expired=AsyncMock(return_value=0))),
             ),
         }
         patcher = patch.dict(sys.modules, modules)

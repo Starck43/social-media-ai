@@ -7,12 +7,13 @@ DB-backed API scope and task-launch suites.
 
 __source_only__ = True
 
+from inspect import signature
 from types import SimpleNamespace
 
 import jwt
 import pytest
 from fastapi import FastAPI, Request
-from fastapi.routing import APIRoute
+from fastapi.params import Depends
 from httpx import ASGITransport, AsyncClient
 from starlette.responses import JSONResponse
 
@@ -317,15 +318,26 @@ async def test_invalid_list_bounds_return_422_without_running_list_queries(monke
     async def override_dependency():
         return fake_actor
 
-    def install_overrides(dependant) -> None:
-        if dependant.call is not None:
-            app.dependency_overrides[dependant.call] = override_dependency
-        for nested in dependant.dependencies:
-            install_overrides(nested)
+    list_endpoints = (
+        sources.list_sources,
+        tasks.list_tasks,
+        credentials.list_credentials,
+        scenarios.list_scenarios,
+        llm_models.list_llm_models,
+        llm_providers.list_llm_providers,
+        user_endpoints.get_users,
+        roles.list_roles,
+    )
+    for endpoint in list_endpoints:
+        for parameter in signature(endpoint).parameters.values():
+            dependency = parameter.default
+            if isinstance(dependency, Depends):
+                app.dependency_overrides[dependency.dependency] = override_dependency
 
-    for route in app.routes:
-        if isinstance(route, APIRoute):
-            install_overrides(route.dependant)
+    from app.services.user.auth import get_authenticated_user
+
+    app.dependency_overrides[get_authenticated_user] = override_dependency
+    assert app.dependency_overrides
 
     def unexpected_manager_query(*_args, **_kwargs):
         raise AssertionError("invalid pagination must fail before endpoint manager access")

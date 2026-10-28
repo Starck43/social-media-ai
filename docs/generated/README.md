@@ -15,7 +15,7 @@ No audit history is regenerated or reattributed.
 
 ## Reproduce
 
-Use a clean Python 3.12 environment with the pinned [core export](../../requirements.txt)
+Use a clean Python 3.14 environment with the pinned [core export](../../requirements.txt)
 installed. From the checkout root:
 
 ```sh

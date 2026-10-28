@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic import Field, SecretStr, field_validator
@@ -134,16 +134,16 @@ class Settings(BaseSettings):
     # External platform credentials (optional — integrations are enabled based on presence).
     # Application/infrastructure config, one-per-deployment: read from here. Personal
     # L2 secrets (VK user_token, Telegram MTProto parts) live in `user_credentials`.
-    VK_APP_ID: Optional[str] = None
-    VK_SERVICE_KEY: Optional[str] = Field(
+    VK_APP_ID: str | None = None
+    VK_SERVICE_KEY: str | None = Field(
         default=None, repr=False
     )  # VK console "Сервисный ключ доступа" — L1 service token
     # Explicit deployment-owned VK grant metadata. Empty means unknown/no grant;
     # never infer these from a token's presence or OAuth login scopes.
-    VK_SERVICE_METHOD_GRANTS: Optional[list[str]] = None
-    VK_SERVICE_GRANTED_SCOPES: Optional[list[str]] = None
+    VK_SERVICE_METHOD_GRANTS: list[str] | None = None
+    VK_SERVICE_GRANTED_SCOPES: list[str] | None = None
     VK_SERVICE_METHOD_SCOPES: dict[str, list[str]] = Field(default_factory=dict)
-    VK_CLIENT_ACCESS_KEY: Optional[str] = Field(
+    VK_CLIENT_ACCESS_KEY: str | None = Field(
         default=None, repr=False
     )  # VK console "Защищённый ключ" — OAuth client secret
     VK_API_BASE_URL: str = "https://api.vk.com/method"
@@ -152,15 +152,15 @@ class Settings(BaseSettings):
     VK_API_VERSION: str = "5.199"
     VK_REQUEST_TIMEOUT: float = 30.0
 
-    TELEGRAM_BOT_TOKEN: Optional[str] = Field(default=None, repr=False)
+    TELEGRAM_BOT_TOKEN: str | None = Field(default=None, repr=False)
     TELEGRAM_API_BASE_URL: str = "https://api.telegram.org"
     TELEGRAM_REQUEST_TIMEOUT: float = 30.0
     # Env fallback for the MTProto session (L2 Telegram). Prefer the personal vault
     # of the source's owner: python -m cli.main credentials login telegram --user <id>
-    TELEGRAM_API_ID: Optional[str] = None
-    TELEGRAM_API_HASH: Optional[str] = Field(default=None, repr=False)
-    TELEGRAM_SESSION: Optional[str] = Field(default=None, repr=False)
-    TELEGRAM_ADMIN_CHAT_ID: Optional[str] = None  # Fixed operator alerts only; no workspace/digest fallback
+    TELEGRAM_API_ID: str | None = None
+    TELEGRAM_API_HASH: str | None = Field(default=None, repr=False)
+    TELEGRAM_SESSION: str | None = Field(default=None, repr=False)
+    TELEGRAM_ADMIN_CHAT_ID: str | None = None  # Fixed operator alerts only; no workspace/digest fallback
 
     # Common social collection defaults
     SOCIAL_PAGE_SIZE: int = 50
@@ -182,7 +182,7 @@ class Settings(BaseSettings):
     TELEGRAM_DIGEST_CHANNEL_ID: str = ""  # Deprecated, ignored by digest delivery; use workspace channel bindings
 
     # MAX messenger (Bot API: https://dev.max.ru)
-    MAX_BOT_TOKEN: Optional[str] = Field(default=None, repr=False)
+    MAX_BOT_TOKEN: str | None = Field(default=None, repr=False)
     MAX_API_URL: str = "https://platform-api2.max.ru"
     MAX_OWNER_ID: str = ""  # MAX user id allowed to talk to the agent
     MAX_CHANNEL_ID: str = ""  # Deprecated, ignored by digest delivery; use workspace channel bindings
@@ -190,7 +190,7 @@ class Settings(BaseSettings):
     # --- Tenancy ---
     # Shared bot model: clients bind their chats via invite codes
     # (/start <code>); chats are resolved to tenants from the DB.
-    CREDENTIALS_KEY: Optional[str] = Field(default=None, repr=False)  # Fernet key for tenant secrets
+    CREDENTIALS_KEY: str | None = Field(default=None, repr=False)  # Fernet key for tenant secrets
     DEFAULT_TENANT_SLUG: str = "owner"  # slug of the bootstrap tenant
 
     # --- Task runner ---
@@ -198,11 +198,11 @@ class Settings(BaseSettings):
     SCHEDULER_POLL_SECONDS: int = 30
     # Opt-in same-host runtime presence. API/runtime must share this trusted
     # local POSIX directory; never use a distributed/network filesystem lease.
-    RUNTIME_STATE_DIR: Optional[Path] = None
+    RUNTIME_STATE_DIR: Path | None = None
 
     @field_validator("RUNTIME_STATE_DIR")
     @classmethod
-    def _absolute_runtime_state_dir(cls, value: Optional[Path]) -> Optional[Path]:
+    def _absolute_runtime_state_dir(cls, value: Path | None) -> Path | None:
         if value is not None:
             value = value.expanduser()
             if not value.is_absolute():
@@ -258,13 +258,13 @@ class Settings(BaseSettings):
     SCHEDULER_TIMEZONE: str = "Europe/Moscow"
 
     # --- Agent ---
-    AGENT_MODEL: Optional[str] = None  # explicit LLMModel name; auto-resolved when empty
+    AGENT_MODEL: str | None = None  # explicit LLMModel name; auto-resolved when empty
     AGENT_HISTORY_LIMIT: int = 20  # messages kept in agent context per session
     AGENT_MAX_ITERATIONS: int = 6  # max tool-call rounds per user message
     AGENT_DAILY_COST_LIMIT: float = 5.0  # USD cap across agent + digests per day
     AGENT_MAX_TOKENS: int = 2048  # reply size cap for chat (analysis uses LLM_DEFAULT_MAX_TOKENS)
     AGENT_TEMPERATURE: float = 0.3
-    AGENT_SYSTEM_PROMPT: Optional[str] = None  # system prompt for agent chat; falls back to built-in default
+    AGENT_SYSTEM_PROMPT: str | None = None  # system prompt for agent chat; falls back to built-in default
 
     # --- Background jobs ---
     JOB_MAX_ATTEMPTS: int = 3

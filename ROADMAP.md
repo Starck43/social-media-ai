@@ -61,6 +61,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P11-T17](docs/tasks/p11-t17.md) Localizable presentation boundaries — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C3`
 - [P11-T18](docs/tasks/p11-t18.md) Typed connector and job extension seams — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 - [P11-T23](docs/tasks/p11-t23.md) Split agent-task documentation by reader — **TODO** · unassigned · — · `P3` · `C2`
+- [P11-T25](docs/tasks/p11-t25.md) Realign the model-layout fixtures with the migrated schema — **TODO** · unassigned · — · `P3` · `C2`
 - [P11-T19](docs/tasks/p11-t19.md) Capacity telemetry and reproducible scale evidence — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 
 ## Deferred by explicit owner decision

@@ -10,8 +10,8 @@ uv compiler in `tools.txt`; commit the reviewed constraints and all exports.
 profile parity and every export against the locked union without a resolver or
 application import. `export --check` also resolves and compares exact closures.
 
-Baseline lock target is Python 3.12 on Linux; package metadata allows newer
-Python but this task does not certify additional interpreter/platform combinations.
+Baseline lock target is Python 3.14 on Linux; package metadata requires 3.14 or
+newer, but this task does not certify additional interpreter/platform combinations.
 Use a clean virtual environment and `pip install -r <export>`, then install the
 built wheel with `--no-deps` (or an editable checkout with `--no-deps`). Always
 run `pip check`. Installing the wheel normally uses the canonical pinned direct

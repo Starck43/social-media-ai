@@ -46,7 +46,7 @@ def pins(text):
         req = Requirement(line)
         specs = list(req.specifier)
         if len(specs) != 1 or specs[0].operator != "==" or req.url or req.marker:
-            raise ValueError(f"Expected a single Linux/Python 3.12 pin: {line}")
+            raise ValueError(f"Expected a single Linux/Python 3.14 pin: {line}")
         name = canonicalize_name(req.name)
         if name in result:
             raise ValueError(f"Duplicate lock pin: {name}")
@@ -99,7 +99,7 @@ def export(uv, check_only=False, refresh=False):
             "--python",
             sys.executable,
             "--python-version",
-            "3.12",
+            "3.14",
             "--python-platform",
             "x86_64-unknown-linux-gnu",
             "--no-header",

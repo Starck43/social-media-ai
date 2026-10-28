@@ -18,7 +18,7 @@ sketches; do not copy their service names/topology into an incident response.
 - VPS with Ubuntu 22.04+ (or Debian 12+)
 - 2 vCPU, 4 GB RAM minimum
 - PostgreSQL 15+ (or managed PostgreSQL)
-- Python 3.12+
+- Python 3.14+
 - Domain name (optional, for HTTPS)
 
 ---
@@ -46,7 +46,7 @@ social-media-ai/
 The snippet is not the checked-in Dockerfile and is not an incident command.
 
 ```dockerfile
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
@@ -139,10 +139,10 @@ curl http://localhost:8000/readyz
 ```bash
 # Python
 sudo apt update
-sudo apt install -y python3.12 python3.12-venv python3.12-dev libpq-dev
+sudo apt install -y python3.14 python3.14-venv python3.14-dev libpq-dev
 
 # Create virtualenv
-python3.12 -m venv /opt/smm-ai/venv
+python3.14 -m venv /opt/smm-ai/venv
 source /opt/smm-ai/venv/bin/activate
 
 # Install project
@@ -615,7 +615,7 @@ reviewed contract; no such action is included in this runbook.
 
 - [ ] VPS provisioned with Ubuntu 22.04+
 - [ ] PostgreSQL installed and secured
-- [ ] Python 3.12+ installed
+- [ ] Python 3.14+ installed
 - [ ] Project cloned and `requirements.txt` installed
 - [ ] `.env` configured with all required values
 - [ ] `SECRET_KEY` and `CREDENTIALS_KEY` generated

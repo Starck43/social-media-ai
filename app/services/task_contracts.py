@@ -11,6 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 TASK_REQUEST_ID_PATTERN = r"^[A-Za-z0-9_.:-]{8,128}$"
 _TASK_REQUEST_ID = re.compile(TASK_REQUEST_ID_PATTERN, re.ASCII)
 
+# Bounded one-off HTTP admissions. The workspace limit follows its task-plan
+# ceiling (up to 20); actor concurrency stays small regardless of tier.
+MAX_ACTIVE_TASK_LAUNCHES_PER_ACTOR = 3
+MAX_ACTIVE_TASK_LAUNCHES_PER_WORKSPACE = 20
+
 
 class TaskLaunchArguments(BaseModel):
     """Transport-neutral launch arguments; the legacy API adapts into this shape."""
@@ -63,6 +68,8 @@ TASK_LAUNCH_ERROR_MESSAGES = {
     "scenario_unavailable": (400, "Scenario is unavailable in this workspace"),
     "source_unavailable": (400, "Selected sources are inactive or outside the task's platform/workspace"),
     "workspace_task_limit": (400, "Workspace task limit reached; review your tasks or plan"),
+    "actor_task_limit": (429, "Too many active task launches for this workspace member; retry shortly."),
+    "workspace_admission_limit": (429, "This workspace has reached its active task limit; retry shortly."),
     "request_id_conflict": (400, "request_id was already used for different task conditions"),
     "source_busy": (409, "A source in this plan already has an active job."),
     "billing_unavailable": (409, "Task was saved inactive; configure personal billing before retrying this request."),

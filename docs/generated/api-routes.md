@@ -20,6 +20,8 @@ and execution permissions remain in the handwritten references and code.
 | DELETE | /api/v1/ai/scenarios/{scenario_id} | delete_scenario_api_v1_ai_scenarios__scenario_id__delete |
 | GET | /api/v1/ai/scenarios/{scenario_id} | get_scenario_api_v1_ai_scenarios__scenario_id__get |
 | PUT | /api/v1/ai/scenarios/{scenario_id} | update_scenario_api_v1_ai_scenarios__scenario_id__put |
+| GET | /api/v1/audit/events | list_action_audit_events_api_v1_audit_events_get |
+| GET | /api/v1/audit/events/export | export_action_audit_events_api_v1_audit_events_export_get |
 | POST | /api/v1/auth/change-password | change_own_password_api_v1_auth_change_password_post |
 | POST | /api/v1/auth/login | login_access_token_api_v1_auth_login_post |
 | POST | /api/v1/auth/refresh-token | refresh_access_token_api_v1_auth_refresh_token_post |

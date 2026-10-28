@@ -2,6 +2,8 @@
 
 [Generated OpenAPI route index](generated/api-routes.md) covers schema-visible
 metadata only; the policies and examples below remain handwritten.
+P11-T08's [public route, compatibility, bounds and admission inventory](api-route-contract.md)
+records the mounted auth groups and known migration constraints.
 
 FastAPI application exposes REST endpoints under `/api/v1` and the sqladmin
 panel under `/admin`. Workspace data endpoints require an access Bearer JWT
@@ -1666,6 +1668,24 @@ a flash message. No delete, sync, live API probe, personal credentials or global
 provider/model editing is exposed by this section.
 See [tenancy boundaries](TENANCY.md#web-settings-and-ownedgranted-workspace-context)
 and [deletion policy](MODEL_DELETION.md).
+
+### Action-audit support reads (P11-T12)
+
+Authenticated workspace owners and admins may use the read-only endpoints:
+
+- `GET /api/v1/audit/events` — requires `audit.action_audit` `VIEW`; returns at
+  most 100 events.
+- `GET /api/v1/audit/events/export` — requires `EXPORT`; returns at most 1,000
+  events.
+
+Both accept optional ISO timestamps `since` and `until` (default: the last 30
+days; maximum range: 90 days), `before_id` for descending pagination, and
+allowlisted `outcome` (`succeeded` or `unknown`) and `action` filters. Responses
+contain only the safe audit envelope; denied/rolled-back diagnostics are not
+exposed as durable rows. Every query is tenant-fenced. These endpoints do not
+mutate business state, authorize cross-workspace support, or return
+payment/delivery receipts. See the
+[action-audit contract](ACTION_AUDIT.md) for retention and security limits.
 
 ## Universal social task parity (P8-T29)
 

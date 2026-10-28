@@ -55,7 +55,7 @@ class VKTaskFormSelectionTests(unittest.TestCase):
             {"app.services.collection.intent": intent, "app.services.social.vk_access": access},
         )
         self.build = _actual_function(
-            "app/web/tasks.py",
+            "app/web/task_forms.py",
             "_task_plan_from_form",
             {"__name__": "isolated_task_form"},
             {"app.services.task_plans": task_plans},
@@ -115,7 +115,7 @@ class ConnectionCatalogRouteTests(unittest.IsolatedAsyncioTestCase):
             "app.services.social.vk_connections": connection_module,
         }
         self.web = _actual_function(
-            "app/web/tasks.py",
+            "app/web/task_routes.py",
             "web_vk_connections",
             {
                 "__name__": "isolated_web_route",
@@ -194,7 +194,7 @@ class ConnectionCatalogRouteTests(unittest.IsolatedAsyncioTestCase):
 
         read = AsyncMock()
         route = _actual_function(
-            "app/admin/views.py",
+            "app/admin/view_modules/operations.py",
             "vk_connections",
             {"__name__": "isolated_admin_catalog", "HTTPException": HTTPException},
             {

@@ -149,7 +149,7 @@ class IdentifierContractTests(unittest.TestCase):
 
     def test_existing_plural_delegation_retains_count_conversion(self):
         plural = function("app/web/deps.py", "plural")
-        delegated = function("app/web/tasks.py", "_plural", plural=plural)
+        delegated = function("app/web/task_presenters.py", "_plural", plural=plural)
         for count, expected in (
             (0, "many"),
             (1, "one"),

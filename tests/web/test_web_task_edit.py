@@ -320,7 +320,7 @@ async def test_tasks_page_add_modal_offers_targets_and_digest_params(client: Asy
         assert "task.job_type === 'digest'" in page.text
         # Trigger fields are server-rendered and visibility-gated, not absent
         # from the POST: a save without JavaScript keeps their values.
-        assert 'x-show="task.job_type === \'analyze\'"' in page.text
+        assert "x-show=\"task.job_type === 'analyze'\"" in page.text
         # Repeat-policy controls are absent from the add form.
         assert 'name="force_reanalyze"' not in page.text
         assert 'name="force_refresh"' not in page.text
@@ -578,7 +578,7 @@ async def test_the_task_row_rolls_back_when_only_the_link_write_fails(
     with no links, i.e. pointed at every active source.
     """
     from app.models.managers.agent_task_manager import AgentTaskManager
-    from app.web import tasks as tasks_web
+    from app.web import task_routes as tasks_web
 
     user, tenant_id = await _register(client, "EditRollback")
     scenario = task = source = surviving_source = None

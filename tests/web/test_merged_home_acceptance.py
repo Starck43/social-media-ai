@@ -91,6 +91,7 @@ from app.models.managers.tenant_manager import TenantUserManager, tenants  # noq
 from app.models.role import role_permission  # noqa: E402
 from app.types import ActionType, PlatformRoleType, SourceType, WorkspaceRoleType  # noqa: E402
 from app.web import dashboard  # noqa: E402
+from tests.p11_t12_audit_cleanup import purge_tenant_audit_events  # noqa: E402
 from tests.web.test_web_settings import PASSWORD, _client, _login, _name, _register  # noqa: E402
 
 pytestmark = pytest.mark.tenancy
@@ -266,6 +267,7 @@ async def home():
             for user in users:
                 await User.objects.delete_user(user.id)
             for tenant_id in tenant_ids:
+                await purge_tenant_audit_events(tenant_id)
                 await tenants.delete_by_id(tenant_id)
             if platform is not None:
                 await Platform.objects.delete_by_id(platform.id)

@@ -40,25 +40,51 @@ def _text(path):
     return path.read_text(encoding="utf-8")
 
 
+def _task_route_form_fields():
+    return _form_fields(WEB / "task_routes.py") | _form_fields(WEB / "task_create_routes.py")
+
+
 class TestTaskFormUsesSelection:
     def test_no_monitored_users_form_field(self):
-        fields = _form_fields(WEB / "tasks.py")
+        fields = _task_route_form_fields()
         assert "monitored_users" not in fields
         assert "tracked_users" in fields, f"форма задачи не принимает tracked_users: {sorted(fields)}"
 
     def test_keywords_and_match_mode_are_present(self):
-        fields = _form_fields(WEB / "tasks.py")
+        fields = _task_route_form_fields()
         assert {"keywords_list", "keywords_match"} <= fields, sorted(fields)
 
     def test_payload_is_written_through_the_selection_writer(self):
-        source = _text(WEB / "tasks.py")
+        source = _text(WEB / "task_forms.py")
         assert "build_selection_payload" in source, "форма собирает payload в обход единственного writer"
 
     def test_edit_context_exposes_tracked_users_not_monitored(self):
         """Страница редактирования показывает сохранённый отбор задачи."""
-        source = _text(WEB / "tasks.py")
+        source = _text(WEB / "task_routes.py") + _text(WEB / "task_create_routes.py")
         assert "monitored_users" not in source
-        assert '"tracked_users"' in source or "'tracked_users'" in source
+        edit_payload = next(
+            node
+            for node in _tree(WEB / "task_forms.py").body
+            if isinstance(node, ast.FunctionDef) and node.name == "_edit_payload"
+        )
+        keys = {
+            key.value
+            for node in ast.walk(edit_payload)
+            if isinstance(node, ast.Dict)
+            for key in node.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        }
+        assert "tracked_users" in keys
+        assert "monitored_users" not in keys
+        edit_page = next(
+            node
+            for node in _tree(WEB / "task_routes.py").body
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "task_edit_page"
+        )
+        assert any(
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_edit_payload"
+            for node in ast.walk(edit_page)
+        )
 
 
 class TestTaskTemplates:

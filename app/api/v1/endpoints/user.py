@@ -19,7 +19,7 @@ async def _require_user_admin(user: User, action: ActionType) -> User:
 @router.get("", response_model=list[UserInDB], summary="Получение списка пользователей")
 async def get_users(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, le=100, description="Maximum number of records to return"),
+    limit: int = Query(100, ge=1, le=100, description="Maximum number of records to return"),
     _current_user: User = Depends(require_model_perm("user", ActionType.VIEW)),
 ):
     """List platform accounts for operators with the user-view grant."""

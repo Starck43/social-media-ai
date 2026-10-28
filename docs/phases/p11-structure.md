@@ -15,11 +15,11 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 5. [P11-T05](../audit/p11-t05.md) — Explicit CREATE transaction ownership and recoverable post-commit steps — DONE 2026-10-27 (accepted `393b73bb15cddf57e23b0b8a15514aea8e1286e5`, integrated `bb8d4385cee477fab39d52ad73a68936400f0ab6`; PR #264).
 6. [P11-T06](../audit/p11-t06.md) — Typed launch contracts, safe errors and allowlisted receipts — DONE 2026-10-27 (accepted `d2c5c91936766715c71dbdebb559aaa814dae346`, integrated `1ce7dcb8d53faaa1b6b6a3bb7e4e086d60c8bfba`; PR #266).
 7. [P11-T07](../audit/p11-t07.md) — Incremental package-boundary enforcement (R-05) — DONE 2026-10-28 (accepted `f6fbbdaf`, integrated `5eb9c5f6`; PR #268).
-8. [P11-T08](../tasks/p11-t08.md) — Public API compatibility and bounded request policy (R-06).
+8. [P11-T08](../audit/p11-t08.md) — Bounded API lists, safe request correlation and atomic actor/workspace launch budgets — DONE 2026-10-29 (accepted `d1657d1691c4a71570162a1c795d5cafa44a5f49`; PR #278).
 9. [P11-T09](../audit/p11-t09.md) — Fail-closed typed agent-tool registration (R-07) — DONE 2026-10-28 (accepted `937a435083e99aa80546510f2cf275fc8101eca9`, integrated `7a89a2b0510ec1588535d80a7adeed0f15ea025f`; PR #273).
 10. [P11-T10](../audit/p11-t10.md) — Operator CLI boundaries and machine-output contract — DONE 2026-10-28 (accepted `e1dec81d`, integrated `1506d98d`; PR #267).
-11. [P11-T11](../tasks/p11-t11.md) — Web and admin use-case decomposition (R-09).
-12. [P11-T12](../audit/p11-t12.md) — Durable action-audit contract and support correlation (R-10) — DONE 2026-10-28 (accepted `b59877ea`, integrated `c8d019ae`; PR #269; contract slice only — persistence, hooks, support reads/export, retention and migration stay open).
+11. [P11-T11](../audit/p11-t11.md) — **DONE 2026-10-29**: web/admin decomposition accepted; loader/type-introspection corrections and application/HTTP/DB checks PASS. Accepted `3c793a24c5c9f4c2356663db1dc3f1c4480973fc`; merged `edfd34e321a54147b7d2969418738f0e5f712a8f` without deployment.
+12. [P11-T12](../audit/p11-t12.md) — Durable action-audit contract and support correlation (R-10) — DONE 2026-10-29 (contract accepted `b59877ea`, integrated `c8d019ae`, PR #269; persistence accepted and merged `6ab81b14` in `bc41326a`, PR #272 — see [implementation audit](../audit/p11-t12-impl.md); no deployment, retention policy applies from the workspace plan).
 13. [P11-T13](../tasks/p11-t13.md) — Manager and execution-module decomposition (R-11).
 14. [P11-T14](../audit/p11-t14.md) — Canonical model imports and semantic helper reuse (R-12) — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`,
     merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).

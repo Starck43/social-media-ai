@@ -9,8 +9,9 @@ from .base import Base, TenantScopedMixin, TimestampMixin
 from .actions import AgentAction
 from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 from .analysis.agent_scenario import AgentScenario
-from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
 from .analysis.ai_analytics import AIAnalytics
+from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
+from .audit import ActionAuditEvent
 from .billing import (
     PersonalBillingAccount,
     PersonalBillingCutover,
@@ -85,6 +86,7 @@ __all__ = [
     "AgentScenario",
     "BotAction",
     "AgentAction",
+    "ActionAuditEvent",
     # AI models
     "LLMProvider",
     "LLMModel",

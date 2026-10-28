@@ -512,10 +512,25 @@ See [notification contract](NOTIFICATIONS.md) for navigation and transport separ
 
 ## Tenant-scoped conversation, memory and action audit
 
-All tables here inherit tenant_id/timestamps.
+All tables here are tenant-scoped; timestamps are listed per model.
 
-The cross-surface action-audit contract is a **proposal**, not a shipped model or
-store: see [P11-T12](ACTION_AUDIT.md).
+The cross-surface action-audit store is
+[ActionAuditEvent](../app/models/audit/action_audit_event.py), with a dedicated
+append-only tenant manager. It keeps safe identifiers and outcomes only; it is
+not a payment/delivery receipt or a second billing ledger. See the
+[P11-T12 contract and limitations](ACTION_AUDIT.md).
+
+### `action_audit_events`
+
+Fields: `id`, unique opaque `event_id`, `tenant_id`, `occurred_at`, `actor_kind`,
+`actor_id`, allowlisted `action`, optional `resource_kind`/`resource_id`,
+`outcome`, optional safe `reason_code`, `request_id`, `job_id`, and
+`receipt_ref`. Only `succeeded` and `unknown` are stored; denied and
+rolled-back outcomes use the separate safe diagnostic logger. The table has
+tenant/time and tenant/outcome/time indexes. Ordinary updates, deletes and
+truncation are blocked by a database trigger; retention cleanup is the sole
+application delete path. See the contract for the limits of that guard and
+retention policy.
 
 ### `agent_sessions`
 

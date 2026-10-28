@@ -283,3 +283,51 @@ class TestHandlerKeepsTheSelectionWiring:
         assert "build_scope" in body, "отбор не читает задачу через build_scope"
         assert "select_items" in body, "отбор не применяется к строкам collected_items"
         assert "monitored_users" not in body
+
+
+def test_pipeline_collection_hashes_are_applied_before_the_bounded_read(analyze_env, monkeypatch):
+    """The pipeline analyzes exactly collected hashes, even beyond the newest-row limit."""
+    selected = "a" * 64
+    other = "b" * 64
+    rows = [staged(1, "selected", key="selected"), staged(1, "other", key="other")]
+    captured = {}
+
+    async def for_source(_source_id, **kwargs):
+        captured["for_source"] = kwargs
+        return rows[:1]
+
+    async def count_for_source(_source_id, **kwargs):
+        captured["count_for_source"] = kwargs
+        return 1
+
+    monkeypatch.setattr(module, "_resolve_sources", AsyncMock(return_value=[SOURCE]))
+    monkeypatch.setattr(
+        "app.models.CollectedItem",
+        SimpleNamespace(
+            objects=SimpleNamespace(
+                for_source=AsyncMock(side_effect=for_source),
+                count_for_source=AsyncMock(side_effect=count_for_source),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.models.managers.entitlement_manager.EntitlementManager.admit_execution",
+        AsyncMock(return_value=None),
+    )
+    task_payload = {"task_plan": {"version": 2}, "scenario_id": 3}
+    collection = {
+        "per_source": [{"source_id": SOURCE.id, "content_hashes": [selected]}],
+    }
+
+    asyncio.run(
+        module.handle_analyze(
+            {"agent_task_id": analyze_env.task.id, "source_ids": [SOURCE.id], "job_id": 99},
+            _resolved_context=(None, analyze_env.task, task_payload),
+            collection_stats_override=collection,
+        )
+    )
+
+    assert captured["for_source"]["content_hashes"] == [selected]
+    assert captured["count_for_source"]["content_hashes"] == [selected]
+    assert other != captured["for_source"]["content_hashes"][0]
+    assert [item["external_id"] for item in analyze_env.analyzed[-1]] == ["post-selected"]

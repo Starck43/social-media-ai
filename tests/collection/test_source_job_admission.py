@@ -594,7 +594,7 @@ async def test_web_queue_reports_existing_job_without_claiming_it():
     # at application boundaries are replaced; execute/claim is not invoked.
     import ast
 
-    tree = ast.parse((ROOT / "app/web/tasks.py").read_text())
+    tree = ast.parse((ROOT / "app/web/task_use_cases.py").read_text())
     function = next(
         node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "queue_task_now"
     )

@@ -70,25 +70,92 @@ def _safe_job_diagnostic(job: Job) -> dict[str, str]:
     error_kind = ""
     if type(job.error) is str and job.error.startswith("Queue outcome unconfirmed; inspect before retry. "):
         candidate = job.error.removeprefix("Queue outcome unconfirmed; inspect before retry. ").split(" ", 1)[0]
-        if candidate in {"timeout", "connection_error", "io_error", "value_error", "type_error", "runtime_error", "unknown_error"}:
+        if candidate in {
+            "timeout",
+            "connection_error",
+            "io_error",
+            "value_error",
+            "type_error",
+            "runtime_error",
+            "unknown_error",
+        }:
             error_kind = candidate
     if error_kind == "timeout":
-        return {"code": "timeout", "stage": "handler", "job_id": str(job.id), "counts": "", "title": "Время ожидания истекло", "detail": "Внешняя операция не ответила вовремя; результат мог быть неполным.", "action": "Проверьте состояние платформы перед повторным запуском."}
+        return {
+            "code": "timeout",
+            "stage": "handler",
+            "job_id": str(job.id),
+            "counts": "",
+            "title": "Время ожидания истекло",
+            "detail": "Внешняя операция не ответила вовремя; результат мог быть неполным.",
+            "action": "Проверьте состояние платформы перед повторным запуском.",
+        }
     if error_kind == "connection_error":
-        return {"code": error_kind, "stage": "handler", "job_id": str(job.id), "counts": "", "title": "Ошибка соединения", "detail": "Подключение к внешнему сервису не установлено.", "action": "Проверьте доступность сервиса и состояние результата перед повтором."}
+        return {
+            "code": error_kind,
+            "stage": "handler",
+            "job_id": str(job.id),
+            "counts": "",
+            "title": "Ошибка соединения",
+            "detail": "Подключение к внешнему сервису не установлено.",
+            "action": "Проверьте доступность сервиса и состояние результата перед повтором.",
+        }
     if error_kind == "io_error":
-        return {"code": error_kind, "stage": "handler", "job_id": str(job.id), "counts": "", "title": "Ошибка ввода-вывода", "detail": "Операция с сетью или хранилищем завершилась ошибкой.", "action": "Проверьте инфраструктуру и сохранённый результат."}
-    diagnostic = {"code": "job_failed", "stage": "handler", "title": "Ошибка выполнения", "detail": "Обработчик не завершил задание.", "action": "Проверьте параметры задачи и журнал сервера; затем повторите запуск."}
+        return {
+            "code": error_kind,
+            "stage": "handler",
+            "job_id": str(job.id),
+            "counts": "",
+            "title": "Ошибка ввода-вывода",
+            "detail": "Операция с сетью или хранилищем завершилась ошибкой.",
+            "action": "Проверьте инфраструктуру и сохранённый результат.",
+        }
+    diagnostic = {
+        "code": "job_failed",
+        "stage": "handler",
+        "title": "Ошибка выполнения",
+        "detail": "Обработчик не завершил задание.",
+        "action": "Проверьте параметры задачи и журнал сервера; затем повторите запуск.",
+    }
     if outcome_unconfirmed(job.error):
-        diagnostic.update(code="outcome_unconfirmed", title="Результат не подтверждён", detail="Возможный внешний эффект нужно проверить вручную.", action="Проверьте целевую платформу перед повторным запуском.")
+        diagnostic.update(
+            code="outcome_unconfirmed",
+            title="Результат не подтверждён",
+            detail="Возможный внешний эффект нужно проверить вручную.",
+            action="Проверьте целевую платформу перед повторным запуском.",
+        )
     elif "partial_delivery_requires_review" in raw:
-        diagnostic.update(code="partial_delivery_requires_review", stage="delivery", title="Частичная отправка", detail="Часть внешних действий могла выполниться.", action="Сверьте отправленные материалы и продолжите вручную.")
+        diagnostic.update(
+            code="partial_delivery_requires_review",
+            stage="delivery",
+            title="Частичная отправка",
+            detail="Часть внешних действий могла выполниться.",
+            action="Сверьте отправленные материалы и продолжите вручную.",
+        )
     elif "digest_run_in_progress_requires_review" in raw:
-        diagnostic.update(code="digest_run_in_progress_requires_review", stage="delivery", title="Отправка дайджеста требует проверки", detail="Нельзя подтвердить итог доставки.", action="Проверьте историю отправок до повтора.")
+        diagnostic.update(
+            code="digest_run_in_progress_requires_review",
+            stage="delivery",
+            title="Отправка дайджеста требует проверки",
+            detail="Нельзя подтвердить итог доставки.",
+            action="Проверьте историю отправок до повтора.",
+        )
     elif job.status == "done" and _job_has_attention(job):
-        diagnostic.update(code="partial_result", stage="processing", title="Частичный результат", detail="Выполнение завершилось с неполным результатом.", action="Откройте задачу и проверьте отчёт перед следующим запуском.")
+        diagnostic.update(
+            code="partial_result",
+            stage="processing",
+            title="Частичный результат",
+            detail="Выполнение завершилось с неполным результатом.",
+            action="Откройте задачу и проверьте отчёт перед следующим запуском.",
+        )
     counts = result.get("counts") if isinstance(result.get("counts"), dict) else result
-    measured = [f"{key}: {value}" for key, value in counts.items() if key in {"processed", "created", "updated", "failed", "skipped", "sent", "total"} and type(value) is int and value >= 0]
+    measured = [
+        f"{key}: {value}"
+        for key, value in counts.items()
+        if key in {"processed", "created", "updated", "failed", "skipped", "sent", "total"}
+        and type(value) is int
+        and value >= 0
+    ]
     diagnostic["counts"] = ", ".join(measured[:5])
     diagnostic["job_id"] = str(job.id)
     return diagnostic
@@ -98,7 +165,9 @@ def _job_requires_review(job: Job) -> bool:
     if job.status == "failed" and outcome_unconfirmed(job.error):
         return True
     result = job.result if isinstance(job.result, dict) else {}
-    if any(result.get(key) is True for key in ("needs_review", "review_required", "operator_review", "delivery_review")):
+    if any(
+        result.get(key) is True for key in ("needs_review", "review_required", "operator_review", "delivery_review")
+    ):
         return True
     return any(
         code in str(result.get(key, "")).lower() or code in str(job.error or "").lower()
@@ -114,6 +183,7 @@ def _job_has_attention(job: Job) -> bool:
     if _job_requires_review(job):
         return True
     result = job.result if isinstance(job.result, dict) else {}
+
     def text(value: Any) -> str:
         if value is None:
             return ""
@@ -125,7 +195,10 @@ def _job_has_attention(job: Job) -> bool:
 
     if text(result.get("status")) in {"partial", "partial_success", "failed", "error", "requires_review"}:
         return True
-    if any(text(result.get(key)) in {"true", "1", "yes"} for key in ("needs_review", "review_required", "operator_review", "delivery_review")):
+    if any(
+        text(result.get(key)) in {"true", "1", "yes"}
+        for key in ("needs_review", "review_required", "operator_review", "delivery_review")
+    ):
         return True
     for key in ("status", "error", "diagnostic_code", "delivery_status"):
         value = text(result.get(key))
@@ -172,6 +245,7 @@ def _safe_terminal_delete_criteria():
         )
     )
     return safe_error, safe_result
+
 
 # Queue-health thresholds, shown as counts and ages only (no payload/error text).
 # A due job still `pending` this long after `run_at` was not claimed: the worker
@@ -308,10 +382,9 @@ async def jobs_list(request: Request):
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
     tenant_id = getattr(request.state, "tenant_id", None)
     from app.core.tenant_context import tenant_scope
+
     web_perms = getattr(request.state, "web_perms", None)
-    can_manage_retention = bool(
-        web_perms and (web_perms.is_owner or web_perms.workspace_role in {"owner", "admin"})
-    )
+    can_manage_retention = bool(web_perms and (web_perms.is_owner or web_perms.workspace_role in {"owner", "admin"}))
 
     view = request.query_params.get("view", "active")
     if view not in {"active", "history", "all"}:
@@ -573,7 +646,11 @@ async def job_run(
             return RedirectResponse("/app/jobs", status_code=302)
 
         if not _replayable_job(job):
-            add_flash(request, "error", "Этот запуск нельзя безопасно повторить. Проверьте сохранённый результат и настройки задачи.")
+            add_flash(
+                request,
+                "error",
+                "Этот запуск нельзя безопасно повторить. Проверьте сохранённый результат и настройки задачи.",
+            )
             return RedirectResponse("/app/jobs", status_code=302)
         actor_id = getattr(getattr(request.state, "web_user", None), "id", None)
         try:

@@ -148,8 +148,7 @@ def _alias_reaches_canonical(alias: str, canonical: str, seen: set[str] | None =
         return False
     seen.add(alias)
     return any(
-        target == canonical
-        or (target in MODEL_ALIAS_MODULES and _alias_reaches_canonical(target, canonical, seen))
+        target == canonical or (target in MODEL_ALIAS_MODULES and _alias_reaches_canonical(target, canonical, seen))
         for target in _module_import_targets(alias)
     )
 

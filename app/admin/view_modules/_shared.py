@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Union
+
 from fastapi import HTTPException
 from sqladmin import action, expose
 from sqladmin.fields import SelectField
@@ -14,8 +15,15 @@ from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from wtforms import FloatField, Form, validators, widgets
+
 from app.admin.actions import LLMModelActions
+from app.admin.base import BaseAdmin
+from app.admin.catalog import PermissionLabelAdmin, PlatformRoleGrantAdmin
+from app.admin.filtered_select import FilteredSelectMultipleField
 from app.admin.formatters import format_date, format_usd, model_price, plan_badge
+from app.admin.price_fields import ExactModelPriceField
+from app.admin.role_picker import RoleChoiceField, RolePickerConverter, role_choices, role_edit
+from app.admin.widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
 from app.core.hashing import get_password_hash
 from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.provider_uid import slugify_uid
@@ -25,6 +33,7 @@ from app.models import (
     AIAnalytics,
     BotAction,
     CollectedItem,
+    Job,
     LLMModel,
     LLMProvider,
     Notification,
@@ -37,6 +46,7 @@ from app.models import (
     UserCredential,
 )
 from app.models.managers.user_manager import UserManager
+from app.services.ai.llm_client import LLMClientFactory
 from app.tasks.cron import cron_to_human
 from app.types import (
     ActionType,
@@ -52,14 +62,6 @@ from app.types import (
     SourceType,
 )
 from app.types.enums.llm_types import APIFormatType
-from app.services.ai.llm_client import LLMClientFactory
-from app.admin.base import BaseAdmin
-from app.admin.catalog import PermissionLabelAdmin, PlatformRoleGrantAdmin
-from app.admin.filtered_select import FilteredSelectMultipleField
-from app.admin.price_fields import ExactModelPriceField
-from app.admin.role_picker import RoleChoiceField, RolePickerConverter, role_choices, role_edit
-from app.admin.widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
-from app.models import Job
 
 logger = logging.getLogger(__name__)
 __all__ = [name for name in globals() if not name.startswith("__")]

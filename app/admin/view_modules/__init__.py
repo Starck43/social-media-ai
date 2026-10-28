@@ -1,13 +1,13 @@
 """Aggregate SQLAdmin views grouped by application use case."""
 
-from .users import UserAdmin, RoleAdmin, PermissionAdmin, TenantAdmin, UserCredentialAdmin
-from .sources import PlatformAdmin, SourceAdmin
-from .scenarios import AgentScenarioAdmin
 from .analytics import AIAnalyticsAdmin
-from .notifications import NotificationAdmin
-from .llm_catalog import LLMProviderAdmin, LLMModelAdmin
 from .collection import CollectedItemAdmin
-from .operations import BotActionAdmin, AgentTaskAdmin, JobAdmin
+from .llm_catalog import LLMModelAdmin, LLMProviderAdmin
+from .notifications import NotificationAdmin
+from .operations import AgentTaskAdmin, BotActionAdmin, JobAdmin
+from .scenarios import AgentScenarioAdmin
+from .sources import PlatformAdmin, SourceAdmin
+from .users import PermissionAdmin, RoleAdmin, TenantAdmin, UserAdmin, UserCredentialAdmin
 
 __all__ = [
     "UserAdmin",

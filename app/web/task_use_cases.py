@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+from .task_forms import (
+    _can_activate,
+)
 from .task_shared import (
     AgentTask,
     AgentTaskManager,
     Any,
-)
-
-from .task_forms import (
-    _can_activate,
 )
 
 
@@ -80,5 +79,6 @@ async def queue_task_now(task: "AgentTask", initiated_by_user_id: int | None = N
     # Execute in this process's event loop so the job runs without a worker.
     launch_job_background(job.id, allow_retry=False)
     return {"job_id": job.id, "status": job.status}
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

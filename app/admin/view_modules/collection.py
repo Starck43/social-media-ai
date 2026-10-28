@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from ._shared import (
-    logging,
     BaseAdmin,
     CollectedItem,
     format_date,
     logger,
+    logging,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -109,5 +108,6 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
         "published_at": lambda m, a: format_date(m.published_at),
         "created_at": lambda m, a: format_date(m.created_at),
     }
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

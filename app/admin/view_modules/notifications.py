@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ._shared import (
-    logging,
     ActionType,
     BaseAdmin,
     Notification,
@@ -13,9 +12,9 @@ from ._shared import (
     SelectField,
     action,
     logger,
+    logging,
     validators,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -143,5 +142,6 @@ class NotificationAdmin(BaseAdmin, model=Notification):
             url=request.url_for("admin:list", identity=self.identity),
             status_code=303,
         )
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

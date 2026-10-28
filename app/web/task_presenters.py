@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from .task_shared import (
-    AgentTaskManager,
-    Job,
-    Any,
     CANCELLED_BEFORE_START_ERROR,
     OPERATOR_CANCELLED_ERROR,
+    AgentTaskManager,
+    Any,
+    Job,
     Request,
     Source,
     datetime,
@@ -1070,5 +1070,6 @@ async def _task_source_ids(task_id: int) -> list[int]:
 
     task = await AgentTask.objects.filter(id=task_id).prefetch_related("sources").first()
     return [source.id for source in task.sources] if task else []
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

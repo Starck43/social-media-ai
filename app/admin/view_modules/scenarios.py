@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ._shared import (
-    logging,
     ActionType,
     AgentScenario,
     AnalysisType,
@@ -17,9 +16,9 @@ from ._shared import (
     action,
     json,
     logger,
+    logging,
     validators,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -385,5 +384,6 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
             url=request.url_for("admin:list", identity=self.identity),
             status_code=303,
         )
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

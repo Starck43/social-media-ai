@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ._shared import (
-    logging,
     ActionType,
     Any,
     BaseAdmin,
@@ -19,9 +18,9 @@ from ._shared import (
     action,
     datetime,
     logger,
+    logging,
     validators,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -355,5 +354,6 @@ class SourceAdmin(BaseAdmin, model=Source):
                     "checked_at": datetime.now(),
                 },
             )
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ._shared import (
-    logging,
     ActionType,
     AgentScenario,
     AgentTask,
@@ -26,11 +25,11 @@ from ._shared import (
     datetime,
     expose,
     logger,
+    logging,
     timedelta,
     timezone,
     validators,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -531,5 +530,6 @@ class JobAdmin(BaseAdmin, model=Job):
     column_details_list = column_list + ["locked_at", "started_at", "finished_at", "created_at", "updated_at"]
     column_sortable_list = ["id", "run_at", "status"]
     column_searchable_list = ["job_type", "status"]
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

@@ -2,6 +2,37 @@
 
 from __future__ import annotations
 
+from .task_forms import (
+    TARGET_FIELD_DEFS,
+    _activate_selected_sources,
+    _apply_targets,
+    _can_activate,
+    _can_manage_job_retention,
+    _check_task_sources,
+    _collection_block,
+    _collection_edit,
+    _duplicate_name,
+    _edit_payload,
+    _group_sources,
+    _normalize_web_job_type,
+    _payload_from_form,
+    _replace_task_sources,
+    _split_phrases,
+    _task_plan_from_form,
+    _trigger_and_action_fields,
+    _unified_analysis_scenario_block,
+    _web_job_type_choices,
+    apply_selection,
+)
+from .task_presenters import (
+    JOB_TYPE_TITLES,
+    _attach_task_lane_evidence,
+    _attach_task_llm_diagnostics,
+    _run_outcome,
+    _task_run_panel_data,
+    _task_run_scope,
+    _task_source_ids,
+)
 from .task_shared import (
     AgentActionType,
     AgentScenario,
@@ -30,42 +61,8 @@ from .task_shared import (
     timedelta,
     timezone,
 )
-
-from .task_forms import (
-    TARGET_FIELD_DEFS,
-    _activate_selected_sources,
-    _apply_targets,
-    _can_activate,
-    _can_manage_job_retention,
-    _check_task_sources,
-    _collection_block,
-    _collection_edit,
-    _duplicate_name,
-    _edit_payload,
-    _group_sources,
-    _normalize_web_job_type,
-    _payload_from_form,
-    _replace_task_sources,
-    _split_phrases,
-    _task_plan_from_form,
-    _trigger_and_action_fields,
-    _unified_analysis_scenario_block,
-    _web_job_type_choices,
-    apply_selection,
-)
-
 from .task_use_cases import (
     queue_task_now,
-)
-
-from .task_presenters import (
-    JOB_TYPE_TITLES,
-    _attach_task_lane_evidence,
-    _attach_task_llm_diagnostics,
-    _run_outcome,
-    _task_source_ids,
-    _task_run_panel_data,
-    _task_run_scope,
 )
 
 
@@ -87,6 +84,7 @@ async def web_vk_connections(request: Request):
         return await connection_catalog(tenant_id=tenant_id, actor_id=actor_id)
     except PermissionError:
         return Response(status_code=403, content="vk_access_unavailable")
+
 
 @router.get("")
 @router.get("/")
@@ -342,6 +340,7 @@ async def task_detail(request: Request, task_id: int):
         perms_can=perms_can,
     )
 
+
 @router.get("/{task_id}/latest-progress")
 async def task_latest_progress(request: Request, task_id: int):
     """Refresh only the newest Job belonging to this tenant's requested task."""
@@ -369,6 +368,7 @@ async def task_latest_progress(request: Request, task_id: int):
     await _attach_task_llm_diagnostics(request, task, job, panel)
     await _attach_task_lane_evidence(panel, job)
     return render(request, "web/task_run_progress.html", task=task, sidebar_oob=True, **panel)
+
 
 @router.get("/{task_id}/edit")
 async def task_edit_page(request: Request, task_id: int):
@@ -533,6 +533,7 @@ async def task_toggle(
     add_flash(request, "success", f"Задача «{task.name}» {action}")
     return RedirectResponse("/app/tasks", status_code=302)
 
+
 @router.post("/{task_id}/run-now")
 async def task_run_now(
     request: Request,
@@ -585,6 +586,7 @@ async def task_run_now(
         return RedirectResponse(back, status_code=302)
     return RedirectResponse(back if return_to_detail == "1" else f"/app/tasks?job_id={job_id}", status_code=302)
 
+
 @router.post("/{task_id}/retry-analysis")
 async def task_retry_analysis(
     request: Request,
@@ -631,6 +633,7 @@ async def task_retry_analysis(
     add_flash(request, "success", f"Повторный анализ по задаче «{task.name}» поставлен в очередь")
     return RedirectResponse(back, status_code=302)
 
+
 @router.post("/{task_id}/digest/{job_id}/send")
 async def task_send_generated_digest(
     request: Request,
@@ -675,6 +678,7 @@ async def task_send_generated_digest(
         else:
             add_flash(request, "error", "Дайджест не отправлен; проверьте его состояние")
     return RedirectResponse(back, status_code=302)
+
 
 @router.post("/{task_id}")
 async def task_update(
@@ -1051,6 +1055,7 @@ async def task_update(
         add_flash(request, "success", f"Задача «{name}» обновлена")
     return RedirectResponse(f"/app/tasks/{task_id}" if return_to_detail == "1" else "/app/tasks", status_code=302)
 
+
 @router.post("/{task_id}/delete")
 async def task_delete(
     request: Request,
@@ -1077,5 +1082,6 @@ async def task_delete(
     await AgentTask.objects.delete(id=task_id)
     add_flash(request, "success", f"Задача «{task_name}» удалена")
     return RedirectResponse("/app/tasks", status_code=302)
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

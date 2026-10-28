@@ -6,8 +6,10 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse, Response
+
 from app.jobs.progress import read_snapshot
 from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR, OPERATOR_CANCELLED_ERROR, outcome_unconfirmed
 from app.models import AgentScenario, AgentTask, Job, Source
@@ -27,6 +29,7 @@ from app.services.monitoring.selection import SelectionError
 from app.tasks.cron import cron_to_human
 from app.types import AgentActionType, BotTriggerType, JobType
 from app.web.task_progress import project_run, sidebar_sources
+
 from .deps import (
     action_tenant_id,
     add_flash,

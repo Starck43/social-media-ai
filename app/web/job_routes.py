@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from .task_presenters import (
+    _as_int,
+    _diagnostics_admin,
+    _diagnostics_view,
+    _job_summary,
+    _source_links,
+)
 from .task_shared import (
     AgentTask,
     Any,
@@ -12,14 +19,6 @@ from .task_shared import (
     perms_can,
     project_run,
     router,
-)
-
-from .task_presenters import (
-    _as_int,
-    _diagnostics_admin,
-    _diagnostics_view,
-    _job_summary,
-    _source_links,
 )
 
 
@@ -74,6 +73,7 @@ async def job_status(request: Request, job_id: int):
         )
         summary["task_url"] = f"/app/tasks/{task.id}" if task is not None else None
     return JSONResponse(summary)
+
 
 @router.post("/job/{job_id}/cancel")
 async def job_cancel_from_modal(
@@ -131,5 +131,6 @@ async def job_cancel_from_modal(
                 continue
             return reply(False, "Задача уже завершилась — отменять нечего.", 409, status=job.status)
     return reply(False, "Состояние задачи изменилось — проверьте результат.", 409)
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

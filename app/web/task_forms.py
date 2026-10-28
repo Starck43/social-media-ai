@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from .task_shared import (
+    CITY_MODES,
+    CITY_PREFER,
+    COLLECTION_JOB_TYPES,
+    CONFIRM_MODES,
     AgentActionType,
     AgentScenario,
     AgentTask,
     AgentTaskManager,
     Any,
     BotTriggerType,
-    CITY_MODES,
-    CITY_PREFER,
-    COLLECTION_JOB_TYPES,
-    CONFIRM_MODES,
     CollectionIntent,
     CollectionIntentError,
     JobType,
@@ -804,5 +804,6 @@ async def _duplicate_name(request: Request, back: str, name: str, exclude_id: in
         f"Задача «{name}» уже существует. Выберите другое название или откройте её для повторного запуска.",
     )
     return RedirectResponse(back, status_code=302)
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+from .task_forms import (
+    _activate_selected_sources,
+    _apply_targets,
+    _can_activate,
+    _can_manage_job_retention,
+    _check_task_sources,
+    _collection_block,
+    _duplicate_name,
+    _normalize_web_job_type,
+    _payload_from_form,
+    _split_phrases,
+    _task_plan_from_form,
+    _trigger_and_action_fields,
+    _unified_analysis_scenario_block,
+    apply_selection,
+)
 from .task_shared import (
     AgentScenario,
     AgentTask,
@@ -19,24 +35,6 @@ from .task_shared import (
     timedelta,
     timezone,
 )
-
-from .task_forms import (
-    _activate_selected_sources,
-    _apply_targets,
-    _can_activate,
-    _can_manage_job_retention,
-    _check_task_sources,
-    _collection_block,
-    _duplicate_name,
-    _normalize_web_job_type,
-    _payload_from_form,
-    _split_phrases,
-    _task_plan_from_form,
-    _trigger_and_action_fields,
-    _unified_analysis_scenario_block,
-    apply_selection,
-)
-
 from .task_use_cases import (
     queue_task_now,
 )
@@ -417,5 +415,6 @@ async def task_create(
     else:
         add_flash(request, "success", f"Задача «{name}» создана")
     return RedirectResponse(back, status_code=302)
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

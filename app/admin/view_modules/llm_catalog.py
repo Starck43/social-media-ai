@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from ._shared import (
-    logging,
-    APIFormatType,
     ActionType,
     Any,
+    APIFormatType,
     BaseAdmin,
     CommaSeparatedSelectMultipleField,
     ExactModelPriceField,
@@ -25,12 +24,12 @@ from ._shared import (
     action,
     get_model_form,
     logger,
+    logging,
     model_price,
     slugify_uid,
     validators,
     widgets,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -683,5 +682,6 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 
         with self._catalog_scope(request):
             return await LLMModelActions.test_model(self, request, pks, self.identity)
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

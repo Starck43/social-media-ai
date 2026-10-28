@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from ._shared import (
-    logging,
-    AIAnalytics,
     ActionType,
+    AIAnalytics,
     BaseAdmin,
     PeriodType,
     RedirectResponse,
@@ -14,9 +13,9 @@ from ._shared import (
     action,
     format_usd,
     logger,
+    logging,
     validators,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -160,5 +159,6 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
             url=request.url_for("admin:details", identity=self.identity, pk=analysis_id),
             status_code=303,
         )
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

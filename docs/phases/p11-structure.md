@@ -19,7 +19,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 9. [P11-T09](../tasks/p11-t09.md) — Fail-closed typed agent-tool registration (R-07).
 10. [P11-T10](../audit/p11-t10.md) — Operator CLI boundaries and machine-output contract — DONE 2026-10-28 (accepted `e1dec81d`, integrated `1506d98d`; PR #267).
 11. [P11-T11](../tasks/p11-t11.md) — Web and admin use-case decomposition (R-09).
-12. [P11-T12](../tasks/p11-t12.md) — Durable action-audit contract and support correlation (R-10).
+12. [P11-T12](../audit/p11-t12.md) — Durable action-audit contract and support correlation (R-10) — DONE 2026-10-28 (accepted `b59877ea`, integrated `c8d019ae`; PR #269; contract slice only — persistence, hooks, support reads/export, retention and migration stay open).
 13. [P11-T13](../tasks/p11-t13.md) — Manager and execution-module decomposition (R-11).
 14. [P11-T14](../tasks/p11-t14.md) — Canonical model imports and semantic helper reuse (R-12).
 15. [P11-T15](../audit/p11-t15.md) — Reproducible package and configuration contract (R-13) — DONE 2026-10-27 (accepted `2c4c6e5566a61f6a9b02967db1a152e4fa1140e7`).

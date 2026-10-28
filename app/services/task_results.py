@@ -65,8 +65,9 @@ def _pipeline_outcome(raw: Any, *, can_view_preview: bool) -> dict[str, Any] | N
                     stage[key] = item
             if type(receipt.get("time_breakdown")) is bool:
                 stage["time_breakdown"] = receipt["time_breakdown"]
+            if type(receipt.get("generated")) is bool:
+                stage["generated"] = receipt["generated"]
             if receipt.get("generated") is True:
-                stage["generated"] = True
                 stage["generated_count"] = 1
             delivered = receipt.get("delivered")
             if type(delivered) is int and 0 <= delivered <= 1_000_000:

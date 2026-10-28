@@ -12,7 +12,7 @@ from app.models.base import Base
 from app.models.managers.base_manager import prefetch
 from app.models.platform import Platform
 from app.models.role import Role
-from app.models.source import Source
+from app.models.collection.source import Source
 from app.models.user import User
 from app.types import PlatformRoleType, PlatformType, SourceType
 

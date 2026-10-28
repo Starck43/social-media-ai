@@ -426,7 +426,7 @@ def test_task_list_row_reports_queue_state_only_from_a_live_job():
 async def test_task_run_scope_reads_windowed_backlog_only_with_source_view(monkeypatch):
     from app.models.collected_item import CollectedItem
     from app.models.managers.collected_item_manager import CollectedItemManager
-    from app.models.source import Source
+    from app.models.collection.source import Source
 
     sources = [
         SimpleNamespace(

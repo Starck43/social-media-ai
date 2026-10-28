@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 
 from app.models.agent_task import AgentTask
 from app.models.ai_analytics import AIAnalytics
-from app.models.source import Source
+from app.models.collection.source import Source
 
 from .deps import render, tenant_filter_context
 

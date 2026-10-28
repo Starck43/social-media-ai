@@ -374,7 +374,7 @@ async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:
     from app.models.agent_scenario import AgentScenario
     from app.models.agent_task import AgentTask
     from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager
-    from app.models.source import Source
+    from app.models.collection.source import Source
 
     counts = {}
     for key, model, model_name in (

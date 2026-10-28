@@ -1422,7 +1422,7 @@ async def task_detail(request: Request, task_id: int):
     from app.models.agent_scenario import AgentScenario
     from app.models.agent_task import AgentTask
     from app.models.job import Job
-    from app.models.source import Source
+    from app.models.collection.source import Source
 
     user = getattr(request.state, "web_user", None)
     is_superuser = False
@@ -1558,7 +1558,7 @@ async def _task_run_scope(
     if task.job_type not in ("collect", "analyze"):
         return None
     from app.core.tenant_context import tenant_scope
-    from app.models.source import Source
+    from app.models.collection.source import Source
 
     with tenant_scope(task.tenant_id):
         all_sources = await Source.objects.filter(tenant_id=task.tenant_id)

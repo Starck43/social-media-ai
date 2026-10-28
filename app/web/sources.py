@@ -27,7 +27,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import func
 
 from app.models.collected_item import CollectedItem
-from app.models.source import Source
+from app.models.collection.source import Source
 from app.services.social.connections import source_connection_status, source_connection_statuses
 from app.types import SourceType
 

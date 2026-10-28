@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from tests.shared.task_plan_support import ROOT, load_plans, plan, source_functions
-from tests.source_import_isolation import load_isolated_source
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 __source_only__ = True
 

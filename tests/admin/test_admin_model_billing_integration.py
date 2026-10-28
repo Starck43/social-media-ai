@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock
 import httpx
 import pytest
 from fastapi import HTTPException
-from source_import_isolation import load_isolated_source
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 from test_admin_model_probe import COST_EVIDENCE, ROOT, extracted_handler, model, probe_module, template_env
 
 from app.core.personal_catalog_context import catalog_execution_scope

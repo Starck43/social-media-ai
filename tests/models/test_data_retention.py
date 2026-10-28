@@ -7,6 +7,7 @@ PostgreSQL deletion semantics live in tests/test_collected_items.py.
 from __future__ import annotations
 
 import ast
+from functools import partial
 import logging
 import sys
 import unittest
@@ -90,6 +91,8 @@ def module_with(**values):
 def load_prune():
     path = ROOT / "app/jobs/handlers.py"
     tree = ast.parse(path.read_text())
+    implementation = ast.parse((ROOT / "app/jobs/job_handlers/prune.py").read_text())
+    tree.body = [node for node in tree.body if getattr(node, "name", None) != "handle_prune"] + implementation.body
     names = {"handle_prune", "_log_id"}
     nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
     classifier_path = ROOT / "app/utils/error_kinds.py"
@@ -104,7 +107,10 @@ def load_prune():
     logger = logging.getLogger("isolated_data_retention")
     namespace = {"Any": Any, "logger": logger, "_error_kind": classifier_namespace["classify_error"]}
     exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), str(path), "exec"), namespace)
-    return namespace["handle_prune"], logger
+    return partial(
+        namespace["handle_prune"], logger=logger, log_id=namespace["_log_id"],
+        error_kind=classifier_namespace["classify_error"],
+    ), logger
 
 
 class Field:

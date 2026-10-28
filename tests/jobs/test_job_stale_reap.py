@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from source_import_isolation import load_isolated_source
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase
@@ -131,7 +131,7 @@ class ReapTests(unittest.IsolatedAsyncioTestCase):
                 "app.jobs.recovery_policy": SimpleNamespace(OUTCOME_UNCONFIRMED_PREFIX=UNCONFIRMED),
             },
         )
-        module.datetime = FixedDatetime
+        module.__isolated_imports__["app.models.managers.job_lifecycle"].datetime = FixedDatetime
         self.module = module
         self.manager = object.__new__(module.JobManager)
 

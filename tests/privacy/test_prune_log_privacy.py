@@ -7,6 +7,7 @@ Not a retention, PostgreSQL or fleet-wide logging acceptance test.
 from __future__ import annotations
 
 import ast
+from functools import partial
 import logging
 import sys
 import unittest
@@ -29,6 +30,8 @@ def module_with(**values):
 def load_prune():
     path = ROOT / "app/jobs/handlers.py"
     tree = ast.parse(path.read_text())
+    implementation = ast.parse((ROOT / "app/jobs/job_handlers/prune.py").read_text())
+    tree.body = [node for node in tree.body if getattr(node, "name", None) != "handle_prune"] + implementation.body
     names = {"handle_prune", "_log_id"}
     nodes = [
         node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names
@@ -48,7 +51,10 @@ def load_prune():
     logger = logging.getLogger("isolated_prune_log_privacy")
     namespace = {"Any": Any, "logger": logger, "_error_kind": classifier_namespace["classify_error"]}
     exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), str(path), "exec"), namespace)
-    return namespace["handle_prune"], logger
+    return partial(
+        namespace["handle_prune"], logger=logger, log_id=namespace["_log_id"],
+        error_kind=classifier_namespace["classify_error"],
+    ), logger
 
 
 class FieldDouble:

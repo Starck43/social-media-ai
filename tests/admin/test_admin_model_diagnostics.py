@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-from source_import_isolation import load_isolated_source
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 from test_admin_model_billing_integration import endpoint_case
 from test_admin_model_probe import COST_EVIDENCE, ROOT, action_module, model, probe_module, template_env
 

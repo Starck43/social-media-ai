@@ -18,7 +18,7 @@ from typing import Any, Optional
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
-from source_import_isolation import load_isolated_source
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 cache_pricing = load_isolated_source("_scoped_cache_pricing", ROOT / "app/services/ai/cache_pricing.py")

@@ -31,7 +31,7 @@ def _load_dep(name, path):
 
 
 fixtures = _load_dep("_dep_job_stale_reap", "tests/jobs/test_job_stale_reap.py")
-from source_import_isolation import load_isolated_source
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = fixtures.ROOT
 MODEL = fixtures.MODEL
@@ -74,7 +74,7 @@ class BudgetPredicateTests(unittest.TestCase):
         self.assertNotIn("_", prefix)
 
     def test_both_acquisition_paths_apply_same_helper_inside_where(self):
-        tree = ast.parse((ROOT / "app/models/managers/job_manager.py").read_text())
+        tree = ast.parse((ROOT / "app/models/managers/job_lifecycle.py").read_text())
         for name in ("_claim", "start_running"):
             method = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == name)
             wheres = [

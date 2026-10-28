@@ -110,11 +110,13 @@ def _plan_table() -> list[dict[str, Any]]:
         rows.append(entry)
     from app.services.tenancy.plan_catalog import CATALOG_VERSION, PLAN_CATALOG
 
-    rows.append({
-        "key": "product_capabilities",
-        "label": f"Product capabilities (catalog v{CATALOG_VERSION})",
-        **{plan: ", ".join(PLAN_CATALOG[plan].capabilities) for plan in Tenant.PLANS},
-    })
+    rows.append(
+        {
+            "key": "product_capabilities",
+            "label": f"Product capabilities (catalog v{CATALOG_VERSION})",
+            **{plan: ", ".join(PLAN_CATALOG[plan].capabilities) for plan in Tenant.PLANS},
+        }
+    )
     return rows
 
 
@@ -246,6 +248,7 @@ async def settings_page(request: Request):
             context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
     elif tab == "agent" and manage:
         from app.services.ai.personal_catalog import chat_model_options
+
         context["agent_model_options"] = await chat_model_options(user_id=user.id, tenant_id=tenant_id)
 
         # Read the last probe result from session (set by /agent/model-probe).
@@ -283,6 +286,7 @@ async def settings_page(request: Request):
         )
     elif tab == "models":
         from .settings_llm import settings_llm_context
+
         context.update(await settings_llm_context(request))
     elif tab == "connections":
         from app.models.managers.user_credential_manager import user_credentials
@@ -373,8 +377,8 @@ async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:
     """Manager-only quota projections; resource counts additionally require VIEW."""
     from app.models.agent_scenario import AgentScenario
     from app.models.agent_task import AgentTask
-    from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager
     from app.models.collection.source import Source
+    from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager
 
     counts = {}
     for key, model, model_name in (
@@ -506,6 +510,7 @@ async def agent_settings_update(
     try:
         selected_id = int(agent_model_id) if agent_model_id.strip() else None
         from app.services.ai.personal_catalog import validate_chat_model
+
         selected = await validate_chat_model(
             user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=selected_id
         )
@@ -557,6 +562,7 @@ async def agent_model_probe(
     if agent_model_id.strip():
         try:
             from app.services.ai.personal_catalog import validate_chat_model
+
             model = await validate_chat_model(
                 user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=int(agent_model_id)
             )

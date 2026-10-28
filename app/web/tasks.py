@@ -1421,8 +1421,8 @@ async def task_detail(request: Request, task_id: int):
     from app.core.tenant_context import tenant_scope
     from app.models.agent_scenario import AgentScenario
     from app.models.agent_task import AgentTask
-    from app.models.job import Job
     from app.models.collection.source import Source
+    from app.models.job import Job
 
     user = getattr(request.state, "web_user", None)
     is_superuser = False

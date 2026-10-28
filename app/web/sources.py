@@ -654,6 +654,7 @@ async def source_detail(request: Request, source_id: int):
 async def source_analysis_progress(request: Request, source_id: int):
     """Small polling fragment for the existing recent-analyses table."""
     from fastapi.responses import HTMLResponse
+
     from app.core.tenant_context import tenant_scope
     from app.models.managers.job_manager import JobManager
 
@@ -1028,8 +1029,10 @@ async def _readiness(source, schedules, effective_schedules=None) -> tuple[bool,
         return False, "Ни одна задача не ссылается на этот источник — сбор не запускается."
     elif not any(s.is_active for s in schedules):
         return False, "Все задачи по этому источнику на паузе."
-    if schedules is not None and effective_schedules is not None and not any(
-        effective_schedules.get(task.id, False) for task in schedules
+    if (
+        schedules is not None
+        and effective_schedules is not None
+        and not any(effective_schedules.get(task.id, False) for task in schedules)
     ):
         return False, "Задачи не выполняются: проверьте, что назначенный сценарий активен."
     if (source.params or {}).get("mode", "pull") == "push":
@@ -1092,7 +1095,8 @@ async def source_collect_now(
 
         try:
             outcome = await run_job_inline(
-                "collect", {"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})}
+                "collect",
+                {"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})},
             )
         except SourceJobBusy:
             add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
@@ -1175,7 +1179,10 @@ async def source_analyze_now(
                 reset_count = await CollectedItem.objects.reset_attempts(session, source_id, **bounds)
                 job = await JobManager().admit_source_job(
                     job_type="analyze",
-                    payload={"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})},
+                    payload={
+                        "source_ids": [source.id],
+                        **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {}),
+                    },
                     tenant_id=tenant_id,
                     session=session,
                 )
@@ -1243,7 +1250,9 @@ async def source_delete_unprocessed(
                     return RedirectResponse("/app/sources", status_code=302)
                 running = await _source_has_running_job(source_id)
                 if running["collect"] or running["analyze"]:
-                    add_flash(request, "info", "Нельзя удалить контент, пока сбор или анализ ожидает запуска или выполняется")
+                    add_flash(
+                        request, "info", "Нельзя удалить контент, пока сбор или анализ ожидает запуска или выполняется"
+                    )
                     return RedirectResponse(back, status_code=302)
                 deleted = await CollectedItem.objects.delete_unprocessed_for_source(
                     session, source_id, active_tenant_id

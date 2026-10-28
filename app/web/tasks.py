@@ -4,12 +4,17 @@ The router and historical helper imports remain available here while forms,
 use cases, presenters, and HTTP endpoints live in focused modules.
 """
 
-from .job_routes import *
-from .task_create_routes import *
-from .task_forms import *
-from .task_presenters import *
-from .task_routes import *
+# Route modules register endpoints on the shared router as they import.
+# Keep their registration order stable; sorting these imports changes it.
+# isort: off
 from .task_shared import *
+from .task_forms import *
 from .task_use_cases import *
+from .task_presenters import *
+from .task_create_routes import *
+from .task_routes import *
+from .job_routes import *
+
+# isort: on
 
 __all__ = [name for name in globals() if not name.startswith("__")]

@@ -77,7 +77,7 @@ def manager_source():
             "app.core.hashing": NS(get_password_hash=Mock(), verify_password=Mock()),
             "app.models.managers.base_manager": NS(BaseManager=StorageBoundary),
             "app.types": TYPES,
-            **dict.fromkeys(('app.models.user', 'app.models.identity.user'), NS(User=user_class)),
+            **dict.fromkeys(("app.models.user", "app.models.identity.user"), NS(User=user_class)),
             "app.models": NS(User=user_class, PlatformRole=NS(objects=roles)),
         },
     )
@@ -161,7 +161,7 @@ def user_admin(source, monkeypatch, manager=None, admin=None):
     manager.identities.prefetch_related = row_read
     manager.identities.set_platform_role = manager.manager.set_platform_role
 
-    tree = ast.parse((ROOT / "app/admin/views.py").read_text())
+    tree = ast.parse((ROOT / "app/admin/view_modules/users.py").read_text())
     node = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "UserAdmin")
     from app.admin.role_picker import RoleChoiceField, RolePickerConverter, role_choices, role_edit
     from app.models.managers.user_manager import UserManager as _UserManager

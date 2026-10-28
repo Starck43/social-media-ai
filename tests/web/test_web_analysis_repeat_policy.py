@@ -15,15 +15,13 @@ ROOT = Path(__file__).resolve().parents[2]
 def _function(path: Path, name: str) -> ast.AsyncFunctionDef | ast.FunctionDef:
     tree = ast.parse(path.read_text())
     return next(
-        node
-        for node in tree.body
-        if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and node.name == name
+        node for node in tree.body if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and node.name == name
     )
 
 
 @pytest.mark.asyncio
 async def test_web_queue_explicitly_disables_force_flags_for_legacy_task():
-    function = _function(ROOT / "app/web/tasks.py", "queue_task_now")
+    function = _function(ROOT / "app/web/task_use_cases.py", "queue_task_now")
     function.decorator_list = []
     function.body = [node for node in function.body if not isinstance(node, ast.ImportFrom)]
     enqueue = AsyncMock(return_value=NS(id=12, status="pending"))
@@ -37,8 +35,13 @@ async def test_web_queue_explicitly_disables_force_flags_for_legacy_task():
     module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
     exec(compile(module, "isolated_web_queue", "exec"), scope)
 
-    task = NS(id=7, tenant_id=4, job_type="digest", agent_scenario_id=None,
-              payload={"force_refresh": True, "force_reanalyze": True})
+    task = NS(
+        id=7,
+        tenant_id=4,
+        job_type="digest",
+        agent_scenario_id=None,
+        payload={"force_refresh": True, "force_reanalyze": True},
+    )
     result = await scope["queue_task_now"](task, initiated_by_user_id=3)
 
     assert result == {"job_id": 12, "status": "pending"}
@@ -72,9 +75,7 @@ async def test_api_task_run_uses_only_false_force_flags_as_one_off_overrides():
     run = AsyncMock(return_value={"status": "done"})
     namespace = {
         "_web_api_payload": lambda payload: {
-            key: value
-            for key, value in (payload or {}).items()
-            if key not in {"force_refresh", "force_reanalyze"}
+            key: value for key, value in (payload or {}).items() if key not in {"force_refresh", "force_reanalyze"}
         },
         "HTTPException": RuntimeError,
         "SourceJobBusy": RuntimeError,

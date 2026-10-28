@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.models import AgentScenario
-from app.web import tasks as tasks_web
+from app.web import task_routes as tasks_web
 from app.web.tasks import (
     _normalize_web_job_type,
     _payload_from_form,
@@ -24,7 +24,7 @@ def test_web_hides_collection_type_and_normalizes_legacy_submission():
 
 
 def test_web_collect_form_becomes_unified_analysis_and_keeps_dates():
-    payload = _payload_from_form("collect", "", "", "2025-01-01", "2025-02-01")
+    payload = _payload_from_form("collect", "2025-01-01", "2025-02-01")
 
     assert payload["collect_before_analyze"] is True
     assert payload["cli_dates"]["start_date"] == "2025-01-01"

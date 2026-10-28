@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.web import tasks
+from app.web import task_forms as tasks
 
 __source_only__ = True
 

@@ -4,12 +4,13 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 ENV_FILE="$ROOT/.env.production"
 COMPOSE_FILE="$ROOT/docker/docker-compose.production.yml"
+IMAGE_FILE="$ROOT/.deployed-image.production"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   printf 'Missing %s; copy .env.production.example and configure production-only values.\n' "$ENV_FILE" >&2
   exit 2
 fi
-mode="$(stat -c '%a' "$ENV_FILE")"
+mode="$(python3 -c 'import os, sys; print(format(os.stat(sys.argv[1]).st_mode & 0o777, "o"))' "$ENV_FILE")"
 if (( (8#$mode & 077) != 0 )); then
   echo '.env.production must be private (chmod 600); refusing to continue.' >&2
   exit 2
@@ -89,12 +90,17 @@ except ValueError:
 if values["SCHEDULER_ENABLED"].lower() not in {"true", "false"}:
     raise SystemExit("SCHEDULER_ENABLED must be true or false.")
 PYENV
+APP_IMAGE="${APP_IMAGE:-}"
+if [[ -z "$APP_IMAGE" && -f "$IMAGE_FILE" ]]; then
+  IFS= read -r APP_IMAGE < "$IMAGE_FILE" || true
+fi
+if [[ ! "$APP_IMAGE" =~ ^ghcr\.io/starck43/social-media-ai@sha256:[0-9a-f]{64}$ ]]; then
+  echo 'APP_IMAGE must name the immutable GHCR image digest.' >&2
+  exit 2
+fi
+export APP_IMAGE
 if ! command -v docker >/dev/null 2>&1; then
   echo 'Docker is required to run the production Compose stack.' >&2
   exit 127
-fi
-if [[ -z "${APP_IMAGE:-}" ]]; then
-  echo 'APP_IMAGE must name the immutable GHCR commit image.' >&2
-  exit 2
 fi
 exec docker compose   --project-name social-ai-production   --env-file "$ENV_FILE"   --file "$COMPOSE_FILE"   "$@"

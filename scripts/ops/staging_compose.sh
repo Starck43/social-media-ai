@@ -4,12 +4,13 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 ENV_FILE="$ROOT/.env.staging"
 COMPOSE_FILE="$ROOT/docker/docker-compose.staging.yml"
+IMAGE_FILE="$ROOT/.deployed-image.staging"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   printf 'Missing %s; copy .env.staging.example and fill staging-only secrets.\n' "$ENV_FILE" >&2
   exit 2
 fi
-mode="$(stat -c '%a' "$ENV_FILE")"
+mode="$(python3 -c 'import os, sys; print(format(os.stat(sys.argv[1]).st_mode & 0o777, "o"))' "$ENV_FILE")"
 if (( (8#$mode & 077) != 0 )); then
   echo '.env.staging must be private (chmod 600); refusing to start.' >&2
   exit 2
@@ -92,6 +93,14 @@ except ValueError:
 if not correct_target:
     raise SystemExit("POSTGRES_URL must target only the staging db service/database.")
 PYENV
+if [[ -z "${APP_IMAGE:-}" && -f "$IMAGE_FILE" ]]; then
+  IFS= read -r APP_IMAGE < "$IMAGE_FILE" || true
+  if [[ ! "$APP_IMAGE" =~ ^ghcr\.io/starck43/social-media-ai@sha256:[0-9a-f]{64}$ ]]; then
+    echo 'Recorded staging APP_IMAGE must use an immutable GHCR image digest.' >&2
+    exit 2
+  fi
+  export APP_IMAGE
+fi
 if ! command -v docker >/dev/null 2>&1; then
   echo 'Docker is required to run the staging Compose stack.' >&2
   exit 127

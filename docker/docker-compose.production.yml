@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env.production}
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env.production}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
     volumes:
       - production_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -80,8 +80,8 @@ services:
 
   nginx:
     build:
-      context: ..
-      dockerfile: nginx/Dockerfile
+      context: ../nginx
+      dockerfile: Dockerfile
     image: social-ai-api-proxy:local
     container_name: social_ai_production_nginx
     ports:

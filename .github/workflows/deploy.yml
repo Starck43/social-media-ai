@@ -19,7 +19,25 @@ env:
   IMAGE_TAG: ghcr.io/starck43/social-media-ai:sha-${{ github.sha }}
 
 jobs:
+  validate-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Install locked verification tools
+        run: python -m pip install --require-hashes -r .ci/requirements.txt
+      - name: Check deployment contracts and Compose configuration
+        run: python -m scripts.ci.check_deployment --compose
+
   validate-pr:
+    needs: validate-config
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-22.04
     permissions:
@@ -42,6 +60,7 @@ jobs:
           cache-from: type=gha
 
   build-and-push:
+    needs: validate-config
     if: github.event_name == 'push'
     runs-on: ubuntu-22.04
     outputs:
@@ -85,7 +104,8 @@ jobs:
         (github.ref == 'refs/heads/dev' && vars.STAGING_DEPLOY_ENABLED == 'true') ||
         (github.ref == 'refs/heads/master' &&
          vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
-         vars.PRODUCTION_BACKUP_READY == 'true')
+         vars.PRODUCTION_BACKUP_READY == 'true' &&
+         vars.PRODUCTION_MIGRATIONS_APPROVED_SHA == github.sha)
       )
     runs-on: ubuntu-22.04
     environment:
@@ -143,9 +163,9 @@ jobs:
             -o "UserKnownHostsFile=$RUNNER_TEMP/ssh/known_hosts"
             -o "Port=$VPS_PORT"
           )
-          remote_bundle="/tmp/social-ai-deploy/$GITHUB_SHA.tar.gz"
+          remote_bundle="/tmp/social-ai-deploy/$DEPLOY_TARGET-$GITHUB_SHA.tar.gz"
           ssh "${ssh_opts[@]}" "$VPS_USER@$VPS_HOST" \
             "install -d -m 0700 /tmp/social-ai-deploy"
           scp "${ssh_opts[@]}" "$bundle" "$VPS_USER@$VPS_HOST:$remote_bundle"
           ssh "${ssh_opts[@]}" "$VPS_USER@$VPS_HOST" \
-            "set -eu; install -d -m 0750 '$VPS_DEPLOY_DIR'; tar -xzf '$remote_bundle' -C '$VPS_DEPLOY_DIR'; rm -f '$remote_bundle'; APP_IMAGE='$IMAGE_REF' bash '$VPS_DEPLOY_DIR/scripts/ops/deploy_vps.sh' '$DEPLOY_TARGET' '$IMAGE_REF'"
+            "set -eu; install -d -m 0750 '$VPS_DEPLOY_DIR'; tar -xzf '$remote_bundle' -C '$VPS_DEPLOY_DIR'; rm -f '$remote_bundle'; PRODUCTION_MIGRATIONS_APPROVED_IMAGE='$IMAGE_REF' APP_IMAGE='$IMAGE_REF' bash '$VPS_DEPLOY_DIR/scripts/ops/deploy_vps.sh' '$DEPLOY_TARGET' '$IMAGE_REF'"

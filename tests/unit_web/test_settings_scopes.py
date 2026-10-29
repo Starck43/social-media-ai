@@ -185,16 +185,16 @@ def gateway(monkeypatch):
         "app.models.managers.tenant_manager": dict(
             TenantUserManager=Members, TenantChannelManager=lambda: Query("channels")
         ),
-        **dict.fromkeys(("app.models.user", "app.models.identity.user"), dict(User=fake_models["users"])),
-        **dict.fromkeys(("app.models.llm_model", "app.models.llm.llm_model"), dict(LLMModel=fake_models["models"])),
+        **dict.fromkeys(("app.models.identity.user",), dict(User=fake_models["users"])),
+        **dict.fromkeys(("app.models.llm.llm_model",), dict(LLMModel=fake_models["models"])),
         **dict.fromkeys(
-            ("app.models.agent_task", "app.models.scheduling.agent_task"), dict(AgentTask=fake_models["agenttask"])
+            ("app.models.scheduling.agent_task", "app.models.scheduling.agent_task"), dict(AgentTask=fake_models["agenttask"])
         ),
         **dict.fromkeys(
-            ("app.models.agent_scenario", "app.models.analysis.agent_scenario"),
+            ("app.models.analysis.agent_scenario", "app.models.analysis.agent_scenario"),
             dict(AgentScenario=fake_models["agentscenario"]),
         ),
-        **dict.fromkeys(("app.models.source", "app.models.collection.source"), dict(Source=fake_models["source"])),
+        **dict.fromkeys(("app.models.collection.source",), dict(Source=fake_models["source"])),
         "app.models.managers.user_credential_manager": dict(user_credentials=Vault()),
         "app.services.social.connections": dict(
             CONNECTIONS=[NS(platform="vk", title="VK", purpose="Own", is_oauth=True, manual_hint="")],

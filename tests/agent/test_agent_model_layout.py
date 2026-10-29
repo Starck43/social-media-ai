@@ -48,15 +48,14 @@ def _canonical_ast(node):
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_all_paths_single_mapper_tenant_scope_and_original_manager(name):
+def test_public_and_domain_paths_single_mapper_tenant_scope_and_original_manager(name):
     module = MODELS[name]
     public = importlib.import_module("app.models")
-    legacy = importlib.import_module(f"app.models.{module}")
     domain = importlib.import_module("app.models.agent")
     leaf = importlib.import_module(f"app.models.agent.{module}")
     manager_module = importlib.import_module(f"app.models.managers.{module}_manager")
     cls = getattr(public, name)
-    assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
+    assert cls is getattr(domain, name) is getattr(leaf, name)
     assert cls.__module__ == f"app.models.agent.{module}"
     assert name in domain.__all__ and name in public.__all__
     assert cls._app_label == "agent" and cls.__tenant_scoped__
@@ -64,7 +63,6 @@ def test_all_paths_single_mapper_tenant_scope_and_original_manager(name):
     assert "tenant_id" in cls.__table__.c
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
     assert cls.objects.model is cls and isinstance(cls.objects, getattr(manager_module, f"{name}Manager"))
-    assert getattr(legacy, f"{name}Manager") is getattr(manager_module, f"{name}Manager")
 
 
 @pytest.mark.parametrize("name", MODELS)
@@ -90,9 +88,8 @@ def test_original_class_contract_preserved_except_documented_api_alias(name):
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_legacy_and_new_class_serialization_stays_resolvable(name):
+def test_canonical_class_serialization_stays_resolvable(name):
     cls = getattr(importlib.import_module("app.models.agent"), name)
-    assert pickle.loads(f"capp.models.{MODELS[name]}\n{name}\n.".encode("ascii")) is cls
     assert pickle.loads(pickle.dumps(cls)) is cls
 
 
@@ -245,10 +242,10 @@ def test_unknown_export_is_rejected():
     "first",
     [
         "app.models.agent",
-        "app.models.agent_session",
-        "app.models.agent_message",
-        "app.models.agent_memory",
-        "app.models.agent_feedback",
+        "app.models.agent.agent_session",
+        "app.models.agent.agent_message",
+        "app.models.agent.agent_memory",
+        "app.models.agent.agent_feedback",
         "app.models.agent.agent_session",
         "app.models.agent.agent_message",
         "app.models.agent.agent_memory",
@@ -269,7 +266,7 @@ public = importlib.import_module('app.models')
 domain = importlib.import_module('app.models.agent')
 for name, module in json.loads(sys.argv[2]).items():
     cls = getattr(public, name)
-    assert cls is getattr(domain, name) is getattr(importlib.import_module(f'app.models.{module}'), name)
+    assert cls is getattr(domain, name) is getattr(importlib.import_module(f'app.models.agent.{module}'), name)
     assert cls.objects.model is cls
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
 session = domain.AgentSession

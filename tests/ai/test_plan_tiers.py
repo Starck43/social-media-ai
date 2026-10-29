@@ -21,7 +21,7 @@ import contextlib
 import pytest
 
 from app.core.permissions import get_current_user, has_permission, permission_scope
-from app.models.tenant import Tenant
+from app.models.tenancy.tenant import Tenant
 from app.services.tenancy import limits
 
 # This whole file is about *per-workspace* counts, so the tenant guard must be
@@ -233,7 +233,7 @@ def test_feature_and_budget_messages_name_the_tier() -> None:
 
 
 async def _platform():
-    from app.models.platform import Platform
+    from app.models.collection.platform import Platform
 
     row = await Platform.objects.filter(is_active=True).first()
     if row is None:
@@ -320,7 +320,7 @@ async def test_a_deactivated_source_still_holds_its_slot(plan_ws, plan_arrange_u
 @pytest.mark.asyncio
 async def test_the_task_ceiling_is_checked_at_creation(plan_ws, plan_arrange_user) -> None:
     from app.core.tenant_context import tenant_scope
-    from app.models.agent_task import AgentTask
+    from app.models.scheduling.agent_task import AgentTask
 
     async with plan_ws("starter") as tenant:
         with tenant_scope(tenant.id):

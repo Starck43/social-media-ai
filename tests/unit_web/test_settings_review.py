@@ -132,8 +132,8 @@ async def test_manager_denies_self_role_even_with_another_owner(monkeypatch, aut
     for name in ["app", "app.models", "app.models.tenancy"]:
         fake_module(monkeypatch, name, __path__=[])
     fake_module(monkeypatch, "app.models.tenancy.workspace_role", WorkspaceRole=Model)
-    fake_module(monkeypatch, "app.models.tenant", Tenant=Model)
-    fake_module(monkeypatch, "app.models.user", User=Model)
+    fake_module(monkeypatch, "app.models.tenancy.tenant", Tenant=Model)
+    fake_module(monkeypatch, "app.models.identity.user", User=Model)
     actor = NS(id=101)
     caller = NS(id=1, user_id=101, channel="web", is_active=True, role=NS(codename=authority), role_id=10)
     target = (

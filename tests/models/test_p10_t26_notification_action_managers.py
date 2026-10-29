@@ -139,25 +139,3 @@ async def test_bot_action_transitions_require_an_authenticated_actor(workspaces,
         with pytest.raises(PermissionError):
             await BotAction.objects.mark_executed(action_id=action.id)
         assert (await BotAction.objects.get(id=action.id)).status == BotActionStatus.PENDING
-
-
-@pytest.mark.parametrize(
-    ("legacy", "canonical", "names"),
-    [
-        ("app.models.notification", "app.models.notifications.notification", ("Notification", "NotificationManager")),
-        (
-            "app.models.bot_action",
-            "app.models.scheduling.bot_action",
-            ("BotAction", "BotActionManager", "AgentActionType", "BotActionStatus"),
-        ),
-        ("app.models.agent_session", "app.models.agent.agent_session", ("AgentSession", "AgentSessionManager")),
-    ],
-)
-async def test_legacy_root_modules_are_pure_reexports(legacy, canonical, names):
-    module = importlib.import_module(legacy)
-    model_name = names[0]
-    assert tuple(module.__all__) == names
-    assert getattr(module, model_name) is getattr(importlib.import_module(canonical), model_name)
-    assert getattr(module, model_name) is getattr(importlib.import_module("app.models"), model_name)
-    public = {name for name in vars(module) if not name.startswith("_")}
-    assert public <= set(names) | {"annotations"}

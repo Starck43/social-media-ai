@@ -1,4 +1,4 @@
-"""Analysis exports, including legacy LLM aliases. Managers bind in app.models.bootstrap."""
+"""Analysis models. Managers bind in app.models.bootstrap."""
 
 from __future__ import annotations
 
@@ -9,36 +9,12 @@ if TYPE_CHECKING:
     from .agent_scenario import AgentScenario
     from .analyzed_content_receipt import AnalyzedContentReceipt
     from .ai_analytics import AIAnalytics
-    from .llm_attempt import LLMAttempt
-    from .llm_budget import LLMBudgetDay, LLMBudgetReservation
-    from .llm_dispatch_receipt import LLMDispatchReceipt
-    from .llm_model import LLMModel
-    from .llm_outcome_event import LLMOutcomeEvent
-    from .llm_provider import LLMProvider
 
-__all__ = [
-    "AgentScenario",
-    "AnalyzedContentReceipt",
-    "AIAnalytics",
-    "LLMAttempt",
-    "LLMBudgetDay",
-    "LLMBudgetReservation",
-    "LLMDispatchReceipt",
-    "LLMModel",
-    "LLMOutcomeEvent",
-    "LLMProvider",
-]
+__all__ = ["AgentScenario", "AnalyzedContentReceipt", "AIAnalytics"]
 _MODULES = {
     "AgentScenario": "agent_scenario",
     "AnalyzedContentReceipt": "analyzed_content_receipt",
     "AIAnalytics": "ai_analytics",
-    "LLMAttempt": "llm_attempt",
-    "LLMBudgetDay": "llm_budget",
-    "LLMBudgetReservation": "llm_budget",
-    "LLMDispatchReceipt": "llm_dispatch_receipt",
-    "LLMModel": "llm_model",
-    "LLMOutcomeEvent": "llm_outcome_event",
-    "LLMProvider": "llm_provider",
 }
 
 

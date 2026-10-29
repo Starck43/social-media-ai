@@ -74,7 +74,7 @@ def test_automatic_delete_sql_is_tenant_terminal_and_review_scoped():
 
 
 def test_web_attention_query_is_text_only_and_active_history_filters_match():
-    from app.models.job import Job
+    from app.models.scheduling.job import Job
     from app.models.managers.job_manager import web_attention_criteria, web_page_status_criteria
 
     attention_sql = str(
@@ -256,7 +256,7 @@ def test_web_prune_payload_roundtrip_and_history_clear_guards():
 
     payload = _payload_from_form("prune", "ignored", "", "", retention_success_hours=72, retention_failure_hours=96)
     assert payload == {"mode": "job_history", "success_hours": 72, "failure_hours": 96}
-    from app.models.job import Job
+    from app.models.scheduling.job import Job
 
     sql = str(
         select(Job.id)

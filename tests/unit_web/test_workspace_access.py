@@ -397,8 +397,8 @@ async def test_team_change_locks_workspace_and_updates_only_authorized_target(mo
     module(monkeypatch, "app.models.managers", __path__=[])
     module(monkeypatch, "app.models.tenancy", __path__=[])
     module(monkeypatch, "app.models.tenancy.workspace_role", WorkspaceRole=WorkspaceRole)
-    module(monkeypatch, "app.models.tenant", Tenant=Tenant)
-    module(monkeypatch, "app.models.user", User=User)
+    module(monkeypatch, "app.models.tenancy.tenant", Tenant=Tenant)
+    module(monkeypatch, "app.models.identity.user", User=User)
     cls = load_nodes(
         "app/models/managers/tenant_manager.py",
         {"TenantUserManager"},

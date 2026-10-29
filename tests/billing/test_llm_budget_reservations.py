@@ -300,7 +300,7 @@ RECEIPT_MANAGER = load_isolated_source(
         "app.core.tenant_context": TENANT_CONTEXT,
         "app.services.ai.dispatch_receipts": RECEIPTS,
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseDouble),
-        "app.models.analysis.llm_dispatch_receipt": RECEIPT_MODEL,
+        "app.models.llm.llm_dispatch_receipt": RECEIPT_MODEL,
     },
 )
 CAP = {"value": 1.0}
@@ -313,7 +313,7 @@ MANAGER = load_isolated_source(
         "app.services.ai.dispatch_receipts": RECEIPTS,
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseDouble),
         "app.models.managers.llm_dispatch_receipt_manager": RECEIPT_MANAGER,
-        "app.models.analysis.llm_budget": MODELS,
+        "app.models.llm.llm_budget": MODELS,
         "app.models.tenancy.tenant": SimpleNamespace(Tenant=Tenant),
         "app.services.tenancy.resolver": SimpleNamespace(resolved_daily_cost_limit=lambda tenant: CAP["value"]),
     },
@@ -492,8 +492,8 @@ def deny(*args, **kwargs):
 socket.socket.connect = deny
 from sqlalchemy.orm import configure_mappers
 from app.models import Base, LLMBudgetDay, LLMBudgetReservation
-from app.models.analysis import LLMBudgetDay as domain_day, LLMBudgetReservation as domain_reservation
-from app.models.llm_budget import LLMBudgetDay as public_day, LLMBudgetReservation as public_reservation
+from app.models.llm import LLMBudgetDay as domain_day, LLMBudgetReservation as domain_reservation
+from app.models.llm.llm_budget import LLMBudgetDay as public_day, LLMBudgetReservation as public_reservation
 assert LLMBudgetDay is domain_day is public_day
 assert LLMBudgetReservation is domain_reservation is public_reservation
 configure_mappers()

@@ -52,7 +52,7 @@ from app.models import (
     User,
     WorkspaceRole,
 )
-from app.models.agent_task import agent_task_sources
+from app.models.scheduling.agent_task import agent_task_sources
 from app.models.managers.tenant_manager import tenant_users, tenants
 from app.services.ai.personal_catalog import (
     catalog_metadata,

@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-MODELS = {"AgentTask": "agent_task", "Job": "job", "DigestRun": "digest_run", "BotAction": "bot_action"}
+MODELS = {"AgentTask": "agent_task", "Job": "job"}
 # Association snapshot from dev1f66f348. Whole-class fingerprints were dropped
 # on 2026-10-26 (P10-T16): they restate only "the file text is unchanged" and
 # went stale on every model-body edit, while identity/layout coverage lives in
@@ -49,26 +49,16 @@ def _fingerprint(node):
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_paths_single_mapper_manager_and_tenant_scope_preserved(name):
+def test_domain_paths_single_mapper_manager_and_tenant_scope_preserved(name):
     module = MODELS[name]
     public = importlib.import_module("app.models")
-    legacy = importlib.import_module(f"app.models.{module}")
     domain = importlib.import_module("app.models.scheduling")
     leaf = importlib.import_module(f"app.models.scheduling.{module}")
     manager_module = importlib.import_module(f"app.models.managers.{module}_manager")
     cls = getattr(public, name)
-    assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
+    assert cls is getattr(domain, name) is getattr(leaf, name)
     assert name in public.__all__ and name in domain.__all__
-    # DigestRun and BotAction have accepted canonical owners outside scheduling;
-    # their old scheduling leaves remain aliases, not alternate declarations.
-    canonical = {
-        "digest_run": "app.models.notifications.digest_run",
-        "bot_action": "app.models.actions.agent_action",
-    }.get(module, f"app.models.scheduling.{module}")
-    assert cls.__module__ == canonical
-    assert cls is getattr(importlib.import_module(canonical), name)
-    if name == "BotAction":
-        assert cls is public.AgentAction is importlib.import_module("app.models.actions").AgentAction
+    assert cls.__module__ == f"app.models.scheduling.{module}"
     assert cls.__table__ is public.Base.metadata.tables[cls.__table__.fullname]
     # `_app_label` is derived by the registry from the class module, so pinning
     # it would only restate the `__module__` assertion above.
@@ -76,13 +66,11 @@ def test_paths_single_mapper_manager_and_tenant_scope_preserved(name):
     assert "tenant_id" in cls.__table__.c
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
     assert isinstance(cls.objects, getattr(manager_module, f"{name}Manager")) and cls.objects.model is cls
-    assert getattr(legacy, f"{name}Manager") is getattr(manager_module, f"{name}Manager")
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_legacy_and_current_class_serialization_resolve(name):
+def test_canonical_class_serialization_resolves(name):
     cls = getattr(importlib.import_module("app.models.scheduling"), name)
-    assert pickle.loads(f"capp.models.{MODELS[name]}\n{name}\n.".encode("ascii")) is cls
     assert pickle.loads(pickle.dumps(cls)) is cls
 
 
@@ -90,12 +78,12 @@ def test_task_source_association_has_single_identity_and_unchanged_contract():
     from sqlalchemy.orm import configure_mappers
 
     from app.models import AgentScenario, AgentTask, Base, Source, Tenant
-    from app.models.agent_task import agent_task_sources as legacy
+    from app.models.scheduling.agent_task import agent_task_sources as canonical
     from app.models.scheduling import agent_task_sources as domain
     from app.models.scheduling.agent_task import agent_task_sources as leaf
 
     configure_mappers()
-    assert legacy is domain is leaf is Base.metadata.tables[leaf.fullname]
+    assert canonical is domain is leaf is Base.metadata.tables[leaf.fullname]
     assert sum(table.name == "agent_task_sources" for table in Base.metadata.tables.values()) == 1
     assert tuple(column.name for column in leaf.primary_key.columns) == ("agent_task_id", "source_id")
     assert AgentTask.__mapper__.relationships["sources"].secondary is leaf
@@ -171,18 +159,16 @@ def test_named_uniqueness_and_nullable_task_foreign_keys_preserved():
 @pytest.mark.parametrize(
     "module,symbol",
     [
-        ("agent_task", "AgentActionType"),
-        ("agent_task", "BotTriggerType"),
-        ("bot_action", "BotActionStatus"),
-        ("bot_action", "AgentActionType"),
-        ("digest_run", "DigestRun"),
-        ("job", "TenantScopedMixin"),
+        ("app.models.scheduling.agent_task", "AgentActionType"),
+        ("app.models.scheduling.agent_task", "BotTriggerType"),
+        ("app.models.actions.agent_action", "BotActionStatus"),
+        ("app.models.actions.agent_action", "AgentActionType"),
+        ("app.models.notifications.digest_run", "DigestRun"),
+        ("app.models.scheduling.job", "TenantScopedMixin"),
     ],
 )
-def test_existing_legacy_symbols_remain_available(module, symbol):
-    legacy = importlib.import_module(f"app.models.{module}")
-    leaf = importlib.import_module(f"app.models.scheduling.{module}")
-    assert getattr(legacy, symbol) is getattr(leaf, symbol)
+def test_canonical_leaf_exports_symbols(module, symbol):
+    assert hasattr(importlib.import_module(module), symbol)
 
 
 def test_unknown_export_raises_attribute_error():
@@ -194,18 +180,12 @@ def test_unknown_export_raises_attribute_error():
     "first",
     [
         "app.models.scheduling",
-        "app.models.agent_task",
-        "app.models.job",
-        "app.models.digest_run",
-        "app.models.bot_action",
         "app.models.scheduling.agent_task",
         "app.models.scheduling.job",
-        "app.models.scheduling.digest_run",
-        "app.models.scheduling.bot_action",
+        "app.models.notifications.digest_run",
+        "app.models.actions.agent_action",
         "app.models.managers.agent_task_manager",
         "app.models.managers.job_manager",
-        "app.models.managers.digest_run_manager",
-        "app.models.managers.bot_action_manager",
     ],
 )
 def test_fresh_process_model_manager_and_association_identity(first):
@@ -218,10 +198,10 @@ public = importlib.import_module('app.models')
 domain = importlib.import_module('app.models.scheduling')
 for name, module in json.loads(sys.argv[2]).items():
     cls = getattr(public, name)
-    assert cls is getattr(domain, name) is getattr(importlib.import_module(f'app.models.{module}'), name)
+    assert cls is getattr(domain, name) is getattr(importlib.import_module(f'app.models.scheduling.{module}'), name)
     assert cls.objects.model is cls
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
-assert domain.agent_task_sources is importlib.import_module('app.models.agent_task').agent_task_sources
+assert domain.agent_task_sources is importlib.import_module('app.models.scheduling.agent_task').agent_task_sources
 """
     result = subprocess.run(
         [sys.executable, "-c", code, first, json.dumps(MODELS)],

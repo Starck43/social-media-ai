@@ -84,11 +84,11 @@ from app.models import (  # noqa: E402
     User,
     WorkspaceRole,
 )
-from app.models.agent_task import agent_task_sources  # noqa: E402
+from app.models.scheduling.agent_task import agent_task_sources  # noqa: E402
 from app.models.base import Base  # noqa: E402
 from app.models.managers.agent_task_manager import AgentTaskManager  # noqa: E402
 from app.models.managers.tenant_manager import TenantUserManager, tenants  # noqa: E402
-from app.models.role import role_permission  # noqa: E402
+from app.models.identity.role import role_permission  # noqa: E402
 from app.types import ActionType, PlatformRoleType, SourceType, WorkspaceRoleType  # noqa: E402
 from app.web import dashboard  # noqa: E402
 from tests.p11_t12_audit_cleanup import purge_tenant_audit_events  # noqa: E402

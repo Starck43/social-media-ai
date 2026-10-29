@@ -331,7 +331,7 @@ class Fixture:
         LocalBase.fixture = self
         imports = {
             "app.models.managers.base_manager": SimpleNamespace(BaseManager=LocalBase),
-            **dict.fromkeys(("app.models.job", "app.models.scheduling.job"), SimpleNamespace(Job=Job)),
+            **dict.fromkeys(("app.models.scheduling.job",), SimpleNamespace(Job=Job)),
             "app.core.config": config,
             "app.core.tenant_context": context,
             "app.jobs.attempt_budget": BUDGET,
@@ -393,9 +393,9 @@ class Fixture:
             ),
             "app.types": SimpleNamespace(ActionType=SimpleNamespace(CREATE="create", UPDATE="update", DELETE="delete")),
             **dict.fromkeys(
-                ("app.models.agent_task", "app.models.scheduling.agent_task"), SimpleNamespace(AgentTask=Task)
+                ("app.models.scheduling.agent_task", "app.models.scheduling.agent_task"), SimpleNamespace(AgentTask=Task)
             ),
-            **dict.fromkeys(("app.models.source", "app.models.collection.source"), SimpleNamespace(Source=Source)),
+            **dict.fromkeys(("app.models.collection.source",), SimpleNamespace(Source=Source)),
             "app.jobs.source_activity": SimpleNamespace(
                 SOURCE_JOB_TYPES={"collect", "analyze"}, SourceJobBusy=SourceJobBusy
             ),

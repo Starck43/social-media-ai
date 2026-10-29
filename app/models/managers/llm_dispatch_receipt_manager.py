@@ -22,7 +22,7 @@ class ReceiptStorageUnavailable(RuntimeError):
 
 class LLMDispatchReceiptManager(BaseManager):
     def __init__(self):
-        from ..analysis.llm_dispatch_receipt import LLMDispatchReceipt
+        from ..llm.llm_dispatch_receipt import LLMDispatchReceipt
 
         super().__init__(LLMDispatchReceipt)
 

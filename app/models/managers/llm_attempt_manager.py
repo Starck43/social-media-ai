@@ -53,7 +53,7 @@ class LLMAttemptManager(BaseManager):
     """
 
     def __init__(self):
-        from ..analysis.llm_attempt import LLMAttempt
+        from ..llm.llm_attempt import LLMAttempt
 
         super().__init__(LLMAttempt)
 

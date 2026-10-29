@@ -77,7 +77,7 @@ class SourceIdentityTests(unittest.TestCase):
         # Bind the already isolated real modules explicitly so this test never
         # falls through to application package initialization.
         self.legacy = load(
-            "app.models.source",
+            "app.models.collection.source",
             "app/models/source.py",
             {
                 "app.models.base": bases,

@@ -4,7 +4,7 @@ umask 077
 
 usage() {
   cat >&2 <<'USAGE'
-Usage: restore_staging_db.sh <custom-format.dump> \
+Usage: bash scripts/ops/restore_staging_db.sh <custom-format.dump> \
   --approved-sanitized-copy --confirm-overwrite-staging
 
 The source must be an owner-approved, sanitized PostgreSQL custom-format dump
@@ -67,14 +67,14 @@ fi
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 # Confirm format before creating a safety backup or stopping the API.
-"$ROOT/scripts/ops/staging_compose.sh" exec -T db pg_restore --list < "$archive" >/dev/null
+bash "$ROOT/scripts/ops/staging_compose.sh" exec -T db pg_restore --list < "$archive" >/dev/null
 # Preserve the current staging database before the destructive replacement.
-"$ROOT/scripts/ops/backup_staging_db.sh"
+bash "$ROOT/scripts/ops/backup_staging_db.sh"
 # Leave the API stopped: it runs Alembic automatically on startup.
-"$ROOT/scripts/ops/staging_compose.sh" stop api
-"$ROOT/scripts/ops/staging_compose.sh" exec -T db sh -ec \
+bash "$ROOT/scripts/ops/staging_compose.sh" stop api
+bash "$ROOT/scripts/ops/staging_compose.sh" exec -T db sh -ec \
   'dropdb --if-exists --maintenance-db=postgres --username="$POSTGRES_USER" "$POSTGRES_DB" && createdb --maintenance-db=postgres --encoding=UTF8 --template=template0 --username="$POSTGRES_USER" "$POSTGRES_DB"'
-"$ROOT/scripts/ops/staging_compose.sh" exec -T db sh -ec \
+bash "$ROOT/scripts/ops/staging_compose.sh" exec -T db sh -ec \
   'exec pg_restore --exit-on-error --single-transaction --no-owner --no-acl --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' \
   < "$archive"
 printf 'Staging restore completed. API remains stopped pending revision/data review.\n'

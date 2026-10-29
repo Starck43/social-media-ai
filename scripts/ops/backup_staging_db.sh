@@ -40,10 +40,10 @@ cleanup() { rm -f -- "$tmp" "$tmp_checksum"; }
 trap cleanup EXIT
 chmod 600 "$tmp"
 
-"$ROOT/scripts/ops/staging_compose.sh" exec -T db sh -ec \
+bash "$ROOT/scripts/ops/staging_compose.sh" exec -T db sh -ec \
   'exec pg_dump --format=custom --no-owner --no-acl --username="$POSTGRES_USER" "$POSTGRES_DB"' \
   > "$tmp"
-"$ROOT/scripts/ops/staging_compose.sh" exec -T db pg_restore --list < "$tmp" >/dev/null
+bash "$ROOT/scripts/ops/staging_compose.sh" exec -T db pg_restore --list < "$tmp" >/dev/null
 
 digest="$(sha256sum -- "$tmp" | cut -d ' ' -f 1)"
 printf '%s  %s\n' "$digest" "$base" > "$tmp_checksum"

@@ -55,9 +55,9 @@ SSH/VPN access path; public ingress/TLS and host provisioning are separate work.
    cp .env.staging.example .env.staging
    chmod 600 .env.staging
    # Edit .env.staging with freshly generated values before the next command.
-   ./scripts/ops/staging_compose.sh config --quiet
-   ./scripts/ops/staging_compose.sh up -d db api
-   ./scripts/ops/staging_compose.sh ps
+   bash scripts/ops/staging_compose.sh config --quiet
+   bash scripts/ops/staging_compose.sh up -d db api
+   bash scripts/ops/staging_compose.sh ps
    ```
 
    The wrapper refuses unresolved placeholders, a non-private env file,
@@ -66,7 +66,7 @@ SSH/VPN access path; public ingress/TLS and host provisioning are separate work.
 3. Take a private logical backup at any approved checkpoint:
 
    ```bash
-   ./scripts/ops/backup_staging_db.sh
+   bash scripts/ops/backup_staging_db.sh
    ```
 
    The script writes a PostgreSQL custom-format dump and SHA-256 manifest under
@@ -90,8 +90,8 @@ source dump will not be usable with the staging-only key. Start the staging DB,
 then use the explicit destructive flags:
 
 ```bash
-./scripts/ops/staging_compose.sh up -d db
-./scripts/ops/restore_staging_db.sh /private/path/approved-sanitized.dump \
+bash scripts/ops/staging_compose.sh up -d db
+bash scripts/ops/restore_staging_db.sh /private/path/approved-sanitized.dump \
   --approved-sanitized-copy --confirm-overwrite-staging
 ```
 
@@ -106,7 +106,7 @@ under [P7-T02](tasks/p7-t02.md). Backup retention and deletion remain an explici
 operator policy.
 
 Stop containers without deleting the staging volume with
-`./scripts/ops/staging_compose.sh down`. `down --volumes` permanently deletes the
+`bash scripts/ops/staging_compose.sh down`. `down --volumes` permanently deletes the
 staging database; use it only after confirming no retained staging data or
 backup is needed. This profile does not fix or exercise the master-only
 [deploy workflow](../.github/workflows/deploy.yml).

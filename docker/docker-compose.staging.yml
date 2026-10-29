@@ -1,4 +1,4 @@
-# Standalone, isolated staging stack. Use scripts/ops/staging_compose.sh so the
+# Standalone, isolated staging stack. Invoke with `bash scripts/ops/staging_compose.sh` so the
 # project name and staging-only env file cannot silently fall back to dev config.
 services:
   db:

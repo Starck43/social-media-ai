@@ -20,6 +20,10 @@ class ApplicationDouble:
         self.state = SimpleNamespace()
         self.routers = []
         self.middleware = []
+        self.exception_handlers = {}
+
+    def add_exception_handler(self, exception, handler):
+        self.exception_handlers[exception] = handler
 
     def include_router(self, router, **options):
         self.routers.append((router, options))

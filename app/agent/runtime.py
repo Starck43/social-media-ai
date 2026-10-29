@@ -36,6 +36,7 @@ from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound
 from app.core.config import settings
 from app.core.permissions import get_current_user, has_permission_by_codename, permission_scope
+from app.core.presentation import MessageId, PresentationMessage, render_message
 from app.core.tenant_context import tenant_scope
 from app.services.tenancy.resolver import (
     Resolution,
@@ -962,7 +963,7 @@ def _model_failure_hint(response: dict | None) -> str:
     return "Переключил модель: " + "; ".join(parts) + "."
 
 
-def _llm_error_reply(exc: BaseException) -> str:
+def _llm_error_reply(exc: BaseException, *, locale: str | None = None) -> str:
     """A short, actionable LLM failure line for the chat — never the raw body.
 
     `httpx.HTTPStatusError` stringifies to `<status>: <response text>`, which for
@@ -975,15 +976,17 @@ def _llm_error_reply(exc: BaseException) -> str:
     """
     status = getattr(getattr(exc, "response", None), "status_code", None)
     if status is None:
-        return "Не удалось обратиться к языковой модели. Подробности в логах."
+        message = PresentationMessage(MessageId.LLM_REQUEST_FAILED)
 
-    if status == 401 or status == 403:
-        return "Языковая модель отклонила запрос: неверный или истёкший API-ключ. Подробности в логах."
-    if status == 429:
-        return "Языковая модель временно недоступна из-за лимита запросов. Подробности в логах."
-    if 400 <= status < 500:
-        return f"Языковая модель отклонила мой запрос ({status}). Подробности в логах."
-    return f"Языковая модель сейчас недоступна ({status}). Подробности в логах."
+    elif status == 401 or status == 403:
+        message = PresentationMessage(MessageId.LLM_AUTH_REJECTED)
+    elif status == 429:
+        message = PresentationMessage(MessageId.LLM_RATE_LIMITED)
+    elif 400 <= status < 500:
+        message = PresentationMessage(MessageId.LLM_REQUEST_REJECTED, {"status": status})
+    else:
+        message = PresentationMessage(MessageId.LLM_UNAVAILABLE, {"status": status})
+    return render_message(message, locale=locale)
 
 
 async def _handle_feedback(session: Any, inbound: Any, command: str, text: str) -> str:

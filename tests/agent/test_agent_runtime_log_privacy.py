@@ -4,9 +4,10 @@ Owner command from the repository root:
     python tests/test_agent_runtime_log_privacy.py
 
 Reads app/agent/runtime.py from cwd, extracts selected function definitions only.
-No app imports, SQL, migrations, providers or messaging. Existing runtime gates
-are replaced only inside this test namespace. These are NOT full runtime or
-authorization acceptance tests. Synthetic markers only.
+Only the pure message-boundary module is imported; no runtime/model imports, SQL,
+migrations, providers or messaging. Existing runtime gates are replaced only
+inside this test namespace. These are NOT full runtime or authorization
+acceptance tests. Synthetic markers only.
 """
 from __future__ import annotations
 
@@ -21,6 +22,8 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, Optional
 from unittest.mock import AsyncMock, patch
+
+from app.core.presentation import MessageId, PresentationMessage, render_message
 
 PRIVATE = "synthetic-private-marker"
 SELECTED = {
@@ -94,6 +97,8 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.ns = {
             "Any": Any, "Optional": Optional, "RuntimeIdentity": Any,
+            "MessageId": MessageId, "PresentationMessage": PresentationMessage,
+            "render_message": render_message,
             "logger": logger, "logging": logging, "json": json, "re": re,
             "settings": SimpleNamespace(AGENT_MAX_ITERATIONS=1),
             "refresh_runtime_identity": AsyncMock(return_value=self.identity),
@@ -142,6 +147,7 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_llm_failure_retains_safe_reply_without_logging_body_or_traceback(self):
         chat = AsyncMock(side_effect=RuntimeError(PRIVATE))
         self.ns["_chat"] = chat
+        self.ns["_spend_remaining"] = AsyncMock(return_value=None)
         session = Session()
         result = await self.ns["_run_tool_loop"](session, [], [], None, self.identity)
         self.assertEqual(result, "Не удалось обратиться к языковой модели. Подробности в логах.")

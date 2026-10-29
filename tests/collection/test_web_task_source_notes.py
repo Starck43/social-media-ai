@@ -1,4 +1,4 @@
-"""Source-isolated checks for run-now modal per-source chips; no app imports.
+"""Source-isolated checks for run-now modal per-source chips; no runtime imports.
 
 Run directly: python tests/test_web_task_source_notes.py
 Covers the two row shapes `_source_links` renders: `collect` per-source rows
@@ -13,6 +13,8 @@ import ast
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+
+from app.core.presentation import MessageId, PresentationMessage, render_message
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -42,7 +44,12 @@ def load_source_note_functions():
             return few
         return many
 
-    namespace: dict = {"plural": plural}
+    namespace: dict = {
+        "plural": plural,
+        "MessageId": MessageId,
+        "PresentationMessage": PresentationMessage,
+        "render_message": render_message,
+    }
     exec(compile(ast.fix_missing_locations(module), str(path), "exec"), namespace)
     return namespace["_source_note"], namespace["_source_links"]
 

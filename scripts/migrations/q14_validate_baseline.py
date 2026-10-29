@@ -89,7 +89,8 @@ def main():
                 operations = Operations(MigrationContext.configure(connection))
                 operations.execute('DROP SCHEMA IF EXISTS "test_schema" CASCADE')
                 operations.execute('CREATE SCHEMA "test_schema"')
-            command.upgrade(config, "head")
+                config.attributes["connection"] = connection
+                command.upgrade(config, "head")
 
             async def prepare():
                 from app.core.database import async_engine

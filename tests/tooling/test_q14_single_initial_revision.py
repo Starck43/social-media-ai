@@ -1,6 +1,7 @@
 """Keep Alembic's executable history to one initial revision."""
 
 import ast
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,3 +27,8 @@ def test_alembic_history_is_one_initial_revision():
     metadata = _metadata(revisions[0])
     assert isinstance(metadata.get("revision"), str) and metadata["revision"]
     assert metadata.get("down_revision") is None
+
+
+def test_initial_schema_resource_contains_sql_without_psql_commands():
+    sql = (VERSIONS / "baseline_0118.sql").read_text(encoding="utf-8")
+    assert not re.search(r"(?m)^\s*\\", sql), "psql client commands cannot execute through Alembic"

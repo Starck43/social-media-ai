@@ -6420,5 +6420,3 @@ ALTER TABLE ONLY {{schema}}.workspace_role_permission
 --
 -- PostgreSQL database dump complete
 --
-
-\unrestrict MglNgc1bogW8giCwsKsLImWv47pVcgyu40mkce8B0cZFJa3jh7ghzbN2ymRIoYc

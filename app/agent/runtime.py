@@ -343,7 +343,8 @@ def _human_confirmation(name: str, args: dict) -> str:
         "source_disable": lambda a: f"отключить источник №{a.get('source_id')}",
         "task_add": lambda a: (
             f"создать задачу «{a.get('name')}»: {_JOB_TYPE_LABELS.get(a.get('job_type'), a.get('job_type'))}, "
-            f"{_human_cron(a)}" + (f", начиная с {a.get('start_date')}" if a.get("start_date") else "")
+            f"{_human_cron(a)}"
+            + (f", начиная с {a.get('start_date')}" if a.get("start_date") else "")
             + (f"; {_human_collection(a.get('collection'))}" if _human_collection(a.get("collection")) else "")
         ),
         "task_update": lambda a: _human_task_update(a),
@@ -845,9 +846,7 @@ async def _run_tool_loop(
             await session.append("assistant", denied)
             return _join_replies(reply, denied)
         if limit and await _cost_today() >= limit:
-            reply = _join_replies(
-                reply, f"{LIMIT_REACHED_PREFIX} расходов исчерпан во время обработки запроса."
-            )
+            reply = _join_replies(reply, f"{LIMIT_REACHED_PREFIX} расходов исчерпан во время обработки запроса.")
             break
 
         try:
@@ -956,10 +955,7 @@ def _model_failure_hint(response: dict | None) -> str:
     switched = [item for item in failures if item.get("reason") != "budget"]
     if not switched:
         return ""
-    parts = [
-        f"{item.get('model')} — {FAILURE_LABELS.get(item.get('reason'), item.get('reason'))}"
-        for item in switched
-    ]
+    parts = [f"{item.get('model')} — {FAILURE_LABELS.get(item.get('reason'), item.get('reason'))}" for item in switched]
     return "Переключил модель: " + "; ".join(parts) + "."
 
 
@@ -1155,6 +1151,7 @@ async def _preferred_agent_model(tenant: Any):
     if identity is not None:
         from app.core.personal_catalog_context import current_catalog_owner_id
         from app.services.ai.personal_catalog import eligible_chat_model
+
         model = await LLMModel.objects.select_related("provider").get(id=identity, is_active=True)
         allowed = tenant.plan_limits().get("model_types") if tenant else None
         if model is not None and eligible_chat_model(model, user_id=current_catalog_owner_id(), allowed_types=allowed):
@@ -1177,8 +1174,8 @@ async def _spend_remaining() -> Optional[float]:
     a permission for one model: past it the chat stops instead of quietly
     switching the owner to a paid provider.
     """
-    from app.core.tenant_context import current_tenant_id
     from app.agent.runtime import tenant_daily_cost_limit
+    from app.core.tenant_context import current_tenant_id
 
     tid = current_tenant_id()
     if tid is None:

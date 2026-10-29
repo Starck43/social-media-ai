@@ -71,21 +71,13 @@ _RU_CATALOG: Mapping[MessageId, str | _PluralForms] = MappingProxyType(
         MessageId.LLM_AUTH_REJECTED: (
             "Языковая модель отклонила запрос: неверный или истёкший API-ключ. Подробности в логах."
         ),
-        MessageId.LLM_RATE_LIMITED: (
-            "Языковая модель временно недоступна из-за лимита запросов. Подробности в логах."
-        ),
-        MessageId.LLM_REQUEST_REJECTED: (
-            "Языковая модель отклонила мой запрос ({status}). Подробности в логах."
-        ),
-        MessageId.LLM_UNAVAILABLE: (
-            "Языковая модель сейчас недоступна ({status}). Подробности в логах."
-        ),
+        MessageId.LLM_RATE_LIMITED: ("Языковая модель временно недоступна из-за лимита запросов. Подробности в логах."),
+        MessageId.LLM_REQUEST_REJECTED: ("Языковая модель отклонила мой запрос ({status}). Подробности в логах."),
+        MessageId.LLM_UNAVAILABLE: ("Языковая модель сейчас недоступна ({status}). Подробности в логах."),
     }
 )
 
-_CATALOGS: Mapping[str, Mapping[MessageId, str | _PluralForms]] = MappingProxyType(
-    {DEFAULT_LOCALE: _RU_CATALOG}
-)
+_CATALOGS: Mapping[str, Mapping[MessageId, str | _PluralForms]] = MappingProxyType({DEFAULT_LOCALE: _RU_CATALOG})
 
 
 def plural_category(count: int) -> str:

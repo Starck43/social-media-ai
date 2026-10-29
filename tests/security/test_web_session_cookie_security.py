@@ -53,6 +53,7 @@ def application_for(environment, *, debug=False, cors=False):
             "ApiScopeMiddleware",
             "PlatformScopeMiddleware",
             "AdminScopeMiddleware",
+            "RequestContextMiddleware",
             "CORSMiddleware",
             "health_router",
             "web_router",

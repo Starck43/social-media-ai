@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlunsplit
 
 try:
     import yaml
@@ -363,58 +364,62 @@ def nginx_static_contract() -> None:
     )
 
 
-def staging_env(password: str | None = None, db_url: str | None = None, placeholders: bool = False) -> str:
+def env_text(values: dict[str, str]) -> str:
+    return "\n".join(f"{key}={value}" for key, value in values.items()) + "\n"
+
+
+def database_url(user: str, password: str, host: str, name: str) -> str:
+    return urlunsplit(("postgresql+asyncpg", f"{user}:{password}@{host}:5432", f"/{name}", "", ""))
+
+
+def staging_env(password: str | None = None, database_host: str = "db", placeholders: bool = False) -> str:
     key = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")
     secret = "replace-with-test-placeholder" if placeholders else secrets.token_urlsafe(48)
     db_password = "replace-with-test-placeholder" if placeholders else (password or secrets.token_hex(32))
-    return "\n".join(
-        (
-            "ENVIRONMENT=production",
-            "DEBUG=false",
-            f"SECRET_KEY={secret}",
-            f"CREDENTIALS_KEY={key}",
-            "BACKEND_CORS_ORIGINS=[]",
-            "POSTGRES_USER=staging",
-            f"POSTGRES_PASSWORD={db_password}",
-            "POSTGRES_DB=social_ai_staging",
-            db_url or f"POSTGRES_URL=postgresql+asyncpg://staging:{db_password}@db:5432/social_ai_staging",
-            "DB_SCHEMA=public",
-            "DB_POOL=pool",
-            "REDIS_URL=redis://redis:6379/0",
-            "DOCKER_SUBNET=172.30.43.0/24",
-            "NGINX_CONTAINER_IP=172.30.43.2",
-            "SCHEDULER_ENABLED=false",
-            "DATA_RETENTION_MONTHS=1",
-            "",
-        )
-    )
+    values = {
+        "ENVIRONMENT": "production",
+        "DEBUG": "false",
+        "SECRET_KEY": secret,
+        "CREDENTIALS_KEY": key,
+        "BACKEND_CORS_ORIGINS": "[]",
+        "POSTGRES_USER": "staging",
+        "POSTGRES_PASSWORD": db_password,
+        "POSTGRES_DB": "social_ai_staging",
+        "POSTGRES_URL": database_url("staging", db_password, database_host, "social_ai_staging"),
+        "DB_SCHEMA": "public",
+        "DB_POOL": "pool",
+        "REDIS_URL": "redis://redis:6379/0",
+        "DOCKER_SUBNET": "172.30.43.0/24",
+        "NGINX_CONTAINER_IP": "172.30.43.2",
+        "SCHEDULER_ENABLED": "false",
+        "DATA_RETENTION_MONTHS": "1",
+    }
+    return env_text(values)
 
 
-def production_env(db_url: str | None = None) -> str:
+def production_env(database_host: str = "db") -> str:
     password = secrets.token_hex(32)
     key = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")
-    return "\n".join(
-        (
-            "ENVIRONMENT=production",
-            "DEBUG=false",
-            f"SECRET_KEY={secrets.token_urlsafe(48)}",
-            f"CREDENTIALS_KEY={key}",
-            "BACKEND_CORS_ORIGINS=[]",
-            "ADMIN_ENABLED=true",
-            "POSTGRES_USER=social_ai",
-            f"POSTGRES_PASSWORD={password}",
-            "POSTGRES_DB=social_ai",
-            db_url or f"POSTGRES_URL=postgresql+asyncpg://social_ai:{password}@db:5432/social_ai",
-            "DB_SCHEMA=public",
-            "DB_POOL=pool",
-            "REDIS_URL=redis://redis:6379/0",
-            "DOCKER_SUBNET=172.30.42.0/24",
-            "NGINX_CONTAINER_IP=172.30.42.2",
-            "SCHEDULER_ENABLED=true",
-            "DATA_RETENTION_MONTHS=1",
-            "",
-        )
-    )
+    values = {
+        "ENVIRONMENT": "production",
+        "DEBUG": "false",
+        "SECRET_KEY": secrets.token_urlsafe(48),
+        "CREDENTIALS_KEY": key,
+        "BACKEND_CORS_ORIGINS": "[]",
+        "ADMIN_ENABLED": "true",
+        "POSTGRES_USER": "social_ai",
+        "POSTGRES_PASSWORD": password,
+        "POSTGRES_DB": "social_ai",
+        "POSTGRES_URL": database_url("social_ai", password, database_host, "social_ai"),
+        "DB_SCHEMA": "public",
+        "DB_POOL": "pool",
+        "REDIS_URL": "redis://redis:6379/0",
+        "DOCKER_SUBNET": "172.30.42.0/24",
+        "NGINX_CONTAINER_IP": "172.30.42.2",
+        "SCHEDULER_ENABLED": "true",
+        "DATA_RETENTION_MONTHS": "1",
+    }
+    return env_text(values)
 
 
 def compose_parser_check() -> None:
@@ -501,8 +506,7 @@ def guard_simulations() -> None:
         require(result.returncode != 0 and not docker_log.exists(), "Staging placeholders must reject before Docker")
 
         password = secrets.token_hex(32)
-        invalid_db_url = f"POSTGRES_URL=postgresql+asyncpg://staging:{password}@localhost:5432/social_ai_staging"
-        env_file.write_text(staging_env(password=password, db_url=invalid_db_url), encoding="utf-8")
+        env_file.write_text(staging_env(password=password, database_host="localhost"), encoding="utf-8")
         env_file.chmod(0o600)
         result = run_guard(wrapper, repo, docker_bin, docker_log, "config", "--quiet")
         require(result.returncode == 1 and not docker_log.exists(), "Invalid staging DB host must reject before Docker")
@@ -545,8 +549,7 @@ def guard_simulations() -> None:
         result = run_guard(production_wrapper, repo, docker_bin, docker_log, "config", "--quiet")
         require(result.returncode == 2 and not docker_log.exists(), "Insecure production env must reject before Docker")
 
-        wrong_db_url = "POSTGRES_URL=postgresql+asyncpg://social_ai:bad@localhost:5432/social_ai"
-        production_file.write_text(production_env(db_url=wrong_db_url), encoding="utf-8")
+        production_file.write_text(production_env(database_host="localhost"), encoding="utf-8")
         production_file.chmod(0o600)
         result = run_guard(production_wrapper, repo, docker_bin, docker_log, "config", "--quiet")
         require(

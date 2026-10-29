@@ -849,6 +849,7 @@ an approved restore/recovery plan against an isolated target first. No automatic
 Alembic downgrade or destructive production restore is provided. A failed health
 probe does not authorize replay, pruning or another provider call.
 
-No VPS, real TLS certificate, Docker daemon, database restore, production rollout,
-or external-provider smoke test was available during repository preparation.
+No VPS, real TLS certificate, live database restore, production rollout, or
+external-provider smoke test was available during repository preparation. Hosted
+CI configuration parsing and image building do not certify a running environment.
 Those checks remain explicitly unrun and their task rows remain open.

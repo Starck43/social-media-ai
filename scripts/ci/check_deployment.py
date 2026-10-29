@@ -32,6 +32,7 @@ except ImportError as exc:  # pragma: no cover - depends on the selected tooling
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/deploy.yml"
 PASS_COUNT = 0
+INVALID_PLACEHOLDER = "replace-with-test-placeholder"
 
 
 def require(condition: bool, message: str) -> None:
@@ -374,8 +375,8 @@ def database_url(user: str, password: str, host: str, name: str) -> str:
 
 def staging_env(password: str | None = None, database_host: str = "db", placeholders: bool = False) -> str:
     key = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")
-    signing_key = "replace-with-test-placeholder" if placeholders else secrets.token_urlsafe(48)
-    db_password = "replace-with-test-placeholder" if placeholders else (password or secrets.token_hex(32))
+    signing_key = INVALID_PLACEHOLDER if placeholders else secrets.token_urlsafe(48)
+    db_password = INVALID_PLACEHOLDER if placeholders else (password or secrets.token_hex(32))
     values = {
         "ENVIRONMENT": "production",
         "DEBUG": "false",

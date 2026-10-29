@@ -33,8 +33,9 @@ for raw in Path(sys.argv[1]).read_text().splitlines():
 required = {
     "ENVIRONMENT", "DEBUG", "SECRET_KEY", "CREDENTIALS_KEY",
     "BACKEND_CORS_ORIGINS", "POSTGRES_USER", "POSTGRES_PASSWORD",
-    "POSTGRES_DB", "POSTGRES_URL", "DB_SCHEMA", "DB_POOL",
-    "SCHEDULER_ENABLED",
+    "POSTGRES_DB", "POSTGRES_URL", "DB_SCHEMA", "DB_POOL", "REDIS_URL",
+    "DOCKER_SUBNET", "NGINX_CONTAINER_IP", "SCHEDULER_ENABLED",
+    "DATA_RETENTION_MONTHS",
 }
 allowed = required
 missing = sorted(required - values.keys())
@@ -47,6 +48,11 @@ if values["ENVIRONMENT"] != "production" or values["DEBUG"].lower() != "false":
     raise SystemExit("Staging must use ENVIRONMENT=production and DEBUG=false.")
 if values["SCHEDULER_ENABLED"].lower() != "false":
     raise SystemExit("SCHEDULER_ENABLED must remain false in this API-only profile.")
+try:
+    if int(values["DATA_RETENTION_MONTHS"]) < 1:
+        raise ValueError
+except ValueError:
+    raise SystemExit("DATA_RETENTION_MONTHS must be an integer >= 1.")
 if values["POSTGRES_USER"] != "staging" or values["POSTGRES_DB"] != "social_ai_staging" or values["DB_SCHEMA"] != "public":
     raise SystemExit("Staging database/schema must match the isolated profile.")
 if len(values["SECRET_KEY"]) < 64:
@@ -63,8 +69,18 @@ try:
     origins = json.loads(values["BACKEND_CORS_ORIGINS"])
 except (TypeError, ValueError):
     raise SystemExit("BACKEND_CORS_ORIGINS must be a JSON list for the loopback staging origin.")
-if not isinstance(origins, list) or any(origin not in {"http://localhost:18000", "http://127.0.0.1:18000"} for origin in origins):
-    raise SystemExit("BACKEND_CORS_ORIGINS may contain only loopback staging origins.")
+if not isinstance(origins, list) or any(not isinstance(origin, str) for origin in origins):
+    raise SystemExit("BACKEND_CORS_ORIGINS must be a JSON list of strings (empty is valid for same-origin UI).")
+if values["REDIS_URL"] != "redis://redis:6379/0":
+    raise SystemExit("REDIS_URL must target only the private staging Redis service.")
+try:
+    import ipaddress
+    network = ipaddress.ip_network(values["DOCKER_SUBNET"], strict=True)
+    proxy_ip = ipaddress.ip_address(values["NGINX_CONTAINER_IP"])
+except ValueError:
+    raise SystemExit("DOCKER_SUBNET and NGINX_CONTAINER_IP must be valid network values.")
+if proxy_ip not in network or proxy_ip in {network.network_address, network.broadcast_address}:
+    raise SystemExit("NGINX_CONTAINER_IP must be a usable address inside DOCKER_SUBNET.")
 try:
     url = urlsplit(values["POSTGRES_URL"])
     correct_target = (url.scheme == "postgresql+asyncpg" and url.hostname == "db"

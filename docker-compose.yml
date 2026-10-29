@@ -1,3 +1,6 @@
+# LEGACY WEB STACK: not the supported Python application deployment.
+# It expects an untracked root Dockerfile and binds 127.0.0.1:8226.
+# Do not run beside docker/docker-compose.production.yml; migrate only after host inventory.
 services:
   web:
     build: .

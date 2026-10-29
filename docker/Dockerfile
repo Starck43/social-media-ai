@@ -1,5 +1,5 @@
 # Build context: repository root (docker-compose `build.context: ..`).
-ARG PYTHON_VERSION=3.12
+ARG PYTHON_VERSION=3.14
 FROM python:${PYTHON_VERSION}-slim
 
 ENV PYTHONUNBUFFERED=1 \

@@ -33,6 +33,7 @@ db.sqlite3*
 .env*
 !.env.example
 !.env.staging.example
+!.env.production.example
 .venv/
 venv/
 ENV/

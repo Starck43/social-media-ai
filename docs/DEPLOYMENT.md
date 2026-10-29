@@ -7,31 +7,95 @@
 
 During an incident start at [Observation and conservative recovery](#observation-and-conservative-recovery),
 not installation/bootstrap/update commands. Starting or restarting a process can
-write data or cause external effects. The checked-in [Compose](../docker/docker-compose.yml)
-contains `db` and `api` only; `api` starts with `alembic upgrade head` before HTTP.
-It does not start the scheduler, worker or messenger listener. Do not restart it
-as a supposedly read-only migration diagnostic. The examples below are historical
-sketches; do not copy their service names/topology into an incident response.
+write data or cause external effects. The root [Compose](../docker-compose.yml)
+is a legacy `web:3000` sketch and is not the supported Python service stack. The
+supported Python profiles are the isolated staging and production Compose files
+described below; migrations are explicit deployment steps, not API startup
+commands. Do not run old examples as a supposedly read-only migration diagnostic.
+
+## Supported single-VPS topology (prepared, not provisioned)
+
+The supported deployment target is the Python modular monolith described in
+[DESIGN](DESIGN.md): FastAPI serves `/app`, `/admin`, API, and health routes in
+one `api` container. There is no separate Node/web or admin container. The
+production Compose stack separates PostgreSQL (persistent), Redis (private,
+volatile rate-limit storage), API, and an optional single `app.runtime` owner.
+The runtime is an explicit `runtime` Compose profile and is intentionally not
+started by deploy automation until its operational and retention gates are
+accepted. `app.main` still starts its own short maintenance loop in API-only mode;
+API-only does not mean a read-only process.
+
+The host's `/etc/nginx` is the public TLS terminator. The internal Nginx
+container is a private reverse proxy to the `api` service; it publishes only
+`127.0.0.1:8226` for production and `127.0.0.1:18000` for staging. Install and
+customize [the host-vhost example](../nginx/vps-sites.conf.example) only after
+choosing domains and obtaining a certificate. Replace every `example.invalid`
+and certificate placeholder, then run `nginx -t` before reload. HTTP is redirected
+to HTTPS; the ACME challenge path is left available for webroot validation.
+
+`docker-compose.yml` at the repository root is an old `web:3000` sketch, not the
+supported Python stack; it also expects an untracked root Dockerfile and claims
+port 8226. Do not start it beside the new Compose projects. `nginx/default.conf`
+is now the container-side proxy for the Python `api`; the root web sketch is
+retained only as legacy material pending a VPS inventory/cutover.
+
+Both Compose projects may share the VPS but must not share env files, database
+volumes, Redis state, or provider credentials. Staging uses a separate named DB
+volume and an internal no-egress network; only staging publishes the PostgreSQL
+port, bound to loopback `127.0.0.1:55432`. Production PostgreSQL has no host port.
+Staging starts no `app.runtime`; use only synthetic or approved sanitized data.
+The same VPS is
+not a separate failure domain. Check `DOCKER_SUBNET` on the host before first
+start; choose a non-overlapping private subnet if another Docker network already
+uses the documented example range.
+
+The GitHub workflow builds the checked-in `docker/Dockerfile`, publishes a
+commit-SHA tag to GHCR, and deploys the returned immutable image digest. Pushes to `dev` deploy that image to staging only when
+`STAGING_DEPLOY_ENABLED=true`; pushes to `master` can reach production only when
+`PRODUCTION_DEPLOY_ENABLED=true` and `PRODUCTION_BACKUP_READY=true`, then wait
+for the GitHub `production` Environment approval. Configure a read-only GHCR
+pull credential on the VPS; the workflow does not transmit it. Set environment
+secrets for the SSH endpoint, private key and pinned `known_hosts`, plus the
+environment variable `VPS_DEPLOY_DIR`. Enable required reviewers/branch restrictions in GitHub
+Settings—workflow YAML cannot create those protection rules. Until those values
+are configured, CI only builds the image and skips deployment.
+
+The deployment script performs a single explicit Alembic step before replacing
+the API. Production first creates a protected local logical snapshot; this is
+not offsite disaster recovery. Do not enable the production deployment gate until
+an offsite backup and restore policy is established. Review migrations on the
+approved test schema and authorize production apply separately. Runtime remains
+off by default; the configured one-month retention is irreversible, so do not
+start the runtime profile before the owner accepts P6-T01 and recovery evidence.
+
+Owner setup still required later: create production/staging DNS records; issue a
+certificate whose SANs cover both names; install the reviewed host-vhost file;
+open only SSH/80/443; create private `.env.production` and `.env.staging` files
+with mode 600 and separate keys; prepare the two deployment directories; configure
+GitHub Environments/secrets/variables and approvals; verify the actual VPS Docker
+subnets; then execute the staging install, sanitized-copy, backup/restore, and
+P7-T02/P4-T01/P6-T01 proofs. No domain, host, certificate, database, or secret
+was accessed while preparing these files.
 
 ## Prerequisites
 
 - VPS with Ubuntu 22.04+ (or Debian 12+)
 - 2 vCPU, 4 GB RAM minimum
-- PostgreSQL 15+ (or managed PostgreSQL)
-- Python 3.14+
+- Docker Engine and Docker Compose v2
+- PostgreSQL 16 container image (bundled in the prepared profiles)
 - Domain name (optional, for HTTPS)
 
 ## Isolated staging Compose (prepared, not provisioned)
 
 The standalone [`docker-compose.staging.yml`](../docker/docker-compose.staging.yml)
-profile is separate from the development Compose and does not read `.env`. It
-builds the app with Python 3.14 (the repository minimum) while leaving the
-existing Dockerfile default unchanged. It runs only PostgreSQL and the API, uses
-the `social-ai-staging` Compose project and its own named volume, publishes only loopback ports (`127.0.0.1:55432` for
-PostgreSQL and `127.0.0.1:18000` for the API), and places both services on an
-internal Docker network with no external egress. It deliberately does not start
-`app.runtime`, Redis, or provider integrations. The API runs one Alembic upgrade
-at startup; do not scale API replicas or start a second migrator.
+profile is separate from development and uses only `.env.staging`. It runs
+PostgreSQL, Redis (for the admin rate limiter), the FastAPI application, and an
+internal Nginx proxy in the `social-ai-staging` Compose project with its own DB
+volume. PostgreSQL and the proxy bind only to loopback (`127.0.0.1:55432` and
+`127.0.0.1:18000`); containers use an internal no-egress network. The API image
+uses Python 3.14. Staging does not start `app.runtime` or provider integrations.
+Run one explicit Alembic upgrade before starting the API; API startup itself does
+not migrate the schema.
 
 This is repository preparation, not a provisioned host, restored database,
 deploy-gated check, or staging acceptance. No production credentials or database
@@ -56,12 +120,19 @@ SSH/VPN access path; public ingress/TLS and host provisioning are separate work.
    chmod 600 .env.staging
    # Edit .env.staging with freshly generated values before the next command.
    bash scripts/ops/staging_compose.sh config --quiet
-   bash scripts/ops/staging_compose.sh up -d db api
+   bash scripts/ops/staging_compose.sh up -d db redis
+   # Apply one reviewed migration, then start HTTP/proxy services.
+   APP_IMAGE=ghcr.io/starck43/social-media-ai:sha-<full-commit-sha> \
+     bash scripts/ops/staging_compose.sh run --rm --no-deps api alembic upgrade head
+   APP_IMAGE=ghcr.io/starck43/social-media-ai:sha-<full-commit-sha> \
+     bash scripts/ops/staging_compose.sh up -d api nginx
    bash scripts/ops/staging_compose.sh ps
    ```
 
    The wrapper refuses unresolved placeholders, a non-private env file,
    unexpected/provider keys, a non-staging database URL, or missing Docker.
+   For routine releases use `scripts/ops/deploy_vps.sh staging <immutable-image>`
+   so the image pull, single migration, and readiness check happen in order.
    `config --quiet` avoids printing interpolated values.
 3. Take a private logical backup at any approved checkpoint:
 
@@ -98,9 +169,9 @@ bash scripts/ops/restore_staging_db.sh /private/path/approved-sanitized.dump \
 Restore verifies the checksum and archive format before changes, saves the
 current staging DB to a new protected backup, stops the API, and replaces only
 the database reached through the fixed staging Compose project. The API remains
-stopped afterward because its startup automatically runs Alembic. Review the
-source Alembic revision and data scope; separately approve the migration/upgrade
-and start the API only after that review. A successful `pg_restore` is not a
+stopped afterward. Review the source Alembic revision and data scope; separately
+approve and run exactly one explicit migration before starting the API. A
+successful `pg_restore` is not a
 restore acceptance proof: verify schema, app access, and the required operation
 under [P7-T02](tasks/p7-t02.md). Backup retention and deletion remain an explicit
 operator policy.
@@ -108,8 +179,24 @@ operator policy.
 Stop containers without deleting the staging volume with
 `bash scripts/ops/staging_compose.sh down`. `down --volumes` permanently deletes the
 staging database; use it only after confirming no retained staging data or
-backup is needed. This profile does not fix or exercise the master-only
-[deploy workflow](../.github/workflows/deploy.yml).
+backup is needed.
+
+### GitHub deployment workflow (prepared, gated off)
+
+Pull requests to `dev` or `master` build the checked-in `docker/Dockerfile`
+without publishing. Branch pushes publish a commit-tagged image to GHCR and the
+deploy step pins the build's content digest.
+`dev` can deploy only to the GitHub `staging` Environment when the repository
+variable `STAGING_DEPLOY_ENABLED=true`; `master` additionally requires
+`PRODUCTION_DEPLOY_ENABLED=true` and `PRODUCTION_BACKUP_READY=true`, then waits
+for approval configured on the protected `production` Environment. The workflow
+uses SSH with a pinned `VPS_KNOWN_HOSTS` secret and copies only the Compose,
+Nginx, and operations support files. It does not copy environment files or pass
+a registry credential to the VPS; configure a read-only GHCR pull login on the
+server first. Deployment paths are fixed as
+`/opt/social-media-ai/staging` and `/opt/social-media-ai/production` using the
+environment variable `VPS_DEPLOY_DIR`. Deploy variables remain unset/false by
+default, so preparing this workflow does not start a deployment.
 
 ---
 

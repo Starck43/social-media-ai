@@ -1,0 +1,48 @@
+# Standalone, isolated staging stack. Invoke with `bash scripts/ops/staging_compose.sh` so the
+# project name and staging-only env file cannot silently fall back to dev config.
+services:
+  db:
+    image: postgres:16-alpine
+    env_file:
+      - ../.env.staging
+    volumes:
+      - staging_pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-social_ai_staging}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        PYTHON_VERSION: "3.14"
+    env_file:
+      - ../.env.staging
+    command:
+      - sh
+      - -ec
+      - alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  staging_pgdata:
+
+networks:
+  default:
+    internal: true

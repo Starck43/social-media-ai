@@ -21,6 +21,96 @@ sketches; do not copy their service names/topology into an incident response.
 - Python 3.14+
 - Domain name (optional, for HTTPS)
 
+## Isolated staging Compose (prepared, not provisioned)
+
+The standalone [`docker-compose.staging.yml`](../docker/docker-compose.staging.yml)
+profile is separate from the development Compose and does not read `.env`. It
+builds the app with Python 3.14 (the repository minimum) while leaving the
+existing Dockerfile default unchanged. It runs only PostgreSQL and the API, uses
+the `social-ai-staging` Compose project and its own named volume, publishes only loopback ports (`127.0.0.1:55432` for
+PostgreSQL and `127.0.0.1:18000` for the API), and places both services on an
+internal Docker network with no external egress. It deliberately does not start
+`app.runtime`, Redis, or provider integrations. The API runs one Alembic upgrade
+at startup; do not scale API replicas or start a second migrator.
+
+This is repository preparation, not a provisioned host, restored database,
+deploy-gated check, or staging acceptance. No production credentials or database
+are supplied. For a remote host, keep the ports loopback-only and use an approved
+SSH/VPN access path; public ingress/TLS and host provisioning are separate work.
+
+### Prepare and start
+
+1. Copy `.env.staging.example` to `.env.staging`; replace every placeholder with
+   newly generated, staging-only values. Set mode `600`. Generate `SECRET_KEY`
+   with `python -c 'import secrets; print(secrets.token_urlsafe(64))'`,
+   `CREDENTIALS_KEY` with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'`,
+   and `POSTGRES_PASSWORD` with `python -c 'import secrets; print(secrets.token_hex(32))'`.
+   Use the same hex password in `POSTGRES_URL`; its host must remain `db` and
+   database `social_ai_staging`. Never copy a production `SECRET_KEY`,
+   `CREDENTIALS_KEY`, provider token, or `.env` into staging.
+2. Validate the required keys and staging-only database target, then start the
+   isolated services:
+
+   ```bash
+   cp .env.staging.example .env.staging
+   chmod 600 .env.staging
+   # Edit .env.staging with freshly generated values before the next command.
+   bash scripts/ops/staging_compose.sh config --quiet
+   bash scripts/ops/staging_compose.sh up -d db api
+   bash scripts/ops/staging_compose.sh ps
+   ```
+
+   The wrapper refuses unresolved placeholders, a non-private env file,
+   unexpected/provider keys, a non-staging database URL, or missing Docker.
+   `config --quiet` avoids printing interpolated values.
+3. Take a private logical backup at any approved checkpoint:
+
+   ```bash
+   bash scripts/ops/backup_staging_db.sh
+   ```
+
+   The script writes a PostgreSQL custom-format dump and SHA-256 manifest under
+   `$HOME/.local/state/social-media-ai/staging/backups` by default (or an absolute
+   `STAGING_BACKUP_DIR` outside the repository). Files are mode `600`; the
+   directory must be mode `700`. It validates the archive and never prunes old
+   backups. Mode bits are not encryption: store real data only on approved,
+   encrypted private storage. Never commit or attach dumps/manifests to issues or
+   PRs.
+
+### Restore an approved sanitized copy
+
+Database copying is a separate owner-approved action. Use only an approved,
+privacy-reviewed/sanitized PostgreSQL custom-format dump and its matching
+`.sha256` manifest, transported through an approved private channel. For a dump
+received from another system, create the manifest from its containing directory
+(e.g. `cd /private/path && sha256sum approved-sanitized.dump > approved-sanitized.dump.sha256`)
+so it names the exact archive basename. Do not copy production encryption keys
+or provider credentials; encrypted credentials in a
+source dump will not be usable with the staging-only key. Start the staging DB,
+then use the explicit destructive flags:
+
+```bash
+bash scripts/ops/staging_compose.sh up -d db
+bash scripts/ops/restore_staging_db.sh /private/path/approved-sanitized.dump \
+  --approved-sanitized-copy --confirm-overwrite-staging
+```
+
+Restore verifies the checksum and archive format before changes, saves the
+current staging DB to a new protected backup, stops the API, and replaces only
+the database reached through the fixed staging Compose project. The API remains
+stopped afterward because its startup automatically runs Alembic. Review the
+source Alembic revision and data scope; separately approve the migration/upgrade
+and start the API only after that review. A successful `pg_restore` is not a
+restore acceptance proof: verify schema, app access, and the required operation
+under [P7-T02](tasks/p7-t02.md). Backup retention and deletion remain an explicit
+operator policy.
+
+Stop containers without deleting the staging volume with
+`bash scripts/ops/staging_compose.sh down`. `down --volumes` permanently deletes the
+staging database; use it only after confirming no retained staging data or
+backup is needed. This profile does not fix or exercise the master-only
+[deploy workflow](../.github/workflows/deploy.yml).
+
 ---
 
 ## Option A: Docker Compose — illustrative deployment sketch

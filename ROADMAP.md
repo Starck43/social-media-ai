@@ -48,7 +48,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [Q-14](docs/tasks/q-14.md) Squash Alembic history into a verified initial baseline — **IN_PROGRESS** · codex-q14 · `codex resume 01a186fa-e6a0-73d2-8dbf-89cd6d530c1d` · `P2` · `C4`
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`

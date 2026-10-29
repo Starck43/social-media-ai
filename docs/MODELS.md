@@ -297,7 +297,7 @@ Cost unit is **USD cents**, unlike USD Float columns elsewhere. NULL cost does n
 
 [Source](../app/models/analysis/analyzed_content_receipt.py),
 [manager](../app/models/managers/analyzed_content_receipt_manager.py),
-[migration 0104](../migrations/versions/0104_durable_analysis_context_receipts.py).
+[migration 0104](../migrations/versions/baseline_0118.py) (from Git history before the Q-14 squash).
 
 Fields: `id` PK; non-null `source_id` FK → sources CASCADE; non-null
 `content_hash` String(64) and `analysis_fingerprint` String(64); nullable
@@ -331,7 +331,7 @@ has a registered SQLAdmin model view; ORM registration is not admin exposure.
 
 [Source](../app/models/llm/llm_attempt.py),
 [manager](../app/models/managers/llm_attempt_manager.py),
-[migration 0092](../migrations/versions/0092_add_llm_attempt_journal.py).
+[migration 0092](../migrations/versions/baseline_0118.py) (from Git history before the Q-14 squash).
 
 Fields: `id` PK; globally unique/non-null `attempt_key` String(64); non-null
 `purpose`, `stage`, `cost_certainty`, `outcome` String(32); nullable plain Integer
@@ -421,7 +421,7 @@ event and parent receipt block tenant deletion when retained. See the
 ### `llm_budget_days` — reviewed balance foundation, runtime unwired
 
 [Source](../app/models/llm/llm_budget.py),
-[migration 0095](../migrations/versions/0095_add_llm_budget_reservations.py).
+[migration 0095](../scripts/migrations/legacy_definitions/0095_add_llm_budget_reservations.py).
 Fields: `id` PK; explicit non-null `tenant_id` FK RESTRICT; non-null Date `utc_day`;
 non-null Numeric(18,9) **Decimal USD** `settled_usd`, `reserved_usd`; non-null
 Integer `undefined_count`, `unbounded_count`; non-null Boolean `frozen`
@@ -435,7 +435,7 @@ rollover. Draft work such as PR #197 is not part of this source baseline.
 
 [Source](../app/models/llm/llm_budget.py),
 [manager](../app/models/managers/llm_budget_manager.py),
-[migration 0095](../migrations/versions/0095_add_llm_budget_reservations.py).
+[migration 0095](../scripts/migrations/legacy_definitions/0095_add_llm_budget_reservations.py).
 Fields: `id` PK; non-null `tenant_id` FK RESTRICT; non-null Date `utc_day`;
 globally unique/non-null `dispatch_id` String(32), FK to receipt identity RESTRICT;
 non-null `ceiling_state` String(16), `undefined_policy_version` String(32);

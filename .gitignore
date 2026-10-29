@@ -64,8 +64,6 @@ logs/
 backups/
 *.dump
 
-external_nginx.conf
-
 
 # Private last-successful image digest for VPS operator commands.
 .deployed-image.*

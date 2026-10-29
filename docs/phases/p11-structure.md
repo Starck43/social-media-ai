@@ -37,6 +37,8 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 25. [P11-T25](../audit/p11-t25.md) — Realign the model-layout fixtures with the migrated schema — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`,
     merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
 
+26. [P11-T26](../tasks/p11-t26.md) — Remove legacy model import shims.
+
 ## Sequencing and continuity
 
 This parent plan is optional navigation, not a prerequisite read for each card.

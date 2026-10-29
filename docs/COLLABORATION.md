@@ -114,6 +114,8 @@ On success, in one registry update:
 1. Write `docs/audit/<id>.md`: verdict, completion date, accepted source SHA,
    key corrections, affected files (including tests), checks/limitations and dialogue.
    Consolidate useful card evidence here; do not retain redundant active cards.
+   Also record branch/worktree disposition — deleted because integrated, or
+   retained with its owner and next action ([cleanup](COLLABORATION.md#git-and-cleanup)).
 2. Replace the parent plan's task link with that audit link and brief DONE/date
    summary. Remove the ROADMAP row and task card; repair inbound active references.
    For an orphan, only the audit remains. Keep historical references as history.
@@ -227,11 +229,32 @@ in the owning task card and its acceptance criteria, not in shared rules.
 
 ## Git and cleanup
 
+### Who creates and who removes a branch
+
+Executor-created branches are task-scoped and short-lived. The agent that creates
+a branch or worktree owns its removal; a branch without an owner is a defect, not
+a leftover to be rediscovered later.
+
+| Artifact | Created by | Removed by |
+| --- | --- | --- |
+| Task branch / worktree | the executor of that task, named on the task card | the same executor at closeout, or the auditor at acceptance if the executor is gone |
+| Merged task branch after integration | as above | whoever integrates: the merge owner deletes it at that moment |
+| Audit/review branch | the auditor | the auditor, once the audit commit is on `dev` |
+| Explicit recovery backup (`backup/*`) | the agent naming it | owner decision only, recorded on the task card |
+
+Acceptance, integration and housekeeping are separate facts, but a merged task
+branch that outlives its integration has no remaining purpose. Deleting a branch
+whose commits are already in `dev` never drops work; it removes a second name for
+the same commit.
+
+### Closeout and acceptance duties
+
 Review scoped diffs before local task commits. Preserve foreign staging/edits.
 Integration/push/deployment requires applicable owner authorization. At closeout,
-inventory `git worktree list`; for each candidate verify task/status/owner, HEAD,
-dirty and untracked files, and whether its commits are integrated. Age or a repeated
-HEAD alone does not prove a workspace is unused.
+inventory `git branch --no-merged origin/dev`, `git worktree list` and
+`git status`; for each candidate verify task/status/owner, HEAD, dirty and
+untracked files, and whether its commits are integrated. Age or a repeated HEAD
+alone does not prove a workspace is unused.
 
 Remove an owned, clean worktree when its owner confirms no active work remains.
 If its commits are unmerged, retain the branch and record branch/HEAD in the task
@@ -243,3 +266,27 @@ file state and next owner action. Never discard work or force-delete to hide los
 Preserve foreign branches and explicit recovery backups. Record removed and
 retained candidates in closeout; acceptance, integration and housekeeping remain
 separate facts.
+
+The acceptance step above adds one obligation: before removing the ROADMAP row,
+the auditor checks the accepting task's branches and worktrees, deletes those
+already integrated, and records in `docs/audit/<id>.md` either the completed
+removal or the retained artifacts and their owner. A closed task with a live,
+integrated branch is an acceptance follow-up, not a new task.
+
+### Periodic sweep
+
+A branch accrues only while two rules are broken at once: the executor did not
+clean up, and no auditor noticed. `git branch --no-merged origin/dev` and
+`git worktree list` are the authoritative inventory — never a hand-kept list.
+
+Sweep cadence: any agent may sweep before claiming a new task, and the owner may
+request one at any time. A sweep is read-only until it proves, per branch, that
+the commits are ancestors of `origin/dev` (or a reviewed equivalent
+squash/rebase) and the worktree is clean. Branches failing either test are
+reported with their task ID and next owner action, never deleted. A sweep is
+housekeeping: it cannot reopen or block a task, and deleting an integrated branch
+is not a claim about acceptance.
+
+Branches retained for a BLOCKED or deferred task are expected and are not
+sweep failures — the task card names them as the resume point.
+

@@ -72,11 +72,13 @@ carry only task-specific additions, not copies of these common rules.
   carries solution/evidence and direct repository/task links.
 - Read [tests/AGENTS](tests/AGENTS.md) before test work. Run focused required checks;
   full suites require explicit owner request. Routine docs review needs no pytest.
-- At closeout remove own temporary files; inventory worktrees and apply
-  [safe cleanup](docs/COLLABORATION.md#git-and-cleanup). Preserve dirty/active/
-  foreign/unclear work and unmerged commits; delete branches only after verified
-  integration. Report retained paths and next action. Cleanup failure cannot
-  reopen an accepted task.
+- At closeout remove own temporary files; inventory worktrees and branches
+  (`git branch --no-merged origin/dev`) and apply
+  [safe cleanup](docs/COLLABORATION.md#git-and-cleanup). The executor removes the
+  branch it created once that branch's commits are in `dev`; the auditor verifies
+  it at acceptance. Preserve dirty/active/foreign/unclear work and unmerged
+  commits; delete branches only after verified integration. Report retained paths
+  and next action. Cleanup failure cannot reopen an accepted task.
 - English code/docs; brief Russian reports; Black/isort line 120. Never commit
   secrets, sessions, generated data or `.agents/tmp/`. Provider adapters in
   `.codex/`, `.opencode/`, `.kilo/` are local ignored configuration.

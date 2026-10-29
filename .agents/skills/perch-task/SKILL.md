@@ -53,20 +53,31 @@ perch run "<task>" --json --cwd <target-dir> --permission auto_review \
 
 ## Model identifiers
 
-Three different strings describe "the same" model; only one of them is an input
-to Perch:
+The two sides of this integration use **opposite** naming rules — mixing them up
+fails on both sides:
+
+| Where | Accepted form | Rejected form |
+| --- | --- | --- |
+| `perch --model` | bare id: `deepseek-v4.1-flash-1017` (tier or `auto` also allowed) | any `provider/…` prefix |
+| OpenCode `--model` / agent `model` | `provider/modelID`: `river/deepseek-ai/DeepSeek-V4.1-Flash-1017` | bare id |
+
+Three strings describe "the same" model; only the first is an input to Perch:
 
 | String | Where it belongs |
 | --- | --- |
 | `deepseek-v4.1-flash-1017` | **only this one** goes into `perch --model` |
 | `deepseek/deepseek-v4.1-flash-1017` | `contextSnapshot.modelId` in the JSON reply — evidence, never an input |
-| `river/deepseek-ai/DeepSeek-V4.1-Flash-1017` | OpenCode's own provider model for the bridge agent — not a Perch identifier |
+| `river/deepseek-ai/DeepSeek-V4.1-Flash-1017` | OpenCode's own provider model — required there, invalid for Perch |
 
-A provider prefix (`deepseek/…`, `openrouter/…`) makes the call fail before any
-work: exit code 1, **empty stdout**, and `Unknown model: <arg>` plus the full
-help on stderr. Because there is no JSON in that case, check that the captured
-output actually parses before reading `status` — an unparseable capture is the
-unknown-model failure, not a model result.
+Perch: a provider prefix (`deepseek/…`, `openrouter/…`, `river/…`) makes the call
+fail before any work — exit code 1, **empty stdout**, and `Unknown model: <arg>`
+plus the full help on stderr. Because there is no JSON in that case, check that
+the captured output actually parses before reading `status`; an unparseable
+capture is the unknown-model failure, not a model result.
+
+OpenCode the other way round: a bare id is rejected as `Invalid model reference`
+(no provider at all) or `Model unavailable` (provider missing from the id), so
+never strip the `river/` prefix from OpenCode's own model settings.
 
 `--model auto` is valid and picks Roost's own choice (Standard), so it is not
 evidence for the pin: confirm `contextSnapshot.modelId` is the DeepSeek 4.1 Flash

@@ -73,13 +73,14 @@ package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app", "app.*", "cli", "cli.*"]
+include = ["app", "app.*", "cli", "cli.*", "migrations", "migrations.*"]
 # cli/commands has no __init__.py and is an implicit namespace package.
 namespaces = true
 exclude = ["app.static*", "app.templates*", "app.web.templates*"]
 
 [tool.setuptools.package-data]
 app = ["static/**/*", "templates/**/*", "web/templates/**/*"]
+migrations = ["versions/*.sql"]
 
 [tool.black]
 line-length = 120

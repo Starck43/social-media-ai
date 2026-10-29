@@ -379,12 +379,47 @@ alembic check
 ```
 
 **Multiple migration heads / unexpected revision: stop and escalate.**
-Do not choose a revision by its number, delete a migration or mark an unexecuted
-revision as applied. Have the authorized maintainer reconcile the migration graph
-in a separate branch, review schema-qualified DDL and verify staging/restore.
-Do not run upgrade/downgrade/stamp/reset during observational triage. The commands
-above belong only to a separately approved deployment, with a verified target and
-one migrator; a migration file in GitHub does not prove the target DB revision.
+Do not choose a revision by its number or mark an unexecuted revision as applied.
+After Q-14, fresh schemas upgrade from the single `baseline_0118` revision. Existing
+databases that still record historical revisions need the reviewed transition below;
+`alembic upgrade head` cannot replay the removed history.
+
+### Existing local public schema after Q-14
+
+The bridge applies only the former 0118 forward delta (the empty `action_audit_events`
+table, its guard function/triggers, and its access-catalog registrations), then replaces
+the old Alembic revision marker with `baseline_0118` in the same transaction. It does not
+rebuild existing tables. The bridge checks that the target is the local
+`social_manager/public` database at exactly revision `0117`, that the new objects are
+absent, and that fingerprints of existing rows are unchanged (registry rows may only be
+appended). It reports hashes and counts, never row contents. The bridge disables Alembic's
+ordinary stamp registration hook and adds only the
+audit resource, its view/export permissions, and owner/admin grants; those catalog rows
+may increase.
+
+First run the Q-14 isolated-schema validator on `test_schema` and retain its report.
+Take and verify a restorable backup of `public`, stop other schema writers, and obtain
+separate owner authorization for the public apply. Then run exactly one migrator:
+
+```bash
+DB_SCHEMA=public DB_TEST_SCHEMA=test_schema \
+  python -m scripts.migrations.q14_public_bridge --apply-public-transition
+```
+
+For an isolated bridge rehearsal after the disposable test schema is prepared at
+revision `0117` with the new audit objects absent, use the same bridge in its test-only
+mode:
+
+```bash
+DB_SCHEMA=test_schema DB_TEST_SCHEMA=test_schema \
+  python -m scripts.migrations.q14_public_bridge --validation-test-schema
+```
+
+The command refuses any other database, schema, or current revision. It is not a
+general-purpose `stamp` recipe; do not substitute `alembic stamp` or run it during
+read-only triage. If its preflight or postcondition fails, the transaction rolls back;
+stop writers and investigate before retrying. Public migrations remain
+separately authorized even after successful test-schema validation.
 
 ---
 

@@ -5,21 +5,9 @@ import socket
 import sys
 import unittest
 
-from scripts.check_p8_t41 import source_only_guard
+from scripts.check_p8_t41 import BLOCKED, passed, source_only_guard
 
-_RUNTIME_MODULE_ROOTS = {
-    "app",
-    "cli",
-    "sqlalchemy",
-    "alembic",
-    "asyncpg",
-    "psycopg",
-    "psycopg2",
-    "httpx",
-    "requests",
-    "telethon",
-}
-_PROJECT_BOOTSTRAP_LOADED = any(name.split(".")[0] in _RUNTIME_MODULE_ROOTS for name in sys.modules)
+_PROJECT_BOOTSTRAP_LOADED = any(name.split(".")[0] in BLOCKED for name in sys.modules)
 
 
 @unittest.skipIf(
@@ -43,6 +31,25 @@ class SourceOnlyRunnerTests(unittest.TestCase):
                     connection.connect_ex(("127.0.0.1", 1))
             with self.assertRaisesRegex(RuntimeError, "forbids network"):
                 socket.create_connection(("127.0.0.1", 1))
+            for resolve in (socket.gethostbyname, socket.gethostbyname_ex):
+                with self.subTest(resolve=resolve.__name__), self.assertRaisesRegex(RuntimeError, "forbids network"):
+                    resolve("example.invalid")
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as datagram:
+                with self.assertRaisesRegex(RuntimeError, "forbids network"):
+                    datagram.sendto(b"x", ("127.0.0.1", 53))
+
+    def test_skips_expected_failures_and_empty_runs_are_not_a_pass(self):
+        def outcome(**values):
+            result = unittest.TestResult()
+            result.testsRun = values.pop("run", 1)
+            for name, value in values.items():
+                setattr(result, name, value)
+            return result
+
+        self.assertTrue(passed(outcome()))
+        for case in ({"run": 0}, {"skipped": [("t", "r")]}, {"expectedFailures": [("t", "r")]}):
+            with self.subTest(case=case):
+                self.assertFalse(passed(outcome(**case)))
 
 
 if __name__ == "__main__":

@@ -14,8 +14,31 @@ from tests.shared.vk_research_journey import ROOT, journey_plan, load_plan_modul
 from tests.source_import_isolation import load_isolated_source
 
 
+class _Scope:
+    def __init__(self, **values):
+        self.__dict__.update(values)
+        self.days = (self.end - self.start).days + 1
+
+
+class _Session:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+
 class ResearchHarness:
     def __init__(self):
+        self._init_state()
+        self._init_fixtures()
+        self._init_doubles()
+        imports = self._bindings()
+        self.pipeline = load_isolated_source("_p8_t41_pipeline", ROOT / "app/services/task_pipeline.py", imports)
+        self.results = load_isolated_source("_p8_t41_results", ROOT / "app/services/task_results.py", imports)
+
+    def _init_state(self):
+        """Mutable access/payer toggles that individual tests flip."""
         self.tenant_id = 3
         self.member_active = True
         self.permission_allowed = True
@@ -24,6 +47,14 @@ class ResearchHarness:
         self.entitlement_allowed = True
         self.checkpoints = []
         self.order = []
+        self.authorization_queries = []
+        self.entitlement_calls = []
+        # Usage rows as (job_id, capability). Mirrors the reserved-per-job contract
+        # of EntitlementManager.evaluate(consume=True); the DB suite must prove the real one.
+        self.usage_rows = []
+
+    def _init_fixtures(self):
+        """Synthetic task/source/scenario rows, admitted snapshot and stage outputs."""
         self.scenario = SimpleNamespace(id=42, tenant_id=3, is_active=True)
         self.source = SimpleNamespace(id=11)
         self.task = SimpleNamespace(
@@ -35,7 +66,6 @@ class ResearchHarness:
             payload={"source_ids": [88]},
             sources=[self.source],
         )
-        self.authorization_queries = []
         self.policy, self.plans, self.preparation = load_plan_modules()
         prepared = self.preparation.prepare_task_plan_create({}, journey_plan(), job_type="analyze")
         prepared.payload["source_ids"] = list(prepared.source_ids)
@@ -65,51 +95,22 @@ class ResearchHarness:
             "staged_errors": 0,
             "per_source": [{"source_id": 11, "analyzed": 2, "analytics_ids": [123, 124]}],
         }
+
+    def _init_doubles(self):
+        """Provider, model, delivery and job-handler doubles."""
         self.aggregate = AsyncMock(side_effect=self._aggregate)
         self.summarize = AsyncMock(return_value=("Synthetic summary", {"model": "mock", "cost": 0}))
         self.send = AsyncMock(side_effect=AssertionError("Preview must never send"))
-        self.entitlement_calls = []
-
-        class Scope:
-            def __init__(scope, **values):
-                scope.__dict__.update(values)
-                scope.days = (scope.end - scope.start).days + 1
-
-        class Session:
-            async def __aenter__(session):
-                return session
-
-            async def __aexit__(session, *_):
-                return False
-
-        async def capabilities(session, payload, *, sources):
-            assert payload == self.snapshot["task_payload"]
-            assert [s.id for s in sources] == [11]
-            return frozenset({"social.collect", "ai.analyze"})
-
-        async def admit(required, *, job_id):
-            self.entitlement_calls.append((required, job_id))
-            if not self.entitlement_allowed:
-                raise PermissionError("synthetic_entitlement_denied")
-
-        async def payer(**values):
-            assert values == {"task_id": 7, "tenant_id": 3}
-            if not self.payer_available:
-                raise RuntimeError("private billing detail")
-            return SimpleNamespace(user_id=5)
-
-        async def memberships(actor):
-            assert actor == 5
-            return [SimpleNamespace(tenant_id=3, is_active=self.member_active)]
-
-        handlers = SimpleNamespace(
+        self.handlers = SimpleNamespace(
             _load_task=AsyncMock(side_effect=lambda _: self.task),
             _resolve_sources=AsyncMock(side_effect=self._sources),
             handle_collect=AsyncMock(side_effect=self._collect),
             handle_analyze=AsyncMock(side_effect=self._analyze),
         )
-        self.handlers = handlers
-        imports = {
+
+    def _bindings(self):
+        """Module-local import doubles for the pipeline and result reader source."""
+        return {
             "app.core.tenant_context": module(
                 "tenant", current_tenant_id=lambda: self.tenant_id, is_bypass=lambda: False
             ),
@@ -123,7 +124,7 @@ class ResearchHarness:
             "app.core.personal_catalog_context": module(
                 "catalog", current_catalog_owner_id=lambda: self.catalog_owner_id
             ),
-            "app.services.billing.payer": module("payer", resolve_scheduled_task_payer=payer),
+            "app.services.billing.payer": module("payer", resolve_scheduled_task_payer=self._payer),
             "app.models": module(
                 "models",
                 AgentTask=self._model("task", lambda: self.task),
@@ -132,7 +133,9 @@ class ResearchHarness:
             ),
             "app.models.managers.tenant_manager": module(
                 "membership",
-                tenant_users=SimpleNamespace(web_memberships=memberships, member_grants=AsyncMock(return_value={})),
+                tenant_users=SimpleNamespace(
+                    web_memberships=self._memberships, member_grants=AsyncMock(return_value={})
+                ),
             ),
             "app.types": module(
                 "types",
@@ -141,16 +144,18 @@ class ResearchHarness:
                 BotTriggerType=SimpleNamespace(),
             ),
             "app.jobs": module(
-                "jobs", handlers=handlers, progress=SimpleNamespace(pipeline_checkpoint=self._checkpoint)
+                "jobs", handlers=self.handlers, progress=SimpleNamespace(pipeline_checkpoint=self._checkpoint)
             ),
-            "app.core.database": module("database", async_session_maker=Session),
+            "app.core.database": module("database", async_session_maker=_Session),
             "app.models.managers.entitlement_manager": module(
                 "entitlements",
-                EntitlementManager=lambda: SimpleNamespace(admit_execution=admit),
+                EntitlementManager=lambda: SimpleNamespace(admit_execution=self._admit),
             ),
-            "app.services.collection.entitlement_policy": module("capabilities", required_capabilities=capabilities),
+            "app.services.collection.entitlement_policy": module(
+                "capabilities", required_capabilities=self._capabilities
+            ),
             "app.services.ai.reporting": module(
-                "reporting", ReportScope=Scope, normalize_digest_axis=lambda value: value
+                "reporting", ReportScope=_Scope, normalize_digest_axis=lambda value: value
             ),
             "app.services.digest.builder": module(
                 "builder",
@@ -161,8 +166,36 @@ class ResearchHarness:
                 broadcast_digest=self.send,
             ),
         }
-        self.pipeline = load_isolated_source("_p8_t41_pipeline", ROOT / "app/services/task_pipeline.py", imports)
-        self.results = load_isolated_source("_p8_t41_results", ROOT / "app/services/task_results.py", imports)
+
+    async def _capabilities(self, session, payload, *, sources):
+        assert payload == self.snapshot["task_payload"]
+        assert [s.id for s in sources] == [11]
+        return frozenset({"social.collect", "ai.analyze"})
+
+    async def _admit(self, required, *, job_id):
+        self.entitlement_calls.append((required, job_id))
+        if not self.entitlement_allowed:
+            raise PermissionError("synthetic_entitlement_denied")
+        reserved = {capability for job, capability in self.usage_rows if job == job_id}
+        self.usage_rows.extend((job_id, capability) for capability in sorted(set(required) - reserved))
+
+    def stage_transitions(self):
+        """(stage, state) for each persisted checkpoint, in write order."""
+        return [
+            (name, checkpoint["stages"][name]["state"])
+            for checkpoint in self.checkpoints
+            for name in [list(checkpoint["stages"])[-1]]
+        ]
+
+    async def _payer(self, **values):
+        assert values == {"task_id": 7, "tenant_id": 3}
+        if not self.payer_available:
+            raise RuntimeError("private billing detail")
+        return SimpleNamespace(user_id=5)
+
+    async def _memberships(self, actor):
+        assert actor == 5
+        return [SimpleNamespace(tenant_id=3, is_active=self.member_active)]
 
     def _model(self, kind, record):
         def query(**criteria):

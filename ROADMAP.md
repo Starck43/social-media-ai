@@ -33,7 +33,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
-- [Q-13](docs/tasks/q-13.md) Restrict GitHub workflows to master pushes — **READY** · notion-ai-ci · [Execution](https://app.notion.com/chat?t=406ddbde023680ea8b8500a9fae66b8f) · `P0` · `C1`
 
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed) · — · `P0` · `C3`

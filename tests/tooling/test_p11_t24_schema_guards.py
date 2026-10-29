@@ -584,9 +584,13 @@ def test_frozen_baseline_and_guard_module_have_the_same_trigger_contract():
         statement = baseline[(trigger.name, trigger.table)]
         actual = _TRIGGER_EVENTS.search(statement)
         function = _TRIGGER_FUNCTION.search(statement)
-        assert actual and normalized(actual.group(1)) == normalized(
-            re.search(r"BEFORE (.+?) ON ", trigger.definition(_SCHEMA)).group(1)
+        expected_events = re.search(r"BEFORE (.+?) ON ", trigger.definition(_SCHEMA)).group(1)
+        assert actual and set(normalized(actual.group(1)).split(" or ")) == set(
+            normalized(expected_events).split(" or ")
         ), trigger.name
+        assert re.search(r"FOR EACH (ROW|STATEMENT)", statement).group(1) == re.search(
+            r"FOR EACH (ROW|STATEMENT)", trigger.definition(_SCHEMA)
+        ).group(1), trigger.name
         assert function and function.group(1).rsplit(".", 1)[-1] == trigger.function, trigger.name
 
 

@@ -5,21 +5,9 @@ import socket
 import sys
 import unittest
 
-from scripts.check_p8_t41 import source_only_guard
+from scripts.check_p8_t41 import BLOCKED, source_only_guard
 
-_RUNTIME_MODULE_ROOTS = {
-    "app",
-    "cli",
-    "sqlalchemy",
-    "alembic",
-    "asyncpg",
-    "psycopg",
-    "psycopg2",
-    "httpx",
-    "requests",
-    "telethon",
-}
-_PROJECT_BOOTSTRAP_LOADED = any(name.split(".")[0] in _RUNTIME_MODULE_ROOTS for name in sys.modules)
+_PROJECT_BOOTSTRAP_LOADED = any(name.split(".")[0] in BLOCKED for name in sys.modules)
 
 
 @unittest.skipIf(

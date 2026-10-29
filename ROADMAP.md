@@ -58,7 +58,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P3
 
-- [P11-T17](docs/tasks/p11-t17.md) Localizable presentation boundaries — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C3`
+- [P11-T17](docs/tasks/p11-t17.md) Localizable presentation boundaries — **IN_PROGRESS** · notion-ai · [Execution](https://app.notion.com/chat?t=408895d2d5a18081942600a990c14a8a) · `P3` · `C3`
 - [P11-T18](docs/tasks/p11-t18.md) Typed connector and job extension seams — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 - [P11-T19](docs/tasks/p11-t19.md) Capacity telemetry and reproducible scale evidence — **TODO** · unassigned · [Planning](https://app.notion.com/chat?t=406ddbde023680a5a4a500a9d7940556) · `P3` · `C4`
 

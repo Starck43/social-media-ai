@@ -7,13 +7,13 @@
 **Plan — active task cards:**
 
 - [P7-T02](../tasks/p7-t02.md) — One staging-backed operations proof
-- [P7-T05](../tasks/p7-t05.md) — prepare isolated staging contour and database recovery path
-- [P7-T06](../tasks/p7-t06.md) — prepare a single-VPS staging and production deployment path
 
 **Accepted history:**
 
 - [P7-T03](../audit/phase-p7-history.md#p7-t03) — use canonical domain model imports and direct manager registration
 - [P7-T04](../audit/phase-p7-history.md#p7-t04) — document routine OpenCode routing and separate pytest route
 - [P7-T01](../audit/p7-t01.md) — loopback-only database binding before production release · 2026-10-25 · `526cfd2`
+- [P7-T05](../audit/p7-t05.md) — prepare isolated staging and database recovery · DONE 2026-10-29 · accepted review source `e8099a150283e86fa2258360fc8151532acd8ed8`; PR #280 merge `045150db19fc402de5b51c18b4fe037388f0846d`
+- [P7-T06](../audit/p7-t06.md) — prepare a gated single-VPS deployment path · DONE 2026-10-29 · accepted source `e8099a150283e86fa2258360fc8151532acd8ed8`; PR #281 merge `02dde506b91b71431cd713c7121a434eae026f10`
 
 **Phase status:** Active phase; close only after every plan item is accepted.

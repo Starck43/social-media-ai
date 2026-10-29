@@ -32,3 +32,17 @@ def test_alembic_history_is_one_initial_revision():
 def test_initial_schema_resource_contains_sql_without_psql_commands():
     sql = (VERSIONS / "baseline_0118.sql").read_text(encoding="utf-8")
     assert not re.search(r"(?m)^\s*\\", sql), "psql client commands cannot execute through Alembic"
+
+
+def test_check_comparison_accepts_only_equivalent_text_array_casts():
+    from scripts.migrations.q14_compare_schemas import _norm_check
+
+    outer = "CHECK (plan::text = ANY (ARRAY['starter'::character varying,'pro'::character varying]::text[]))"
+    inner = "CHECK (plan::text = ANY (ARRAY['starter'::character varying::text,'pro'::character varying::text]))"
+    assert _norm_check(outer, "public") == _norm_check(inner, "test_schema")
+    assert _norm_check(outer, "public") != _norm_check(inner.replace("'pro'", "'business'"), "test_schema")
+    assert _norm_check(outer.replace(" = ANY", " <> ANY"), "public") != _norm_check(inner, "test_schema")
+    bounded = outer.replace("character varying", "character varying(3)")
+    assert _norm_check(bounded, "public") != _norm_check(inner, "test_schema")
+    overloaded = "CHECK (custom(ARRAY['starter'::character varying]::text[]))"
+    assert _norm_check(overloaded, "public") == overloaded

@@ -94,6 +94,31 @@ def _norm_sql(value: str | None, schema: str) -> str | None:
     return "".join(out).strip()
 
 
+def _norm_check(value: str, schema: str) -> str:
+    """Normalize only equivalent text-array casts in PostgreSQL ANY comparisons.
+
+    pg_dump replay may move an unbounded varchar[] -> text[] cast onto each
+    constant element. Preserve literal contents, operators and all other casts.
+    """
+    normalized = _norm_sql(value, schema) or ""
+    literal = r"'(?:[^']|'')*'::character varying(?:::text)?"
+    pattern = re.compile(
+        rf"(=\s*ANY\s*\(\s*)ARRAY\[((?:{literal})(?:\s*,\s*{literal})*)\](::text\[\])?(?=\s*\))",
+        re.IGNORECASE,
+    )
+
+    def replace(match):
+        elements = re.findall(literal, match.group(2), re.IGNORECASE)
+        if not match.group(3) and not all(element.lower().endswith("::text") for element in elements):
+            return match.group(0)
+        elements = [
+            re.sub(r"::character varying(?:::text)?$", "::text", item, flags=re.IGNORECASE) for item in elements
+        ]
+        return match.group(1) + "ARRAY[" + ",".join(elements) + "]"
+
+    return pattern.sub(replace, normalized)
+
+
 def _norm_default(value: str | None, type_name: str, schema: str) -> str | None:
     normalized = _norm_sql(value, schema)
     if normalized is None:
@@ -248,7 +273,7 @@ def _catalog(connection, schema: str) -> dict[str, Any]:
                 }
             )
         elif row["contype"] == "c":
-            item["expression"] = _norm_sql(row["definition"], schema)
+            item["expression"] = _norm_check(row["definition"], schema)
         constraints[row["table_name"]].append(item)
 
     indexes: dict[str, list[dict[str, Any]]] = defaultdict(list)

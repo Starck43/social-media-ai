@@ -46,8 +46,11 @@ carry only task-specific additions, not copies of these common rules.
   stage plans; `docs/audit` owns accepted results and detailed failures. Use
   [lifecycle and evidence rules](docs/COLLABORATION.md#acceptance). Never invent
   checks, approvals, dialogue links or completion. READY requires required checks
-  PASS. Before solution merge or deferral ask the owner to choose; preserve the
-  branch/PR until then. Acceptance and integration are separate. BLOCKED concerns
+  PASS. A successful audit acceptance also authorizes merging that exact accepted
+  revision into `dev` and deleting its branch, unless the target or a finding
+  fails ([acceptance rules](docs/COLLABORATION.md#acceptance)). Any other merge or
+  deferral still needs the owner's choice; preserve the branch/PR until then.
+  BLOCKED concerns
   the solution/acceptance, never a decision wait or housekeeping. Open row
   statuses: TODO, IN_PROGRESS, READY, BLOCKED, DEFERRED — DONE is not a row
   status; acceptance removes the row. DEFERRED is only an explicit owner choice,
@@ -66,8 +69,9 @@ carry only task-specific additions, not copies of these common rules.
   deployment, production mutation or publication of unrelated local commits.
 - Only Codex may invoke third-party agents; others use native children. Preserve
   handoff evidence in the task card/PR; `.agents/tmp` and `/tmp` are scratch,
-  never portable evidence. Ask owner before merge or deferral; preserve resume
-  branch/PR pending the choice. Then stop/delete owned child sessions. Unsupported
+  never portable evidence. Acceptance authorizes the merge it covers; any other
+  merge or deferral asks the owner first and preserves the resume branch/PR.
+  Then stop/delete owned child sessions. Unsupported
   cleanup is reported separately. Remote coordination uses PR comments; PR body
   carries solution/evidence and direct repository/task links.
 - Read [tests/AGENTS](tests/AGENTS.md) before test work. Run focused required checks;

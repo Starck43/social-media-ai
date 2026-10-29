@@ -28,7 +28,8 @@ or worktree cleanup never makes a resolved task BLOCKED.
 At closeout, inventory worktrees and report removed/retained candidates under
 [cleanup rules](../../../docs/COLLABORATION.md#git-and-cleanup). Preserve dirty,
 active, unmerged, foreign or unclear workspaces. Commit and remove merged owned
-work only when authorized; report actual checks briefly. For accepted code that
-is not integrated, ask the owner whether to merge, continue on the branch/PR or
-defer; the audit verdict itself is not merge authorization. Keep evidence in the
-card/PR, never a local temporary path.
+work when authorized; report actual checks briefly. An accepted code revision is
+also authorization to merge it and delete its branch, provided the accepted SHA is
+the PR head, the PR targets `dev` and no finding blocks it; record the merge
+commit in the audit note. Any other merge, continuation or deferral still asks the
+owner. Keep evidence in the card/PR, never a local temporary path.

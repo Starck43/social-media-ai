@@ -32,15 +32,18 @@ and removes the active card/queue row. Give a repository/PR URL only if ambiguou
 
 Use test_schema under [database safeguards](COLLABORATION.md#database). Required
 checks must pass before READY; a required unrun check is recorded honestly.
-Acceptance, integration and cleanup are separate facts. No approval for production
-changes or solution publication is inferred from a short audit prompt.
+Acceptance authorizes merging the exact accepted revision and deleting its branch
+under [acceptance rules](COLLABORATION.md#acceptance); other merges need the owner.
+No approval for production changes or solution publication is inferred from a
+short audit prompt.
 
 ## After checks
 
 Report the tested branch/SHA, exact commands and results, unrun checks, and a
-resume point in the task card/PR. Then ask the owner to choose only if not already
-authorized: **merge**, **continue on this branch/PR**, or **defer and preserve**.
-For example:
+resume point in the task card/PR. An executor that has not been accepted yet asks
+the owner to choose: **merge**, **continue on this branch/PR**, or **defer and
+preserve** — an acceptance verdict later authorizes the covered merge itself. For
+example:
 
 > P8-T29 at `597b5e7`: migration commands succeeded; application tests were not
 > run. The local report lists `public` before `test_schema`, so prior validation

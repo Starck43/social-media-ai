@@ -123,7 +123,8 @@ On success, in one registry update:
    with a short outcome per task/audit link, history pointer, accepted SHA and its
    actual commit date. Do not invent missing historical metadata.
 4. Synchronize the scoped registry update with local/origin dev as under Tasks.
-   Record pending solution integration separately from audit acceptance.
+   Where acceptance is the merge authorization (see below), merge the accepted
+   PR, delete its branch and record the merge commit here in the same closeout.
 
 Before integrating or deferring solution work, the executor reports the exact
 branch/commit or PR and asks the owner for one choice: merge to dev; continue on
@@ -131,10 +132,22 @@ the current branch/PR; or defer and preserve that resume point. Do not merge,
 push a solution, close the PR or discard the branch until the owner chooses; an
 existing explicit instruction already covering that action counts. If the owner
 has not answered, leave the solution intact and record the pending decision.
-READY is executor evidence; successful audit is an acceptance decision; neither
-authorizes integration by itself. After acceptance, remove the queue item and
-archive it even when integration is still pending. For unresolved work, keep the
-task IN_PROGRESS if work can continue; use BLOCKED only for a task/dependency
+READY is executor evidence and grants nothing. A successful audit acceptance
+**is** merge authorization under the following conditions, and the auditor
+carries it out in the same closeout: the accepted SHA is the PR head; the audit
+was performed on that exact revision with its required checks recorded; the PR
+targets `dev` and has no conflicts or outstanding change requests. Then the
+auditor merges with the normal merge strategy, deletes the merged branch and the
+task's owned worktrees, and records the merge commit in `docs/audit/<id>.md`.
+Acceptance never authorizes a force-push, a production or schema mutation, or
+publishing unrelated local commits.
+
+When any condition fails — dirty/unmerged work, an unresolved finding, a target
+other than `dev`, or an owner instruction to hold — the auditor does not merge:
+it records the failing condition in the audit note and asks the owner explicitly.
+Integration and acceptance remain separately recorded facts, but a plain
+accepted task no longer waits for a second decision. For unresolved work, keep
+the task IN_PROGRESS if work can continue; use BLOCKED only for a task/dependency
 that prevents resolution. If the owner chooses to defer, record that choice and
 resume branch/PR without calling it BLOCKED solely for being postponed.
 
@@ -237,15 +250,17 @@ a leftover to be rediscovered later.
 
 | Artifact | Created by | Removed by |
 | --- | --- | --- |
-| Task branch / worktree | the executor of that task, named on the task card | the same executor at closeout, or the auditor at acceptance if the executor is gone |
-| Merged task branch after integration | as above | whoever integrates: the merge owner deletes it at that moment |
+| Task branch / worktree | the executor of that task, named on the task card | the auditor at acceptance, which is also the merge authorization; the executor if it closes the task itself |
+| Merged task branch after integration | as above | whoever integrates: the merge owner deletes it immediately after the merge |
 | Audit/review branch | the auditor | the auditor, once the audit commit is on `dev` |
 | Explicit recovery backup (`backup/*`) | the agent naming it | owner decision only, recorded on the task card |
 
-Acceptance, integration and housekeeping are separate facts, but a merged task
-branch that outlives its integration has no remaining purpose. Deleting a branch
-whose commits are already in `dev` never drops work; it removes a second name for
-the same commit.
+Acceptance, integration and housekeeping are recorded as separate facts, but a
+plain accepted task is no longer parked for a second decision: the audit verdict
+authorizes the merge, and the merging auditor deletes the branch in the same
+closeout. A merged branch that outlives its integration has no remaining purpose.
+Deleting a branch whose commits are already in `dev` never drops work; it removes
+a second name for the same commit.
 
 ### Closeout and acceptance duties
 

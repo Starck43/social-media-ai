@@ -111,7 +111,7 @@ def collect_guard_definitions(schema: str) -> tuple[list[str], dict[str, str]]:
     statements: list[str] = []
     function_bodies: dict[str, str] = {}
     for revision in REVISIONS:
-        matches = list((ROOT / "migrations" / "versions").glob(f"{revision}_*.py"))
+        matches = list((ROOT / "scripts" / "migrations" / "legacy_definitions").glob(f"{revision}_*.py"))
         require(len(matches) == 1, f"revision-file-{revision}")
         spec = importlib.util.spec_from_file_location(f"_p9_t07_{revision}_guard_source", matches[0])
         require(spec is not None and spec.loader is not None, f"revision-loader-{revision}")

@@ -155,8 +155,7 @@ class _CliHarness:
                 own_models = [
                     row
                     for row in models.LLMModel.objects.rows
-                    if getattr(row, "owner_user_id", user_id) == user_id
-                    and row.provider_id == provider.id
+                    if getattr(row, "owner_user_id", user_id) == user_id and row.provider_id == provider.id
                 ]
                 providers.append(
                     {
@@ -241,19 +240,13 @@ def _models(*, providers=None, models=None, model=None):
 
         async def get(self, **filters):
             return next(
-                (
-                    row
-                    for row in rows
-                    if all(getattr(row, key) == value for key, value in filters.items())
-                ),
+                (row for row in rows if all(getattr(row, key) == value for key, value in filters.items())),
                 None,
             )
 
         async def order_by(self, *_):
             return [
-                row
-                for row in rows
-                if all(getattr(row, key) == value for key, value in (self.selected or {}).items())
+                row for row in rows if all(getattr(row, key) == value for key, value in (self.selected or {}).items())
             ]
 
         def filter(self, **filters):
@@ -486,7 +479,9 @@ def test_llm_provider_orm_drops_removed_default_flag():
     }
     assert "is_default" not in fields
 
-    migration = (ROOT / "migrations" / "versions" / "0091_drop_llm_provider_default_flag.py").read_text()
+    migration = (
+        ROOT / "scripts" / "migrations" / "legacy_definitions" / "0091_drop_llm_provider_default_flag.py"
+    ).read_text()
     assert 'COLUMN = "is_default"' in migration
 
     provider_list = ast.unparse(_function(_tree(CLI_LLM), "provider_list"))

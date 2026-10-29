@@ -187,7 +187,7 @@ async def inspect_state(engine, args=None):
 
 def receipt_revision():
     spec = importlib.util.spec_from_file_location(
-        "_isolated_receipt_revision", ROOT / "migrations/versions/0093_add_llm_dispatch_receipts.py"
+        "_isolated_receipt_revision", ROOT / "scripts/migrations/legacy_definitions/0093_add_llm_dispatch_receipts.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

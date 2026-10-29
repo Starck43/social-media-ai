@@ -29,6 +29,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+# Historical revisions live in Git; executable Alembic discovery contains only
+# the frozen initial baseline below.
 MIGRATIONS = ROOT / "migrations/versions"
 # scripts is a package; register the module before exec so dataclasses resolve
 # their own module. Nothing in it imports app, Alembic or a driver.
@@ -512,6 +514,53 @@ def _module_pairs():
     return {(trigger.name, trigger.table) for trigger in GUARDS.GUARD_TRIGGERS}
 
 
+def _baseline_renderer():
+    """Extract only the stdlib renderer; the offline lane must not import Alembic."""
+    path = ROOT / "migrations/versions/baseline_0118.py"
+    tree = ast.parse(path.read_text())
+    nodes = [
+        node
+        for node in tree.body
+        if (isinstance(node, ast.FunctionDef) and node.name == "render_baseline_sql")
+        or (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id in {"_SCHEMA_IDENTIFIER", "_SQL_PATH"}
+                for target in node.targets
+            )
+        )
+    ]
+    namespace = {"Path": Path, "re": re, "__file__": str(path)}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec"), namespace)
+    return namespace["render_baseline_sql"]
+
+
+def _baseline_sql():
+    """Render the frozen initial schema without importing settings or a DB driver."""
+    # SQL is emitted against quoted schema identifiers; the historical parser
+    # uses an unquoted symbolic schema token.
+    return _baseline_renderer()(_SCHEMA).replace(f'"{_SCHEMA}".', f"{_SCHEMA}.")
+
+
+def _baseline_trigger_statements():
+    return {
+        (match.group("name"), _table_of(statement)): statement
+        for statement in re.findall(r"CREATE TRIGGER .*?;", _baseline_sql(), flags=re.IGNORECASE | re.DOTALL)
+        for match in [_CREATE_TRIGGER.search(statement)]
+        if match and _table_of(statement)
+    }
+
+
+def _baseline_function_bodies():
+    """Parse frozen pg_dump function bodies by their immutable object names."""
+    sql = _baseline_sql()
+    pattern = re.compile(
+        r"CREATE FUNCTION (?P<name>[\w.]+)\([^)]*\) RETURNS trigger\s+" r"LANGUAGE plpgsql\s+AS \$\$(?P<body>.*?)\$\$;",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return {match.group("name").rsplit(".", 1)[-1]: match.group("body") for match in pattern.finditer(sql)}
+
+
 def test_the_bulk_table_map_covers_every_bulk_guarded_table():
     triples = {trigger.table for trigger in GUARDS.GUARD_TRIGGERS if trigger.name == f"{trigger.table}_immutable"}
     assert set(BULK_TABLES) == triples - ONE_OFF_TABLES, (
@@ -524,48 +573,25 @@ def test_the_bulk_table_map_covers_every_bulk_guarded_table():
     assert set(BULK_TABLES.values()) == validators
 
 
-def test_every_migration_trigger_is_in_the_guard_module():
-    missing = sorted(migration_trigger_pairs() - _module_pairs(), key=str)
-    assert not missing, (
-        f"Migration-created trigger(s) absent from scripts/schema_guards.py: {missing}. "
-        "A metadata-built schema would lose them and accept rows the migrated schema refuses. "
-        "Add the trigger (and its function) to the guard module."
+def test_frozen_baseline_and_guard_module_have_the_same_trigger_contract():
+    baseline = _baseline_trigger_statements()
+    expected = _module_pairs()
+    assert set(baseline) == expected, (
+        "Frozen baseline guard triggers differ from scripts/schema_guards.py: "
+        f"baseline-only={sorted(set(baseline) - expected)}, module-only={sorted(expected - set(baseline))}"
     )
-
-
-def test_no_guard_trigger_exists_only_in_the_module():
-    extra = sorted(_module_pairs() - migration_trigger_pairs(), key=str)
-    assert not extra, (
-        f"scripts/schema_guards.py installs trigger(s) no migration creates: {extra}. "
-        "Remove them or add the migration; the test schema must not diverge from a migrated one."
-    )
-
-
-def test_trigger_timing_events_and_function_match_the_migrations():
-    """Name+table identity is not enough: a wrong event or function changes the rule."""
-    migrated = migration_trigger_statements()
-    diverged = []
     for trigger in GUARDS.GUARD_TRIGGERS:
-        expected = migrated.get((trigger.name, trigger.table))
-        if expected is None:
-            continue
-        events = _TRIGGER_EVENTS.search(expected)
-        level = _TRIGGER_LEVEL.search(expected)
-        function = _TRIGGER_FUNCTION.search(expected)
-        actual = trigger.definition(_SCHEMA)
-        actual_events = re.search(r"BEFORE (.+?) ON ", actual).group(1)
-        actual_level = _TRIGGER_LEVEL.search(actual).group(1)
-        if (
-            not events
-            or normalized(events.group(1)) != normalized(actual_events)
-            or (level and level.group(1).upper() != actual_level)
-            or (function and function.group(1).rsplit(".", 1)[-1] != trigger.function)
-        ):
-            diverged.append(trigger.name)
-    assert not diverged, (
-        f"Trigger definitions in scripts/schema_guards.py differ from the migrations: {diverged}. "
-        "The test schema would enforce a different rule than a migrated one."
-    )
+        statement = baseline[(trigger.name, trigger.table)]
+        actual = _TRIGGER_EVENTS.search(statement)
+        function = _TRIGGER_FUNCTION.search(statement)
+        expected_events = re.search(r"BEFORE (.+?) ON ", trigger.definition(_SCHEMA)).group(1)
+        assert actual and set(normalized(actual.group(1)).split(" or ")) == set(
+            normalized(expected_events).split(" or ")
+        ), trigger.name
+        assert re.search(r"FOR EACH (ROW|STATEMENT)", statement).group(1) == re.search(
+            r"FOR EACH (ROW|STATEMENT)", trigger.definition(_SCHEMA)
+        ).group(1), trigger.name
+        assert function and function.group(1).rsplit(".", 1)[-1] == trigger.function, trigger.name
 
 
 def test_guard_trigger_functions_exist():
@@ -573,27 +599,23 @@ def test_guard_trigger_functions_exist():
         assert trigger.function in GUARDS.GUARD_FUNCTIONS, f"{trigger.name} executes unknown {trigger.function}"
 
 
-def test_every_guard_function_exists_in_migration_history():
-    missing = sorted(set(GUARDS.GUARD_FUNCTIONS) - migration_function_names())
-    assert not missing, f"Guard functions no migration creates: {missing}"
+def test_frozen_baseline_guard_function_bodies_match_guard_module():
+    bodies = _baseline_function_bodies()
+    assert set(bodies) == set(GUARDS.GUARD_FUNCTIONS)
+    diverged = []
+    for name, body in bodies.items():
+        expected = GUARDS.GUARD_FUNCTIONS[name].replace("{s}", _SCHEMA)
+        if normalized(_bare(body)) != normalized(_bare(expected)):
+            diverged.append(name)
+    assert not diverged, f"Frozen baseline guard function bodies differ from scripts/schema_guards.py: {diverged}"
 
 
-def test_every_migration_guard_function_is_in_the_module():
-    extra = sorted(migration_function_names() - set(GUARDS.GUARD_FUNCTIONS))
-    assert not extra, f"Migration guard functions missing from scripts/schema_guards.py: {extra}"
-
-
-def test_migration_helper_arguments_follow_upgrade_reachability():
-    """0103's installed body comes from upgrade even though downgrade calls its helper too."""
-    path = MIGRATIONS / "0103_allow_platform_task_initiator.py"
-    tree = ast.parse(path.read_text())
-    reachable = _reachable_functions(tree)
-    sites = _call_sites(tree, "_replace_validator", reachable)
-    assert len(sites) == 1, "Upgrade must resolve to one validator helper invocation"
-    assert sites[0].flags == {"allow_platform_operator": True}
-    reversed_tree = ast.Module(body=list(reversed(tree.body)), type_ignores=[])
-    reversed_sites = _call_sites(reversed_tree, "_replace_validator", _reachable_functions(reversed_tree))
-    assert [site.flags for site in reversed_sites] == [site.flags for site in sites]
+def test_baseline_renders_a_requested_schema_without_public_leakage():
+    sql = _baseline_renderer()("probe_schema")
+    assert "{{schema}}" not in sql
+    assert '"probe_schema".' in sql
+    assert "public." not in sql
+    assert '"public".' not in sql
 
 
 def test_unresolved_dml_without_call_bindings_is_not_guard_ddl():
@@ -612,29 +634,6 @@ def test_unresolved_guard_ddl_without_call_bindings_fails_closed():
         assert "guard DDL" in str(error)
     else:
         raise AssertionError("Unresolved guard function body was silently ignored")
-
-
-def test_function_bodies_match_the_final_migration_bodies():
-    """Later revisions replace a body; the module keeps only the final one.
-
-    ``CREATE OR REPLACE`` replaces a body, and 0103 appends a clause to the
-    0099 body, so the last body per function is the only comparable one.
-    """
-    diverged = []
-    compared = 0
-    for name, (source, expected) in sorted(migration_function_bodies().items()):
-        template = GUARDS.GUARD_FUNCTIONS.get(name)
-        if template is None:
-            continue
-        compared += 1
-        actual = template.replace("{s}", _SCHEMA)
-        if normalized(_bare(expected)) != normalized(_bare(actual)):
-            diverged.append(f"{name} (last written by {source})")
-    assert compared >= 15, f"Only {compared} guard bodies were statically comparable"
-    assert not diverged, (
-        f"Guard bodies in scripts/schema_guards.py differ from the final migration body: {diverged}. "
-        "Copy the current migration text, or record the intentional change here."
-    )
 
 
 def test_rendered_ddl_is_schema_qualified_and_idempotent():

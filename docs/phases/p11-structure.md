@@ -32,7 +32,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 
 21. [P11-T21](../audit/p11-t21.md) — minimal task-reading path and removal of redundant audit navigation — DONE 2026-10-27 (accepted `401ee050`).
 22. [P11-T22](../audit/p11-t22.md) — host shared working principles in the project rules — DONE 2026-10-27 (accepted `59027292`).
-23. [P11-T23](../tasks/p11-t23.md) — Split agent-task documentation by reader — TODO (registered 2026-10-27; waits for P11-T16, P8-T40 and P8-T41).
+23. [P11-T23](../audit/p11-t23.md) — Split agent-task documentation by reader — DONE 2026-10-29 (accepted `363a26e1`; owner-waived tests, docs-only).
 24. [P11-T24](../audit/p11-t24.md) — Reproduce schema guard objects in the metadata-built test schema — DONE 2026-10-28 (rebuilt-schema billing 46/46, drift test deterministic).
 25. [P11-T25](../audit/p11-t25.md) — Realign the model-layout fixtures with the migrated schema — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`,
     merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).

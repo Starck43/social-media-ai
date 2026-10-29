@@ -392,4 +392,4 @@ deferred checks and no-DB/no-runtime/no-live-action restrictions remain open.
 
 ## P8-T29 design constraint
 
-The [universal task contract](../AGENT_TASKS.md#explicit-task-plans) preserves this shell and independent sources, scenarios, tasks/schedules and digests pages. Chat is supplementary. Add needed settings using existing controls/styles; do not replace navigation or introduce a new visual design.
+The [universal task contract](../AGENT_TASKS_PLAN.md#explicit-task-plans) preserves this shell and independent sources, scenarios, tasks/schedules and digests pages. Chat is supplementary. Add needed settings using existing controls/styles; do not replace navigation or introduce a new visual design.

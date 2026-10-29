@@ -21,7 +21,7 @@ PostgreSQL/SQLAlchemy/Alembic own persistence; Celery/Redis and Streamlit are fr
 
 | Responsibility | Code entry | Contract (read only when needed) |
 | --- | --- | --- |
-| Runtime / scheduling / queue | `app/runtime.py`, `app/worker.py`, `app/jobs/`, `app/tasks/` | [AGENT_TASKS](AGENT_TASKS.md) |
+| Runtime / scheduling / queue | `app/runtime.py`, `app/worker.py`, `app/jobs/`, `app/tasks/` | [AGENT_TASKS_QUEUE](AGENT_TASKS_QUEUE.md) |
 | HTTP / web / admin / CLI | `app/main.py`, `app/api/`, `app/web/`, `app/admin/`, `cli/` | [API](API.md), [ADMIN](ADMIN.md), [CLI](CLI.md) |
 | Conversation / tools / memory | `app/agent/` | [AGENT](AGENT.md) |
 | Sources / collection / analysis | `app/services/monitoring/`, `app/services/social/`, `app/services/ai/` | [COLLECTION](COLLECTION.md), [AI pipeline](AI_PIPELINE_AND_PROMPTS.md) |

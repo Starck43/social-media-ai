@@ -90,7 +90,7 @@ Acceptance requires recovery tests for healthy long jobs, stale claims, retries,
 cancellation, shutdown, non-cooperative work and transaction rollback. An
 unresolved external effect blocks replay until its idempotency or operator decision
 is known. API/web status reflects actual terminal outcome rather than task return
-shape or HTTP success alone. See [AGENT_TASKS](AGENT_TASKS.md).
+shape or HTTP success alone. See [AGENT_TASKS_QUEUE](AGENT_TASKS_QUEUE.md).
 
 ## PRD-06 — Data lifecycle, privacy and offboarding
 

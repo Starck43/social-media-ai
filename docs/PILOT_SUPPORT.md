@@ -114,7 +114,7 @@ and within 12 hours of observing completion; do not rely on a seven-day Job
 history. Retained evidence is not permission to change retention or dump raw
 results. If a row disappears before evidence capture, report `unavailable` and
 coverage loss, never reconstruct a successful result from task `last_status`.
-See [job retention](AGENT_TASKS.md#job-history-and-one-time-runs).
+See [job retention](AGENT_TASKS_QUEUE.md#job-history-and-one-time-runs).
 
 All targets below are **proposed v1 thresholds**, not measured baselines or
 promises that current code already achieves them. Report numerator, denominator,
@@ -175,7 +175,7 @@ claimed to exist: the authorized operator keeps this manual evidence log.
 
 Source fields/semantics: [Job](../app/models/scheduling/job.py),
 [permission-aware task results](../app/services/task_results.py),
-[task run receipts](AGENT_TASKS.md#explicit-task-plans).
+[task run receipts](AGENT_TASKS_PLAN.md#explicit-task-plans).
 `AgentTask.last_status=queued` is historical admission evidence, not completion.
 Database `started_at`/`finished_at` are not claimed to be exposed by every UI/API;
 this manual metric uses receipt observation times, not a new timestamp endpoint.

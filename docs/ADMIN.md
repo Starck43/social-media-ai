@@ -413,7 +413,7 @@ due row and runs its handler inline; a competing claim raises rather than
 starting a second handler. The Job remains the execution audit trail. The
 shared trigger path updates task bookkeeping, including one-shot deactivation.
 This action can invoke configured job behavior: do not use it as a harmless UI
-probe. See [AGENT_TASKS](AGENT_TASKS.md) for queue/outcome boundaries.
+probe. See [AGENT_TASKS_QUEUE](AGENT_TASKS_QUEUE.md) for queue/outcome boundaries.
 
 Task create/edit exposes source multi-selection (`agent_task_sources`),
 `agent_scenario`, schedule/job/payload and trigger/action controls. Scenario =
@@ -791,12 +791,12 @@ multi-select deletion as one atomic transaction.
 
 ## Universal social task parity (P8-T29)
 
-Task plans follow the shared [task contract](AGENT_TASKS.md#explicit-task-plans).
+Task plans follow the shared [task contract](AGENT_TASKS_PLAN.md#explicit-task-plans).
 Console forms do not edit collector/runtime evidence or secrets; Run now uses the
 standard admission path. Implementation evidence belongs to the task record.
 
 Version-2 `payload.task_plan` uses the same bounded composed research parser:
 select `analyze`, matching sources/scenario and trigger, then supply the separate
-`pipeline` and `digest.window` fields from the [shared contract](AGENT_TASKS.md#composed-research-and-digest-plans-p8-t40).
+`pipeline` and `digest.window` fields from the [shared contract](AGENT_TASKS_PLAN.md#composed-research-and-digest-plans-p8-t40).
 Run now and schedules generate a digest only. External delivery is a separate
 confirmed task action with fresh rights and frozen per-part receipts.

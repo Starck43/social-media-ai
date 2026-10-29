@@ -25,7 +25,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
     merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
 15. [P11-T15](../audit/p11-t15.md) — Reproducible package and configuration contract (R-13) — DONE 2026-10-27 (accepted `2c4c6e5566a61f6a9b02967db1a152e4fa1140e7`).
 16. [P11-T16](../audit/p11-t16.md) — Test and reference navigation without evidence loss (R-14) — DONE 2026-10-27 (accepted `bd6120cfb698f0bc71481660c4356312985068cf`).
-17. [P11-T17](../tasks/p11-t17.md) — Localizable presentation boundaries (R-15).
+17. [P11-T17](../audit/p11-t17.md) — Localizable presentation boundaries (R-15) — DONE 2026-10-29 (accepted `de03fc20`, merged `c20edcab`, PR #282; Russian-only catalog with `ru` fallback and stable message IDs at presenter/LLM error boundaries).
 18. [P11-T18](../tasks/p11-t18.md) — Typed connector and job extension seams (R-16).
 19. [P11-T19](../tasks/p11-t19.md) — Capacity telemetry and reproducible scale evidence (R-17).
 20. [P11-T20](../audit/p11-t20.md) — Select and specify bounded enterprise requirements (R-18) — DONE 2026-10-27; owner retained the current identity scope (accepted PR #265, `f4ecdceb`).

@@ -70,7 +70,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 bash "$ROOT/scripts/ops/staging_compose.sh" exec -T db pg_restore --list < "$archive" >/dev/null
 # Preserve the current staging database before the destructive replacement.
 bash "$ROOT/scripts/ops/backup_staging_db.sh"
-# Leave the API stopped: it runs Alembic automatically on startup.
+# Leave the API stopped; review the source revision and run any approved migration explicitly.
 bash "$ROOT/scripts/ops/staging_compose.sh" stop api
 bash "$ROOT/scripts/ops/staging_compose.sh" exec -T db sh -ec \
   'dropdb --if-exists --maintenance-db=postgres --username="$POSTGRES_USER" "$POSTGRES_DB" && createdb --maintenance-db=postgres --encoding=UTF8 --template=template0 --username="$POSTGRES_USER" "$POSTGRES_DB"'

@@ -20,7 +20,7 @@ BACKUP_DIR="$(cd -- "$BACKUP_DIR" && pwd -P)"
 case "$BACKUP_DIR/" in
   "$ROOT/"*) echo 'Backups must be outside the repository.' >&2; exit 2 ;;
 esac
-mode="$(stat -c '%a' "$BACKUP_DIR")"
+mode="$(python3 -c 'import os, sys; print(format(os.stat(sys.argv[1]).st_mode & 0o777, "o"))' "$BACKUP_DIR")"
 if (( (8#$mode & 077) != 0 )); then
   echo 'Backup directory must be private (chmod 700); refusing to write.' >&2
   exit 2

@@ -1,37 +1,109 @@
 # Deployment Guide
 
-> **Status:** deployment examples are drafts, not a verified production profile.
+> **Status:** repository deployment assets are prepared; VPS/runtime acceptance remains unrun.
 > Observation/recovery runbook: [PR #27](https://github.com/Starck43/social-media-ai/pull/27), MERGED as `0234c21`; source baseline `10212b5e`.
 > GitGuardian and Kilo passed for head `a874ada`; eight tabletop cases remain unexecuted.
 > It is documentation, not executed recovery, staging acceptance or deployment.
 
 During an incident start at [Observation and conservative recovery](#observation-and-conservative-recovery),
 not installation/bootstrap/update commands. Starting or restarting a process can
-write data or cause external effects. The checked-in [Compose](../docker/docker-compose.yml)
-contains `db` and `api` only; `api` starts with `alembic upgrade head` before HTTP.
-It does not start the scheduler, worker or messenger listener. Do not restart it
-as a supposedly read-only migration diagnostic. The examples below are historical
-sketches; do not copy their service names/topology into an incident response.
+write data or cause external effects. The root [Compose](../docker-compose.yml)
+is a legacy `web:3000` sketch and is not the supported Python service stack. The
+supported Python profiles are the isolated staging and production Compose files
+described below; migrations are explicit deployment steps, not API startup
+commands. Do not run old examples as a supposedly read-only migration diagnostic.
+
+## Supported single-VPS topology (prepared, not provisioned)
+
+The supported deployment target is the Python modular monolith described in
+[DESIGN](DESIGN.md): FastAPI serves `/app`, `/admin`, API, and health routes in
+one `api` container. There is no separate Node/web or admin container. The
+production Compose stack separates PostgreSQL (persistent), Redis (private,
+volatile rate-limit storage), API, and an optional single `app.runtime` owner.
+The runtime is an explicit `runtime` Compose profile and is intentionally not
+started by deploy automation until its operational and retention gates are
+accepted. `app.main` still starts its own short maintenance loop in API-only mode;
+API-only does not mean a read-only process.
+
+The host's `/etc/nginx` is the public TLS terminator. The internal Nginx
+container is a private reverse proxy to the `api` service; it publishes only
+`127.0.0.1:8226` for production and `127.0.0.1:18000` for staging. Install and
+customize [the host-vhost example](../nginx/vps-sites.conf.example) only after
+choosing domains and obtaining a certificate. Replace every `example.invalid`
+and certificate placeholder, then run `nginx -t` before reload. HTTP is redirected
+to HTTPS; the ACME challenge path is left available for webroot validation.
+
+`docker-compose.yml` at the repository root is an old `web:3000` sketch, not the
+supported Python stack; it also expects an untracked root Dockerfile and claims
+port 8226. Do not start it beside the new Compose projects. `nginx/default.conf`
+is now the container-side proxy for the Python `api`; the root web sketch is
+retained only as legacy material pending a VPS inventory/cutover.
+
+Both Compose projects may share the VPS but must not share env files, database
+volumes, Redis state, or provider credentials. Staging uses a separate named DB
+volume and an internal no-egress network; only staging publishes the PostgreSQL
+port, bound to loopback `127.0.0.1:55432`. Production PostgreSQL has no host port.
+Staging starts no `app.runtime`; use only synthetic or approved sanitized data.
+The same VPS is
+not a separate failure domain. Check `DOCKER_SUBNET` on the host before first
+start; choose a non-overlapping private subnet if another Docker network already
+uses the documented example range.
+
+The GitHub workflow builds the checked-in `docker/Dockerfile`, publishes a
+commit-SHA tag to GHCR, and deploys the returned immutable image digest. Pushes to `dev` deploy that image to staging only when
+`STAGING_DEPLOY_ENABLED=true`; pushes to `master` can reach production only when
+`PRODUCTION_DEPLOY_ENABLED=true`, `PRODUCTION_BACKUP_READY=true`, and
+`PRODUCTION_MIGRATIONS_APPROVED_SHA` equal to the full push commit SHA, then wait
+for the GitHub `production` Environment approval. Configure a read-only GHCR
+pull credential on the VPS; the workflow does not transmit it. Set environment
+secrets for the SSH endpoint, private key and pinned `known_hosts`, plus the
+environment variable `VPS_DEPLOY_DIR`. Enable required reviewers/branch restrictions in GitHub
+Settings—workflow YAML cannot create those protection rules. Until those values
+are configured, CI only builds the image and skips deployment.
+
+The deployment script takes an exclusive per-target host lock and waits for DB/Redis
+health. Production first creates a protected local logical snapshot, then stops
+the API and any already running runtime before one explicit Alembic step; this is
+not offsite disaster recovery. API/runtime stay stopped on migration failure;
+inspect migration state and the snapshot before deciding recovery. Do not enable the production deployment gate until
+an offsite backup and restore policy is established. Review migrations on the
+approved test schema and authorize production apply separately. After migration, the API and proxy are recreated and `/readyz` is checked;
+a previously running runtime is restarted only after HTTP readiness. A runtime
+that was stopped stays stopped. The successful image digest is stored privately
+in `.deployed-image.production` or `.deployed-image.staging` for later wrapper
+commands and backups; these files are ignored and never contain credentials.
+Runtime remains
+off by default; the configured one-month retention is irreversible, so do not
+start the runtime profile before the owner accepts P6-T01 and recovery evidence.
+
+Owner setup still required later: create production/staging DNS records; issue a
+certificate whose SANs cover both names; install the reviewed host-vhost file;
+open only SSH/80/443; create private `.env.production` and `.env.staging` files
+with mode 600 and separate keys; prepare the two deployment directories; configure
+GitHub Environments/secrets/variables and approvals; verify the actual VPS Docker
+subnets; then execute the staging install, sanitized-copy, backup/restore, and
+P7-T02/P4-T01/P6-T01 proofs. No domain, host, certificate, database, or secret
+was accessed while preparing these files.
 
 ## Prerequisites
 
 - VPS with Ubuntu 22.04+ (or Debian 12+)
 - 2 vCPU, 4 GB RAM minimum
-- PostgreSQL 15+ (or managed PostgreSQL)
-- Python 3.14+
+- Docker Engine and Docker Compose v2
+- PostgreSQL 16 container image (bundled in the prepared profiles)
 - Domain name (optional, for HTTPS)
 
 ## Isolated staging Compose (prepared, not provisioned)
 
 The standalone [`docker-compose.staging.yml`](../docker/docker-compose.staging.yml)
-profile is separate from the development Compose and does not read `.env`. It
-builds the app with Python 3.14 (the repository minimum) while leaving the
-existing Dockerfile default unchanged. It runs only PostgreSQL and the API, uses
-the `social-ai-staging` Compose project and its own named volume, publishes only loopback ports (`127.0.0.1:55432` for
-PostgreSQL and `127.0.0.1:18000` for the API), and places both services on an
-internal Docker network with no external egress. It deliberately does not start
-`app.runtime`, Redis, or provider integrations. The API runs one Alembic upgrade
-at startup; do not scale API replicas or start a second migrator.
+profile is separate from development and uses only `.env.staging`. It runs
+PostgreSQL, Redis (for the admin rate limiter), the FastAPI application, and an
+internal Nginx proxy in the `social-ai-staging` Compose project with its own DB
+volume. PostgreSQL and the proxy bind only to loopback (`127.0.0.1:55432` and
+`127.0.0.1:18000`); containers use an internal no-egress network. The API image
+uses Python 3.14. Staging does not start `app.runtime` or provider integrations.
+Run one explicit Alembic upgrade before starting the API; API startup itself does
+not migrate the schema.
 
 This is repository preparation, not a provisioned host, restored database,
 deploy-gated check, or staging acceptance. No production credentials or database
@@ -56,12 +128,19 @@ SSH/VPN access path; public ingress/TLS and host provisioning are separate work.
    chmod 600 .env.staging
    # Edit .env.staging with freshly generated values before the next command.
    bash scripts/ops/staging_compose.sh config --quiet
-   bash scripts/ops/staging_compose.sh up -d db api
+   bash scripts/ops/staging_compose.sh up -d --wait db redis
+   # Apply one reviewed migration, then start HTTP/proxy services.
+   APP_IMAGE=ghcr.io/starck43/social-media-ai@sha256:<64-hex-digest> \
+     bash scripts/ops/staging_compose.sh run --rm --no-deps api alembic upgrade head
+   APP_IMAGE=ghcr.io/starck43/social-media-ai@sha256:<64-hex-digest> \
+     bash scripts/ops/staging_compose.sh up -d --no-deps api nginx
    bash scripts/ops/staging_compose.sh ps
    ```
 
    The wrapper refuses unresolved placeholders, a non-private env file,
    unexpected/provider keys, a non-staging database URL, or missing Docker.
+   For routine releases use `scripts/ops/deploy_vps.sh staging <immutable-image>`
+   so the image pull, single migration, and readiness check happen in order.
    `config --quiet` avoids printing interpolated values.
 3. Take a private logical backup at any approved checkpoint:
 
@@ -98,9 +177,9 @@ bash scripts/ops/restore_staging_db.sh /private/path/approved-sanitized.dump \
 Restore verifies the checksum and archive format before changes, saves the
 current staging DB to a new protected backup, stops the API, and replaces only
 the database reached through the fixed staging Compose project. The API remains
-stopped afterward because its startup automatically runs Alembic. Review the
-source Alembic revision and data scope; separately approve the migration/upgrade
-and start the API only after that review. A successful `pg_restore` is not a
+stopped afterward. Review the source Alembic revision and data scope; separately
+approve and run exactly one explicit migration before starting the API. A
+successful `pg_restore` is not a
 restore acceptance proof: verify schema, app access, and the required operation
 under [P7-T02](tasks/p7-t02.md). Backup retention and deletion remain an explicit
 operator policy.
@@ -108,10 +187,33 @@ operator policy.
 Stop containers without deleting the staging volume with
 `bash scripts/ops/staging_compose.sh down`. `down --volumes` permanently deletes the
 staging database; use it only after confirming no retained staging data or
-backup is needed. This profile does not fix or exercise the master-only
-[deploy workflow](../.github/workflows/deploy.yml).
+backup is needed.
+
+### GitHub deployment workflow (prepared, gated off)
+
+Pull requests to `dev` or `master` build the checked-in `docker/Dockerfile`
+without publishing. Branch pushes publish a commit-tagged image to GHCR and the
+deploy step pins the build's content digest.
+`dev` can deploy only to the GitHub `staging` Environment when the repository
+variable `STAGING_DEPLOY_ENABLED=true`; `master` additionally requires
+`PRODUCTION_DEPLOY_ENABLED=true`, `PRODUCTION_BACKUP_READY=true`, and
+`PRODUCTION_MIGRATIONS_APPROVED_SHA` equal to the full push commit SHA, then waits
+for approval configured on the protected `production` Environment. The workflow
+uses SSH with a pinned `VPS_KNOWN_HOSTS` secret and copies only the Compose,
+Nginx, and operations support files. It does not copy environment files or pass
+a registry credential to the VPS; configure a read-only GHCR pull login on the
+server first. Deployment paths are fixed as
+`/opt/social-media-ai/staging` and `/opt/social-media-ai/production` using the
+environment variable `VPS_DEPLOY_DIR`. Deploy variables remain unset/false by
+default, so preparing this workflow does not start a deployment.
 
 ---
+
+## Historical development sketches (not the production installation path)
+
+Use the prepared single-VPS profiles above for new hosts. The following local
+and systemd examples are historical alternatives, not additional services to
+start beside Compose. Inventory existing owners before any cutover.
 
 ## Option A: Docker Compose — illustrative deployment sketch
 
@@ -664,7 +766,9 @@ staging/fault/restore exercises require their own approval and evidence.
 The following historical sketch is not an automatic recovery action. Verify
 target/revision, migration plan, process ownership and in-flight deliveries; obtain
 owner approval before executing installation/migration/restart commands. The
-checked-in API Compose auto-runs a migration at startup. Do not restart a generic
+supported staging/production Compose profiles run migrations only through the
+explicit deployment step; the older development Compose sketch still embeds a
+startup migration and must not be used for production. Do not restart a generic
 worker during ambiguous delivery merely because the HTTP process is unhealthy.
 
 ```bash
@@ -701,23 +805,51 @@ reviewed contract; no such action is included in this runbook.
 
 ---
 
-## Checklist for First Deployment
+## Release gates and first-host checklist
 
-- [ ] VPS provisioned with Ubuntu 22.04+
-- [ ] PostgreSQL installed and secured
-- [ ] Python 3.14+ installed
-- [ ] Project cloned and `requirements.txt` installed
-- [ ] `.env` configured with all required values
-- [ ] `SECRET_KEY` and `CREDENTIALS_KEY` generated
-- [ ] Alembic migrations run (`alembic upgrade head`)
-- [ ] Admin user created
-- [ ] Platform credentials set up (`credentials set`)
-- [ ] Sources configured
-- [ ] Tasks created (`task add`)
-- [ ] Service started (systemd or docker compose)
-- [ ] Health check passes
-- [ ] First digest sent successfully (`digest send-now day`)
-- [ ] Agent responds in Telegram/MAX
-- [ ] Backup script configured
-- [ ] Monitoring configured
-- [ ] Firewall rules set (only 80/443/22 open)
+Repository preparation closes P7-T05/P7-T06 only. It does not waive the following
+host-specific release gates or authorize production migrations, retention, sends,
+or provider calls. Keep deployment-enable variables false until the host is ready.
+
+| Gate | Required evidence / owner action |
+| --- | --- |
+| Host | Provision VPS; install Docker Engine, Compose v2 supporting `up --wait`, host Nginx and Python 3; verify RAM/disk, firewall (SSH/80/443), non-overlapping subnets and one runtime owner. |
+| Secrets | Separate mode-600 staging/production env files; distinct keys/passwords; private offsite encryption-key custody; read-only GHCR pull login on VPS. Never rotate the production Fernet key during upgrade. |
+| Ingress | Select DNS names, obtain certificates, replace host-vhost placeholders; run real `nginx -t`, verify HTTPS, secure cookies, `/app`, `/admin`, and rate-limit storage through the real proxy chain. Restrict staging to approved operator ingress (VPN/IP allowlist/auth). |
+| GitHub | Create `staging`/`production` Environments, production required reviewers and deployment branch restriction `master`; set SSH secrets and fixed deployment directory variable. Keep enable flags repository-scoped; environment variables cannot enable a job before its environment is selected. |
+| Schema | Complete active [Q-14](tasks/q-14.md) migration baseline work before selecting the first production revision. Validate that exact revision on the approved test schema; obtain separate apply approval. Set repository variable `PRODUCTION_MIGRATIONS_APPROVED_SHA` to that full commit only. A later commit requires fresh approval. |
+| Recovery | Schedule protected logical backups with offsite copies and separately secured encryption keys; select RPO/RTO, retention and monitoring. Run an isolated verified restore before setting `PRODUCTION_BACKUP_READY=true`. Local pre-migration snapshots alone do not satisfy this gate. |
+| Operations | Execute [P7-T02](tasks/p7-t02.md) on staging: install, backup, restore, verify revision/schema, HTTP and controlled operation; record exact image digest and cleanup. |
+| Delivery | Execute [P4-T01](tasks/p4-t01.md) operator recovery without duplicate sends; use approved test recipients and preserve receipts. |
+| Runtime / retention | Review and approve [P6-T01](tasks/p6-t01.md) cutoff, backup and rollout before explicitly enabling `--profile runtime`; confirm no other systemd/container runtime owner exists. |
+| Billing | Complete [P2-T09](tasks/p2-t09.md) production billing verification before billable public use. Provider permission and availability remain separate integration gates. |
+
+The workflow passes the approved digest to `deploy_vps.sh`. For a separately
+approved manual production rollout, set `PRODUCTION_MIGRATIONS_APPROVED_IMAGE`
+to the same immutable digest supplied as the second argument; the script rejects
+missing/mismatched approval before contacting Docker. `APP_IMAGE` may override
+the stored successful digest for a reviewed operator command. Never use mutable
+`latest` tags or run direct production Alembic as a diagnostic.
+
+### Rollback and interrupted rollout
+
+Record the previous image digest and database revision before a rollout. The
+stored digest changes only after successful API readiness and any intended
+runtime restart; after a failed migration it still identifies the last successful
+release, not necessarily the currently running containers. Inspect both states.
+
+For a backward-compatible schema, stop the active runtime/API and use the
+wrappers with `APP_IMAGE=<previous-reviewed-digest>` to pull and replace HTTP and
+proxy with `up -d --no-deps --force-recreate api nginx`; verify `/readyz` and the
+application before restarting the one previously active runtime. Record the
+successful rollback digest explicitly. This API rollback does not downgrade the
+schema. Do not invoke `deploy_vps.sh` with an older image as a schema rollback.
+For an incompatible or partially applied migration, keep writers stopped and use
+an approved restore/recovery plan against an isolated target first. No automatic
+Alembic downgrade or destructive production restore is provided. A failed health
+probe does not authorize replay, pruning or another provider call.
+
+No VPS, real TLS certificate, live database restore, production rollout, or
+external-provider smoke test was available during repository preparation. Hosted
+CI configuration parsing and image building do not certify a running environment.
+Those checks remain explicitly unrun and their task rows remain open.

@@ -1,0 +1,131 @@
+# Single-VPS production. Host Nginx terminates TLS and proxies to loopback :8226.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: social_ai_production_db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env.production}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - production_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [app]
+
+  redis:
+    image: redis:7-alpine
+    container_name: social_ai_production_redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [app]
+
+  api:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the immutable GHCR commit image}
+    container_name: social_ai_production_api
+    env_file:
+      - ../.env.production
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips=${NGINX_CONTAINER_IP:-172.30.42.2}
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/readyz', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [app]
+
+  nginx:
+    build:
+      context: ../nginx
+      dockerfile: Dockerfile
+    image: social-ai-api-proxy:local
+    container_name: social_ai_production_nginx
+    ports:
+      - "127.0.0.1:8226:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      app:
+        ipv4_address: ${NGINX_CONTAINER_IP:-172.30.42.2}
+
+  # Explicit opt-in: start only after runtime/retention acceptance and owner approval.
+  # One Compose project and a fixed container name prevent accidental scaling.
+  runtime:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the immutable GHCR commit image}
+    container_name: social_ai_production_runtime
+    env_file:
+      - ../.env.production
+    command: ["python", "-m", "app.runtime"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [app]
+    profiles: [runtime]
+
+volumes:
+  production_pgdata:
+
+networks:
+  app:
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET:-172.30.42.0/24}

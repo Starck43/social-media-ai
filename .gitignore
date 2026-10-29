@@ -33,6 +33,7 @@ db.sqlite3*
 .env*
 !.env.example
 !.env.staging.example
+!.env.production.example
 .venv/
 venv/
 ENV/
@@ -65,3 +66,6 @@ backups/
 
 external_nginx.conf
 
+
+# Private last-successful image digest for VPS operator commands.
+.deployed-image.*

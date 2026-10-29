@@ -386,12 +386,15 @@ databases that still record historical revisions need the reviewed transition be
 
 ### Existing local public schema after Q-14
 
-The bridge applies only the former 0118 forward delta (the empty `action_audit_events`
-table, its guard function/triggers, and its access-catalog registrations), then replaces
-the old Alembic revision marker with `baseline_0118` in the same transaction. It does not
-rebuild existing tables. The bridge checks that the target is the local
+The bridge applies the former 0118 forward delta (the empty `action_audit_events`
+table, guards and catalog registrations), aligns the task-action FK deletion rule and
+global messenger-chat uniqueness with the current models, and removes only the empty
+retired `oauth_pending` table and unused `analyze_type` enum. It then replaces
+the old revision marker with `baseline_0118` in the same transaction. The baseline
+retains the other current public definitions, defaults and indexes. The target is local
 `social_manager/public` database at exactly revision `0117`, that the new objects are
-absent, and that fingerprints of existing rows are unchanged (registry rows may only be
+absent. Duplicate chats, nonempty retired records, unexpected dependencies or other
+schema drift abort the entire transaction. Existing row fingerprints must be unchanged (registry rows may only be
 appended). It checks row hashes without exposing row contents. The bridge disables Alembic's
 ordinary stamp registration hook and adds only the
 audit resource, its view/export permissions, and owner/admin grants; those catalog rows
@@ -420,14 +423,9 @@ DB_SCHEMA=public DB_TEST_SCHEMA=test_schema \
   python -m scripts.migrations.q14_public_bridge --apply-public-transition
 ```
 
-For an isolated bridge rehearsal after the disposable test schema is prepared at
-revision `0117` with the new audit objects absent, use the same bridge in its test-only
-mode:
-
-```bash
-DB_SCHEMA=test_schema DB_TEST_SCHEMA=test_schema \
-  python -m scripts.migrations.q14_public_bridge --validation-test-schema
-```
+The rehearsal captures the canonical baseline catalog, clones only the real public
+DDL and revision marker into test_schema, seeds references and executes the same
+bridge. It compares the result strictly against the captured baseline before commit.
 
 The command refuses any other database, schema, or current revision. It is not a
 general-purpose `stamp` recipe; do not substitute `alembic stamp` or run it during

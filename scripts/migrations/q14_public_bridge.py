@@ -62,7 +62,7 @@ def _require_local_target(connection, schema: str, *, validation_test_schema: bo
 
 
 def apply_public_transition(
-    connection, config: Config, schema: str = "public", *, validation_test_schema: bool = False
+    connection, config: Config, schema: str = "public", *, validation_test_schema: bool = False, expected_catalog=None
 ) -> None:
     """Apply the retained 0118 forward delta and baseline stamp atomically."""
     from app.core.config import settings
@@ -96,31 +96,98 @@ def apply_public_transition(
     if function_exists:
         raise RuntimeError("guard_action_audit_mutation already exists; inspect partial/foreign work")
 
+    from app.models import Base
+    from scripts.migrations.q14_compare_schemas import _catalog, compare
+
+    connection.execute(text("SET LOCAL search_path TO pg_catalog"))
     if not validation_test_schema:
-        from app.models import Base
-        from scripts.migrations.q14_compare_schemas import _catalog, compare
+        if expected_catalog is not None:
+            raise RuntimeError("Public validation must use the actual prepared test_schema catalog")
 
         baseline_revision = (
             connection.execute(text("SELECT version_num FROM test_schema.alembic_version")).scalars().all()
         )
         if baseline_revision != ["baseline_0118"]:
             raise RuntimeError("Prepare and validate test_schema at baseline_0118 before public transition")
-        connection.execute(text("SET LOCAL search_path TO pg_catalog"))
+        expected_catalog = _catalog(connection, "test_schema")
         compatibility = compare(
             _catalog(connection, "public"),
-            _catalog(connection, "test_schema"),
+            expected_catalog,
             before_bridge=True,
+            allow_reconciliation=True,
             model_tables={table.name for table in Base.metadata.sorted_tables},
         )
         if compatibility["status"] != "PASS":
             raise RuntimeError("Schema compatibility failed; run q14_compare_schemas --before-bridge and investigate")
+    elif expected_catalog is None:
+        raise RuntimeError("Rehearsal must supply the baseline catalog captured before cloning public")
 
+    connection.execute(text(f'LOCK TABLE "{schema}".tenant_channels, "{schema}".bot_actions IN ACCESS EXCLUSIVE MODE'))
+    legacy_table = inspect(connection).has_table("oauth_pending", schema=schema)
+    if legacy_table:
+        connection.execute(text(f'LOCK TABLE "{schema}".oauth_pending IN ACCESS EXCLUSIVE MODE'))
     before = _table_fingerprints(connection, schema)
+    if legacy_table and before["oauth_pending"]:
+        raise RuntimeError("oauth_pending is not empty; preserve its rows and stop the alignment")
+    duplicate_chats = connection.execute(
+        text(
+            f'SELECT count(*) FROM (SELECT channel, chat_id FROM "{schema}".tenant_channels '
+            "GROUP BY channel, chat_id HAVING count(*) > 1) AS duplicate_chats"
+        )
+    ).scalar_one()
+    if duplicate_chats:
+        raise RuntimeError("Duplicate messenger chats prevent global uniqueness; no rows may be removed automatically")
     bridge = _load_0118_bridge()
     bridge.SCHEMA = schema
     migration_context = MigrationContext.configure(connection, opts={"version_table_schema": schema})
     with Operations.context(migration_context):
+        operations = Operations(migration_context)
+        foreign_keys = [
+            fk
+            for fk in inspect(connection).get_foreign_keys("bot_actions", schema=schema)
+            if fk["constrained_columns"] == ["agent_task_id"]
+        ]
+        if len(foreign_keys) != 1 or foreign_keys[0]["referred_table"] != "agent_tasks":
+            raise RuntimeError("Unexpected bot_actions task binding constraint")
+        foreign_key = foreign_keys[0]
+        if foreign_key.get("options", {}).get("ondelete") != "SET NULL":
+            if foreign_key.get("options", {}).get("ondelete") != "CASCADE":
+                raise RuntimeError("Unexpected task binding deletion rule")
+            operations.drop_constraint(foreign_key["name"], "bot_actions", schema=schema, type_="foreignkey")
+            operations.create_foreign_key(
+                foreign_key["name"],
+                "bot_actions",
+                "agent_tasks",
+                ["agent_task_id"],
+                ["id"],
+                source_schema=schema,
+                referent_schema=schema,
+                ondelete="SET NULL",
+            )
+        uniques = inspect(connection).get_unique_constraints("tenant_channels", schema=schema)
+        binding = [item for item in uniques if item["name"] == "uq_tenant_channel_chat"]
+        if len(binding) != 1:
+            raise RuntimeError("Unexpected tenant channel uniqueness constraint")
+        if binding[0]["column_names"] == ["tenant_id", "channel", "chat_id"]:
+            operations.drop_constraint("uq_tenant_channel_chat", "tenant_channels", schema=schema, type_="unique")
+            operations.create_unique_constraint(
+                "uq_tenant_channel_chat", "tenant_channels", ["channel", "chat_id"], schema=schema
+            )
+        elif binding[0]["column_names"] != ["channel", "chat_id"]:
+            raise RuntimeError("Unexpected tenant channel uniqueness columns")
+        if legacy_table:
+            operations.drop_table("oauth_pending", schema=schema)
+        operations.execute(f'DROP TYPE IF EXISTS "{schema}".analyze_type')
         bridge.upgrade()
+
+    aligned = compare(
+        _catalog(connection, schema),
+        expected_catalog,
+        allow_legacy=False,
+        model_tables={table.name for table in Base.metadata.sorted_tables},
+    )
+    if aligned["status"] != "PASS":
+        raise RuntimeError("Aligned schema differs from the tested baseline; rolling back the entire transition")
 
     config.attributes["connection"] = connection
     config.attributes["skip_model_type_registration_on_stamp"] = True
@@ -132,6 +199,8 @@ def apply_public_transition(
         if table in _ALLOWED_REGISTRY_TABLES:
             if actual is None or not fingerprints <= actual:
                 raise RuntimeError(f"Existing registry row fingerprints changed in {table}")
+        elif table == "oauth_pending" and not fingerprints and actual is None:
+            continue
         elif actual != fingerprints:
             raise RuntimeError(f"Existing row fingerprints changed in {table}")
     if after.get("action_audit_events") != Counter():
@@ -143,15 +212,13 @@ def apply_public_transition(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--apply-public-transition", action="store_true")
-    mode.add_argument("--validation-test-schema", action="store_true")
+    parser.add_argument("--apply-public-transition", action="store_true", required=True)
     args = parser.parse_args()
 
     from app.core.config import settings
 
     url = make_url(settings.POSTGRES_URL)
-    expected_schema = "test_schema" if args.validation_test_schema else "public"
+    expected_schema = "public"
     if (
         settings.DB_SCHEMA != expected_schema
         or url.database != "social_manager"
@@ -173,7 +240,6 @@ def main() -> int:
             connection,
             config,
             expected_schema,
-            validation_test_schema=args.validation_test_schema,
         )
     print(f"{expected_schema} transition complete: 0117 -> baseline_0118; existing row fingerprints preserved")
     return 0

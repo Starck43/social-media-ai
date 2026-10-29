@@ -135,10 +135,10 @@ CREATE TYPE {{schema}}.source_type AS ENUM (
     'EVENT',
     'MARKET',
     'ALBUM',
-    'SEARCH',
     'SUPERGROUP',
     'BOT',
-    'BROADCAST'
+    'BROADCAST',
+    'SEARCH'
 );
 
 
@@ -260,16 +260,6 @@ CREATE FUNCTION {{schema}}.check_personal_llm_reservation_state_event() RETURNS 
 CREATE FUNCTION {{schema}}.check_task_billing_payer_consent() RETURNS trigger
     LANGUAGE plpgsql
     AS $$ DECLARE task_tenant integer; account_ready boolean; owner_active boolean; latest_version integer; BEGIN SELECT tenant_id INTO task_tenant FROM {{schema}}.agent_tasks WHERE id = NEW.agent_task_id; IF task_tenant IS DISTINCT FROM NEW.tenant_id THEN RAISE EXCEPTION 'Task payer consent scope differs' USING ERRCODE = '23503'; END IF; SELECT a.is_active AND a.configured_at IS NOT NULL, u.is_active INTO account_ready, owner_active FROM {{schema}}.personal_billing_accounts a JOIN {{schema}}.users u ON u.id = a.user_id WHERE a.user_id = NEW.payer_user_id; IF account_ready IS DISTINCT FROM TRUE OR owner_active IS DISTINCT FROM TRUE THEN RAISE EXCEPTION 'Task payer has no configured personal account' USING ERRCODE = '23514'; END IF; SELECT max(consent_version) INTO latest_version FROM {{schema}}.task_billing_payers WHERE agent_task_id = NEW.agent_task_id; IF NEW.consent_version IS DISTINCT FROM coalesce(latest_version, 0) + 1 THEN RAISE EXCEPTION 'Task payer consent version is not next' USING ERRCODE = '23514'; END IF; RETURN NEW; END; $$;
-
-
---
-
--- Name: guard_action_audit_mutation(); Type: FUNCTION; Schema: {{schema}}; Owner: -
---
-
-CREATE FUNCTION {{schema}}.guard_action_audit_mutation() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$ BEGIN IF TG_OP = 'DELETE' AND current_setting('app.action_audit_retention', true) = 'on' THEN RETURN OLD; END IF; RAISE EXCEPTION 'Action audit evidence is immutable outside retention cleanup' USING ERRCODE = '55000'; END; $$;
 
 
 --
@@ -458,64 +448,6 @@ CREATE FUNCTION {{schema}}.reject_task_billing_payers_mutation() RETURNS trigger
     AS $$ BEGIN RAISE EXCEPTION 'Task payer consents are immutable' USING ERRCODE = '55000'; END; $$;
 
 
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
---
-
--- Name: action_audit_events; Type: TABLE; Schema: {{schema}}; Owner: -
---
-
-CREATE TABLE {{schema}}.action_audit_events (
-    id integer NOT NULL,
-    tenant_id integer NOT NULL,
-    event_id character varying(32) NOT NULL,
-    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
-    actor_kind character varying(16) NOT NULL,
-    actor_id character varying(64) NOT NULL,
-    action character varying(80) NOT NULL,
-    resource_kind character varying(40),
-    resource_id character varying(128),
-    outcome character varying(16) NOT NULL,
-    reason_code character varying(64),
-    request_id character varying(128),
-    job_id integer,
-    receipt_ref character varying(160),
-    CONSTRAINT ck_action_audit_events_action CHECK (((action)::text = 'scheduling.task_admit'::text)),
-    CONSTRAINT ck_action_audit_events_actor_id CHECK (((((actor_kind)::text = 'user'::text) AND ((actor_id)::text ~ '^[1-9][0-9]{0,9}$'::text)) OR (((actor_kind)::text = 'service'::text) AND ((actor_id)::text = 'task_runner'::text)) OR (((actor_kind)::text = 'scheduler'::text) AND ((actor_id)::text = 'scheduler'::text)))),
-    CONSTRAINT ck_action_audit_events_actor_kind CHECK (((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'service'::character varying, 'scheduler'::character varying])::text[]))),
-    CONSTRAINT ck_action_audit_events_event_id CHECK (((event_id)::text ~ '^[0-9a-f]{32}$'::text)),
-    CONSTRAINT ck_action_audit_events_job_id CHECK (((job_id IS NULL) OR ((job_id > 0) AND (job_id <= 2147483647)))),
-    CONSTRAINT ck_action_audit_events_outcome CHECK (((outcome)::text = ANY ((ARRAY['succeeded'::character varying, 'unknown'::character varying])::text[]))),
-    CONSTRAINT ck_action_audit_events_reason_code CHECK (((((outcome)::text = 'succeeded'::text) AND (reason_code IS NULL)) OR (((outcome)::text = 'unknown'::text) AND ((reason_code)::text = 'launch_unconfirmed'::text)))),
-    CONSTRAINT ck_action_audit_events_receipt_ref CHECK ((receipt_ref IS NULL)),
-    CONSTRAINT ck_action_audit_events_request_id CHECK ((request_id IS NULL)),
-    CONSTRAINT ck_action_audit_events_resource_id CHECK (((resource_id IS NULL) OR ((resource_id)::text ~ '^[1-9][0-9]{0,9}$'::text))),
-    CONSTRAINT ck_action_audit_events_resource_kind CHECK (((resource_kind IS NULL) OR ((resource_kind)::text = 'agent_task'::text)))
-);
-
-
---
-
--- Name: action_audit_events_id_seq; Type: SEQUENCE; Schema: {{schema}}; Owner: -
---
-
-CREATE SEQUENCE {{schema}}.action_audit_events_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
-
--- Name: action_audit_events_id_seq; Type: SEQUENCE OWNED BY; Schema: {{schema}}; Owner: -
---
-
-ALTER SEQUENCE {{schema}}.action_audit_events_id_seq OWNED BY {{schema}}.action_audit_events.id;
 
 
 --
@@ -525,13 +457,13 @@ ALTER SEQUENCE {{schema}}.action_audit_events_id_seq OWNED BY {{schema}}.action_
 
 CREATE TABLE {{schema}}.agent_feedback (
     id integer NOT NULL,
+    tenant_id integer NOT NULL,
     session_id integer NOT NULL,
     message_id integer,
     vote character varying(10) NOT NULL,
     note text,
     voter_channel character varying(20),
     voter_external_id character varying(100),
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -590,25 +522,17 @@ ALTER SEQUENCE {{schema}}.agent_feedback_id_seq OWNED BY {{schema}}.agent_feedba
 
 CREATE TABLE {{schema}}.agent_memory (
     id integer NOT NULL,
-    user_id integer,
     scope character varying(20) DEFAULT 'global'::character varying NOT NULL,
     key character varying(100) NOT NULL,
     value text,
-    source character varying(20) DEFAULT 'manual'::character varying NOT NULL,
-    confidence double precision DEFAULT '1'::double precision NOT NULL,
-    evidence_message_id integer,
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tenant_id integer NOT NULL,
+    source character varying(20) DEFAULT 'manual'::character varying NOT NULL,
+    confidence double precision DEFAULT 1.0 NOT NULL,
+    evidence_message_id integer,
+    user_id integer
 );
-
-
---
-
--- Name: COLUMN agent_memory.user_id; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.agent_memory.user_id IS 'Personal memory owner; NULL is the legacy owner-only bucket';
 
 
 --
@@ -663,9 +587,9 @@ CREATE TABLE {{schema}}.agent_messages (
     tool_name character varying(64),
     tokens integer,
     cost double precision,
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tenant_id integer NOT NULL
 );
 
 
@@ -699,73 +623,25 @@ ALTER SEQUENCE {{schema}}.agent_messages_id_seq OWNED BY {{schema}}.agent_messag
 CREATE TABLE {{schema}}.agent_scenarios (
     id integer NOT NULL,
     name character varying(255) NOT NULL,
-    description text,
-    content_types json,
-    analysis_types json,
-    scope json,
-    base_prompt text,
-    media_overrides json,
-    summary_prompt text,
-    max_tokens integer,
-    output_schema json,
     is_active boolean,
-    is_default boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    content_types json,
+    scope json,
+    description text,
+    analysis_types json,
+    llm_strategy {{schema}}.llm_strategy_type,
     text_llm_model_id integer,
     image_llm_model_id integer,
     video_llm_model_id integer,
-    llm_strategy {{schema}}.llm_strategy_type,
     tenant_id integer NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    is_default boolean DEFAULT false NOT NULL,
+    max_tokens integer,
+    output_schema json,
+    base_prompt text,
+    media_overrides json,
+    summary_prompt text
 );
-
-
---
-
--- Name: COLUMN agent_scenarios.base_prompt; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.agent_scenarios.base_prompt IS 'Core LLM instruction for analysis. If null, uses default.';
-
-
---
-
--- Name: COLUMN agent_scenarios.media_overrides; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.agent_scenarios.media_overrides IS 'Per-media-type prompt overrides, e.g. {"image": "...", "video": "..."}';
-
-
---
-
--- Name: COLUMN agent_scenarios.summary_prompt; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.agent_scenarios.summary_prompt IS 'Custom prompt for unified summary. If null, uses default.';
-
-
---
-
--- Name: COLUMN agent_scenarios.max_tokens; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.agent_scenarios.max_tokens IS 'Max tokens for LLM responses in this scenario';
-
-
---
-
--- Name: COLUMN agent_scenarios.output_schema; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.agent_scenarios.output_schema IS 'JSON Schema for structured LLM output (lazily generated from analysis_types)';
-
-
---
-
--- Name: COLUMN agent_scenarios.is_default; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.agent_scenarios.is_default IS 'Default scenario for the tenant when a source has none assigned';
 
 
 --
@@ -794,24 +670,26 @@ COMMENT ON COLUMN {{schema}}.agent_scenarios.video_llm_model_id IS 'Specific LLM
 
 --
 
--- Name: agent_scenarios_id_seq; Type: SEQUENCE; Schema: {{schema}}; Owner: -
+-- Name: COLUMN agent_scenarios.is_default; Type: COMMENT; Schema: {{schema}}; Owner: -
 --
 
-CREATE SEQUENCE {{schema}}.agent_scenarios_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
+COMMENT ON COLUMN {{schema}}.agent_scenarios.is_default IS 'Default scenario for the tenant when a source has none assigned';
 
 
 --
 
--- Name: agent_scenarios_id_seq; Type: SEQUENCE OWNED BY; Schema: {{schema}}; Owner: -
+-- Name: COLUMN agent_scenarios.max_tokens; Type: COMMENT; Schema: {{schema}}; Owner: -
 --
 
-ALTER SEQUENCE {{schema}}.agent_scenarios_id_seq OWNED BY {{schema}}.agent_scenarios.id;
+COMMENT ON COLUMN {{schema}}.agent_scenarios.max_tokens IS 'Max tokens for LLM responses in this scenario';
+
+
+--
+
+-- Name: COLUMN agent_scenarios.output_schema; Type: COMMENT; Schema: {{schema}}; Owner: -
+--
+
+COMMENT ON COLUMN {{schema}}.agent_scenarios.output_schema IS 'JSON Schema for structured LLM output (lazily generated from analysis_types)';
 
 
 --
@@ -828,9 +706,9 @@ CREATE TABLE {{schema}}.agent_sessions (
     is_active boolean DEFAULT true NOT NULL,
     state json,
     last_message_at timestamp with time zone,
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tenant_id integer NOT NULL
 );
 
 
@@ -875,9 +753,6 @@ CREATE TABLE {{schema}}.agent_task_sources (
 CREATE TABLE {{schema}}.agent_tasks (
     id integer NOT NULL,
     name character varying(100) NOT NULL,
-    launch_key character varying(64),
-    launch_fingerprint character varying(64),
-    launch_job_id integer,
     cron_expr character varying(100) NOT NULL,
     job_type character varying(20) NOT NULL,
     payload json DEFAULT '{}'::json NOT NULL,
@@ -886,55 +761,20 @@ CREATE TABLE {{schema}}.agent_tasks (
     last_run_at timestamp with time zone,
     last_status character varying(20),
     last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tenant_id integer NOT NULL,
+    agent_scenario_id integer,
     trigger_type {{schema}}.bot_trigger_type,
     trigger_config json DEFAULT '{}'::json,
     action_type {{schema}}.bot_action_type,
     rate_limit_per_hour integer,
     cooldown_seconds integer,
     dry_run boolean DEFAULT false NOT NULL,
-    agent_scenario_id integer,
-    tenant_id integer NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    launch_key character varying(64),
+    launch_fingerprint character varying(64),
+    launch_job_id integer
 );
-
-
---
-
--- Name: COLUMN agent_tasks.rate_limit_per_hour; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.agent_tasks.rate_limit_per_hour IS 'Max actions per hour for this task';
-
-
---
-
--- Name: COLUMN agent_tasks.cooldown_seconds; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.agent_tasks.cooldown_seconds IS 'Min seconds between actions';
-
-
---
-
--- Name: agent_tasks_id_seq; Type: SEQUENCE; Schema: {{schema}}; Owner: -
---
-
-CREATE SEQUENCE {{schema}}.agent_tasks_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
-
--- Name: agent_tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: {{schema}}; Owner: -
---
-
-ALTER SEQUENCE {{schema}}.agent_tasks_id_seq OWNED BY {{schema}}.agent_tasks.id;
 
 
 --
@@ -947,26 +787,42 @@ CREATE TABLE {{schema}}.ai_analytics (
     source_id integer NOT NULL,
     analysis_date date DEFAULT CURRENT_DATE,
     period_type {{schema}}.analysis_period_type NOT NULL,
-    content_hash character varying(64),
-    analysis_fingerprint character varying(64) DEFAULT 'legacy'::character varying NOT NULL,
-    topic_chain_id character varying(100),
-    chain_label character varying(255),
-    normalized_label character varying(255),
-    parent_analysis_id integer,
     summary_data json DEFAULT '{}'::jsonb NOT NULL,
-    response_payload json,
-    main_topics json,
-    prompt_text text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    topic_chain_id character varying(100),
+    parent_analysis_id integer,
     llm_model character varying(100),
-    provider_type character varying(100),
-    media_types json,
+    prompt_text text,
+    response_payload json,
     request_tokens integer,
     response_tokens integer,
     estimated_cost numeric(14,6),
+    provider_type character varying(100),
+    media_types json,
+    main_topics json,
     tenant_id integer NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    content_hash character varying(64),
+    chain_label character varying(255),
+    normalized_label character varying(255),
+    analysis_fingerprint character varying(64) DEFAULT 'legacy'::character varying NOT NULL
 );
+
+
+--
+
+-- Name: COLUMN ai_analytics.estimated_cost; Type: COMMENT; Schema: {{schema}}; Owner: -
+--
+
+COMMENT ON COLUMN {{schema}}.ai_analytics.estimated_cost IS 'Estimated cost in USD cents at 1e-8 USD precision (NULL = unknown or free)';
+
+
+--
+
+-- Name: COLUMN ai_analytics.main_topics; Type: COMMENT; Schema: {{schema}}; Owner: -
+--
+
+COMMENT ON COLUMN {{schema}}.ai_analytics.main_topics IS 'Main topics extracted from AI analysis for theme matching';
 
 
 --
@@ -975,14 +831,6 @@ CREATE TABLE {{schema}}.ai_analytics (
 --
 
 COMMENT ON COLUMN {{schema}}.ai_analytics.content_hash IS 'SHA256 hex digest of the analyzed content payload for deduplication';
-
-
---
-
--- Name: COLUMN ai_analytics.analysis_fingerprint; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.ai_analytics.analysis_fingerprint IS 'Versioned semantic identity of the analysis context; legacy rows are unattributed';
 
 
 --
@@ -999,22 +847,6 @@ COMMENT ON COLUMN {{schema}}.ai_analytics.chain_label IS 'Human-readable name of
 --
 
 COMMENT ON COLUMN {{schema}}.ai_analytics.normalized_label IS 'Normalized topic label for chain deduplication (lowercase, ё→е, stemmed)';
-
-
---
-
--- Name: COLUMN ai_analytics.main_topics; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.ai_analytics.main_topics IS 'Main topics extracted from AI analysis for theme matching';
-
-
---
-
--- Name: COLUMN ai_analytics.estimated_cost; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.ai_analytics.estimated_cost IS 'Estimated cost in USD cents at 1e-8 USD precision (NULL = unknown or free)';
 
 
 --
@@ -1046,13 +878,13 @@ ALTER SEQUENCE {{schema}}.ai_analytics_id_seq OWNED BY {{schema}}.ai_analytics.i
 
 CREATE TABLE {{schema}}.analyzed_content_receipts (
     id integer NOT NULL,
+    tenant_id integer NOT NULL,
     source_id integer NOT NULL,
     content_hash character varying(64) NOT NULL,
     analysis_fingerprint character varying(64) NOT NULL,
     scenario_id integer,
     analytics_id integer,
-    analyzed_at timestamp with time zone DEFAULT now() NOT NULL,
-    tenant_id integer NOT NULL
+    analyzed_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1085,12 +917,22 @@ ALTER SEQUENCE {{schema}}.analyzed_content_receipts_id_seq OWNED BY {{schema}}.a
 
 CREATE TABLE {{schema}}.bot_actions (
     id integer NOT NULL,
+    tenant_id integer NOT NULL,
     agent_scenario_id integer,
-    agent_task_id integer,
     source_id integer,
     analytics_id integer,
     action_type {{schema}}.bot_action_type,
     status {{schema}}.bot_action_status DEFAULT 'PENDING'::{{schema}}.bot_action_status NOT NULL,
+    payload json DEFAULT '{}'::jsonb NOT NULL,
+    result json,
+    error text,
+    dry_run boolean DEFAULT true NOT NULL,
+    confirmed_by integer,
+    confirmed_at timestamp with time zone,
+    attempts integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    agent_task_id integer,
     capability character varying(100) DEFAULT 'social.legacy'::character varying NOT NULL,
     origin character varying(20) DEFAULT 'task'::character varying NOT NULL,
     target_ref character varying(300),
@@ -1103,18 +945,8 @@ CREATE TABLE {{schema}}.bot_actions (
     claim_expires_at timestamp with time zone,
     claim_token_hash character varying(64),
     executed_at timestamp with time zone,
-    history json DEFAULT '[]'::json NOT NULL,
     origin_snapshot json,
-    payload json DEFAULT '{}'::jsonb NOT NULL,
-    result json,
-    error text,
-    dry_run boolean DEFAULT true NOT NULL,
-    confirmed_by integer,
-    confirmed_at timestamp with time zone,
-    attempts integer DEFAULT 0 NOT NULL,
-    tenant_id integer NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    history json DEFAULT '[]'::json NOT NULL
 );
 
 
@@ -1142,6 +974,28 @@ ALTER SEQUENCE {{schema}}.bot_actions_id_seq OWNED BY {{schema}}.bot_actions.id;
 
 --
 
+-- Name: bot_scenarios_id_seq; Type: SEQUENCE; Schema: {{schema}}; Owner: -
+--
+
+CREATE SEQUENCE {{schema}}.bot_scenarios_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+
+-- Name: bot_scenarios_id_seq; Type: SEQUENCE OWNED BY; Schema: {{schema}}; Owner: -
+--
+
+ALTER SEQUENCE {{schema}}.bot_scenarios_id_seq OWNED BY {{schema}}.agent_scenarios.id;
+
+
+--
+
 -- Name: collected_items; Type: TABLE; Schema: {{schema}}; Owner: -
 --
 
@@ -1152,23 +1006,23 @@ CREATE TABLE {{schema}}.collected_items (
     external_id character varying(255),
     content_hash character varying(64) NOT NULL,
     platform character varying(50),
-    content_type character varying(20) DEFAULT 'post'::character varying NOT NULL,
-    parent_external_id character varying(255),
-    lane_id character varying(100),
-    selection_status character varying(20),
-    selection_reason character varying(64),
     published_at timestamp with time zone,
     media_type character varying(20),
-    attachments json,
     text text,
     metrics json,
     author json,
     permalink character varying(500),
-    analyze_attempts integer DEFAULT 0 NOT NULL,
-    give_up_after_attempts integer DEFAULT 3 NOT NULL,
     tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    analyze_attempts integer DEFAULT 0 NOT NULL,
+    give_up_after_attempts integer DEFAULT 3 NOT NULL,
+    attachments json,
+    content_type character varying(20) DEFAULT 'post'::character varying NOT NULL,
+    parent_external_id character varying(255),
+    lane_id character varying(100),
+    selection_status character varying(20),
+    selection_reason character varying(64)
 );
 
 
@@ -1201,6 +1055,7 @@ ALTER SEQUENCE {{schema}}.collected_items_id_seq OWNED BY {{schema}}.collected_i
 
 CREATE TABLE {{schema}}.collection_candidates (
     id integer NOT NULL,
+    tenant_id integer NOT NULL,
     platform character varying(50) NOT NULL,
     kind character varying(20) NOT NULL,
     external_id character varying(255) NOT NULL,
@@ -1214,7 +1069,6 @@ CREATE TABLE {{schema}}.collection_candidates (
     status character varying(20) DEFAULT 'new'::character varying NOT NULL,
     source_id integer,
     discovered_by character varying(100),
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -1249,6 +1103,7 @@ ALTER SEQUENCE {{schema}}.collection_candidates_id_seq OWNED BY {{schema}}.colle
 
 CREATE TABLE {{schema}}.collection_lane_runs (
     id integer NOT NULL,
+    tenant_id integer NOT NULL,
     job_id integer,
     task_id integer,
     lane_id character varying(100) NOT NULL,
@@ -1266,7 +1121,6 @@ CREATE TABLE {{schema}}.collection_lane_runs (
     unsupported_reason character varying(255),
     started_at timestamp with time zone,
     finished_at timestamp with time zone,
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -1301,6 +1155,7 @@ ALTER SEQUENCE {{schema}}.collection_lane_runs_id_seq OWNED BY {{schema}}.collec
 
 CREATE TABLE {{schema}}.collection_seen (
     id integer NOT NULL,
+    tenant_id integer NOT NULL,
     source_id integer NOT NULL,
     content_type character varying(20) NOT NULL,
     external_id character varying(255) NOT NULL,
@@ -1308,7 +1163,6 @@ CREATE TABLE {{schema}}.collection_seen (
     first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     status character varying(20) DEFAULT 'new'::character varying NOT NULL,
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -1353,11 +1207,11 @@ CREATE TABLE {{schema}}.digest_runs (
     message_id character varying(100),
     content text,
     error text,
-    delivery_state jsonb,
-    llm_cost double precision,
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tenant_id integer NOT NULL,
+    llm_cost double precision,
+    delivery_state jsonb
 );
 
 
@@ -1390,14 +1244,14 @@ ALTER SEQUENCE {{schema}}.digest_runs_id_seq OWNED BY {{schema}}.digest_runs.id;
 
 CREATE TABLE {{schema}}.entitlement_usage (
     id integer NOT NULL,
+    tenant_id integer NOT NULL,
     capability character varying(160) NOT NULL,
     job_id integer NOT NULL,
     task_id integer,
     initiated_by_user_id integer,
     plan character varying(20) NOT NULL,
     catalog_version integer NOT NULL,
-    admitted_at timestamp with time zone DEFAULT now() NOT NULL,
-    tenant_id integer NOT NULL
+    admitted_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1431,22 +1285,22 @@ ALTER SEQUENCE {{schema}}.entitlement_usage_id_seq OWNED BY {{schema}}.entitleme
 CREATE TABLE {{schema}}.jobs (
     id integer NOT NULL,
     agent_task_id integer,
-    initiated_by_user_id integer,
     job_type character varying(20) NOT NULL,
     payload json DEFAULT '{}'::json NOT NULL,
     status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
     run_at timestamp with time zone NOT NULL,
     locked_at timestamp with time zone,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
     attempts integer DEFAULT 0 NOT NULL,
     max_attempts integer DEFAULT 3 NOT NULL,
     result json,
     error text,
-    llm_cost double precision,
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tenant_id integer NOT NULL,
+    llm_cost double precision,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    initiated_by_user_id integer
 );
 
 
@@ -1479,6 +1333,7 @@ ALTER SEQUENCE {{schema}}.jobs_id_seq OWNED BY {{schema}}.jobs.id;
 
 CREATE TABLE {{schema}}.llm_attempts (
     id integer NOT NULL,
+    tenant_id integer NOT NULL,
     attempt_key character varying(64) NOT NULL,
     purpose character varying(32) NOT NULL,
     stage character varying(32) NOT NULL,
@@ -1491,62 +1346,21 @@ CREATE TABLE {{schema}}.llm_attempts (
     provider_name character varying(200),
     input_cost_per_1k numeric(18,8),
     output_cost_per_1k numeric(18,8),
-    cache_read_cost_per_1m numeric(18,8),
-    cache_write_5m_cost_per_1m numeric(18,8),
-    cache_write_1h_cost_per_1m numeric(18,8),
-    cache_usage jsonb,
-    pricing_policy_version character varying(32),
-    pricing_token_unit integer,
     prompt_tokens integer,
     completion_tokens integer,
     cost_usd numeric(18,9),
     cost_certainty character varying(32) NOT NULL,
     outcome character varying(32) NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    tenant_id integer NOT NULL,
+    cache_read_cost_per_1m numeric(18,8),
+    cache_write_5m_cost_per_1m numeric(18,8),
+    cache_write_1h_cost_per_1m numeric(18,8),
+    pricing_token_unit integer,
+    pricing_policy_version character varying(32),
+    cache_usage jsonb,
     CONSTRAINT ck_llm_attempts_cache_rates CHECK ((((cache_read_cost_per_1m IS NULL) OR (cache_read_cost_per_1m >= (0)::numeric)) AND ((cache_write_5m_cost_per_1m IS NULL) OR (cache_write_5m_cost_per_1m >= (0)::numeric)) AND ((cache_write_1h_cost_per_1m IS NULL) OR (cache_write_1h_cost_per_1m >= (0)::numeric)))),
     CONSTRAINT ck_llm_attempts_pricing_token_unit CHECK (COALESCE(((((pricing_policy_version IS NULL) OR ((pricing_policy_version)::text = 'provider-price-v1'::text)) AND ((pricing_token_unit IS NULL) OR (pricing_token_unit = 1000)) AND (cache_usage IS NULL) AND (cache_read_cost_per_1m IS NULL) AND (cache_write_5m_cost_per_1m IS NULL) AND (cache_write_1h_cost_per_1m IS NULL)) OR (((pricing_policy_version)::text = 'cache-tariff-v2'::text) AND ((pricing_token_unit = ANY (ARRAY[1000, 1000000])) OR ((pricing_token_unit IS NULL) AND (input_cost_per_1k IS NULL) AND (output_cost_per_1k IS NULL) AND (cache_read_cost_per_1m IS NULL) AND (cache_write_5m_cost_per_1m IS NULL) AND (cache_write_1h_cost_per_1m IS NULL))))), false))
 );
-
-
---
-
--- Name: COLUMN llm_attempts.attempt_key; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.llm_attempts.attempt_key IS 'SHA256 of the attempt''s content identity; repeat writes are idempotent';
-
-
---
-
--- Name: COLUMN llm_attempts.purpose; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.llm_attempts.purpose IS '''analysis'' | future: ''digest'' | ''learn'' | ''agent_chat''';
-
-
---
-
--- Name: COLUMN llm_attempts.stage; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.llm_attempts.stage IS '''text_analysis'' | ''image_analysis'' | ''video_analysis'' | ''unified_summary''';
-
-
---
-
--- Name: COLUMN llm_attempts.cost_certainty; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.llm_attempts.cost_certainty IS '''priced'' | ''free'' | ''unknown_tariff'' | ''unknown_usage'' | ''not_dispatched''';
-
-
---
-
--- Name: COLUMN llm_attempts.outcome; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.llm_attempts.outcome IS '''succeeded'' | ''failed_output'' | ''failed_transport'' | ''unknown''';
 
 
 --
@@ -1677,10 +1491,6 @@ CREATE TABLE {{schema}}.llm_dispatch_receipts (
     provider_name character varying(200) NOT NULL,
     input_cost_per_1k numeric(18,8),
     output_cost_per_1k numeric(18,8),
-    cache_read_cost_per_1m numeric(18,8),
-    cache_write_5m_cost_per_1m numeric(18,8),
-    cache_write_1h_cost_per_1m numeric(18,8),
-    pricing_token_unit integer,
     tariff_state character varying(16) NOT NULL,
     pricing_policy_version character varying(32) NOT NULL,
     source_id integer,
@@ -1688,6 +1498,10 @@ CREATE TABLE {{schema}}.llm_dispatch_receipts (
     agent_task_id integer,
     agent_session_id integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    cache_read_cost_per_1m numeric(18,8),
+    cache_write_5m_cost_per_1m numeric(18,8),
+    cache_write_1h_cost_per_1m numeric(18,8),
+    pricing_token_unit integer,
     CONSTRAINT ck_llm_dispatch_receipts_identity CHECK (((dispatch_id)::text ~ '^[0-9a-f]{32}$'::text)),
     CONSTRAINT ck_llm_dispatch_receipts_rates CHECK ((((input_cost_per_1k IS NULL) OR ((input_cost_per_1k >= (0)::numeric) AND (input_cost_per_1k <= 9999999999.99999999))) AND ((output_cost_per_1k IS NULL) OR ((output_cost_per_1k >= (0)::numeric) AND (output_cost_per_1k <= 9999999999.99999999))) AND ((cache_read_cost_per_1m IS NULL) OR ((cache_read_cost_per_1m >= (0)::numeric) AND (cache_read_cost_per_1m <= 9999999999.99999999))) AND ((cache_write_5m_cost_per_1m IS NULL) OR ((cache_write_5m_cost_per_1m >= (0)::numeric) AND (cache_write_5m_cost_per_1m <= 9999999999.99999999))) AND ((cache_write_1h_cost_per_1m IS NULL) OR ((cache_write_1h_cost_per_1m >= (0)::numeric) AND (cache_write_1h_cost_per_1m <= 9999999999.99999999))))),
     CONSTRAINT ck_llm_dispatch_receipts_tariff_snapshot CHECK (COALESCE(((((pricing_policy_version)::text = 'provider-price-v1'::text) AND ((((tariff_state)::text = 'undefined'::text) AND ((input_cost_per_1k IS NULL) OR (output_cost_per_1k IS NULL))) OR (((tariff_state)::text = 'free'::text) AND (input_cost_per_1k IS NOT NULL) AND (output_cost_per_1k IS NOT NULL) AND (input_cost_per_1k = (0)::numeric) AND (output_cost_per_1k = (0)::numeric)) OR (((tariff_state)::text = 'known'::text) AND (input_cost_per_1k IS NOT NULL) AND (output_cost_per_1k IS NOT NULL) AND ((input_cost_per_1k + output_cost_per_1k) > (0)::numeric))) AND (cache_read_cost_per_1m IS NULL) AND (cache_write_5m_cost_per_1m IS NULL) AND (cache_write_1h_cost_per_1m IS NULL) AND ((pricing_token_unit IS NULL) OR (pricing_token_unit = 1000))) OR (((pricing_policy_version)::text = 'cache-tariff-v2'::text) AND (pricing_token_unit = ANY (ARRAY[1000, 1000000])) AND ((((tariff_state)::text = 'undefined'::text) AND ((input_cost_per_1k IS NULL) OR (output_cost_per_1k IS NULL))) OR (((tariff_state)::text = 'free'::text) AND (input_cost_per_1k IS NOT NULL) AND (output_cost_per_1k IS NOT NULL) AND (cache_read_cost_per_1m IS NOT NULL) AND (cache_write_5m_cost_per_1m IS NOT NULL) AND (cache_write_1h_cost_per_1m IS NOT NULL) AND (input_cost_per_1k = (0)::numeric) AND (output_cost_per_1k = (0)::numeric) AND (cache_read_cost_per_1m = (0)::numeric) AND (cache_write_5m_cost_per_1m = (0)::numeric) AND (cache_write_1h_cost_per_1m = (0)::numeric)) OR (((tariff_state)::text = 'known'::text) AND (input_cost_per_1k IS NOT NULL) AND (output_cost_per_1k IS NOT NULL) AND ((cache_read_cost_per_1m IS DISTINCT FROM (0)::numeric) OR (cache_write_5m_cost_per_1m IS DISTINCT FROM (0)::numeric) OR (cache_write_1h_cost_per_1m IS DISTINCT FROM (0)::numeric) OR (input_cost_per_1k > (0)::numeric) OR (output_cost_per_1k > (0)::numeric)))))), false)),
@@ -1726,18 +1540,18 @@ ALTER SEQUENCE {{schema}}.llm_dispatch_receipts_id_seq OWNED BY {{schema}}.llm_d
 CREATE TABLE {{schema}}.llm_models (
     id integer NOT NULL,
     provider_id integer NOT NULL,
-    owner_user_id integer NOT NULL,
     name character varying(100) NOT NULL,
-    model_id character varying(100) NOT NULL,
     description text,
-    model_type character varying(20) NOT NULL,
-    custom_endpoint_path character varying(200),
     input_cost_per_1k double precision NOT NULL,
     output_cost_per_1k double precision NOT NULL,
-    cache_read_cost_per_1m numeric(18,8),
-    cache_write_5m_cost_per_1m numeric(18,8),
-    cache_write_1h_cost_per_1m numeric(18,8),
-    pricing_token_unit integer DEFAULT 1000000 NOT NULL,
+    is_active boolean,
+    is_default boolean,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    model_id character varying(100) NOT NULL,
+    model_type character varying(20) NOT NULL,
+    max_tokens integer NOT NULL,
+    default_temperature double precision NOT NULL,
     last_request_cost double precision,
     last_request_cost_at timestamp without time zone,
     last_used_at timestamp without time zone,
@@ -1745,23 +1559,15 @@ CREATE TABLE {{schema}}.llm_models (
     last_error_at timestamp without time zone,
     use_count integer DEFAULT 0 NOT NULL,
     fail_count integer DEFAULT 0 NOT NULL,
-    max_tokens integer NOT NULL,
-    default_temperature double precision NOT NULL,
-    is_active boolean,
-    is_default boolean,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    custom_endpoint_path character varying(200),
+    pricing_token_unit integer DEFAULT 1000000 NOT NULL,
+    cache_read_cost_per_1m numeric(18,8),
+    cache_write_5m_cost_per_1m numeric(18,8),
+    cache_write_1h_cost_per_1m numeric(18,8),
+    owner_user_id integer NOT NULL,
     CONSTRAINT ck_llm_models_cache_rates CHECK ((((cache_read_cost_per_1m IS NULL) OR (cache_read_cost_per_1m >= (0)::numeric)) AND ((cache_write_5m_cost_per_1m IS NULL) OR (cache_write_5m_cost_per_1m >= (0)::numeric)) AND ((cache_write_1h_cost_per_1m IS NULL) OR (cache_write_1h_cost_per_1m >= (0)::numeric)))),
     CONSTRAINT ck_llm_models_pricing_token_unit CHECK ((pricing_token_unit = ANY (ARRAY[1000, 1000000])))
 );
-
-
---
-
--- Name: COLUMN llm_models.custom_endpoint_path; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.llm_models.custom_endpoint_path IS 'Custom endpoint path for api_format=custom, e.g. /v1/systemone';
 
 
 --
@@ -1782,26 +1588,10 @@ COMMENT ON COLUMN {{schema}}.llm_models.last_request_cost_at IS 'Timestamp of th
 
 --
 
--- Name: COLUMN llm_models.last_used_at; Type: COMMENT; Schema: {{schema}}; Owner: -
+-- Name: COLUMN llm_models.custom_endpoint_path; Type: COMMENT; Schema: {{schema}}; Owner: -
 --
 
-COMMENT ON COLUMN {{schema}}.llm_models.last_used_at IS 'Last time this model was invoked';
-
-
---
-
--- Name: COLUMN llm_models.last_success_at; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.llm_models.last_success_at IS 'Last successful invocation (no 5xx/timeout)';
-
-
---
-
--- Name: COLUMN llm_models.last_error_at; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.llm_models.last_error_at IS 'Last failed invocation (5xx/timeout/network)';
+COMMENT ON COLUMN {{schema}}.llm_models.custom_endpoint_path IS 'Custom endpoint path for api_format=custom, e.g. /v1/systemone';
 
 
 --
@@ -1842,7 +1632,6 @@ CREATE TABLE {{schema}}.llm_outcome_events (
     outcome character varying(32) NOT NULL,
     prompt_tokens integer,
     completion_tokens integer,
-    cache_usage jsonb,
     provider_price_state character varying(16) NOT NULL,
     provider_cost_raw character varying(128),
     cost_usd numeric(18,9),
@@ -1850,6 +1639,7 @@ CREATE TABLE {{schema}}.llm_outcome_events (
     price_source character varying(32) NOT NULL,
     pricing_policy_version character varying(32) NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    cache_usage jsonb,
     CONSTRAINT ck_llm_outcome_events_amount CHECK (((cost_usd IS NULL) OR ((cost_usd >= (0)::numeric) AND (cost_usd <= 999999999.999999999)))),
     CONSTRAINT ck_llm_outcome_events_certainty CHECK (((((cost_certainty)::text = ANY ((ARRAY['undefined'::character varying, 'not_dispatched'::character varying])::text[])) AND (cost_usd IS NULL)) OR (((cost_certainty)::text = 'free'::text) AND (cost_usd IS NOT NULL) AND (cost_usd = (0)::numeric)) OR (((cost_certainty)::text = 'priced'::text) AND (cost_usd IS NOT NULL)))),
     CONSTRAINT ck_llm_outcome_events_identity CHECK ((((event_id)::text ~ '^[0-9a-f]{32}$'::text) AND ((dispatch_id)::text ~ '^[0-9a-f]{32}$'::text))),
@@ -1893,17 +1683,17 @@ ALTER SEQUENCE {{schema}}.llm_outcome_events_id_seq OWNED BY {{schema}}.llm_outc
 
 CREATE TABLE {{schema}}.llm_providers (
     id integer NOT NULL,
-    owner_user_id integer NOT NULL,
-    uid character varying(100) NOT NULL,
     name character varying(255) NOT NULL,
     description text,
-    api_format character varying(20) NOT NULL,
     base_url character varying(500) NOT NULL,
-    auth_header character varying(200),
-    encrypted_api_key text,
     is_active boolean,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    api_format character varying(20) NOT NULL,
+    auth_header character varying(200),
+    encrypted_api_key text,
+    owner_user_id integer NOT NULL,
+    uid character varying(100) NOT NULL
 );
 
 
@@ -1975,13 +1765,13 @@ ALTER SEQUENCE {{schema}}.login_attempts_id_seq OWNED BY {{schema}}.login_attemp
 
 CREATE TABLE {{schema}}.model_types (
     id integer NOT NULL,
-    resource_key character varying(100) NOT NULL,
     model_name character varying(100) NOT NULL,
     table_name character varying(100) NOT NULL,
     description text,
     is_managed boolean NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    resource_key character varying(100) NOT NULL
 );
 
 
@@ -2025,7 +1815,8 @@ CREATE TABLE {{schema}}.notification_preferences (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_notification_preferences_end CHECK ((("end")::text ~ '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'::text)),
     CONSTRAINT ck_notification_preferences_quiet_interval CHECK (((NOT quiet) OR ((start)::text <> ("end")::text))),
-    CONSTRAINT ck_notification_preferences_start CHECK (((start)::text ~ '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'::text))
+    CONSTRAINT ck_notification_preferences_start CHECK (((start)::text ~ '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'::text)),
+    CONSTRAINT ck_notification_preferences_version CHECK ((version = 1))
 );
 
 
@@ -2078,15 +1869,15 @@ CREATE TABLE {{schema}}.notifications (
     title character varying(200) NOT NULL,
     message text NOT NULL,
     notification_type {{schema}}.notification_type NOT NULL,
-    severity character varying(20) DEFAULT 'info'::character varying NOT NULL,
-    dedup_key character varying(200),
-    expires_at timestamp with time zone,
     is_read boolean,
     related_entity_type character varying(50),
     related_entity_id integer,
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tenant_id integer NOT NULL,
+    severity character varying(20) DEFAULT 'info'::character varying NOT NULL,
+    dedup_key character varying(200),
+    expires_at timestamp with time zone,
     CONSTRAINT ck_notifications_severity CHECK (((severity)::text = ANY ((ARRAY['info'::character varying, 'warning'::character varying, 'action_required'::character varying])::text[])))
 );
 
@@ -2130,10 +1921,10 @@ CREATE TABLE {{schema}}.permissions (
 
 --
 
--- Name: permissions_id_seq; Type: SEQUENCE; Schema: {{schema}}; Owner: -
+-- Name: permissions_new_id_seq; Type: SEQUENCE; Schema: {{schema}}; Owner: -
 --
 
-CREATE SEQUENCE {{schema}}.permissions_id_seq
+CREATE SEQUENCE {{schema}}.permissions_new_id_seq
     AS integer
     START WITH 1
     INCREMENT BY 1
@@ -2144,10 +1935,10 @@ CREATE SEQUENCE {{schema}}.permissions_id_seq
 
 --
 
--- Name: permissions_id_seq; Type: SEQUENCE OWNED BY; Schema: {{schema}}; Owner: -
+-- Name: permissions_new_id_seq; Type: SEQUENCE OWNED BY; Schema: {{schema}}; Owner: -
 --
 
-ALTER SEQUENCE {{schema}}.permissions_id_seq OWNED BY {{schema}}.permissions.id;
+ALTER SEQUENCE {{schema}}.permissions_new_id_seq OWNED BY {{schema}}.permissions.id;
 
 
 --
@@ -2328,7 +2119,7 @@ CREATE TABLE {{schema}}.personal_llm_billing_incidents (
     reserved_usd numeric(18,9) NOT NULL,
     actual_usd numeric(18,9),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_personal_llm_billing_incident_amounts CHECK ((((actual_usd IS NULL) OR ((actual_usd >= (0)::numeric) AND (actual_usd <= 999999999.999999999))) AND (reserved_usd >= (0)::numeric) AND (reserved_usd <= 999999999.999999999))),
+    CONSTRAINT ck_personal_llm_billing_incident_amounts CHECK ((((actual_usd IS NULL) OR ((actual_usd >= (0)::numeric) AND (actual_usd <= 999999999.999999999))) AND ((reserved_usd >= (0)::numeric) AND (reserved_usd <= 999999999.999999999)))),
     CONSTRAINT ck_personal_llm_billing_incident_kind CHECK (((incident_kind)::text = ANY ((ARRAY['bound_breach'::character varying, 'cap_overrun'::character varying, 'bound_and_cap_overrun'::character varying, 'terminal_conflict'::character varying])::text[])))
 );
 
@@ -2416,7 +2207,7 @@ CREATE TABLE {{schema}}.personal_llm_budget_days (
     frozen boolean DEFAULT false NOT NULL,
     baseline_version character varying(64) NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_personal_llm_budget_day_amounts CHECK (((settled_usd >= (0)::numeric) AND (settled_usd <= 999999999.999999999) AND (reserved_usd >= (0)::numeric) AND (reserved_usd <= 999999999.999999999))),
+    CONSTRAINT ck_personal_llm_budget_day_amounts CHECK ((((settled_usd >= (0)::numeric) AND (settled_usd <= 999999999.999999999)) AND ((reserved_usd >= (0)::numeric) AND (reserved_usd <= 999999999.999999999)))),
     CONSTRAINT ck_personal_llm_budget_day_counts CHECK (((undefined_count >= 0) AND (unbounded_count >= 0) AND (unresolved_count >= 0)))
 );
 
@@ -2465,10 +2256,6 @@ CREATE TABLE {{schema}}.personal_llm_dispatches (
     provider_name character varying(200) NOT NULL,
     input_cost_per_1k numeric(18,8),
     output_cost_per_1k numeric(18,8),
-    cache_read_cost_per_1m numeric(18,8),
-    cache_write_5m_cost_per_1m numeric(18,8),
-    cache_write_1h_cost_per_1m numeric(18,8),
-    pricing_token_unit integer,
     tariff_state character varying(16) NOT NULL,
     pricing_policy_version character varying(32) NOT NULL,
     source_id integer,
@@ -2476,6 +2263,10 @@ CREATE TABLE {{schema}}.personal_llm_dispatches (
     agent_task_id integer,
     agent_session_id integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    cache_read_cost_per_1m numeric(18,8),
+    cache_write_5m_cost_per_1m numeric(18,8),
+    cache_write_1h_cost_per_1m numeric(18,8),
+    pricing_token_unit integer,
     CONSTRAINT ck_personal_llm_dispatch_identity CHECK (((dispatch_id)::text ~ '^[0-9a-f]{32}$'::text)),
     CONSTRAINT ck_personal_llm_dispatch_rates CHECK ((((input_cost_per_1k IS NULL) OR ((input_cost_per_1k >= (0)::numeric) AND (input_cost_per_1k <= 9999999999.99999999))) AND ((output_cost_per_1k IS NULL) OR ((output_cost_per_1k >= (0)::numeric) AND (output_cost_per_1k <= 9999999999.99999999))) AND ((cache_read_cost_per_1m IS NULL) OR ((cache_read_cost_per_1m >= (0)::numeric) AND (cache_read_cost_per_1m <= 9999999999.99999999))) AND ((cache_write_5m_cost_per_1m IS NULL) OR ((cache_write_5m_cost_per_1m >= (0)::numeric) AND (cache_write_5m_cost_per_1m <= 9999999999.99999999))) AND ((cache_write_1h_cost_per_1m IS NULL) OR ((cache_write_1h_cost_per_1m >= (0)::numeric) AND (cache_write_1h_cost_per_1m <= 9999999999.99999999))))),
     CONSTRAINT ck_personal_llm_dispatch_snapshot CHECK (COALESCE(((((pricing_policy_version)::text = 'provider-price-v1'::text) AND ((pricing_token_unit IS NULL) OR (pricing_token_unit = 1000)) AND (cache_read_cost_per_1m IS NULL) AND (cache_write_5m_cost_per_1m IS NULL) AND (cache_write_1h_cost_per_1m IS NULL) AND ((((tariff_state)::text = 'undefined'::text) AND ((input_cost_per_1k IS NULL) OR (output_cost_per_1k IS NULL))) OR (((tariff_state)::text = 'free'::text) AND (input_cost_per_1k IS NOT NULL) AND (output_cost_per_1k IS NOT NULL) AND (input_cost_per_1k = (0)::numeric) AND (output_cost_per_1k = (0)::numeric)) OR (((tariff_state)::text = 'known'::text) AND (input_cost_per_1k IS NOT NULL) AND (output_cost_per_1k IS NOT NULL) AND ((input_cost_per_1k + output_cost_per_1k) > (0)::numeric)))) OR (((pricing_policy_version)::text = 'cache-tariff-v2'::text) AND (pricing_token_unit = ANY (ARRAY[1000, 1000000])) AND ((((tariff_state)::text = 'undefined'::text) AND ((input_cost_per_1k IS NULL) OR (output_cost_per_1k IS NULL))) OR (((tariff_state)::text = 'free'::text) AND (input_cost_per_1k IS NOT NULL) AND (output_cost_per_1k IS NOT NULL) AND (cache_read_cost_per_1m IS NOT NULL) AND (cache_write_5m_cost_per_1m IS NOT NULL) AND (cache_write_1h_cost_per_1m IS NOT NULL) AND (input_cost_per_1k = (0)::numeric) AND (output_cost_per_1k = (0)::numeric) AND (cache_read_cost_per_1m = (0)::numeric) AND (cache_write_5m_cost_per_1m = (0)::numeric) AND (cache_write_1h_cost_per_1m = (0)::numeric)) OR (((tariff_state)::text = 'known'::text) AND (input_cost_per_1k IS NOT NULL) AND (output_cost_per_1k IS NOT NULL) AND ((cache_read_cost_per_1m IS DISTINCT FROM (0)::numeric) OR (cache_write_5m_cost_per_1m IS DISTINCT FROM (0)::numeric) OR (cache_write_1h_cost_per_1m IS DISTINCT FROM (0)::numeric) OR (input_cost_per_1k > (0)::numeric) OR (output_cost_per_1k > (0)::numeric)))))), false)),
@@ -2566,7 +2357,7 @@ CREATE TABLE {{schema}}.personal_llm_reservation_states (
     latest_observed_at timestamp with time zone,
     latest_event_id character varying(32),
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_personal_llm_reservation_states_amounts CHECK (((settled_usd >= (0)::numeric) AND (settled_usd <= 999999999.999999999) AND (reserved_usd >= (0)::numeric) AND (reserved_usd <= 999999999.999999999))),
+    CONSTRAINT ck_personal_llm_reservation_states_amounts CHECK ((((settled_usd >= (0)::numeric) AND (settled_usd <= 999999999.999999999)) AND ((reserved_usd >= (0)::numeric) AND (reserved_usd <= 999999999.999999999)))),
     CONSTRAINT ck_personal_llm_reservation_states_status CHECK (((status)::text = ANY ((ARRAY['reserved'::character varying, 'settled'::character varying, 'released'::character varying])::text[])))
 );
 
@@ -2609,7 +2400,7 @@ CREATE TABLE {{schema}}.personal_llm_reservations (
     undefined_policy_version character varying(32) NOT NULL,
     cap_usd numeric(18,9),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_personal_llm_reservations_amounts CHECK ((((ceiling_usd IS NULL) OR ((ceiling_usd >= (0)::numeric) AND (ceiling_usd <= 999999999.999999999))) AND ((cap_usd IS NULL) OR ((cap_usd > (0)::numeric) AND (cap_usd <= 999999999.999999999))))),
+    CONSTRAINT ck_personal_llm_reservations_amounts CHECK ((((ceiling_usd IS NULL) OR ((ceiling_usd >= (0)::numeric) AND (ceiling_usd <= 999999999.999999999))) AND ((cap_usd IS NULL) OR ((cap_usd >= 0.000000001) AND (cap_usd <= 999999999.999999999))))),
     CONSTRAINT ck_personal_llm_reservations_bound CHECK (((((ceiling_state)::text = 'bounded'::text) AND (ceiling_usd IS NOT NULL) AND ((ceiling_usd = (0)::numeric) OR (bound_version IS NOT NULL))) OR (((ceiling_state)::text = 'unbounded'::text) AND (ceiling_usd IS NULL) AND (bound_version IS NULL) AND (cap_usd IS NULL)) OR (((ceiling_state)::text = 'undefined'::text) AND (ceiling_usd = (0)::numeric) AND (bound_version IS NULL)))),
     CONSTRAINT ck_personal_llm_reservations_state CHECK (((ceiling_state)::text = ANY ((ARRAY['bounded'::character varying, 'unbounded'::character varying, 'undefined'::character varying])::text[]))),
     CONSTRAINT ck_personal_llm_reservations_undefined_policy CHECK (((undefined_policy_version)::text = 'owner-undefined-allow-v1'::text))
@@ -2647,9 +2438,9 @@ CREATE TABLE {{schema}}.platforms (
     id integer NOT NULL,
     name character varying(50) NOT NULL,
     platform_type {{schema}}.platform_type NOT NULL,
+    is_active boolean DEFAULT true,
     base_url character varying(255) NOT NULL,
-    params json NOT NULL,
-    is_active boolean DEFAULT true
+    params json NOT NULL
 );
 
 
@@ -2725,23 +2516,45 @@ ALTER SEQUENCE {{schema}}.roles_id_seq OWNED BY {{schema}}.roles.id;
 
 --
 
+-- Name: schedules_id_seq; Type: SEQUENCE; Schema: {{schema}}; Owner: -
+--
+
+CREATE SEQUENCE {{schema}}.schedules_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+
+-- Name: schedules_id_seq; Type: SEQUENCE OWNED BY; Schema: {{schema}}; Owner: -
+--
+
+ALTER SEQUENCE {{schema}}.schedules_id_seq OWNED BY {{schema}}.agent_tasks.id;
+
+
+--
+
 -- Name: sources; Type: TABLE; Schema: {{schema}}; Owner: -
 --
 
 CREATE TABLE {{schema}}.sources (
     id integer NOT NULL,
     platform_id integer NOT NULL,
-    name character varying(255) NOT NULL,
     source_type {{schema}}.source_type NOT NULL,
     external_id character varying(100) NOT NULL,
+    name character varying(255) NOT NULL,
     params json NOT NULL,
     is_active boolean NOT NULL,
     last_checked timestamp with time zone,
-    last_item_id character varying(100),
-    owner_task_id integer,
-    tenant_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tenant_id integer NOT NULL,
+    last_item_id character varying(100),
+    owner_task_id integer
 );
 
 
@@ -2751,14 +2564,6 @@ CREATE TABLE {{schema}}.sources (
 --
 
 COMMENT ON COLUMN {{schema}}.sources.last_item_id IS 'Watermark of the newest ingested item for push-based sources (Telegram Bot API)';
-
-
---
-
--- Name: COLUMN sources.owner_task_id; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.sources.owner_task_id IS 'Task-scoped query lane; hidden from the global source list';
 
 
 --
@@ -2872,13 +2677,13 @@ CREATE TABLE {{schema}}.tenant_invites (
     id integer NOT NULL,
     tenant_id integer NOT NULL,
     code_hash character varying(64) NOT NULL,
-    role_id integer,
     expires_at timestamp with time zone,
     max_uses integer DEFAULT 1 NOT NULL,
     used_count integer DEFAULT 0 NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    role_id integer
 );
 
 
@@ -2887,7 +2692,7 @@ CREATE TABLE {{schema}}.tenant_invites (
 -- Name: COLUMN tenant_invites.role_id; Type: COMMENT; Schema: {{schema}}; Owner: -
 --
 
-COMMENT ON COLUMN {{schema}}.tenant_invites.role_id IS 'Workspace role to assign on invite redemption';
+COMMENT ON COLUMN {{schema}}.tenant_invites.role_id IS 'Platform role to assign on invite redemption';
 
 
 --
@@ -2922,12 +2727,12 @@ CREATE TABLE {{schema}}.tenant_users (
     tenant_id integer NOT NULL,
     channel character varying(20) NOT NULL,
     external_user_id character varying(100) NOT NULL,
-    user_id integer,
-    role_id integer,
-    ai_chat_enabled boolean DEFAULT false NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    user_id integer,
+    role_id integer,
+    ai_chat_enabled boolean DEFAULT false NOT NULL
 );
 
 
@@ -2936,7 +2741,7 @@ CREATE TABLE {{schema}}.tenant_users (
 -- Name: COLUMN tenant_users.role_id; Type: COMMENT; Schema: {{schema}}; Owner: -
 --
 
-COMMENT ON COLUMN {{schema}}.tenant_users.role_id IS 'Workspace role for this workspace membership (NULL = legacy/unresolved)';
+COMMENT ON COLUMN {{schema}}.tenant_users.role_id IS 'Platform role for this workspace membership (NULL = legacy/unresolved)';
 
 
 --
@@ -2971,19 +2776,19 @@ CREATE TABLE {{schema}}.tenants (
     name character varying(100) NOT NULL,
     slug character varying(50) NOT NULL,
     plan character varying(20) DEFAULT 'pro'::character varying NOT NULL,
-    plan_expires_at timestamp with time zone,
     timezone character varying(50) DEFAULT 'Europe/Moscow'::character varying NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     daily_cost_limit double precision DEFAULT '5'::double precision NOT NULL,
     max_sources integer DEFAULT 20 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     agent_style json,
-    agent_model_id integer,
     agent_model character varying(100),
     agent_max_tokens integer DEFAULT 1024,
     agent_temperature double precision DEFAULT '0.3'::double precision,
     agent_system_prompt text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    agent_model_id integer,
+    plan_expires_at timestamp with time zone,
     CONSTRAINT ck_tenants_plan CHECK (((plan)::text = ANY ((ARRAY['starter'::character varying, 'pro'::character varying, 'business'::character varying])::text[])))
 );
 
@@ -2994,38 +2799,6 @@ CREATE TABLE {{schema}}.tenants (
 --
 
 COMMENT ON COLUMN {{schema}}.tenants.agent_style IS 'Owner''s reply style contract: {tone, length, language, quiet_hours}; rendered into the system prompt';
-
-
---
-
--- Name: COLUMN tenants.agent_model; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.tenants.agent_model IS 'LLM model name override for agent chat (e.g. ''gpt-4o'', ''claude-3-sonnet'')';
-
-
---
-
--- Name: COLUMN tenants.agent_max_tokens; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.tenants.agent_max_tokens IS 'Max tokens for agent replies (overrides AGENT_MAX_TOKENS)';
-
-
---
-
--- Name: COLUMN tenants.agent_temperature; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.tenants.agent_temperature IS 'Temperature for agent replies (overrides AGENT_TEMPERATURE)';
-
-
---
-
--- Name: COLUMN tenants.agent_system_prompt; Type: COMMENT; Schema: {{schema}}; Owner: -
---
-
-COMMENT ON COLUMN {{schema}}.tenants.agent_system_prompt IS 'Custom system prompt override (appended to built-in DEFAULT_SYSTEM_PROMPT)';
 
 
 --
@@ -3103,9 +2876,9 @@ CREATE TABLE {{schema}}.users (
     email character varying(100) NOT NULL,
     hashed_password character varying(255) NOT NULL,
     is_active boolean NOT NULL,
-    role_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    role_id integer NOT NULL
 );
 
 
@@ -3181,14 +2954,6 @@ ALTER SEQUENCE {{schema}}.workspace_roles_id_seq OWNED BY {{schema}}.workspace_r
 
 --
 
--- Name: action_audit_events id; Type: DEFAULT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.action_audit_events ALTER COLUMN id SET DEFAULT nextval('{{schema}}.action_audit_events_id_seq'::regclass);
-
-
---
-
 -- Name: agent_feedback id; Type: DEFAULT; Schema: {{schema}}; Owner: -
 --
 
@@ -3216,7 +2981,7 @@ ALTER TABLE ONLY {{schema}}.agent_messages ALTER COLUMN id SET DEFAULT nextval('
 -- Name: agent_scenarios id; Type: DEFAULT; Schema: {{schema}}; Owner: -
 --
 
-ALTER TABLE ONLY {{schema}}.agent_scenarios ALTER COLUMN id SET DEFAULT nextval('{{schema}}.agent_scenarios_id_seq'::regclass);
+ALTER TABLE ONLY {{schema}}.agent_scenarios ALTER COLUMN id SET DEFAULT nextval('{{schema}}.bot_scenarios_id_seq'::regclass);
 
 
 --
@@ -3232,7 +2997,7 @@ ALTER TABLE ONLY {{schema}}.agent_sessions ALTER COLUMN id SET DEFAULT nextval('
 -- Name: agent_tasks id; Type: DEFAULT; Schema: {{schema}}; Owner: -
 --
 
-ALTER TABLE ONLY {{schema}}.agent_tasks ALTER COLUMN id SET DEFAULT nextval('{{schema}}.agent_tasks_id_seq'::regclass);
+ALTER TABLE ONLY {{schema}}.agent_tasks ALTER COLUMN id SET DEFAULT nextval('{{schema}}.schedules_id_seq'::regclass);
 
 
 --
@@ -3408,7 +3173,7 @@ ALTER TABLE ONLY {{schema}}.notifications ALTER COLUMN id SET DEFAULT nextval('{
 -- Name: permissions id; Type: DEFAULT; Schema: {{schema}}; Owner: -
 --
 
-ALTER TABLE ONLY {{schema}}.permissions ALTER COLUMN id SET DEFAULT nextval('{{schema}}.permissions_id_seq'::regclass);
+ALTER TABLE ONLY {{schema}}.permissions ALTER COLUMN id SET DEFAULT nextval('{{schema}}.permissions_new_id_seq'::regclass);
 
 
 --
@@ -3589,15 +3354,6 @@ ALTER TABLE ONLY {{schema}}.workspace_roles ALTER COLUMN id SET DEFAULT nextval(
 
 --
 
--- Name: action_audit_events action_audit_events_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.action_audit_events
-    ADD CONSTRAINT action_audit_events_pkey PRIMARY KEY (id);
-
-
---
-
 -- Name: agent_feedback agent_feedback_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
@@ -3625,15 +3381,6 @@ ALTER TABLE ONLY {{schema}}.agent_messages
 
 --
 
--- Name: agent_scenarios agent_scenarios_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.agent_scenarios
-    ADD CONSTRAINT agent_scenarios_pkey PRIMARY KEY (id);
-
-
---
-
 -- Name: agent_sessions agent_sessions_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
@@ -3648,15 +3395,6 @@ ALTER TABLE ONLY {{schema}}.agent_sessions
 
 ALTER TABLE ONLY {{schema}}.agent_task_sources
     ADD CONSTRAINT agent_task_sources_pkey PRIMARY KEY (agent_task_id, source_id);
-
-
---
-
--- Name: agent_tasks agent_tasks_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.agent_tasks
-    ADD CONSTRAINT agent_tasks_pkey PRIMARY KEY (id);
 
 
 --
@@ -3684,6 +3422,15 @@ ALTER TABLE ONLY {{schema}}.analyzed_content_receipts
 
 ALTER TABLE ONLY {{schema}}.bot_actions
     ADD CONSTRAINT bot_actions_pkey PRIMARY KEY (id);
+
+
+--
+
+-- Name: agent_scenarios bot_scenarios_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.agent_scenarios
+    ADD CONSTRAINT bot_scenarios_pkey PRIMARY KEY (id);
 
 
 --
@@ -3832,15 +3579,6 @@ ALTER TABLE ONLY {{schema}}.model_types
 
 --
 
--- Name: model_types model_types_resource_key_key; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.model_types
-    ADD CONSTRAINT model_types_resource_key_key UNIQUE (resource_key);
-
-
---
-
 -- Name: notification_preferences notification_preferences_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
@@ -3868,11 +3606,11 @@ ALTER TABLE ONLY {{schema}}.notifications
 
 --
 
--- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
+-- Name: permissions permissions_new_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
 ALTER TABLE ONLY {{schema}}.permissions
-    ADD CONSTRAINT permissions_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT permissions_new_pkey PRIMARY KEY (id);
 
 
 --
@@ -4021,20 +3759,20 @@ ALTER TABLE ONLY {{schema}}.role_permission
 
 --
 
--- Name: roles roles_codename_key; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.roles
-    ADD CONSTRAINT roles_codename_key UNIQUE (codename);
-
-
---
-
 -- Name: roles roles_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
 ALTER TABLE ONLY {{schema}}.roles
     ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
+
+
+--
+
+-- Name: agent_tasks schedules_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.agent_tasks
+    ADD CONSTRAINT schedules_pkey PRIMARY KEY (id);
 
 
 --
@@ -4089,15 +3827,6 @@ ALTER TABLE ONLY {{schema}}.tenant_users
 
 ALTER TABLE ONLY {{schema}}.tenants
     ADD CONSTRAINT tenants_pkey PRIMARY KEY (id);
-
-
---
-
--- Name: action_audit_events uq_action_audit_events_event_id; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.action_audit_events
-    ADD CONSTRAINT uq_action_audit_events_event_id UNIQUE (event_id);
 
 
 --
@@ -4264,6 +3993,15 @@ ALTER TABLE ONLY {{schema}}.login_attempts
 
 --
 
+-- Name: model_types uq_model_types_resource_key; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.model_types
+    ADD CONSTRAINT uq_model_types_resource_key UNIQUE (resource_key);
+
+
+--
+
 -- Name: notification_receipts uq_notification_receipt_owner; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
@@ -4390,6 +4128,15 @@ ALTER TABLE ONLY {{schema}}.personal_llm_reservations
 
 --
 
+-- Name: roles uq_roles_codename; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.roles
+    ADD CONSTRAINT uq_roles_codename UNIQUE (codename);
+
+
+--
+
 -- Name: sources uq_source_tenant_platform_external; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
@@ -4444,6 +4191,15 @@ ALTER TABLE ONLY {{schema}}.tenant_users
 
 --
 
+-- Name: workspace_roles uq_workspace_roles_codename; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.workspace_roles
+    ADD CONSTRAINT uq_workspace_roles_codename UNIQUE (codename);
+
+
+--
+
 -- Name: user_credentials user_credentials_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
@@ -4467,15 +4223,6 @@ ALTER TABLE ONLY {{schema}}.users
 
 ALTER TABLE ONLY {{schema}}.workspace_role_permission
     ADD CONSTRAINT workspace_role_permission_pkey PRIMARY KEY (role_id, permission_id);
-
-
---
-
--- Name: workspace_roles workspace_roles_codename_key; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.workspace_roles
-    ADD CONSTRAINT workspace_roles_codename_key UNIQUE (codename);
 
 
 --
@@ -4585,22 +4332,6 @@ CREATE INDEX idx_sources_platform_id ON {{schema}}.sources USING btree (platform
 
 --
 
--- Name: ix_action_audit_events_tenant_outcome_time; Type: INDEX; Schema: {{schema}}; Owner: -
---
-
-CREATE INDEX ix_action_audit_events_tenant_outcome_time ON {{schema}}.action_audit_events USING btree (tenant_id, outcome, occurred_at);
-
-
---
-
--- Name: ix_action_audit_events_tenant_time_id; Type: INDEX; Schema: {{schema}}; Owner: -
---
-
-CREATE INDEX ix_action_audit_events_tenant_time_id ON {{schema}}.action_audit_events USING btree (tenant_id, occurred_at, id);
-
-
---
-
 -- Name: ix_agent_feedback_session_id; Type: INDEX; Schema: {{schema}}; Owner: -
 --
 
@@ -4673,6 +4404,14 @@ CREATE INDEX ix_agent_tasks_tenant_id ON {{schema}}.agent_tasks USING btree (ten
 
 --
 
+-- Name: ix_ai_analytics_normalized_label; Type: INDEX; Schema: {{schema}}; Owner: -
+--
+
+CREATE INDEX ix_ai_analytics_normalized_label ON {{schema}}.ai_analytics USING btree (normalized_label);
+
+
+--
+
 -- Name: ix_ai_analytics_tenant_id; Type: INDEX; Schema: {{schema}}; Owner: -
 --
 
@@ -4733,6 +4472,14 @@ CREATE INDEX ix_bot_actions_tenant_id ON {{schema}}.bot_actions USING btree (ten
 --
 
 CREATE INDEX ix_collected_items_run_id ON {{schema}}.collected_items USING btree (run_id);
+
+
+--
+
+-- Name: ix_collected_items_source_attempts; Type: INDEX; Schema: {{schema}}; Owner: -
+--
+
+CREATE INDEX ix_collected_items_source_attempts ON {{schema}}.collected_items USING btree (source_id, analyze_attempts);
 
 
 --
@@ -4841,10 +4588,26 @@ CREATE INDEX ix_llm_dispatch_receipts_tenant_day ON {{schema}}.llm_dispatch_rece
 
 --
 
+-- Name: ix_llm_models_owner_user_id; Type: INDEX; Schema: {{schema}}; Owner: -
+--
+
+CREATE INDEX ix_llm_models_owner_user_id ON {{schema}}.llm_models USING btree (owner_user_id);
+
+
+--
+
 -- Name: ix_llm_outcome_events_tenant_receipt; Type: INDEX; Schema: {{schema}}; Owner: -
 --
 
 CREATE INDEX ix_llm_outcome_events_tenant_receipt ON {{schema}}.llm_outcome_events USING btree (tenant_id, dispatch_id, observed_at);
+
+
+--
+
+-- Name: ix_llm_providers_owner_user_id; Type: INDEX; Schema: {{schema}}; Owner: -
+--
+
+CREATE INDEX ix_llm_providers_owner_user_id ON {{schema}}.llm_providers USING btree (owner_user_id);
 
 
 --
@@ -4877,6 +4640,30 @@ CREATE INDEX ix_personal_llm_dispatches_account_created ON {{schema}}.personal_l
 --
 
 CREATE INDEX ix_personal_llm_dispatches_workspace ON {{schema}}.personal_llm_dispatches USING btree (tenant_id);
+
+
+--
+
+-- Name: ix_social_manager_llm_models_provider_id; Type: INDEX; Schema: {{schema}}; Owner: -
+--
+
+CREATE INDEX ix_social_manager_llm_models_provider_id ON {{schema}}.llm_models USING btree (provider_id);
+
+
+--
+
+-- Name: ix_social_manager_users_email; Type: INDEX; Schema: {{schema}}; Owner: -
+--
+
+CREATE UNIQUE INDEX ix_social_manager_users_email ON {{schema}}.users USING btree (email);
+
+
+--
+
+-- Name: ix_social_manager_users_username; Type: INDEX; Schema: {{schema}}; Owner: -
+--
+
+CREATE UNIQUE INDEX ix_social_manager_users_username ON {{schema}}.users USING btree (username);
 
 
 --
@@ -4945,46 +4732,6 @@ CREATE INDEX ix_tenants_slug ON {{schema}}.tenants USING btree (slug);
 
 --
 
--- Name: ix_test_schema_llm_models_owner_user_id; Type: INDEX; Schema: {{schema}}; Owner: -
---
-
-CREATE INDEX ix_test_schema_llm_models_owner_user_id ON {{schema}}.llm_models USING btree (owner_user_id);
-
-
---
-
--- Name: ix_test_schema_llm_models_provider_id; Type: INDEX; Schema: {{schema}}; Owner: -
---
-
-CREATE INDEX ix_test_schema_llm_models_provider_id ON {{schema}}.llm_models USING btree (provider_id);
-
-
---
-
--- Name: ix_test_schema_llm_providers_owner_user_id; Type: INDEX; Schema: {{schema}}; Owner: -
---
-
-CREATE INDEX ix_test_schema_llm_providers_owner_user_id ON {{schema}}.llm_providers USING btree (owner_user_id);
-
-
---
-
--- Name: ix_test_schema_users_email; Type: INDEX; Schema: {{schema}}; Owner: -
---
-
-CREATE UNIQUE INDEX ix_test_schema_users_email ON {{schema}}.users USING btree (email);
-
-
---
-
--- Name: ix_test_schema_users_username; Type: INDEX; Schema: {{schema}}; Owner: -
---
-
-CREATE UNIQUE INDEX ix_test_schema_users_username ON {{schema}}.users USING btree (username);
-
-
---
-
 -- Name: ix_user_credentials_user_id; Type: INDEX; Schema: {{schema}}; Owner: -
 --
 
@@ -5037,22 +4784,6 @@ CREATE UNIQUE INDEX uq_notifications_tenant_dedup ON {{schema}}.notifications US
 --
 
 CREATE UNIQUE INDEX uq_tenant_users_web_membership ON {{schema}}.tenant_users USING btree (tenant_id, user_id) WHERE (user_id IS NOT NULL);
-
-
---
-
--- Name: action_audit_events action_audit_events_immutable; Type: TRIGGER; Schema: {{schema}}; Owner: -
---
-
-CREATE TRIGGER action_audit_events_immutable BEFORE DELETE OR UPDATE ON {{schema}}.action_audit_events FOR EACH ROW EXECUTE FUNCTION {{schema}}.guard_action_audit_mutation();
-
-
---
-
--- Name: action_audit_events action_audit_events_no_truncate; Type: TRIGGER; Schema: {{schema}}; Owner: -
---
-
-CREATE TRIGGER action_audit_events_no_truncate BEFORE TRUNCATE ON {{schema}}.action_audit_events FOR EACH STATEMENT EXECUTE FUNCTION {{schema}}.guard_action_audit_mutation();
 
 
 --
@@ -5438,15 +5169,6 @@ ALTER TABLE ONLY {{schema}}.agent_memory
 
 --
 
--- Name: agent_memory agent_memory_user_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.agent_memory
-    ADD CONSTRAINT agent_memory_user_id_fkey FOREIGN KEY (user_id) REFERENCES {{schema}}.users(id) ON DELETE CASCADE;
-
-
---
-
 -- Name: agent_messages agent_messages_session_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
@@ -5461,42 +5183,6 @@ ALTER TABLE ONLY {{schema}}.agent_messages
 
 ALTER TABLE ONLY {{schema}}.agent_messages
     ADD CONSTRAINT agent_messages_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE CASCADE;
-
-
---
-
--- Name: agent_scenarios agent_scenarios_image_llm_model_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.agent_scenarios
-    ADD CONSTRAINT agent_scenarios_image_llm_model_id_fkey FOREIGN KEY (image_llm_model_id) REFERENCES {{schema}}.llm_models(id) ON DELETE SET NULL;
-
-
---
-
--- Name: agent_scenarios agent_scenarios_tenant_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.agent_scenarios
-    ADD CONSTRAINT agent_scenarios_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE CASCADE;
-
-
---
-
--- Name: agent_scenarios agent_scenarios_text_llm_model_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.agent_scenarios
-    ADD CONSTRAINT agent_scenarios_text_llm_model_id_fkey FOREIGN KEY (text_llm_model_id) REFERENCES {{schema}}.llm_models(id) ON DELETE SET NULL;
-
-
---
-
--- Name: agent_scenarios agent_scenarios_video_llm_model_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.agent_scenarios
-    ADD CONSTRAINT agent_scenarios_video_llm_model_id_fkey FOREIGN KEY (video_llm_model_id) REFERENCES {{schema}}.llm_models(id) ON DELETE SET NULL;
 
 
 --
@@ -5524,24 +5210,6 @@ ALTER TABLE ONLY {{schema}}.agent_task_sources
 
 ALTER TABLE ONLY {{schema}}.agent_task_sources
     ADD CONSTRAINT agent_task_sources_source_id_fkey FOREIGN KEY (source_id) REFERENCES {{schema}}.sources(id) ON DELETE CASCADE;
-
-
---
-
--- Name: agent_tasks agent_tasks_agent_scenario_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.agent_tasks
-    ADD CONSTRAINT agent_tasks_agent_scenario_id_fkey FOREIGN KEY (agent_scenario_id) REFERENCES {{schema}}.agent_scenarios(id) ON DELETE SET NULL;
-
-
---
-
--- Name: agent_tasks agent_tasks_tenant_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.agent_tasks
-    ADD CONSTRAINT agent_tasks_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE CASCADE;
 
 
 --
@@ -5618,29 +5286,11 @@ ALTER TABLE ONLY {{schema}}.bot_actions
 
 --
 
--- Name: bot_actions bot_actions_agent_task_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.bot_actions
-    ADD CONSTRAINT bot_actions_agent_task_id_fkey FOREIGN KEY (agent_task_id) REFERENCES {{schema}}.agent_tasks(id) ON DELETE SET NULL;
-
-
---
-
 -- Name: bot_actions bot_actions_analytics_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
 ALTER TABLE ONLY {{schema}}.bot_actions
     ADD CONSTRAINT bot_actions_analytics_id_fkey FOREIGN KEY (analytics_id) REFERENCES {{schema}}.ai_analytics(id) ON DELETE SET NULL;
-
-
---
-
--- Name: bot_actions bot_actions_approved_user_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.bot_actions
-    ADD CONSTRAINT bot_actions_approved_user_id_fkey FOREIGN KEY (approved_user_id) REFERENCES {{schema}}.users(id) ON DELETE SET NULL;
 
 
 --
@@ -5668,6 +5318,15 @@ ALTER TABLE ONLY {{schema}}.bot_actions
 
 ALTER TABLE ONLY {{schema}}.bot_actions
     ADD CONSTRAINT bot_actions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE CASCADE;
+
+
+--
+
+-- Name: agent_scenarios bot_scenarios_tenant_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.agent_scenarios
+    ADD CONSTRAINT bot_scenarios_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE CASCADE;
 
 
 --
@@ -5726,15 +5385,6 @@ ALTER TABLE ONLY {{schema}}.collection_seen
 
 --
 
--- Name: digest_runs digest_runs_agent_task_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.digest_runs
-    ADD CONSTRAINT digest_runs_agent_task_id_fkey FOREIGN KEY (agent_task_id) REFERENCES {{schema}}.agent_tasks(id) ON DELETE SET NULL;
-
-
---
-
 -- Name: digest_runs digest_runs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
@@ -5753,11 +5403,92 @@ ALTER TABLE ONLY {{schema}}.entitlement_usage
 
 --
 
--- Name: action_audit_events fk_action_audit_events_tenant; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+-- Name: agent_memory fk_agent_memory_user_id_users; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
-ALTER TABLE ONLY {{schema}}.action_audit_events
-    ADD CONSTRAINT fk_action_audit_events_tenant FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY {{schema}}.agent_memory
+    ADD CONSTRAINT fk_agent_memory_user_id_users FOREIGN KEY (user_id) REFERENCES {{schema}}.users(id) ON DELETE CASCADE;
+
+
+--
+
+-- Name: agent_tasks fk_agent_tasks_agent_scenario; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.agent_tasks
+    ADD CONSTRAINT fk_agent_tasks_agent_scenario FOREIGN KEY (agent_scenario_id) REFERENCES {{schema}}.agent_scenarios(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: bot_actions fk_bot_actions_agent_task_id; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.bot_actions
+    ADD CONSTRAINT fk_bot_actions_agent_task_id FOREIGN KEY (agent_task_id) REFERENCES {{schema}}.agent_tasks(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: bot_actions fk_bot_actions_approved_user; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.bot_actions
+    ADD CONSTRAINT fk_bot_actions_approved_user FOREIGN KEY (approved_user_id) REFERENCES {{schema}}.users(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: agent_scenarios fk_bot_scenarios_image_llm_model; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.agent_scenarios
+    ADD CONSTRAINT fk_bot_scenarios_image_llm_model FOREIGN KEY (image_llm_model_id) REFERENCES {{schema}}.llm_models(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: agent_scenarios fk_bot_scenarios_text_llm_model; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.agent_scenarios
+    ADD CONSTRAINT fk_bot_scenarios_text_llm_model FOREIGN KEY (text_llm_model_id) REFERENCES {{schema}}.llm_models(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: agent_scenarios fk_bot_scenarios_video_llm_model; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.agent_scenarios
+    ADD CONSTRAINT fk_bot_scenarios_video_llm_model FOREIGN KEY (video_llm_model_id) REFERENCES {{schema}}.llm_models(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: digest_runs fk_digest_runs_agent_task; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.digest_runs
+    ADD CONSTRAINT fk_digest_runs_agent_task FOREIGN KEY (agent_task_id) REFERENCES {{schema}}.agent_tasks(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: jobs fk_jobs_agent_task; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.jobs
+    ADD CONSTRAINT fk_jobs_agent_task FOREIGN KEY (agent_task_id) REFERENCES {{schema}}.agent_tasks(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: jobs fk_jobs_initiated_by_user_id_users; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.jobs
+    ADD CONSTRAINT fk_jobs_initiated_by_user_id_users FOREIGN KEY (initiated_by_user_id) REFERENCES {{schema}}.users(id) ON DELETE RESTRICT;
 
 
 --
@@ -5776,6 +5507,33 @@ ALTER TABLE ONLY {{schema}}.llm_budget_reservations
 
 ALTER TABLE ONLY {{schema}}.llm_models
     ADD CONSTRAINT fk_llm_model_provider_owner FOREIGN KEY (provider_id, owner_user_id) REFERENCES {{schema}}.llm_providers(id, owner_user_id) ON DELETE CASCADE;
+
+
+--
+
+-- Name: llm_models fk_llm_models_owner_user; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.llm_models
+    ADD CONSTRAINT fk_llm_models_owner_user FOREIGN KEY (owner_user_id) REFERENCES {{schema}}.users(id) ON DELETE RESTRICT;
+
+
+--
+
+-- Name: llm_providers fk_llm_providers_owner_user; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.llm_providers
+    ADD CONSTRAINT fk_llm_providers_owner_user FOREIGN KEY (owner_user_id) REFERENCES {{schema}}.users(id) ON DELETE RESTRICT;
+
+
+--
+
+-- Name: personal_llm_billing_incidents fk_personal_llm_billing_incident_day; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.personal_llm_billing_incidents
+    ADD CONSTRAINT fk_personal_llm_billing_incident_day FOREIGN KEY (account_id, utc_day) REFERENCES {{schema}}.personal_llm_budget_days(account_id, utc_day) ON DELETE RESTRICT;
 
 
 --
@@ -5816,20 +5574,38 @@ ALTER TABLE ONLY {{schema}}.personal_llm_reservations
 
 --
 
--- Name: jobs jobs_agent_task_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+-- Name: sources fk_sources_owner_task_id; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
-ALTER TABLE ONLY {{schema}}.jobs
-    ADD CONSTRAINT jobs_agent_task_id_fkey FOREIGN KEY (agent_task_id) REFERENCES {{schema}}.agent_tasks(id) ON DELETE SET NULL;
+ALTER TABLE ONLY {{schema}}.sources
+    ADD CONSTRAINT fk_sources_owner_task_id FOREIGN KEY (owner_task_id) REFERENCES {{schema}}.agent_tasks(id) ON DELETE CASCADE;
 
 
 --
 
--- Name: jobs jobs_initiated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+-- Name: tenant_invites fk_tenant_invites_workspace_role; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
-ALTER TABLE ONLY {{schema}}.jobs
-    ADD CONSTRAINT jobs_initiated_by_user_id_fkey FOREIGN KEY (initiated_by_user_id) REFERENCES {{schema}}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY {{schema}}.tenant_invites
+    ADD CONSTRAINT fk_tenant_invites_workspace_role FOREIGN KEY (role_id) REFERENCES {{schema}}.workspace_roles(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: tenant_users fk_tenant_users_workspace_role; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.tenant_users
+    ADD CONSTRAINT fk_tenant_users_workspace_role FOREIGN KEY (role_id) REFERENCES {{schema}}.workspace_roles(id) ON DELETE SET NULL;
+
+
+--
+
+-- Name: tenants fk_tenants_agent_model_id; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.tenants
+    ADD CONSTRAINT fk_tenants_agent_model_id FOREIGN KEY (agent_model_id) REFERENCES {{schema}}.llm_models(id) ON DELETE SET NULL;
 
 
 --
@@ -5888,15 +5664,6 @@ ALTER TABLE ONLY {{schema}}.llm_dispatch_receipts
 
 --
 
--- Name: llm_models llm_models_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.llm_models
-    ADD CONSTRAINT llm_models_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES {{schema}}.users(id) ON DELETE RESTRICT;
-
-
---
-
 -- Name: llm_outcome_events llm_outcome_events_dispatch_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
@@ -5911,15 +5678,6 @@ ALTER TABLE ONLY {{schema}}.llm_outcome_events
 
 ALTER TABLE ONLY {{schema}}.llm_outcome_events
     ADD CONSTRAINT llm_outcome_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE RESTRICT;
-
-
---
-
--- Name: llm_providers llm_providers_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.llm_providers
-    ADD CONSTRAINT llm_providers_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES {{schema}}.users(id) ON DELETE RESTRICT;
 
 
 --
@@ -5960,11 +5718,11 @@ ALTER TABLE ONLY {{schema}}.notifications
 
 --
 
--- Name: permissions permissions_model_type_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+-- Name: permissions permissions_new_model_type_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
 ALTER TABLE ONLY {{schema}}.permissions
-    ADD CONSTRAINT permissions_model_type_id_fkey FOREIGN KEY (model_type_id) REFERENCES {{schema}}.model_types(id);
+    ADD CONSTRAINT permissions_new_model_type_id_fkey FOREIGN KEY (model_type_id) REFERENCES {{schema}}.model_types(id);
 
 
 --
@@ -6266,11 +6024,11 @@ ALTER TABLE ONLY {{schema}}.role_permission
 
 --
 
--- Name: sources sources_owner_task_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+-- Name: agent_tasks schedules_tenant_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
-ALTER TABLE ONLY {{schema}}.sources
-    ADD CONSTRAINT sources_owner_task_id_fkey FOREIGN KEY (owner_task_id) REFERENCES {{schema}}.agent_tasks(id) ON DELETE CASCADE;
+ALTER TABLE ONLY {{schema}}.agent_tasks
+    ADD CONSTRAINT schedules_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE CASCADE;
 
 
 --
@@ -6329,29 +6087,11 @@ ALTER TABLE ONLY {{schema}}.tenant_channels
 
 --
 
--- Name: tenant_invites tenant_invites_role_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.tenant_invites
-    ADD CONSTRAINT tenant_invites_role_id_fkey FOREIGN KEY (role_id) REFERENCES {{schema}}.workspace_roles(id) ON DELETE SET NULL;
-
-
---
-
 -- Name: tenant_invites tenant_invites_tenant_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
 --
 
 ALTER TABLE ONLY {{schema}}.tenant_invites
     ADD CONSTRAINT tenant_invites_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE CASCADE;
-
-
---
-
--- Name: tenant_users tenant_users_role_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.tenant_users
-    ADD CONSTRAINT tenant_users_role_id_fkey FOREIGN KEY (role_id) REFERENCES {{schema}}.workspace_roles(id) ON DELETE SET NULL;
 
 
 --
@@ -6370,15 +6110,6 @@ ALTER TABLE ONLY {{schema}}.tenant_users
 
 ALTER TABLE ONLY {{schema}}.tenant_users
     ADD CONSTRAINT tenant_users_user_id_fkey FOREIGN KEY (user_id) REFERENCES {{schema}}.users(id) ON DELETE CASCADE;
-
-
---
-
--- Name: tenants tenants_agent_model_id_fkey; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
---
-
-ALTER TABLE ONLY {{schema}}.tenants
-    ADD CONSTRAINT tenants_agent_model_id_fkey FOREIGN KEY (agent_model_id) REFERENCES {{schema}}.llm_models(id) ON DELETE SET NULL;
 
 
 --
@@ -6419,4 +6150,138 @@ ALTER TABLE ONLY {{schema}}.workspace_role_permission
 
 --
 -- PostgreSQL database dump complete
+--
+
+
+-- Name: guard_action_audit_mutation(); Type: FUNCTION; Schema: {{schema}}; Owner: -
+--
+
+CREATE FUNCTION {{schema}}.guard_action_audit_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$ BEGIN IF TG_OP = 'DELETE' AND current_setting('app.action_audit_retention', true) = 'on' THEN RETURN OLD; END IF; RAISE EXCEPTION 'Action audit evidence is immutable outside retention cleanup' USING ERRCODE = '55000'; END; $$;
+
+
+--
+
+-- Name: action_audit_events; Type: TABLE; Schema: {{schema}}; Owner: -
+--
+
+CREATE TABLE {{schema}}.action_audit_events (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    event_id character varying(32) NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_kind character varying(16) NOT NULL,
+    actor_id character varying(64) NOT NULL,
+    action character varying(80) NOT NULL,
+    resource_kind character varying(40),
+    resource_id character varying(128),
+    outcome character varying(16) NOT NULL,
+    reason_code character varying(64),
+    request_id character varying(128),
+    job_id integer,
+    receipt_ref character varying(160),
+    CONSTRAINT ck_action_audit_events_action CHECK (((action)::text = 'scheduling.task_admit'::text)),
+    CONSTRAINT ck_action_audit_events_actor_id CHECK (((((actor_kind)::text = 'user'::text) AND ((actor_id)::text ~ '^[1-9][0-9]{0,9}$'::text)) OR (((actor_kind)::text = 'service'::text) AND ((actor_id)::text = 'task_runner'::text)) OR (((actor_kind)::text = 'scheduler'::text) AND ((actor_id)::text = 'scheduler'::text)))),
+    CONSTRAINT ck_action_audit_events_actor_kind CHECK (((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'service'::character varying, 'scheduler'::character varying])::text[]))),
+    CONSTRAINT ck_action_audit_events_event_id CHECK (((event_id)::text ~ '^[0-9a-f]{32}$'::text)),
+    CONSTRAINT ck_action_audit_events_job_id CHECK (((job_id IS NULL) OR ((job_id > 0) AND (job_id <= 2147483647)))),
+    CONSTRAINT ck_action_audit_events_outcome CHECK (((outcome)::text = ANY ((ARRAY['succeeded'::character varying, 'unknown'::character varying])::text[]))),
+    CONSTRAINT ck_action_audit_events_reason_code CHECK (((((outcome)::text = 'succeeded'::text) AND (reason_code IS NULL)) OR (((outcome)::text = 'unknown'::text) AND ((reason_code)::text = 'launch_unconfirmed'::text)))),
+    CONSTRAINT ck_action_audit_events_receipt_ref CHECK ((receipt_ref IS NULL)),
+    CONSTRAINT ck_action_audit_events_request_id CHECK ((request_id IS NULL)),
+    CONSTRAINT ck_action_audit_events_resource_id CHECK (((resource_id IS NULL) OR ((resource_id)::text ~ '^[1-9][0-9]{0,9}$'::text))),
+    CONSTRAINT ck_action_audit_events_resource_kind CHECK (((resource_kind IS NULL) OR ((resource_kind)::text = 'agent_task'::text)))
+);
+
+
+--
+
+-- Name: action_audit_events_id_seq; Type: SEQUENCE; Schema: {{schema}}; Owner: -
+--
+
+CREATE SEQUENCE {{schema}}.action_audit_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+
+-- Name: action_audit_events_id_seq; Type: SEQUENCE OWNED BY; Schema: {{schema}}; Owner: -
+--
+
+ALTER SEQUENCE {{schema}}.action_audit_events_id_seq OWNED BY {{schema}}.action_audit_events.id;
+
+
+--
+
+-- Name: action_audit_events id; Type: DEFAULT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.action_audit_events ALTER COLUMN id SET DEFAULT nextval('{{schema}}.action_audit_events_id_seq'::regclass);
+
+
+--
+
+-- Name: action_audit_events action_audit_events_pkey; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.action_audit_events
+    ADD CONSTRAINT action_audit_events_pkey PRIMARY KEY (id);
+
+
+--
+
+-- Name: action_audit_events uq_action_audit_events_event_id; Type: CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.action_audit_events
+    ADD CONSTRAINT uq_action_audit_events_event_id UNIQUE (event_id);
+
+
+--
+
+-- Name: ix_action_audit_events_tenant_outcome_time; Type: INDEX; Schema: {{schema}}; Owner: -
+--
+
+CREATE INDEX ix_action_audit_events_tenant_outcome_time ON {{schema}}.action_audit_events USING btree (tenant_id, outcome, occurred_at);
+
+
+--
+
+-- Name: ix_action_audit_events_tenant_time_id; Type: INDEX; Schema: {{schema}}; Owner: -
+--
+
+CREATE INDEX ix_action_audit_events_tenant_time_id ON {{schema}}.action_audit_events USING btree (tenant_id, occurred_at, id);
+
+
+--
+
+-- Name: action_audit_events action_audit_events_immutable; Type: TRIGGER; Schema: {{schema}}; Owner: -
+--
+
+CREATE TRIGGER action_audit_events_immutable BEFORE DELETE OR UPDATE ON {{schema}}.action_audit_events FOR EACH ROW EXECUTE FUNCTION {{schema}}.guard_action_audit_mutation();
+
+
+--
+
+-- Name: action_audit_events action_audit_events_no_truncate; Type: TRIGGER; Schema: {{schema}}; Owner: -
+--
+
+CREATE TRIGGER action_audit_events_no_truncate BEFORE TRUNCATE ON {{schema}}.action_audit_events FOR EACH STATEMENT EXECUTE FUNCTION {{schema}}.guard_action_audit_mutation();
+
+
+--
+
+-- Name: action_audit_events fk_action_audit_events_tenant; Type: FK CONSTRAINT; Schema: {{schema}}; Owner: -
+--
+
+ALTER TABLE ONLY {{schema}}.action_audit_events
+    ADD CONSTRAINT fk_action_audit_events_tenant FOREIGN KEY (tenant_id) REFERENCES {{schema}}.tenants(id) ON DELETE RESTRICT;
+
+
 --

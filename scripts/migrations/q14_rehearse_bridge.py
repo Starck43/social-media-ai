@@ -28,6 +28,7 @@ def main():
     parser.parse_args()
     from app.core.config import settings
     from app.core.database import engine
+    from scripts.migrations.q14_compare_schemas import _catalog
 
     url = make_url(settings.POSTGRES_URL)
     if settings.DB_SCHEMA != "test_schema" or settings.DB_TEST_SCHEMA != "test_schema":
@@ -56,6 +57,13 @@ def main():
             before = public_fingerprint(connection)
             if before["revision"] != ["0117"]:
                 raise SystemExit("Rehearsal requires the actual public 0117 source schema")
+            if (
+                connection.execute(text("SELECT version_num FROM test_schema.alembic_version")).scalar_one()
+                != "baseline_0118"
+            ):
+                raise SystemExit("Prepare the canonical baseline before rehearsing the public clone")
+            connection.execute(text("SET LOCAL search_path TO pg_catalog"))
+            expected_catalog = _catalog(connection, "test_schema")
             env = os.environ.copy()
             env.update(
                 PGDATABASE=database,
@@ -101,7 +109,11 @@ def main():
             engine.dispose()
             with connection.begin():
                 apply_public_transition(
-                    connection, Config(str(ROOT / "alembic.ini")), "test_schema", validation_test_schema=True
+                    connection,
+                    Config(str(ROOT / "alembic.ini")),
+                    "test_schema",
+                    validation_test_schema=True,
+                    expected_catalog=expected_catalog,
                 )
             if public_fingerprint(connection) != before:
                 raise SystemExit("Public fingerprint changed during rehearsal; investigate")

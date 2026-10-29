@@ -25,6 +25,10 @@ LEGACY_ORDERED_ENUMS = {"bot_action_status", "bot_trigger_type"}
 AUDIT_TABLE = "action_audit_events"
 AUDIT_FUNCTION = "guard_action_audit_mutation"
 AUDIT_TRIGGERS = {"action_audit_events_immutable", "action_audit_events_no_truncate"}
+RECONCILIATION_LABELS = {
+    "bot_actions.agent_task_id FK": "ON DELETE CASCADE -> SET NULL",
+    "tenant_channels UNIQUE": "(tenant_id, channel, chat_id) -> (channel, chat_id)",
+}
 
 
 def _norm_sql(value: str | None, schema: str) -> str | None:
@@ -461,31 +465,172 @@ def _as_set_delta(left: set[Any], right: set[Any]) -> dict[str, list[Any]]:
     }
 
 
-def _allowed_legacy_public_difference(public: dict[str, Any], test: dict[str, Any], before_bridge: bool):
+def _allowed_legacy_public_difference(
+    public: dict[str, Any], test: dict[str, Any], before_bridge: bool, allow_legacy: bool
+):
     allowed: list[str] = []
-    if "oauth_pending" in public["tables"] and "oauth_pending" not in test["tables"]:
+    if allow_legacy and "oauth_pending" in public["tables"] and "oauth_pending" not in test["tables"]:
         allowed.append("public retains legacy oauth_pending and its owned schema objects")
-    if "analyze_type" in public["enums"] and "analyze_type" not in test["enums"]:
+    if allow_legacy and "analyze_type" in public["enums"] and "analyze_type" not in test["enums"]:
         allowed.append("public retains legacy analyze_type enum")
-    for enum_name in sorted(LEGACY_ORDERED_ENUMS):
-        left, right = public["enums"].get(enum_name), test["enums"].get(enum_name)
-        if left is not None and right is not None and left != right and set(left) == set(right):
-            allowed.append(f"public has historical {enum_name} label order")
+    if allow_legacy:
+        for enum_name in sorted(LEGACY_ORDERED_ENUMS):
+            left, right = public["enums"].get(enum_name), test["enums"].get(enum_name)
+            if left is not None and right is not None and left != right and set(left) == set(right):
+                allowed.append(f"public has historical {enum_name} label order")
     if before_bridge and AUDIT_TABLE not in public["tables"] and AUDIT_TABLE in test["tables"]:
         allowed.append("public predates action_audit_events bridge objects")
     return allowed
 
 
+def _constraint_contract(**values: Any) -> dict[str, Any]:
+    contract = {
+        "deferrable": False,
+        "initially_deferred": False,
+        "validated": True,
+        "nulls_not_distinct": False,
+    }
+    contract.update(values)
+    return contract
+
+
+def _planned_reconciliations(public: dict[str, Any], test: dict[str, Any]) -> dict[str, Any]:
+    """Return exact source/target contracts for the two authorized model fixes."""
+    pairs: dict[str, Any] = {}
+    source_fk = _constraint_contract(
+        kind="f",
+        columns=["agent_task_id"],
+        references={"schema": "<schema>", "table": "agent_tasks", "columns": ["id"]},
+        match="s",
+        on_update="a",
+        on_delete="c",
+        delete_set_columns=[],
+    )
+    target_fk = {**source_fk, "on_delete": "n"}
+    source_unique = _constraint_contract(kind="u", columns=["tenant_id", "channel", "chat_id"])
+    target_unique = _constraint_contract(kind="u", columns=["channel", "chat_id"])
+
+    fk_pair = _matching_pair(
+        public["constraints"].get("bot_actions", []), test["constraints"].get("bot_actions", []), source_fk, target_fk
+    )
+    if fk_pair:
+        pairs["bot_actions.agent_task_id FK"] = {"constraint": fk_pair}
+
+    source_index, target_index = _tenant_channel_index_pair(
+        public["indexes"].get("tenant_channels", []), test["indexes"].get("tenant_channels", [])
+    )
+    unique_pair = _matching_pair(
+        public["constraints"].get("tenant_channels", []),
+        test["constraints"].get("tenant_channels", []),
+        source_unique,
+        target_unique,
+    )
+    if unique_pair is not None and source_index is not None and target_index is not None:
+        pairs["tenant_channels UNIQUE"] = {
+            "constraint": unique_pair,
+            "index": (source_index, target_index),
+        }
+    return pairs
+
+
+def _matching_pair(source: list[dict[str, Any]], target: list[dict[str, Any]], source_value: dict, target_value: dict):
+    source_index = next((index for index, item in enumerate(source) if item == source_value), None)
+    target_index = next((index for index, item in enumerate(target) if item == target_value), None)
+    if source_index is None or target_index is None:
+        return None
+    return source_index, target_index
+
+
+def _tenant_channel_index_pair(source: list[dict[str, Any]], target: list[dict[str, Any]]):
+    """Match the exact unique btree whose only change drops the tenant key."""
+
+    def base_matches(index: dict[str, Any]) -> bool:
+        return (
+            index["unique"] is True
+            and index["primary"] is False
+            and index["valid"] is True
+            and index["ready"] is True
+            and index["live"] is True
+            and index["nulls_not_distinct"] is False
+            and index["method"] == "btree"
+            and index["included"] == []
+            and index["predicate"] is None
+        )
+
+    def key_is_default(key: dict[str, Any]) -> bool:
+        return key["descending"] is False and key["nulls_first"] is False and key["opclass"] is not None
+
+    for source_pos, source_item in enumerate(source):
+        if not base_matches(source_item) or len(source_item["keys"]) != 3:
+            continue
+        expressions = [key["expression"] for key in source_item["keys"]]
+        if expressions != ["tenant_id", "channel", "chat_id"]:
+            continue
+        if not all(key_is_default(key) for key in source_item["keys"]):
+            continue
+        source_first = source_item["keys"][0]
+        if source_first["collation"] is not None:
+            continue
+        for target_pos, target_item in enumerate(target):
+            if not base_matches(target_item) or len(target_item["keys"]) != 2:
+                continue
+            if target_item["keys"] == source_item["keys"][1:]:
+                return source_pos, target_pos
+    return None, None
+
+
+def _remove_pair(source: list[Any], target: list[Any], pair: tuple[int, int] | None) -> tuple[list[Any], list[Any]]:
+    if pair is None:
+        return source, target
+    source_index, target_index = pair
+    return (
+        [item for index, item in enumerate(source) if index != source_index],
+        [item for index, item in enumerate(target) if index != target_index],
+    )
+
+
 def compare(
-    public: dict[str, Any], test: dict[str, Any], *, before_bridge: bool = False, model_tables: set[str] | None = None
+    public: dict[str, Any],
+    test: dict[str, Any],
+    *,
+    before_bridge: bool = False,
+    model_tables: set[str] | None = None,
+    allow_reconciliation: bool = False,
+    allow_legacy: bool = True,
 ) -> dict[str, Any]:
     allowed_public_tables = {
-        name for name in LEGACY_PUBLIC_TABLES if name in public["tables"] and name not in test["tables"]
+        name
+        for name in LEGACY_PUBLIC_TABLES
+        if allow_legacy and name in public["tables"] and name not in test["tables"]
     }
     allowed_public_enums = {
-        name for name in LEGACY_PUBLIC_ENUMS if name in public["enums"] and name not in test["enums"]
+        name for name in LEGACY_PUBLIC_ENUMS if allow_legacy and name in public["enums"] and name not in test["enums"]
     }
     ignored_audit = before_bridge and AUDIT_TABLE not in public["tables"] and AUDIT_TABLE in test["tables"]
+    recognized_reconciliations = _planned_reconciliations(public, test) if allow_reconciliation else {}
+    planned_reconciliations: dict[str, Any] = {}
+    for name, pair in recognized_reconciliations.items():
+        if name == "bot_actions.agent_task_id FK":
+            source_index, target_index = pair["constraint"]
+            planned_reconciliations[name] = {
+                "change": RECONCILIATION_LABELS[name],
+                "source": {"constraint": public["constraints"]["bot_actions"][source_index]},
+                "target": {"constraint": test["constraints"]["bot_actions"][target_index]},
+            }
+        else:
+            source_constraint, target_constraint = pair["constraint"]
+            source_index, target_index = pair["index"]
+            planned_reconciliations[name] = {
+                "change": RECONCILIATION_LABELS[name],
+                "source": {
+                    "constraint": public["constraints"]["tenant_channels"][source_constraint],
+                    "index": public["indexes"]["tenant_channels"][source_index],
+                },
+                "target": {
+                    "constraint": test["constraints"]["tenant_channels"][target_constraint],
+                    "index": test["indexes"]["tenant_channels"][target_index],
+                },
+            }
 
     differences: dict[str, Any] = {}
     if model_tables is not None:
@@ -494,7 +639,7 @@ def compare(
         extra = sorted(test_application_tables - model_tables)
         if missing or extra:
             differences["test_schema_model_tables"] = {"missing": missing, "extra": extra}
-    allowed = _allowed_legacy_public_difference(public, test, before_bridge)
+    allowed = _allowed_legacy_public_difference(public, test, before_bridge, allow_legacy)
     index_name_mismatches: list[str] = []
     for category in ("tables", "enums", "sequences", "functions"):
         left, right = public[category], test[category]
@@ -505,17 +650,18 @@ def compare(
             ignore_left |= allowed_public_tables
             if ignored_audit:
                 ignore_right.add(AUDIT_TABLE)
-        if category == "enums":
+        if category == "enums" and allow_legacy:
             ignore_left |= allowed_public_enums
         if category == "functions":
             if ignored_audit:
                 ignore_right.add(AUDIT_FUNCTION)
-            public_legacy_trigger_functions = {
-                item["function"] for item in public["triggers"] if item["table"] in allowed_public_tables
-            }
-            for name in public_legacy_trigger_functions:
-                if name not in test["functions"]:
-                    ignore_left.add(name)
+            if allow_legacy:
+                public_legacy_trigger_functions = {
+                    item["function"] for item in public["triggers"] if item["table"] in allowed_public_tables
+                }
+                for name in public_legacy_trigger_functions:
+                    if name not in test["functions"]:
+                        ignore_left.add(name)
         if category == "sequences" and ignored_audit:
             ignore_right |= {name for name, item in right.items() if item["owner"] and item["owner"][0] == AUDIT_TABLE}
         delta = _as_set_delta(names_left - ignore_left, names_right - ignore_right)
@@ -529,7 +675,7 @@ def compare(
                 equal = left_semantic == right_semantic
             if not equal:
                 changed[name] = {"public": left_value, "test_schema": right_value}
-        if category == "enums":
+        if category == "enums" and allow_legacy:
             for enum_name in LEGACY_ORDERED_ENUMS:
                 if enum_name in changed and set(changed[enum_name]["public"]) == set(changed[enum_name]["test_schema"]):
                     changed.pop(enum_name)
@@ -557,6 +703,9 @@ def compare(
                 if any(column_delta.values()) or column_changed:
                     changed[table] = {**column_delta, "changed": column_changed}
             elif category == "indexes":
+                if allow_reconciliation and table == "tenant_channels":
+                    pair = recognized_reconciliations.get("tenant_channels UNIQUE", {}).get("index")
+                    left, right = _remove_pair(left, right, pair)
                 left_semantic = [{key: value for key, value in item.items() if key != "name"} for item in left]
                 right_semantic = [{key: value for key, value in item.items() if key != "name"} for item in right]
                 left_semantic.sort(key=lambda item: json.dumps(item, sort_keys=True))
@@ -569,6 +718,22 @@ def compare(
                 if category == "constraints":
                     # Constraint names vary between historical DDL and metadata
                     # create_all. Compare full semantics while ignoring names.
+                    if (
+                        allow_reconciliation
+                        and table == "bot_actions"
+                        and "bot_actions.agent_task_id FK" in recognized_reconciliations
+                    ):
+                        left, right = _remove_pair(
+                            left, right, recognized_reconciliations["bot_actions.agent_task_id FK"]["constraint"]
+                        )
+                    if (
+                        allow_reconciliation
+                        and table == "tenant_channels"
+                        and "tenant_channels UNIQUE" in recognized_reconciliations
+                    ):
+                        left, right = _remove_pair(
+                            left, right, recognized_reconciliations["tenant_channels UNIQUE"]["constraint"]
+                        )
                     left = sorted(left, key=lambda item: json.dumps(item, sort_keys=True))
                     right = sorted(right, key=lambda item: json.dumps(item, sort_keys=True))
                 if left != right:
@@ -578,7 +743,8 @@ def compare(
 
     public_triggers = public["triggers"]
     test_triggers = test["triggers"]
-    public_triggers = [item for item in public_triggers if item["table"] not in allowed_public_tables]
+    if allow_legacy:
+        public_triggers = [item for item in public_triggers if item["table"] not in allowed_public_tables]
     if ignored_audit:
         test_triggers = [
             item for item in test_triggers if not (item["table"] == AUDIT_TABLE and item["name"] in AUDIT_TRIGGERS)
@@ -617,6 +783,7 @@ def compare(
     return {
         "status": "DRIFT" if differences else "PASS",
         "allowed_differences": allowed,
+        "planned_reconciliations": planned_reconciliations,
         "differences": differences,
     }
 
@@ -626,7 +793,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--before-bridge",
         action="store_true",
-        help="allow public to lack only the action audit table, its two triggers, and guard function",
+        help="allow the two explicit model reconciliations and public to lack only action-audit bridge objects",
+    )
+    parser.add_argument(
+        "--strict-legacy", action="store_true", help="require historical public objects and enum order to match"
     )
     args = parser.parse_args(argv)
 
@@ -669,6 +839,8 @@ def main(argv: list[str] | None = None) -> int:
                 test_catalog,
                 before_bridge=args.before_bridge,
                 model_tables=model_tables,
+                allow_reconciliation=args.before_bridge,
+                allow_legacy=not args.strict_legacy,
             )
     except Exception as exc:
         # Keep connection strings, SQL values and application data out of output.

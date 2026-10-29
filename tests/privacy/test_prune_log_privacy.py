@@ -10,6 +10,7 @@ import ast
 import logging
 import sys
 import unittest
+from functools import partial
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
@@ -29,6 +30,8 @@ def module_with(**values):
 def load_prune():
     path = ROOT / "app/jobs/handlers.py"
     tree = ast.parse(path.read_text())
+    implementation = ast.parse((ROOT / "app/jobs/job_handlers/prune.py").read_text())
+    tree.body = [node for node in tree.body if getattr(node, "name", None) != "handle_prune"] + implementation.body
     names = {"handle_prune", "_log_id"}
     nodes = [
         node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names
@@ -48,7 +51,15 @@ def load_prune():
     logger = logging.getLogger("isolated_prune_log_privacy")
     namespace = {"Any": Any, "logger": logger, "_error_kind": classifier_namespace["classify_error"]}
     exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), str(path), "exec"), namespace)
-    return namespace["handle_prune"], logger
+    return (
+        partial(
+            namespace["handle_prune"],
+            logger=logger,
+            log_id=namespace["_log_id"],
+            error_kind=classifier_namespace["classify_error"],
+        ),
+        logger,
+    )
 
 
 class FieldDouble:
@@ -107,6 +118,7 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                 Job=job,
                 CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=self.sweep)),
                 AIAnalytics=SimpleNamespace(objects=SimpleNamespace(delete_expired=self.expire)),
+                ActionAuditEvent=SimpleNamespace(objects=SimpleNamespace(delete_expired=AsyncMock(return_value=0))),
             ),
         }
         patcher = patch.dict(sys.modules, modules)
@@ -131,7 +143,14 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assert_private(logs, 31, "runtime_error")
         self.assertEqual(
             result,
-            {"deleted": 0, "staged_deleted": 0, "staged_days": 9, "analytics_deleted": 4, "retention_months": 1},
+            {
+                "deleted": 0,
+                "staged_deleted": 0,
+                "staged_days": 9,
+                "analytics_deleted": 4,
+                "retention_months": 1,
+                "action_audit_deleted": 0,
+            },
         )
         self.sweep.assert_awaited_once_with(self.session, 9)
         self.session.close.assert_awaited_once_with()
@@ -171,7 +190,14 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             result = await self.prune({"job_id": 31})
         self.assertEqual(
             result,
-            {"deleted": 0, "staged_deleted": 3, "staged_days": 7, "analytics_deleted": 4, "retention_months": 1},
+            {
+                "deleted": 0,
+                "staged_deleted": 3,
+                "staged_days": 7,
+                "analytics_deleted": 4,
+                "retention_months": 1,
+                "action_audit_deleted": 0,
+            },
         )
         self.sweep.assert_awaited_once_with(self.session, 7)
         self.session.close.assert_awaited_once_with()

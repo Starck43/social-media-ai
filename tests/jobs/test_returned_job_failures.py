@@ -13,8 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from source_import_isolation import load_isolated_source
-
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 from tests.shared.job_catalog_double import run_with_job_catalog
 
 ROOT = Path(__file__).resolve().parents[2]

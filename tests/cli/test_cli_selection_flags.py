@@ -21,7 +21,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 MAIN = ROOT / "cli" / "commands" / "tasks.py"
 COLLECT = ROOT / "cli" / "commands" / "collect.py"
-WRITER_MODULE = ROOT / "app" / "models" / "managers" / "agent_task_manager.py"
+WRITER_MODULE = ROOT / "app" / "models" / "managers" / "task_inputs.py"
 
 
 def _tree(path):

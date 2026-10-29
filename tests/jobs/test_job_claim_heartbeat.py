@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from source_import_isolation import load_isolated_source
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 CLAIMS = load_isolated_source("_heartbeat_claims", ROOT / "app/jobs/claim_outcomes.py")
@@ -114,10 +114,24 @@ class Session:
 class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.claim = CLAIMS.JobClaim(7, 31, "learn", None, 2, NOW)
-        self.row = dict(id=7, tenant_id=31, job_type="learn", agent_task_id=None, status="running",
-                        attempts=2, started_at=NOW, locked_at=NOW, updated_at=NOW, max_attempts=3,
-                        result={"retained": True}, error="retained", llm_cost=1.25, run_at=NOW,
-                        finished_at=None, payload={"opaque": True})
+        self.row = dict(
+            id=7,
+            tenant_id=31,
+            job_type="learn",
+            agent_task_id=None,
+            status="running",
+            attempts=2,
+            started_at=NOW,
+            locked_at=NOW,
+            updated_at=NOW,
+            max_attempts=3,
+            result={"retained": True},
+            error="retained",
+            llm_cost=1.25,
+            run_at=NOW,
+            finished_at=None,
+            payload={"opaque": True},
+        )
         self.tenant = ContextVar("test_tenant", default=31)
         self.bypass = ContextVar("test_bypass", default=False)
         self.committed = False
@@ -127,19 +141,39 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
         self.query = None
         self.session = Session(self)
         self.factory = Mock(return_value=self.session)
-        self.model = type("JobModel", (), {key: Column(key) for key in [
-            "id", "tenant_id", "job_type", "agent_task_id", "status", "attempts", "started_at", "updated_at", "locked_at"
-        ]})
+        self.model = type(
+            "JobModel",
+            (),
+            {
+                key: Column(key)
+                for key in [
+                    "id",
+                    "tenant_id",
+                    "job_type",
+                    "agent_task_id",
+                    "status",
+                    "attempts",
+                    "started_at",
+                    "updated_at",
+                    "locked_at",
+                ]
+            },
+        )
         imports = {
             "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseManager),
-            **dict.fromkeys(('app.models.job', 'app.models.scheduling.job'), SimpleNamespace(Job=self.model)),
-            "sqlalchemy": SimpleNamespace(update=Update, func=SimpleNamespace(greatest=lambda column, stamp: ("greatest", column, stamp))),
+            **dict.fromkeys(("app.models.job", "app.models.scheduling.job"), SimpleNamespace(Job=self.model)),
+            "sqlalchemy": SimpleNamespace(
+                update=Update, func=SimpleNamespace(greatest=lambda column, stamp: ("greatest", column, stamp))
+            ),
             "app.core.database": SimpleNamespace(async_session_maker=self.factory),
-            "app.core.tenant_context": SimpleNamespace(TenantContextError=TenantContextError,
-                current_tenant_id=self.tenant.get, is_bypass=self.bypass.get),
+            "app.core.tenant_context": SimpleNamespace(
+                TenantContextError=TenantContextError, current_tenant_id=self.tenant.get, is_bypass=self.bypass.get
+            ),
             "app.jobs.claim_outcomes": SimpleNamespace(JobClaim=CLAIMS.JobClaim),
         }
-        self.module = load_isolated_source("app.models.managers._heartbeat_check", ROOT / "app/models/managers/job_manager.py", imports)
+        self.module = load_isolated_source(
+            "app.models.managers._heartbeat_check", ROOT / "app/models/managers/job_manager.py", imports
+        )
         self.manager = self.module.JobManager()
 
     async def test_matching_claim_renews_only_lease_after_commit(self):
@@ -162,16 +196,30 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_full_claim_and_running_predicates_are_in_atomic_update(self):
         await self.manager.renew_claim(self.claim, now=NOW)
-        self.assertEqual(self.query.criteria, [
-            ("id", 7), ("tenant_id", 31), ("job_type", "learn"), ("agent_task_id", None),
-            ("status", "running"), ("attempts", 2), ("started_at", NOW),
-        ])
+        self.assertEqual(
+            self.query.criteria,
+            [
+                ("id", 7),
+                ("tenant_id", 31),
+                ("job_type", "learn"),
+                ("agent_task_id", None),
+                ("status", "running"),
+                ("attempts", 2),
+                ("started_at", NOW),
+            ],
+        )
         self.assertIs(self.query.returned, self.model.id)
 
     async def test_each_changed_identity_or_status_prevents_renewal(self):
-        for key, value in [("id", 8), ("tenant_id", 99), ("job_type", "collect"),
-                           ("agent_task_id", 9), ("status", "pending"), ("attempts", 3),
-                           ("started_at", NOW + timedelta(seconds=1))]:
+        for key, value in [
+            ("id", 8),
+            ("tenant_id", 99),
+            ("job_type", "collect"),
+            ("agent_task_id", 9),
+            ("status", "pending"),
+            ("attempts", 3),
+            ("started_at", NOW + timedelta(seconds=1)),
+        ]:
             with self.subTest(field=key):
                 self.setUp()
                 self.row[key] = value

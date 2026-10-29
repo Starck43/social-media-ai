@@ -12,13 +12,13 @@ Provides aggregated metrics for dashboard and admin panels:
 import logging
 import math
 from collections import Counter, defaultdict
-from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from app.models import AIAnalytics
 from app.services.ai.analysis_render import first_analysis_value
 from app.services.ai.chain_resolver import human_chain_label
+from app.services.ai.report_scope import ReportScope, normalize_digest_axis, sentiment_bucket
 from app.types import MediaType, PeriodType
 from app.utils.enum_helpers import get_enum_value
 
@@ -28,57 +28,6 @@ logger = logging.getLogger(__name__)
 SENTIMENT_FILTERS = ("positive", "neutral", "negative")
 MEDIA_FILTERS = ("text", "image", "video")
 REMOVED_GROUPING_AXES = frozenset({"sentiment", "content_type"})
-
-
-def sentiment_bucket(score: Any) -> str | None:
-    """Canonical buckets: >0.6 positive, <0.4 negative, boundaries neutral.
-
-    Missing/non-numeric/non-finite values have no bucket, never fake neutrality.
-    """
-    if score is None or isinstance(score, bool):
-        return None
-    try:
-        score = float(score)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(score):
-        return None
-    return "positive" if score > 0.6 else "negative" if score < 0.4 else "neutral"
-
-
-@dataclass(frozen=True)
-class ReportScope:
-    """One immutable scope shared by every digest report section (AUD-07).
-
-    Before it, the digest's top-level aggregates read a ``today - days`` window
-    with no upper bound, no base-row-kind filter and no source/scenario
-    selection, while the brief applied its own filters — so the rendered
-    sections could disagree, a day report leaked yesterday/future rows and
-    saved WEEK/MONTH rollups re-entered later sums.
-    """
-
-    start: date  # inclusive
-    end: date  # inclusive
-    source_ids: Optional[frozenset] = None  # None = the whole workspace
-    scenario_id: Optional[int] = None
-    tenant_id: Optional[int] = None  # narrow-only, same rule as _analytics_query
-    base_period_type: PeriodType = PeriodType.DAY
-
-    @property
-    def days(self) -> int:
-        """Window length in days; matches period_bounds for digest periods."""
-        return (self.end - self.start).days + 1
-
-    def previous(self) -> "ReportScope":
-        """The same-shaped window immediately before this one (never overlapping)."""
-        prev_end = self.start - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=self.days - 1)
-        return replace(self, start=prev_start, end=prev_end)
-
-
-def normalize_digest_axis(group_by: str | None) -> str:
-    """Compatibility for saved tasks; public grouping APIs reject old axes."""
-    return "themes" if not group_by or group_by in REMOVED_GROUPING_AXES else group_by
 
 
 class ReportAggregator:
@@ -224,10 +173,16 @@ class ReportAggregator:
         return await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
 
     async def get_grouped_analytics(
-        self, axis: str = "themes", days: int | None = 7,
-        source_id: int | None = None, tenant_id: int | None = None,
-        chain_id: str | None = None, time_breakdown: bool = False,
-        entity_type: str | None = None, sentiment: str | None = None, media: str | None = None,
+        self,
+        axis: str = "themes",
+        days: int | None = 7,
+        source_id: int | None = None,
+        tenant_id: int | None = None,
+        chain_id: str | None = None,
+        time_breakdown: bool = False,
+        entity_type: str | None = None,
+        sentiment: str | None = None,
+        media: str | None = None,
     ) -> dict[str, Any]:
         """Token-free grouping over the scoped, inclusive reporting window."""
         from app.services.ai.grouping import group_analytics
@@ -237,11 +192,17 @@ class ReportAggregator:
         rows = await self._analytics_query(days=days, source_id=source_id, tenant_id=tenant_id)
         today = date.today()
         lower = today - timedelta(days=days - 1) if days is not None else None
-        rows = [row for row in rows if row.analysis_date is not None and row.analysis_date <= today
-                and (lower is None or row.analysis_date >= lower)
-                and (chain_id is None or row.topic_chain_id == chain_id)]
-        return await group_analytics(rows, axis, time_breakdown=time_breakdown,
-                                     entity_type=entity_type, sentiment=sentiment, media=media)
+        rows = [
+            row
+            for row in rows
+            if row.analysis_date is not None
+            and row.analysis_date <= today
+            and (lower is None or row.analysis_date >= lower)
+            and (chain_id is None or row.topic_chain_id == chain_id)
+        ]
+        return await group_analytics(
+            rows, axis, time_breakdown=time_breakdown, entity_type=entity_type, sentiment=sentiment, media=media
+        )
 
     async def get_sentiment_trends(
         self,
@@ -1381,7 +1342,9 @@ class ReportAggregator:
     def _specialized_sections(cls):
         return [(name, label, method) for name, (label, method) in cls.DIGEST_SPECIALIZED.items()]
 
-    async def _brief_base_group(self, analytics, axis: str = "themes", time_breakdown: bool = False, entity_type: str | None = None) -> list[str]:
+    async def _brief_base_group(
+        self, analytics, axis: str = "themes", time_breakdown: bool = False, entity_type: str | None = None
+    ) -> list[str]:
         """Group the period's analytics by axis into markdown lines."""
         from app.services.ai.grouping import group_analytics
         from app.types.enums.bot_types import GroupingAxis
@@ -1390,7 +1353,9 @@ class ReportAggregator:
             result = await group_analytics(analytics, axis, time_breakdown=time_breakdown, entity_type=entity_type)
         except ValueError:
             # Invalid axis — fall back to themes
-            result = await group_analytics(analytics, GroupingAxis.THEMES, time_breakdown=time_breakdown, entity_type=entity_type)
+            result = await group_analytics(
+                analytics, GroupingAxis.THEMES, time_breakdown=time_breakdown, entity_type=entity_type
+            )
 
         return self._render_grouped_result(result)
 
@@ -1893,7 +1858,11 @@ class ReportAggregator:
                     # Track the most recent analysis that mentioned this entity,
                     # so the widget can link to it.
                     if a.id is not None:
-                        if key not in latest_analysis_id or (a.analysis_date and latest_analysis_date.get(key) and a.analysis_date >= latest_analysis_date[key]):
+                        if key not in latest_analysis_id or (
+                            a.analysis_date
+                            and latest_analysis_date.get(key)
+                            and a.analysis_date >= latest_analysis_date[key]
+                        ):
                             latest_analysis_id[key] = a.id
                             latest_analysis_date[key] = a.analysis_date
 

@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.models import LLMModel
 from app.services.ai.cache_pricing import cache_price_usd, model_pricing_token_unit, normalize_cache_usage
 from app.services.ai.json_schema_builder import validate_with_pydantic
+from app.services.ai.response_cost import _num, extract_cost_info
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ async def _personal_admission(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Reserve one trusted provider envelope before HTTP when personal billing is active."""
     from app.services.ai.personal_dispatch import validate_personal_dispatch
+
     await validate_personal_dispatch(client)
     if not settings.PERSONAL_BILLING_ENABLED:
         return None, None
@@ -255,8 +257,8 @@ def _eligible_text_model(m: LLMModel, allowed_types: Optional[set[str]]) -> bool
     """
     from app.core.personal_catalog_context import current_catalog_owner_id
     from app.services.ai.personal_catalog import eligible_chat_model
-    return eligible_chat_model(m, user_id=current_catalog_owner_id(), allowed_types=allowed_types)
 
+    return eligible_chat_model(m, user_id=current_catalog_owner_id(), allowed_types=allowed_types)
 
 
 def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
@@ -301,6 +303,7 @@ async def _allowed_model_types() -> Optional[set[str]]:
 class LLMClient(ABC):
     def __init__(self, model: LLMModel):
         from app.core.personal_catalog_context import assert_catalog_model
+
         assert_catalog_model(model)
         self.provider = model.provider
         self.model = model
@@ -345,11 +348,7 @@ class LLMClient(ABC):
             # A claimed but unusable provider total (non-USD, malformed, out of
             # range) is unresolved spend. Publishing 0.0 here let a paid call
             # count as free everywhere the legacy `cost` key is read.
-            amount = (
-                float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
-                if reported is not None
-                else None
-            )
+            amount = float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP)) if reported is not None else None
             return {
                 "prompt_tokens": int(prompt_tokens or 0),
                 "completion_tokens": int(completion_tokens or 0),
@@ -424,7 +423,13 @@ class LLMClient(ABC):
         messages and media. Unknown accounting is explicit, never numeric zero.
         Successful provider content is intentionally unaffected.
         """
-        if code not in {"timeout", "http_error", "transport_error", "provider_request_failed", "invalid_structured_output"}:
+        if code not in {
+            "timeout",
+            "http_error",
+            "transport_error",
+            "provider_request_failed",
+            "invalid_structured_output",
+        }:
             code = "provider_request_failed"
         log = logger.warning if code == "invalid_structured_output" else logger.error
         log("LLM analyze failed: %s", code)
@@ -501,9 +506,9 @@ class LLMClient(ABC):
                     "prompt_tokens": prompt,
                     "completion_tokens": completion,
                     "total_tokens": prompt + completion,
-                    "cost": float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
-                    if reported is not None
-                    else 0.0,
+                    "cost": (
+                        float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP)) if reported is not None else 0.0
+                    ),
                     "cost_source": "provider" if reported is not None else "flat_tariff_estimate",
                     "cost_is_estimate": reported is None,
                 }
@@ -696,7 +701,9 @@ class OpenAICompatibleClient(LLMClient):
                 response = self._parse_chat(data)
             except Exception:
                 response, parse_error = {
-                    "content": "", "tool_calls": [], "usage": self._usage_block_for_response(0, 0, data)
+                    "content": "",
+                    "tool_calls": [],
+                    "usage": self._usage_block_for_response(0, 0, data),
                 }, True
             response["_personal_dispatch_id"] = dispatch_id
             await _observe_personal_outcome(
@@ -707,7 +714,9 @@ class OpenAICompatibleClient(LLMClient):
             )
             await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             if isinstance(diagnostic, dict):
-                diagnostic.update(stage="complete", accounting_status="confirmed" if receipt is not None else "standard")
+                diagnostic.update(
+                    stage="complete", accounting_status="confirmed" if receipt is not None else "standard"
+                )
             return response
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
@@ -782,9 +791,7 @@ class OpenAICompatibleClient(LLMClient):
                 {"id": tc.get("id") or fn.get("name", ""), "name": fn.get("name", ""), "arguments": parsed}
             )
         usage = data.get("usage") or {}
-        block = self._usage_block_for_response(
-            usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data
-        )
+        block = self._usage_block_for_response(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data)
         block["total_tokens"] = usage.get("total_tokens", 0) or block["total_tokens"]
         return {
             "content": msg.get("content"),
@@ -958,7 +965,9 @@ class AnthropicClient(LLMClient):
                 response = self._parse_chat(data)
             except Exception:
                 response, parse_error = {
-                    "content": "", "tool_calls": [], "usage": self._usage_block_for_response(0, 0, data)
+                    "content": "",
+                    "tool_calls": [],
+                    "usage": self._usage_block_for_response(0, 0, data),
                 }, True
             response["_personal_dispatch_id"] = dispatch_id
             await _observe_personal_outcome(
@@ -1000,9 +1009,7 @@ class AnthropicClient(LLMClient):
         return {
             "content": "\n".join(content_parts) or None,
             "tool_calls": tool_calls,
-            "usage": self._usage_block_for_response(
-                usage.get("input_tokens", 0), usage.get("output_tokens", 0), data
-            ),
+            "usage": self._usage_block_for_response(usage.get("input_tokens", 0), usage.get("output_tokens", 0), data),
             "finish_reason": data.get("stop_reason"),
             "raw": data,
         }
@@ -1156,7 +1163,9 @@ class CustomClient(LLMClient):
                 }
             except Exception:
                 response, parse_error = {
-                    "content": "", "tool_calls": [], "usage": self._usage_block_for_response(0, 0, data)
+                    "content": "",
+                    "tool_calls": [],
+                    "usage": self._usage_block_for_response(0, 0, data),
                 }, True
             response["_personal_dispatch_id"] = dispatch_id
             await _observe_personal_outcome(
@@ -1278,9 +1287,13 @@ async def journal_chat_attempt(
 
 
 async def chat_with_fallback(
-    messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None,
-    preferred_model: Optional[LLMModel] = None, *, budget: Optional[float] = None,
-    failures: Optional[list[dict[str, Any]]] = None, **kwargs
+    messages: list[dict[str, Any]],
+    tools: Optional[list[dict[str, Any]]] = None,
+    preferred_model: Optional[LLMModel] = None,
+    *,
+    budget: Optional[float] = None,
+    failures: Optional[list[dict[str, Any]]] = None,
+    **kwargs,
 ) -> Optional[dict[str, Any]]:
     """One chat turn across the eligible fleet: the preferred model first, then the rest.
 
@@ -1311,12 +1324,14 @@ async def chat_with_fallback(
     text_models = [m for m in models if _eligible_text_model(m, allowed_types)]
     if not text_models and allowed_types is not None:
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
-    text_models.sort(key=lambda m: (
-        m.id != getattr(preferred_model, "id", None),
-        -_model_proven_score(m),
-        -_model_last_seen(m),
-        default_model_sort_key(m),
-    ))
+    text_models.sort(
+        key=lambda m: (
+            m.id != getattr(preferred_model, "id", None),
+            -_model_proven_score(m),
+            -_model_last_seen(m),
+            default_model_sort_key(m),
+        )
+    )
 
     last_err: Optional[Exception] = None
     blocked_paid = False
@@ -1348,7 +1363,9 @@ async def chat_with_fallback(
                 raise
             if not _chat_response_usable(response):
                 reason = _empty_reply_reason(response)
-                logger.warning("%s/%s returned an empty reply (%s), trying next", model.provider.name, model.model_id, reason)
+                logger.warning(
+                    "%s/%s returned an empty reply (%s), trying next", model.provider.name, model.model_id, reason
+                )
                 _record_failure(failures, model, reason, limit=getattr(model, "max_tokens", None))
                 last_err = RuntimeError(f"empty_reply:{reason}")
                 continue
@@ -1391,13 +1408,10 @@ async def chat_with_fallback(
 
 def _model_price_floor(model: LLMModel) -> float:
     """Return a comparable USD/1M tariff signal, including configured cache rates."""
-    from app.services.ai.cache_pricing import canonical_decimal, model_pricing_token_unit, CACHE_RATE_FIELDS
+    from app.services.ai.cache_pricing import CACHE_RATE_FIELDS, canonical_decimal, model_pricing_token_unit
 
     unit = model_pricing_token_unit(model)
-    ordinary = [
-        canonical_decimal(getattr(model, field, None))
-        for field in ("input_cost_per_1k", "output_cost_per_1k")
-    ]
+    ordinary = [canonical_decimal(getattr(model, field, None)) for field in ("input_cost_per_1k", "output_cost_per_1k")]
     prices = [float(rate * Decimal(1_000_000) / unit) for rate in ordinary if rate is not None]
     prices.extend(
         float(rate)
@@ -1557,85 +1571,3 @@ def _try_json(text: str) -> dict[str, Any]:
     except (json.JSONDecodeError, TypeError):
         return {"analysis": text}
     return parsed if isinstance(parsed, dict) else {"analysis": text}
-
-
-def _num(value: Any) -> Optional[float]:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        s = value.strip().replace("$", "").replace("USD", "").strip().lower()
-        try:
-            return float(s)
-        except ValueError:
-            return None
-    return None
-
-
-def extract_cost_info(raw_response: Any) -> dict[str, Any]:
-    """Extract token usage and reported dollar costs from a raw LLM API response.
-
-    Understands OpenAI/Anthropic usage plus common provider cost extensions
-    (OpenRouter `cost`, LiteLLM proxy `prompt_cost`/`completion_cost`/`total_cost`).
-
-    Returns:
-        tokens:      {"input": int, "output": int, "total": int}
-        cost:        {"input": float|None, "output": float|None, "total": float|None}
-        price_per_1k: {"input": float|None, "output": float|None}  (derived from cost/tokens)
-        has_cost_report: bool
-    """
-    empty = {
-        "tokens": {"input": 0, "output": 0, "total": 0},
-        "cost": {"input": None, "output": None, "total": None},
-        "price_per_1k": {"input": None, "output": None},
-        "has_cost_report": False,
-    }
-    if not isinstance(raw_response, dict):
-        return empty
-
-    usage = raw_response.get("usage")
-    if not isinstance(usage, dict) or not usage:
-        # Some providers report cost at the top level of the response
-        if _num(raw_response.get("total_cost")) is not None or _num(raw_response.get("cost")) is not None:
-            return {
-                "tokens": {"input": 0, "output": 0, "total": 0},
-                "cost": {
-                    "input": None,
-                    "output": None,
-                    "total": _num(raw_response.get("total_cost") or raw_response.get("cost")),
-                },
-                "price_per_1k": {"input": None, "output": None},
-                "has_cost_report": True,
-            }
-        return empty
-
-    input_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-    output_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
-
-    input_cost = _num(usage.get("prompt_cost") or usage.get("input_cost"))
-    output_cost = _num(usage.get("completion_cost") or usage.get("output_cost"))
-    total_cost = _num(usage.get("total_cost") or usage.get("cost"))
-    if total_cost is None:
-        total_cost = _num(raw_response.get("total_cost") or raw_response.get("cost"))
-
-    has_report = any(v is not None for v in (input_cost, output_cost, total_cost))
-
-    def per_1k(cost: Optional[float], tokens: int) -> Optional[float]:
-        if cost is None or tokens <= 0:
-            return None
-        return round(cost / tokens * 1000, 10)
-
-    return {
-        "tokens": {
-            "input": input_tokens,
-            "output": output_tokens,
-            "total": input_tokens + output_tokens,
-        },
-        "cost": {"input": input_cost, "output": output_cost, "total": total_cost},
-        "price_per_1k": {
-            "input": per_1k(input_cost, input_tokens),
-            "output": per_1k(output_cost, output_tokens),
-        },
-        "has_cost_report": has_report,
-    }

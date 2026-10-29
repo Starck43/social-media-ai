@@ -20,7 +20,7 @@ from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
 from app.jobs.claim_outcomes import JobClaim
 from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX, outcome_unconfirmed
 from app.models import AgentTask, Job, Tenant
-from app.models.managers import job_manager as manager_module
+from app.models.managers import job_lifecycle as manager_module
 from app.models.managers.job_manager import JobManager
 
 pytestmark = pytest.mark.tenancy
@@ -40,9 +40,9 @@ async def workspaces(monkeypatch):
     tenants = []
     try:
         for _ in range(2):
-            tenants.append(await Tenant.objects.create(
-                name="Stale reap test", slug=f"stale-reap-{uuid4().hex}", plan="business"
-            ))
+            tenants.append(
+                await Tenant.objects.create(name="Stale reap test", slug=f"stale-reap-{uuid4().hex}", plan="business")
+            )
         yield tenants
     finally:
         for tenant in reversed(tenants):
@@ -54,10 +54,17 @@ async def workspaces(monkeypatch):
 async def make_job(tenant, *, status="running", locked_at=STALE, task=None, attempts=2):
     with tenant_scope(tenant.id):
         return await Job.objects.create(
-            job_type="learn", payload={"test": "stale-reap"}, run_at=NOW,
-            status=status, locked_at=locked_at, started_at=STALE,
-            attempts=attempts, max_attempts=3, result={"audit": "retained"},
-            error="retained_error", llm_cost=None,
+            job_type="learn",
+            payload={"test": "stale-reap"},
+            run_at=NOW,
+            status=status,
+            locked_at=locked_at,
+            started_at=STALE,
+            attempts=attempts,
+            max_attempts=3,
+            result={"audit": "retained"},
+            error="retained_error",
+            llm_cost=None,
             agent_task_id=None if task is None else task.id,
         )
 
@@ -68,8 +75,13 @@ TRIGGERED = STALE - timedelta(minutes=1)
 async def make_task(tenant, *, last_run_at=TRIGGERED, last_status="queued", last_error=None):
     with tenant_scope(tenant.id), service_permission_scope("agenttask", "create"):
         return await AgentTask.objects.create(
-            name=f"stale-reap-{uuid4().hex}", cron_expr="@once", job_type="learn", is_active=False,
-            last_run_at=last_run_at, last_status=last_status, last_error=last_error,
+            name=f"stale-reap-{uuid4().hex}",
+            cron_expr="@once",
+            job_type="learn",
+            is_active=False,
+            last_run_at=last_run_at,
+            last_status=last_status,
+            last_error=last_error,
         )
 
 
@@ -100,14 +112,17 @@ async def test_reap_is_tenant_scoped_and_preserves_attempt_evidence(workspaces):
         assert await JobManager().reap_stale() == 0
 
 
-@pytest.mark.parametrize("status,lease", [
-    ("running", NOW - timedelta(minutes=30)),
-    ("running", NOW),
-    ("running", None),
-    ("pending", STALE),
-    ("done", STALE),
-    ("failed", STALE),
-])
+@pytest.mark.parametrize(
+    "status,lease",
+    [
+        ("running", NOW - timedelta(minutes=30)),
+        ("running", NOW),
+        ("running", None),
+        ("pending", STALE),
+        ("done", STALE),
+        ("failed", STALE),
+    ],
+)
 async def test_fresh_boundary_null_and_nonrunning_rows_are_unchanged(workspaces, status, lease):
     own = workspaces[0]
     job = await make_job(own, status=status, locked_at=lease)
@@ -229,16 +244,23 @@ async def test_renewal_and_reaper_follow_committed_order_on_independent_connecti
 async def lock_waiters():
     """Backends blocked on a row lock while updating jobs (observer session only)."""
     async with async_session_maker() as observer:
-        return (await observer.execute(text(
-            "select count(*) from pg_stat_activity where datname = current_database() "
-            "and wait_event_type = 'Lock' and query ilike 'update%jobs%'"
-        ))).scalar_one()
+        return (
+            await observer.execute(
+                text(
+                    "select count(*) from pg_stat_activity where datname = current_database() "
+                    "and wait_event_type = 'Lock' and query ilike 'update%jobs%'"
+                )
+            )
+        ).scalar_one()
 
 
-@pytest.mark.parametrize("replacement", [
-    {"status": "done", "finished_at": NOW},
-    {"locked_at": NOW},
-])
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        {"status": "done", "finished_at": NOW},
+        {"locked_at": NOW},
+    ],
+)
 async def test_reap_does_not_overwrite_concurrent_completion_or_heartbeat(workspaces, replacement):
     own = workspaces[0]
     job = await make_job(own)
@@ -246,9 +268,7 @@ async def test_reap_does_not_overwrite_concurrent_completion_or_heartbeat(worksp
     try:
         async with async_session_maker() as holder:
             async with holder.begin():
-                await holder.execute(
-                    update(Job).where(Job.id == job.id, Job.tenant_id == own.id).values(**replacement)
-                )
+                await holder.execute(update(Job).where(Job.id == job.id, Job.tenant_id == own.id).values(**replacement))
                 with tenant_scope(own.id):
                     manager = JobManager()
                     manager._recovery_scope = lambda model: [*JobManager._recovery_scope(model), model.id == job.id]
@@ -301,11 +321,14 @@ async def test_budget_stop_projects_operational_stop_onto_task(workspaces):
     assert outcome_unconfirmed(summary.last_error) and summary.last_run_at == NOW
 
 
-@pytest.mark.parametrize("newer", [
-    {"last_status": "queued", "last_error": None},
-    {"last_status": "ok", "last_error": None},
-    {"last_status": "failed", "last_error": "newer_failure"},
-])
+@pytest.mark.parametrize(
+    "newer",
+    [
+        {"last_status": "queued", "last_error": None},
+        {"last_status": "ok", "last_error": None},
+        {"last_status": "failed", "last_error": "newer_failure"},
+    ],
+)
 async def test_newer_trigger_or_outcome_on_task_is_not_overwritten(workspaces, newer):
     """An old attempt's quarantine must not hide a run admitted or finished after it started."""
     own = workspaces[0]
@@ -317,7 +340,9 @@ async def test_newer_trigger_or_outcome_on_task_is_not_overwritten(workspaces, n
     assert (await stored(own, job)).status == "failed"
     summary = await stored_task(own, task)
     assert (summary.last_status, summary.last_error, summary.last_run_at) == (
-        newer["last_status"], newer["last_error"], later
+        newer["last_status"],
+        newer["last_error"],
+        later,
     )
 
 

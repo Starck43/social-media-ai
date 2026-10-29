@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 from tests.shared.task_plan_support import ROOT, Query, load_plans, plan
-from tests.source_import_isolation import load_isolated_source
 
 __source_only__ = True
 

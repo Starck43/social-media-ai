@@ -8,15 +8,16 @@ from typing import Any, Optional
 from app.core.analysis_constants import DEFAULT_ANALYSIS_PARAMS
 from app.core.config import settings
 from app.models import AgentScenario, AIAnalytics, LLMModel, Source
-from app.services.ai.chain_resolver import _normalize, _token_set_ratio, resolve_chain_async
+from app.services.ai.analysis_context import analysis_fingerprint
+from app.services.ai.analysis_stats import AnalysisStatsMixin
 from app.services.ai.cache_pricing import CACHE_RATE_FIELDS, cache_price_usd, model_pricing_token_unit
+from app.services.ai.chain_resolver import _normalize, _token_set_ratio, resolve_chain_async
 from app.services.ai.content_classifier import ContentClassifier
 from app.services.ai.dedup import batch_hash, filter_by_context_receipts, hashes_hash, item_hash
-from app.services.ai.analysis_context import analysis_fingerprint
 from app.services.ai.json_schema_builder import build_pydantic_model, validate_with_pydantic
-from app.services.ai.scenario_schema import ScenarioOutputContract, ScenarioSchemaError, compile_scenario_output
 from app.services.ai.llm_client import LLMClientFactory
 from app.services.ai.prompts import PromptBuilder
+from app.services.ai.scenario_schema import ScenarioOutputContract, ScenarioSchemaError, compile_scenario_output
 from app.services.ai.theme_matcher import ThemeMatcher
 from app.types import PeriodType
 from app.types.enums.llm_types import MediaType
@@ -99,7 +100,7 @@ async def _resolve_usage_tariff(entry: dict[str, Any]):
     return rows[0] if len(rows) == 1 else None
 
 
-class AIAnalyzer:
+class AIAnalyzer(AnalysisStatsMixin):
     """
     AI Analyzer with multi-LLM support.
 
@@ -188,8 +189,10 @@ class AIAnalyzer:
             return {
                 **result,
                 "parsed": {},
-                "response": {**(response if isinstance(response, dict) else {}),
-                             "error": "analysis_output_validation_failed"},
+                "response": {
+                    **(response if isinstance(response, dict) else {}),
+                    "error": "analysis_output_validation_failed",
+                },
             }
         return {**result, "parsed": validated}
 
@@ -289,8 +292,11 @@ class AIAnalyzer:
                     agent_scenario = default_sc
                     logger.info(f"Using tenant default scenario '{agent_scenario.name}' for source {source.id}")
             except Exception as error:
-                logger.warning("analysis_context_resolution_failed source_id=%s error_kind=%s", source.id,
-                               _analysis_error_kind(error))
+                logger.warning(
+                    "analysis_context_resolution_failed source_id=%s error_kind=%s",
+                    source.id,
+                    _analysis_error_kind(error),
+                )
                 self.reported_errors += 1
                 return None
 
@@ -340,7 +346,9 @@ class AIAnalyzer:
             errors_before = self.reported_errors
             # Analyze each content type with appropriate LLM
             analysis_results = {}
-            media_coverage_gaps = self._uncovered_media_hashes(None, ContentClassifier.uncovered_attachment_items(content))
+            media_coverage_gaps = self._uncovered_media_hashes(
+                None, ContentClassifier.uncovered_attachment_items(content)
+            )
 
             # Media modalities follow the scenario's configured models: a
             # modality without a configured model is deliberately ignored rather
@@ -389,7 +397,11 @@ class AIAnalyzer:
                     )
                 else:
                     image_result = await self._analyze_images(
-                        classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload,
+                        classified[MediaType.IMAGE.db_value],
+                        agent_scenario,
+                        platform_name,
+                        trigger_config,
+                        task_payload,
                         output_contract=output_contract,
                         billing_execution=billing_execution,
                     )
@@ -397,9 +409,9 @@ class AIAnalyzer:
                         # Preserve request/response usage for existing accounting;
                         # provider failure text is not a semantic analysis result.
                         image_result = {**image_result, "parsed": {}}
-                    media_coverage_gaps.update(self._uncovered_media_hashes(
-                        image_result, classified[MediaType.IMAGE.db_value]
-                    ))
+                    media_coverage_gaps.update(
+                        self._uncovered_media_hashes(image_result, classified[MediaType.IMAGE.db_value])
+                    )
                     if image_result:
                         analysis_results["image_analysis"] = image_result
 
@@ -412,7 +424,11 @@ class AIAnalyzer:
                     )
                 else:
                     video_result = await self._analyze_videos(
-                        classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload,
+                        classified[MediaType.VIDEO.db_value],
+                        agent_scenario,
+                        platform_name,
+                        trigger_config,
+                        task_payload,
                         output_contract=output_contract,
                         billing_execution=billing_execution,
                     )
@@ -420,9 +436,9 @@ class AIAnalyzer:
                         # Preserve request/response usage for existing accounting;
                         # provider failure text is not a semantic analysis result.
                         video_result = {**video_result, "parsed": {}}
-                    media_coverage_gaps.update(self._uncovered_media_hashes(
-                        video_result, classified[MediaType.VIDEO.db_value]
-                    ))
+                    media_coverage_gaps.update(
+                        self._uncovered_media_hashes(video_result, classified[MediaType.VIDEO.db_value])
+                    )
                     if video_result:
                         analysis_results["video_analysis"] = video_result
 
@@ -497,9 +513,8 @@ class AIAnalyzer:
             if isinstance(text_result, dict) and "_submitted_text_hashes" in text_result:
                 submitted = text_result["_submitted_text_hashes"]
                 text_hashes = {item_hash(item) for item in classified[MediaType.TEXT.db_value]}
-                valid = (
-                    type(submitted) is list
-                    and all(type(value) is str and value in text_hashes for value in submitted)
+                valid = type(submitted) is list and all(
+                    type(value) is str and value in text_hashes for value in submitted
                 )
                 omitted = text_hashes - (set(submitted) if valid else set())
                 content_hashes = [value for value in content_hashes if value not in omitted]
@@ -525,8 +540,11 @@ class AIAnalyzer:
                 normalized_label=normalized_label,
                 parent_analysis_id=parent_analysis_id,
                 analysis_date=analysis_date,
-                content_hash=(hashes_hash(content_hashes) if content_hashes else None)
-                if coverage_limited else batch_hash(content),
+                content_hash=(
+                    (hashes_hash(content_hashes) if content_hashes else None)
+                    if coverage_limited
+                    else batch_hash(content)
+                ),
                 content_hashes=content_hashes,
                 coverage_limited=coverage_limited,
                 text_coverage_limited=text_coverage_limited,
@@ -702,7 +720,9 @@ class AIAnalyzer:
             )
             pydantic_model = output_contract.model if output_contract is not None else None
             if output_contract is not None:
-                prompt += "\n\nОтвет должен соответствовать JSON Schema:\n" + json.dumps(output_contract.schema, ensure_ascii=False)
+                prompt += "\n\nОтвет должен соответствовать JSON Schema:\n" + json.dumps(
+                    output_contract.schema, ensure_ascii=False
+                )
             kwargs: dict[str, Any] = {}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
@@ -746,8 +766,12 @@ class AIAnalyzer:
                     result = None
                     continue
                 response = result.get("response") if isinstance(result, dict) else None
-                if (isinstance(result, dict) and isinstance(result.get("parsed"), dict) and result.get("parsed")
-                        and not (isinstance(response, dict) and response.get("error"))):
+                if (
+                    isinstance(result, dict)
+                    and isinstance(result.get("parsed"), dict)
+                    and result.get("parsed")
+                    and not (isinstance(response, dict) and response.get("error"))
+                ):
                     logger.info(f"Text analysis completed using {candidate.name}")
                     break
                 logger.warning(
@@ -764,9 +788,7 @@ class AIAnalyzer:
                 # Keep this local coverage evidence outside parsed output, and
                 # never trust a provider-supplied field with the same name.
                 response = result.get("response")
-                useful = bool(result.get("parsed")) and not (
-                    isinstance(response, dict) and response.get("error")
-                )
+                useful = bool(result.get("parsed")) and not (isinstance(response, dict) and response.get("error"))
                 return {
                     **result,
                     "_submitted_text_hashes": [item_hash(item) for item in selected_text] if useful else [],
@@ -1037,9 +1059,7 @@ class AIAnalyzer:
                         # A pin survives a migration or a hand-edited scenario: it
                         # must still own its provider key, exactly like the
                         # fallback paths below.
-                        and eligible_owned_model(
-                            model, user_id=current_catalog_owner_id(), capabilities={capability}
-                        )
+                        and eligible_owned_model(model, user_id=current_catalog_owner_id(), capabilities={capability})
                     ):
                         logger.info(f"✅ Select model {model.name} (provider: {model.provider.name}) for {media_type}")
                         return model
@@ -1098,146 +1118,6 @@ class AIAnalyzer:
 
         obj = await Platform.objects.get(id=source.platform_id)
         return obj.name
-
-    def _calculate_content_stats(self, content: list[dict], analysis_date: Optional[date] = None) -> dict[str, Any]:
-        """
-        Calculate content statistics including actual post date range.
-
-        Args:
-                content: List of content items
-                analysis_date: Optional analysis date for event-based mode
-        """
-        if not content:
-            return {}
-
-        # Extract basic data
-        texts = [item.get("text", "") for item in content]
-        from app.services.ai.analysis_render import metric_number, safe_original_url
-
-        coverage = {}
-        values = {}
-        for field, key in (("reactions", "total_reactions"), ("comments", "total_comments"), ("views", "total_views")):
-            observed = []
-            known = 0
-            for item in content:
-                metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
-                flags = item.get("metric_availability", metrics.get("metric_availability"))
-                value = metric_number(item.get(field, metrics.get(field)))
-                if value is not None:
-                    observed.append(value)  # Preserve the legacy saved numeric sum.
-                    if not isinstance(flags, dict) or flags.get(field) is True:
-                        known += 1
-            values[field] = sum(observed)
-            coverage[key] = {"known": known, "total": len(content)}
-
-        # Distinct authors: VK items carry from_id/owner_id; Telegram comments a
-        # from_id. Any of these is enough to count an active user.
-        authors: set[str] = set()
-        for item in content:
-            author = item.get("author") if isinstance(item.get("author"), dict) else {}
-            author_id = next(
-                (item[key] for key in ("from_id", "owner_id", "author_id", "user_id") if item.get(key) is not None),
-                author.get("id"),
-            )
-            if author_id is not None:
-                authors.add(str(author_id))
-
-        total_posts = len(content)
-        total_reactions = values["reactions"]
-        total_comments = values["comments"]
-        total_views = values["views"]
-        known_authors = sum(
-            any(item.get(key) is not None for key in ("from_id", "owner_id", "author_id", "user_id"))
-            or (isinstance(item.get("author"), dict) and item["author"].get("id") is not None)
-            for item in content
-        )
-        coverage["active_users"] = {"known": known_authors, "total": total_posts}
-        for key in ("total_posts", "messages_count"):
-            coverage[key] = {"known": total_posts, "total": total_posts}
-        coverage["engagement_rate"] = {
-            "known": min(coverage[key]["known"] for key in ("total_reactions", "total_comments", "total_views")),
-            "total": total_posts,
-        }
-        originals = []
-        for item in content:
-            url = safe_original_url(item.get("permalink") or item.get("url"))
-            if url and url not in originals:
-                originals.append(url)
-
-        # Extract and parse post dates using existing utility
-        post_dates = []
-        for item in content:
-            pub_date = item.get("published_at") or item.get("date") or item.get("created_at")
-            if parsed_date := universal_date_parser(pub_date):
-                post_dates.append(parsed_date)
-
-        # Calculate content date range
-        content_date_range = {}
-        if post_dates:
-            min_date, max_date = min(post_dates), max(post_dates)
-            content_date_range = {
-                "earliest": min_date.isoformat(),
-                "latest": max_date.isoformat(),
-                "span_days": (max_date - min_date).days,
-            }
-
-        # Determine date range for context
-        if analysis_date and post_dates:
-            date_range_dict = {"first": analysis_date.isoformat(), "last": analysis_date.isoformat()}
-        else:
-            # Use actual dates from content (fallback to None if no dates)
-            dates = [item.get("date") for item in content if item.get("date")]
-            date_range_dict = {"first": min(dates) if dates else None, "last": max(dates) if dates else None}
-
-        # Build user activity summary from available data
-        user_activity_summary = ""
-        if authors:
-            user_activity_summary = (
-                f"Активных пользователей: {len(authors)}. "
-                f"Всего постов: {total_posts}, реакций: {total_reactions}, "
-                f"комментариев: {total_comments}"
-            )
-
-        # Calculate all statistics
-        return {
-            "total_posts": total_posts,
-            "metric_coverage": coverage,
-            "original_links": originals[:50],
-            "messages_count": total_posts,
-            "active_users": len(authors),
-            "avg_text_length": sum(len(t) for t in texts) / total_posts if texts else 0,
-            "total_reactions": total_reactions,
-            "total_comments": total_comments,
-            "total_views": total_views,
-            "avg_reactions_per_post": total_reactions / total_posts if total_posts else 0,
-            "avg_comments_per_post": total_comments / total_posts if total_posts else 0,
-            "engagement_rate": (total_reactions + total_comments + total_views) / total_posts if total_posts else 0,
-            "date_range": date_range_dict,  # Context-aware date range
-            "content_date_range": content_date_range,  # Actual post dates
-            "user_activity_summary": user_activity_summary,
-            "liked_posts_count": 0,  # Данные о лайках пользователя недоступны
-            "comments_to_others_count": 0,  # Данные о комментариях к чужим постам недоступны
-        }
-
-    def _make_json_serializable(self, obj):
-        """Recursively convert non-JSON serializable objects to strings/primitives."""
-        from datetime import date, datetime
-        from enum import Enum
-
-        if isinstance(obj, (datetime, date)):
-            return obj.isoformat()
-
-        if isinstance(obj, Enum):
-            # return the database value or name; str(obj) also works if consistent
-            return getattr(obj, "value", obj.name)
-
-        if isinstance(obj, dict):
-            return {k: self._make_json_serializable(v) for k, v in obj.items()}
-
-        if isinstance(obj, (list, tuple, set)):
-            return [self._make_json_serializable(v) for v in obj]
-
-        return obj
 
     #: Scale of AIAnalytics.estimated_cost (USD cents, 6 decimals = 1e-8 USD).
     COST_SCALE = Decimal("0.000001")
@@ -1343,7 +1223,9 @@ class AIAnalyzer:
             "base_prompt": getattr(scenario, "base_prompt", None),
             "media_overrides": getattr(scenario, "media_overrides", None),
             "summary_prompt": getattr(scenario, "summary_prompt", None),
-            "output_schema": output_contract.schema if output_contract is not None else getattr(scenario, "output_schema", None),
+            "output_schema": (
+                output_contract.schema if output_contract is not None else getattr(scenario, "output_schema", None)
+            ),
             "scope": getattr(scenario, "scope", None) or {},
             "analysis_types": getattr(scenario, "analysis_types", None) or [],
             "content_types": getattr(scenario, "content_types", None) or [],
@@ -1656,7 +1538,9 @@ class AIAnalyzer:
         existing_analysis = None
         if reported_partial is True or media_coverage_limited is True:
             existing_analysis = await AIAnalytics.objects.filter(
-                source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY,
+                source_id=source.id,
+                analysis_date=analysis_date,
+                period_type=PeriodType.DAY,
                 analysis_fingerprint=analysis_fingerprint,
             ).first()
             if existing_analysis:
@@ -1670,19 +1554,22 @@ class AIAnalyzer:
                 # the text work for them is already paid for. B's own body is
                 # not persisted; its per-item coverage lives in the hashes.
                 previous_hashes = (existing_analysis.summary_data or {}).get("content_hashes") or []
-                merged_hashes = list(dict.fromkeys(
-                    [*(value for value in previous_hashes if type(value) is str),
-                     *(value for value in content_hashes if type(value) is str)]
-                ))
+                merged_hashes = list(
+                    dict.fromkeys(
+                        [
+                            *(value for value in previous_hashes if type(value) is str),
+                            *(value for value in content_hashes if type(value) is str),
+                        ]
+                    )
+                )
                 updated_summary = dict(existing_analysis.summary_data or {})
                 updated_summary["content_hashes"] = merged_hashes
-                await AIAnalytics.objects.update_by_id(
-                    existing_analysis.id, summary_data=updated_summary
-                )
+                await AIAnalytics.objects.update_by_id(existing_analysis.id, summary_data=updated_summary)
                 self.completed_hashes.update(value for value in merged_hashes if type(value) is str)
                 logger.info(
                     "partial_analysis_update_skipped — merged %s coverage hashes into analysis %s",
-                    len(merged_hashes), existing_analysis.id,
+                    len(merged_hashes),
+                    existing_analysis.id,
                 )
                 return None
 
@@ -1882,7 +1769,11 @@ class AIAnalyzer:
         if unified_summary:
             audit_results["unified_summary"] = unified_summary
         response_payload["request"] = self._build_request_snapshot(
-            audit_results, source, agent_scenario, task_payload, trigger_config,
+            audit_results,
+            source,
+            agent_scenario,
+            task_payload,
+            trigger_config,
             output_contract=output_contract,
         )
 
@@ -1925,9 +1816,11 @@ class AIAnalyzer:
                         parent_analysis_id=parent_analysis_id,
                         request_tokens=total_request_tokens if total_request_tokens > 0 else None,
                         response_tokens=total_response_tokens if total_response_tokens > 0 else None,
-                        estimated_cost=estimated_cost_cents
-                        if estimated_cost_cents is not None and (estimated_cost_cents > 0 or persist_zero_cost)
-                        else None,
+                        estimated_cost=(
+                            estimated_cost_cents
+                            if estimated_cost_cents is not None and (estimated_cost_cents > 0 or persist_zero_cost)
+                            else None
+                        ),
                         provider_type=primary_provider,
                         media_types=list(media_types_analyzed) if media_types_analyzed else None,
                     )
@@ -1949,9 +1842,11 @@ class AIAnalyzer:
                         parent_analysis_id=parent_analysis_id,
                         request_tokens=total_request_tokens if total_request_tokens > 0 else None,
                         response_tokens=total_response_tokens if total_response_tokens > 0 else None,
-                        estimated_cost=estimated_cost_cents
-                        if estimated_cost_cents is not None and (estimated_cost_cents > 0 or persist_zero_cost)
-                        else None,
+                        estimated_cost=(
+                            estimated_cost_cents
+                            if estimated_cost_cents is not None and (estimated_cost_cents > 0 or persist_zero_cost)
+                            else None
+                        ),
                         provider_type=primary_provider,
                         media_types=list(media_types_analyzed) if media_types_analyzed else None,
                     )

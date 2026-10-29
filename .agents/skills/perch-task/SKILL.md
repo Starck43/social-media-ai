@@ -38,19 +38,39 @@ perch run "<task>" --json --cwd <target-dir> --permission auto_review \
   ask — a headless turn then ends `approval_required`, which is a task-related
   BLOCKED, not something to route around.
 - `--thread <id>` continues a previous turn; the id comes from the JSON body.
-- `--model` accepts a Roost tier (`standard`, `standard 1m`, `pro`, `pro 1m`)
-  **and an exact pin**, although `perch --help` lists only the tiers. The
-  project's default pin is `deepseek-v4.1-flash-1017`; confirm the result in
-  `contextSnapshot.modelId`, because a silently different model is a finding, not
-  a pass. Tiers above the account plan are accepted and then fail on the first
-  call with `status: "failed"` — read `status`, never exit code alone.
+- `--model` accepts a Roost tier (`standard`, `standard 1m`, `pro`, `pro 1m`),
+  `auto`, **and an exact pin**, although `perch --help` lists only the tiers. The
+  project pin is the bare short id — see [Model identifiers](#model-identifiers).
+  Tiers above the account plan are accepted by the flag and then fail on the
+  first call with `status: "failed"`; read `status`, never exit code alone.
+- `--mode plan` is read-only; use `ask` for one question without tool work.
+- Shell-local models and keys go through `perch byolm` / `perch byok`; they do
+  not consume Perch Tokens and never fall back to Roost silently.
 - A `status: "failed"` whose `error` is a transient provider message (model busy,
   rate limit, timeout) may be retried once with the identical command; that is
   not a permission change. Permission-, approval- or plan-related failures are
   reported, never retried with a wider mode.
-- `--mode plan` is read-only; use `ask` for one question without tool work.
-- Shell-local models and keys go through `perch byolm` / `perch byok`; they do
-  not consume Perch Tokens and never fall back to Roost silently.
+
+## Model identifiers
+
+Three different strings describe "the same" model; only one of them is an input
+to Perch:
+
+| String | Where it belongs |
+| --- | --- |
+| `deepseek-v4.1-flash-1017` | **only this one** goes into `perch --model` |
+| `deepseek/deepseek-v4.1-flash-1017` | `contextSnapshot.modelId` in the JSON reply — evidence, never an input |
+| `river/deepseek-ai/DeepSeek-V4.1-Flash-1017` | OpenCode's own provider model for the bridge agent — not a Perch identifier |
+
+A provider prefix (`deepseek/…`, `openrouter/…`) makes the call fail before any
+work: exit code 1, **empty stdout**, and `Unknown model: <arg>` plus the full
+help on stderr. Because there is no JSON in that case, check that the captured
+output actually parses before reading `status` — an unparseable capture is the
+unknown-model failure, not a model result.
+
+`--model auto` is valid and picks Roost's own choice (Standard), so it is not
+evidence for the pin: confirm `contextSnapshot.modelId` is the DeepSeek 4.1 Flash
+1017 build and treat anything else as a finding, not a pass.
 
 ## Roles
 

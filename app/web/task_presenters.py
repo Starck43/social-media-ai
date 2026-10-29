@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.core.presentation import MessageId, PresentationMessage, render_message
+
 from .task_shared import (
     CANCELLED_BEFORE_START_ERROR,
     OPERATOR_CANCELLED_ERROR,
@@ -452,7 +454,7 @@ def _cancel_info(job: "Job") -> dict[str, Any]:
     return info
 
 
-def _source_note(entry: dict[str, Any]) -> str:
+def _source_note(entry: dict[str, Any], *, locale: str | None = None) -> str:
     """One source's line in the modal: what this run got from it.
 
     `collect` rows carry the visit's outcome at the top level. `analyze` rows
@@ -475,13 +477,14 @@ def _source_note(entry: dict[str, Any]) -> str:
         if entry.get("error") is True:
             outcome = "error"
     if outcome == "error":
-        note = "ошибка"
         code = entry.get("error_code") or stage.get("error_code")
         hint = entry.get("error_hint") or stage.get("error_hint")
-        if code:
-            note = f"ошибка · {code}"
-        if hint:
-            note = f"{note} · {hint}"
+        details = " · ".join(str(value) for value in (code, hint) if value)
+        suffix = f" · {details}" if details else ""
+        note = render_message(
+            PresentationMessage(MessageId.TASK_SOURCE_ERROR, {"details": suffix}),
+            locale=locale,
+        )
     elif outcome == "auth_required":
         note = "нужна авторизация"
     elif outcome == "rate_limited":
@@ -494,18 +497,39 @@ def _source_note(entry: dict[str, Any]) -> str:
         if stage.get("new_items") is not None:
             new_items = int(stage["new_items"])
             if new_items:
-                note = f"{new_items} {_plural(new_items, 'новая', 'новых', 'новых')}"
+                note = render_message(
+                    PresentationMessage(
+                        MessageId.TASK_SOURCE_NEW_ITEMS,
+                        {"count": new_items},
+                        plural_count=new_items,
+                    ),
+                    locale=locale,
+                )
             else:
                 note = "новых нет"
         else:
-            note = f"{items} {_plural(items, 'запись', 'записи', 'записей')}"
+            note = render_message(
+                PresentationMessage(
+                    MessageId.TASK_SOURCE_ITEMS,
+                    {"count": items},
+                    plural_count=items,
+                ),
+                locale=locale,
+            )
     else:
         note = "без новых данных"
     # `analyzed` counts task-filtered analysis results, not all persisted rows or raw source records.
     analyzed = entry.get("analyzed")
     if outcome != "error" and analyzed:
         count = int(analyzed)
-        note = f"{count} {_plural(count, 'результат', 'результата', 'результатов')} анализа"
+        note = render_message(
+            PresentationMessage(
+                MessageId.TASK_SOURCE_ANALYSIS_RESULTS,
+                {"count": count},
+                plural_count=count,
+            ),
+            locale=locale,
+        )
     if stage.get("dry_run") is True or entry.get("dry_run") is True:
         note = f"тест · {note}"
     return note
@@ -825,7 +849,12 @@ def _raw_coverage(job: "Job") -> list[dict[str, Any]]:
     return coverage
 
 
-def _source_links(job: "Job", task_name: str | None = None) -> list[dict[str, Any]]:
+def _source_links(
+    job: "Job",
+    task_name: str | None = None,
+    *,
+    locale: str | None = None,
+) -> list[dict[str, Any]]:
     """Sources to jump to from the run-now modal, with what this run got from each.
 
     The modal is a summary; it is not where you read the data. Each entry is a
@@ -851,7 +880,7 @@ def _source_links(job: "Job", task_name: str | None = None) -> list[dict[str, An
         link = {
             "source_id": source_id,
             "name": entry.get("name") or f"Источник {source_id}",
-            "note": _source_note(entry),
+            "note": _source_note(entry, locale=locale),
             # Failures surface red on the chip: collect rows mark them in the
             # outcome, analyze rows via the row-level error flag (analysis or
             # its inline collect stage).

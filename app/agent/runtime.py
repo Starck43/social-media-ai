@@ -36,6 +36,7 @@ from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound
 from app.core.config import settings
 from app.core.permissions import get_current_user, has_permission_by_codename, permission_scope
+from app.core.presentation import MessageId, PresentationMessage, render_message
 from app.core.tenant_context import tenant_scope
 from app.services.tenancy.resolver import (
     Resolution,
@@ -342,7 +343,8 @@ def _human_confirmation(name: str, args: dict) -> str:
         "source_disable": lambda a: f"отключить источник №{a.get('source_id')}",
         "task_add": lambda a: (
             f"создать задачу «{a.get('name')}»: {_JOB_TYPE_LABELS.get(a.get('job_type'), a.get('job_type'))}, "
-            f"{_human_cron(a)}" + (f", начиная с {a.get('start_date')}" if a.get("start_date") else "")
+            f"{_human_cron(a)}"
+            + (f", начиная с {a.get('start_date')}" if a.get("start_date") else "")
             + (f"; {_human_collection(a.get('collection'))}" if _human_collection(a.get("collection")) else "")
         ),
         "task_update": lambda a: _human_task_update(a),
@@ -844,9 +846,7 @@ async def _run_tool_loop(
             await session.append("assistant", denied)
             return _join_replies(reply, denied)
         if limit and await _cost_today() >= limit:
-            reply = _join_replies(
-                reply, f"{LIMIT_REACHED_PREFIX} расходов исчерпан во время обработки запроса."
-            )
+            reply = _join_replies(reply, f"{LIMIT_REACHED_PREFIX} расходов исчерпан во время обработки запроса.")
             break
 
         try:
@@ -955,14 +955,11 @@ def _model_failure_hint(response: dict | None) -> str:
     switched = [item for item in failures if item.get("reason") != "budget"]
     if not switched:
         return ""
-    parts = [
-        f"{item.get('model')} — {FAILURE_LABELS.get(item.get('reason'), item.get('reason'))}"
-        for item in switched
-    ]
+    parts = [f"{item.get('model')} — {FAILURE_LABELS.get(item.get('reason'), item.get('reason'))}" for item in switched]
     return "Переключил модель: " + "; ".join(parts) + "."
 
 
-def _llm_error_reply(exc: BaseException) -> str:
+def _llm_error_reply(exc: BaseException, *, locale: str | None = None) -> str:
     """A short, actionable LLM failure line for the chat — never the raw body.
 
     `httpx.HTTPStatusError` stringifies to `<status>: <response text>`, which for
@@ -975,15 +972,17 @@ def _llm_error_reply(exc: BaseException) -> str:
     """
     status = getattr(getattr(exc, "response", None), "status_code", None)
     if status is None:
-        return "Не удалось обратиться к языковой модели. Подробности в логах."
+        message = PresentationMessage(MessageId.LLM_REQUEST_FAILED)
 
-    if status == 401 or status == 403:
-        return "Языковая модель отклонила запрос: неверный или истёкший API-ключ. Подробности в логах."
-    if status == 429:
-        return "Языковая модель временно недоступна из-за лимита запросов. Подробности в логах."
-    if 400 <= status < 500:
-        return f"Языковая модель отклонила мой запрос ({status}). Подробности в логах."
-    return f"Языковая модель сейчас недоступна ({status}). Подробности в логах."
+    elif status == 401 or status == 403:
+        message = PresentationMessage(MessageId.LLM_AUTH_REJECTED)
+    elif status == 429:
+        message = PresentationMessage(MessageId.LLM_RATE_LIMITED)
+    elif 400 <= status < 500:
+        message = PresentationMessage(MessageId.LLM_REQUEST_REJECTED, {"status": status})
+    else:
+        message = PresentationMessage(MessageId.LLM_UNAVAILABLE, {"status": status})
+    return render_message(message, locale=locale)
 
 
 async def _handle_feedback(session: Any, inbound: Any, command: str, text: str) -> str:
@@ -1152,6 +1151,7 @@ async def _preferred_agent_model(tenant: Any):
     if identity is not None:
         from app.core.personal_catalog_context import current_catalog_owner_id
         from app.services.ai.personal_catalog import eligible_chat_model
+
         model = await LLMModel.objects.select_related("provider").get(id=identity, is_active=True)
         allowed = tenant.plan_limits().get("model_types") if tenant else None
         if model is not None and eligible_chat_model(model, user_id=current_catalog_owner_id(), allowed_types=allowed):
@@ -1174,8 +1174,8 @@ async def _spend_remaining() -> Optional[float]:
     a permission for one model: past it the chat stops instead of quietly
     switching the owner to a paid provider.
     """
-    from app.core.tenant_context import current_tenant_id
     from app.agent.runtime import tenant_daily_cost_limit
+    from app.core.tenant_context import current_tenant_id
 
     tid = current_tenant_id()
     if tid is None:

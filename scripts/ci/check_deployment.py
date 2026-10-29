@@ -374,12 +374,12 @@ def database_url(user: str, password: str, host: str, name: str) -> str:
 
 def staging_env(password: str | None = None, database_host: str = "db", placeholders: bool = False) -> str:
     key = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")
-    secret = "replace-with-test-placeholder" if placeholders else secrets.token_urlsafe(48)
+    signing_key = "replace-with-test-placeholder" if placeholders else secrets.token_urlsafe(48)
     db_password = "replace-with-test-placeholder" if placeholders else (password or secrets.token_hex(32))
     values = {
         "ENVIRONMENT": "production",
         "DEBUG": "false",
-        "SECRET_KEY": secret,
+        "SECRET_KEY": signing_key,
         "CREDENTIALS_KEY": key,
         "BACKEND_CORS_ORIGINS": "[]",
         "POSTGRES_USER": "staging",

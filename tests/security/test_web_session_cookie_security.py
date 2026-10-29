@@ -115,6 +115,7 @@ class WebSessionCookieSecurityTests(unittest.TestCase):
                 for name in (
                     "TenantUIMiddleware",
                     "ApiScopeMiddleware",
+                    "RequestContextMiddleware",
                     "PlatformScopeMiddleware",
                     "AdminScopeMiddleware",
                     "SessionMiddleware",

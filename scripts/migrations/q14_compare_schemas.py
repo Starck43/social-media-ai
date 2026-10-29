@@ -179,7 +179,7 @@ def _catalog(connection, schema: str) -> dict[str, Any]:
                   ARRAY(
                     SELECT att.attname
                     FROM jsonb_array_elements_text(
-                      COALESCE(to_jsonb(con)->'confdelsetcols', '[]'::jsonb)
+                      COALESCE(NULLIF(to_jsonb(con)->'confdelsetcols', 'null'::jsonb), '[]'::jsonb)
                     ) WITH ORDINALITY AS deleted(attnum, ord)
                     JOIN pg_catalog.pg_attribute att
                       ON att.attrelid = con.confrelid AND att.attnum = deleted.attnum::smallint

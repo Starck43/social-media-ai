@@ -85,4 +85,4 @@ carry only task-specific additions, not copies of these common rules.
   and next action. Cleanup failure cannot reopen an accepted task.
 - English code/docs; brief Russian reports; Black/isort line 120. Never commit
   secrets, sessions, generated data or `.agents/tmp/`. Provider adapters in
-  `.codex/`, `.opencode/`, `.kilo/` are local ignored configuration.
+  `.codex/`, `.opencode/`, `.kilo/`, `.perch/` are local ignored configuration.

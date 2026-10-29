@@ -12,8 +12,8 @@ unrun checks and cleanup. Record documentation actually read in the card/PR.
 
 Run-only assignments execute and analyze the supplied command; do not edit
 source or add tests. Test authoring requires explicit assignment. Codex routes
-to configured OpenCode `build`/V2 `tester` first, then Kilo, then a native child
-if unavailable. Other agents use native children only. Never bypass ownership,
+to configured OpenCode `build`/V2 `tester` first, then the [Perch route](../perch-task/SKILL.md),
+then a native child if unavailable. Other agents use native children only. Never bypass ownership,
 revision or DB guards. Serialize shared test-schema use and remove/verify all
 synthetic records after the run. No full suite without owner request. Session
 cleanup is housekeeping and does not alter the test verdict.

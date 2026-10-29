@@ -193,7 +193,8 @@ instructions to invoke configured `tester` via the V2 `subagent` tool. Its model
 `~/.config/opencode/opencode.jsonc`; do not override them or select tester as
 parent. Tester only runs the supplied command and analyzes output; parent owns
 preparation/cleanup. Explicit test authoring is a separate assignment.
-If unavailable, use Kilo, then a native Codex child; permission/HEAD/ownership
+If unavailable, use Perch via [the Perch route](../.agents/skills/perch-task/SKILL.md)
+(`perch run --json`), then a native Codex child; permission/HEAD/ownership
 failures are not bypass permissions. Other agents use native test children.
 Collect affected paths after enum/import/layout changes. DB scopes use root
 conftest; disable it only for proven no-DB isolation. No broad suite without

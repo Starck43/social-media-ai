@@ -8,7 +8,7 @@ an agent follows general execution and all mandatory AGENTS rules.
 | --- | --- | --- |
 | Local execution | `$task P8-T12 implement` | [task](../.agents/skills/task/SKILL.md) |
 | OpenCode implementation | `Apply skill opencode-task: P8-T12 implement` | [opencode-task](../.agents/skills/opencode-task/SKILL.md) |
-| Kilo implementation | `Apply skill kilo-task: P8-T12 implement` | [kilo-task](../.agents/skills/kilo-task/SKILL.md) |
+| Perch executor | `Apply skill perch-task: P8-T12 implement` | [perch-task](../.agents/skills/perch-task/SKILL.md) |
 | Remote Git/PR execution | `Apply skill remote-task: P8-T12 implement` | [remote-task](../.agents/skills/remote-task/SKILL.md) |
 | Local help with real PostgreSQL | `$remote-agent-helper P8-T12 validate on test_schema` | [helper](../.agents/skills/remote-agent-helper/SKILL.md) |
 | Codex audits a READY task/remote PR | `$audit P8-T12` | [audit](../.agents/skills/audit/SKILL.md) |

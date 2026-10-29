@@ -48,7 +48,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P11-T13](docs/tasks/p11-t13.md) Manager and execution-module decomposition — **IN_PROGRESS** · notion-ai-p11-t13 · [Execution](https://app.notion.com/chat?t=407218bd94b680609a7c00a918e9c486) · `P2` · `C5`
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`

@@ -20,7 +20,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 10. [P11-T10](../audit/p11-t10.md) — Operator CLI boundaries and machine-output contract — DONE 2026-10-28 (accepted `e1dec81d`, integrated `1506d98d`; PR #267).
 11. [P11-T11](../audit/p11-t11.md) — **DONE 2026-10-29**: web/admin decomposition accepted; loader/type-introspection corrections and application/HTTP/DB checks PASS. Accepted `3c793a24c5c9f4c2356663db1dc3f1c4480973fc`; merged `edfd34e321a54147b7d2969418738f0e5f712a8f` without deployment.
 12. [P11-T12](../audit/p11-t12.md) — Durable action-audit contract and support correlation (R-10) — DONE 2026-10-29 (contract accepted `b59877ea`, integrated `c8d019ae`, PR #269; persistence accepted and merged `6ab81b14` in `bc41326a`, PR #272 — see [implementation audit](../audit/p11-t12-impl.md); no deployment, retention policy applies from the workspace plan).
-13. [P11-T13](../tasks/p11-t13.md) — Manager and execution-module decomposition (R-11).
+13. [P11-T13](../audit/p11-t13.md) — Manager and execution-module decomposition (R-11) — DONE 2026-10-29 (accepted `ecec9ef3`; 76 passed + 10 subtests on real PostgreSQL; integration pending owner choice).
 14. [P11-T14](../audit/p11-t14.md) — Canonical model imports and semantic helper reuse (R-12) — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`,
     merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
 15. [P11-T15](../audit/p11-t15.md) — Reproducible package and configuration contract (R-13) — DONE 2026-10-27 (accepted `2c4c6e5566a61f6a9b02967db1a152e4fa1140e7`).

@@ -243,24 +243,18 @@ def check_dockerfile_sources(dockerfile: Path, context: Path) -> None:
 def workflow_contract() -> None:
     workflow = load_yaml(WORKFLOW)
     events = workflow.get("on", {})  # BaseLoader keeps YAML 1.1's `on` as a string.
-    require(set(events) == {"pull_request", "push"}, "Workflow must be limited to PR validation and branch pushes")
-    require(
-        list_value(events["pull_request"].get("branches")) == ["dev", "master"],
-        "PR validation branch filters must be dev/master",
-    )
-    require(list_value(events["push"].get("branches")) == ["dev", "master"], "Push branch filters must be dev/master")
+    # Q-13: only master pushes may execute Actions.
+    require(set(events) == {"push"}, "Workflow must be limited to master pushes only")
+    require(list_value(events["push"].get("branches")) == ["master"], "Push branch filters must be master only")
 
     jobs = workflow.get("jobs", {})
     deploy = jobs.get("deploy", {})
-    build = jobs.get("build-and-push", {})
-    pr_job = jobs.get("validate-pr", {})
-    require("github.event_name == 'pull_request'" in pr_job.get("if", ""), "PR builds must stay in validation-only job")
-    require("push: false" in read(WORKFLOW), "PR validation must not publish images")
-    require("github.event_name == 'push'" in build.get("if", ""), "Only pushes may publish images")
+    require("validate-pr" not in jobs, "PR validation job must be removed; pull requests run no Actions")
+    require("push: false" not in read(WORKFLOW), "No workflow job may build images without publishing")
     deploy_if = deploy.get("if", "")
     require(
-        "refs/heads/dev" in deploy_if and "STAGING_DEPLOY_ENABLED" in deploy_if,
-        "Staging deploy must be explicitly gated to dev",
+        "refs/heads/dev" not in deploy_if and "STAGING_DEPLOY_ENABLED" not in deploy_if,
+        "Staging deploy from dev must be removed while Actions run on master only",
     )
     require(
         "refs/heads/master" in deploy_if and "PRODUCTION_DEPLOY_ENABLED" in deploy_if,
@@ -271,9 +265,7 @@ def workflow_contract() -> None:
         "Production deploy must require backup readiness and exact-SHA migration approval",
     )
     environment = deploy.get("environment", {}).get("name", "")
-    require(
-        "production" in environment and "staging" in environment, "Deploys must use branch-scoped GitHub environments"
-    )
+    require(environment == "production", "Deploys must use the protected production environment")
     require(
         "needs.build-and-push.outputs.image_digest" in deploy.get("env", {}).get("IMAGE_REF", ""),
         "Deployment must use the registry digest output",

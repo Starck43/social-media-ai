@@ -50,8 +50,9 @@ start; choose a non-overlapping private subnet if another Docker network already
 uses the documented example range.
 
 The GitHub workflow builds the checked-in `docker/Dockerfile`, publishes a
-commit-SHA tag to GHCR, and deploys the returned immutable image digest. Pushes to `dev` deploy that image to staging only when
-`STAGING_DEPLOY_ENABLED=true`; pushes to `master` can reach production only when
+commit-SHA tag to GHCR, and deploys the returned immutable image digest. Actions
+run only on pushes to `master`; `dev` branches and pull requests execute no
+workflow. A `master` push can reach production only when
 `PRODUCTION_DEPLOY_ENABLED=true`, `PRODUCTION_BACKUP_READY=true`, and
 `PRODUCTION_MIGRATIONS_APPROVED_SHA` equal to the full push commit SHA, then wait
 for the GitHub `production` Environment approval. Configure a read-only GHCR
@@ -191,11 +192,10 @@ backup is needed.
 
 ### GitHub deployment workflow (prepared, gated off)
 
-Pull requests to `dev` or `master` build the checked-in `docker/Dockerfile`
-without publishing. Branch pushes publish a commit-tagged image to GHCR and the
-deploy step pins the build's content digest.
-`dev` can deploy only to the GitHub `staging` Environment when the repository
-variable `STAGING_DEPLOY_ENABLED=true`; `master` additionally requires
+All workflows run only on pushes to `master` ([Q-13](audit/q-13-workflows.md));
+`dev` pushes and pull requests execute no Actions jobs. A master push publishes a
+commit-tagged image to GHCR and the deploy step pins the build's content digest.
+Production deploy additionally requires
 `PRODUCTION_DEPLOY_ENABLED=true`, `PRODUCTION_BACKUP_READY=true`, and
 `PRODUCTION_MIGRATIONS_APPROVED_SHA` equal to the full push commit SHA, then waits
 for approval configured on the protected `production` Environment. The workflow
@@ -863,7 +863,7 @@ or provider calls. Keep deployment-enable variables false until the host is read
 | Host | Provision VPS; install Docker Engine, Compose v2 supporting `up --wait`, host Nginx and Python 3; verify RAM/disk, firewall (SSH/80/443), non-overlapping subnets and one runtime owner. |
 | Secrets | Separate mode-600 staging/production env files; distinct keys/passwords; private offsite encryption-key custody; read-only GHCR pull login on VPS. Never rotate the production Fernet key during upgrade. |
 | Ingress | Select DNS names, obtain certificates, replace host-vhost placeholders; run real `nginx -t`, verify HTTPS, secure cookies, `/app`, `/admin`, and rate-limit storage through the real proxy chain. Restrict staging to approved operator ingress (VPN/IP allowlist/auth). |
-| GitHub | Create `staging`/`production` Environments, production required reviewers and deployment branch restriction `master`; set SSH secrets and fixed deployment directory variable. Keep enable flags repository-scoped; environment variables cannot enable a job before its environment is selected. |
+| GitHub | Create the `production` Environment with required reviewers and deployment branch restriction `master`; set SSH secrets and the fixed deployment directory variable. The `staging` Environment is unused while Actions run only on `master` ([Q-13](audit/q-13-workflows.md)). |
 | Schema | The [Q-14](audit/q-14.md) initial baseline is complete and integrated. Before selecting the first production revision, validate that exact revision on the approved test schema and obtain separate apply approval. Set repository variable `PRODUCTION_MIGRATIONS_APPROVED_SHA` to that full commit only. A later commit requires fresh approval. |
 | Recovery | Schedule protected logical backups with offsite copies and separately secured encryption keys; select RPO/RTO, retention and monitoring. Run an isolated verified restore before setting `PRODUCTION_BACKUP_READY=true`. Local pre-migration snapshots alone do not satisfy this gate. |
 | Operations | Execute [P7-T02](tasks/p7-t02.md) on staging: install, backup, restore, verify revision/schema, HTTP and controlled operation; record exact image digest and cleanup. |

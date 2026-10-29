@@ -1,13 +1,10 @@
 name: Build and Deploy to VPS
 
 on:
-  pull_request:
-    branches: [dev, master]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
+  # Only master pushes execute Actions (Q-13). Staging still deploys from the
+  # master-built image; development branches and pull requests run nothing here.
   push:
-    branches: [dev, master]
+    branches: [master]
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -36,32 +33,8 @@ jobs:
       - name: Check deployment contracts and Compose configuration
         run: python -m scripts.ci.check_deployment --compose
 
-  validate-pr:
-    needs: validate-config
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5.0.0
-        with:
-          persist-credentials: false
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build without publishing
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          push: false
-          cache-from: type=gha
-
   build-and-push:
     needs: validate-config
-    if: github.event_name == 'push'
     runs-on: ubuntu-22.04
     outputs:
       image_digest: ${{ steps.publish.outputs.digest }}
@@ -100,21 +73,18 @@ jobs:
     needs: build-and-push
     if: >-
       github.event_name == 'push' &&
-      (
-        (github.ref == 'refs/heads/dev' && vars.STAGING_DEPLOY_ENABLED == 'true') ||
-        (github.ref == 'refs/heads/master' &&
-         vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
-         vars.PRODUCTION_BACKUP_READY == 'true' &&
-         vars.PRODUCTION_MIGRATIONS_APPROVED_SHA == github.sha)
-      )
+      github.ref == 'refs/heads/master' &&
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
+      vars.PRODUCTION_BACKUP_READY == 'true' &&
+      vars.PRODUCTION_MIGRATIONS_APPROVED_SHA == github.sha
     runs-on: ubuntu-22.04
     environment:
-      name: ${{ github.ref == 'refs/heads/dev' && 'staging' || 'production' }}
+      name: production
     concurrency:
-      group: deploy-${{ github.ref_name }}
+      group: deploy-production
       cancel-in-progress: false
     env:
-      DEPLOY_TARGET: ${{ github.ref == 'refs/heads/dev' && 'staging' || 'production' }}
+      DEPLOY_TARGET: production
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_PORT: ${{ secrets.VPS_PORT || '22' }}

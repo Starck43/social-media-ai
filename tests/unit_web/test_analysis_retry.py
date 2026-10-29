@@ -1,7 +1,8 @@
 """Remote no-DB checks: real pure projections/templates, AST-loaded mocked routes.
 
 No application startup, provider calls, credentials, DB fixtures or ASGI claims.
-Real transaction/permission/worker acceptance remains local through Kilo.
+Real transaction/permission/worker acceptance remains local through the
+configured test route.
 """
 
 from __future__ import annotations

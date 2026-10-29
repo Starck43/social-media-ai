@@ -1,6 +1,6 @@
 """Real home acceptance on the existing approved target, without DB bootstrap.
 
-Run only through Kilo/pare-test with --noconftest. Resolve the test target before
+Run only through test-runner/pare-test with --noconftest. Resolve the test target before
 application imports; create and remove only this module's own synthetic rows.
 """
 

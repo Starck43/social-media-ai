@@ -1,6 +1,6 @@
 """Actual source, isolated doubles/DDL capture only; no app startup or database.
 
-Run via Kilo/test-runner/pare-test with --noconftest and explicit positional path.
+Run via test-runner/pare-test with --noconftest and explicit positional path.
 These checks are NOT PostgreSQL concurrency, bootstrap or migration evidence.
 """
 

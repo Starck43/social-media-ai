@@ -766,7 +766,9 @@ staging/fault/restore exercises require their own approval and evidence.
 The following historical sketch is not an automatic recovery action. Verify
 target/revision, migration plan, process ownership and in-flight deliveries; obtain
 owner approval before executing installation/migration/restart commands. The
-checked-in API Compose auto-runs a migration at startup. Do not restart a generic
+supported staging/production Compose profiles run migrations only through the
+explicit deployment step; the older development Compose sketch still embeds a
+startup migration and must not be used for production. Do not restart a generic
 worker during ambiguous delivery merely because the HTTP process is unhealthy.
 
 ```bash

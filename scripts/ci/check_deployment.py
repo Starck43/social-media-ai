@@ -133,7 +133,11 @@ def compose_contract() -> tuple[dict, dict]:
         require(
             assignments.get("ENV_FILE", "").endswith(f".env.{name}"), f"{name} wrapper must select its own env file"
         )
-        lines = (shlex.split(line) for line in read(wrapper).splitlines())
+        lines = (
+            shlex.split(line)
+            for line in logical_shell_lines(read(wrapper))
+            if line.lstrip().startswith("exec docker compose")
+        )
         require(
             any(
                 tokens[index : index + 2] == ["--project-name", project]
@@ -169,6 +173,19 @@ def shell_assignments(path: Path) -> dict[str, str]:
         if match:
             assignments[match.group(1)] = match.group(2)
     return assignments
+
+
+def logical_shell_lines(source: str):
+    pending = ""
+    for line in source.splitlines():
+        stripped = line.rstrip()
+        if stripped.endswith("\\"):
+            pending += stripped[:-1] + " "
+        else:
+            yield pending + line
+            pending = ""
+    if pending:
+        yield pending
 
 
 def dockerfile_contract(compose: dict, name: str) -> None:
@@ -276,9 +293,10 @@ def workflow_contract() -> None:
 
     for target in ("staging", "production"):
         body = shell_case_body(deploy_script, target)
-        commands = [
-            shlex.split(line) for line in body.splitlines() if line.strip() and not line.lstrip().startswith("#")
-        ]
+        commands = []
+        for line in logical_shell_lines(body):
+            if line.lstrip().startswith('bash "$compose"') or "backup_production_db.sh" in line:
+                commands.append(shlex.split(line))
 
         def command_at(predicate) -> int:
             return next((index for index, command in enumerate(commands) if predicate(command)), -1)

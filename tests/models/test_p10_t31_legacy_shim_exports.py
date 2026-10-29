@@ -112,7 +112,7 @@ def test_action_aliases_preserve_canonical_mapper_manager_and_legacy_pickle_path
 
 
 def test_0117_header_matches_unchanged_real_parent():
-    tree = ast.parse((ROOT / "migrations/versions/0117_capability_entitlements.py").read_text())
+    tree = ast.parse((ROOT / "scripts/migrations/legacy_definitions/0117_capability_entitlements.py").read_text())
     assignments = {
         node.targets[0].id: ast.literal_eval(node.value)
         for node in tree.body

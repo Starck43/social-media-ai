@@ -392,12 +392,26 @@ the old Alembic revision marker with `baseline_0118` in the same transaction. It
 rebuild existing tables. The bridge checks that the target is the local
 `social_manager/public` database at exactly revision `0117`, that the new objects are
 absent, and that fingerprints of existing rows are unchanged (registry rows may only be
-appended). It reports hashes and counts, never row contents. The bridge disables Alembic's
+appended). It checks row hashes without exposing row contents. The bridge disables Alembic's
 ordinary stamp registration hook and adds only the
 audit resource, its view/export permissions, and owner/admin grants; those catalog rows
 may increase.
 
-First run the Q-14 isolated-schema validator on `test_schema` and retain its report.
+First validate the baseline and rehearse the bridge, retaining the actual reports:
+
+```bash
+DB_SCHEMA=test_schema DB_TEST_SCHEMA=test_schema \
+  python -m scripts.migrations.q14_validate_baseline --reset-test-schema
+DB_SCHEMA=test_schema DB_TEST_SCHEMA=test_schema \
+  python -m scripts.migrations.q14_rehearse_bridge --reset-test-schema
+# Restore the final initial-schema contract and its canonical reference rows.
+DB_SCHEMA=test_schema DB_TEST_SCHEMA=test_schema \
+  python -m scripts.migrations.q14_validate_baseline --reset-test-schema
+DB_SCHEMA=test_schema DB_TEST_SCHEMA=test_schema \
+  python -m scripts.migrations.q14_compare_schemas --before-bridge
+```
+
+These maintenance commands reset only the explicitly disposable local test schema.
 Take and verify a restorable backup of `public`, stop other schema writers, and obtain
 separate owner authorization for the public apply. Then run exactly one migrator:
 

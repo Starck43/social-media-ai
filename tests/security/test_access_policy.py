@@ -124,7 +124,10 @@ def test_codename_is_derived_and_old_explicit_alias_resolves_same_right():
 
 
 def test_migration_catalog_and_presets_match_runtime_without_database():
-    path = Path(__file__).resolve().parents[2] / "migrations/versions/0096_split_access_roles_and_resources.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/migrations/legacy_definitions/0096_split_access_roles_and_resources.py"
+    )
     spec = importlib.util.spec_from_file_location("access_migration", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -144,7 +147,10 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
 def test_migration_permission_map_keeps_canonical_model_without_permissions(monkeypatch):
     import sqlite3
 
-    path = Path(__file__).resolve().parents[2] / "migrations/versions/0096_split_access_roles_and_resources.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/migrations/legacy_definitions/0096_split_access_roles_and_resources.py"
+    )
     spec = importlib.util.spec_from_file_location("access_migration_permission_map", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -205,7 +211,10 @@ def test_migration_retires_only_allowlisted_model_metadata_and_keeps_physical_da
 
     from sqlalchemy import create_engine, text
 
-    path = Path(__file__).resolve().parents[2] / "migrations/versions/0096_split_access_roles_and_resources.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/migrations/legacy_definitions/0096_split_access_roles_and_resources.py"
+    )
     spec = importlib.util.spec_from_file_location("access_migration_retirement", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -253,7 +262,10 @@ def test_migration_seeds_missing_resource_catalog_rows_idempotently():
 
     from sqlalchemy import create_engine, event, text
 
-    path = Path(__file__).resolve().parents[2] / "migrations/versions/0096_split_access_roles_and_resources.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/migrations/legacy_definitions/0096_split_access_roles_and_resources.py"
+    )
     spec = importlib.util.spec_from_file_location("access_migration_model_type_seed", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)

@@ -271,7 +271,7 @@ def capture_cache_tariff_additions(schema="receipts_review"):
     )
     migration = load_isolated_source(
         "_cache_tariff_receipt_migration",
-        ROOT / "migrations/versions/0107_add_cache_tariff_evidence.py",
+        ROOT / "scripts/migrations/legacy_definitions/0107_add_cache_tariff_evidence.py",
         imports={
             "alembic": SimpleNamespace(op=operations),
             "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),
@@ -428,7 +428,7 @@ class DefinitionTests(unittest.TestCase):
         )
         migration = load_isolated_source(
             "_receipt_migration_definition",
-            ROOT / "migrations/versions/0093_add_llm_dispatch_receipts.py",
+            ROOT / "scripts/migrations/legacy_definitions/0093_add_llm_dispatch_receipts.py",
             imports={
                 "alembic": SimpleNamespace(op=operations),
                 "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),

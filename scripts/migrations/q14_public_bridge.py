@@ -96,6 +96,25 @@ def apply_public_transition(
     if function_exists:
         raise RuntimeError("guard_action_audit_mutation already exists; inspect partial/foreign work")
 
+    if not validation_test_schema:
+        from app.models import Base
+        from scripts.migrations.q14_compare_schemas import _catalog, compare
+
+        baseline_revision = (
+            connection.execute(text("SELECT version_num FROM test_schema.alembic_version")).scalars().all()
+        )
+        if baseline_revision != ["baseline_0118"]:
+            raise RuntimeError("Prepare and validate test_schema at baseline_0118 before public transition")
+        connection.execute(text("SET LOCAL search_path TO pg_catalog"))
+        compatibility = compare(
+            _catalog(connection, "public"),
+            _catalog(connection, "test_schema"),
+            before_bridge=True,
+            model_tables={table.name for table in Base.metadata.sorted_tables},
+        )
+        if compatibility["status"] != "PASS":
+            raise RuntimeError("Schema compatibility failed; run q14_compare_schemas --before-bridge and investigate")
+
     before = _table_fingerprints(connection, schema)
     bridge = _load_0118_bridge()
     bridge.SCHEMA = schema

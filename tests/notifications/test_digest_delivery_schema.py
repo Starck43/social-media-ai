@@ -22,7 +22,7 @@ def test_digest_checkpoint_column_is_nullable_jsonb():
 
 
 def test_upgrade_and_downgrade_preserve_old_rows(monkeypatch):
-    path = Path(__file__).parents[2] / "migrations/versions/0087_add_digest_delivery_state.py"
+    path = Path(__file__).parents[2] / "scripts/migrations/legacy_definitions/0087_add_digest_delivery_state.py"
     spec = importlib.util.spec_from_file_location("digest_checkpoint_migration", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)

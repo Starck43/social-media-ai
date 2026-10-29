@@ -527,7 +527,7 @@ for model in (LLMBudgetDay, LLMBudgetReservation):
         )
         migration = load_isolated_source(
             "_budget_migration",
-            ROOT / "migrations/versions/0095_add_llm_budget_reservations.py",
+            ROOT / "scripts/migrations/legacy_definitions/0095_add_llm_budget_reservations.py",
             imports={
                 "alembic": SimpleNamespace(op=operations),
                 "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),

@@ -44,10 +44,15 @@ RUNNER_PATH = "tests/acceptance/test_llm_budget_pg.py"
 DEFINITION_PATHS = (
     "app/models/tenancy/tenant.py",
     "app/models/base.py",
-    "migrations/versions/0093_add_llm_dispatch_receipts.py",
-    "migrations/versions/0094_add_llm_outcome_events.py",
-    "migrations/versions/0095_add_llm_budget_reservations.py",
+    "scripts/migrations/legacy_definitions/0093_add_llm_dispatch_receipts.py",
+    "scripts/migrations/legacy_definitions/0094_add_llm_outcome_events.py",
+    "scripts/migrations/legacy_definitions/0095_add_llm_budget_reservations.py",
 )
+LEGACY_ALEMBIC_PATHS = {
+    "scripts/migrations/legacy_definitions/0093_add_llm_dispatch_receipts.py": "migrations/versions/0093_add_llm_dispatch_receipts.py",
+    "scripts/migrations/legacy_definitions/0094_add_llm_outcome_events.py": "migrations/versions/0094_add_llm_outcome_events.py",
+    "scripts/migrations/legacy_definitions/0095_add_llm_budget_reservations.py": "migrations/versions/0095_add_llm_budget_reservations.py",
+}
 FIXTURES = (
     ("fresh", "budget-review-7417a3ed-fresh", "pro", 1.0, True),
     ("race", "budget-review-7417a3ed-race", "pro", 1.0, True),
@@ -160,7 +165,10 @@ def verify_script_pin(pin):
     require(git("cat-file", "-t", pin) == "commit", "preparation-pin-not-commit")
     require(git_bytes("show", f"{pin}:{SCRIPT_PATH}") == (ROOT / SCRIPT_PATH).read_bytes(), "preparation-content-drift")
     for path in DEFINITION_PATHS:
-        require(git_bytes("show", f"{CODE_PIN}:{path}") == (ROOT / path).read_bytes(), "definition-content-drift")
+        source_path = LEGACY_ALEMBIC_PATHS.get(path, path)
+        require(
+            git_bytes("show", f"{CODE_PIN}:{source_path}") == (ROOT / path).read_bytes(), "definition-content-drift"
+        )
 
 
 def emit(kind, **values):
@@ -237,7 +245,10 @@ def validate_plan(plan, phase):
     require(
         plan["execution_sha"] == git("rev-parse", "HEAD") and not git("status", "--porcelain"), "expected-clean-head"
     )
-    require(not git("diff", CODE_PIN, "HEAD", "--", "app", "migrations"), "application-drift")
+    # The Alembic baseline is deliberately replaced by Q-14. Application code
+    # remains pinned, while the frozen legacy DDL APIs are checked byte-for-byte
+    # against CODE_PIN above.
+    require(not git("diff", CODE_PIN, "HEAD", "--", "app"), "application-drift")
     if phase != "preflight":
         require(type(plan["endpoint"]) is list and len(plan["endpoint"]) == 3, "write-endpoint-unmeasured")
     verify_script_pin(plan["preparation_sha"])
@@ -598,7 +609,7 @@ def inspect_prepared(connection):
 
 
 def load_revision(name):
-    path = ROOT / "migrations/versions" / name
+    path = ROOT / "scripts/migrations/legacy_definitions" / name
     spec = importlib.util.spec_from_file_location("_isolated_" + name[:4], path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

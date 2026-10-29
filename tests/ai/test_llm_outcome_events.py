@@ -76,9 +76,7 @@ def receipt(input_rate="0.001", output_rate="0.002", *, cache_policy=False, **ch
         result["tariff_state"] = (
             "undefined"
             if input_rate is None or output_rate is None
-            else "free"
-            if Decimal(str(input_rate)) == Decimal(str(output_rate)) == 0
-            else "known"
+            else "free" if Decimal(str(input_rate)) == Decimal(str(output_rate)) == 0 else "known"
         )
     result.update(changes)
     return result
@@ -364,9 +362,7 @@ DEPS = {
 PARENT = load_isolated_source(
     "app.models.llm._outcome_parent", ROOT / "app/models/llm/llm_dispatch_receipt.py", imports=DEPS
 )
-LEAF = load_isolated_source(
-    "app.models.llm._outcome_model", ROOT / "app/models/llm/llm_outcome_event.py", imports=DEPS
-)
+LEAF = load_isolated_source("app.models.llm._outcome_model", ROOT / "app/models/llm/llm_outcome_event.py", imports=DEPS)
 
 
 def capture_cache_tariff_additions(schema="outcomes_review"):
@@ -383,7 +379,7 @@ def capture_cache_tariff_additions(schema="outcomes_review"):
     )
     migration = load_isolated_source(
         "_cache_tariff_outcome_migration",
-        ROOT / "migrations/versions/0107_add_cache_tariff_evidence.py",
+        ROOT / "scripts/migrations/legacy_definitions/0107_add_cache_tariff_evidence.py",
         imports={
             "alembic": SimpleNamespace(op=operations),
             "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),
@@ -581,7 +577,7 @@ class DefinitionTests(unittest.TestCase):
         )
         migration = load_isolated_source(
             "_outcome_migration",
-            ROOT / "migrations/versions/0094_add_llm_outcome_events.py",
+            ROOT / "scripts/migrations/legacy_definitions/0094_add_llm_outcome_events.py",
             imports={
                 "alembic": SimpleNamespace(op=ops),
                 "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),

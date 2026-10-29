@@ -98,7 +98,7 @@ class HelpersTests(unittest.TestCase):
         # without ever creating a connection or importing real application config.
         revision = load_isolated_source(
             "_verifier_revision",
-            ROOT / "migrations/versions/0093_add_llm_dispatch_receipts.py",
+            ROOT / "scripts/migrations/legacy_definitions/0093_add_llm_dispatch_receipts.py",
             imports={"app.core.config": SimpleNamespace(settings=settings)},
         )
         from sqlalchemy import Index, Table

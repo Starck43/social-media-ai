@@ -7,6 +7,7 @@
 **Plan — active task cards:**
 
 - [P7-T02](../tasks/p7-t02.md) — One staging-backed operations proof
+- [P7-T05](../tasks/p7-t05.md) — prepare isolated staging contour and database recovery path
 
 **Accepted history:**
 

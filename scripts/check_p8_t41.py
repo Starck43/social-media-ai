@@ -56,12 +56,20 @@ def source_only_guard():
         with (
             patch.object(socket.socket, "connect", deny_network),
             patch.object(socket.socket, "connect_ex", deny_network),
+            patch.object(socket.socket, "sendto", deny_network),
             patch.object(socket, "getaddrinfo", deny_network),
             patch.object(socket, "create_connection", deny_network),
+            patch.object(socket, "gethostbyname", deny_network),
+            patch.object(socket, "gethostbyname_ex", deny_network),
         ):
             yield
     finally:
         sys.meta_path.remove(finder)
+
+
+def passed(result):
+    """A skip or expected failure is missing evidence, not a passing lane."""
+    return bool(result.wasSuccessful() and not result.skipped and not result.expectedFailures and result.testsRun > 0)
 
 
 def main():
@@ -71,8 +79,7 @@ def main():
     with source_only_guard():
         suite = unittest.defaultTestLoader.loadTestsFromNames(SUITES)
         result = unittest.TextTestRunner(verbosity=2).run(suite)
-    # A skip is missing evidence, not a passing lane.
-    return 0 if result.wasSuccessful() and not result.skipped and result.testsRun > 0 else 1
+    return 0 if passed(result) else 1
 
 
 if __name__ == "__main__":

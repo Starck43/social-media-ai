@@ -23,6 +23,19 @@ def calls(node):
     }
 
 
+def is_confirmation_gate(test, op, value):
+    """`confirmed <op> <value>` regardless of formatting or quote style."""
+    return (
+        isinstance(test, ast.Compare)
+        and isinstance(test.left, ast.Name)
+        and test.left.id == "confirmed"
+        and [type(o) for o in test.ops] == [op]
+        and isinstance(test.comparators[0], ast.Constant)
+        and type(test.comparators[0].value) is type(value)
+        and test.comparators[0].value == value
+    )
+
+
 class SurfaceSeamTests(unittest.TestCase):
     def test_all_five_writers_retain_shared_plan_preparation(self):
         cases = (
@@ -99,13 +112,13 @@ class SurfaceSeamTests(unittest.TestCase):
         self.assertEqual(keywords["parameters"]["required"], ["task_id", "job_id"])
 
     def test_web_and_api_send_guards_precede_delivery_call(self):
-        for path, name, expected_test in (
-            ("app/api/v1/endpoints/tasks.py", "send_composed_task_digest", "confirmed is not True"),
-            ("app/web/task_routes.py", "task_send_generated_digest", "confirmed != 'true'"),
+        for path, name, op, value in (
+            ("app/api/v1/endpoints/tasks.py", "send_composed_task_digest", ast.IsNot, True),
+            ("app/web/task_routes.py", "task_send_generated_digest", ast.NotEq, "true"),
         ):
             with self.subTest(path=path):
                 node = function(path, name)
-                gate = next(n for n in node.body if isinstance(n, ast.If) and ast.unparse(n.test) == expected_test)
+                gate = next(n for n in node.body if isinstance(n, ast.If) and is_confirmation_gate(n.test, op, value))
                 self.assertTrue(any(isinstance(n, (ast.Return, ast.Raise)) for n in ast.walk(gate)))
                 send = next(
                     n

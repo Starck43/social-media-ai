@@ -49,6 +49,9 @@ class ResearchHarness:
         self.order = []
         self.authorization_queries = []
         self.entitlement_calls = []
+        # Usage rows as (job_id, capability). Mirrors the reserved-per-job contract
+        # of EntitlementManager.evaluate(consume=True); the DB suite must prove the real one.
+        self.usage_rows = []
 
     def _init_fixtures(self):
         """Synthetic task/source/scenario rows, admitted snapshot and stage outputs."""
@@ -173,6 +176,16 @@ class ResearchHarness:
         self.entitlement_calls.append((required, job_id))
         if not self.entitlement_allowed:
             raise PermissionError("synthetic_entitlement_denied")
+        reserved = {capability for job, capability in self.usage_rows if job == job_id}
+        self.usage_rows.extend((job_id, capability) for capability in sorted(set(required) - reserved))
+
+    def stage_transitions(self):
+        """(stage, state) for each persisted checkpoint, in write order."""
+        return [
+            (name, checkpoint["stages"][name]["state"])
+            for checkpoint in self.checkpoints
+            for name in [list(checkpoint["stages"])[-1]]
+        ]
 
     async def _payer(self, **values):
         assert values == {"task_id": 7, "tenant_id": 3}

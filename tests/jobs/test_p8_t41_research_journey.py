@@ -4,6 +4,10 @@ import unittest
 from copy import deepcopy
 
 from tests.shared.vk_research_execution import ResearchHarness
+from tests.shared.vk_research_journey import journey_plan
+
+STAGES = journey_plan()["pipeline"]["stages"]
+CAPABILITIES = [(99, "ai.analyze"), (99, "social.collect")]
 
 
 class ResearchJourneyTests(unittest.IsolatedAsyncioTestCase):
@@ -21,8 +25,11 @@ class ResearchJourneyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("https://vk.com/wall-100_1", result["digest"]["preview_text"])
         self.assertTrue(result["digest"]["generated"])
         self.assertEqual(result["digest"]["delivered"], 0)
-        self.assertEqual(len(self.h.checkpoints), 6)
-        self.assertEqual(len(self.h.entitlement_calls), 3)
+        self.assertEqual(
+            self.h.stage_transitions(), [(stage, state) for stage in STAGES for state in ("started", "completed")]
+        )
+        self.assertEqual([job for _, job in self.h.entitlement_calls], [99] * len(STAGES))
+        self.assertEqual(self.h.usage_rows, CAPABILITIES)
         self.h.send.assert_not_awaited()
 
     async def test_completed_retry_rechecks_rights_but_does_not_repeat_work(self):
@@ -32,8 +39,9 @@ class ResearchJourneyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(replay["pipeline"], result["pipeline"])
         self.assertEqual(self.h.order, ["collect", "analyze", "digest"])
         self.assertEqual(self.h.checkpoints, checkpoints)
-        self.assertEqual(len(self.h.entitlement_calls), 6)
-        self.assertEqual(len([q for kind, q in self.h.authorization_queries if kind == "task"]), 6)
+        self.assertEqual(len(self.h.entitlement_calls), 2 * len(STAGES))
+        self.assertEqual(self.h.usage_rows, CAPABILITIES, "Replay must not record a second charge")
+        self.assertEqual(len([q for kind, q in self.h.authorization_queries if kind == "task"]), 2 * len(STAGES))
 
     async def test_revocation_between_stages_stops_analysis_and_digest(self):
         async def revoke(*args, **kwargs):
@@ -64,6 +72,7 @@ class ResearchJourneyTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(PermissionError, reason):
                     await h.pipeline.execute_task_pipeline(h.payload())
                 self.assertEqual(h.order, [])
+                self.assertEqual(h.usage_rows, [])
                 h.summarize.assert_not_awaited()
                 h.send.assert_not_awaited()
 

@@ -350,11 +350,21 @@ def nginx_static_contract() -> None:
     proxy = read(ROOT / "nginx/default.conf")
     host = read(ROOT / "nginx/vps-sites.conf.example")
     require("server api:8000;" in proxy, "Container Nginx must proxy to FastAPI's api service")
+    # Each hostname owns a dedicated HTTP and HTTPS vhost so certificate renewal
+    # and redirect targets stay host-specific.
+    for name in ("app.example.invalid", "stage.example.invalid"):
+        require(
+            f"server_name {name};" in host,
+            f"Host Nginx sample must declare a {name} vhost",
+        )
+        require(
+            f"return 301 https://{name}$request_uri;" in host,
+            f"Host Nginx {name} vhost must redirect HTTP to HTTPS",
+        )
     require(
-        "server_name app.example.invalid stage.example.invalid;" in host,
-        "Host Nginx sample must use domain placeholders",
+        host.count("location ^~ /.well-known/acme-challenge/") == 2,
+        "Both host Nginx HTTP vhosts must keep the ACME webroot for certificate renewal",
     )
-    require("return 301 https://$host$request_uri;" in host, "Host Nginx must redirect HTTP to HTTPS")
     require(
         "proxy_pass http://127.0.0.1:8226;" in host and "proxy_pass http://127.0.0.1:18000;" in host,
         "Production and staging vhosts must use their dedicated loopback ingress ports",
@@ -363,6 +373,15 @@ def nginx_static_contract() -> None:
         "REPLACE_WITH_CERT_NAME" in host and "example.invalid" in host,
         "Host Nginx sample must not embed live domains or certificates",
     )
+    # `ssl_prefer_server_ciphers` also ships inside certbot's options-ssl-nginx.conf,
+    # and nginx rejects a repeated directive, so it must not be declared here.
+    include_line = "include /etc/letsencrypt/options-ssl-nginx.conf;"
+    require(include_line in host, "Host Nginx sample must include certbot's TLS options")
+    require(
+        host.count("ssl_prefer_server_ciphers") == 0,
+        "Host Nginx sample must not duplicate ssl_prefer_server_ciphers from certbot options",
+    )
+    require("\t" not in host, "Host Nginx sample must indent with spaces, not tabs")
 
 
 def env_text(values: dict[str, str]) -> str:

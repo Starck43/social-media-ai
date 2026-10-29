@@ -1,67 +1,103 @@
-# Host Nginx template. Replace both hostnames and certificate paths before enabling.
-# This file is loaded inside the Nginx http{} context (sites-enabled/conf.d).
+# Host Nginx: TLS terminator in the host's http{} context.
+# Replace the example hostnames and certificate lineage before enabling.
+# The public host Nginx is the trusted edge; see X-Forwarded-For below.
+
 map $http_upgrade $connection_upgrade {
     default upgrade;
     ''      close;
 }
 
+# Production HTTP: keep the ACME webroot location for certificate renewal.
 server {
     listen 80;
-    server_name app.example.invalid stage.example.invalid;
+    server_name app.example.invalid;
     server_tokens off;
 
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
+
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://app.example.invalid$request_uri;
     }
 }
 
+# Staging HTTP: same ACME webroot, redirect to the staging hostname.
+server {
+    listen 80;
+    server_name stage.example.invalid;
+    server_tokens off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://stage.example.invalid$request_uri;
+    }
+}
+
+# Production HTTPS -> production Compose proxy on loopback :8226.
 server {
     listen 443 ssl http2;
+    # For Nginx 1.25.1+, use these instead of the line above:
+    # listen 443 ssl;
+    # http2 on;
+
     server_name app.example.invalid;
     server_tokens off;
 
-    ssl_certificate /etc/letsencrypt/live/REPLACE_WITH_CERT_NAME/fullchain.pem;
+    ssl_certificate     /etc/letsencrypt/live/REPLACE_WITH_CERT_NAME/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/REPLACE_WITH_CERT_NAME/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
 
     location / {
         proxy_pass http://127.0.0.1:8226;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        # Public edge: replace any client-supplied X-Forwarded-For value.
+        proxy_set_header X-Forwarded-For   $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header X-Forwarded-Host  $host;
+
+        proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 300s;
     }
 }
 
+# Staging HTTPS -> staging Compose proxy on loopback :18000.
 server {
     listen 443 ssl http2;
+    # For Nginx 1.25.1+, use these instead of the line above:
+    # listen 443 ssl;
+    # http2 on;
+
     server_name stage.example.invalid;
     server_tokens off;
 
-    ssl_certificate /etc/letsencrypt/live/REPLACE_WITH_CERT_NAME/fullchain.pem;
+    ssl_certificate     /etc/letsencrypt/live/REPLACE_WITH_CERT_NAME/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/REPLACE_WITH_CERT_NAME/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
 
     location / {
         proxy_pass http://127.0.0.1:18000;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header X-Forwarded-Host  $host;
+
+        proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 300s;
     }
 }

@@ -8,6 +8,7 @@
 
 - [P7-T02](../tasks/p7-t02.md) — One staging-backed operations proof
 - [P7-T05](../tasks/p7-t05.md) — prepare isolated staging contour and database recovery path
+- [P7-T06](../tasks/p7-t06.md) — prepare a single-VPS staging and production deployment path
 
 **Accepted history:**
 

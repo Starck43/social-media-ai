@@ -1,8 +1,16 @@
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Awaitable
+
+# Allow `python app/main.py` as well as `python -m app.main`: running the file
+# directly puts `app/` on sys.path instead of the project root, so the
+# `app.*` imports below would fail with ModuleNotFoundError.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

@@ -115,7 +115,7 @@ MODULE = load_isolated_source(
     ROOT / "app/models/managers/llm_attempt_manager.py",
     imports={
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseManagerDouble),
-        "app.models.analysis.llm_attempt": SimpleNamespace(LLMAttempt=MODEL),
+        "app.models.llm.llm_attempt": SimpleNamespace(LLMAttempt=MODEL),
     },
 )
 

@@ -428,8 +428,8 @@ MANAGER = load_isolated_source(
         "app.services.ai.dispatch_receipts": RECEIPTS,
         "app.services.ai.outcome_events": EVENTS,
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseManagerDouble),
-        "app.models.analysis.llm_dispatch_receipt": PARENT,
-        "app.models.analysis.llm_outcome_event": LEAF,
+        "app.models.llm.llm_dispatch_receipt": PARENT,
+        "app.models.llm.llm_outcome_event": LEAF,
     },
 )
 

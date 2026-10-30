@@ -77,7 +77,7 @@ def manager_source():
             "app.core.hashing": NS(get_password_hash=Mock(), verify_password=Mock()),
             "app.models.managers.base_manager": NS(BaseManager=StorageBoundary),
             "app.types": TYPES,
-            **dict.fromkeys(("app.models.user", "app.models.identity.user"), NS(User=user_class)),
+            **dict.fromkeys(("app.models.identity.user",), NS(User=user_class)),
             "app.models": NS(User=user_class, PlatformRole=NS(objects=roles)),
         },
     )

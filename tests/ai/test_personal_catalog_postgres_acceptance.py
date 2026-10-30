@@ -52,8 +52,8 @@ from app.models import (
     User,
     WorkspaceRole,
 )
-from app.models.agent_task import agent_task_sources
 from app.models.managers.tenant_manager import tenant_users, tenants
+from app.models.scheduling.agent_task import agent_task_sources
 from app.services.ai.personal_catalog import (
     catalog_metadata,
     chat_model_options,
@@ -330,11 +330,13 @@ async def test_database_catalog_has_composite_fk_and_ownership_guards():
         guards = set(
             (
                 await session.execute(
-                    text("""
+                    text(
+                        """
             SELECT c.relname, t.tgname FROM pg_trigger t
             JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname=:schema AND NOT t.tgisinternal AND t.tgenabled <> 'D'
-        """),
+        """
+                    ),
                     {"schema": settings.DB_SCHEMA},
                 )
             ).all()

@@ -53,7 +53,7 @@ class LLMAttemptManager(BaseManager):
     """
 
     def __init__(self):
-        from ..analysis.llm_attempt import LLMAttempt
+        from ..llm.llm_attempt import LLMAttempt
 
         super().__init__(LLMAttempt)
 
@@ -72,9 +72,13 @@ class LLMAttemptManager(BaseManager):
 
         policy = values["pricing_policy_version"]
         if policy in (None, "provider-price-v1"):
-            if values["pricing_token_unit"] not in (None, 1000) or values["cache_usage"] is not None or any(
-                values[field] is not None
-                for field in ("cache_read_cost_per_1m", "cache_write_5m_cost_per_1m", "cache_write_1h_cost_per_1m")
+            if (
+                values["pricing_token_unit"] not in (None, 1000)
+                or values["cache_usage"] is not None
+                or any(
+                    values[field] is not None
+                    for field in ("cache_read_cost_per_1m", "cache_write_5m_cost_per_1m", "cache_write_1h_cost_per_1m")
+                )
             ):
                 raise ValueError("Legacy attempts cannot contain cache tariff evidence")
         elif policy == "cache-tariff-v2":
@@ -92,7 +96,10 @@ class LLMAttemptManager(BaseManager):
                     raise ValueError("A v2 tariff with configured rates requires an explicit unit")
             elif type(values["pricing_token_unit"]) is not int or values["pricing_token_unit"] not in (1000, 1_000_000):
                 raise ValueError("Attempt pricing token unit is invalid")
-            if values["cache_usage"] is not None and validate_cache_usage(values["cache_usage"]) != values["cache_usage"]:
+            if (
+                values["cache_usage"] is not None
+                and validate_cache_usage(values["cache_usage"]) != values["cache_usage"]
+            ):
                 raise ValueError("Attempt cache usage does not match the normalized evidence contract")
         else:
             raise ValueError("Unsupported attempt pricing policy")

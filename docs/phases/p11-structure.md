@@ -38,6 +38,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
     merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
 
 26. [P11-T26](../tasks/p11-t26.md) — Remove legacy model import shims.
+27. [P11-T27](../tasks/p11-t27.md) — Admin console audit and operator tooling hardening.
 
 ## Sequencing and continuity
 

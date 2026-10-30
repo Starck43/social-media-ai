@@ -1,7 +1,6 @@
 # Capacity and telemetry specification
 
-**Status:** proposal for P11-T19; not implemented or measured. No numeric SLO
-target or capacity claim is made here.
+**Status:** specification accepted 2026-10-31; instrumentation and measurements remain implementation gates. No numeric SLO target or capacity claim is made here.
 
 ## Decision summary
 
@@ -155,7 +154,7 @@ and remain limited to that environment.
 
 ## Documents and source contracts
 
-- [P11-T19 task card](tasks/p11-t19.md)
+- [P11-T19 acceptance and limitations](audit/p11-t19.md)
 - [P11-T03 accepted queue and runtime ownership](audit/p11-t03.md)
 - [P11-T12 accepted action-audit contract](audit/p11-t12.md)
 - [P11-T08 accepted task-launch admission limits](audit/p11-t08.md)

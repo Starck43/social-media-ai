@@ -55,8 +55,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P3
 
-- [P11-T18](docs/tasks/p11-t18.md) Typed connector and job extension seams — **IN_PROGRESS** · notion-ai · [Execution](https://app.notion.com/chat?t=408895d2d5a18081942600a990c14a8a) · `P3` · `C4`
-- [P11-T19](docs/tasks/p11-t19.md) Capacity telemetry and reproducible scale evidence — **IN_PROGRESS** · notion-ai · [Execution](https://app.notion.com/chat?t=408895d2d5a18081942600a990c14a8a) · `P3` · `C4`
 
 ## Deferred by explicit owner decision
 

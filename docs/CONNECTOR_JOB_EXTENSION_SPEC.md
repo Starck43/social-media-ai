@@ -1,7 +1,6 @@
 # Connector and job extension seams
 
-**Status:** proposal for P11-T18; not implemented. No new connector, job type,
-permission, provider operation, or capability is enabled by this document.
+**Status:** specification accepted 2026-10-31; implementation gated by a selected capability. No new connector, job type, permission, provider operation, or capability is enabled.
 
 ## Decision summary
 
@@ -119,7 +118,7 @@ of this proposal.
 
 ## Documents and source contracts
 
-- [P11-T18 task card](tasks/p11-t18.md)
+- [P11-T18 acceptance and limitations](audit/p11-t18.md)
 - [P11-T04 accepted task orchestration](audit/p11-t04.md)
 - [P11-T06 accepted typed launch/error contract](audit/p11-t06.md)
 - [Product extension contracts](PRODUCT_PLAN.md#extension-contracts)

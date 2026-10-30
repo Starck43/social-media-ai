@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import PlainTextResponse, Response
 from starlette.websockets import WebSocket
 
-from app.admin.csrf import CSRFTokenManager
+from app.admin.csrf import AdminCSRFMiddleware, CSRFTokenManager
 from app.admin.scope import AdminScopeMiddleware
 from app.api.v1 import entry
 from app.core.api_scope import ApiScopeMiddleware
@@ -141,11 +141,19 @@ def create_application() -> FastAPI:
     # (`docs/ADMIN.md` — "everyone else their own").
     application.add_middleware(AdminScopeMiddleware)
 
+    # Console CSRF: every mutating /admin/* request carries a session-bound
+    # token. Added before SessionMiddleware so it runs INSIDE it (Starlette
+    # nests in reverse order of the calls) and the session is available.
+    application.add_middleware(AdminCSRFMiddleware)
+
     # Add SessionMiddleware with a secret key
     application.add_middleware(
         SessionMiddleware,  # type: ignore[arg-type]
         secret_key=settings.SECRET_KEY,
         session_cookie="session",
+        # Explicit, not the browser default: console writes rely on it as the
+        # second CSRF layer after the token check above.
+        same_site="lax",
         # Only the explicit development profile permits local HTTP cookies.
         https_only=settings.ENVIRONMENT.strip().lower() != "development",
         max_age=3600 * 24,

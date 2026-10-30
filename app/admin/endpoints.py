@@ -12,7 +12,7 @@ from starlette import status
 from starlette.templating import Jinja2Templates
 
 from app.admin.authorization import require_admin_perm
-from app.admin.csrf import get_csrf_manager
+from app.admin.csrf import issue_token, verify_request_token
 from app.core.config import settings
 from app.core.hashing import get_password_hash, verify_password
 from app.models import Tenant, User
@@ -52,7 +52,7 @@ async def llm_model_test_real(
     csrf_token: str = Form(""),
 ):
     """Retire the old paid route without silently translating or replaying it."""
-    if not get_csrf_manager(request).verify_token(csrf_token):
+    if not verify_request_token(request, csrf_token):
         raise HTTPException(status_code=403, detail="Недействительный CSRF токен")
     token = request.session.get("token")
     if not token:
@@ -120,9 +120,7 @@ async def change_password_form_path(
         # Try to get from a session or use default
         return_url = request.session.get(f"return_url_{user_id}", f"/admin/user/details/{user_id}")
 
-    csrf_manager = get_csrf_manager(request)
-    csrf_token = csrf_manager.generate_token()
-    request.session["csrf_token"] = csrf_token
+    csrf_token = issue_token(request)
 
     # Get the admin instance from the request. Never mutate it per request:
     # the instance is shared by every operator, and the template sets its own
@@ -186,8 +184,7 @@ async def change_password_submit_path(
         request.session["_messages"] = []
 
     # CSRF check
-    csrf_manager = get_csrf_manager(request)
-    if not csrf_token or not csrf_manager.verify_token(csrf_token):
+    if not verify_request_token(request, csrf_token):
         request.session["_messages"].append(
             "Отсутствующий или недействительный токен безопасности. Попробуйте ещё раз."
         )
@@ -285,8 +282,13 @@ async def change_password_submit_path(
 
 
 @router.post("/admin/verify-current-password")
+@limiter.limit(settings.CHANGE_PASSWORD_RATE_LIMIT)
 async def verify_current_password(request: Request, data: dict = Body(...)):
-    """AJAX endpoint to verify current password"""
+    """AJAX endpoint to verify the current password.
+
+    Rate-limited like the password change itself: without a budget this would
+    be an online password oracle. The CSRF middleware guards the POST.
+    """
     token = request.session.get("token")
     if not token:
         return {"valid": False}
@@ -411,7 +413,7 @@ async def submit_llm_model_test(request: Request):
     user = await require_admin_perm(request, "llmmodel", ActionType.CONFIGURE)
     form = await request.form()
     token = form.get("csrf_token")
-    if not isinstance(token, str) or not get_csrf_manager(request).verify_token(token):
+    if not isinstance(token, str) or not verify_request_token(request, token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
     from app.admin.actions import LLMModelActions
 

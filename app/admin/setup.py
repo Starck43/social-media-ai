@@ -1,10 +1,11 @@
 from pathlib import Path
 
+from jinja2 import pass_context
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from starlette.staticfiles import StaticFiles
 
 from app.admin.authorization import AdminAuthorizationBackend
-from app.admin.csrf import CSRFTokenManager
+from app.admin.csrf import CSRFTokenManager, issue_token
 from app.admin.session import AdminAsyncSession
 from app.core.config import settings
 from app.core.database import async_engine
@@ -77,9 +78,18 @@ def setup_admin(app):
         templates_dir=str(PROJECT_ROOT / "app" / "templates"),
     )
 
+    @pass_context
+    def _csrf_token(context):
+        # Templates render per request, so the token binds to that session;
+        # without a request (e.g. shell rendering) fall back to an unbound token.
+        request = context.get("request")
+        if request is None:
+            return csrf_manager.generate_token()
+        return issue_token(request)
+
     admin.templates.env.globals.update(
         {
-            "csrf_token": lambda: csrf_manager.generate_token(),
+            "csrf_token": _csrf_token,
             "settings": settings,
             "debug": settings.DEBUG,
             "render_analysis": _render_analysis,

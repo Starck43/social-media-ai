@@ -392,7 +392,14 @@ class AtomicStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.budget.reserved_usd, D(0))
 
     async def test_free_zero_and_unlimited_unbounded_are_distinct(self):
-        self.value = receipt(input_cost_per_1k=D(0), output_cost_per_1k=D(0), tariff_state="free")
+        self.value = receipt(
+            input_cost_per_1k=D(0),
+            output_cost_per_1k=D(0),
+            cache_read_cost_per_1m=D(0),
+            cache_write_5m_cost_per_1m=D(0),
+            cache_write_1h_cost_per_1m=D(0),
+            tariff_state="free",
+        )
         self.assertTrue(await self.reserve(D(0), None))
         self.assertEqual(self.manager.budget.undefined_count, 0)
         self.manager = MANAGER.LLMBudgetManager()

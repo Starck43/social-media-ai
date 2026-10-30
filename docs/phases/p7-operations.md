@@ -7,6 +7,7 @@
 **Plan — active task cards:**
 
 - [P7-T02](../tasks/p7-t02.md) — One staging-backed operations proof
+- [P7-T07](../tasks/p7-t07.md) — Clarify local development versus server staging/production startup commands — IN_PROGRESS (notion-ai)
 
 **Accepted history:**
 

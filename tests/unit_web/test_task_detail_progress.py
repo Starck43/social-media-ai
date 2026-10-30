@@ -103,6 +103,7 @@ async def test_latest_progress_endpoint_looks_up_task_and_job_in_same_tenant(mon
         lambda *_args, **_kwargs: {"job": job_row, "summary": {}, "sources": [], "can_view_sources": False},
     )
     monkeypatch.setattr(tasks, "_task_run_scope", lambda *_args, **_kwargs: _async_value(None))
+    monkeypatch.setattr(task_presenters, "_lane_run_rows", lambda _job: _async_value([]))
     monkeypatch.setattr(tasks, "render", lambda _request, name, **context: (name, context))
     request = SimpleNamespace(state=SimpleNamespace(tenant_id=7))
 
@@ -198,6 +199,7 @@ def test_task_run_panel_hides_admin_diagnostics_for_regular_operator(monkeypatch
     monkeypatch.setattr(task_presenters, "_job_summary", lambda *_args: {"status": "done", "stats": [{"value": 2}]})
     monkeypatch.setattr(task_presenters, "_source_links", lambda _job: [{"source_id": 8, "name": "Source"}])
     monkeypatch.setattr(task_presenters, "_raw_coverage", lambda _job: [{"source_id": 8, "percent": 50}])
+    monkeypatch.setattr(task_presenters, "_lane_run_rows", lambda _job: _async_value([]))
     monkeypatch.setattr(task_presenters, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
     monkeypatch.setattr(
         task_presenters, "perms_can", lambda _request, resource, action: (resource, action) == ("source", "view")
@@ -235,6 +237,7 @@ def test_task_run_panel_includes_allowlisted_diagnostics_only_for_admin(monkeypa
     )
     monkeypatch.setattr(task_presenters, "_source_links", lambda _job: [])
     monkeypatch.setattr(task_presenters, "_raw_coverage", lambda _job: [])
+    monkeypatch.setattr(task_presenters, "_lane_run_rows", lambda _job: _async_value([]))
     monkeypatch.setattr(task_presenters, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
     monkeypatch.setattr(task_presenters, "perms_can", lambda *_args: False)
     monkeypatch.setattr(task_presenters, "_diagnostics_admin", lambda _request: True)

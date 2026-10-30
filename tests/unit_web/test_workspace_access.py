@@ -209,7 +209,7 @@ async def test_messenger_member_requires_ai_chat_grant():
 @pytest.mark.parametrize("active", [True, False])
 @pytest.mark.parametrize("codename,expected", [("admin", True), ("operator", True), ("user", False)])
 def test_admin_entry_requires_active_platform_operator_or_admin(active, codename, expected):
-    enum = NS(ADMIN="admin", OPERATOR="operator")
+    enum = NS(ADMIN="admin", OPERATOR="operator", SUPERUSER="superuser")
     cls = load_nodes(
         "app/models/identity/user.py",
         {"User"},
@@ -298,6 +298,7 @@ async def test_admin_model_action_grants_remain_separate(grants):
     backend.resolve_user = AsyncMock(
         return_value=NS(
             has_admin_access=lambda: True,
+            is_superuser=False,
             is_platform_admin=False,
             model_permissions=lambda name: grants if name == "source" else set(),
         )
@@ -397,7 +398,7 @@ async def test_team_change_locks_workspace_and_updates_only_authorized_target(mo
     module(monkeypatch, "app", __path__=[])
     module(monkeypatch, "app.models", __path__=[])
     module(monkeypatch, "app.models.managers", __path__=[])
-    module(monkeypatch, "app.models.tenancy", __path__=[])
+    module(monkeypatch, "app.models.tenancy", __path__=[], Tenant=Tenant)
     module(monkeypatch, "app.models.tenancy.workspace_role", WorkspaceRole=WorkspaceRole)
     module(monkeypatch, "app.models.tenancy.tenant", Tenant=Tenant)
     module(monkeypatch, "app.models.identity.user", User=User)

@@ -41,6 +41,10 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 
 7. [P8-T42](../tasks/p8-t42.md) — persistent chat actions, explicit task context,
    permission-filtered plan/status and responsive workspace panel.
+8. [P8-T43](../tasks/p8-t43.md) — preserve each source post permalink and its
+   media URL references from collection through analysis and agent-rendered results;
+   use source URLs only (no media downloading/storage). Coordinate overlapping chat
+   presentation with P8-T42.
 
 **Other active P8 cards:**
 

@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .agent_scenario import AgentScenario
-    from .analyzed_content_receipt import AnalyzedContentReceipt
     from .ai_analytics import AIAnalytics
+    from .analyzed_content_receipt import AnalyzedContentReceipt
 
 __all__ = ["AgentScenario", "AnalyzedContentReceipt", "AIAnalytics"]
 _MODULES = {

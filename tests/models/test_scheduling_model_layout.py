@@ -78,8 +78,8 @@ def test_task_source_association_has_single_identity_and_unchanged_contract():
     from sqlalchemy.orm import configure_mappers
 
     from app.models import AgentScenario, AgentTask, Base, Source, Tenant
-    from app.models.scheduling.agent_task import agent_task_sources as canonical
     from app.models.scheduling import agent_task_sources as domain
+    from app.models.scheduling.agent_task import agent_task_sources as canonical
     from app.models.scheduling.agent_task import agent_task_sources as leaf
 
     configure_mappers()

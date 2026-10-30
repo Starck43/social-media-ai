@@ -191,7 +191,9 @@ async def test_messenger_member_requires_ai_chat_grant():
             WEB_CHANNEL="web",
             current_tenant_id=lambda: 7,
             resolve_runtime_identity=AsyncMock(
-                return_value=NS(user_id=101, is_owner=False, ai_chat_enabled=True, user=user(), member_grants=frozenset())
+                return_value=NS(
+                    user_id=101, is_owner=False, ai_chat_enabled=True, user=user(), member_grants=frozenset()
+                )
             ),
             memory_actor_scope=lambda *args: nullcontext(),
             permission_scope=lambda *a, **kw: nullcontext(),

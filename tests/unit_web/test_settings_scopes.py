@@ -188,7 +188,8 @@ def gateway(monkeypatch):
         **dict.fromkeys(("app.models.identity.user",), dict(User=fake_models["users"])),
         **dict.fromkeys(("app.models.llm.llm_model",), dict(LLMModel=fake_models["models"])),
         **dict.fromkeys(
-            ("app.models.scheduling.agent_task", "app.models.scheduling.agent_task"), dict(AgentTask=fake_models["agenttask"])
+            ("app.models.scheduling.agent_task", "app.models.scheduling.agent_task"),
+            dict(AgentTask=fake_models["agenttask"]),
         ),
         **dict.fromkeys(
             ("app.models.analysis.agent_scenario", "app.models.analysis.agent_scenario"),

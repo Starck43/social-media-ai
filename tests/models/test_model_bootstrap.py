@@ -52,6 +52,7 @@ DOMAINS = {
     },
 }
 
+
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_canonical_classes_keep_facade_identity_and_manager_binding(domain):
     public = importlib.import_module("app.models")

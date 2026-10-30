@@ -126,7 +126,8 @@ class ReapTests(unittest.IsolatedAsyncioTestCase):
                 "app.models.managers.base_manager": SimpleNamespace(BaseManager=DummyBase),
                 **dict.fromkeys(("app.models.scheduling.job",), SimpleNamespace(Job=JobRow)),
                 **dict.fromkeys(
-                    ("app.models.scheduling.agent_task", "app.models.scheduling.agent_task"), SimpleNamespace(AgentTask=TaskRow)
+                    ("app.models.scheduling.agent_task", "app.models.scheduling.agent_task"),
+                    SimpleNamespace(AgentTask=TaskRow),
                 ),
                 "app.core.database": SimpleNamespace(async_session_maker=session_maker),
                 "app.core.tenant_context": tenancy,

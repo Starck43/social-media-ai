@@ -34,10 +34,12 @@ MODELS = {
 # 0be47bbf. The LLMModel and LLMProvider classes changed after that snapshot:
 # cache tariff fields and the pricing token unit (afe30b6), then personal
 # ownership with per-owner constraints and the get_api_key owner guard (e14c395).
-CLASS_FINGERPRINTS = {'AIAnalytics': '5d5f4e40a0f1e71cd52a25b89c20fc426ab0935d42b7c27a3f337ec5c9733aa1',
- 'AgentScenario': 'b3510e7960b9329f3f3ee8b040d8d83dd085efa978946e0c4acb65bccb02877b',
- 'LLMModel': 'c4ba75818e22dcb147bbac9ac531be0f938dd1c9d96f5533cb6e9bfa37d1a3a1',
- 'LLMProvider': '8c3c27ae91d7f42eb9a20bdd1c5d42985b8d9e6a42a4ac06675f48ecc8c2a0b4'}
+CLASS_FINGERPRINTS = {
+    "AIAnalytics": "5d5f4e40a0f1e71cd52a25b89c20fc426ab0935d42b7c27a3f337ec5c9733aa1",
+    "AgentScenario": "b3510e7960b9329f3f3ee8b040d8d83dd085efa978946e0c4acb65bccb02877b",
+    "LLMModel": "c4ba75818e22dcb147bbac9ac531be0f938dd1c9d96f5533cb6e9bfa37d1a3a1",
+    "LLMProvider": "8c3c27ae91d7f42eb9a20bdd1c5d42985b8d9e6a42a4ac06675f48ecc8c2a0b4",
+}
 
 
 def _canonical_ast(node):
@@ -78,9 +80,7 @@ def test_entire_class_contract_unchanged_except_relative_import_depth(name):
     cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name)
     for node in ast.walk(cls):
         if isinstance(node, ast.ImportFrom) and node.level:
-            node.module = importlib.util.resolve_name(
-                "." * node.level + (node.module or ""), f"app.models.{package}"
-            )
+            node.module = importlib.util.resolve_name("." * node.level + (node.module or ""), f"app.models.{package}")
             node.level = 0
     payload = json.dumps(_canonical_ast(cls), ensure_ascii=True, separators=(",", ":")).encode("utf-8")
     assert hashlib.sha256(payload).hexdigest() == CLASS_FINGERPRINTS[name]
@@ -112,7 +112,8 @@ def test_canonical_serialized_class_reference_resolves(name):
 
 def test_relationships_across_domain_boundaries_are_unchanged():
     from sqlalchemy.orm import configure_mappers
-    from app.models import AIAnalytics, AgentScenario, AgentTask, LLMModel, LLMProvider, Source
+
+    from app.models import AgentScenario, AgentTask, AIAnalytics, LLMModel, LLMProvider, Source
 
     configure_mappers()
     assert LLMProvider.__mapper__.relationships["models"].mapper.class_ is LLMModel
@@ -129,6 +130,7 @@ def test_relationships_across_domain_boundaries_are_unchanged():
 
 def test_cost_types_and_period_enum_are_not_unified_by_layout_change():
     from sqlalchemy import Float, Numeric
+
     from app.models.analysis import AIAnalytics
     from app.models.llm import LLMModel
     from app.types import PeriodType
@@ -147,9 +149,14 @@ def test_cost_types_and_period_enum_are_not_unified_by_layout_change():
     assert LLMModel.__table__.c.last_request_cost.nullable
 
 
-@pytest.mark.parametrize("value,expected", [
-    ("", []), ("text", ["text"]), ("text, image,video", ["text", "image", "video"]),
-])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("", []),
+        ("text", ["text"]),
+        ("text, image,video", ["text", "image", "video"]),
+    ],
+)
 def test_capabilities_and_legacy_helper_preserved(value, expected):
     from app.models.llm import LLMModel
     from app.models.llm.llm_model import _model_type_to_capabilities
@@ -162,9 +169,10 @@ def test_model_tariff_conversion_and_scenario_legacy_prompt_alias_preserved():
     from app.models.analysis import AgentScenario
     from app.models.llm import LLMModel
 
-    assert LLMModel.get_cost_per_million(
-        SimpleNamespace(input_cost_per_1k=0.001, output_cost_per_1k=0.002)
-    ) == (1.0, 2.0)
+    assert LLMModel.get_cost_per_million(SimpleNamespace(input_cost_per_1k=0.001, output_cost_per_1k=0.002)) == (
+        1.0,
+        2.0,
+    )
     scenario = SimpleNamespace(base_prompt="original")
     assert AgentScenario.ai_prompt.fget(scenario) == "original"
     AgentScenario.ai_prompt.fset(scenario, "updated")
@@ -204,9 +212,14 @@ def test_provider_api_key_denied_for_another_catalog_owner(monkeypatch, stored):
     assert calls == []
 
 
-@pytest.mark.parametrize("key,expected", [
-    ("", ""), ("short", "***"), ("synthetic-long-token", "synt…oken"),
-])
+@pytest.mark.parametrize(
+    "key,expected",
+    [
+        ("", ""),
+        ("short", "***"),
+        ("synthetic-long-token", "synt…oken"),
+    ],
+)
 def test_provider_key_masking_unchanged_without_real_secrets(key, expected):
     from app.models.llm import LLMProvider
 
@@ -219,13 +232,20 @@ def test_unknown_domain_export_raises_attribute_error():
         getattr(domain, "UnknownAnalysisModel")
 
 
-@pytest.mark.parametrize("first", [
-    "app.models.analysis",
-    "app.models.analysis.agent_scenario", "app.models.analysis.ai_analytics",
-    "app.models.llm.llm_model", "app.models.llm.llm_provider",
-    "app.models.managers.agent_scenario_manager", "app.models.managers.ai_analytics_manager",
-    "app.models.managers.llm_model_manager", "app.models.managers.llm_provider_manager",
-])
+@pytest.mark.parametrize(
+    "first",
+    [
+        "app.models.analysis",
+        "app.models.analysis.agent_scenario",
+        "app.models.analysis.ai_analytics",
+        "app.models.llm.llm_model",
+        "app.models.llm.llm_provider",
+        "app.models.managers.agent_scenario_manager",
+        "app.models.managers.ai_analytics_manager",
+        "app.models.managers.llm_model_manager",
+        "app.models.managers.llm_provider_manager",
+    ],
+)
 def test_fresh_process_import_entry_points_complete_without_partial_binding(first):
     # Owner execution inherits conftest's redirected env; child performs no SQL.
     code = """
@@ -251,6 +271,10 @@ for name, module in json.loads(sys.argv[2]).items():
             first,
             json.dumps({name: f"{data[5]}.{data[0]}" for name, data in MODELS.items()}),
         ],
-        cwd=ROOT, text=True, capture_output=True, timeout=60, check=False,
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
     )
     assert result.returncode == 0, result.stderr

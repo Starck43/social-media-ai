@@ -310,7 +310,7 @@ class DigestEnvironment:
             {
                 "fastapi": fastapi,
                 "fastapi.responses": response_module,
-                **dict.fromkeys(('app.models.notifications.digest_run',), module_with(DigestRun=object)),
+                **dict.fromkeys(("app.models.notifications.digest_run",), module_with(DigestRun=object)),
                 "app.services.digest.builder": self.builder,
                 "app.services.digest.render": module_with(render_digest=lambda *args: "mock rendering"),
                 "app.web.deps": self.webdeps,

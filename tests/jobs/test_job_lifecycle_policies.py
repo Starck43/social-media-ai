@@ -74,8 +74,8 @@ def test_automatic_delete_sql_is_tenant_terminal_and_review_scoped():
 
 
 def test_web_attention_query_is_text_only_and_active_history_filters_match():
-    from app.models.scheduling.job import Job
     from app.models.managers.job_manager import web_attention_criteria, web_page_status_criteria
+    from app.models.scheduling.job import Job
 
     attention_sql = str(
         select(Job.id)

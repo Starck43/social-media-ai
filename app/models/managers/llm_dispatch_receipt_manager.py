@@ -84,7 +84,9 @@ class LLMDispatchReceiptManager(BaseManager):
             existing = (
                 (
                     await session.execute(
-                            select(*(getattr(self.model, field) for field in RECEIPT_FIELDS if hasattr(self.model, field))).where(
+                        select(
+                            *(getattr(self.model, field) for field in RECEIPT_FIELDS if hasattr(self.model, field))
+                        ).where(
                             self.model.dispatch_id == value["dispatch_id"],
                             self.model.tenant_id == tenant_id,
                         )

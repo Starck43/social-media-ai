@@ -393,7 +393,8 @@ class Fixture:
             ),
             "app.types": SimpleNamespace(ActionType=SimpleNamespace(CREATE="create", UPDATE="update", DELETE="delete")),
             **dict.fromkeys(
-                ("app.models.scheduling.agent_task", "app.models.scheduling.agent_task"), SimpleNamespace(AgentTask=Task)
+                ("app.models.scheduling.agent_task", "app.models.scheduling.agent_task"),
+                SimpleNamespace(AgentTask=Task),
             ),
             **dict.fromkeys(("app.models.collection.source",), SimpleNamespace(Source=Source)),
             "app.jobs.source_activity": SimpleNamespace(

@@ -95,6 +95,7 @@ def test_canonical_class_serialization_stays_resolvable(name):
 
 def test_unique_foreign_key_and_cost_role_contracts_do_not_change():
     from sqlalchemy import Float, String, UniqueConstraint
+
     from app.models.agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 
     def unique_columns(model, name):

@@ -50,7 +50,15 @@ def test_removed_compatibility_modules_are_absent():
 
 def test_analysis_and_scheduling_exports_stay_domain_scoped():
     packages = {
-        "analysis": {"LLMAttempt", "LLMBudgetDay", "LLMBudgetReservation", "LLMDispatchReceipt", "LLMModel", "LLMOutcomeEvent", "LLMProvider"},
+        "analysis": {
+            "LLMAttempt",
+            "LLMBudgetDay",
+            "LLMBudgetReservation",
+            "LLMDispatchReceipt",
+            "LLMModel",
+            "LLMOutcomeEvent",
+            "LLMProvider",
+        },
         "scheduling": {"BotAction", "DigestRun"},
     }
     for package, forbidden in packages.items():

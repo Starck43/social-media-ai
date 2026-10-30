@@ -24,11 +24,13 @@ from ._shared import (
     action,
     get_model_form,
     get_password_hash,
+    hide_form_secret,
     logger,
     logging,
     plan_badge,
     role_choices,
     role_edit,
+    seal_form_secret,
     validators,
 )
 
@@ -430,19 +432,27 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
         "label": {"label": "Метка", "description": "Для справки, например «VK OAuth (PKCE)»"},
         "secret_encrypted": {
             "label": "Секрет",
-            "description": "Вставьте токен открытым текстом — он будет зашифрован перед сохранением",
+            "description": "Шифруется до записи в БД. Пустое поле сохраняет текущий секрет — вводите только для замены",
         },
         "expires_at": {"label": "Действует до", "description": "Оставьте пустым, если срок неизвестен"},
         **BaseAdmin.form_args,
     }
 
-    async def after_model_change(self, data: dict, model: UserCredential, is_created: bool, request=None) -> None:
-        if model.secret_encrypted and not model.secret_encrypted.startswith("gAAAAA"):
-            from app.utils.crypto import encrypt_secret
+    async def on_model_change(self, data: dict, model: UserCredential, is_created: bool, request=None) -> None:
+        """Seal the secret before the row is written, not after it.
 
-            model.secret_encrypted = encrypt_secret(model.secret_encrypted)
-            await UserCredential.objects.update_by_id(model.id, secret_encrypted=model.secret_encrypted)
-        await super().after_model_change(data, model, is_created, request)
+        A blank field keeps the stored secret: the edit form never renders the
+        ciphertext, so an operator changing only the label must not be forced to
+        retype the token.
+        """
+        seal_form_secret(data, "secret_encrypted", getattr(model, "secret_encrypted", None))
+        await super().on_model_change(data, model, is_created, request)
+
+    async def get_form_data_for_edit(self, obj: Any) -> dict[str, Any]:
+        """Never render stored ciphertext back into the edit form."""
+        data = await super().get_form_data_for_edit(obj)
+        hide_form_secret(data, "secret_encrypted")
+        return data
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

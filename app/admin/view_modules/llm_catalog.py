@@ -23,9 +23,11 @@ from ._shared import (
     Union,
     action,
     get_model_form,
+    hide_form_secret,
     logger,
     logging,
     model_price,
+    seal_form_secret,
     slugify_uid,
     validators,
     widgets,
@@ -147,7 +149,7 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         },
         "encrypted_api_key": {
             "label": "API ключ",
-            "description": "Ключ будет зашифрован перед сохранением в БД",
+            "description": "Шифруется до записи в БД. Пустое поле сохраняет текущий ключ — вводите только для замены",
         },
         "is_active": {
             "label": "Активен",
@@ -279,8 +281,19 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
             data["uid"] = slug
             model.uid = slug
 
+        # The key is sealed here, before SQLAdmin writes the row. A blank field
+        # keeps the stored key, so an edit that only touches the name does not
+        # need the secret retyped.
+        seal_form_secret(data, "encrypted_api_key", getattr(model, "encrypted_api_key", None))
+
         with self._catalog_scope(request):
             await super().on_model_change(data, model, is_created, request)
+
+    async def get_form_data_for_edit(self, obj: Any) -> dict[str, Any]:
+        """Never render stored ciphertext back into the edit form."""
+        data = await super().get_form_data_for_edit(obj)
+        hide_form_secret(data, "encrypted_api_key")
+        return data
 
     @action(name="test-connection", label="🔌 Проверить подключение", add_in_list=True, add_in_detail=True)
     async def test_connection_action(self, request: Request):
@@ -316,12 +329,9 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
     async def after_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
+        # The API key is already sealed in `on_model_change`; nothing to rewrite
+        # after the commit.
         with self._catalog_scope(request):
-            if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
-                from app.utils.crypto import encrypt_secret
-
-                model.encrypted_api_key = encrypt_secret(model.encrypted_api_key)
-                await LLMProvider.objects.update_by_id(model.id, encrypted_api_key=model.encrypted_api_key)
             await super().after_model_change(data, model, is_created, request)
 
 

@@ -185,8 +185,8 @@ class HelpersTests(unittest.TestCase):
         model_signature = MODULE.table_signature(model.LLMDispatchReceipt.__table__)
         # Physical ALTER column order differs from declarative grouping. Compare
         # columns by name while retaining every other schema detail.
-        captured_signature["columns"].sort(key=lambda column: column["name"])
-        model_signature["columns"].sort(key=lambda column: column["name"])
+        captured_signature["columns"].sort(key=lambda column: column[0])
+        model_signature["columns"].sort(key=lambda column: column[0])
         self.assertEqual(captured_signature, model_signature)
 
 

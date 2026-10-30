@@ -166,9 +166,7 @@ async def test_detail_retry_passes_identical_window_to_read_reset_and_job():
     scope, row, manager, collected, jobs, session, tx = route_scope()
     launch_observed = []
     scope["launch_job_background"].side_effect = lambda _job_id, **_kwargs: launch_observed.append(tx.outcome)
-    response = await scope["analytics_retry"](
-        NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7
-    )
+    response = await scope["analytics_retry"](NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7)
     assert response.url == "/app/analytics/1127?retry_job_id=20"
     manager.get.assert_awaited_once_with(id=1127, tenant_id=7)
     bounds = retry.parse_staged_window({"start_date": START, "end_date": END})
@@ -235,9 +233,7 @@ async def test_detail_retry_blockers_never_write(blocked):
             "collect": blocked == "pending",
             "analyze": blocked == "running",
         }
-    await scope["analytics_retry"](
-        NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7
-    )
+    await scope["analytics_retry"](NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7)
     collected.reset_attempts.assert_not_awaited()
     jobs.enqueue.assert_not_awaited()
     assert tx.outcome is None
@@ -248,9 +244,7 @@ async def test_enqueue_failure_rolls_back_reset_and_never_reports_success():
     scope, _, _, _, jobs, session, tx = route_scope()
     jobs.enqueue.side_effect = RuntimeError("synthetic queue failure")
     with pytest.raises(RuntimeError):
-        await scope["analytics_retry"](
-            NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7
-        )
+        await scope["analytics_retry"](NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7)
     assert tx.outcome == "rollback"
     session.close.assert_awaited_once()
     assert not scope["add_flash"].called
@@ -485,9 +479,9 @@ def source_html(rights=True, can_view_tasks=None, can_create_tasks=None, **overr
         source=source,
         perms=NS(
             can=lambda model, action: (
-                can_view_tasks if (model, action) == ("agenttask", "view")
-                else can_create_tasks if (model, action) == ("agenttask", "create")
-                else rights
+                can_view_tasks
+                if (model, action) == ("agenttask", "view")
+                else can_create_tasks if (model, action) == ("agenttask", "create") else rights
             )
         ),
         csrf="fake",

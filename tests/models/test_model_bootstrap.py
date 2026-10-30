@@ -1,4 +1,4 @@
-"""Import-only checks for canonical ownership and compatibility entry points."""
+"""Import-only checks for canonical ownership and public model entry points."""
 
 import importlib
 import json
@@ -52,27 +52,14 @@ DOMAINS = {
     },
 }
 
-# New domain modules have no legacy flat `app.models.<module>` facade for the
-# canonical class; their domain/package identity is still asserted below.
-NO_LEGACY_FLAT_MODULE = {
-    ("actions", "agent_action"),
-    ("notifications", "notification_receipt"),
-    ("billing", "billing"),
-    ("billing", "dispatch"),
-    ("notifications", "notification_preference"),
-}
-
 
 @pytest.mark.parametrize("domain", DOMAINS)
-def test_canonical_classes_keep_legacy_identity_and_manager_binding(domain):
+def test_canonical_classes_keep_facade_identity_and_manager_binding(domain):
     public = importlib.import_module("app.models")
     for module, name in DOMAINS[domain].items():
         cls = getattr(public, name)
         assert cls is getattr(importlib.import_module(f"app.models.{domain}"), name)
         assert cls is getattr(importlib.import_module(f"app.models.{domain}.{module}"), name)
-        legacy = "tenant" if domain == "tenancy" and name != "WorkspaceRole" else module
-        if name != "WorkspaceRole" and (domain, module) not in NO_LEGACY_FLAT_MODULE:
-            assert cls is getattr(importlib.import_module(f"app.models.{legacy}"), name)
         assert cls.__module__ == f"app.models.{domain}.{module}"
         assert cls.objects.model is cls
         assert sum(mapper.class_ is cls for mapper in public.Base.registry.mappers) == 1

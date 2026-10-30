@@ -1,8 +1,8 @@
 """Static layout checks for the notifications model domain package.
 
 Mirrors tests/test_tenancy_model_layout.py: class identity across public,
-legacy, domain and leaf import paths, exactly one mapper registration,
-preserved manager binding and legacy manager exports, unchanged schema
+facade, domain and leaf import paths, exactly one mapper registration,
+preserved manager binding, unchanged schema
 declarations and fresh-process import entry points. New test bodies issue
 no SQL of their own; standard conftest fixtures still apply.
 """
@@ -23,7 +23,6 @@ from app.models import Notification as notification_public
 from app.models.managers import NotificationManager as notification_manager_export
 from app.models.managers.notification_manager import NotificationManager
 from app.models.managers.notification_manager import NotificationManager as notification_manager_direct
-from app.models.notification import Notification as notification_legacy
 from app.models.notifications import Notification as notification_domain
 from app.models.notifications.notification import Notification as notification_leaf
 
@@ -44,9 +43,8 @@ def _canonical_ast(node):
     return node
 
 
-def test_class_identity_across_all_paths():
+def test_class_identity_across_facade_domain_and_leaf():
     assert notification_public is notification_leaf
-    assert notification_legacy is notification_leaf
     assert notification_domain is notification_leaf
     assert notification_leaf.__name__ == "Notification"
     assert notification_leaf.__module__ == "app.models.notifications.notification"
@@ -63,9 +61,6 @@ def test_manager_binding_preserved():
     assert isinstance(notification_leaf.objects, notification_manager_direct)
     assert notification_manager_direct is notification_manager_export
     assert notification_leaf.objects.model is notification_leaf
-    from app.models.notification import NotificationManager as legacy_manager_export
-
-    assert legacy_manager_export is NotificationManager
 
 
 def test_table_declaration_unchanged():
@@ -93,11 +88,10 @@ def test_table_declaration_unchanged():
 def test_fresh_process_import_entry_points():
     snippets = [
         "from app.models import Notification; assert Notification.__table__.name == 'notifications'",
-        "from app.models.notification import Notification; assert Notification.objects is not None",
         "from app.models.notifications import Notification",
         "from app.models.notifications.notification import Notification",
         "from app.models.managers import NotificationManager",
-        "import app.models; import app.models.notification; import app.models.notifications",
+        "import app.models; import app.models.notifications.notification; import app.models.notifications",
     ]
     for snippet in snippets:
         result = subprocess.run(
@@ -133,9 +127,7 @@ def test_schema_expressions_preserve_types_defaults_and_enum_contract():
     assert set(table.c.notification_type.type.impl.enums) == {n.name for n in NotificationType}
 
 
-def test_legacy_serialized_notification_class_reference_still_resolves():
-    # Only locally constructed trusted class references, never external input.
-    assert pickle.loads(b"capp.models.notification\nNotification\n.") is notification_leaf
+def test_canonical_serialized_notification_class_reference_resolves():
     assert pickle.loads(pickle.dumps(notification_leaf)) is notification_leaf
 
 

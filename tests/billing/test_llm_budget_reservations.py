@@ -76,13 +76,13 @@ MODEL_IMPORTS = {
     "app.models.base": SimpleNamespace(Base=TestBase, TenantScopedMixin=type("Scoped", (), {})),
 }
 RECEIPT_MODEL = load_isolated_source(
-    "app.models.analysis._budget_receipt_model",
-    ROOT / "app/models/analysis/llm_dispatch_receipt.py",
+    "app.models.llm._budget_receipt_model",
+    ROOT / "app/models/llm/llm_dispatch_receipt.py",
     imports=MODEL_IMPORTS,
 )
 MODELS = load_isolated_source(
-    "app.models.analysis._budget_models",
-    ROOT / "app/models/analysis/llm_budget.py",
+    "app.models.llm._budget_models",
+    ROOT / "app/models/llm/llm_budget.py",
     imports=MODEL_IMPORTS,
 )
 
@@ -300,7 +300,7 @@ RECEIPT_MANAGER = load_isolated_source(
         "app.core.tenant_context": TENANT_CONTEXT,
         "app.services.ai.dispatch_receipts": RECEIPTS,
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseDouble),
-        "app.models.analysis.llm_dispatch_receipt": RECEIPT_MODEL,
+        "app.models.llm.llm_dispatch_receipt": RECEIPT_MODEL,
     },
 )
 CAP = {"value": 1.0}
@@ -313,7 +313,7 @@ MANAGER = load_isolated_source(
         "app.services.ai.dispatch_receipts": RECEIPTS,
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseDouble),
         "app.models.managers.llm_dispatch_receipt_manager": RECEIPT_MANAGER,
-        "app.models.analysis.llm_budget": MODELS,
+        "app.models.llm.llm_budget": MODELS,
         "app.models.tenancy.tenant": SimpleNamespace(Tenant=Tenant),
         "app.services.tenancy.resolver": SimpleNamespace(resolved_daily_cost_limit=lambda tenant: CAP["value"]),
     },
@@ -392,7 +392,14 @@ class AtomicStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.budget.reserved_usd, D(0))
 
     async def test_free_zero_and_unlimited_unbounded_are_distinct(self):
-        self.value = receipt(input_cost_per_1k=D(0), output_cost_per_1k=D(0), tariff_state="free")
+        self.value = receipt(
+            input_cost_per_1k=D(0),
+            output_cost_per_1k=D(0),
+            cache_read_cost_per_1m=D(0),
+            cache_write_5m_cost_per_1m=D(0),
+            cache_write_1h_cost_per_1m=D(0),
+            tariff_state="free",
+        )
         self.assertTrue(await self.reserve(D(0), None))
         self.assertEqual(self.manager.budget.undefined_count, 0)
         self.manager = MANAGER.LLMBudgetManager()
@@ -492,8 +499,8 @@ def deny(*args, **kwargs):
 socket.socket.connect = deny
 from sqlalchemy.orm import configure_mappers
 from app.models import Base, LLMBudgetDay, LLMBudgetReservation
-from app.models.analysis import LLMBudgetDay as domain_day, LLMBudgetReservation as domain_reservation
-from app.models.llm_budget import LLMBudgetDay as public_day, LLMBudgetReservation as public_reservation
+from app.models.llm import LLMBudgetDay as domain_day, LLMBudgetReservation as domain_reservation
+from app.models.llm.llm_budget import LLMBudgetDay as public_day, LLMBudgetReservation as public_reservation
 assert LLMBudgetDay is domain_day is public_day
 assert LLMBudgetReservation is domain_reservation is public_reservation
 configure_mappers()

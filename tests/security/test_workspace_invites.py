@@ -130,7 +130,7 @@ async def test_owner_issues_a_link_that_binds_the_chosen_level() -> None:
 
 
 async def test_owner_level_and_unlisted_days_are_refused() -> None:
-    from app.models.tenant import TenantInvite
+    from app.models.tenancy.tenant import TenantInvite
 
     owner: User | None = None
     tenant_id = None
@@ -148,7 +148,7 @@ async def test_owner_level_and_unlisted_days_are_refused() -> None:
 
 
 async def test_a_member_who_does_not_manage_the_workspace_cannot_invite() -> None:
-    from app.models.tenant import TenantInvite
+    from app.models.tenancy.tenant import TenantInvite
 
     owner: User | None = None
     viewer: User | None = None

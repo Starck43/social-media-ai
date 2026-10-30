@@ -44,15 +44,14 @@ def _canonical_ast(node):
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_public_legacy_domain_and_leaf_paths_share_one_model_and_manager(name):
+def test_public_domain_and_leaf_paths_share_one_model_and_manager(name):
     module, table_name, manager_name, scoped = MODELS[name]
     public = importlib.import_module("app.models")
-    legacy = importlib.import_module(f"app.models.{module}")
     domain = importlib.import_module("app.models.collection")
     leaf = importlib.import_module(f"app.models.collection.{module}")
     manager_module = importlib.import_module(f"app.models.managers.{module}_manager")
     cls = getattr(public, name)
-    assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
+    assert cls is getattr(domain, name) is getattr(leaf, name)
     assert name in public.__all__ and name in domain.__all__
     assert domain.__dict__[name] is cls
     assert cls.__module__ == f"app.models.collection.{module}"
@@ -62,7 +61,6 @@ def test_public_legacy_domain_and_leaf_paths_share_one_model_and_manager(name):
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
     assert isinstance(cls.objects, getattr(manager_module, manager_name))
     assert cls.objects.model is cls
-    assert getattr(legacy, manager_name) is getattr(manager_module, manager_name)
     assert bool(getattr(cls, "__tenant_scoped__", False)) is scoped
 
 
@@ -76,10 +74,9 @@ def test_public_legacy_domain_and_leaf_paths_share_one_model_and_manager(name):
         ("collected_item", "TimestampMixin"),
     ],
 )
-def test_existing_legacy_imported_symbols_remain_available(module, symbol):
-    legacy = importlib.import_module(f"app.models.{module}")
+def test_domain_leaf_imported_symbols_remain_available(module, symbol):
     leaf = importlib.import_module(f"app.models.collection.{module}")
-    assert getattr(legacy, symbol) is getattr(leaf, symbol)
+    assert hasattr(leaf, symbol)
 
 
 @pytest.mark.parametrize("name", MODELS)
@@ -112,12 +109,9 @@ def test_declarative_schema_expressions_unchanged(name):
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_legacy_and_current_serialized_class_references_resolve(name):
+def test_canonical_serialized_class_reference_resolves(name):
     module = MODELS[name][0]
-    cls = getattr(importlib.import_module(f"app.models.{module}"), name)
-    # Locally constructed trusted GLOBAL reference, never external pickle input.
-    old = f"capp.models.{module}\n{name}\n.".encode("ascii")
-    assert pickle.loads(old) is cls
+    cls = getattr(importlib.import_module(f"app.models.collection.{module}"), name)
     assert pickle.loads(pickle.dumps(cls)) is cls
 
 
@@ -208,9 +202,9 @@ def test_domain_unknown_export_raises_attribute_error():
     "first",
     [
         "app.models.collection",
-        "app.models.platform",
-        "app.models.source",
-        "app.models.collected_item",
+        "app.models.collection.platform",
+        "app.models.collection.source",
+        "app.models.collection.collected_item",
         "app.models.collection.platform",
         "app.models.collection.source",
         "app.models.collection.collected_item",
@@ -230,9 +224,8 @@ public = importlib.import_module('app.models')
 domain = importlib.import_module('app.models.collection')
 for name, module in json.loads(sys.argv[2]).items():
     cls = getattr(public, name)
-    legacy = importlib.import_module(f'app.models.{module}')
     leaf = importlib.import_module(f'app.models.collection.{module}')
-    assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
+    assert cls is getattr(domain, name) is getattr(leaf, name)
     assert cls.objects.model is cls
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
 """

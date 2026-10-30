@@ -199,9 +199,9 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
 
         modules = {
             "app.models.managers.base_manager": fixtures.module_with(BaseManager=Base),
-            **dict.fromkeys(("app.models.job", "app.models.scheduling.job"), fixtures.module_with(Job=model)),
+            **dict.fromkeys(("app.models.scheduling.job",), fixtures.module_with(Job=model)),
             **dict.fromkeys(
-                ("app.models.agent_task", "app.models.scheduling.agent_task"),
+                ("app.models.scheduling.agent_task", "app.models.scheduling.agent_task"),
                 fixtures.module_with(AgentTask=self.task_model),
             ),
             "sqlalchemy": fixtures.module_with(select=Query),

@@ -9,8 +9,8 @@ def test_upcoming_query_without_source_view_does_not_reference_source_tables(mon
     # resolve and validate its approved target during collection.
     from sqlalchemy import select
 
-    from app.models.agent_task import AgentTask
     from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.models.scheduling.agent_task import AgentTask
 
     captured = {}
 

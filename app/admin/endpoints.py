@@ -124,9 +124,10 @@ async def change_password_form_path(
     csrf_token = csrf_manager.generate_token()
     request.session["csrf_token"] = csrf_token
 
-    # Get the admin instance from the request
+    # Get the admin instance from the request. Never mutate it per request:
+    # the instance is shared by every operator, and the template sets its own
+    # title block.
     admin = request.app.state.admin
-    admin.title = "Смена пароля"
 
     messages = request.session.pop("_messages", None)
 

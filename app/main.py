@@ -141,9 +141,6 @@ def create_application() -> FastAPI:
     # (`docs/ADMIN.md` — "everyone else their own").
     application.add_middleware(AdminScopeMiddleware)
 
-    # Set up CORS
-    # application.middleware("http")(csrf_middleware)
-
     # Add SessionMiddleware with a secret key
     application.add_middleware(
         SessionMiddleware,  # type: ignore[arg-type]
@@ -154,6 +151,7 @@ def create_application() -> FastAPI:
         max_age=3600 * 24,
     )
 
+    # Set up CORS
     if settings.BACKEND_CORS_ORIGINS:
         application.add_middleware(
             CORSMiddleware,  # type: ignore[arg-type]

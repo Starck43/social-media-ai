@@ -202,11 +202,3 @@ class BaseAdmin(ModelView):
     async def get_object_for_details(self, request: Request) -> Any:
         with self._catalog_scope(request):
             return await super().get_object_for_details(request)
-
-    async def on_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
-        """Perform actions before model is created/updated."""
-        await super().on_model_change(data, model, is_created, request)
-
-    async def after_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
-        """Perform actions after model is created/updated."""
-        await super().after_model_change(data, model, is_created, request)

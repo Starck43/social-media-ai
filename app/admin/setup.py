@@ -37,10 +37,6 @@ from .views import (
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
-# # Add 'sqladmin' prefix to template paths
-# templates.env.globals['include_sqladmin'] = lambda name: f"sqladmin/{name}"
-
-
 def _render_analysis(summary_data):
     """Shared `summary_data` → display structure, used by the admin detail page.
 
@@ -56,7 +52,9 @@ def setup_admin(app):
     """Initialize SQLAdmin with all views."""
 
     # --- CSRF ---
-    csrf_manager = CSRFTokenManager(secret_key=settings.SECRET_KEY)
+    # Reuse the manager `app/main.py` already published: one token issuer per
+    # process, so every surface verifies the tokens any of them minted.
+    csrf_manager = getattr(app.state, "csrf_manager", None) or CSRFTokenManager(secret_key=settings.SECRET_KEY)
     app.state.csrf_manager = csrf_manager
 
     from .endpoints import router as admin_router

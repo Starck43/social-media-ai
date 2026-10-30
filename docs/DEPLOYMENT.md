@@ -17,15 +17,40 @@ commands. Do not run old examples as a supposedly read-only migration diagnostic
 
 There is **no supported `dev` deployment profile for a server**. Use the isolated
 `staging` profile for remote pre-release validation; production is a separate,
-explicitly gated rollout. The checked-in development Compose sketch is for an
-isolated developer workstation only:
+explicitly gated rollout.
+
+### Local Python development (no Docker for the API)
+
+If PostgreSQL and Redis are already running and `.env` is configured, run the
+API directly from the repository root with the project's Python 3.14+ environment:
+
+```bash
+python app/main.py
+```
+
+With a virtual environment, use its interpreter (for example,
+`.venv/bin/python app/main.py`). This single command starts the API/web process;
+`DEBUG=true` enables Uvicorn's reload watcher. `HOST` and `PORT` come from `.env`
+(defaults `0.0.0.0:8000`; set `HOST=127.0.0.1` to listen only on this machine).
+The process uses the existing PostgreSQL and Redis services; it does not start
+them. It also does not start the separate scheduler/worker/messenger runtime.
+When that runtime is needed, start exactly one owner with `python -m app.runtime`.
+
+On API startup, `init_db()` calls SQLAlchemy `create_all`: it can create missing
+tables, but it does **not** apply Alembic migrations. Use this entry point only
+with a local development database, never a shared, staging or production DB.
+
+### Local Docker alternative
+
+For an isolated developer workstation, the checked-in development Compose sketch
+can start the local PostgreSQL/API services:
 
 - **Local development only:** `docker compose -f docker/docker-compose.yml up -d --build`.
-  This starts the local PostgreSQL/API sketch; the API container runs
-  `alembic upgrade head` before Uvicorn and publishes port `8000` on all host
-  interfaces. Do not use it on a shared server. The explicit `-f` is essential:
-  unqualified `docker compose` selects the root legacy `docker-compose.yml`
-  (`web:3000`), not the Python stack. This profile does not start `app.runtime`.
+  The API container runs `alembic upgrade head` before Uvicorn and publishes
+  port `8000` on all host interfaces. Do not use it on a shared server. The
+  explicit `-f` is essential: unqualified `docker compose` selects the root
+  legacy `docker-compose.yml` (`web:3000`), not the Python stack. This profile
+  does not start `app.runtime` or Redis.
 - **Server staging:** after provisioning a private `.env.staging` and logging in
   to GHCR, use an immutable image digest:
 

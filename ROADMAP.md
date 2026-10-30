@@ -48,15 +48,13 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P2
 
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
-- [P11-T26](docs/tasks/p11-t26.md) Remove legacy model import shims — **IN_PROGRESS** · notion-ai · [Execution](https://app.notion.com/chat?t=408439228587804093ec00a909303868) · `P2` · `C3`
+- [P11-T26](docs/tasks/p11-t26.md) Remove legacy model import shims — **IN_PROGRESS** · codex (local validation and audit) · [PR #285](https://github.com/Starck43/social-media-ai/pull/285) · `P2` · `C3`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 
 ### Priority P3
 
-- [P11-T18](docs/tasks/p11-t18.md) Typed connector and job extension seams — **IN_PROGRESS** · notion-ai · [Execution](https://app.notion.com/chat?t=408895d2d5a18081942600a990c14a8a) · `P3` · `C4`
-- [P11-T19](docs/tasks/p11-t19.md) Capacity telemetry and reproducible scale evidence — **IN_PROGRESS** · notion-ai · [Execution](https://app.notion.com/chat?t=408895d2d5a18081942600a990c14a8a) · `P3` · `C4`
 
 ## Deferred by explicit owner decision
 

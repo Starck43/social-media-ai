@@ -22,10 +22,13 @@ from dateutil import parser as dateutil_parser
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from .chat_workspace import router as workspace_router
+from .chat_workspace import selected_task, workspace_denied
 from .deps import add_flash, ensure_csrf, render, render_section_denied
 from .nav import section_of
 
 router = APIRouter(prefix="/chat")
+router.include_router(workspace_router)
 
 # Transcript depth on first paint. The loop only ever feeds the last 20 turns
 # to the model (see `agent_messages.recent`), so a long page is scroll, not
@@ -236,6 +239,7 @@ async def chat_page(request: Request):
         section="chat",
         messages=enriched,
         is_owner=_is_owner(request),
+        awaiting_confirmation=await _confirmation_pending(user.id),
     )
 
 
@@ -244,6 +248,7 @@ async def chat_send(
     request: Request,
     text: str = Form(""),
     token: str = Form("", alias="_csrf"),
+    task_id: int | None = Form(None),
 ):
     """Run one agent turn and show the answer on the same page.
 
@@ -277,6 +282,23 @@ async def chat_send(
         if is_ajax:
             return JSONResponse({"error": "Пустое сообщение"}, status_code=400)
         return RedirectResponse("/app/chat", status_code=302)
+
+    # An explicit selection is context, never authority. Validate it again at
+    # send time; keep confirmation replies unchanged for the shared runtime gate.
+    if task_id is not None and not await _confirmation_pending(user.id):
+        denied = workspace_denied(request)
+        if denied is not None:
+            return denied
+        try:
+            definition = await selected_task(request, task_id) if task_id > 0 else None
+        except PermissionError:
+            definition = None
+        if definition is None:
+            if is_ajax:
+                return JSONResponse({"error": "Выбранная задача больше недоступна. Снимите выбор."}, status_code=403)
+            add_flash(request, "error", "Выбранная задача недоступна")
+            return RedirectResponse("/app/chat", status_code=303)
+        text = f"[Контекст: задача #{task_id}]\n{text}"
 
     from app.agent.runtime import LIMIT_REACHED_PREFIX, handle_web_message
 
@@ -336,6 +358,7 @@ async def chat_send(
             section="chat",
             messages=enriched,
             is_owner=_is_owner(request),
+            awaiting_confirmation=awaiting,
         )
     except PermissionError:
         if is_ajax:

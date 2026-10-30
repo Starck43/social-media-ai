@@ -1,5 +1,21 @@
 function chatApp() {
         return {
+            panelOpen: window.matchMedia('(min-width: 1200px)').matches,
+            workspaceTasks: [],
+            workspaceSearch: '',
+            workspaceOffset: 0,
+            workspaceNextOffset: null,
+            workspaceListLoading: false,
+            workspaceListError: '',
+            workspaceTask: null,
+            workspaceTaskId: null,
+            workspaceTaskLoading: false,
+            workspaceTaskError: '',
+            workspaceCheckedAt: '',
+            workspaceListRequest: 0,
+            workspaceTaskRequest: 0,
+            awaitingConfirmation: Boolean(window.__chatAwaitingConfirmation),
+            draftNotice: '',
             pending: false,
             sending: false,
             abortController: null,
@@ -20,6 +36,7 @@ function chatApp() {
             csrf: document.querySelector('input[name="_csrf"]')?.value || '',
 
             init() {
+                this.loadWorkspaceTasks();
                 // Event delegation for JSON copy buttons (added via x-html)
                 document.addEventListener('click', (e) => {
                     const btn = e.target.closest('[data-copy-json]')
@@ -49,6 +66,103 @@ function chatApp() {
                 this.$nextTick(() => { this.scrollToBottom(); this.onScroll(); })
             },
 
+            toggleWorkspacePanel() {
+                this.panelOpen = !this.panelOpen;
+                this.$nextTick(() => {
+                    const target = this.panelOpen ? this.$refs.workspacePanel : this.$refs.panelToggle;
+                    target?.focus();
+                    if (this.panelOpen && !window.matchMedia('(min-width: 1200px)').matches) target?.scrollIntoView({block: 'start'});
+                });
+            },
+            draftAction(text) {
+                if (this.pending || this.awaitingConfirmation) return;
+                const input = this.$refs.input;
+                const existing = input.value.trim();
+                input.value = existing ? input.value + '\n\n' + text : text;
+                this.draftNotice = existing ? 'Запрос добавлен к вашему черновику. Проверьте перед отправкой.' : 'Запрос подготовлен. Уточните детали и отправьте.';
+                this.resizeInput();
+                input.focus();
+                this.$nextTick(() => this.scrollToBottom());
+            },
+            async workspaceRead(url) {
+                const response = await fetch(url, {headers: {'Accept': 'application/json'}, cache: 'no-store'});
+                const data = await response.json();
+                if (!response.ok) {
+                    const error = new Error(data.error || 'Не удалось загрузить данные');
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            },
+            async loadWorkspaceTasks(offset = 0) {
+                if (!document.querySelector('[data-chat-task-picker]')) return;
+                const request = ++this.workspaceListRequest;
+                this.workspaceListLoading = true;
+                this.workspaceListError = '';
+                this.workspaceTasks = [];
+                this.workspaceNextOffset = null;
+                try {
+                    const data = await this.workspaceRead('/app/chat/workspace/tasks?' + new URLSearchParams({search: this.workspaceSearch, offset}));
+                    if (request !== this.workspaceListRequest) return;
+                    this.workspaceTasks = data.tasks || [];
+                    this.workspaceOffset = offset;
+                    this.workspaceNextOffset = data.next_offset;
+                } catch (error) {
+                    if (request === this.workspaceListRequest) {
+                        this.workspaceListError = error.status === 403 ? 'Доступ к задачам изменился.' : 'Не удалось загрузить задачи. Повторите попытку.';
+                        if (error.status === 403) this.clearWorkspaceTask();
+                    }
+                } finally {
+                    if (request === this.workspaceListRequest) this.workspaceListLoading = false;
+                }
+            },
+            async selectWorkspaceTask(id) {
+                if (this.pending || this.awaitingConfirmation) return;
+                this.clearWorkspaceTask();
+                this.workspaceTaskId = Number(id);
+                await this.refreshWorkspaceTask();
+            },
+            clearWorkspaceTask() {
+                if (this.pending || this.awaitingConfirmation) return;
+                ++this.workspaceTaskRequest;
+                this.workspaceTaskId = null;
+                this.workspaceTask = null;
+                this.workspaceTaskError = '';
+                this.workspaceCheckedAt = '';
+                this.workspaceTaskLoading = false;
+            },
+            async refreshWorkspaceTask() {
+                if (!this.workspaceTaskId) return;
+                const id = this.workspaceTaskId;
+                const request = ++this.workspaceTaskRequest;
+                this.workspaceTaskLoading = true;
+                this.workspaceTaskError = '';
+                // Do not keep stale plan/results visible after access changes.
+                this.workspaceTask = null;
+                this.workspaceCheckedAt = '';
+                try {
+                    const data = await this.workspaceRead('/app/chat/workspace/tasks/' + id);
+                    if (request !== this.workspaceTaskRequest || id !== this.workspaceTaskId) return;
+                    this.workspaceTask = data;
+                    this.workspaceCheckedAt = new Date().toLocaleTimeString('ru-RU');
+                } catch (error) {
+                    if (request === this.workspaceTaskRequest) {
+                        this.workspaceTaskError = [403, 404].includes(error.status) ? 'Задача больше недоступна. Снимите выбор или выберите другую.' : 'Не удалось обновить задачу. Повторите попытку.';
+                    }
+                } finally {
+                    if (request === this.workspaceTaskRequest) this.workspaceTaskLoading = false;
+                }
+            },
+            workspacePlanNotice(status) {
+                return ({legacy: 'Для этой задачи нет сохранённого плана.', source_access_required: 'Для просмотра плана нужен доступ к источникам.', scenario_access_required: 'Для просмотра плана нужен доступ к сценарию.', scope_changed: 'Источники изменились. Проверьте план задачи.', source_unavailable: 'Один из источников недоступен.'})[status] || 'План недоступен. Откройте подробности задачи.';
+            },
+            workspaceWindow(window) {
+                if (!window) return 'Период не указан';
+                return window.type === 'rolling' ? 'Последние ' + window.days + ' дн.' : (window.start || 'С начала') + ' — ' + (window.end || 'по текущую дату');
+            },
+            workspaceRunStatus(status) {
+                return ({pending: 'В очереди', running: 'Выполняется', done: 'Обработка завершена — проверьте результат и охват', failed: 'Завершилось с ошибкой', cancelled: 'Отменено', unavailable: 'Сведения о запуске недоступны'})[status] || 'Состояние не подтверждено';
+            },
             visibleMessages(items) {
                 return items.filter(m => ['user', 'assistant'].includes(m.role) && typeof m.content === 'string' && m.content.trim());
             },
@@ -77,7 +191,6 @@ function chatApp() {
                 this.thinkingTimer = null
             },
             resizeInput() { const el = this.$refs.input; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 180) + 'px'; },
-            attachFile() { this.notice = 'Прикрепление файлов пока не поддерживается.'; },
             stopGeneration() { if (this.abortController) this.abortController.abort(); },
             safeMarkdown(html) {
                 const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -165,14 +278,17 @@ function chatApp() {
                 const data = await response.json()
                 if (!response.ok) throw new Error(data.error || 'Не удалось обновить диалог')
                 this.messages = this.visibleMessages(data.messages || [])
+                this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
                 this.$nextTick(() => this.scrollToBottom())
             },
 
             async sendMessage(preset = '') {
                 const textarea = this.$refs.input
                 const text = (typeof preset === 'string' && preset ? preset : textarea.value).trim()
-                if (!text || this.pending) return
+                if (!text || this.pending || (!this.awaitingConfirmation && this.workspaceTaskId && (this.workspaceTaskLoading || this.workspaceTaskError))) return
                 this.notice = ''
+                this.draftNotice = '';
+                const selectedId = this.workspaceTaskId;
 
                 this.pending = true
                 this.sending = true
@@ -202,6 +318,7 @@ function chatApp() {
                         body: new URLSearchParams({
                             '_csrf': this.csrf,
                             'text': text,
+                            ...(selectedId ? {task_id: selectedId} : {}),
                         }),
                         signal: this.abortController.signal,
                     })
@@ -223,6 +340,7 @@ function chatApp() {
 
                     // Replace with full transcript from server (includes user msg + assistant replies)
                     this.messages = this.visibleMessages(data.messages || [])
+                    this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
                     if (data.warning) this.notice = data.warning
                     else if (data.awaiting_confirmation) {
                         // A staged confirmation is a question, not a missing
@@ -253,6 +371,7 @@ function chatApp() {
                     this.sending = false
                     this.abortController = null
                     this.stopThinking()
+                    if (this.workspaceTaskId) this.refreshWorkspaceTask();
                 }
             },
 
@@ -275,6 +394,9 @@ function chatApp() {
                     const data = await response.json()
                     if (!response.ok || data.error) throw new Error(data.error)
                     this.messages = this.visibleMessages(data.messages || [])
+                    this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
+                    this.pending = false;
+                    this.clearWorkspaceTask();
                     if (data.warning) this.notice = data.warning
                     this.$nextTick(() => this.scrollToBottom())
                 } catch (err) {

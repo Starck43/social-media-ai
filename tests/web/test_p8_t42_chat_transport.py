@@ -78,9 +78,9 @@ def _load_chat(monkeypatch, *, permitted=True, confirmation_pending=False):
         handle_web_message=handle_web_message,
     )
     module = load_isolated_source(
-        "p8_t42_chat_under_test",
+        "app.web._p8_t42_chat_under_test",
         "app/web/chat.py",
-        module_imports={
+        imports={
             "app.web.deps": deps,
             "app.web.nav": nav,
             "app.web.chat_workspace": workspace,

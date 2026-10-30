@@ -114,9 +114,9 @@ def _load_workspace(monkeypatch, *, rows=(), config=None, result=None, calls=Non
         task_result=task_result,
     )
     module = load_isolated_source(
-        "p8_t42_chat_workspace_under_test",
+        "app.web._p8_t42_chat_workspace_under_test",
         "app/web/chat_workspace.py",
-        module_imports={
+        imports={
             "app.web.deps": deps,
             "app.core.tenant_context": tenant,
             "app.models": models,

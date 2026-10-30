@@ -1,5 +1,5 @@
 <aside id="chat-workspace-panel" class="chat-workspace-panel" tabindex="-1" x-ref="workspacePanel" x-show="panelOpen" x-cloak aria-labelledby="chat-workspace-title"
-       @keydown.escape.stop="panelOpen = false; $refs.panelToggle.focus()">
+       @keydown.escape.stop="if (panelOpen) toggleWorkspacePanel()">
     <div class="chat-panel-heading">
         <h2 id="chat-workspace-title">Рабочий контекст</h2>
         <button type="button" @click="toggleWorkspacePanel()" aria-label="Свернуть рабочий контекст">×</button>

@@ -48,6 +48,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
+- [P8-T42](docs/tasks/p8-t42.md) Chat workspace, contextual task panel and quick actions — **IN_PROGRESS** · codex · `codex resume 01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C3`
+
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`

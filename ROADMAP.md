@@ -48,7 +48,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **READY** · codex · [PR #288](https://github.com/Starck43/social-media-ai/pull/288) · `P2` · `C2`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
@@ -98,5 +97,5 @@ Use the P11 cards in the execution queue or the linked parent plan.
 
 ## Questions
 
-Q-2/Q-5/Q-10 are ordered in the execution queue; Q-12 remains owner-deferred.
+Q-2/Q-5 are ordered in the execution queue; Q-12 remains owner-deferred.
 The P6-T05 audit's two test follow-ups were accepted under [P6-T06](docs/audit/p6-t06.md); the original audit remains historical evidence.

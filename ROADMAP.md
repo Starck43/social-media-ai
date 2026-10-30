@@ -49,7 +49,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P2
 
 - [Q-10](docs/tasks/q-10.md) Credential-disable route compatibility — **OPEN** · codex · — · `P2` · `C2`
-- [P11-T26](docs/tasks/p11-t26.md) Remove legacy model import shims — **IN_PROGRESS** · codex (local validation and audit) · [PR #285](https://github.com/Starck43/social-media-ai/pull/285) · `P2` · `C3`
+- [P11-T26](docs/tasks/p11-t26.md) Remove legacy model import shims — **READY** · codex (local validation and audit) · [PR #285](https://github.com/Starck43/social-media-ai/pull/285) · `P2` · `C3`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`

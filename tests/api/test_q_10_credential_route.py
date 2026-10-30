@@ -90,7 +90,9 @@ def _credential_api():
     app = FastAPI()
     app.include_router(module.router, prefix="/api/v1/credentials")
     disable_endpoints = {
-        route.endpoint for route in app.routes if getattr(route, "path", "").endswith("/{credential_id}/disable")
+        route.endpoint
+        for route in module.router.routes
+        if getattr(route, "path", "").endswith("/{credential_id}/disable")
     }
     assert len(disable_endpoints) == 1
     return TestClient(app), manager

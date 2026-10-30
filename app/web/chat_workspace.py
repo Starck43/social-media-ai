@@ -34,7 +34,12 @@ async def selected_task(request: Request, task_id: int) -> dict | None:
     from app.services.task_results import task_configuration
 
     with tenant_scope(request.state.tenant_id):
-        return await task_configuration(task_id)
+        definition = await task_configuration(task_id)
+    # The panel deliberately exposes only the social task lane, matching its
+    # picker. Retention/operator tasks keep their existing management gate.
+    if definition is None or definition.get("job_type") not in {"collect", "analyze"}:
+        return None
+    return definition
 
 
 @router.get("/tasks")
@@ -59,7 +64,7 @@ async def workspace_tasks(
     return JSONResponse(
         {
             "tasks": [{"id": row.id, "name": row.name[:160]} for row in rows[:PAGE_SIZE]],
-            "next_offset": offset + PAGE_SIZE if len(rows) > PAGE_SIZE else None,
+            "next_offset": offset + PAGE_SIZE if len(rows) > PAGE_SIZE and offset < 10000 else None,
         },
         headers={"Cache-Control": "no-store"},
     )

@@ -1413,16 +1413,19 @@ Returns the current user's personal credentials (secrets are encrypted, never re
 ### Disable Credential
 
 ```
-PATCH /api/v1/credentials/credentials/{credential_id}/disable
+PATCH /api/v1/credentials/{credential_id}/disable
 Authorization: Bearer <token>
 ```
 
-**Implementation discrepancy:** `entry.py` mounts the credentials router under
-`/credentials`, and this endpoint also declares `/credentials/{credential_id}/disable`.
-The composed route therefore repeats the segment. The single-segment path
-`/api/v1/credentials/{credential_id}/disable` is not registered by the current source.
+The deprecated compatibility alias
+`PATCH /api/v1/credentials/credentials/{credential_id}/disable` remains supported.
+Both routes invoke the same handler and require `credential.update`; the alias
+is marked deprecated in OpenAPI. Clients should use the canonical single-segment
+path. No alias removal is scheduled; removal requires a separately approved
+breaking-change migration.
 
-Deactivates a credential (row kept for audit).
+Deactivates the current user's credential (row kept for audit). A missing or
+another user's credential returns `404`; no credential is updated in that case.
 
 **Permissions:** `credential.update`
 

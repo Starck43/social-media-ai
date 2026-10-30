@@ -10,7 +10,10 @@ const { createRequire } = require('node:module');
 async function main() {
 const root = path.resolve(__dirname, '../..');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'p8-t42-chat-'));
-const fixture = path.join(scratch, 'chat.html');
+const fixtureOnlyIndex = process.argv.indexOf('--fixture-only');
+const fixtureOnlyPath = fixtureOnlyIndex >= 0 ? process.argv[fixtureOnlyIndex + 1] : null;
+if (fixtureOnlyIndex >= 0 && !fixtureOnlyPath) throw Error('Expected output path after --fixture-only');
+const fixture = fixtureOnlyPath ? path.resolve(fixtureOnlyPath) : path.join(scratch, 'chat.html');
 const requireFromProject = createRequire(path.join(root, 'package.json'));
 const render = String.raw`
 from types import SimpleNamespace
@@ -62,9 +65,17 @@ try {
     const browserChecks = String.raw`
       (async () => {
         const checks = [];
-        const check = (value, label) => { if (!value) throw Error(label); checks.push(label); };
         const root = document.querySelector('.chat-page');
         const panel = document.querySelector('#chat-workspace-panel');
+        let app = null;
+        const diagnostic = () => ({
+          panelOpen: app?.panelOpen ?? null,
+          panelInlineDisplay: panel?.style.display || '',
+          panelDisplay: panel ? getComputedStyle(panel).display : '',
+          expanded: root?.querySelector('.chat-panel-toggle')?.getAttribute('aria-expanded') || '',
+          activeElement: document.activeElement ? {tag: document.activeElement.tagName, id: document.activeElement.id, label: document.activeElement.getAttribute('aria-label')} : null,
+        });
+        const check = (value, label) => { if (!value) throw Error(label + ' diagnostic=' + JSON.stringify(diagnostic())); checks.push(label); };
         check(root && panel, 'real chat template includes the task workspace');
         check(panel.querySelector('#chat-task-search'), 'task picker has a labelled search input');
         check(panel.textContent.includes('Быстрые действия'), 'persistent quick action section renders');
@@ -106,14 +117,20 @@ try {
           throw Error('Unexpected fixture request: ' + url);
         };
         await new Promise(resolve => setTimeout(resolve, 120));
-        const app = Alpine.$data(root);
+        app = Alpine.$data(root);
         await new Promise(resolve => setTimeout(resolve, 20));
         check(Alpine && app, 'Alpine initializes the real workspace component');
         const toggle = panel.querySelector('[aria-label="Свернуть рабочий контекст"]');
         if (!app.panelOpen) root.querySelector('.chat-panel-toggle').click();
         await new Promise(resolve => setTimeout(resolve, 25));
         panel.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
-        await new Promise(resolve => setTimeout(resolve, 25));
+        const escapeDeadline = Date.now() + 1500;
+        while (Date.now() < escapeDeadline && (
+          app.panelOpen || getComputedStyle(panel).display !== 'none' ||
+          document.activeElement !== root.querySelector('.chat-panel-toggle')
+        )) {
+          await new Promise(resolve => requestAnimationFrame(resolve));
+        }
         check(getComputedStyle(panel).display === 'none' && document.activeElement === root.querySelector('.chat-panel-toggle'), 'Escape closes panel and restores focus');
         root.querySelector('.chat-panel-toggle').click();
         await new Promise(resolve => setTimeout(resolve, 25));
@@ -199,6 +216,10 @@ try {
     html = html.replace('</head>', `<style>${css}</style></head>`);
     html = html.replace('</body>', `<script>${js}</script><script>${browserChecks}</script><script>${alpineJs}</script></body>`);
     fs.writeFileSync(fixture, html);
+    if (fixtureOnlyPath) {
+        console.log(`Fixture written: ${fixture}`);
+        return;
+    }
 
     const browserCandidates = [
         process.env.CHROMIUM_BIN,

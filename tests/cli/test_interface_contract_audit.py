@@ -699,7 +699,7 @@ def test_task_list_resolves_agent_task_symbol():
     ]
 
 
-def _credential_disable_mount():
+def _credential_disable_mounts():
     entry = _tree(ENTRY)
     mount = next(
         node.value
@@ -716,22 +716,21 @@ def _credential_disable_mount():
         for node in _tree(CREDENTIALS).body
         if isinstance(node, ast.AsyncFunctionDef) and node.name == "disable_credential"
     )
-    route = ast.literal_eval(endpoint.decorator_list[0].args[0])
-    return "/api/v1" + prefix + route
+    return {"/api/v1" + prefix + ast.literal_eval(decorator.args[0]) for decorator in endpoint.decorator_list}
 
 
 def test_api_docs_records_actual_credential_disable_route():
-    mounted = _credential_disable_mount()
-    assert mounted == "/api/v1/credentials/credentials/{credential_id}/disable"
-    assert mounted in (ROOT / "docs" / "API.md").read_text(encoding="utf-8")
+    mounted = _credential_disable_mounts()
+    assert mounted == {
+        "/api/v1/credentials/{credential_id}/disable",
+        "/api/v1/credentials/credentials/{credential_id}/disable",
+    }
+    documentation = (ROOT / "docs" / "API.md").read_text(encoding="utf-8")
+    assert all(route in documentation for route in mounted)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="credential endpoint repeats the mounted /credentials prefix in its runtime route",
-)
 def test_credential_disable_route_uses_canonical_single_segment():
-    assert _credential_disable_mount() == "/api/v1/credentials/{credential_id}/disable"
+    assert "/api/v1/credentials/{credential_id}/disable" in _credential_disable_mounts()
 
 
 @pytest.mark.parametrize(

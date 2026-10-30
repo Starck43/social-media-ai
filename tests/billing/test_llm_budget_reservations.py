@@ -76,13 +76,13 @@ MODEL_IMPORTS = {
     "app.models.base": SimpleNamespace(Base=TestBase, TenantScopedMixin=type("Scoped", (), {})),
 }
 RECEIPT_MODEL = load_isolated_source(
-    "app.models.analysis._budget_receipt_model",
-    ROOT / "app/models/analysis/llm_dispatch_receipt.py",
+    "app.models.llm._budget_receipt_model",
+    ROOT / "app/models/llm/llm_dispatch_receipt.py",
     imports=MODEL_IMPORTS,
 )
 MODELS = load_isolated_source(
-    "app.models.analysis._budget_models",
-    ROOT / "app/models/analysis/llm_budget.py",
+    "app.models.llm._budget_models",
+    ROOT / "app/models/llm/llm_budget.py",
     imports=MODEL_IMPORTS,
 )
 

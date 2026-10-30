@@ -1,7 +1,8 @@
 """Isolated access contracts: AST handlers, pure policy, fake ORM and offline SQL only.
 
-No application import, engine, root conftest, ASGI startup or provider call.
-These checks are not real role/tenant/database acceptance.
+No application runtime/model initialization, database engine, root conftest,
+ASGI startup or provider call. These checks are not real role/tenant/database
+acceptance.
 """
 
 from __future__ import annotations
@@ -274,12 +275,20 @@ async def test_external_admin_guard_requires_token_not_user_id(monkeypatch, toke
 @pytest.mark.asyncio
 @pytest.mark.parametrize("grants", [set(), {"view"}, {"create"}, {"update"}, {"delete"}, {"export"}, {"configure"}])
 async def test_admin_model_action_grants_remain_separate(grants):
+    # Exercise the current resource registry: workspace scoping for `source`
+    # must remain distinct from the global `user` model.
+    from app.core.access_catalog import resource_for
+
     cls = load_nodes(
         "app/admin/authorization.py",
         {"AdminAuthorizationBackend"},
         methods={"get_grants"},
         namespace=dict(
             WILDCARD="*",
+            resource_for=resource_for,
+            # A platform-console request without a workspace exercises the
+            # operator's platform grants against the actual resource registry.
+            current_tenant_id=lambda: None,
             Action=NS(LIST="list", DETAILS="details"),
             ActionType=NS(VIEW="view"),
             BUILTIN_ACTION_TYPES={

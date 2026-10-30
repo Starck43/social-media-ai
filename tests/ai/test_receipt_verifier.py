@@ -86,8 +86,8 @@ class HelpersTests(unittest.TestCase):
 
         settings = SimpleNamespace(DB_SCHEMA="test_schema")
         model = load_isolated_source(
-            "app.models.analysis._verifier_model",
-            ROOT / "app/models/analysis/llm_dispatch_receipt.py",
+            "app.models.llm._verifier_model",
+            ROOT / "app/models/llm/llm_dispatch_receipt.py",
             imports={
                 "app.core.config": SimpleNamespace(settings=settings),
                 "app.core.decorators": SimpleNamespace(app_label=lambda label: lambda cls: cls),

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_BUILDER = ROOT / "tests/browser/p8_t42_chat_workspace.cjs"
-EXPECTED = "PASS 24 checks"
+EXPECTED = re.compile(r"PASS (?P<count>\d+) checks")
 
 _APPLESCRIPT = r"""on run argv
     set targetURL to item 1 of argv
@@ -49,11 +50,11 @@ _APPLESCRIPT = r"""on run argv
             set resultText to ""
             repeat 80 times
                 delay 0.25
-                tell application "Safari" to set resultText to do JavaScript "JSON.stringify({state: document.readyState, result: document.querySelector('#p8t42-results')?.textContent || '', width: window.innerWidth})" in current tab of (window id ownedID)
+                tell application "Safari" to set resultText to do JavaScript "JSON.stringify({state: document.readyState, result: document.querySelector('#p8t42-results')?.textContent || '', body: document.body.innerText.slice(-500), phase: sessionStorage.getItem('__p8t42-panel-reload'), savedPanel: sessionStorage.getItem('chat.workspace.panel'), width: window.innerWidth})" in current tab of (window id ownedID)
                 if resultText contains "FAIL " and resultText contains "focus-probes=" and resultText does not contain "focus-probes=pending" then error "T42 browser interaction failed: " & resultText
-                if resultText contains "PASS 24 checks" then exit repeat
+                if resultText contains "PASS " and resultText contains " checks" then exit repeat
             end repeat
-            if not (resultText contains "PASS 24 checks") then error "T42 checks did not finish: " & resultText
+            if not (resultText contains "PASS " and resultText contains " checks") then error "T42 checks did not finish: " & resultText
             set outputText to outputText & "P8T42_VIEWPORT:" & resultText & linefeed
         end repeat
     on error errorMessage number errorNumber
@@ -68,6 +69,17 @@ end run"""
 
 
 class _QuietHandler(SimpleHTTPRequestHandler):
+    def do_GET(self) -> None:
+        if self.path.startswith("/app/"):
+            body = b"<!doctype html><html><head><title>Mock</title></head><body><h1>Mock source settings</h1></body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
     def log_message(self, _format: str, *_args) -> None:
         pass
 
@@ -116,7 +128,8 @@ def _run_applescript(fixture_url: str) -> list[dict]:
         raise RuntimeError("Safari did not return both viewport results: " + output[-1800:].strip())
     for result, layout in zip(results, ("desktop", "narrow"), strict=True):
         width = int(result.get("width", 0))
-        if result.get("result") != EXPECTED:
+        matched = EXPECTED.fullmatch(str(result.get("result", "")))
+        if not matched or int(matched.group("count")) < 40:
             raise RuntimeError(f"Safari {layout} interaction checks failed: {result!r}")
         if layout == "desktop" and width < 1200:
             raise RuntimeError(f"Safari desktop viewport measured only {width}px")
@@ -141,8 +154,8 @@ def main() -> int:
         fixture_url = f"http://127.0.0.1:{server.server_port}/chat.html"
         try:
             desktop, narrow = _run_applescript(fixture_url)
-            print(f"PASS Safari desktop: 24 checks at measured viewport {desktop['width']}px")
-            print(f"PASS Safari narrow: 24 checks at measured viewport {narrow['width']}px")
+            print(f"PASS Safari desktop: {desktop['result']} at measured viewport {desktop['width']}px")
+            print(f"PASS Safari narrow: {narrow['result']} at measured viewport {narrow['width']}px")
             return 0
         finally:
             server.shutdown()

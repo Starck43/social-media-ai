@@ -77,7 +77,7 @@ try {
           expressionErrors.push({type: 'unhandledrejection', message: String(event.reason?.message || event.reason)});
         });
         const diagnostic = () => {
-          const toggle = root?.querySelector('.chat-panel-toggle');
+        const toggle = root?.querySelector('.chat-panel-tab');
           const rect = toggle?.getBoundingClientRect();
           return {
             documentHasFocus: document.hasFocus(),
@@ -109,6 +109,14 @@ try {
               display: getComputedStyle(toggle).display,
               isAlpineRef: Boolean(app?.$refs && app.$refs.panelToggle === toggle),
             } : null,
+            scrollGeometry: root?.querySelector('.chat-scroll-bottom') ? (() => {
+              const buttonRect = root.querySelector('.chat-scroll-bottom').getBoundingClientRect();
+              const chatRect = root.querySelector('.chat-messages').getBoundingClientRect();
+              return {buttonCenter: buttonRect.left + buttonRect.width / 2, buttonLeft: buttonRect.left,
+                inlineLeft: root.querySelector('.chat-scroll-bottom').style.left,
+                chatCenter: chatRect.left + chatRect.width / 2, chatLeft: chatRect.left, chatWidth: chatRect.width,
+                buttonTransform: getComputedStyle(root.querySelector('.chat-scroll-bottom')).transform};
+            })() : null,
           };
         };
       (async () => {
@@ -125,10 +133,11 @@ try {
         check(root && panel, 'real chat template includes the task workspace');
         check(panel.querySelector('#chat-task-search'), 'task picker has a labelled search input');
         check(panel.textContent.includes('Быстрые действия'), 'persistent quick action section renders');
+        check(!root.querySelector('nav[aria-label="Управление данными и задачами"]'), 'chat footer does not duplicate the persistent shell navigation');
         window.marked = {parse: text => text};
         check(panel.querySelector('[aria-labelledby="chat-selected-task-title"]'), 'selected task summary region renders');
-        check(!document.querySelector('.chat-attach'), 'unsupported file attachment control is absent');
-        check(root.querySelector('.chat-panel-toggle')?.getAttribute('aria-controls') === 'chat-workspace-panel', 'panel toggle is associated accessibly');
+        check(document.querySelector('.chat-attach'), 'attachment affordance remains visible');
+        check(root.querySelector('.chat-panel-tab')?.getAttribute('aria-controls') === 'chat-workspace-panel', 'panel tab is associated accessibly');
 
         let failNextSnapshot = false;
         let releaseStaleSnapshot;
@@ -165,6 +174,33 @@ try {
         await waitFor(() => window.Alpine && typeof Alpine.$data(root)?.toggleWorkspacePanel === 'function', 'Alpine component initialization');
         app = Alpine.$data(root);
         check(Alpine && app, 'Alpine initializes the real workspace component');
+        const panelReloadPhase = sessionStorage.getItem('__p8t42-panel-reload');
+        if (panelReloadPhase !== 'reset' && panelReloadPhase !== 'closed') {
+          sessionStorage.removeItem('chat.workspace.panel');
+          sessionStorage.removeItem('__p8t42-default-open');
+          sessionStorage.setItem('__p8t42-panel-reload', 'reset');
+          location.reload();
+          return;
+        }
+        if (panelReloadPhase === 'reset') {
+          await waitFor(() => app.panelOpen, 'panel defaults open');
+          check(app.panelOpen, 'workspace panel defaults open');
+          sessionStorage.setItem('__p8t42-default-open', 'yes');
+          root.querySelector('.chat-panel-close').click();
+          await waitFor(() => !app.panelOpen && sessionStorage.getItem('chat.workspace.panel') === 'closed', 'panel collapse persists');
+          sessionStorage.setItem('__p8t42-panel-reload', 'closed');
+          location.reload();
+          return;
+        }
+        sessionStorage.removeItem('__p8t42-panel-reload');
+        await waitFor(() => !app.panelOpen, 'closed panel state restored after reload');
+        check(sessionStorage.getItem('__p8t42-default-open') === 'yes', 'default-open state was observed before the persistence reload');
+        sessionStorage.removeItem('__p8t42-default-open');
+        check(!app.panelOpen && sessionStorage.getItem('chat.workspace.panel') === 'closed', 'panel state restores from this browser session');
+        root.querySelector('.chat-panel-tab').click();
+        await waitFor(() => app.panelOpen && sessionStorage.getItem('chat.workspace.panel') === 'open' &&
+          document.activeElement === panel, 'panel expansion persists and receives focus');
+        check(app.panelOpen && sessionStorage.getItem('chat.workspace.panel') === 'open', 'expanding panel updates saved session state');
         const originalToggleWorkspacePanel = app.toggleWorkspacePanel;
         app.toggleWorkspacePanel = function(...args) {
           const call = {
@@ -186,29 +222,63 @@ try {
             throw error;
           }
         };
-        const toggle = panel.querySelector('[aria-label="Свернуть рабочий контекст"]');
-        if (!app.panelOpen) root.querySelector('.chat-panel-toggle').click();
-        await waitFor(() => app.panelOpen && getComputedStyle(panel).display !== 'none', 'panel opening before Escape');
+        const panelClose = panel.querySelector('.chat-panel-close');
+        check(getComputedStyle(panelClose).backgroundColor !== getComputedStyle(panel).backgroundColor, 'panel close uses the darker secondary surface');
+        const closeGlyph = document.createRange();
+        closeGlyph.selectNodeContents(panelClose);
+        const glyphRect = closeGlyph.getBoundingClientRect();
+        const closeRect = panelClose.getBoundingClientRect();
+        check(Math.abs((glyphRect.left + glyphRect.width / 2) - (closeRect.left + closeRect.width / 2)) <= 2,
+          'panel close icon is centered inside its button');
+        if (!app.panelOpen) root.querySelector('.chat-panel-tab').click();
+        await waitFor(() => app.panelOpen && getComputedStyle(panel).display !== 'none' &&
+          document.activeElement === panel, 'panel opening before Escape');
         panel.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
-        let escapeWaitError = null;
+        await waitFor(() => !app.panelOpen && getComputedStyle(panel).display === 'none' &&
+          document.activeElement === root.querySelector('.chat-panel-tab'), 'Escape closes the panel and restores focus');
+        check(!app.panelOpen && getComputedStyle(panel).display === 'none' &&
+          document.activeElement === root.querySelector('.chat-panel-tab'), 'Escape closes the workspace panel and focuses its collapsed tab');
+        root.querySelector('.chat-panel-tab').click();
+        await waitFor(() => app.panelOpen && getComputedStyle(panel).display !== 'none' &&
+          document.activeElement === panel, 'panel visibility after opening');
+        check(getComputedStyle(panel).display !== 'none', 'opening the panel updates the real Alpine state');
+        panel.querySelector('.chat-panel-close').click();
+        let closeFocusError = null;
         try {
           await waitFor(() => !app.panelOpen && getComputedStyle(panel).display === 'none' &&
-            document.activeElement === root.querySelector('.chat-panel-toggle'), 'Escape closes panel and restores focus');
-        } catch (error) {
-          escapeWaitError = error.message;
-        }
-        const escapePassed = getComputedStyle(panel).display === 'none' && document.activeElement === root.querySelector('.chat-panel-toggle');
-        escapeAssertion = {passed: escapePassed, beforeProbe: diagnostic()};
-        check(escapePassed, escapeWaitError || 'Escape closes panel and restores focus');
-        root.querySelector('.chat-panel-toggle').click();
-        await waitFor(() => getComputedStyle(panel).display !== 'none', 'panel visibility after opening');
-        check(getComputedStyle(panel).display !== 'none', 'opening the panel updates the real Alpine state');
+            document.activeElement === root.querySelector('.chat-panel-tab'), 'panel close restores focus to the collapsed tab');
+        } catch (error) { closeFocusError = error.message; }
+        const closeFocusPassed = getComputedStyle(panel).display === 'none' &&
+          document.activeElement === root.querySelector('.chat-panel-tab');
+        escapeAssertion = {passed: closeFocusPassed, beforeProbe: diagnostic()};
+        check(closeFocusPassed, closeFocusError || 'panel close restores focus to the collapsed tab');
+        root.querySelector('.chat-panel-tab').click();
+        await waitFor(() => app.panelOpen && getComputedStyle(panel).display !== 'none' &&
+          document.activeElement === panel, 'panel opens after focus restore');
 
         const input = panel.closest('.chat-page').querySelector('.chat-input');
+        const sampleBubble = document.createElement('div');
+        sampleBubble.className = 'chat-bubble-user';
+        root.append(sampleBubble);
+        check(getComputedStyle(sampleBubble).backgroundColor === getComputedStyle(root.querySelector('.chat-send')).backgroundColor,
+          'user message bubble uses the send button brand color');
+        sampleBubble.remove();
+        const composer = input.closest('.chat-composer');
+        const borderBeforeFocus = getComputedStyle(composer).borderTopColor;
+        input.focus();
+        const inputStyle = getComputedStyle(input);
+        check(inputStyle.outlineStyle === 'none' && inputStyle.borderTopStyle === 'none', 'textarea has no independent focus frame');
+        await waitFor(() => getComputedStyle(composer).borderTopColor !== borderBeforeFocus, 'composer parent focus border transition');
+        check(getComputedStyle(composer).borderTopColor !== borderBeforeFocus, 'composer parent carries the focus border');
+        input.blur();
         input.value = 'Existing draft';
-        panel.querySelector('.chat-panel-actions button').click();
+        [...panel.querySelectorAll('.chat-panel-actions button')].find(button => button.textContent.trim() === 'Подготовить задачу').click();
         await waitFor(() => input.value.startsWith('Existing draft\n\n'), 'prepared request appends to existing draft');
         check(input.value.startsWith('Existing draft\n\n'), 'quick action appends without replacing the draft');
+        const appended = input.value;
+        [...panel.querySelectorAll('.chat-panel-actions button')].find(button => button.textContent.trim() === 'Что дальше?').click();
+        await waitFor(() => input.value.length > appended.length, 'next-step action prepares a draft');
+        check(input.value.startsWith(appended + '\n\n') && input.value.includes('Предложи следующий шаг'), 'context action adds an actionable next-step draft');
 
         const search = panel.querySelector('#chat-task-search');
         search.value = 'Fixture';
@@ -270,7 +340,67 @@ try {
         await waitFor(() => Boolean(app.workspaceTaskError), 'refresh error state renders');
         check(!app.workspaceTask && panel.textContent.includes('Не удалось обновить задачу'), 'refresh failure hides stale snapshot and explains recovery');
 
-        if (!app.panelOpen) root.querySelector('.chat-panel-toggle').click();
+        const draftBeforeModal = 'Черновик остаётся в чате';
+        input.value = draftBeforeModal;
+        const sourceAction = [...panel.querySelectorAll('.chat-panel-actions button')]
+          .find(button => button.textContent.includes('Источники для задачи'));
+        check(sourceAction, 'workspace exposes settings shortcut without duplicating shell navigation');
+        input.focus();
+        sourceAction.click();
+        const modal = root.querySelector('.chat-content-dialog');
+        const frame = modal.querySelector('iframe');
+        await waitFor(() => modal.open && frame.contentDocument?.body.textContent.includes('Mock source settings'), 'settings page opens inside the chat modal');
+        check(frame.contentWindow.location.pathname.startsWith('/app/sources') &&
+          new URL(frame.src).searchParams.get('embedded') === '1', 'same-origin management page opens in the embedded modal');
+        modal.querySelector('[aria-label="Закрыть окно"]').click();
+        await waitFor(() => !modal.open && document.activeElement === sourceAction, 'modal close restores launcher focus');
+        check(input.value === draftBeforeModal && document.activeElement === sourceAction, 'modal close preserves draft and restores focus');
+        sourceAction.click();
+        await waitFor(() => modal.open && frame.contentDocument?.body.textContent.includes('Mock source settings'), 'settings modal can reopen');
+        frame.contentDocument.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+        await waitFor(() => !modal.open && document.activeElement === sourceAction, 'Escape in embedded page closes modal and restores focus');
+        check(!modal.open && input.value === draftBeforeModal && document.activeElement === sourceAction, 'embedded Escape preserves chat draft and returns focus');
+        app.openWorkspacePage('//evil.invalid/page', 'External page', sourceAction);
+        app.openWorkspacePage('/app/chat', 'Chat page', sourceAction);
+        check(!modal.open, 'modal rejects external origins and nested chat routes');
+
+        const attachmentButton = root.querySelector('.chat-attach');
+        attachmentButton.click();
+        const attachmentDialog = root.querySelector('.chat-attachment-dialog');
+        check(attachmentDialog.open && attachmentDialog.textContent.includes('Прикрепление файлов пока недоступно'), 'paperclip explains current file-upload availability');
+        attachmentDialog.querySelector('button[type="submit"]').click();
+        await waitFor(() => !attachmentDialog.open, 'attachment information dialog closes');
+
+        const scrollButton = root.querySelector('.chat-scroll-bottom');
+        const spacer = document.createElement('div');
+        spacer.dataset.testSpacer = 'true';
+        spacer.style.height = '1400px';
+        composer.before(spacer);
+        const scroller = app.scrollContainer();
+        scroller.scrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        scroller.dispatchEvent(new Event('scroll'));
+        app.onScroll();
+        const visibleBounds = scroller === document.scrollingElement || scroller === document.documentElement
+          ? {top: 0, bottom: innerHeight} : scroller.getBoundingClientRect();
+        check(composer.getBoundingClientRect().bottom <= visibleBounds.bottom + 1, 'composer is fully visible at the bottom of the conversation');
+        await waitFor(() => !scrollButton.getClientRects().length, 'scroll shortcut remains hidden while composer is in view');
+        check(!scrollButton.getClientRects().length, 'scroll shortcut stays hidden while composer is visible');
+        scroller.scrollTop = 0;
+        scroller.dispatchEvent(new Event('scroll'));
+        app.onScroll();
+        const awayRect = composer.getBoundingClientRect();
+        check(awayRect.top >= visibleBounds.bottom + 80, 'test scroll places composer well below the viewport');
+        await waitFor(() => scrollButton.getClientRects().length > 0, 'scroll shortcut appears after scrolling away from composer');
+        const centerBefore = scrollButton.getBoundingClientRect().left + scrollButton.getBoundingClientRect().width / 2;
+        await new Promise(resolve => setTimeout(resolve, 80));
+        const rectAfter = scrollButton.getBoundingClientRect();
+        const centerAfter = rectAfter.left + rectAfter.width / 2;
+        check(Math.abs(centerAfter - centerBefore) <= 1, 'scroll shortcut stays horizontally centered while appearing');
+        const chatRect = root.querySelector('.chat-messages').getBoundingClientRect();
+        check(Math.abs(centerAfter - (chatRect.left + chatRect.width / 2)) <= 2, 'scroll shortcut tracks the visible chat center');
+        spacer.remove();
+
+        if (!app.panelOpen) root.querySelector('.chat-panel-tab').click();
         await waitFor(() => app.panelOpen && getComputedStyle(panel).display !== 'none' &&
           (innerWidth >= 1200
             ? getComputedStyle(document.querySelector('.chat-workspace-grid')).gridTemplateColumns.split(' ').length === 2
@@ -295,7 +425,7 @@ try {
         document.body.append(result);
         let failureProbes = null;
         if (escapeAssertion && !escapeAssertion.passed) {
-          const toggle = document.querySelector('.chat-panel-toggle');
+          const toggle = document.querySelector('.chat-panel-tab');
           const input = document.querySelector('.chat-input');
           const focused = () => document.activeElement === toggle;
           failureProbes = {originalAssertion: escapeAssertion, rootRefKeys: Object.keys(app?.$refs || {})};
@@ -325,6 +455,7 @@ try {
         result.textContent = failure + (failureProbes ? ' focus-probes=' + JSON.stringify(failureProbes) : ' focus-probes=not-applicable');
       });
     `;
+    new Function(browserChecks);
     html = html.replace('</head>', () => `<style>${css}</style></head>`);
     html = html.replace('</body>', () => `<script>${js}</script><script>${browserChecks}</script><script>${alpineJs}</script></body>`);
     if (!html.includes(alpineJs)) throw Error('Alpine.js fixture bytes changed during HTML insertion');
@@ -350,7 +481,7 @@ try {
         if (run.error) throw run.error;
         const dom = run.stdout || '';
         const result = dom.match(/<pre id="p8t42-results">([^<]+)<\/pre>/)?.[1];
-        if (run.status !== 0 || result !== 'PASS 24 checks' || /Alpine Expression Error|Uncaught/.test(run.stderr || '')) {
+        if (run.status !== 0 || !/^PASS \d+ checks$/.test(result || '') || /Alpine Expression Error|Uncaught/.test(run.stderr || '')) {
             throw Error(result || dom.match(/Uncaught[^<]*/)?.[0] || run.stderr || 'Browser checks failed');
         }
         console.log(`${result} at ${width}px`);

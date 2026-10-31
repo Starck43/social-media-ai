@@ -299,7 +299,7 @@ def _real_result(observation, response=None, *, api_key="", error=None):
     return result
 
 
-async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
+async def probe_real_capped(model, prompt: str = "", *, purpose: str = "admin_probe") -> dict[str, Any]:
     """One bounded provider request using the client's active accounting mode.
 
     Never bypass admission or retry. Preserve received provider evidence even
@@ -307,6 +307,8 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
     """
     from app.services.ai.llm_client import LLMClientFactory, journal_chat_attempt
 
+    if purpose not in {"admin_probe", "model_test"}:
+        raise ValueError("Unsupported model probe purpose")
     question, max_tokens = request_parameters(model, prompt)
 
     def blocked(code, message):
@@ -340,7 +342,7 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
             [{"role": "user", "content": question}],
             max_tokens=max_tokens,
             temperature=0.0,
-            personal_billing_purpose="admin_probe",
+            personal_billing_purpose=purpose,
         )
     except Exception as exc:
         stage = observation.get("stage")
@@ -416,17 +418,24 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
         result = _real_result(observation, api_key=client.api_key, error=error)
         if observation.get("dispatch_state") == "not_dispatched":
             result["tokens_spent"] = 0
+        hint = provider_limit_hint(result, model)
+        if hint is not None:
+            result["limit_hint"] = hint
         return result
     if not isinstance(response, dict):
-        return _real_result(
+        result = _real_result(
             observation,
             api_key=client.api_key,
             error=("invalid_response", "Ответ не подтверждён. Не повторяйте автоматически."),
         )
+        hint = provider_limit_hint(result, model)
+        if hint is not None:
+            result["limit_hint"] = hint
+        return result
     dispatch_id = response.pop("_personal_dispatch_id", None)
     journal_warning = False
     try:
-        await journal_chat_attempt(client, "admin_probe", response, dispatch_id=dispatch_id)
+        await journal_chat_attempt(client, purpose, response, dispatch_id=dispatch_id)
     except Exception:
         journal_warning = True
     result = _real_result(observation, response, api_key=client.api_key)
@@ -434,4 +443,169 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
     if journal_warning:
         result["save_warning"] = "Ответ получен, но журнал не подтверждён. Не повторяйте вызов автоматически."
         result["accounting_status"] = "journal_unconfirmed"
+    hint = provider_limit_hint(result, model)
+    if hint is not None:
+        result["limit_hint"] = hint
     return result
+
+
+_PROVIDER_LIMIT_MESSAGES = {
+    "rate_limit": "Провайдер сообщил об ограничении частоты запросов или временной квоте.",
+    "quota": "Провайдер сообщил, что доступная квота исчерпана.",
+    "budget": "Провайдер сообщил об ограничении бюджета или баланса.",
+    "billing": "Провайдер сообщил о проблеме оплаты или баланса аккаунта.",
+    "pricing_mismatch": "Провайдер сообщил стоимость вызова при нулевом тарифе модели. Проверьте тариф в настройках.",
+}
+
+
+def provider_limit_hint(result: dict[str, Any], model=None) -> dict[str, str] | None:
+    """Map structured provider status/error/price evidence to fixed safe UI copy.
+
+    Never return provider text, credentials, or arbitrary response fields. A
+    provider-reported price is evidence for a warning only; it never edits the
+    configured catalog tariff. Zero token rates are not interpreted as quota.
+    """
+    if not isinstance(result, dict) or result.get("tier") != "real":
+        return None
+
+    status = result.get("http_status")
+    payload = result.get("response_json")
+    code = None
+
+    # Only inspect recognized limit containers, never model-generated choices,
+    # arbitrary metadata or free-text response content.
+    limit_containers = {
+        "limits": "budget",
+        "quota": "quota",
+        "quotas": "quota",
+        "budget": "budget",
+        "budgets": "budget",
+        "rate_limit": "rate_limit",
+        "rate_limits": "rate_limit",
+        "usage_limit": "budget",
+        "usage_limits": "budget",
+        "billing": "billing",
+        "credits": "quota",
+    }
+    exhausted_flags = {"exhausted", "exceeded", "limit_exceeded", "quota_exceeded", "rate_limited", "limit_reached"}
+    remaining_fields = {
+        "remaining",
+        "remaining_quota",
+        "quota_remaining",
+        "remaining_budget",
+        "budget_remaining",
+        "credits_remaining",
+    }
+    if isinstance(payload, dict):
+        for container_name, category in limit_containers.items():
+            container = payload.get(container_name)
+            if not isinstance(container, dict):
+                continue
+            nodes = [(container, category)]
+            for key in ("daily", "monthly", "requests", "tokens", "current"):
+                nested = container.get(key)
+                if isinstance(nested, dict):
+                    nested_category = "rate_limit" if key == "requests" else "quota" if key == "tokens" else category
+                    nodes.append((nested, nested_category))
+            for node, node_category in nodes:
+                if any(node.get(flag) is True for flag in exhausted_flags):
+                    code = node_category
+                    break
+                for field in remaining_fields:
+                    amount = node.get(field)
+                    if type(amount) in (int, float) and amount <= 0:
+                        code = node_category
+                        break
+                if code is None and "limit" in node and "used" in node:
+                    try:
+                        from decimal import Decimal, InvalidOperation
+
+                        limit = Decimal(str(node["limit"]))
+                        used = Decimal(str(node["used"]))
+                        if limit.is_finite() and used.is_finite() and limit > 0 and used >= limit:
+                            code = node_category
+                    except (InvalidOperation, ValueError, TypeError):
+                        pass
+                if code is not None:
+                    break
+            if code is not None:
+                break
+
+    fragments: list[str] = []
+    if isinstance(payload, dict):
+        provider_error = payload.get("error")
+        if isinstance(provider_error, dict):
+            for field in ("code", "type", "message", "status"):
+                value = provider_error.get(field)
+                if isinstance(value, (str, int)) and not isinstance(value, bool):
+                    fragments.append(str(value).lower()[:180])
+        elif isinstance(provider_error, str):
+            fragments.append(provider_error.lower()[:180])
+        for field in ("error_code", "error_type", "error_message"):
+            value = payload.get(field)
+            if isinstance(value, str):
+                fragments.append(value.lower()[:180])
+    error_code = result.get("error_code")
+    if isinstance(error_code, str):
+        fragments.append(error_code.lower()[:160])
+    text = " ".join(fragments)
+
+    # A structured exhaustion signal wins over generic HTTP 429/402. Otherwise
+    # classify the provider's explicit error fields, then generic status.
+    if code is None:
+        if any(
+            term in text
+            for term in ("insufficient_quota", "quota_exceeded", "quota exceeded", "out of quota", "credits exhausted")
+        ):
+            code = "quota"
+        elif any(
+            term in text
+            for term in (
+                "rate_limit",
+                "rate limit",
+                "too many requests",
+                "requests per minute",
+                "rpm_limit",
+                "tpm_limit",
+            )
+        ):
+            code = "rate_limit"
+        elif any(
+            term in text
+            for term in (
+                "budget_exceeded",
+                "budget exceeded",
+                "spending limit",
+                "monthly limit",
+                "daily limit",
+                "usage limit",
+            )
+        ):
+            code = "budget"
+        elif any(
+            term in text
+            for term in ("billing", "payment required", "payment method", "insufficient balance", "no credits")
+        ):
+            code = "billing"
+
+    if code is None and status == 429:
+        code = "rate_limit"
+    elif code is None and status == 402:
+        code = "billing"
+
+    if code is None and model is not None:
+        provider_cost = result.get("provider_cost_usd")
+        try:
+            from decimal import Decimal, InvalidOperation
+
+            reported = Decimal(str(provider_cost))
+            configured = (
+                Decimal(str(getattr(model, "input_cost_per_1k", 0))) == 0
+                and Decimal(str(getattr(model, "output_cost_per_1k", 0))) == 0
+            )
+            if configured and reported.is_finite() and reported > 0:
+                code = "pricing_mismatch"
+        except (InvalidOperation, ValueError, TypeError):
+            pass
+
+    return {"code": code, "message": _PROVIDER_LIMIT_MESSAGES[code]} if code else None

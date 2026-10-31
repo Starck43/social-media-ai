@@ -48,8 +48,8 @@ journey gate, not a way to rename or retroactively accept P8-T29.
    use source URLs only (no media downloading/storage). Coordinate overlapping chat
    presentation with P8-T42.
 
-9. [P8-T44](../tasks/p8-t44.md) — private photo/document attachments in the
-   shared chat; owner requested separate implementation after the P8-T42 UI revision.
+9. [P8-T44](../audit/p8-t44.md) — DONE 2026-10-31: private photo/document attachments in the
+   shared chat with magic-byte validation, large-file token confirmation gate and model capability checks; accepted `e1f79788`, PR #292 (merge `7c76bace940c174a2cd33d77eaf839bc9f7d4a61`).
 
 10. [P8-T45](../audit/p8-t45.md) — DONE 2026-10-31: shared compact model probes, invocation counters and safe quota/budget/price warnings; accepted `3d69c36a223b2023ae32fa4d1b59a9bd9d755296`, PR #291 (merge `57b5bebc2f1759d2d8543576a8c842c3d17f7acf`).
 

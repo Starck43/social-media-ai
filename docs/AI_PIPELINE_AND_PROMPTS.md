@@ -28,7 +28,10 @@ in `app/services/ai/param_registry.py` enforces that separation.
 5. Provider output is parsed and validated against the compiled scenario contract.
 6. A unified summary combines valid modality results.
 7. The result is saved to `AIAnalytics` with source/date, context fingerprint,
-   structured payload, usage projection, analyzed media types, content hashes
+   structured payload, usage projection, analyzed media types, content hashes,
+   canonical source permalinks (`original_links`), per-item post/media evidence
+   (`post_evidence` with `permalink`, `parent_permalink`, reference-only
+   `media_urls`, normalized `attachments` status, `source_id` and `tenant_id`),
    and optional topic chain. A durable success receipt is stored atomically with
    the analytics row for each successfully covered hash.
 

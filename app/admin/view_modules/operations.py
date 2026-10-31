@@ -292,6 +292,18 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         otherwise never become due. Compute it from the cron expression so
         admin-created tasks actually fire (a @once task is scheduled ~1 min out).
         """
+        job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
+        data["payload"] = self._prepare_task_payload(data, model, is_created, job_type)
+        active = self._hold_new_task_plan_for_owner_activation(data, model, is_created, request)
+        tenant_id = self._task_tenant_id(data, model)
+        await self._validate_active_task_sources(data, active, job_type, tenant_id)
+        await self._warn_about_missing_scenario_targets(data, model, request)
+        await self._schedule_next_task_run(data, model, tenant_id)
+        await super().on_model_change(data, model, is_created, request)
+
+    @staticmethod
+    def _prepare_task_payload(data: dict, model: Any, is_created: bool, job_type: str) -> dict:
+        """Validate and canonicalize the collection and task-plan form fields."""
         # The payload is a JSON column, so the form can hand back any JSON value
         # (a list, a string, a number). The collection limits inside it are
         # parsed by the shared writer on every other write surface (web, API,
@@ -301,7 +313,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
 
         from app.services.collection.intent import CollectionIntentError, apply_collection, collection_error_message
 
-        job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
         raw_payload = data["payload"] if "payload" in data else getattr(model, "payload", None)
         if raw_payload is None:
             raw_payload = {}
@@ -349,17 +360,14 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             raise ValueError(collection_error_message(str(exc))) from None
         except ValueError as exc:
             raise ValueError(str(exc)) from None
+        return payload
 
-        # Guard: an active source-based task (collect/analyze) needs at least one
-        # active source to operate on. Empty links fall back to "all active
-        # sources", so the check is on the workspace, mirroring the web rule.
-        from app.core.tenant_context import tenant_scope
-        from app.models import Source
-        from app.models.managers.agent_task_manager import AgentTaskManager
+    @staticmethod
+    def _hold_new_task_plan_for_owner_activation(data: dict, model: Any, is_created: bool, request: Any) -> bool:
+        """Keep a newly-authored paid plan inactive until its workspace owner activates it."""
+        from collections.abc import Mapping
 
         active = data.get("is_active", getattr(model, "is_active", False))
-        # The platform admin has no personal payer context. A newly authored
-        # paid plan must be activated by its workspace owner after consent.
         if is_created and isinstance(data.get("payload"), Mapping) and "task_plan" in data["payload"]:
             active = False
             data["is_active"] = False
@@ -368,17 +376,29 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                     "type": "warning",
                     "message": "Новая задача сохранена неактивной: владелец пространства должен настроить оплату и активировать её.",
                 }
+        return active
+
+    @staticmethod
+    def _task_tenant_id(data: dict, model: Any) -> int | None:
+        """Normalize the form's tenant value before comparing it to source IDs."""
         tenant_val = data.get("tenant") or getattr(model, "tenant_id", None)
         tenant_id = tenant_val.id if hasattr(tenant_val, "id") else tenant_val
-        # The form delivers the workspace as a string ("1"), and a `tenant_id`
-        # compared against `sources.tenant_id` as VARCHAR fails with
-        # `operator does not exist: integer = character varying`. Coerce once,
-        # here, rather than trusting every caller to pass an int.
         if tenant_id is not None:
             try:
                 tenant_id = int(tenant_id)
             except (TypeError, ValueError):
                 tenant_id = None
+        return tenant_id
+
+    @staticmethod
+    async def _validate_active_task_sources(data: dict, active: bool, job_type: str, tenant_id: int | None) -> None:
+        # Guard: an active source-based task (collect/analyze) needs at least one
+        # active source to operate on. Empty links fall back to "all active
+        # sources", so the check is on the workspace, mirroring the web rule.
+        from app.core.tenant_context import tenant_scope
+        from app.models import Source
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
         if active and AgentTaskManager.requires_sources(job_type):
             submitted = data.get("sources") or []
             submitted_ids = [int(v) if isinstance(v, (int, str)) else getattr(v, "id", None) for v in submitted]
@@ -400,9 +420,13 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                     "выберите хотя бы один источник или снимите флаг «Активна»"
                 )
 
+    @staticmethod
+    async def _warn_about_missing_scenario_targets(data: dict, model: Any, request: Any) -> None:
         # Guard: missing target params for the scenario's analysis types.
         # Non-blocking warning: a task is still valid without them, but analysis
         # will have nothing specific to look for.
+        from app.core.tenant_context import tenant_scope
+
         scenario_id_val = data.get("agent_scenario") or getattr(model, "agent_scenario_id", None)
         if scenario_id_val is not None:
             scenario_pk = (
@@ -432,11 +456,14 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                         if session is not None:
                             session["admin_message"] = {"type": "warning", "message": msg}
 
+    @staticmethod
+    async def _schedule_next_task_run(data: dict, model: Any, tenant_id: int | None) -> None:
         cron_expr = (data.get("cron_expr") or getattr(model, "cron_expr", "") or "").strip()
         if cron_expr and getattr(model, "next_run_at", None) is None:
             if cron_expr == "@once":
                 data["next_run_at"] = datetime.now(timezone.utc) + timedelta(minutes=1)
             else:
+                from app.core.tenant_context import tenant_scope
                 from app.models import Tenant
                 from app.tasks.cron import next_run_at as compute_next
                 from app.tasks.cron import resolve_tz
@@ -453,7 +480,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                     cron_expr,
                     task_plan_timezone(task_plan, resolve_tz(tenant)),
                 )
-        await super().on_model_change(data, model, is_created, request)
 
     def list_query(self, request: Request) -> Select:
         return AgentTask.objects.prefetch_related("sources", "agent_scenario").filter().to_select()

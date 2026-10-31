@@ -251,8 +251,7 @@ async def test_non_generation_modes_do_not_require_billing_tenant_or_payer(mode)
 
 @pytest.mark.asyncio
 async def test_retired_paid_route_never_translates_or_dispatches():
-    auth = AsyncMock(return_value=NS(id=31))
-    lookup = AsyncMock(return_value=NS(is_active=True, is_platform_admin=True))
+    identity = AsyncMock(return_value=NS(id=31, is_active=True, is_platform_admin=True))
     handler = extracted_handler(
         "app/admin/endpoints.py",
         "llm_model_test_real",
@@ -260,8 +259,7 @@ async def test_retired_paid_route_never_translates_or_dispatches():
             "Form": lambda *a, **k: None,
             "HTTPException": HTTPException,
             "verify_request_token": lambda request, token: True,
-            "get_authenticated_user": auth,
-            "User": NS(objects=NS(prefetch_related=lambda *a: NS(get=lookup))),
+            "resolve_operator_identity": identity,
         },
         {},
     )

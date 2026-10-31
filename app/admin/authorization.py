@@ -44,6 +44,7 @@ from sqladmin.authorization import (
 from sqladmin.models import ModelView
 from starlette.requests import Request
 
+from app.admin.identity import resolve_operator_identity
 from app.core.access_catalog import resource_for
 from app.core.permissions import has_permission
 from app.core.tenant_context import current_tenant_id
@@ -184,13 +185,9 @@ class AdminAuthorizationBackend(GrantsAuthorizationBackend):
         token = request.session.get("token")
         if token:
             try:
-                from app.services.user.auth import get_authenticated_user
-
-                authenticated = await get_authenticated_user(token=token)
-                if authenticated is not None and authenticated.is_active:
-                    user = await User.objects.prefetch_related("role.permissions").get(id=authenticated.id)
-                    if user is not None and (not user.is_active or not user.has_admin_access()):
-                        user = None
+                user = await resolve_operator_identity(token, require_admin_access=True)
+                if user is not None and not user.is_active:
+                    user = None
             except Exception:
                 # Revoked/invalid identity or unavailable DB must grant nothing.
                 logger.warning("Admin identity could not be resolved", exc_info=True)

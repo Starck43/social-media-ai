@@ -38,6 +38,7 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from app.admin.identity import resolve_operator_identity
 from app.core.permissions import permission_scope
 from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.tenant_context import tenant_scope
@@ -128,13 +129,10 @@ class AdminScopeMiddleware:
         if not token:
             return None
         try:
-            from app.models import User
-            from app.services.user.auth import get_authenticated_user
-
-            authenticated = await get_authenticated_user(token=token)
-            if authenticated is None or not authenticated.is_active:
+            user = await resolve_operator_identity(token)
+            if user is None or not user.is_active:
                 return None
-            return await User.objects.prefetch_related("role.permissions").get(id=authenticated.id, is_active=True)
+            return user
         except Exception:
             logger.warning("Admin scope identity could not be resolved", exc_info=True)
             return None

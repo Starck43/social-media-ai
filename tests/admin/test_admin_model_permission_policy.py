@@ -73,14 +73,19 @@ def user_with(*actions, role="operator", active=True, resource="llm.model"):
 def console(user):
     manager = NS(get=AsyncMock(return_value=user))
     manager.prefetch_related = Mock(return_value=manager)
-    identity = AsyncMock(return_value=NS(id=7, is_active=True))
+
+    async def resolve_identity(_token, *, require_admin_access=False):
+        assert require_admin_access is True
+        return await manager.prefetch_related("role.permissions").get(id=7)
+
+    identity = AsyncMock(side_effect=resolve_identity)
     module = load_isolated_source(
         "_admin_model_real_permission_backend",
         ROOT / "app/admin/authorization.py",
         {
+            "app.admin.identity": NS(resolve_operator_identity=identity),
             "app.models": NS(User=NS(objects=manager)),
             "app.types": TYPES,
-            "app.services.user.auth": NS(get_authenticated_user=identity),
         },
     )
     # Read the real view's declaration; fail if it drifts away from CONFIGURE.

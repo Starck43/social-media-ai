@@ -141,8 +141,8 @@ def password_console(monkeypatch, request):
         async def get(self, **criteria):
             return {admin.id: admin, owner.id: owner}.get(criteria["id"])
 
-    monkeypatch.setattr("app.admin.endpoints.get_authenticated_user", authenticate)
-    # The routes read `User.objects` for the actor, the target and the write.
+    monkeypatch.setattr("app.admin.endpoints.resolve_operator_identity", authenticate)
+    # The routes read `User.objects` for the target and the write.
     monkeypatch.setattr(
         "app.admin.endpoints.User",
         SimpleNamespace(objects=SimpleNamespace(prefetch_related=lambda *_: Query(), update_by_id=update)),

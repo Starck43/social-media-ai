@@ -13,11 +13,11 @@ from starlette.templating import Jinja2Templates
 
 from app.admin.authorization import require_admin_perm
 from app.admin.csrf import issue_token, verify_request_token
+from app.admin.identity import resolve_operator_identity
 from app.core.config import settings
 from app.core.hashing import get_password_hash, verify_password
 from app.models import Tenant, User
 from app.models.managers.user_manager import UserManager
-from app.services.user.auth import get_authenticated_user
 from app.types import ActionType
 
 # Configure logger
@@ -57,9 +57,7 @@ async def llm_model_test_real(
     token = request.session.get("token")
     if not token:
         raise HTTPException(status_code=401, detail="Требуется вход в панель")
-    user = await get_authenticated_user(token=token, token_type="access")
-    if user is not None:
-        user = await User.objects.prefetch_related("role.permissions").get(id=user.id)
+    user = await resolve_operator_identity(token, token_type="access")
     if user is None or not user.is_active or not user.is_platform_admin:
         raise HTTPException(status_code=403, detail="Нужны активные права администратора платформы")
     raise HTTPException(status_code=410, detail="Open the model test page and confirm a new probe explicitly")
@@ -82,9 +80,7 @@ async def change_password_form_path(
             url=f"/admin/login?next=/admin/user/change-password/{user_id}", status_code=status.HTTP_303_SEE_OTHER
         )
 
-    current_user = await get_authenticated_user(token)
-    if current_user is not None:
-        current_user = await User.objects.prefetch_related("role.permissions").get(id=current_user.id)
+    current_user = await resolve_operator_identity(token)
     if not current_user:
         # Redirect to log in with next parameter to return here after login
         return RedirectResponse(
@@ -165,9 +161,7 @@ async def change_password_submit_path(
 
     # Check if user is authenticated
     token = request.session.get("token")
-    current_user = await get_authenticated_user(token)
-    if current_user is not None:
-        current_user = await User.objects.prefetch_related("role.permissions").get(id=current_user.id)
+    current_user = await resolve_operator_identity(token)
 
     if not token or not current_user:
         return RedirectResponse(
@@ -293,12 +287,7 @@ async def verify_current_password(request: Request, data: dict = Body(...)):
     if not token:
         return {"valid": False}
 
-    authenticated = await get_authenticated_user(token)
-    current_user = (
-        await User.objects.prefetch_related("role.permissions").get(id=authenticated.id)
-        if authenticated is not None
-        else None
-    )
+    current_user = await resolve_operator_identity(token)
     if not current_user:
         return {"valid": False}
     if not current_user.has_admin_access():
@@ -348,7 +337,7 @@ async def analytics_dashboard(request: Request):
 
     try:
         # Get user from session token
-        current_user = await get_authenticated_user(token=token, token_type="access")
+        current_user = await resolve_operator_identity(token, token_type="access")
 
         if not current_user or not current_user.is_active:
             request.session.clear()
@@ -389,7 +378,7 @@ async def topic_chains_dashboard(request: Request):
     await require_admin_perm(request, "aianalytics", ActionType.VIEW)
 
     try:
-        current_user = await get_authenticated_user(token=token, token_type="access")
+        current_user = await resolve_operator_identity(token, token_type="access")
 
         if not current_user or not current_user.is_active:
             request.session.clear()

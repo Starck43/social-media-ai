@@ -1,0 +1,97 @@
+<aside id="chat-workspace-panel" class="chat-workspace-panel" tabindex="-1" x-ref="workspacePanel" x-show="panelOpen" x-cloak aria-labelledby="chat-workspace-title"
+       @keydown.escape.stop="if (panelOpen) toggleWorkspacePanel()">
+    <div class="chat-panel-heading">
+        <h2 id="chat-workspace-title">Рабочий контекст</h2>
+        <button type="button" @click="toggleWorkspacePanel()" class="chat-panel-close" aria-label="Свернуть рабочий контекст">›</button>
+    </div>
+    <section aria-labelledby="chat-actions-title">
+        <h3 id="chat-actions-title">Быстрые действия</h3>
+        <p class="chat-panel-hint">Подготовят запрос в поле ввода. Проверьте его перед отправкой.</p>
+        <div class="chat-panel-actions">
+            <button type="button" @click="draftAction(starters[2].text)" :disabled="pending || awaitingConfirmation">Подготовить задачу</button>
+            <button type="button" @click="draftAction(workspaceTaskId ? 'Разбери результаты выбранной задачи: ключевые выводы, ссылки на материалы, охват и ограничения. Отдели подтверждённые данные от предположений.' : 'Разбери результаты, которые мы обсуждали: ключевые выводы, ссылки, охват и ограничения. Если данных не хватает, уточни задачу.')" :disabled="pending || awaitingConfirmation">Разобрать результат</button>
+            <button type="button" @click="draftAction('Предложи следующий шаг по текущему обсуждению' + (workspaceTaskId ? ' и выбранной задаче' : '') + '. Учти уже сделанное и ограничения. Объясни пользу и дождись моего решения перед действиями.')" :disabled="pending || awaitingConfirmation">Что дальше?</button>
+        </div>
+    </section>
+    <section aria-labelledby="chat-reference-title">
+        <h3 id="chat-reference-title">Проверить настройки</h3>
+        <p class="chat-panel-hint">Откроются поверх диалога. Черновик останется на месте.</p>
+        <div class="chat-panel-actions">
+            {% for item in nav if item.key in ('sources', 'scenarios') and item.ready %}
+            <button type="button" @click="openWorkspacePage({{ item.href | tojson | forceescape }}, {{ item.label | tojson | forceescape }}, $event.currentTarget)">{{ 'Источники для задачи' if item.key == 'sources' else 'Сценарии обработки' }}</button>
+            {% endfor %}
+        </div>
+    </section>
+    {% if nav|selectattr('key', 'equalto', 'tasks')|list %}
+    <section data-chat-task-picker aria-labelledby="chat-task-picker-title">
+        <h3 id="chat-task-picker-title">Мои задачи</h3>
+        <label for="chat-task-search" class="chat-panel-hint">Поиск задач сбора и анализа</label>
+        <input id="chat-task-search" type="search" maxlength="100" placeholder="Название задачи" x-model="workspaceSearch"
+               @input.debounce.300ms="loadWorkspaceTasks()" :disabled="pending || awaitingConfirmation">
+        <p x-show="workspaceListLoading" role="status">Загружаю задачи…</p>
+        <p x-show="workspaceListError" role="alert" x-text="workspaceListError"></p>
+        <button type="button" x-show="workspaceListError" @click="loadWorkspaceTasks()">Повторить загрузку</button>
+        <p x-show="!workspaceListLoading && !workspaceListError && !workspaceTasks.length" class="chat-panel-hint">Задач не найдено. Опишите новую задачу в чате.</p>
+        <ul class="chat-task-picker-list" aria-label="Доступные задачи">
+            <template x-for="task in workspaceTasks" :key="task.id">
+                <li><button type="button" @click="selectWorkspaceTask(task.id)" :aria-pressed="workspaceTaskId === task.id"
+                            :disabled="pending || awaitingConfirmation" x-text="task.name"></button></li>
+            </template>
+        </ul>
+        <div class="chat-panel-pagination">
+            <button type="button" x-show="workspaceOffset > 0" @click="loadWorkspaceTasks(Math.max(0, workspaceOffset - 20))" :disabled="workspaceListLoading">Назад</button>
+            <button type="button" x-show="workspaceNextOffset !== null" @click="loadWorkspaceTasks(workspaceNextOffset)" :disabled="workspaceListLoading">Далее</button>
+        </div>
+    </section>
+    {% endif %}
+    <section aria-labelledby="chat-selected-task-title" :aria-busy="workspaceTaskLoading">
+        <h3 id="chat-selected-task-title">Текущая задача</h3>
+        <p x-show="!workspaceTaskId" class="chat-panel-hint">Выберите задачу, чтобы видеть её план и обсуждать конкретный результат.</p>
+        <p x-show="workspaceTaskLoading" role="status">Обновляю задачу…</p>
+        <p x-show="workspaceTaskError" role="alert" x-text="workspaceTaskError"></p>
+        <div x-show="workspaceTaskId" class="chat-panel-actions">
+            <button type="button" @click="refreshWorkspaceTask()" :disabled="workspaceTaskLoading || pending">Обновить</button>
+            <button type="button" @click="clearWorkspaceTask()" :disabled="pending || awaitingConfirmation">Снять выбор</button>
+        </div>
+        <template x-if="workspaceTask">
+            <div class="chat-selected-task">
+                <p class="chat-task-name" x-text="workspaceTask?.name"></p>
+                <button type="button" @click="openWorkspacePage(workspaceTask?.task_url, workspaceTask?.name, $event.currentTarget)">Настройки и управление</button>
+                <p class="chat-panel-hint" x-text="'Проверено в ' + workspaceCheckedAt + '. Обновите для актуального состояния.'"></p>
+                <h4>План задачи</h4>
+                <p x-show="!workspaceTask?.plan" class="chat-panel-hint" x-text="workspacePlanNotice(workspaceTask?.plan_status)"></p>
+                <template x-if="workspaceTask?.plan">
+                    <dl class="chat-panel-plan">
+                        <dt>Цель</dt><dd x-text="workspaceTask?.plan?.goal"></dd>
+                        <dt>Данные</dt><dd x-text="(workspaceTask?.plan?.platforms || []).map(p => ({vk:'ВКонтакте', telegram:'Telegram'})[p] || p).join(', ')"></dd>
+                        <dt>Источники</dt><dd x-text="({selected:'Выбрано: ' + workspaceTask?.plan?.source_count, discovery:'Поиск по запросам', all:'Все разрешённые источники'})[workspaceTask?.plan?.source_scope] || 'По сохранённому плану'"></dd>
+                        <dt>Обработка</dt><dd x-text="(workspaceTask?.plan?.stages || []).length ? (workspaceTask?.plan?.stages || []).map(stage => ({collect:'Сбор', analyze:'Анализ', digest:'Дайджест'})[stage] || stage).join(' → ') : 'По настройкам задачи'"></dd>
+                        <dt>Период</dt><dd x-text="workspaceWindow(workspaceTask?.plan?.window)"></dd>
+                        <dt>Запуск</dt><dd x-text="workspaceTask?.plan?.trigger?.type === 'schedule' ? 'По расписанию: ' + workspaceTask?.plan?.trigger?.cron + (workspaceTask?.plan?.trigger?.timezone ? ' · ' + workspaceTask?.plan?.trigger?.timezone : '') : 'Разово'"></dd>
+                        <dt>Ограничение</dt><dd x-text="workspaceTask?.plan?.limit ? workspaceTask?.plan?.limit + ' материалов на источник или поток' : 'По настройкам задачи'"></dd>
+                    </dl>
+                </template>
+                <button type="button" class="chat-panel-primary" @click="draftAction('Покажи актуальный план выбранной задачи, проверь доступ и ограничения. Подготовь разовый запуск и дождись моего подтверждения.')"
+                        :disabled="pending || awaitingConfirmation">Обсудить запуск</button>
+                <h4>Последний запуск</h4>
+                <p x-show="!workspaceTask?.latest" class="chat-panel-hint">Сведения о запуске недоступны.</p>
+                <template x-if="workspaceTask?.latest">
+                    <div>
+                        <p x-text="workspaceRunStatus(workspaceTask?.latest?.status)"></p>
+                        <p class="chat-panel-hint" x-show="workspaceTask?.latest?.coverage === 'partial_or_bounded'">Охват ограничен параметрами запуска; полнота данных не подтверждена.</p>
+                        <template x-if="workspaceTask?.latest?.progress">
+                            <p class="chat-panel-hint" x-text="'Обработано источников: ' + workspaceTask?.latest?.progress?.completed + ' из ' + workspaceTask?.latest?.progress?.total + (workspaceTask?.latest?.progress?.updated_at ? ' · ' + workspaceTask?.latest?.progress?.updated_at : '')"></p>
+                        </template>
+                        <ul class="chat-result-links">
+                            <template x-for="analysis in (workspaceTask?.latest?.analyses || [])" :key="analysis.url">
+                                <li><button type="button" @click="openWorkspacePage(analysis.url, analysis.title, $event.currentTarget)" x-text="analysis.title"></button></li>
+                            </template>
+                        </ul>
+                        <button type="button" @click="draftAction('Покажи результаты выбранной задачи со ссылками на материалы, охватом и ограничениями. Предложи следующий шаг.')"
+                                :disabled="pending || awaitingConfirmation">Обсудить результат</button>
+                    </div>
+                </template>
+            </div>
+        </template>
+    </section>
+</aside>

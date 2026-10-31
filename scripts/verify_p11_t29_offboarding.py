@@ -65,7 +65,7 @@ def database_snapshot(conn, schema: str) -> dict:
         revisions = []
         if "alembic_version" in tables:
             cur.execute(sql.SQL("SELECT version_num FROM {}.alembic_version ORDER BY version_num").format(quoted))
-            revisions = sorted(row[0] for row in cur.fetchall())
+            revisions = sorted(row["version_num"] for row in cur.fetchall())
         catalog_rows = {}
         for table, order in (
             ("model_types", "id"),

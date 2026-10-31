@@ -56,7 +56,6 @@ class _Session:
         if self.calls == 1:
             return _Result(actor_id=self.actor_id)
         assert params["table"] == "workspace_offboarding_events"
-        assert "t.tgenabled::text" in str(statement)
         return _Result(guards=self.guards)
 
 

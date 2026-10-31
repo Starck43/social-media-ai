@@ -138,3 +138,64 @@
     width: 100%;
   }
 }
+.llm-health-counts {
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px !important;
+}
+.llm-probe-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.llm-probe-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.llm-catalog .llm-probe-button {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.llm-real-probe > summary {
+  min-height: 32px !important;
+  padding: 6px 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.llm-real-probe[open] {
+  flex-basis: 100%;
+}
+.llm-real-probe form label {
+  max-width: 360px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.llm-probe-status,
+.llm-probe-warning {
+  margin-top: 6px;
+}
+.llm-probe-ok {
+  color: #059669;
+}
+.llm-probe-failed,
+.llm-probe-warning {
+  color: #b45309;
+}
+.dark .llm-probe-ok {
+  color: #34d399;
+}
+.dark .llm-probe-failed,
+.dark .llm-probe-warning {
+  color: #fbbf24;
+}
+@media (max-width: 640px) {
+  .llm-probe-actions,
+  .llm-probe-form {
+    width: 100%;
+  }
+}

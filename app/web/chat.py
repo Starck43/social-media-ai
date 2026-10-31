@@ -19,13 +19,16 @@ import re
 from datetime import timezone
 
 from dateutil import parser as dateutil_parser
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from .chat_workspace import router as workspace_router
+from .chat_workspace import selected_task, workspace_denied
 from .deps import add_flash, ensure_csrf, render, render_section_denied
 from .nav import section_of
 
 router = APIRouter(prefix="/chat")
+router.include_router(workspace_router)
 
 # Transcript depth on first paint. The loop only ever feeds the last 20 turns
 # to the model (see `agent_messages.recent`), so a long page is scroll, not
@@ -123,7 +126,7 @@ def _enrich_message(msg) -> dict:
 
 
 async def _confirmation_pending(user_id: int) -> bool:
-    """Whether this user's chat is waiting for a yes/no on a staged action."""
+    """Whether this user's chat is waiting for a yes/no on a staged action or large attachment."""
     from app.agent.runtime import web_session_id
 
     session_id = await web_session_id(user_id)
@@ -135,7 +138,19 @@ async def _confirmation_pending(user_id: int) -> bool:
     if row is None:
         return False
     state = row.state if isinstance(row.state, dict) else {}
-    return isinstance(state.get("pending_confirmation"), dict)
+    return isinstance(state.get("pending_confirmation"), dict) or isinstance(
+        state.get("pending_attachment_confirmation"), dict
+    )
+
+
+def _valid_chat_actor(request: Request) -> tuple[Any, int] | None:
+    """Verify concrete integer user.id and tenant_id on the request state."""
+    user = getattr(request.state, "web_user", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    user_id = getattr(user, "id", None)
+    if user is None or type(user_id) is not int or user_id <= 0 or type(tenant_id) is not int or tenant_id <= 0:
+        return None
+    return user, tenant_id
 
 
 def _display_transcript(messages) -> list[dict]:
@@ -220,6 +235,14 @@ async def chat_page(request: Request):
 
     # Enrich messages with formatted fields
     enriched = _display_transcript(messages)
+    from app.services.chat_attachments import resolve_workspace_attachment_policy
+
+    att_policy = await resolve_workspace_attachment_policy(
+        tenant_id=tenant_id,
+        user_id=user.id,
+        tenant_obj=getattr(request.state, "tenant", None),
+    )
+    policy_dict = att_policy.to_public_dict()
 
     if is_ajax:
         return JSONResponse(
@@ -227,6 +250,7 @@ async def chat_page(request: Request):
                 "messages": enriched,
                 "awaiting_confirmation": await _confirmation_pending(user.id),
                 "is_owner": _is_owner(request),
+                "attachment_policy": policy_dict,
             }
         )
 
@@ -236,6 +260,8 @@ async def chat_page(request: Request):
         section="chat",
         messages=enriched,
         is_owner=_is_owner(request),
+        awaiting_confirmation=await _confirmation_pending(user.id),
+        attachment_policy=policy_dict,
     )
 
 
@@ -244,6 +270,9 @@ async def chat_send(
     request: Request,
     text: str = Form(""),
     token: str = Form("", alias="_csrf"),
+    task_id: int | None = Form(None),
+    attachment_ids: str | None = Form(None),
+    confirm_large: str | None = Form(None),
 ):
     """Run one agent turn and show the answer on the same page.
 
@@ -265,29 +294,94 @@ async def chat_send(
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/chat", status_code=302)
 
-    user = getattr(request.state, "web_user", None)
-    tenant_id = getattr(request.state, "tenant_id", None)
-    if user is None or tenant_id is None:
+    actor = _valid_chat_actor(request)
+    if actor is None:
         if is_ajax:
             return JSONResponse({"error": "Не авторизован"}, status_code=401)
         return RedirectResponse("/app/chat", status_code=302)
+    user, tenant_id = actor
 
-    text = (text or "").strip()
+    raw_att_ids = attachment_ids if isinstance(attachment_ids, str) else ""
+    parsed_att_ids = [item.strip() for item in raw_att_ids.split(",") if item.strip()]
+    confirm_large_flag = (confirm_large if isinstance(confirm_large, str) else "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+    text = (text if isinstance(text, str) else "").strip()
+    if not text and parsed_att_ids:
+        text = "Проанализируй прикреплённые вложения в контексте моих задач."
     if not text:
         if is_ajax:
             return JSONResponse({"error": "Пустое сообщение"}, status_code=400)
         return RedirectResponse("/app/chat", status_code=302)
 
+    resolved_task_id = task_id if type(task_id) is int else None
+    # An explicit selection is context, never authority. Validate it again at
+    # send time; keep confirmation replies unchanged for the shared runtime gate.
+    if resolved_task_id is not None and not await _confirmation_pending(user.id):
+        denied = workspace_denied(request)
+        if denied is not None:
+            return denied
+        try:
+            definition = await selected_task(request, resolved_task_id) if resolved_task_id > 0 else None
+        except PermissionError:
+            definition = None
+        if definition is None:
+            if is_ajax:
+                return JSONResponse({"error": "Выбранная задача больше недоступна. Снимите выбор."}, status_code=403)
+            add_flash(request, "error", "Выбранная задача недоступна")
+            return RedirectResponse("/app/chat", status_code=303)
+        text = f"[Контекст: задача #{resolved_task_id}]\n{text}"
+
+    turn_attachments: list[dict] = []
+    if parsed_att_ids:
+        from app.services.chat_attachments import (
+            AttachmentValidationError,
+            attachment_store,
+            evaluate_turn_attachments,
+            resolve_workspace_attachment_policy,
+        )
+
+        try:
+            loaded_pairs = attachment_store.build_turn_payloads(
+                tenant_id=tenant_id,
+                user_id=user.id,
+                attachment_ids=parsed_att_ids,
+            )
+            policy = await resolve_workspace_attachment_policy(
+                tenant_id=tenant_id,
+                user_id=user.id,
+                tenant_obj=getattr(request.state, "tenant", None),
+            )
+            evaluate_turn_attachments([pair[0] for pair in loaded_pairs], policy)
+            turn_attachments = [pair[1] for pair in loaded_pairs]
+        except AttachmentValidationError as exc:
+            if exc.code in {"model_capability_unsupported", "model_token_limit_exceeded"}:
+                attachment_store.cleanup_actor(tenant_id=tenant_id, user_id=user.id, attachment_ids=parsed_att_ids)
+            if is_ajax:
+                return JSONResponse({"error": exc.message, "code": exc.code}, status_code=exc.status_code)
+            add_flash(request, "error", exc.message)
+            return RedirectResponse("/app/chat", status_code=302)
+
     from app.agent.runtime import LIMIT_REACHED_PREFIX, handle_web_message
 
     # The runtime reloads the owner membership before it admits a paid turn.
     try:
+        extra_kwargs: dict = {}
+        if turn_attachments:
+            extra_kwargs["attachments"] = turn_attachments
+            if confirm_large_flag:
+                extra_kwargs["confirm_large_attachments"] = True
         reply = await handle_web_message(
             text,
             tenant_id=tenant_id,
             user_id=user.id,
             role_id=_membership_role_id(request),
             role_codename=_membership_role(request),
+            **extra_kwargs,
         )
 
         # A spent daily cap is not an answer: it is a refusal. It becomes a real
@@ -336,6 +430,7 @@ async def chat_send(
             section="chat",
             messages=enriched,
             is_owner=_is_owner(request),
+            awaiting_confirmation=awaiting,
         )
     except PermissionError:
         if is_ajax:
@@ -420,3 +515,148 @@ async def chat_message_delete(
 
     add_flash(request, "success", "Сообщение удалено")
     return RedirectResponse("/app/chat", status_code=302)
+
+
+@router.get("/attachments/policy")
+async def chat_attachment_policy(request: Request):
+    """Return active workspace and model attachment capabilities and staged files."""
+    denied = _chat_denied(request, is_ajax=True)
+    if denied is not None:
+        return denied
+    actor = _valid_chat_actor(request)
+    if actor is None:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    user, tenant_id = actor
+
+    from app.services.chat_attachments import attachment_store, resolve_workspace_attachment_policy
+
+    policy = await resolve_workspace_attachment_policy(
+        tenant_id=tenant_id,
+        user_id=user.id,
+        tenant_obj=getattr(request.state, "tenant", None),
+    )
+    staged = [item.to_public_dict() for item in attachment_store.list_staged(tenant_id=tenant_id, user_id=user.id)]
+    return JSONResponse(
+        {**policy.to_public_dict(), "staged": staged},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/attachments")
+async def chat_attachment_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    token: str = Form("", alias="_csrf"),
+):
+    """Validate, extract, and privately stage one photo or document for the current actor."""
+    denied = _chat_denied(request, is_ajax=True)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        return JSONResponse({"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403)
+    actor = _valid_chat_actor(request)
+    if actor is None:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    user, tenant_id = actor
+
+    from app.services.chat_attachments import (
+        MAX_IMAGE_BYTES,
+        AttachmentValidationError,
+        attachment_store,
+        inspect_and_extract_attachment,
+        resolve_workspace_attachment_policy,
+    )
+
+    policy = await resolve_workspace_attachment_policy(
+        tenant_id=tenant_id,
+        user_id=user.id,
+        tenant_obj=getattr(request.state, "tenant", None),
+    )
+    try:
+        raw_bytes = await file.read(MAX_IMAGE_BYTES + 1)
+        existing = attachment_store.list_staged(tenant_id=tenant_id, user_id=user.id)
+        prepared = inspect_and_extract_attachment(
+            filename=getattr(file, "filename", None),
+            content_type=getattr(file, "content_type", None),
+            data=raw_bytes,
+            policy=policy,
+            existing_staged=existing,
+        )
+        attachment_store.save(prepared, raw_bytes)
+        return JSONResponse(
+            {
+                "attachment": prepared.to_public_dict(),
+                "policy": policy.to_public_dict(),
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+    except AttachmentValidationError as exc:
+        return JSONResponse(
+            {
+                "error": exc.message,
+                "code": exc.code,
+                "status": "rejected",
+                "policy": policy.to_public_dict(),
+            },
+            status_code=exc.status_code,
+            headers={"Cache-Control": "no-store"},
+        )
+    finally:
+        try:
+            await file.close()
+        except Exception:
+            pass
+
+
+@router.post("/attachments/cleanup")
+async def chat_attachment_cleanup(
+    request: Request,
+    token: str = Form("", alias="_csrf"),
+    attachment_ids: str = Form(""),
+):
+    """Remove specified or all staged attachments for the current workspace actor."""
+    denied = _chat_denied(request, is_ajax=True)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        return JSONResponse({"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403)
+    actor = _valid_chat_actor(request)
+    if actor is None:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    user, tenant_id = actor
+
+    from app.services.chat_attachments import attachment_store
+
+    raw_ids = attachment_ids if isinstance(attachment_ids, str) else ""
+    ids = [item.strip() for item in raw_ids.split(",") if item.strip()]
+    removed = attachment_store.cleanup_actor(
+        tenant_id=tenant_id,
+        user_id=user.id,
+        attachment_ids=ids if ids else None,
+    )
+    return JSONResponse({"ok": True, "removed": removed}, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/attachments/{attachment_id}/delete")
+async def chat_attachment_delete(
+    request: Request,
+    attachment_id: str,
+    token: str = Form("", alias="_csrf"),
+):
+    """Delete one staged attachment owned by the current workspace actor."""
+    denied = _chat_denied(request, is_ajax=True)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        return JSONResponse({"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403)
+    actor = _valid_chat_actor(request)
+    if actor is None:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    user, tenant_id = actor
+
+    from app.services.chat_attachments import attachment_store
+
+    deleted = attachment_store.delete(tenant_id=tenant_id, user_id=user.id, attachment_id=attachment_id)
+    if not deleted:
+        return JSONResponse({"error": "Вложение не найдено"}, status_code=404)
+    return JSONResponse({"ok": True, "id": attachment_id}, headers={"Cache-Control": "no-store"})

@@ -159,13 +159,19 @@
                                 {{ popover_select('agent_model_id', 'ag-model', chat_options, current=tenant.agent_model_id if tenant else '', placeholder='Автовыбор (по умолчанию)') }}
                             </div>
                             <button type="submit" formaction="/app/settings/agent/model-probe" formmethod="post"
-                                    class="ui-control" aria-describedby="ag-model-help">
-                                Тестировать модель
+                                    name="probe_mode" value="local" class="ui-control" aria-describedby="ag-model-help">
+                                Локальная проверка
                             </button>
                         </div>
-                        <p id="ag-model-help" class="mt-2 text-sm ui-muted">Автовыбор учитывает модель по умолчанию и доступность для этого пространства. Локальный тест проверяет статус и mock без запроса к провайдеру. Реальный ответ — в консоли администратора.</p>
+                        <p id="ag-model-help" class="mt-2 text-sm ui-muted">Автовыбор учитывает модель по умолчанию и доступность для этого пространства. Локальная проверка не обращается к провайдеру.</p>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <label class="text-xs ui-muted"><input type="checkbox" name="consent" value="yes"> Разрешаю один короткий запрос провайдеру. Возможен расход токенов и бюджета.</label>
+                            <button type="submit" formaction="/app/settings/agent/model-probe" formmethod="post"
+                                    name="probe_mode" value="real" class="ui-control">Реальный тест</button>
+                        </div>
                         {% if probe_result %}
-                        <p role="status" class="mt-2 text-sm {{ 'text-emerald-700 dark:text-emerald-400' if probe_result.ok else 'text-rose-700 dark:text-rose-400' }}">{{ probe_result.text }}</p>
+                        <p role="status" class="mt-2 text-sm {{ 'text-emerald-700 dark:text-emerald-400' if probe_result.ok else 'text-rose-700 dark:text-rose-400' }}">Последняя {{ 'реальная' if probe_result.mode == 'real' else 'локальная' }} проверка в этой сессии · {{ probe_result.model_name|default('модель недоступна') }} (#{{ probe_result.model_id|default('—') }}): {{ probe_result.text }}</p>
+                        {% if probe_result.limit_hint %}<p role="note" class="mt-1 text-sm text-amber-700 dark:text-amber-300">{{ probe_result.limit_hint.message }}</p>{% endif %}
                         {% endif %}
                     </div>
 

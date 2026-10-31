@@ -225,6 +225,10 @@ lazy view catalog is built. Menu visibility alone is not authorization.
 
 Additional restrictions:
 
+- Workspace deletion is reserved for the platform `superuser`. Even explicit
+  platform admin/operator grants and workspace owner/admin membership cannot
+  delegate `tenancy.workspace.delete`. Other workspace grants are unchanged.
+
 - `TenantAdmin.is_accessible()` requires the `tenancy.workspace` VIEW right, not
   the platform badge and not ownership of one workspace. The owner holds it
   through the wildcard; an `admin` needs it granted like any other role.

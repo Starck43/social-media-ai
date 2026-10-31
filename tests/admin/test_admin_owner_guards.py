@@ -44,7 +44,9 @@ def users(monkeypatch):
             async def get(self, **criteria):
                 return accounts.get(criteria["id"])
 
-        monkeypatch.setattr("app.models.user.User.objects", SimpleNamespace(prefetch_related=lambda *_: Query()))
+        monkeypatch.setattr(
+            "app.models.identity.user.User.objects", SimpleNamespace(prefetch_related=lambda *_: Query())
+        )
 
     return install
 

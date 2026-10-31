@@ -187,7 +187,7 @@ async def test_the_workspace_tab_shows_the_tier_and_the_comparison() -> None:
     template, so a limit the runtime enforces and a limit the pricing page shows
     cannot drift apart without a test going red.
     """
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     async with await _client() as client:
         user, tenant_id = await _register(client, "PlanView")
@@ -217,7 +217,7 @@ async def test_a_non_owner_cannot_change_the_tier() -> None:
     The form is hidden for non-superusers, so this asserts the handler too —
     hiding a button is not a check.
     """
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     async with await _client() as client:
         owner, tenant_id = await _register(client, "PlanOwner")

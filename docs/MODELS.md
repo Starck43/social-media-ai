@@ -25,28 +25,26 @@ final dev. See
 
 The public facade is [app.models](../app/models/__init__.py); canonical definitions
 live in domain packages. [bootstrap](../app/models/bootstrap.py) binds managers
-once after class registration. Root-level modules and the older `analysis.llm_*`
-/ `scheduling.digest_run` modules are compatibility re-exports of the same mapped
-classes, not additional tables. `Role` aliases `PlatformRole`; it is not another
-mapper. The public facade imports domain packages directly; manager registration
-imports managers from `app.models.managers`, independently of legacy wrappers.
-New model declarations belong in the matching domain package. Keep `base.py`,
-`bootstrap.py`, `scenario_schema_guard.py` and `managers/` as shared infrastructure.
-Existing root import paths retain their compatibility exports; do not declare
-models or instantiate managers in these wrappers.
-The explicit helper exports retained by P10-T31 are `LLMStrategyType` and
-`TenantScopedMixin` on `app.models.agent_scenario`, `Decimal` and `PeriodType`
-on `app.models.ai_analytics`, and `TenantScopedMixin` on `app.models.job`.
-These are the same objects exported by the corresponding canonical leaves,
-included in the wrappers' explicit `__all__`; they are not new types or a
-wildcard export of every implementation import. Internal model/manager imports
-continue to use canonical domain paths.
+once after class registration. Import declarations from their owning leaf modules
+or domain package; do not add flat `app.models.<model>` modules or cross-domain
+aliases. Keep `base.py`, `bootstrap.py`, `scenario_schema_guard.py` and
+`managers/` as shared infrastructure. `app.models` remains the intentional
+aggregate facade; it imports domain packages directly and manager registration
+imports from `app.models.managers`.
 
-`BotAction` and `AgentAction` are the same mapped class declared in
-`app.models.actions.agent_action`. The old root `bot_action` and
-`scheduling.bot_action` paths retain that identity, manager binding and legacy
-pickle resolution; they do not change the class's canonical `__module__` to
-make it look like a scheduling declaration.
+`Role` aliases `PlatformRole`; it is not another mapper. `BotAction` and
+`AgentAction` are the same mapped class declared in
+`app.models.actions.agent_action`; use that canonical path or the `app.models`
+facade, not a scheduling alias. Legacy flat, `analysis.llm_*`, and
+`scheduling.{bot_action,digest_run}` import/pickle paths are intentionally not
+supported.
+
+The explicit helper exports `LLMStrategyType` and `TenantScopedMixin` are
+available from `app.models.analysis.agent_scenario`; `Decimal` and `PeriodType`
+from `app.models.analysis.ai_analytics`; and `TenantScopedMixin` from
+`app.models.scheduling.job`. These are the same objects imported by the
+canonical leaves, not new types or wildcard exports of implementation imports.
+Internal model/manager imports use canonical domain paths.
 See [access transition](ACCESS_MIGRATION.md) and [tenancy](TENANCY.md).
 
 Field inventories omit inherited fields where indicated. Exact types, defaults,

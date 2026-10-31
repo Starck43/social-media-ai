@@ -13,6 +13,81 @@ supported Python profiles are the isolated staging and production Compose files
 described below; migrations are explicit deployment steps, not API startup
 commands. Do not run old examples as a supposedly read-only migration diagnostic.
 
+## Choose the correct startup path
+
+There is **no supported `dev` deployment profile for a server**. Use the isolated
+`staging` profile for remote pre-release validation; production is a separate,
+explicitly gated rollout.
+
+### Local Python development (no Docker for the API)
+
+If PostgreSQL and Redis are already running and `.env` is configured, run the
+API directly from the repository root with the project's Python 3.14+ environment:
+
+```bash
+python app/main.py
+```
+
+With a virtual environment, use its interpreter (for example,
+`.venv/bin/python app/main.py`). This single command starts the API/web process;
+`DEBUG=true` enables Uvicorn's reload watcher. `HOST` and `PORT` come from `.env`
+(defaults `0.0.0.0:8000`; set `HOST=127.0.0.1` to listen only on this machine).
+The process uses the existing PostgreSQL and Redis services; it does not start
+them. It also does not start the separate scheduler/worker/messenger runtime.
+When that runtime is needed, start exactly one owner with `python -m app.runtime`.
+
+On API startup, `init_db()` calls SQLAlchemy `create_all`: it can create missing
+tables, but it does **not** apply Alembic migrations. Use this entry point only
+with a local development database, never a shared, staging or production DB.
+
+### Local Docker alternative
+
+For an isolated developer workstation, the checked-in development Compose sketch
+can start the local PostgreSQL/API services:
+
+- **Local development only:** `docker compose -f docker/docker-compose.yml up -d --build`.
+  The API container runs `alembic upgrade head` before Uvicorn and publishes
+  port `8000` on all host interfaces. Do not use it on a shared server. The
+  explicit `-f` is essential: unqualified `docker compose` selects the root
+  legacy `docker-compose.yml` (`web:3000`), not the Python stack. This profile
+  does not start `app.runtime` or Redis.
+- **Server staging:** after provisioning a private `.env.staging` and logging in
+  to GHCR, use an immutable image digest:
+
+  ```bash
+  IMAGE='ghcr.io/starck43/social-media-ai@sha256:<replace-with-64-hex-digest>'
+  bash scripts/ops/deploy_vps.sh staging "$IMAGE"
+  ```
+
+  The wrapper waits for PostgreSQL/Redis, stops the API for one explicit Alembic
+  upgrade, recreates the API and proxy, and checks `/readyz` on loopback port
+  `18000`. Staging is API-only; it does not start the runtime profile. See
+  [Isolated staging Compose](#isolated-staging-compose-prepared-not-provisioned)
+  for environment and first-install details.
+- **Approved manual production rollout:** only after the backup, schema-review,
+  production-approval, host and recovery gates below are satisfied, set the image
+  to the exact immutable digest and run:
+
+  ```bash
+  IMAGE='ghcr.io/starck43/social-media-ai@sha256:<replace-with-64-hex-digest>'
+  PRODUCTION_MIGRATIONS_APPROVED_IMAGE="$IMAGE" \
+  APP_IMAGE="$IMAGE" \
+  bash scripts/ops/deploy_vps.sh production "$IMAGE"
+  ```
+
+  The wrapper rejects a missing/mismatched image approval, creates a protected
+  local database snapshot, stops the API and only an already-running runtime,
+  applies one Alembic upgrade, recreates API/proxy and checks `/readyz` on loopback
+  port `8226`. The runtime stays stopped if it was stopped before the rollout.
+  Routine GitHub deployment runs only for an approved `master` push after the
+  required repository gates and protected `production` Environment approval;
+  `dev` pushes and pull requests do not deploy. Runtime is an optional, separate
+  profile; do not enable it until P6-T01 and owner approval are complete.
+
+The repository assets are prepared, not a live server instruction: no VPS was
+accessed or changed while reviewing these commands. The historical development
+and systemd sketches later in this file are not current installation procedures.
+
 ## Supported single-VPS topology (prepared, not provisioned)
 
 The supported deployment target is the Python modular monolith described in
@@ -209,11 +284,14 @@ default, so preparing this workflow does not start a deployment.
 
 ---
 
-## Historical development sketches (not the production installation path)
+## Historical development sketches (reference only; do not execute)
 
-Use the prepared single-VPS profiles above for new hosts. The following local
-and systemd examples are historical alternatives, not additional services to
-start beside Compose. Inventory existing owners before any cutover.
+The following local and systemd snippets are retained as historical context, not
+as current install/start procedures or additional services to run beside the
+supported Compose profiles. In particular, the unqualified `docker compose up`
+example below selects the root legacy web stack, while its illustrative `app`
+service is not present in the checked-in Python Compose files. Use the command
+selector above; inventory existing owners before any cutover.
 
 ## Option A: Docker Compose — illustrative deployment sketch
 

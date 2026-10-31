@@ -53,14 +53,13 @@ def _canonical_ast(node):
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_public_legacy_and_domain_paths_share_one_mapped_class(name):
+def test_public_and_domain_paths_share_one_mapped_class(name):
     public = importlib.import_module("app.models")
-    legacy = importlib.import_module("app.models.tenant")
     domain = importlib.import_module("app.models.tenancy")
     module, table_name, manager_name, singleton_name = MODELS[name]
     leaf = importlib.import_module(f"app.models.tenancy.{module}")
     cls = getattr(public, name)
-    assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
+    assert cls is getattr(domain, name) is getattr(leaf, name)
     assert name in public.__all__ and name in domain.__all__
     # The layout move kept the owning package (`docs/COLLABORATION.md` model
     # layout); the classes live in `app.models.tenancy`, not the old account app.
@@ -73,8 +72,6 @@ def test_public_legacy_and_domain_paths_share_one_mapped_class(name):
     assert isinstance(cls.objects, getattr(managers, manager_name))
     assert cls.objects.model is cls
     assert getattr(managers, singleton_name).model is cls
-    # Preserve the old module's explicit manager-class exports as well.
-    assert getattr(legacy, manager_name) is getattr(managers, manager_name)
 
 
 @pytest.mark.parametrize("name", MODELS)
@@ -124,11 +121,8 @@ def test_existing_declarative_schema_expressions_are_unchanged(name):
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_legacy_serialized_class_reference_still_resolves(name):
-    # Only a locally constructed GLOBAL opcode; never deserialize user input.
-    old_reference = f"capp.models.tenant\n{name}\n.".encode("ascii")
-    cls = getattr(importlib.import_module("app.models.tenant"), name)
-    assert pickle.loads(old_reference) is cls
+def test_canonical_serialized_class_reference_resolves(name):
+    cls = getattr(importlib.import_module(f"app.models.tenancy.{MODELS[name][0]}"), name)
     assert pickle.loads(pickle.dumps(cls)) is cls
 
 
@@ -156,7 +150,7 @@ def test_relationships_and_chat_binding_contract_remain_registered():
 @pytest.mark.parametrize(
     "first",
     [
-        "app.models.tenant",
+        "app.models.tenancy.tenant",
         "app.models.tenancy",
         "app.models.tenancy.tenant",
         "app.models.tenancy.tenant_user",
@@ -175,12 +169,11 @@ import json
 import sys
 importlib.import_module(sys.argv[1])
 public = importlib.import_module('app.models')
-legacy = importlib.import_module('app.models.tenant')
 domain = importlib.import_module('app.models.tenancy')
 managers = importlib.import_module('app.models.managers.tenant_manager')
 for name, singleton in json.loads(sys.argv[2]).items():
     cls = getattr(public, name)
-    assert cls is getattr(legacy, name) is getattr(domain, name)
+    assert cls is getattr(domain, name)
     assert cls.objects.model is cls
     assert getattr(managers, singleton).model is cls
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1

@@ -28,14 +28,13 @@ MODELS = {
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_identity_class_paths_single_mapper_global_scope_and_existing_manager(name):
+def test_identity_domain_paths_single_mapper_global_scope_and_existing_manager(name):
     module, table, manager, label = MODELS[name]
     public = importlib.import_module("app.models")
-    legacy = importlib.import_module(f"app.models.{module}")
     domain = importlib.import_module("app.models.identity")
     leaf = importlib.import_module(f"app.models.identity.{module}")
     cls = getattr(public, name)
-    assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
+    assert cls is getattr(domain, name) is getattr(leaf, name)
     assert name in public.__all__ and name in domain.__all__
     assert cls.__module__ == f"app.models.identity.{module}"
     assert cls.__tablename__ == table
@@ -49,8 +48,6 @@ def test_identity_class_paths_single_mapper_global_scope_and_existing_manager(na
         else:
             manager_module = importlib.import_module(f"app.models.managers.{module}_manager")
         assert isinstance(cls.objects, getattr(manager_module, manager)) and cls.objects.model is cls
-        if manager != "BaseManager":
-            assert getattr(legacy, manager) is getattr(manager_module, manager)
     from scripts.migrations.deps import get_app_label_from_model, get_model_class_by_table_name
 
     # Pure registry/label helpers only; NEVER execute Alembic or registration writes.
@@ -64,10 +61,9 @@ def test_role_permission_association_has_one_canonical_declaration():
     from app.models import Base, Permission, PlatformRole, Role, User
     from app.models.identity import role_permission as domain_table
     from app.models.identity.role import role_permission as leaf_table
-    from app.models.role import role_permission as legacy_table
 
     configure_mappers()
-    assert domain_table is leaf_table is legacy_table is Base.metadata.tables[leaf_table.fullname]
+    assert domain_table is leaf_table is Base.metadata.tables[leaf_table.fullname]
     assert sum(table.name == "role_permission" for table in Base.metadata.tables.values()) == 1
     assert tuple(column.name for column in leaf_table.primary_key.columns) == ("role_id", "permission_id")
     assert PlatformRole is Role
@@ -124,17 +120,14 @@ def test_permission_codename_is_computed_from_stable_resource_key_and_action():
         ("user_credential", "TimestampMixin"),
     ],
 )
-def test_legacy_imported_symbols_are_still_available(module, symbol):
-    legacy = importlib.import_module(f"app.models.{module}")
+def test_canonical_leaf_exports_symbols(module, symbol):
     leaf = importlib.import_module(f"app.models.identity.{module}")
-    assert getattr(legacy, symbol) is getattr(leaf, symbol)
+    assert hasattr(leaf, symbol)
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_legacy_and_current_class_serialization_resolve(name):
+def test_canonical_class_serialization_resolves(name):
     cls = getattr(importlib.import_module("app.models.identity"), name)
-    module = MODELS[name][0]
-    assert pickle.loads(f"capp.models.{module}\n{name}\n.".encode("ascii")) is cls
     assert pickle.loads(pickle.dumps(cls)) is cls
 
 
@@ -206,11 +199,11 @@ def test_unknown_identity_export_raises_attribute_error():
     "first",
     [
         "app.models.identity",
-        "app.models.user",
-        "app.models.role",
-        "app.models.permission",
-        "app.models.model_type",
-        "app.models.user_credential",
+        "app.models.identity.user",
+        "app.models.identity.role",
+        "app.models.identity.permission",
+        "app.models.identity.model_type",
+        "app.models.identity.user_credential",
         "app.models.identity.user",
         "app.models.identity.role",
         "app.models.identity.permission",
@@ -232,12 +225,12 @@ public = importlib.import_module('app.models')
 domain = importlib.import_module('app.models.identity')
 for name, module in json.loads(sys.argv[2]).items():
     cls = getattr(public, name)
-    assert cls is getattr(domain, name) is getattr(importlib.import_module(f'app.models.{module}'), name)
+    assert cls is getattr(domain, name) is getattr(importlib.import_module(f'app.models.identity.{module}'), name)
     assert cls.objects.model is cls
     mapper_name = 'PlatformRole' if name == 'Role' else name
     assert sum(mapper.class_.__name__ == mapper_name for mapper in public.Base.registry.mappers) == 1
-legacy = importlib.import_module('app.models.role')
-assert domain.role_permission is legacy.role_permission
+leaf = importlib.import_module('app.models.identity.role')
+assert domain.role_permission is leaf.role_permission
 """
     result = subprocess.run(
         [sys.executable, "-c", code, first, json.dumps({name: values[0] for name, values in MODELS.items()})],

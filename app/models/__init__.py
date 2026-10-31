@@ -6,7 +6,7 @@ from __future__ import annotations
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 # isort: split
-from .actions import AgentAction
+from .actions import AgentAction, BotAction
 from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 from .analysis.agent_scenario import AgentScenario
 from .analysis.ai_analytics import AIAnalytics
@@ -45,7 +45,7 @@ from .llm import (
     LLMProvider,
 )
 from .notifications import DigestRun, Notification, NotificationPreference, NotificationReceipt
-from .scheduling import AgentTask, BotAction, Job
+from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
 __all__ = [

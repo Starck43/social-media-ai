@@ -9,11 +9,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
 from app.models.base import Base
+from app.models.collection.platform import Platform
 from app.models.collection.source import Source
+from app.models.identity.role import Role
+from app.models.identity.user import User
 from app.models.managers.base_manager import prefetch
-from app.models.platform import Platform
-from app.models.role import Role
-from app.models.user import User
 from app.types import PlatformRoleType, PlatformType, SourceType
 
 

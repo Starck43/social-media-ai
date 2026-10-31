@@ -1,7 +1,8 @@
 """Isolated access contracts: AST handlers, pure policy, fake ORM and offline SQL only.
 
-No application import, engine, root conftest, ASGI startup or provider call.
-These checks are not real role/tenant/database acceptance.
+No application runtime/model initialization, database engine, root conftest,
+ASGI startup or provider call. These checks are not real role/tenant/database
+acceptance.
 """
 
 from __future__ import annotations
@@ -191,7 +192,9 @@ async def test_messenger_member_requires_ai_chat_grant():
             WEB_CHANNEL="web",
             current_tenant_id=lambda: 7,
             resolve_runtime_identity=AsyncMock(
-                return_value=NS(user_id=101, is_owner=False, ai_chat_enabled=True, user=user(), member_grants=frozenset())
+                return_value=NS(
+                    user_id=101, is_owner=False, ai_chat_enabled=True, user=user(), member_grants=frozenset()
+                )
             ),
             memory_actor_scope=lambda *args: nullcontext(),
             permission_scope=lambda *a, **kw: nullcontext(),
@@ -207,7 +210,7 @@ async def test_messenger_member_requires_ai_chat_grant():
 @pytest.mark.parametrize("active", [True, False])
 @pytest.mark.parametrize("codename,expected", [("admin", True), ("operator", True), ("user", False)])
 def test_admin_entry_requires_active_platform_operator_or_admin(active, codename, expected):
-    enum = NS(ADMIN="admin", OPERATOR="operator")
+    enum = NS(ADMIN="admin", OPERATOR="operator", SUPERUSER="superuser")
     cls = load_nodes(
         "app/models/identity/user.py",
         {"User"},
@@ -272,12 +275,20 @@ async def test_external_admin_guard_requires_token_not_user_id(monkeypatch, toke
 @pytest.mark.asyncio
 @pytest.mark.parametrize("grants", [set(), {"view"}, {"create"}, {"update"}, {"delete"}, {"export"}, {"configure"}])
 async def test_admin_model_action_grants_remain_separate(grants):
+    # Exercise the current resource registry: workspace scoping for `source`
+    # must remain distinct from the global `user` model.
+    from app.core.access_catalog import resource_for
+
     cls = load_nodes(
         "app/admin/authorization.py",
         {"AdminAuthorizationBackend"},
         methods={"get_grants"},
         namespace=dict(
             WILDCARD="*",
+            resource_for=resource_for,
+            # A platform-console request without a workspace exercises the
+            # operator's platform grants against the actual resource registry.
+            current_tenant_id=lambda: None,
             Action=NS(LIST="list", DETAILS="details"),
             ActionType=NS(VIEW="view"),
             BUILTIN_ACTION_TYPES={
@@ -296,6 +307,7 @@ async def test_admin_model_action_grants_remain_separate(grants):
     backend.resolve_user = AsyncMock(
         return_value=NS(
             has_admin_access=lambda: True,
+            is_superuser=False,
             is_platform_admin=False,
             model_permissions=lambda name: grants if name == "source" else set(),
         )
@@ -395,10 +407,10 @@ async def test_team_change_locks_workspace_and_updates_only_authorized_target(mo
     module(monkeypatch, "app", __path__=[])
     module(monkeypatch, "app.models", __path__=[])
     module(monkeypatch, "app.models.managers", __path__=[])
-    module(monkeypatch, "app.models.tenancy", __path__=[])
+    module(monkeypatch, "app.models.tenancy", __path__=[], Tenant=Tenant)
     module(monkeypatch, "app.models.tenancy.workspace_role", WorkspaceRole=WorkspaceRole)
-    module(monkeypatch, "app.models.tenant", Tenant=Tenant)
-    module(monkeypatch, "app.models.user", User=User)
+    module(monkeypatch, "app.models.tenancy.tenant", Tenant=Tenant)
+    module(monkeypatch, "app.models.identity.user", User=User)
     cls = load_nodes(
         "app/models/managers/tenant_manager.py",
         {"TenantUserManager"},

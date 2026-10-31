@@ -1,6 +1,6 @@
-"""Source-only metadata/alias/bootstrap contract; run directly, never DB conftest.
+"""Source-only metadata/canonical package/bootstrap contract; run directly, never DB conftest.
 
-Real SQLAlchemy, Source declaration, enum helpers, aliases, lazy export and binding
+Real SQLAlchemy, Source declaration, enum helpers, canonical/lazy exports and binding
 logic and project Base/mixins; synthetic settings/managers. No project app or DB bootstrap,
 engine, connection, SQL, migration, provider or network is permitted.
 """
@@ -73,19 +73,6 @@ class SourceIdentityTests(unittest.TestCase):
             return value
 
         self.managers = SimpleNamespace(SourceManager=manager)
-        # The compatibility facade re-exports Base and the source types too.
-        # Bind the already isolated real modules explicitly so this test never
-        # falls through to application package initialization.
-        self.legacy = load(
-            "app.models.source",
-            "app/models/source.py",
-            {
-                "app.models.base": bases,
-                "app.types": types,
-                "app.models.collection.source": self.leaf,
-                "app.models.managers.source_manager": self.managers,
-            },
-        )
         self.domain = load("app.models.collection", "app/models/collection/__init__.py")
         self.domain.import_module = lambda relative, package: (
             self.leaf if relative == ".source" else self.fail(relative)
@@ -96,21 +83,15 @@ class SourceIdentityTests(unittest.TestCase):
         self.assertEqual(after, self.before, "No application import/cache pollution")
         self.base.registry.dispose()
 
-    def test_alias_and_lazy_export_share_one_real_mapped_class(self):
+    def test_canonical_leaf_and_lazy_domain_export_share_one_real_mapped_class(self):
         cls = self.leaf.Source
-        self.assertIs(self.legacy.Source, cls)
         self.assertIs(self.domain.Source, cls)
-        self.assertIs(self.domain.Source, cls)
+        self.assertIs(self.domain.__dict__["Source"], cls)
         self.assertIn("Source", self.domain.__all__)
-        self.assertEqual(
-            self.legacy.__all__,
-            ["Base", "Source", "SourceManager", "SourceType", "TenantScopedMixin", "TimestampMixin"],
-        )
-        self.assertIs(self.legacy.Base, self.base)
-        self.assertIs(self.legacy.SourceType, self.types.SourceType)
-        self.assertIs(self.legacy.TenantScopedMixin, self.bases.TenantScopedMixin)
-        self.assertIs(self.legacy.TimestampMixin, self.bases.TimestampMixin)
-        self.assertIs(self.legacy.SourceManager, self.managers.SourceManager)
+        self.assertIs(self.leaf.Base, self.base)
+        self.assertIs(self.leaf.SourceType, self.types.SourceType)
+        self.assertIs(self.leaf.TenantScopedMixin, self.bases.TenantScopedMixin)
+        self.assertIs(self.leaf.TimestampMixin, self.bases.TimestampMixin)
         self.assertEqual(cls.__module__, "app.models.collection.source")
         self.assertEqual(cls._app_label, "collection")
         self.assertEqual(list(self.base.metadata.tables), ["p11_t14_isolated.sources"])
@@ -147,8 +128,8 @@ class SourceIdentityTests(unittest.TestCase):
         bootstrap.bind_managers(models)
         self.assertEqual(len(self.manager_calls), 1)
         self.assertIs(models.Source.objects.model, self.leaf.Source)
-        self.assertIs(self.legacy.Source.objects, models.Source.objects)
         self.assertIs(self.domain.Source.objects, models.Source.objects)
+        self.assertIs(self.domain.__dict__["Source"].objects, models.Source.objects)
         self.assertEqual(len(list(self.base.registry.mappers)), 1)
 
     def test_source_helper_edges_are_not_normalized_by_import_migration(self):

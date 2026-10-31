@@ -77,7 +77,7 @@ class HelpersTests(unittest.TestCase):
         self.assertNotEqual(MODULE.table_signature(first), MODULE.table_signature(second))
 
     def test_capture_is_unbound_and_matches_isolated_real_model(self):
-        from sqlalchemy import MetaData
+        from sqlalchemy import CheckConstraint, MetaData
         from sqlalchemy.orm import DeclarativeBase
 
         class TestBase(DeclarativeBase):
@@ -86,8 +86,8 @@ class HelpersTests(unittest.TestCase):
 
         settings = SimpleNamespace(DB_SCHEMA="test_schema")
         model = load_isolated_source(
-            "app.models.analysis._verifier_model",
-            ROOT / "app/models/analysis/llm_dispatch_receipt.py",
+            "app.models.llm._verifier_model",
+            ROOT / "app/models/llm/llm_dispatch_receipt.py",
             imports={
                 "app.core.config": SimpleNamespace(settings=settings),
                 "app.core.decorators": SimpleNamespace(app_label=lambda label: lambda cls: cls),
@@ -120,10 +120,74 @@ class HelpersTests(unittest.TestCase):
             execute=statements.append,
         )
         revision.upgrade()
-        self.assertEqual(MODULE.table_signature(tables[0]), MODULE.table_signature(model.LLMDispatchReceipt.__table__))
+        legacy_statements = list(statements)
         self.assertEqual(len(statements), 3)
         self.assertIn(MODULE.FUNCTION_BODY, statements[0])
         self.assertEqual(len(MODULE.CHECKS), 5)
+
+        # Compose the captured 0093 receipt table with revision 0107's actual
+        # receipt operations. Other explicitly named tables are recorded but
+        # ignored because this assertion covers only the receipt definition.
+        cache_revision = load_isolated_source(
+            "_verifier_cache_tariff_revision",
+            ROOT / "scripts/migrations/legacy_definitions/0107_add_cache_tariff_evidence.py",
+            imports={
+                "app.core.config": SimpleNamespace(settings=settings),
+                "alembic": SimpleNamespace(op=SimpleNamespace()),
+            },
+        )
+        receipt_table = tables[0]
+        other_tables = {"llm_models", "llm_attempts", "personal_llm_dispatches", "llm_outcome_events"}
+        cache_statements = []
+
+        def add_column(table_name, column, *, schema):
+            self.assertEqual(schema, "test_schema")
+            if table_name == "llm_dispatch_receipts":
+                self.assertNotIn(column.name, receipt_table.c)
+                receipt_table.append_column(column)
+            else:
+                self.assertIn(table_name, other_tables)
+
+        def drop_constraint(name, table_name, *, schema, type_):
+            self.assertEqual(schema, "test_schema")
+            self.assertEqual(type_, "check")
+            if table_name == "llm_dispatch_receipts":
+                matches = [item for item in receipt_table.constraints if item.name == name]
+                self.assertEqual(len(matches), 1)
+                self.assertIsInstance(matches[0], CheckConstraint)
+                receipt_table.constraints.remove(matches[0])
+            else:
+                self.assertIn(table_name, other_tables)
+
+        def create_check_constraint(name, table_name, condition, *, schema):
+            self.assertEqual(schema, "test_schema")
+            if table_name == "llm_dispatch_receipts":
+                receipt_table.append_constraint(CheckConstraint(condition, name=name))
+            else:
+                self.assertIn(table_name, other_tables)
+
+        def alter_column(table_name, _column_name, *, schema, **_kwargs):
+            self.assertEqual(schema, "test_schema")
+            self.assertIn(table_name, other_tables)
+
+        cache_revision.op = SimpleNamespace(
+            add_column=add_column,
+            drop_constraint=drop_constraint,
+            create_check_constraint=create_check_constraint,
+            alter_column=alter_column,
+            get_bind=lambda: SimpleNamespace(dialect=postgresql.dialect()),
+            execute=cache_statements.append,
+        )
+        cache_revision.upgrade()
+        self.assertTrue(cache_statements)
+        self.assertEqual(legacy_statements, statements)
+        captured_signature = MODULE.table_signature(receipt_table)
+        model_signature = MODULE.table_signature(model.LLMDispatchReceipt.__table__)
+        # Physical ALTER column order differs from declarative grouping. Compare
+        # columns by name while retaining every other schema detail.
+        captured_signature["columns"].sort(key=lambda column: column[0])
+        model_signature["columns"].sort(key=lambda column: column[0])
+        self.assertEqual(captured_signature, model_signature)
 
 
 class ReflectedKeyTests(unittest.TestCase):

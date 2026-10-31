@@ -39,6 +39,13 @@ can build against mocked VK data while Q-5 is open. T41's live method evidence
 waits on Q-5. T41 is the integrated
 journey gate, not a way to rename or retroactively accept P8-T29.
 
+7. [P8-T42](../tasks/p8-t42.md) — persistent chat actions, explicit task context,
+   permission-filtered plan/status and responsive workspace panel.
+8. [P8-T43](../tasks/p8-t43.md) — preserve each source post permalink and its
+   media URL references from collection through analysis and agent-rendered results;
+   use source URLs only (no media downloading/storage). Coordinate overlapping chat
+   presentation with P8-T42.
+
 **Other active P8 cards:**
 
 - [P8-T10](../audit/p8-t10.md) — runtime freshness identity; accepted 2026-10-27, integrated in PR #248 (merge `d7213c6b`)

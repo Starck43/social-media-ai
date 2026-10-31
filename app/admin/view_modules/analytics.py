@@ -24,6 +24,8 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
     name = "ИИ-аналитика"
     name_plural = "ИИ-аналитика"
     icon = "fa fa-chart-bar"
+    category = "ИИ и аналитика"
+    category_icon = "fa fa-robot"
 
     # Rows are written by the analyzer only — the admin may inspect, correct or
     # remove them, but never fabricate an analysis run.

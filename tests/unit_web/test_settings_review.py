@@ -66,7 +66,7 @@ def test_admin_link_matches_real_platform_policy(role, active, expected):
         if isinstance(n, ast.ClassDef) and n.name == "User"
     )
     method = next(n for n in cls.body if getattr(n, "name", "") == "has_admin_access")
-    ns = dict(PlatformRoleType=NS(OPERATOR="operator", ADMIN="admin"))
+    ns = dict(PlatformRoleType=NS(OPERATOR="operator", ADMIN="admin", SUPERUSER="superuser"))
     exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), "admin policy", "exec"), ns)
     user = NS(is_active=active, role=NS(codename=role))
     c = fixtures["context"]("owner-workspace")
@@ -130,10 +130,10 @@ async def test_manager_denies_self_role_even_with_another_owner(monkeypatch, aut
         id = tenant_id = is_active = role = Expression()
 
     for name in ["app", "app.models", "app.models.tenancy"]:
-        fake_module(monkeypatch, name, __path__=[])
+        fake_module(monkeypatch, name, __path__=[], **({"Tenant": Model} if name == "app.models.tenancy" else {}))
     fake_module(monkeypatch, "app.models.tenancy.workspace_role", WorkspaceRole=Model)
-    fake_module(monkeypatch, "app.models.tenant", Tenant=Model)
-    fake_module(monkeypatch, "app.models.user", User=Model)
+    fake_module(monkeypatch, "app.models.tenancy.tenant", Tenant=Model)
+    fake_module(monkeypatch, "app.models.identity.user", User=Model)
     actor = NS(id=101)
     caller = NS(id=1, user_id=101, channel="web", is_active=True, role=NS(codename=authority), role_id=10)
     target = (

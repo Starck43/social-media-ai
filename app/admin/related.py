@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from sqladmin import Admin
+from sqladmin._menu import CategoryMenu, ViewMenu
 from sqladmin.helpers import get_object_identifier
 from sqlalchemy import inspect
 from sqlalchemy.orm import MANYTOMANY, MANYTOONE
@@ -56,6 +57,16 @@ async def related_token(request: Request) -> str | None:
     return token if isinstance(token, str) and TOKEN_PATTERN.fullmatch(token) else None
 
 
+class _ScopedCategoryMenu(CategoryMenu):
+    """Only show a category dropdown when at least one child view is visible and accessible."""
+
+    def is_visible(self, request: Request) -> bool:
+        return any(child.is_visible(request) and child.is_accessible(request) for child in self.children)
+
+    def is_accessible(self, request: Request) -> bool:
+        return any(child.is_visible(request) and child.is_accessible(request) for child in self.children)
+
+
 class RelatedAdmin(Admin):
     """Replace only a successful popup CRUD redirect with a return receipt.
 
@@ -90,3 +101,11 @@ class RelatedAdmin(Admin):
         result = await self.templates.TemplateResponse(request, "sqladmin/related_saved.html", {"saved": saved})
         result.headers["Cache-Control"] = "no-store"
         return result
+
+    def _build_menu(self, view: Any) -> None:
+        if getattr(view, "category", None):
+            menu = _ScopedCategoryMenu(name=view.category, icon=getattr(view, "category_icon", None))
+            menu.add_child(ViewMenu(view=view, name=view.name, icon=view.icon))
+            self._menu.add(menu)
+        else:
+            super()._build_menu(view)

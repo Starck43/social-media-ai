@@ -387,10 +387,10 @@ class Fixture:
                     log_denied=lambda **_: None,
                 )
             ),
-            **dict.fromkeys(("app.models.job", "app.models.scheduling.job"), NS(Job=Job)),
-            **dict.fromkeys(("app.models.tenant", "app.models.tenancy.tenant"), NS(Tenant=Tenant)),
-            **dict.fromkeys(("app.models.agent_task", "app.models.scheduling.agent_task"), NS(AgentTask=Task)),
-            **dict.fromkeys(("app.models.source", "app.models.collection.source"), NS(Source=Source)),
+            **dict.fromkeys(("app.models.scheduling.job",), NS(Job=Job)),
+            **dict.fromkeys(("app.models.tenancy.tenant",), NS(Tenant=Tenant)),
+            **dict.fromkeys(("app.models.scheduling.agent_task",), NS(AgentTask=Task)),
+            **dict.fromkeys(("app.models.collection.source",), NS(Source=Source)),
             "app.jobs.source_activity": activity,
         }
         self.module = load_isolated_source(

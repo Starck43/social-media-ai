@@ -37,7 +37,7 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 25. [P11-T25](../audit/p11-t25.md) — Realign the model-layout fixtures with the migrated schema — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`,
     merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
 
-26. [P11-T26](../tasks/p11-t26.md) — Remove legacy model import shims.
+26. [P11-T26](../audit/p11-t26.md) — DONE 2026-10-31: canonical model paths; obsolete shims removed; import/layout, fixture and offline checks passed (accepted `f955448f8387aca45a4475efeb2d2cd44ad18928`, merged `b8f372f0de16a0f512a0b6802367573737f78329`; PR #285).
 27. [P11-T27](../tasks/p11-t27.md) — Admin console audit and operator tooling hardening.
 
 ## Sequencing and continuity

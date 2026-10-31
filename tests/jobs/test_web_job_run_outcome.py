@@ -26,6 +26,7 @@ class Router:
         def register(function):
             self.routes.append((method, path, function.__name__))
             return function
+
         return register
 
 
@@ -41,7 +42,9 @@ class JobReplayRouteTests(unittest.IsolatedAsyncioTestCase):
         self.csrf = True
         self.superuser_denial = None
         self.permission_denial = None
-        self.job = SimpleNamespace(id=7, tenant_id=31, status="failed", job_type="collect", payload={}, result={}, error=None)
+        self.job = SimpleNamespace(
+            id=7, tenant_id=31, status="failed", job_type="collect", payload={}, result={}, error=None
+        )
         self.get = AsyncMock(return_value=self.job)
         self.enqueue = AsyncMock(return_value=SimpleNamespace(id=8))
         self.launch = Mock()
@@ -74,9 +77,16 @@ class JobReplayRouteTests(unittest.IsolatedAsyncioTestCase):
             "app.web._job_replay_isolated",
             ROOT / "app/web/jobs.py",
             {
-                "fastapi": SimpleNamespace(APIRouter=Router, Form=lambda default=None, **kwargs: default, Request=object),
+                "fastapi": SimpleNamespace(
+                    APIRouter=Router, Form=lambda default=None, **kwargs: default, Request=object
+                ),
                 "fastapi.responses": SimpleNamespace(RedirectResponse=Redirect),
-                **dict.fromkeys(('app.models.job', 'app.models.scheduling.job'), SimpleNamespace(Job=SimpleNamespace(objects=SimpleNamespace(get=self.get, enqueue_replay=self.enqueue)))),
+                **dict.fromkeys(
+                    ("app.models.scheduling.job",),
+                    SimpleNamespace(
+                        Job=SimpleNamespace(objects=SimpleNamespace(get=self.get, enqueue_replay=self.enqueue))
+                    ),
+                ),
                 "app.web.deps": deps,
                 "app.core.tenant_context": SimpleNamespace(tenant_scope=tenant_scope),
                 "app.jobs.replay_policy": SimpleNamespace(

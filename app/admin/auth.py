@@ -11,10 +11,10 @@ from app.admin.csrf import (
     rotate_session_id,
     verify_request_token,
 )
+from app.admin.identity import resolve_operator_identity
 from app.core.config import settings
 from app.core.hashing import verify_password
 from app.models import User
-from app.services.user.auth import get_authenticated_user
 from app.services.user.login_protection import (
     LoginLocked,
     clear_login_failures,
@@ -118,17 +118,13 @@ class AdminAuthBackend(AuthenticationBackend):
         if not token:
             return False
         try:
-            user = await get_authenticated_user(token=token)
+            user = await resolve_operator_identity(token, require_admin_access=True)
             if user is None or not user.is_active:
                 request.session.clear()
                 return False
-            loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
-            if loaded is None or not loaded.has_admin_access():
-                request.session.clear()
-                return False
-            request.state.admin_user = loaded
-            request.session["user_id"] = str(loaded.id)
-            request.session["username"] = loaded.username
+            request.state.admin_user = user
+            request.session["user_id"] = str(user.id)
+            request.session["username"] = user.username
             # Sessions that predate the S2 binding get their CSRF id here.
             if SESSION_ID_KEY not in request.session:
                 ensure_session_id(request)

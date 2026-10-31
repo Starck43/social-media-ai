@@ -313,7 +313,7 @@ MANAGER = load_isolated_source(
         "app.core.tenant_context": TENANT,
         "app.services.ai.dispatch_receipts": HELPERS,
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseManagerDouble),
-        "app.models.analysis.llm_dispatch_receipt": LEAF,
+        "app.models.llm.llm_dispatch_receipt": LEAF,
     },
 )
 
@@ -495,9 +495,9 @@ def deny(*args, **kwargs):
 socket.socket.connect = deny
 from sqlalchemy.orm import configure_mappers
 from app.models import Base, LLMDispatchReceipt
-from app.models.analysis import LLMDispatchReceipt as domain
-from app.models.llm_dispatch_receipt import LLMDispatchReceipt as public
-from app.models.analysis.llm_dispatch_receipt import LLMDispatchReceipt as leaf
+from app.models.llm import LLMDispatchReceipt as domain
+from app.models.llm.llm_dispatch_receipt import LLMDispatchReceipt as public
+from app.models.llm.llm_dispatch_receipt import LLMDispatchReceipt as leaf
 assert LLMDispatchReceipt is domain is public is leaf
 configure_mappers()
 assert LLMDispatchReceipt.objects.model is LLMDispatchReceipt

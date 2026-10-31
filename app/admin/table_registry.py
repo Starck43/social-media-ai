@@ -15,6 +15,8 @@ Two sources, in priority order:
 Nothing here reads rows: the detail page shows the declaration of a table.
 """
 
+import weakref
+
 from sqlalchemy import Table
 
 from app.core.access_catalog import _BY_TABLE
@@ -23,6 +25,8 @@ from app.core.access_catalog import _BY_TABLE
 # registry only lists names, but the page labels the risky ones so the owner
 # is not surprised by what the table carries.
 SENSITIVE_COLUMN_HINTS = ("password", "token", "secret", "key", "hash")
+
+_REGISTRY_CACHE: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 def _table_columns(table: Table) -> list[dict]:
@@ -39,8 +43,22 @@ def _table_columns(table: Table) -> list[dict]:
     ]
 
 
+def _metadata_signature(metadata) -> tuple:
+    return tuple(
+        sorted((table.name, len(table.columns), len(table.foreign_keys)) for table in metadata.tables.values())
+    )
+
+
 def build_table_registry(metadata) -> list[dict]:
     """Describe every model and association table, sorted by table name."""
+    signature = _metadata_signature(metadata)
+    try:
+        cached = _REGISTRY_CACHE.get(metadata)
+    except TypeError:
+        cached = None
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
     tables = []
     for table in metadata.tables.values():
         resource = _BY_TABLE.get(table.name)
@@ -57,7 +75,12 @@ def build_table_registry(metadata) -> list[dict]:
                 "has_primary_key": bool(table.primary_key.columns),
             }
         )
-    return sorted(tables, key=lambda item: item["table"])
+    result = sorted(tables, key=lambda item: item["table"])
+    try:
+        _REGISTRY_CACHE[metadata] = (signature, result)
+    except TypeError:
+        pass
+    return result
 
 
 def filter_tables(tables: list[dict], query: str) -> list[dict]:

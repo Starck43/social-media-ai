@@ -40,7 +40,8 @@ async def list_credentials(
     ]
 
 
-@router.patch("/credentials/{credential_id}/disable")
+@router.patch("/{credential_id}/disable")
+@router.patch("/credentials/{credential_id}/disable", deprecated=True)
 async def disable_credential(
     credential_id: int,
     current_user: User = Depends(require_model_perm("credential", ActionType.UPDATE)),

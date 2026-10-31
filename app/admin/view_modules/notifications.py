@@ -27,6 +27,8 @@ class NotificationAdmin(BaseAdmin, model=Notification):
     name = "Уведомление"
     name_plural = "Уведомления"
     icon = "fa fa-bell"
+    category = "Задачи и операции"
+    category_icon = "fa fa-cogs"
 
     # Technical archive only. No action acknowledges any User receipt.
     action_permissions = {

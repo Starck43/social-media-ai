@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -252,7 +253,7 @@ def main() -> int:
     # The P11-T28 catalog row is required by root-conftest reference checks.
     # Its helper takes/releases this same advisory lock before our snapshots.
     run([sys.executable, "scripts/prepare_p11_t28_test_schema.py"], env)
-    with psycopg2.connect(dsn) as conn:
+    with closing(psycopg2.connect(dsn)) as conn:
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute("SELECT pg_try_advisory_lock(%s)", (LOCK_ID,))
@@ -264,6 +265,26 @@ def main() -> int:
             test_before_layout = inventory(schema, inventory_env)
             before = database_snapshot(conn, schema)
             public_reference_before = database_snapshot(conn, "public")
+            snapshot_path = Path(args.snapshot_file).resolve() if args.snapshot_file else None
+            if snapshot_path is not None:
+                snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+                snapshot_path.write_text(
+                    json.dumps(
+                        {
+                            "phase": "before",
+                            "public_reference_before": public_reference_before,
+                            "public_layout_before": public_before,
+                            "test_schema_before": before,
+                            "test_schema_layout_before": test_before_layout,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                        default=str,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                print(f"Pre-run snapshot evidence saved: {snapshot_path}", flush=True)
             if before["revision"] != [EXPECTED_REVISION]:
                 raise RuntimeError(f"STOP: expected {EXPECTED_REVISION}, found {before['revision']}")
             failure = None
@@ -341,12 +362,11 @@ def main() -> int:
                         f"{before['offboarding_event_count']!r} -> {after['offboarding_event_count']!r}",
                         flush=True,
                     )
-            if args.snapshot_file:
-                snapshot_path = Path(args.snapshot_file).resolve()
-                snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            if snapshot_path is not None:
                 snapshot_path.write_text(
                     json.dumps(
                         {
+                            "phase": "complete",
                             "public_reference_before": public_reference_before,
                             "public_reference_after": public_reference_after,
                             "public_layout_before": public_before,

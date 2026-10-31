@@ -49,7 +49,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P8-T44](docs/tasks/p8-t44.md) Photo and document attachments in the shared chat — **TODO** · — · `codex resume 01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C4`
+- [P8-T44](docs/tasks/p8-t44.md) Photo and document attachments in the shared chat — **IN_PROGRESS** · ai-studio-p8-t44 · `codex resume 01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C4`
 
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`

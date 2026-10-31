@@ -50,6 +50,7 @@ async def test_category_visibility_follows_accessible_child_views():
     categories = {item.name: item for item in admin._menu.items}
 
     owner = user_with(role="superuser")
+    owner.has_perm_for = lambda model, action: True
     owner_req = SimpleNamespace(
         state=SimpleNamespace(admin_user=owner),
         app=SimpleNamespace(state=SimpleNamespace(admin=admin)),
@@ -94,3 +95,30 @@ def test_admin_docs_describe_resulting_s1_through_s7_contract():
         "_ScopedCategoryMenu",
     ):
         assert required_term in admin_doc, f"Missing {required_term!r} in docs/ADMIN.md"
+
+
+@pytest.mark.asyncio
+async def test_rendered_sidebar_menu_contains_collapsible_category_submenus():
+    admin = _build_console()
+    owner = user_with(role="superuser")
+    owner.has_perm_for = lambda model, action: True
+    owner_req = SimpleNamespace(
+        state=SimpleNamespace(admin_user=owner),
+        app=SimpleNamespace(state=SimpleNamespace(admin=admin)),
+        session={},
+        path_params={"identity": "user"},
+        url=SimpleNamespace(path="/admin/user/list"),
+        url_for=lambda name, **kw: f"/admin/{name}/{kw.get('identity', '')}",
+    )
+    await admin.authorization_backend.load(owner_req)
+    mod = await admin.templates.env.get_template("sqladmin/_macros.html").make_module_async()
+    html = await mod.display_menu(admin._menu, owner_req)
+
+    for category_name, children in EXPECTED_CATEGORIES.items():
+        assert f'data-sqladmin-menu-category="{category_name}"' in html
+        for child_title in children:
+            assert child_title in html
+
+    custom_css = (ROOT / "app/static/css/custom.css").read_text()
+    assert ".admin-menu .dropdown-menu" in custom_css
+    assert "position: static !important;" in custom_css

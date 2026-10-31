@@ -42,6 +42,7 @@ function node(type, attributes = {}, parent = null) {
             if (selector === '[data-sqladmin-menu-category]') return 'data-sqladmin-menu-category' in attributes;
             if (selector === '[data-bs-toggle="dropdown"]') return 'data-bs-toggle' in attributes;
             if (selector === '.dropdown-menu') return type === 'menu';
+            if (selector === '.active') return element.classList.contains('active');
             return false;
         },
         querySelector(selector) {
@@ -83,7 +84,7 @@ function node(type, attributes = {}, parent = null) {
     return element;
 }
 
-function sidebar(remembered = []) {
+function sidebar(remembered = [], activeGroup = null) {
     const store = new Map();
     if (remembered.length) store.set(KEY, JSON.stringify(remembered));
     const root = node('html');
@@ -98,8 +99,9 @@ function sidebar(remembered = []) {
         const item = node('div', { 'data-sqladmin-menu-category': name }, menu);
         const toggle = node('toggle', { 'data-bs-toggle': 'dropdown', 'aria-expanded': 'false' }, item);
         const panel = node('menu', {}, item);
-        node('a', {}, panel);
-        return { name, item, toggle, panel };
+        const childLink = node('a', {}, panel);
+        if (activeGroup === name) { toggle.classList.add('active'); childLink.classList.add('active'); }
+        return { name, item, toggle, panel, childLink };
     });
     const plain = node('a', {}, node('div', {}, menu));
     const readyHooks = [];
@@ -164,7 +166,8 @@ function sidebar(remembered = []) {
         document.dispatch('click', event);
     };
     const toggle = name => groups.find(group => group.name === name).toggle;
-    return { root, menu, plain, outsideToggle, outsidePanel, store, open, click, toggle, ready };
+    const childLink = name => groups.find(group => group.name === name).childLink;
+    return { root, menu, groups, plain, outsideToggle, outsidePanel, store, open, click, toggle, childLink, ready };
 }
 
 let checks = 0;
@@ -218,5 +221,19 @@ console_page.store.set(KEY, '{not json');
 console_page.ready();
 console_page.click(console_page.toggle('System'));
 check(console_page.open(), ['System'], 'broken storage does not break the menu');
+
+// Clicking a child model link inside an open submenu keeps that category open and stored.
+console_page = sidebar();
+console_page.ready();
+console_page.click(console_page.toggle('Content'));
+console_page.click(console_page.childLink('Content'));
+check(console_page.open(), ['Content'], 'clicking a submenu model link keeps its category open');
+check(JSON.parse(console_page.store.get(KEY)), ['Content'], 'clicking a submenu model link keeps its category remembered');
+
+// Active route category auto-expands when storage is empty.
+console_page = sidebar([], 'System');
+console_page.ready();
+check(console_page.open(), ['System'], 'active route category auto-expands when storage is empty');
+check(JSON.parse(console_page.store.get(KEY)), ['System'], 'active route category is remembered');
 
 console.log(`${checks} admin menu single-open/restore checks passed.`);

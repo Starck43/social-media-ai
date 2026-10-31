@@ -11,18 +11,18 @@
  * The click listener is attached to the root element in the capture phase, so
  * it runs before Bootstrap's document-level handler: every group is folded
  * first, and the clicked category then opens through Bootstrap as usual.
- * Clicking its header again folds it too: Bootstrap sees a closed toggle and
- * reopens it; the following click closes it for good.
+ * Clicking a child model link inside an open submenu keeps that category open
+ * and stored so the submenu stays expanded on the target model page.
  */
 (function () {
     'use strict';
-
     var STORAGE_PREFIX = 'sqladmin:menu:';
     var MENU = '[data-sqladmin-menu]';
     var CATEGORY = '[data-sqladmin-menu-category]';
     var TOGGLE = '[data-bs-toggle="dropdown"]';
     var PANEL = '.dropdown-menu';
     var SHOW = 'show';
+    var ACTIVE = 'active';
 
     function storageKey(menu) {
         var base = menu.getAttribute('data-sqladmin-menu');
@@ -47,6 +47,13 @@
         if (panel) panel.classList.remove(SHOW);
     }
 
+    function openItem(item) {
+        var toggle = item.querySelector(TOGGLE);
+        var panel = item.querySelector(PANEL);
+        if (toggle) { toggle.classList.add(SHOW); toggle.setAttribute('aria-expanded', 'true'); }
+        if (panel) panel.classList.add(SHOW);
+    }
+
     function openItems(menu) {
         var open = [];
         Array.prototype.forEach.call(menu.querySelectorAll(CATEGORY), function (item) {
@@ -57,6 +64,19 @@
     }
 
     function nameOf(item) { return item.getAttribute('data-sqladmin-menu-category'); }
+
+    function activeCategory(menu) {
+        var found = null;
+        Array.prototype.forEach.call(menu.querySelectorAll(CATEGORY), function (item) {
+            var toggle = item.querySelector(TOGGLE);
+            var panel = item.querySelector(PANEL);
+            if ((toggle && toggle.classList && toggle.classList.contains(ACTIVE)) ||
+                (panel && panel.querySelector && panel.querySelector('.' + ACTIVE))) {
+                found = nameOf(item);
+            }
+        });
+        return found;
+    }
 
     // Keep exactly the group that is open now, so a reload restores just it.
     function syncStorage(menu) {
@@ -72,21 +92,16 @@
     }
 
     // The native restore script may already have trimmed the stored stack;
-    // the render state, not storage, decides which group stays open.
+    // the render state, storage, or the active route category decides which group stays open.
     function restore(menu) {
         var remembered = collapseStack(menu);
         var open = openItems(menu);
-        var keep = open.length ? nameOf(open[open.length - 1]) : remembered;
+        var keep = open.length ? nameOf(open[open.length - 1]) : (remembered !== null ? remembered : activeCategory(menu));
         if (keep === null) return;
         writeNames(storageKey(menu), [keep]);
         Array.prototype.forEach.call(menu.querySelectorAll(CATEGORY), function (item) {
             if (nameOf(item) !== keep) close(item);
-            else {
-                var toggle = item.querySelector(TOGGLE);
-                var panel = item.querySelector(PANEL);
-                if (toggle) { toggle.classList.add(SHOW); toggle.setAttribute('aria-expanded', 'true'); }
-                if (panel) panel.classList.add(SHOW);
-            }
+            else openItem(item);
         });
     }
 
@@ -103,6 +118,17 @@
             var clicked = target.closest ? target.closest(CATEGORY) : null;
             // Clicks outside the menu leave it alone.
             if (!inside && !clicked) return;
+            // Clicking a model link inside an open submenu keeps that category open
+            // and remembered so the submenu stays expanded on the target model page.
+            var clickedPanel = clicked ? clicked.querySelector(PANEL) : null;
+            if (clicked && clickedPanel && clickedPanel.contains(target)) {
+                Array.prototype.forEach.call(menu.querySelectorAll(CATEGORY), function (item) {
+                    if (item !== clicked) close(item);
+                    else openItem(item);
+                });
+                syncStorage(menu);
+                return;
+            }
             // Fold everything first. Only the clicked category may come back:
             // Bootstrap opens it next because it saw a closed toggle.
             Array.prototype.forEach.call(menu.querySelectorAll(CATEGORY), close);

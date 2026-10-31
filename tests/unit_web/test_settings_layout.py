@@ -60,7 +60,7 @@ def test_every_settings_state_has_one_navigation_and_safe_independent_forms(mode
 def test_team_compact_controls_preserve_actions_roles_and_owner_protection():
     doc = Document(render("owner-team"))
     assert not any(tag == "table" for tag, _ in doc.tags)
-    forms = {form["action"]: fields for form, fields in doc.forms}
+    forms = {form.get("action", ""): fields for form, fields in doc.forms}
     for member in (2, 3):
         assert f"/app/settings/members/{member}/role" in forms
         assert f"/app/settings/members/{member}/ai" in forms
@@ -82,7 +82,7 @@ def test_non_managers_do_not_render_privileged_controls(mode):
     assert "data-team-members" not in html
     assert 'name="daily_cost_limit"' not in html
     assert 'name="agent_system_prompt"' not in html
-    assert not any(form["action"].startswith("/app/settings/members/") for form, _ in doc.forms)
+    assert not any(form.get("action", "").startswith("/app/settings/members/") for form, _ in doc.forms)
     assert not any(tag == "a" and a.get("href") == "/app/settings?tab=agent" for tag, a in doc.tags)
 
 
@@ -91,6 +91,11 @@ def test_model_probe_is_a_distinct_submitter_with_results_and_help():
     form, fields = next((a, f) for a, f in doc.forms if a.get("id") == "agent-settings")
     probe = next(a for tag, a in fields if a.get("formaction") == "/app/settings/agent/model-probe")
     assert probe["formmethod"] == "post"
+    real_test = next(
+        a for tag, a in fields if a.get("formaction") == "/app/settings/agent/model-probe" and a.get("value") == "real"
+    )
+    assert real_test["formmethod"] == "post"
+    assert any(a.get("name") == "consent" and a.get("value") == "yes" for _, a in fields)
     assert probe["aria-describedby"] == "ag-model-help"
     assert any("data-agent-save" in a for _, a in fields)
     assert form["action"] == "/app/settings/agent"

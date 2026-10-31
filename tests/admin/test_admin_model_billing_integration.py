@@ -82,14 +82,24 @@ async def test_secondary_journal_failure_retains_answer_and_never_replays():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("prompt,limit", [("", 8), ("What is an API?", 512)])
-async def test_actual_chat_transport_keeps_caps_and_admission_but_not_timeout_in_json(prompt, limit):
+@pytest.mark.parametrize(
+    "purpose,prompt,limit,status,success",
+    [
+        ("admin_probe", "", 8, 200, True),
+        ("model_test", "", 8, 200, True),
+        ("model_test", "", 8, 429, False),
+        ("admin_probe", "What is an API?", 512, 200, True),
+    ],
+)
+async def test_actual_chat_transport_keeps_caps_admission_and_single_health_update(
+    purpose, prompt, limit, status, success
+):
     settings = NS(PERSONAL_BILLING_ENABLED=True, LLM_DEFAULT_TIMEOUT=60)
     sent = []
 
     def transport(request):
         sent.append(request)
-        return httpx.Response(200, json={"choices": [{"message": {"content": "да"}}]})
+        return httpx.Response(status, json={"choices": [{"message": {"content": "да"}}]})
 
     transport_double = NS(
         AsyncClient=lambda: httpx.AsyncClient(transport=httpx.MockTransport(transport)),
@@ -132,16 +142,18 @@ async def test_actual_chat_transport_keeps_caps_and_admission_but_not_timeout_in
             "app.services.ai.attempt_journal": COST_EVIDENCE,
         },
     )
-    result = await probe.probe_real_capped(selected, prompt=prompt)
-    assert result["ok"] and result["tokens_spent"] is None and len(sent) == 1
+    result = await probe.probe_real_capped(selected, prompt=prompt, purpose=purpose)
+    assert result["ok"] is success and result["tokens_spent"] is None and len(sent) == 1
     import json
 
     payload = json.loads(sent[0].content)
     assert payload["max_tokens"] == limit and payload["messages"][0]["content"] == (prompt or probe.PROBE_PROMPT)
     assert "timeout" not in payload and "personal_billing_purpose" not in payload
     assert all(value == 20 for value in sent[0].extensions["timeout"].values())
-    assert client_module._personal_admission.await_args.kwargs["purpose"] == "admin_probe"
+    assert client_module._personal_admission.await_args.kwargs["purpose"] == purpose
     client_module._observe_personal_outcome.assert_awaited_once()
+    client_module._record_llm_usage.assert_awaited_once()
+    assert client_module._record_llm_usage.await_args.kwargs["success"] is success
 
 
 def endpoint_case(*, enabled=True, admin=True, csrf=True, consent=True, tenant="3", active=True, allowed=True):

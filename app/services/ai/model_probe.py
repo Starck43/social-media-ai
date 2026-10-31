@@ -548,6 +548,9 @@ def provider_limit_hint(result: dict[str, Any], model=None) -> dict[str, str] | 
     error_code = result.get("error_code")
     if isinstance(error_code, str):
         fragments.append(error_code.lower()[:160])
+    response_body = result.get("response_body")
+    if isinstance(response_body, str):
+        fragments.append(response_body.lower()[:2000])
     text = " ".join(fragments)
 
     # A structured exhaustion signal wins over generic HTTP 429/402. Otherwise

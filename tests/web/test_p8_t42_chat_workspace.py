@@ -209,7 +209,7 @@ async def test_selected_task_uses_canonical_readers_and_projects_safe_snapshot(m
             "vk_access": {"credential_id": 99},
             "sensitive_payload": "must not leak",
         },
-        "api_key": "must not leak",
+        "provider_payload": "must not leak",
     }
     result = {
         "job_status": "done",

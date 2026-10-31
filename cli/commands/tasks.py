@@ -280,6 +280,21 @@ def task_vk_connections_cmd(
     return catalog
 
 
+@task_app.command("vk-search-categories")
+@_json_command("task vk-search-categories")
+def task_vk_search_categories_cmd():
+    """List declared VK search-result categories and their evidence status."""
+    import json
+
+    from app.services.collection.search_categories import category_catalog
+
+    from .task_output import task_print as rprint
+
+    catalog = {"categories": category_catalog(), "gate": "docs/tasks/q-5.md"}
+    rprint(json.dumps(catalog, ensure_ascii=False, indent=2))
+    return catalog
+
+
 @task_app.command("plan")
 @_json_command("task plan")
 def task_plan_cmd(

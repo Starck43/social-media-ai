@@ -1114,6 +1114,24 @@ async def task_vk_connections() -> dict[str, Any]:
 
 
 @tool(
+    name="task_vk_search_categories",
+    description="Показать заявленные категории поиска ВКонтакте (люди, видео и другие) и их статус доступности.",
+    required_permission="scheduling.task.view",
+    parameters={"type": "object", "properties": {}, "required": []},
+)
+async def task_vk_search_categories() -> dict[str, Any]:
+    """Share the category registry; execution stays gated by Q-5 evidence.
+
+    Read-only catalog, identical to the other surfaces. Never present a
+    `mocked` category as available: it is contract-tested only until Q-5
+    records method/profile evidence.
+    """
+    from app.services.collection.search_categories import category_catalog
+
+    return {"categories": category_catalog(), "gate": "docs/tasks/q-5.md"}
+
+
+@tool(
     name="task_plan",
     description=(
         "Проверить и показать полный план социальной задачи без сохранения или запуска. "

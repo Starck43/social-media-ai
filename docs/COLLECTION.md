@@ -297,6 +297,33 @@ is shown as requiring renewal, not as an execution permit. Grant metadata must
 be reviewed again after reauthorization replaces it. Catalogs never return
 refresh tokens, device IDs, arbitrary provider metadata or encrypted secrets.
 
+### VK search-result categories (P8-T33)
+
+`app/services/collection/search_categories.py` declares the VK search-result
+categories as an explicit, evidence-gated registry: each category records its
+official API method, result kind, status (`enabled`, `mocked`, `deferred`,
+`unsupported`) and a bounded reason. Only `people` (official `users.search`)
+is selected in the T33 slice; it dispatches through the collection adapter's
+existing `search_people`, returns typed people results (never Sources) stamped
+with category provenance, and stays `mocked` — contract-tested only — while
+Q-5 owns live method/profile evidence. Video, apps/games, owner-scoped market
+items and music are `deferred` with their own task cards; clips and channels
+are `unsupported` with explicit reasons. Only `enabled` categories may
+execute: `resolve_categories` aggregates only enabled categories for `all`,
+returns the rest as unavailable with their reasons and fails closed on unknown
+ids; a refused or unavailable category raises a bounded error instead of
+returning an empty page. `search_category` always re-resolves the canonical
+registry record, so a caller-supplied category object cannot bypass the gate.
+
+Read-only catalogs share `search_categories.category_catalog`:
+
+- API: `GET /api/v1/tasks/vk-search-categories` in an authenticated workspace.
+- Web: `GET /app/tasks/vk-search-categories`; the task editor renders the
+  catalog read-only with each category's status.
+- CLI: `task vk-search-categories`.
+- Admin: `/admin/agent-task/vk-search-categories` for an authenticated operator.
+- Agent: `task_vk_search_categories` returns the same catalog in chat.
+
 ## Telegram
 
 The Bot API **cannot read a channel's or a chat's history**: a bot only receives

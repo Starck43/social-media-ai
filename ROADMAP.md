@@ -50,6 +50,10 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **IN_PROGRESS** · notion-ai-p8-t33 · [chat](https://app.notion.com/chat?t=40a3d3cc6f4080648d4000a9e3177cc4) · `P2` · `C4`
+- [P8-T46](docs/tasks/p8-t46.md) VK video search category — **TODO** · unassigned · — · `P2` · `C3`
+- [P8-T47](docs/tasks/p8-t47.md) VK apps/games search category — **TODO** · unassigned · — · `P2` · `C3`
+- [P8-T48](docs/tasks/p8-t48.md) VK owner-scoped market items category — **TODO** · unassigned · — · `P2` · `C3`
+- [P8-T49](docs/tasks/p8-t49.md) VK music search category — **TODO** · unassigned · — · `P2` · `C3`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 

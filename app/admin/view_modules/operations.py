@@ -137,6 +137,21 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             raise HTTPException(status_code=403, detail="vk_access_unavailable") from None
         return JSONResponse(catalog)
 
+    @expose("/vk-search-categories", methods=["GET"])
+    async def vk_search_categories(self, request: Request):
+        """Declared VK search-result categories; read-only, operator-authenticated.
+
+        Deployment-level registry metadata, not member data: any authenticated
+        operator may read it. A `mocked` status is not a live availability
+        claim; Q-5 owns the method/profile evidence gate.
+        """
+        from app.services.collection.search_categories import category_catalog
+
+        actor = self.get_admin_user(request)
+        if actor is None or type(getattr(actor, "id", None)) is not int:
+            raise HTTPException(status_code=403, detail="workspace_actor_required")
+        return JSONResponse({"categories": category_catalog(), "gate": "docs/tasks/q-5.md"})
+
     name = "Задача"
     name_plural = "Задачи"
     icon = "fa fa-clock"

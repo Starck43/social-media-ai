@@ -252,6 +252,13 @@
                     </template>
                 </div>
             </label>
+            <div class="text-sm text-slate-700 dark:text-slate-300">
+                <span class="mb-1 block">Категории поиска ВКонтакте</span>
+                <template x-for="category in vkCategories" :key="category.id">
+                    <p class="text-xs" x-text="category.label + ' — ' + category.status_label + (category.official_method ? ' (' + category.official_method + ')' : '')"></p>
+                </template>
+                <p class="mt-1 text-xs text-slate-500">Категория становится доступной только после подтверждения методов профилем приложения (Q-5); поиск людей пока проверен только на моках.</p>
+            </div>
         </div>
         <div x-show="editing.job_type === 'analyze'" x-cloak class="rounded-lg border border-cyan-200 dark:border-cyan-900 p-3 space-y-3">
             <label class="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
@@ -588,6 +595,7 @@
         return {
             editing: { ...defaults },
             vkConnections: [],
+            vkCategories: [],
             editSched: scheduleBuilder(),
             targetDefs: TARGET_FIELDS,
             // Compact inline source picker state. `SOURCES` is the full
@@ -692,6 +700,10 @@
                 fetch('/app/tasks/vk-connections', { headers: { "Accept": "application/json" } })
                     .then(response => response.ok ? response.json() : null)
                     .then(data => { if (data && Array.isArray(data.connections)) { this.vkConnections = data.connections; this.vkCatalog = data } })
+                    .catch(() => {});
+                fetch('/app/tasks/vk-search-categories', { headers: { "Accept": "application/json" } })
+                    .then(response => response.ok ? response.json() : null)
+                    .then(data => { if (data && Array.isArray(data.categories)) { this.vkCategories = data.categories } })
                     .catch(() => {});
                 this.editSched.load(this.editing.cron_expr)
                 // The schedule widget notifies the form scope (own Alpine

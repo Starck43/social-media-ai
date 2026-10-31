@@ -91,6 +91,22 @@ async def get_vk_connections(
         raise HTTPException(status_code=403, detail="vk_access_unavailable") from None
 
 
+@router.get("/vk-search-categories", response_model=dict)
+async def get_vk_search_categories(
+    _user=Depends(require_model_perm("agenttask", ActionType.VIEW)),
+):
+    """List declared VK search-result categories and their evidence status.
+
+    Read-only registry metadata shared with every other surface. A `mocked`
+    category is implemented and contract-tested but stays unavailable until
+    Q-5 supplies method/profile evidence; deferred and unsupported categories
+    carry their bounded reason.
+    """
+    from app.services.collection.search_categories import category_catalog
+
+    return {"categories": category_catalog(), "gate": "docs/tasks/q-5.md"}
+
+
 @router.get("/entitlements", response_model=dict)
 async def get_task_entitlements(
     _user=Depends(require_model_perm("agenttask", ActionType.VIEW)),

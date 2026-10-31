@@ -29,7 +29,7 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
    VK research-to-digest journey at the exact integrated revision.
 6. [P8-T33](../tasks/p8-t33.md) — optional extension beyond the minimum pilot:
    select a bounded set of verified VK result categories, with explicit cards
-   for any other requested categories before T33 closes.
+   for any other requested categories before T33 closes. **IN_PROGRESS** · owner `notion-ai-p8-t33` · claim base `8c9f5222bbf5c8f69177ae4e3ad3df0682ec2877`.
 
 T38 can proceed from the integrated T29 foundation without waiting for the
 live VK gate. T39 reuses the accepted shared execution-scope/mutation policy in

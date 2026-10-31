@@ -35,10 +35,42 @@ def _payload_has_media(value: Any) -> bool:
     if isinstance(value, dict):
         if any(key in value for key in ("image_url", "input_image", "media_url", "media_urls")):
             return True
+        if value.get("type") == "image" and "source" in value:
+            return True
         return any(_payload_has_media(item) for item in value.values())
     if isinstance(value, (list, tuple)):
         return any(_payload_has_media(item) for item in value)
     return False
+
+
+def _normalize_anthropic_message_content(content: Any) -> Any:
+    """Convert OpenAI-style data-URI `image_url` blocks to Anthropic native base64 image blocks."""
+    if not isinstance(content, list):
+        return content
+    normalized: list[dict[str, Any]] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "image_url":
+            url_val = (block.get("image_url") or {}).get("url") or ""
+            if isinstance(url_val, str) and url_val.startswith("data:") and ";base64," in url_val:
+                header, b64_data = url_val.split(";base64,", 1)
+                media_type = header[5:] or "image/png"
+                normalized.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": b64_data,
+                        },
+                    }
+                )
+            elif isinstance(url_val, str) and url_val:
+                normalized.append({"type": "image", "source": {"type": "url", "url": url_val}})
+        else:
+            normalized.append(block)
+    return normalized
 
 
 async def _personal_admission(
@@ -913,8 +945,12 @@ class AnthropicClient(LLMClient):
             raise ValueError(f"API key not set for {self.provider.name}")
         await self._rate_limit()
 
-        system = "\n".join(m["content"] for m in messages if m["role"] == "system")
-        chat_msgs = [{"role": m["role"], "content": m["content"]} for m in messages if m["role"] != "system"]
+        system = "\n".join(str(m["content"]) for m in messages if m["role"] == "system")
+        chat_msgs = [
+            {"role": m["role"], "content": _normalize_anthropic_message_content(m["content"])}
+            for m in messages
+            if m["role"] != "system"
+        ]
 
         payload: dict[str, Any] = {
             "model": self.model_name,
@@ -1321,7 +1357,16 @@ async def chat_with_fallback(
     allowed_types = await _allowed_model_types()
     # The same eligibility gate as automatic resolution: capability lists,
     # the full tier subset and an active provider all precede preference.
-    text_models = [m for m in models if _eligible_text_model(m, allowed_types)]
+    require_image = _payload_has_media(messages)
+    if require_image and allowed_types is not None and "image" not in allowed_types:
+        raise ValueError("Workspace plan does not allow image-capable models")
+    text_models = [
+        m
+        for m in models
+        if _eligible_text_model(m, allowed_types) and (not require_image or "image" in (m.capabilities or ()))
+    ]
+    if require_image and not text_models:
+        raise ValueError("No active image-capable LLM model available for this workspace")
     if not text_models and allowed_types is not None:
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
     text_models.sort(

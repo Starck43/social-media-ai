@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from sqlalchemy.exc import IntegrityError
+
 from ._shared import (
     ActionType,
     Any,
@@ -372,6 +374,21 @@ class TenantAdmin(BaseAdmin, model=Tenant):
         },
         **BaseAdmin.form_args,
     }
+
+    async def delete_model(self, request: Request, pk: Any) -> Any:
+        """Keep retained workspace evidence protected and hide database details.
+
+        The database FK remains the final atomic guard, including against a
+        concurrent audit append. SQLAdmin displays a failed deletion's message
+        in its list page; never expose the raw constraint/SQL in that URL.
+        """
+        try:
+            return await super().delete_model(request, pk)
+        except IntegrityError as exc:
+            raise ValueError(
+                "Нельзя удалить рабочее пространство: сохранённый аудит или связанные "
+                "защищённые записи требуют отдельной процедуры хранения и удаления."
+            ) from exc
 
     def is_accessible(self, request: Request) -> bool:
         """Workspace-wide administration is reserved for platform admins.

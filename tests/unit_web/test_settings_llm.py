@@ -1,5 +1,8 @@
 """Isolated form contract tests; catalog persistence is explicitly doubled."""
 
+# Source-only: every app boundary is isolated or a pure context helper; tests use doubles, not storage.
+__source_only__ = True
+
 import runpy
 from decimal import Decimal
 from pathlib import Path
@@ -25,10 +28,18 @@ def source():
         add_flash=lambda request, level, message: flashes.append((level, message)),
         ensure_csrf=lambda request, token: token == "fixture-csrf",
     )
+    from unittest.mock import Mock
+
+    manager = NS(filter=AsyncMock(return_value=[]))
+    model_manager = NS(LLMModelManager=Mock(return_value=manager))
     module = load(
         "app.web._isolated_llm_settings",
         ROOT / "app/web/settings_llm.py",
-        {"app.web.deps": deps, "app.services.ai.personal_catalog": service},
+        {
+            "app.web.deps": deps,
+            "app.services.ai.personal_catalog": service,
+            "app.models.managers.llm_model_manager": model_manager,
+        },
     )
     return module, service, flashes
 
@@ -47,7 +58,9 @@ def form(**extra):
 
 def request(data=None, user_id=2, active=True):
     return NS(
-        state=NS(web_user=NS(id=user_id, is_active=active), tenant=None), form=AsyncMock(return_value=data or form())
+        state=NS(web_user=NS(id=user_id, is_active=active), tenant=None),
+        session={},
+        form=AsyncMock(return_value=data or form()),
     )
 
 

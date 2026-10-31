@@ -205,7 +205,7 @@ async def test_selected_task_uses_canonical_readers_and_projects_safe_snapshot(m
             "window": {"type": "rolling", "days": 7},
             "trigger": {"type": "once"},
             "pipeline": {"stages": ["collect", "analyze"]},
-            "collection": {"limit": 50, "secret": "must not leak"},
+            "collection": {"limit": 50, "private_metadata": "must not leak"},
             "vk_access": {"credential_id": 99},
             "sensitive_payload": "must not leak",
         },

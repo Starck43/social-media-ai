@@ -121,13 +121,15 @@ class AdminCSRFMiddleware:
 
         token = request.headers.get("X-CSRF-Token")
         if token is None and request.headers.get("content-type", "").split(";")[0].strip() in _FORM_CONTENT_TYPES:
+            # Cache the body *before* parsing: `form()` drains the stream and
+            # Starlette refuses a second read ("Stream consumed"), which would
+            # 500 every console form POST.
+            body = await request.body()
             form = await request.form()
             value = form.get("csrf_token")
             token = value if isinstance(value, str) else None
-            # The form read consumed the body stream; replay it so the route
-            # handler parses the same payload again.
-            body = await request.body()
-            await request.close()
+            # This middleware consumed the receive channel; replay the cached
+            # body so the route handler parses the same payload.
             body_replayed = False
 
             async def replay_receive():

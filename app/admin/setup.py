@@ -78,6 +78,13 @@ def setup_admin(app):
         templates_dir=str(PROJECT_ROOT / "app" / "templates"),
     )
 
+    # sqladmin mounts itself as a sub-application at `/admin`, so inside console
+    # routes `request.app` is that Starlette app, not the FastAPI one. Publish
+    # the same manager on both states: templates and `verify_request_token`
+    # resolve it from `request.app.state` and must find it on either surface.
+    admin.admin.state.csrf_manager = csrf_manager
+    admin.admin.state.admin = admin
+
     @pass_context
     def _csrf_token(context):
         # Templates render per request, so the token binds to that session;

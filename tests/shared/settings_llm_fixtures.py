@@ -32,6 +32,10 @@ def catalog_context(mode="catalog"):
                     model_type="text",
                     is_active=True,
                     is_default=True,
+                    use_count=0,
+                    fail_count=0,
+                    success_count=0,
+                    has_recent_error=False,
                 ),
                 dict(
                     id=32,
@@ -41,6 +45,10 @@ def catalog_context(mode="catalog"):
                     model_type="text",
                     is_active=True,
                     is_default=False,
+                    use_count=0,
+                    fail_count=0,
+                    success_count=0,
+                    has_recent_error=False,
                 ),
             ],
         ),
@@ -61,6 +69,8 @@ def catalog_context(mode="catalog"):
         tab="models",
         visible_tabs=["account", "models"],
         llm_catalog={"providers": [] if mode == "empty" else providers, "models": [], "effective_default_model_id": 31},
+        model_probe_result=None,
+        settings_tenant_id=7,
         llm_chat_model_id=32 if mode != "no-workspace" else None,
         llm_provider_choices=[
             {key: provider[key] for key in ("id", "name", "uid", "base_url", "has_api_key")}

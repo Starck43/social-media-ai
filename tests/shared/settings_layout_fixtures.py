@@ -145,6 +145,9 @@ def context(mode):
         ],
         probe_result=dict(
             ok=mode != "agent-error",
+            owner_user_id=101,
+            mode="local",
+            limit_hint=None,
             text=(
                 "Статус модели и локальный mock проверены"
                 if mode != "agent-error"

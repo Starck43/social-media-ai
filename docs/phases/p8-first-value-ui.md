@@ -46,6 +46,9 @@ journey gate, not a way to rename or retroactively accept P8-T29.
    use source URLs only (no media downloading/storage). Coordinate overlapping chat
    presentation with P8-T42.
 
+9. [P8-T44](../tasks/p8-t44.md) — private photo/document attachments in the
+   shared chat; owner requested separate implementation after the P8-T42 UI revision.
+
 **Other active P8 cards:**
 
 - [P8-T10](../audit/p8-t10.md) — runtime freshness identity; accepted 2026-10-27, integrated in PR #248 (merge `d7213c6b`)

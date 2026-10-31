@@ -63,8 +63,6 @@ try {
     }
     const alpineJs = fs.readFileSync(alpinePath, 'utf8');
     const browserChecks = String.raw`
-      (async () => {
-        const checks = [];
         const root = document.querySelector('.chat-page');
         const panel = document.querySelector('#chat-workspace-panel');
         let app = null;
@@ -90,6 +88,8 @@ try {
             } : null,
           };
         };
+      (async () => {
+        const checks = [];
         const check = (value, label) => { if (!value) throw Error(label + ' diagnostic=' + JSON.stringify(diagnostic())); checks.push(label); };
         check(root && panel, 'real chat template includes the task workspace');
         check(panel.querySelector('#chat-task-search'), 'task picker has a labelled search input');
@@ -225,6 +225,11 @@ try {
         result.id = 'p8t42-results'; result.textContent = 'PASS ' + checks.length + ' checks';
         document.body.append(result);
       })().catch(async error => {
+        const result = document.createElement('pre');
+        result.id = 'p8t42-results';
+        const failure = 'FAIL ' + error.message;
+        result.textContent = failure + ' focus-probes=pending';
+        document.body.append(result);
         let failureProbes = null;
         if (escapeAssertion && !escapeAssertion.passed) {
           const toggle = document.querySelector('.chat-panel-toggle');
@@ -239,18 +244,22 @@ try {
             failureProbes.explicitTabindexFocus = {focused: focused(), active: document.activeElement?.tagName + '#' + (document.activeElement?.id || '')};
             input.focus();
             failureProbes.inputFocus = {focused: document.activeElement === input, active: document.activeElement?.tagName + '#' + (document.activeElement?.id || '')};
-            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            await Promise.race([
+              new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+              new Promise(resolve => setTimeout(resolve, 200)),
+            ]);
             toggle.focus();
-            await new Promise(resolve => requestAnimationFrame(resolve));
+            await Promise.race([
+              new Promise(resolve => requestAnimationFrame(resolve)),
+              new Promise(resolve => setTimeout(resolve, 200)),
+            ]);
             failureProbes.toggleFocusNextFrame = {focused: focused(), active: document.activeElement?.tagName + '#' + (document.activeElement?.id || '')};
             failureProbes.afterProbe = diagnostic();
           } catch (probeError) {
             failureProbes.probeError = probeError.message;
           }
         }
-        const result = document.createElement('pre');
-        result.id = 'p8t42-results'; result.textContent = 'FAIL ' + error.message + (failureProbes ? ' focus-probes=' + JSON.stringify(failureProbes) : '');
-        document.body.append(result);
+        result.textContent = failure + (failureProbes ? ' focus-probes=' + JSON.stringify(failureProbes) : ' focus-probes=not-applicable');
       });
     `;
     html = html.replace('</head>', `<style>${css}</style></head>`);

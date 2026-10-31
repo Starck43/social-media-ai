@@ -50,7 +50,7 @@ _APPLESCRIPT = r"""on run argv
             repeat 80 times
                 delay 0.25
                 tell application "Safari" to set resultText to do JavaScript "JSON.stringify({state: document.readyState, result: document.querySelector('#p8t42-results')?.textContent || '', width: window.innerWidth})" in current tab of (window id ownedID)
-                if resultText contains "FAIL " then error "T42 browser interaction failed: " & resultText
+                if resultText contains "FAIL " and resultText contains "focus-probes=" then error "T42 browser interaction failed: " & resultText
                 if resultText contains "PASS 24 checks" then exit repeat
             end repeat
             if not (resultText contains "PASS 24 checks") then error "T42 checks did not finish: " & resultText

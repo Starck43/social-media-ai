@@ -148,10 +148,14 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
             "author": dict(self.author or {}),
             "permalink": self.permalink,
             "content_hash": self.content_hash,
-            "content_type": self.content_type or "post",
-            "parent_external_id": self.parent_external_id,
-            "lane_id": self.lane_id,
+            "content_type": getattr(self, "content_type", None) or "post",
+            "parent_external_id": getattr(self, "parent_external_id", None),
+            "lane_id": getattr(self, "lane_id", None),
         }
+        if getattr(self, "source_id", None) is not None:
+            item["source_id"] = self.source_id
+        if getattr(self, "tenant_id", None) is not None:
+            item["tenant_id"] = self.tenant_id
         parent_context = metrics.get("parent_context")
         if isinstance(parent_context, dict):
             item["parent_context"] = dict(parent_context)

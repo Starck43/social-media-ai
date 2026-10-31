@@ -20,6 +20,7 @@ from starlette.applications import Starlette
 from starlette.staticfiles import StaticFiles
 from test_admin_model_permission_policy import CATALOG, TYPES, user_with
 
+from app.admin.registry import PAGE_SIZES
 from app.admin.table_registry import build_table_registry, filter_tables, find_table, paginate_tables
 from app.models import Base
 
@@ -139,12 +140,36 @@ async def get(ctx, url):
 
 @pytest.mark.asyncio
 async def test_owner_sees_the_registry_with_tables_and_search(registry_module):
-    response = await get(console(registry_module, user_with(role="superuser")), "/admin/registry")
+    ctx = console(registry_module, user_with(role="superuser"))
+    response = await get(ctx, "/admin/registry")
     assert response.status_code == 200, response.text
     body = response.text
     assert "data-table-registry" in body
     assert 'name="q"' in body
-    assert "user_credentials" in body
+    # The first page is bounded by the default page size, not by a table count
+    # that grows with the metadata: assert the bound, then reach a table that
+    # falls past it through the search the owner actually uses.
+    total = len(build_table_registry(Base.metadata))
+    assert total > 0
+    assert body.count("data-table-name=") == min(total, PAGE_SIZES[1])
+    assert f"Всего {total} ·" in body
+
+    found = await get(ctx, "/admin/registry?q=user_credentials")
+    assert found.status_code == 200, found.text
+    assert 'data-table-name="user_credentials"' in found.text
+
+
+@pytest.mark.asyncio
+async def test_registry_pages_past_the_default_size(registry_module):
+    """A table beyond the first page is still reachable by paging."""
+    ctx = console(registry_module, user_with(role="superuser"))
+    tables = build_table_registry(Base.metadata)
+    if len(tables) <= PAGE_SIZES[1]:
+        pytest.skip("metadata fits on one page")
+    last = tables[-1]["table"]
+    response = await get(ctx, "/admin/registry?page=2")
+    assert response.status_code == 200, response.text
+    assert f'data-table-name="{last}"' in response.text
 
 
 @pytest.mark.asyncio

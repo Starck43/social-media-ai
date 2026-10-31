@@ -7,7 +7,7 @@
 **Plan — active task cards:**
 
 - [P7-T02](../tasks/p7-t02.md) — One staging-backed operations proof
-- [P7-T07](../tasks/p7-t07.md) — Clarify local development versus server staging/production startup commands — READY (notion-ai; implementation in `dev` via [`c3f57bc`](https://github.com/Starck43/social-media-ai/commit/c3f57bcfcdde65abe7e6d14b1f22ba62427506b2) and [`98a356d`](https://github.com/Starck43/social-media-ai/commit/98a356dcff44316238e9affd9f4eec27721449fa); [PR #287 closed unmerged](https://github.com/Starck43/social-media-ai/pull/287); awaiting independent audit)
+- P7-T07 — Clarify local development versus server staging/production startup commands — **ACCEPTED 2026-10-31** (notion-ai; merged in `dev` via [`c3f57bc`](https://github.com/Starck43/social-media-ai/commit/c3f57bcfcdde65abe7e6d14b1f22ba62427506b2) and [`98a356d`](https://github.com/Starck43/social-media-ai/commit/98a356dcff44316238e9affd9f4eec27721449fa), [PR #287](https://github.com/Starck43/social-media-ai/pull/287) merged as `db1e5dd3`; [audit](../audit/p7-t07.md) accepted after two corrected findings)
 
 **Accepted history:**
 

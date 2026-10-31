@@ -40,11 +40,9 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P1
 
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
-- [P8-T43](docs/tasks/p8-t43.md) Preserve post and media links through analysis — **IN_PROGRESS** · ai-studio-p8-t43 · [chat](https://app.notion.com/chat?t=408439228587804093ec00a909303868) · `P1` · `C4`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **DEFERRED** (owner: park after local mock/DB increment until runtime journey and bounded live VK evidence, 2026-10-29) · notion-ai-p8-t41 · [Closeout](https://github.com/Starck43/social-media-ai/pull/279#issuecomment-6492303448) · resume `dev` at `295268d9` · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
-- [P7-T07](docs/tasks/p7-t07.md) Clarify local dev vs server startup commands — **READY** · notion-ai · [chat](https://app.notion.com/chat?t=40a52eb64917802fbbd700a958d1c3a7) · dev commits [`c3f57bc`](https://github.com/Starck43/social-media-ai/commit/c3f57bcfcdde65abe7e6d14b1f22ba62427506b2), [`98a356d`](https://github.com/Starck43/social-media-ai/commit/98a356dcff44316238e9affd9f4eec27721449fa) · [PR #287 (closed unmerged)](https://github.com/Starck43/social-media-ai/pull/287) · `P1` · `C1`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
 
 ### Priority P2

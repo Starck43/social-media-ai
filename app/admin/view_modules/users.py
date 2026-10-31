@@ -289,15 +289,17 @@ class TenantAdmin(BaseAdmin, model=Tenant):
         "name",
         "slug",
         "plan",
-        "plan_expires_at",
-        "entitlement_policy",
         "timezone",
         "is_active",
-        "max_sources",
-        "daily_cost_limit",
         "updated_at",
     ]
-    column_details_list = column_list + ["agent_style"]
+    column_details_list = column_list + [
+        "agent_style",
+        "plan_expires_at",
+        "entitlement_policy",
+        "max_sources",
+        "daily_cost_limit",
+    ]
     column_searchable_list = ["name", "slug"]
     column_sortable_list = ["name", "slug", "plan", "is_active"]
     column_labels = dict(
@@ -306,7 +308,7 @@ class TenantAdmin(BaseAdmin, model=Tenant):
             "name": "Название",
             "slug": "Слаг",
             "plan": "Тариф",
-            "plan_expires_at": "Plan expires at (UTC)",
+            "plan_expires_at": "План действует до",
             "entitlement_policy": "Product capabilities (static policy)",
             "timezone": "Часовой пояс",
             "is_active": "Активно",

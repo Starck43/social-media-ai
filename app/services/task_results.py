@@ -294,16 +294,40 @@ async def task_result(task_id: int, *, job_id: int | None = None, limit: int = 5
     rows = await (
         AIAnalytics.objects.filter(id__in=ids, source_id__in=list(sources)).order_by(AIAnalytics.id.desc()).limit(limit)
     )
+    from app.services.ai.analysis_render import render_analysis
+
     for row in rows:
         summary = row.summary_data if isinstance(row.summary_data, dict) else {}
-        title = summary.get("analysis_title")
-        text = summary.get("summary")
-        result["analyses"].append(
-            {
-                "id": row.id,
-                "title": title[:200] if isinstance(title, str) else f"Analysis #{row.id}",
-                "summary": text[:2_000] if isinstance(text, str) else None,
-                "url": f"/app/analytics/{row.id}",
-            }
-        )
+        rendered = render_analysis(summary)
+        title = summary.get("analysis_title") or rendered.get("analysis_title")
+        text = summary.get("summary") or summary.get("analysis_summary") or rendered.get("analysis_summary")
+        entry: dict[str, Any] = {
+            "id": row.id,
+            "title": title[:200] if isinstance(title, str) else f"Analysis #{row.id}",
+            "summary": text[:2_000] if isinstance(text, str) else None,
+            "url": f"/app/analytics/{row.id}",
+        }
+        if rendered.get("original_links"):
+            entry["original_links"] = rendered["original_links"][:20]
+        if rendered.get("post_evidence"):
+            entry["post_evidence"] = [
+                {
+                    "external_id": item.get("external_id"),
+                    "content_type": item.get("content_type"),
+                    "permalink": item.get("permalink"),
+                    "media_urls": item.get("media_urls", []),
+                    "attachments": [
+                        {"type": att.get("type"), "url": att.get("url"), "status": att.get("status")}
+                        for att in item.get("attachments", [])
+                    ],
+                    **({"parent_permalink": item["parent_permalink"]} if item.get("parent_permalink") else {}),
+                    **(
+                        {"source_id": item["source_id"]}
+                        if type(item.get("source_id")) is int
+                        else ({"source_id": row.source_id} if type(getattr(row, "source_id", None)) is int else {})
+                    ),
+                }
+                for item in rendered["post_evidence"][:20]
+            ]
+        result["analyses"].append(entry)
     return result

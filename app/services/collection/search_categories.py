@@ -45,6 +45,14 @@ EXECUTABLE_STATUSES = (STATUS_ENABLED, STATUS_MOCKED)
 
 ALL_CATEGORIES = "all"
 
+# User-facing Russian labels, shared so all five surfaces word a status the same.
+STATUS_LABELS = {
+    STATUS_ENABLED: "доступна",
+    STATUS_MOCKED: "проверяется на моках",
+    STATUS_DEFERRED: "отложена",
+    STATUS_UNSUPPORTED: "не поддерживается",
+}
+
 # Bounded, operator-safe reason codes. Surfaces render these verbatim; none of
 # them implies a live failure or a live capability.
 REASON_PROFILE_UNVERIFIED = "vk_method_profile_unverified"
@@ -93,6 +101,7 @@ class SearchCategory:
             "label": self.label,
             "result_kind": self.result_kind,
             "status": self.status,
+            "status_label": STATUS_LABELS[self.status],
             "reason": self.reason,
             "official_method": self.official_method,
             "executable": self.executable,

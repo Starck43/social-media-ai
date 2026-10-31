@@ -86,6 +86,21 @@ async def web_vk_connections(request: Request):
         return Response(status_code=403, content="vk_access_unavailable")
 
 
+@router.get("/vk-search-categories")
+async def web_vk_search_categories(request: Request):
+    """Return the declared VK search-result categories for the task editor.
+
+    The same shared catalog the API, CLI, admin and agent surfaces read; the
+    editor renders it read-only with each category's honest status.
+    """
+    denied = guard_web(request, "agenttask", "view", back="/app/tasks")
+    if denied is not None:
+        return denied
+    from app.services.collection.search_categories import category_catalog
+
+    return {"categories": category_catalog(), "gate": "docs/tasks/q-5.md"}
+
+
 @router.get("")
 @router.get("/")
 async def tasks_list(request: Request):

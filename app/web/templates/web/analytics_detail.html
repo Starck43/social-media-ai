@@ -57,6 +57,43 @@
     <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Выделяющиеся моменты</h2>
     <ul class="mt-3 list-inside list-disc space-y-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">{% for highlight in display.highlights %}<li>{{ highlight }}</li>{% endfor %}</ul>
 {% endcall %}{% endif %}
+{% if display.post_evidence %}{% call card(extra='mt-4') %}
+    <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Проанализированные материалы и медиа</h2>
+    <ul class="mt-3 space-y-3 text-sm" data-evidence="posts">
+    {% for item in display.post_evidence %}
+        <li class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-evidence-item="{{ item.external_id or loop.index }}">
+            <div class="flex flex-wrap items-center gap-3">
+                {% if item.permalink %}<a href="{{ item.permalink }}" target="_blank" rel="noopener noreferrer" class="font-medium text-cyan-700 hover:underline dark:text-cyan-400">{% if item.content_type == 'comment' %}Комментарий{% else %}Публикация{% endif %}{% if display.post_evidence|length > 1 %} {{ loop.index }}{% endif %} ↗</a>
+                {% else %}<span class="font-medium text-slate-600 dark:text-slate-400">{% if item.content_type == 'comment' %}Комментарий{% else %}Публикация{% endif %}{% if display.post_evidence|length > 1 %} {{ loop.index }}{% endif %} (прямая ссылка недоступна)</span>{% endif %}
+                {% if item.parent_permalink %}<a href="{{ item.parent_permalink }}" target="_blank" rel="noopener noreferrer" class="text-xs text-slate-500 hover:underline dark:text-slate-400">Исходный пост ↗</a>{% endif %}
+            </div>
+            {% if item.attachments %}
+            <div class="mt-2 flex flex-wrap gap-3">
+                {% for media in item.attachments %}
+                    {% if media.type == 'image' and media.url %}
+                    <div class="flex flex-col gap-1" data-media-type="image" data-media-state="available">
+                        <a href="{{ media.url }}" target="_blank" rel="noopener noreferrer" class="inline-block overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                            <img src="{{ media.url }}" alt="{{ media.label }} {{ loop.index }}" loading="lazy" referrerpolicy="no-referrer" class="max-h-36 w-auto object-cover" />
+                        </a>
+                        <a href="{{ media.url }}" target="_blank" rel="noopener noreferrer" class="text-xs text-cyan-700 hover:underline dark:text-cyan-400">Открыть изображение ↗</a>
+                    </div>
+                    {% elif media.type == 'video' and media.url %}
+                    <div class="flex items-center" data-media-type="video" data-media-state="available">
+                        <a href="{{ media.url }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-cyan-700 hover:bg-slate-50 dark:border-slate-700 dark:text-cyan-400 dark:hover:bg-slate-800">Открыть видео ↗</a>
+                    </div>
+                    {% else %}
+                    <div class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400" data-media-type="{{ media.type }}" data-media-state="{{ media.status }}">
+                        <span>{{ media.fallback_label or 'Медиа без прямой ссылки' }}</span>
+                        {% if item.permalink %}<span>·</span><a href="{{ item.permalink }}" target="_blank" rel="noopener noreferrer" class="text-cyan-700 hover:underline dark:text-cyan-400">открыть в источнике ↗</a>{% endif %}
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+        </li>
+    {% endfor %}
+    </ul>
+{% endcall %}{% endif %}
 {% set metrics = namespace(count=0) %}
 {% for key in ['total_posts','total_reactions','total_comments','active_users'] %}{% if stats[key] is not none %}{% set metrics.count = metrics.count + 1 %}{% endif %}{% endfor %}
 {% if metrics.count %}

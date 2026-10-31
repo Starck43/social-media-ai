@@ -487,7 +487,7 @@ class VKCollectionAdapter(CollectionProvider):
         published = row.get("date")
         if isinstance(published, datetime) and published.tzinfo is None:
             published = published.replace(tzinfo=timezone.utc)
-        return {
+        item: dict[str, Any] = {
             "platform": "vk",
             "content_type": "post",
             "external_id": row.get("external_id") or row.get("id"),
@@ -506,6 +506,12 @@ class VKCollectionAdapter(CollectionProvider):
             "post_id": row.get("id"),
             "source_type": row.get("source_type"),
         }
+        if "attachments" in row and isinstance(row.get("attachments"), list):
+            item["attachments"] = [dict(att) for att in row["attachments"] if isinstance(att, dict)]
+        for extra_key in ("has_attachments", "attachment_types", "media_type"):
+            if extra_key in row:
+                item[extra_key] = row[extra_key]
+        return item
 
     @staticmethod
     def _comment(
@@ -526,7 +532,7 @@ class VKCollectionAdapter(CollectionProvider):
             if name:
                 author["name"] = name
         published = _datetime(row.get("date"))
-        return {
+        comment_item: dict[str, Any] = {
             "platform": "vk",
             "content_type": "comment",
             "external_id": f"{post_external_id}:{comment_id}",
@@ -542,6 +548,9 @@ class VKCollectionAdapter(CollectionProvider):
             "post_id": post_id,
             "comment_id": comment_id,
         }
+        if "attachments" in row and isinstance(row.get("attachments"), list):
+            comment_item["attachments"] = VKClient._normalize_direct_attachments(row["attachments"])
+        return comment_item
 
     @staticmethod
     def _person(row: Mapping[str, Any]) -> Candidate:

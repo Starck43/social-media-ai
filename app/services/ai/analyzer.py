@@ -1716,7 +1716,13 @@ class AIAnalyzer(AnalysisStatsMixin):
             },
             "unified_summary": unified_summary.get("parsed", {}) if unified_summary else {},
             "content_statistics": self._make_json_serializable(content_stats),
-            "source_metadata": {"source_type": st_val, "platform": platform_name, "source_name": source.name},
+            "source_metadata": {
+                "source_type": st_val,
+                "platform": platform_name,
+                "source_name": getattr(source, "name", None),
+                **({"source_id": source.id} if type(getattr(source, "id", None)) is int else {}),
+                **({"tenant_id": source.tenant_id} if type(getattr(source, "tenant_id", None)) is int else {}),
+            },
             "analysis_metadata": {
                 "analysis_version": "3.0-multi-llm",
                 "analysis_timestamp": datetime.now(UTC).isoformat(),
@@ -1801,6 +1807,28 @@ class AIAnalyzer(AnalysisStatsMixin):
                         content_hash = hashes_hash(merged_hashes)
                     elif content_hash is None:
                         content_hash = existing_analysis.content_hash
+                    existing_stats = (existing_analysis.summary_data or {}).get("content_statistics")
+                    current_stats = comprehensive_data.get("content_statistics")
+                    if isinstance(existing_stats, dict) and isinstance(current_stats, dict):
+                        prev_links = existing_stats.get("original_links") or []
+                        curr_links = current_stats.get("original_links") or []
+                        if prev_links or curr_links:
+                            current_stats["original_links"] = list(
+                                dict.fromkeys(
+                                    [
+                                        *(u for u in prev_links if type(u) is str),
+                                        *(u for u in curr_links if type(u) is str),
+                                    ]
+                                )
+                            )[:50]
+                        prev_ev = existing_stats.get("post_evidence") or []
+                        curr_ev = current_stats.get("post_evidence") or []
+                        if prev_ev or curr_ev:
+                            from app.services.ai.analysis_render import extract_post_evidence
+
+                            merged_ev = extract_post_evidence({"post_evidence": [*prev_ev, *curr_ev]})
+                            if merged_ev:
+                                current_stats["post_evidence"] = merged_ev
                     analytics = await AIAnalytics.objects.update_by_id(
                         existing_analysis.id,
                         session=session,

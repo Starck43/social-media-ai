@@ -10,6 +10,7 @@ import asyncio
 import base64
 import json
 import re
+import secrets
 import socket
 import sys
 import threading
@@ -61,7 +62,7 @@ from app.models import (
 from app.services.tenancy import offboarding
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
-PASSWORD = "Synthetic-P11-T29-Offboard!"
+PASSWORD = secrets.token_urlsafe(24)
 CSRF = re.compile(r'name="csrf_token"[^>]*value="([^"]+)"')
 
 

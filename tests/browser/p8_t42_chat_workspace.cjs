@@ -67,11 +67,21 @@ try {
         const panel = document.querySelector('#chat-workspace-panel');
         let app = null;
         let escapeAssertion = null;
+        const expressionErrors = [];
+        const toggleTrace = [];
+        window.addEventListener('error', event => {
+          expressionErrors.push({type: 'error', message: event.message || 'window error', stack: event.error?.stack || ''});
+        });
+        window.addEventListener('unhandledrejection', event => {
+          expressionErrors.push({type: 'unhandledrejection', message: String(event.reason?.message || event.reason)});
+        });
         const diagnostic = () => {
           const toggle = root?.querySelector('.chat-panel-toggle');
           const rect = toggle?.getBoundingClientRect();
           return {
             documentHasFocus: document.hasFocus(),
+            expressionErrors: expressionErrors.slice(-5),
+            toggleTrace: toggleTrace.slice(-4),
             panelOpen: app?.panelOpen ?? null,
             panelInlineDisplay: panel?.style.display || '',
             panelDisplay: panel ? getComputedStyle(panel).display : '',
@@ -135,6 +145,27 @@ try {
         app = Alpine.$data(root);
         await new Promise(resolve => setTimeout(resolve, 20));
         check(Alpine && app, 'Alpine initializes the real workspace component');
+        const originalToggleWorkspacePanel = app.toggleWorkspacePanel;
+        app.toggleWorkspacePanel = function(...args) {
+          const call = {
+            before: this.panelOpen,
+            args: args.map(value => value?.target?.tagName || value?.tagName || typeof value),
+            argElementTag: args.find(value => value?.target?.tagName || value?.tagName)?.target?.tagName ||
+              args.find(value => value?.tagName)?.tagName || document.activeElement?.tagName || null,
+            rootClass: this.$root?.className || '',
+            refsKeys: Object.keys(this.$refs || {}),
+          };
+          toggleTrace.push(call);
+          try {
+            const result = originalToggleWorkspacePanel.apply(this, args);
+            call.after = this.panelOpen;
+            call.rootClassAfter = this.$root?.className || '';
+            return result;
+          } catch (error) {
+            call.error = {message: error.message, stack: error.stack || ''};
+            throw error;
+          }
+        };
         const toggle = panel.querySelector('[aria-label="Свернуть рабочий контекст"]');
         if (!app.panelOpen) root.querySelector('.chat-panel-toggle').click();
         await new Promise(resolve => setTimeout(resolve, 25));
@@ -220,6 +251,9 @@ try {
         if (innerWidth >= 1200) check(columns === 2, 'desktop panel shares the chat workspace in two columns');
         else check(columns === 1, 'mobile panel stacks without a horizontal split');
         check(document.documentElement.scrollWidth <= innerWidth + 1, 'workspace does not cause horizontal page overflow');
+        if (expressionErrors.length) {
+          throw Error('Browser recorded window errors: ' + JSON.stringify(expressionErrors.slice(-5)));
+        }
 
         const result = document.createElement('pre');
         result.id = 'p8t42-results'; result.textContent = 'PASS ' + checks.length + ' checks';

@@ -257,7 +257,7 @@
                 <button
                     type="button" class="chat-send" :class="{ 'chat-send-stop': sending }"
                     @click="sending ? stopGeneration() : sendMessage()"
-                    :disabled="(pending && !sending) || (!awaitingConfirmation && workspaceTaskId && (workspaceTaskLoading || workspaceTaskError))"
+                    :disabled="(pending && !sending) || workspaceContextBlocked()"
                     :aria-label="sending ? 'Остановить генерацию' : 'Отправить сообщение'"
                     :title="sending ? 'Остановить' : 'Отправить'"
                 >

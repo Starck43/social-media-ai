@@ -153,6 +153,10 @@ function chatApp() {
                     if (request === this.workspaceTaskRequest) this.workspaceTaskLoading = false;
                 }
             },
+            workspaceContextBlocked() {
+                return Boolean(!this.awaitingConfirmation && this.workspaceTaskId &&
+                    (this.workspaceTaskLoading || this.workspaceTaskError));
+            },
             workspacePlanNotice(status) {
                 return ({legacy: 'Для этой задачи нет сохранённого плана.', source_access_required: 'Для просмотра плана нужен доступ к источникам.', scenario_access_required: 'Для просмотра плана нужен доступ к сценарию.', scope_changed: 'Источники изменились. Проверьте план задачи.', source_unavailable: 'Один из источников недоступен.'})[status] || 'План недоступен. Откройте подробности задачи.';
             },
@@ -285,7 +289,7 @@ function chatApp() {
             async sendMessage(preset = '') {
                 const textarea = this.$refs.input
                 const text = (typeof preset === 'string' && preset ? preset : textarea.value).trim()
-                if (!text || this.pending || (!this.awaitingConfirmation && this.workspaceTaskId && (this.workspaceTaskLoading || this.workspaceTaskError))) return
+                if (!text || this.pending || this.workspaceContextBlocked()) return
                 this.notice = ''
                 this.draftNotice = '';
                 const selectedId = this.workspaceTaskId;

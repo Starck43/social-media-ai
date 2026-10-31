@@ -1,5 +1,8 @@
 """Owner-scoped settings model test route contracts with external services doubled."""
 
+# Source-only: every app boundary is isolated or a pure context helper; tests use doubles, not storage.
+__source_only__ = True
+
 from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, Mock

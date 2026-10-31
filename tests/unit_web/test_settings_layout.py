@@ -1,5 +1,8 @@
 """Strict template regressions only; never import the application or its DB."""
 
+# Source-only: every app boundary is isolated or a pure context helper; tests use doubles, not storage.
+__source_only__ = True
+
 import runpy
 from html.parser import HTMLParser
 from pathlib import Path

@@ -1,5 +1,8 @@
 """Isolated source/mocked handlers and real template rendering; no app, DB or provider."""
 
+# Source-only: every app boundary is isolated or a pure context helper; tests use doubles, not storage.
+__source_only__ = True
+
 import ast
 from pathlib import Path
 from types import SimpleNamespace as NS

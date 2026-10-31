@@ -1,5 +1,8 @@
 """Isolated combined-lane contracts; not application/DB acceptance.
 
+# Source-only: every app boundary is isolated or a pure context helper; tests use doubles, not storage.
+__source_only__ = True
+
 Every application import below is replaced by an explicit local double. HTTP
 uses MockTransport only. No settings, model registry, conftest or app startup.
 """

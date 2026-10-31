@@ -1,5 +1,8 @@
 """Isolated form contract tests; catalog persistence is explicitly doubled."""
 
+# Source-only: every app boundary is isolated or a pure context helper; tests use doubles, not storage.
+__source_only__ = True
+
 import runpy
 from decimal import Decimal
 from pathlib import Path

@@ -1,5 +1,8 @@
 """Provider limit hints use only safe structured evidence; no provider calls."""
 
+# Source-only: every app boundary is isolated or a pure context helper; tests use doubles, not storage.
+__source_only__ = True
+
 from pathlib import Path
 from types import SimpleNamespace as NS
 

@@ -40,6 +40,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P1
 
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
+- [P8-T43](docs/tasks/p8-t43.md) Preserve post and media links through analysis — **IN_PROGRESS** · ai-studio-p8-t43 · [chat](https://app.notion.com/chat?t=408439228587804093ec00a909303868) · `P1` · `C4`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **DEFERRED** (owner: park after local mock/DB increment until runtime journey and bounded live VK evidence, 2026-10-29) · notion-ai-p8-t41 · [Closeout](https://github.com/Starck43/social-media-ai/pull/279#issuecomment-6492303448) · resume `dev` at `295268d9` · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
@@ -48,11 +49,12 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P8-T42](docs/tasks/p8-t42.md) Chat workspace, contextual task panel and quick actions — **IN_PROGRESS** · codex · `codex resume 01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C3`
+- [P8-T42](docs/tasks/p8-t42.md) Chat workspace, contextual task panel and quick actions — **READY** · codex · `codex resume 01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C3`
 
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
+- [P11-T27](docs/tasks/p11-t27.md) Admin console audit and operator tooling hardening — **IN_PROGRESS** · notion-ai-p11-t27 · [Notion chat](https://app.notion.com/chat?t=409082a1eed08062987b00a9a2f80eb6) · `P2` · `C3`
 
 ### Priority P3
 

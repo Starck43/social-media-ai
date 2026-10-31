@@ -69,7 +69,9 @@ function chatApp() {
             toggleWorkspacePanel() {
                 this.panelOpen = !this.panelOpen;
                 this.$nextTick(() => {
-                    const target = this.panelOpen ? this.$refs.workspacePanel : this.$refs.panelToggle;
+                    // Resolve within this workspace after Alpine has applied x-show.
+                    // A reference captured before child initialization may be absent.
+                    const target = this.$root.querySelector(this.panelOpen ? '#chat-workspace-panel' : '[data-chat-panel-toggle]');
                     target?.focus();
                     if (this.panelOpen && !window.matchMedia('(min-width: 1200px)').matches) target?.scrollIntoView({block: 'start'});
                 });

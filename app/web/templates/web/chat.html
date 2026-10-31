@@ -50,7 +50,7 @@
             <span x-text="workspaceTask ? 'Задача: ' + workspaceTask.name : 'Задача #' + workspaceTaskId"></span>
             <button type="button" @click="clearWorkspaceTask()" :disabled="pending || awaitingConfirmation" aria-label="Снять выбор задачи">×</button>
         </span>
-        <button type="button" class="chat-panel-toggle" x-ref="panelToggle" @click="toggleWorkspacePanel()"
+        <button type="button" class="chat-panel-toggle" data-chat-panel-toggle x-ref="panelToggle" @click="toggleWorkspacePanel()"
                 aria-controls="chat-workspace-panel" :aria-expanded="panelOpen">Задача и действия</button>
     </div>
     <div class="chat-workspace-grid">

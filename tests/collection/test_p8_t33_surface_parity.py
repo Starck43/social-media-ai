@@ -34,8 +34,10 @@ def test_api_route_serves_the_shared_catalog():
 def test_web_route_serves_the_shared_catalog():
     from app.web import task_routes
 
+    # The shared router carries prefix="/tasks", so the declared path is the
+    # full one the browser and the editor's fetch actually use.
     paths = {getattr(route, "path", "") for route in task_routes.router.routes}
-    assert "/vk-search-categories" in paths
+    assert "/tasks/vk-search-categories" in paths
     assert "category_catalog" in inspect.getsource(task_routes.web_vk_search_categories)
 
 
@@ -46,8 +48,9 @@ def test_web_editor_renders_the_catalog_read_only():
     assert "/app/tasks/vk-search-categories" in template
     assert 'x-for="category in vkCategories"' in template
     assert "category.status_label" in template
-    # The block is a status list, not a launcher: no form control writes a category.
-    block = template.split("Категории поиска ВКонтакте", 1)[1]
+    # The block is a status list, not a launcher: no form control writes a
+    # category. Slice the block itself, not everything after its heading.
+    block = template.split("Категории поиска ВКонтакте", 1)[1].split("</div>", 1)[0]
     assert "<input" not in block and "<select" not in block
 
 
@@ -81,4 +84,6 @@ async def test_agent_tool_returns_the_shared_catalog_with_honest_status():
     assert people["status"] == STATUS_MOCKED
     assert people["status_label"]
     assert people["official_method"] == "users.search"
-    assert people["executable"] is True
+    # Mocked is implemented, not available: the tool must not advertise it.
+    assert people["executable"] is False
+    assert people["reason"]

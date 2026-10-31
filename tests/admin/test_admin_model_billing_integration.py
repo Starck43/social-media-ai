@@ -177,7 +177,7 @@ def endpoint_case(*, enabled=True, admin=True, csrf=True, consent=True, tenant="
             "HTTPException": HTTPException,
             "settings": NS(PERSONAL_BILLING_ENABLED=enabled),
             "Tenant": NS(objects=NS(get=lookup)),
-            "get_csrf_manager": lambda request: NS(verify_token=lambda token: csrf),
+            "verify_request_token": lambda request, token: bool(csrf and token),
         },
         {
             "app.admin.actions": NS(LLMModelActions=NS(submit_test=submit, reject_test=submit.reject)),
@@ -259,7 +259,7 @@ async def test_retired_paid_route_never_translates_or_dispatches():
         {
             "Form": lambda *a, **k: None,
             "HTTPException": HTTPException,
-            "get_csrf_manager": lambda request: NS(verify_token=lambda token: True),
+            "verify_request_token": lambda request, token: True,
             "get_authenticated_user": auth,
             "User": NS(objects=NS(prefetch_related=lambda *a: NS(get=lookup))),
         },

@@ -20,6 +20,8 @@ These are `tenancy` tests on purpose: the autouse fixture switches the bypass
 off so that "no scope" is the failure mode, not the default.
 """
 
+import base64
+import json
 import secrets
 from contextlib import asynccontextmanager, contextmanager
 from typing import AsyncIterator
@@ -27,6 +29,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from httpx import AsyncClient
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.access_catalog import workspace_grants
 from app.core.permissions import has_permission, operator_permission_scope, permission_scope
@@ -571,7 +574,7 @@ async def test_admin_http_personal_catalog_blocks_foreign_provider_and_model_rou
         )
 
     async with _admin_grants("llm.provider", "llm.model"):
-        async with _console(actor) as client:
+        async with _console(actor) as client, _console_app(client) as app:
             own_list = await client.get("/admin/llm-provider/list")
             assert own_list.status_code == 200 and own_provider.name in own_list.text
             assert foreign_provider.name not in own_list.text
@@ -589,12 +592,12 @@ async def test_admin_http_personal_catalog_blocks_foreign_provider_and_model_rou
                 assert (await client.get(f"/admin/{identity}/edit/{record.id}")).status_code in {403, 404}
                 forged = await client.post(
                     f"/admin/{identity}/edit/{record.id}",
-                    data={"name": "forged-by-http", "csrf_token": _valid_csrf_token()},
+                    data={"name": "forged-by-http", "csrf_token": _valid_csrf_token(client, app)},
                 )
                 assert forged.status_code in {403, 404}, identity
                 deleted = await client.delete(
                     f"/admin/{identity}/delete?pks={record.id}",
-                    headers={"X-CSRF-Token": _valid_csrf_token()},
+                    headers={"X-CSRF-Token": _valid_csrf_token(client, app)},
                 )
                 # SQLAdmin returns a list URL with an error receipt for a
                 # missing scoped object, including from its DELETE route.
@@ -610,9 +613,24 @@ async def test_admin_http_personal_catalog_blocks_foreign_provider_and_model_rou
         assert (await LLMProvider.objects.get(id=own_provider.id)).name == own_provider.name
 
 
-def _valid_csrf_token() -> str:
-    """A signed, well-formed token: the refusal must not be "bad CSRF"."""
-    from app.admin.csrf import CSRFTokenManager
+@asynccontextmanager
+async def _console_app(client) -> AsyncIterator:
+    """The FastAPI app behind the logged-in console client, for token minting."""
+    transport = getattr(client, "_transport", None)
+    app = getattr(transport, "app", None)
+    assert app is not None, "the console client must wrap an ASGI app"
+    yield app
+
+
+def _valid_csrf_token(client, app) -> str:
+    """A real token for this session: the refusal must not be "bad CSRF".
+
+    Since S2 console tokens are bound to the session's CSRF id, so the token has
+    to be minted for the logged-in browser, not for an anonymous session.
+    """
+    from app.admin.csrf import SESSION_ID_KEY
     from app.core.config import settings
 
-    return CSRFTokenManager(secret_key=settings.SECRET_KEY).generate_token()
+    signer = SessionMiddleware(app, secret_key=settings.SECRET_KEY).signer
+    payload = json.loads(base64.b64decode(signer.unsign(client.cookies.get("session").encode("utf-8"))))
+    return app.state.csrf_manager.generate_token(session_id=payload[SESSION_ID_KEY])

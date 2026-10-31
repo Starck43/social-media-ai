@@ -132,7 +132,7 @@ def unified_post(module):
             "ActionType": ActionType,
             "HTTPException": HTTPException,
             "settings": NS(PERSONAL_BILLING_ENABLED=False),
-            "get_csrf_manager": lambda request: NS(verify_token=verify),
+            "verify_request_token": lambda request, token: verify(token),
         },
         {"app.admin.actions": NS(LLMModelActions=NS(submit_test=submitted))},
     )

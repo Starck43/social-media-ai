@@ -97,6 +97,10 @@ def task_console(count=60, allowed=True):
         }
     ]
     admin.templates.env.globals["related_token"] = lambda *args: None
+    # S2: the console shell renders a meta CSRF token. This harness does not boot
+    # `setup_admin`, so it publishes the global itself; the template only needs a
+    # string here.
+    admin.templates.env.globals["csrf_token"] = lambda: "synthetic-token"
     admin.add_view(TaskView)
     view = admin._views[0]
     options = [Source(id=i, name=f"Источник {i:03} — VK.news / " + "длинное_имя_" * 4) for i in range(1, count + 1)]

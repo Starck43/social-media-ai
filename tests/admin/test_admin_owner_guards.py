@@ -143,15 +143,13 @@ def password_console(monkeypatch, request):
     # The routes read `User.objects` for the actor, the target and the write.
     monkeypatch.setattr(
         "app.admin.endpoints.User",
-        SimpleNamespace(
-            objects=SimpleNamespace(prefetch_related=lambda *_: Query(), update_by_id=update)
-        ),
+        SimpleNamespace(objects=SimpleNamespace(prefetch_related=lambda *_: Query(), update_by_id=update)),
     )
     # The POST verifies CSRF before it looks at the target; a valid-session
     # request is what a browser sends, so the refusal under test is the guard.
     monkeypatch.setattr(
-        "app.admin.endpoints.get_csrf_manager",
-        lambda _request: SimpleNamespace(verify_token=lambda token: bool(token)),
+        "app.admin.endpoints.verify_request_token",
+        lambda _request, token: bool(token),
     )
 
     async def permit(*args, **kwargs):

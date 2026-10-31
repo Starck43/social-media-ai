@@ -1,9 +1,8 @@
-"""Shared offline checks, admin metadata connectivity and bounded billed requests.
+"""Shared offline checks, metadata connectivity and bounded billed requests.
 
-Web settings retain the offline ``probe_short`` contract. The admin's explicit
-short POST uses ``probe_connectivity`` (metadata only, never generation).
-``probe_real_capped`` defaults to an eight-token probe for existing callers;
-admin-supplied questions get a bounded, usable answer via the same billed client.
+``probe_short`` is local-only; ``probe_connectivity`` checks metadata without
+generation. Explicit ``probe_real_capped`` calls use the same billed client and
+may spend tokens. All real probes retain bounded output and admission controls.
 """
 
 from __future__ import annotations
@@ -458,6 +457,23 @@ _PROVIDER_LIMIT_MESSAGES = {
 }
 
 
+def _finite_limit_number(value: Any):
+    """Parse bounded JSON numeric evidence without accepting bools or infinities."""
+    from decimal import Decimal, InvalidOperation
+
+    if isinstance(value, bool) or type(value) not in (int, float, str):
+        return None
+    if isinstance(value, str) and len(value) > 64:
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if not number.is_finite() or (number != 0 and abs(number.adjusted()) > 30):
+        return None
+    return number
+
+
 def provider_limit_hint(result: dict[str, Any], model=None) -> dict[str, str] | None:
     """Map structured provider status/error/price evidence to fixed safe UI copy.
 
@@ -484,6 +500,7 @@ def provider_limit_hint(result: dict[str, Any], model=None) -> dict[str, str] | 
         "rate_limits": "rate_limit",
         "usage_limit": "budget",
         "usage_limits": "budget",
+        "daily_limit": "budget",
         "billing": "billing",
         "credits": "quota",
     }
@@ -512,20 +529,15 @@ def provider_limit_hint(result: dict[str, Any], model=None) -> dict[str, str] | 
                     code = node_category
                     break
                 for field in remaining_fields:
-                    amount = node.get(field)
-                    if type(amount) in (int, float) and amount <= 0:
+                    amount = _finite_limit_number(node.get(field))
+                    if amount is not None and amount <= 0:
                         code = node_category
                         break
                 if code is None and "limit" in node and "used" in node:
-                    try:
-                        from decimal import Decimal, InvalidOperation
-
-                        limit = Decimal(str(node["limit"]))
-                        used = Decimal(str(node["used"]))
-                        if limit.is_finite() and used.is_finite() and limit > 0 and used >= limit:
-                            code = node_category
-                    except (InvalidOperation, ValueError, TypeError):
-                        pass
+                    limit = _finite_limit_number(node["limit"])
+                    used = _finite_limit_number(node["used"])
+                    if limit is not None and used is not None and limit > 0 and used >= limit:
+                        code = node_category
                 if code is not None:
                     break
             if code is not None:

@@ -12,6 +12,8 @@ import json
 import re
 import socket
 import sys
+import threading
+import time
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,6 +22,8 @@ from uuid import uuid4
 
 import httpx
 import pytest
+
+_LIVE_SERVER_PORTS: set[int] = set()
 
 # Guard before any app imports or engine creation.
 _expected_conftest = Path(__file__).resolve().parents[1] / "conftest.py"
@@ -102,7 +106,8 @@ def live_admin_app(monkeypatch):
     def guard(original):
         def checked(sock, address):
             if sock.family in {socket.AF_INET, socket.AF_INET6}:
-                if address[0] not in {"localhost", "127.0.0.1", "::1"} or address[1] != 5432:
+                loopback = address[0] in {"localhost", "127.0.0.1", "::1"}
+                if not loopback or (address[1] != 5432 and address[1] not in _LIVE_SERVER_PORTS):
                     forbidden.append(f"{address[0]}:{address[1]}")
                     raise AssertionError("Only approved loopback PostgreSQL is allowed")
             return original(sock, address)
@@ -267,21 +272,45 @@ async def test_live_console_limits_workspace_delete_to_platform_owner(live_admin
     with platform_scope():
         assert await Tenant.objects.get(id=live_records["admin_workspace_id"]) is not None
 
-    async with admin_client(live_admin_app) as owner_client:
-        await login(owner_client, live_records["owner"])
-        listing = await owner_client.get("/admin/tenant/list")
-        assert listing.status_code == 200, listing.text
-        owner_token = live_admin_app.state.csrf_manager.generate_token(
-            session_id=session_id(live_admin_app, owner_client)
-        )
-        deleted = await owner_client.delete(
-            "/admin/tenant/delete",
-            params={"pks": live_records["owner_workspace_id"]},
-            headers={"X-CSRF-Token": owner_token},
-        )
+    # Verify the same real app over loopback in Safari. This exercises browser
+    # cookies/session CSRF and the actual DELETE route with the synthetic rows.
+    import runpy
 
-    assert deleted.status_code == 200, deleted.text
-    assert "error=" not in deleted.text, f"Owner console deletion failed: {deleted.text}"
+    import uvicorn
+
+    helper = runpy.run_path(str(Path(__file__).resolve().parents[1] / "browser/p11_t28_live_console_safari.py"))
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    port = listener.getsockname()[1]
+    _LIVE_SERVER_PORTS.add(port)
+    server = uvicorn.Server(
+        uvicorn.Config(live_admin_app, host="127.0.0.1", port=port, lifespan="off", log_level="critical")
+    )
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not server.started and thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert server.started, "The loopback test ASGI server did not start"
+        helper["run_safari_console"](
+            f"http://127.0.0.1:{port}",
+            live_records["admin"].username,
+            live_records["owner"].username,
+            PASSWORD,
+            live_records["admin_workspace_id"],
+            live_records["owner_workspace_id"],
+            live_records["audit_workspace_id"],
+        )
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        listener.close()
+        _LIVE_SERVER_PORTS.discard(port)
+    assert not thread.is_alive(), "Owned loopback ASGI server must stop after Safari walkthrough"
+
     with platform_scope():
         assert await Tenant.objects.get(id=live_records["owner_workspace_id"]) is None
 

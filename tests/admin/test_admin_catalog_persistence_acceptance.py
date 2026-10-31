@@ -144,11 +144,14 @@ async def make_user():
     yield _make
     with platform_scope():
         for user_id in created:
-            # An owner account is not deletable by rule; it also holds no rows.
             target = await User.objects.prefetch_related("role").get(id=user_id)
             if target is not None and target.is_superuser:
-                await User.objects.update_by_id(user_id, is_active=False)
-                continue
+                # The platform-owner role is protected by UserManager. This is
+                # an owned synthetic fixture account, so demote it first and
+                # then remove the exact row instead of leaving an inactive SU.
+                admin_role = await PlatformRole.objects.get_by_codename("admin")
+                assert admin_role is not None
+                await User.objects.update_by_id(user_id, role_id=admin_role.id)
             await User.objects.delete_user(user_id)
 
 

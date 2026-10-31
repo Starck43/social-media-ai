@@ -41,6 +41,8 @@ class UserAdmin(BaseAdmin, model=User):
     name = "Пользователь"
     name_plural = "Пользователи"
     icon = "fa fa-user"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
 
     # Право на смену чужого пароля — это право на изменение пользователя.
     # Ключ — slug, который sqladmin ставит на кнопку (`@action` slugify'ит
@@ -220,6 +222,8 @@ class RoleAdmin(PlatformRoleGrantAdmin, model=PlatformRole):
     name = "Платформенная роль"
     name_plural = "Роли"
     icon = "fa fa-shield"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
     inline_columns = ["id", "codename", "description"]
     column_list = ["id", "codename", "description"]
     column_searchable_list = ["codename"]
@@ -244,6 +248,8 @@ class PermissionAdmin(PermissionLabelAdmin, model=Permission):
     name = "Разрешение"
     name_plural = "Разрешения"
     icon = "fa fa-key"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
     inline_columns = ["id", "name", "action_type"]
     column_list = ["id", "codename", "name", "action_type"]
     column_searchable_list = ["name"]
@@ -272,6 +278,8 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     name = "Рабочее пространство"
     name_plural = "Рабочие пространства"
     icon = "fa fa-building"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
 
     inline_columns = ["id", "name", "slug", "plan", "is_active"]
     column_list = [
@@ -391,6 +399,8 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
     name = "Личные креды"
     name_plural = "Личные креды"
     icon = "fa fa-user-lock"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
 
     inline_columns = ["id", "platform", "kind", "label", "expires_at", "is_active"]
     column_list = ["id", "user_id", "platform", "kind", "label", "expires_at", "is_active", "updated_at"]

@@ -41,6 +41,8 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
     name = "Провайдер ИИ"
     name_plural = "Провайдеры ИИ"
     icon = "fa fa-server"
+    category = "ИИ и аналитика"
+    category_icon = "fa fa-robot"
     # The stock templates have no hook for a page script; these two add the UID
     # autofill next to them.
     create_template = "sqladmin/llm_create.html"
@@ -373,6 +375,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     name = "Модель ИИ"
     name_plural = "Модели ИИ"
     icon = "fa fa-microchip"
+    category = "ИИ и аналитика"
+    category_icon = "fa fa-robot"
     create_template = "sqladmin/llm_create.html"
     edit_template = "sqladmin/llm_edit.html"
 

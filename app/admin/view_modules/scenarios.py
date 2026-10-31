@@ -28,6 +28,8 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
     name = "Сценарий"
     name_plural = "Сценарии"
     icon = "fa fa-robot"
+    category = "ИИ и аналитика"
+    category_icon = "fa fa-robot"
 
     action_permissions = {
         "view-prompts": ActionType.VIEW,

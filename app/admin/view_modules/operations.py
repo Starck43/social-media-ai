@@ -46,6 +46,8 @@ class BotActionAdmin(BaseAdmin, model=BotAction):
     name = "Действие бота"
     name_plural = "Действия ботов"
     icon = "fa fa-bolt"
+    category = "Задачи и операции"
+    category_icon = "fa fa-cogs"
     can_create = False
     form_columns = []
 
@@ -138,6 +140,8 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     name = "Задача"
     name_plural = "Задачи"
     icon = "fa fa-clock"
+    category = "Задачи и операции"
+    category_icon = "fa fa-cogs"
 
     # Запуск задачи ставит job в очередь — это изменение, а не просмотр.
     action_permissions = {"run-now": ActionType.UPDATE}
@@ -579,6 +583,8 @@ class JobAdmin(BaseAdmin, model=Job):
     name = "Выполнение"
     name_plural = "Очередь выполнения"
     icon = "fa fa-list"
+    category = "Задачи и операции"
+    category_icon = "fa fa-cogs"
     can_create = False
     can_edit = False
     can_delete = False

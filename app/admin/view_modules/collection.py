@@ -17,6 +17,8 @@ class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
     name = "Собранный контент"
     name_plural = "Собранный контент"
     icon = "fa fa-database"
+    category = "Источники и сбор"
+    category_icon = "fa fa-rss"
 
     # High-volume raw content stays on its dedicated list, never in parent inlines.
     inline_exclude = True

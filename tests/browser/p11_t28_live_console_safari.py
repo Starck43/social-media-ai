@@ -55,7 +55,6 @@ _APPLESCRIPT = r"""on run argv
             if adminResult contains "status" or adminResult contains "error" then exit repeat
         end repeat
         if adminResult does not contain "status" then error "Safari admin workspace check did not finish: " & adminResult
-        tell application "Safari" to do JavaScript "localStorage.setItem('__p11t28_admin', " & quoted form of adminResult & ")" in current tab of (window id ownedID)
 
         tell application "Safari" to set URL of current tab of (window id ownedID) to (item 7 of argv)
         delay 0.6
@@ -72,7 +71,7 @@ _APPLESCRIPT = r"""on run argv
 
         tell application "Safari" to set URL of current tab of (window id ownedID) to workspaceURL
         delay 0.6
-        tell application "Safari" to do JavaScript "(async()=>{try{const token=document.querySelector('meta[name=\"csrf-token\"]')?.content||'';const remove=async id=>{const r=await fetch('/admin/tenant/delete?pks='+id,{method:'DELETE',headers:{'X-CSRF-Token':token}});return {status:r.status,text:await r.text()}};const allowed=await remove(" & ownerWorkspace & ");const protectedRow=await remove(" & auditWorkspace & ");window.__p11t28_owner={allowed,protectedRow,admin:JSON.parse(localStorage.getItem('__p11t28_admin')||'{}')}}catch(e){window.__p11t28_owner={error:String(e)}}})()" in current tab of (window id ownedID)
+        tell application "Safari" to do JavaScript "(async()=>{try{const token=document.querySelector('meta[name=\"csrf-token\"]')?.content||'';const remove=async id=>{const r=await fetch('/admin/tenant/delete?pks='+id,{method:'DELETE',headers:{'X-CSRF-Token':token}});return {status:r.status,text:await r.text()}};const allowed=await remove(" & ownerWorkspace & ");const protectedRow=await remove(" & auditWorkspace & ");window.__p11t28_owner={allowed,protectedRow}}catch(e){window.__p11t28_owner={error:String(e)}}})()" in current tab of (window id ownedID)
         set outputText to ""
         repeat 80 times
             delay 0.25
@@ -80,10 +79,10 @@ _APPLESCRIPT = r"""on run argv
             if outputText contains "allowed" or outputText contains "error" then exit repeat
         end repeat
         if outputText does not contain "allowed" then error "Safari owner workspace check did not finish: " & outputText
-        tell application "Safari" to do JavaScript "localStorage.setItem('__p11t28_final', " & quoted form of outputText & ")" in current tab of (window id ownedID)
-        set adminSaved to ""
-        tell application "Safari" to set adminSaved to do JavaScript "localStorage.getItem('__p11t28_admin')||'{}'" in current tab of (window id ownedID)
-        return outputText
+        -- Return both phases in one payload. A cross-page channel (localStorage)
+        -- is not reliable here: the owner phase navigates through logout and a
+        -- fresh login, and the stored admin result was observed arriving empty.
+        return adminResult & linefeed & "__P11T28_PHASE_SPLIT__" & linefeed & outputText
     on error errorMessage number errorNumber
         if ownedID is not missing value then try
             tell application "Safari" to close (window id ownedID)
@@ -129,12 +128,15 @@ def run_safari_console(
     )
     if result.returncode:
         raise RuntimeError("Safari live SQLAdmin walkthrough failed: " + (result.stderr or result.stdout)[-1800:])
+    admin_raw, _, owner_raw = result.stdout.strip().partition("\n__P11T28_PHASE_SPLIT__\n")
+    if not owner_raw:
+        raise RuntimeError("Safari did not return both SQLAdmin phases: " + result.stdout[-1200:])
     try:
-        payload = json.loads(result.stdout.strip())
+        admin_result = json.loads(admin_raw.strip())
+        owner_result = json.loads(owner_raw.strip())
     except (TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Safari did not return its SQLAdmin result object: " + result.stdout[-1200:]) from exc
-    admin_result = payload.get("admin", {})
-    owner_result = payload
+        raise RuntimeError("Safari did not return its SQLAdmin result objects: " + result.stdout[-1200:]) from exc
+    payload = {**owner_result, "admin": admin_result}
     assert admin_result.get("details") == 200, payload
     assert admin_result.get("status") == 403, payload
     assert owner_result.get("allowed", {}).get("status") == 200, payload

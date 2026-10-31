@@ -43,10 +43,11 @@ journey gate, not a way to rename or retroactively accept P8-T29.
    permission-filtered task plan/results, embedded pages and Safari UX refinements;
    accepted `6a2e6de55ae417b6ec7239ad00103cba8335f161`, PR #290
    (merge `27f83079df7488bec6c4deaf780a1032477cab47`).
-8. [P8-T43](../tasks/p8-t43.md) — preserve each source post permalink and its
-   media URL references from collection through analysis and agent-rendered results;
-   use source URLs only (no media downloading/storage). Coordinate overlapping chat
-   presentation with P8-T42.
+8. [P8-T43](../audit/p8-t43.md) — DONE 2026-10-31: each source post permalink,
+   per-post media URL references (or explicit missing/unsupported state),
+   `source_id` and tenant scope survive collection → analysis → agent result →
+   analytics page; reference-only media, no schema change. Accepted
+   `93a51b363eaa8f55a9eedb91bff1a1c6bf28a909`, PR #289.
 
 9. [P8-T44](../audit/p8-t44.md) — DONE 2026-10-31: private photo/document attachments in the
    shared chat with magic-byte validation, large-file token confirmation gate and model capability checks; accepted `e1f79788`, PR #292 (merge `7c76bace940c174a2cd33d77eaf839bc9f7d4a61`).

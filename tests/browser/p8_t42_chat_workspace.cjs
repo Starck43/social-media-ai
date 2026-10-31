@@ -67,6 +67,7 @@ try {
         const panel = document.querySelector('#chat-workspace-panel');
         let app = null;
         let escapeAssertion = null;
+        let submitted = null;
         const expressionErrors = [];
         const toggleTrace = [];
         window.addEventListener('error', event => {
@@ -83,6 +84,18 @@ try {
             expressionErrors: expressionErrors.slice(-5),
             toggleTrace: toggleTrace.slice(-4),
             panelOpen: app?.panelOpen ?? null,
+            chatPending: app?.pending ?? null,
+            chatSending: app?.sending ?? null,
+            selectedTaskId: app?.workspaceTaskId ?? null,
+            taskLoading: app?.workspaceTaskLoading ?? null,
+            taskError: app?.workspaceTaskError ?? '',
+            awaitingConfirmation: app?.awaitingConfirmation ?? null,
+            notice: app?.notice || '',
+            submitted: submitted ? Object.fromEntries(submitted.entries()) : null,
+            chatSend: root?.querySelector('.chat-send') ? {
+              disabled: root.querySelector('.chat-send').disabled,
+              inputLength: root.querySelector('.chat-input')?.value.length ?? null,
+            } : null,
             panelInlineDisplay: panel?.style.display || '',
             panelDisplay: panel ? getComputedStyle(panel).display : '',
             expanded: toggle?.getAttribute('aria-expanded') || '',
@@ -117,7 +130,6 @@ try {
         check(!document.querySelector('.chat-attach'), 'unsupported file attachment control is absent');
         check(root.querySelector('.chat-panel-toggle')?.getAttribute('aria-controls') === 'chat-workspace-panel', 'panel toggle is associated accessibly');
 
-        let submitted = null;
         let failNextSnapshot = false;
         let releaseStaleSnapshot;
         let staleResponseParsed = false;
@@ -211,7 +223,10 @@ try {
         check(document.querySelector('.chat-context-label').textContent.includes('Fixture task'), 'selected task is visible beside chat');
 
         input.value = 'Ask about selected task';
-        document.querySelector('.chat-send').click();
+        const chatSend = document.querySelector('.chat-send');
+        await waitFor(() => !chatSend.disabled && !app.pending && !app.workspaceTaskLoading &&
+          !app.workspaceTaskError && app.workspaceTask?.id === 57, 'send becomes available for the loaded selected task');
+        chatSend.click();
         await waitFor(() => submitted?.get('task_id') === '57' && !app.pending, 'selected-task request completes');
         check(submitted?.get('task_id') === '57', 'real chat send includes the explicit selected task ID');
         check(submitted?.get('text') === 'Ask about selected task', 'real chat send preserves the typed request');
@@ -221,7 +236,8 @@ try {
         app.workspaceTaskLoading = true;
         app.workspaceTaskError = 'temporary refresh error';
         input.value = 'да';
-        document.querySelector('.chat-send').click();
+        await waitFor(() => !chatSend.disabled && app.awaitingConfirmation, 'confirmation remains sendable during task refresh');
+        chatSend.click();
         await waitFor(() => submitted?.get('text') === 'да' && !app.pending, 'confirmation reply completes during task refresh');
         check(submitted?.get('text') === 'да', 'pending confirmation can be sent while task refresh is pending');
         check(submitted?.get('task_id') === '57', 'pending reply leaves authority to the existing server confirmation state');

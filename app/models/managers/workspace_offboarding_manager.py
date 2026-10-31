@@ -65,7 +65,7 @@ class WorkspaceOffboardingManager:
         rows = (
             await session.execute(
                 text(
-                    "SELECT t.tgname, t.tgtype, t.tgenabled, p.proname, pn.nspname, "
+                    "SELECT t.tgname, t.tgtype, t.tgenabled::text, p.proname, pn.nspname, "
                     "p.prosrc, p.prosecdef, p.proconfig, p.pronargs, l.lanname, rt.typname "
                     "FROM pg_catalog.pg_trigger AS t "
                     "JOIN pg_catalog.pg_class AS c ON c.oid = t.tgrelid "

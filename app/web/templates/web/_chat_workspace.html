@@ -18,7 +18,7 @@
         <p class="chat-panel-hint">Откроются поверх диалога. Черновик останется на месте.</p>
         <div class="chat-panel-actions">
             {% for item in nav if item.key in ('sources', 'scenarios') and item.ready %}
-            <button type="button" @click="openWorkspacePage({{ item.href | tojson | forceescape }}, {{ item.label | tojson | forceescape }})">{{ 'Источники для задачи' if item.key == 'sources' else 'Сценарии обработки' }}</button>
+            <button type="button" @click="openWorkspacePage({{ item.href | tojson | forceescape }}, {{ item.label | tojson | forceescape }}, $event.currentTarget)">{{ 'Источники для задачи' if item.key == 'sources' else 'Сценарии обработки' }}</button>
             {% endfor %}
         </div>
     </section>
@@ -56,7 +56,7 @@
         <template x-if="workspaceTask">
             <div class="chat-selected-task">
                 <p class="chat-task-name" x-text="workspaceTask?.name"></p>
-                <button type="button" @click="openWorkspacePage(workspaceTask?.task_url, workspaceTask?.name)">Настройки и управление</button>
+                <button type="button" @click="openWorkspacePage(workspaceTask?.task_url, workspaceTask?.name, $event.currentTarget)">Настройки и управление</button>
                 <p class="chat-panel-hint" x-text="'Проверено в ' + workspaceCheckedAt + '. Обновите для актуального состояния.'"></p>
                 <h4>План задачи</h4>
                 <p x-show="!workspaceTask?.plan" class="chat-panel-hint" x-text="workspacePlanNotice(workspaceTask?.plan_status)"></p>
@@ -84,7 +84,7 @@
                         </template>
                         <ul class="chat-result-links">
                             <template x-for="analysis in (workspaceTask?.latest?.analyses || [])" :key="analysis.url">
-                                <li><button type="button" @click="openWorkspacePage(analysis.url, analysis.title)" x-text="analysis.title"></button></li>
+                                <li><button type="button" @click="openWorkspacePage(analysis.url, analysis.title, $event.currentTarget)" x-text="analysis.title"></button></li>
                             </template>
                         </ul>
                         <button type="button" @click="draftAction('Покажи результаты выбранной задачи со ссылками на материалы, охватом и ограничениями. Предложи следующий шаг.')"

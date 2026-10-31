@@ -47,64 +47,65 @@ def psycopg_dsn(raw: str) -> str:
 
 
 def database_snapshot(conn, schema: str) -> dict:
-    """Capture schema inventories plus exact P11-T29 reference rows/revision."""
+    """Capture the revision, full access catalog, and owned journal count."""
+    from psycopg2 import sql
     from psycopg2.extras import RealDictCursor
 
+    if schema not in {"public", "test_schema"}:
+        raise ValueError("Only public and test_schema snapshots are supported")
+    quoted = sql.Identifier(schema)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        resources = ("audit.workspace_offboarding", "tenancy.workspace")
-        cur.execute("SELECT version_num FROM test_schema.alembic_version ORDER BY version_num")
-        revisions = sorted(row["version_num"] for row in cur.fetchall())
-        cur.execute(
-            """SELECT id, resource_key, model_name, table_name, description, is_managed, created_at, updated_at
-                 FROM test_schema.model_types WHERE resource_key = ANY(%s) ORDER BY resource_key""",
-            (list(resources),),
-        )
-        model_types = [dict(row) for row in cur.fetchall()]
-        cur.execute(
-            """SELECT p.id, mt.resource_key, p.name, p.action_type::text AS action_type
-                 FROM test_schema.permissions p JOIN test_schema.model_types mt ON mt.id = p.model_type_id
-                WHERE mt.resource_key = ANY(%s) ORDER BY mt.resource_key, p.action_type::text""",
-            (list(resources),),
-        )
-        permissions = [dict(row) for row in cur.fetchall()]
-        cur.execute(
-            """SELECT r.codename AS role, p.id AS permission_id, p.action_type::text AS action_type
-                 FROM test_schema.role_permission rp
-                 JOIN test_schema.roles r ON r.id = rp.role_id
-                 JOIN test_schema.permissions p ON p.id = rp.permission_id
-                 JOIN test_schema.model_types mt ON mt.id = p.model_type_id
-                WHERE mt.resource_key = ANY(%s) ORDER BY mt.resource_key, r.codename, p.action_type::text""",
-            (list(resources),),
-        )
-        role_permissions = [dict(row) for row in cur.fetchall()]
-        cur.execute(
-            """SELECT r.codename AS role, p.id AS permission_id, p.action_type::text AS action_type
-                 FROM test_schema.workspace_role_permission rp
-                 JOIN test_schema.workspace_roles r ON r.id = rp.role_id
-                 JOIN test_schema.permissions p ON p.id = rp.permission_id
-                 JOIN test_schema.model_types mt ON mt.id = p.model_type_id
-                WHERE mt.resource_key = ANY(%s) ORDER BY mt.resource_key, r.codename, p.action_type::text""",
-            (list(resources),),
-        )
-        workspace_role_permissions = [dict(row) for row in cur.fetchall()]
         cur.execute(
             """SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                 WHERE n.nspname = %s AND c.relkind IN ('r','p','S') ORDER BY c.relname""",
             (schema,),
         )
         relations = [row["relname"] for row in cur.fetchall()]
-        (
-            cur.execute("""SELECT count(*) AS row_count FROM test_schema.workspace_offboarding_events""")
-            if "workspace_offboarding_events" in relations
-            else None
-        )
-        event_count = cur.fetchone()["row_count"] if "workspace_offboarding_events" in relations else 0
+        tables = set(relations)
+        revisions = []
+        if "alembic_version" in tables:
+            cur.execute(sql.SQL("SELECT version_num FROM {}.alembic_version ORDER BY version_num").format(quoted))
+            revisions = sorted(row[0] for row in cur.fetchall())
+        catalog_rows = {}
+        for table, order in (
+            ("model_types", "id"),
+            ("permissions", "id"),
+            ("roles", "id"),
+            ("role_permission", "role_id, permission_id"),
+            ("workspace_roles", "id"),
+            ("workspace_role_permission", "role_id, permission_id"),
+        ):
+            if table not in tables:
+                catalog_rows[table] = []
+                continue
+            query = sql.SQL("SELECT * FROM {}.{} ORDER BY {}").format(
+                quoted,
+                sql.Identifier(table),
+                sql.SQL(", ").join(sql.Identifier(part.strip()) for part in order.split(",")),
+            )
+            cur.execute(query)
+            catalog_rows[table] = [dict(row) for row in cur.fetchall()]
+        business_counts = {}
+        for table in (
+            "users",
+            "tenants",
+            "action_audit_events",
+            "llm_budget_days",
+            "task_billing_payers",
+        ):
+            if table not in tables:
+                business_counts[table] = None
+                continue
+            cur.execute(sql.SQL("SELECT count(*) AS row_count FROM {}.{}").format(quoted, sql.Identifier(table)))
+            business_counts[table] = cur.fetchone()["row_count"]
+        event_count = 0
+        if "workspace_offboarding_events" in tables:
+            cur.execute(sql.SQL("SELECT count(*) AS row_count FROM {}.workspace_offboarding_events").format(quoted))
+            event_count = cur.fetchone()["row_count"]
         return {
             "revision": revisions,
-            "model_types": model_types,
-            "permissions": permissions,
-            "role_permissions": role_permissions,
-            "workspace_role_permissions": workspace_role_permissions,
+            "catalog_rows": catalog_rows,
+            "business_counts": business_counts,
             "relations": relations,
             "offboarding_event_count": event_count,
         }
@@ -143,6 +144,46 @@ def run(command: list[str], env: dict[str, str]) -> None:
     subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
+def verify_normal_downgrade_refusal(conn, env: dict[str, str]) -> None:
+    """A non-empty immutable journal must survive a normal revision downgrade."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT version_num FROM test_schema.alembic_version ORDER BY version_num")
+        before_revision = [row[0] for row in cur.fetchall()]
+        cur.execute("SELECT count(*) FROM test_schema.workspace_offboarding_events")
+        before_rows = cur.fetchone()[0]
+    if before_revision != [TARGET_REVISION] or before_rows < 1:
+        raise RuntimeError("Normal-downgrade refusal requires revision 0119 and at least one successful journal row")
+    command = [sys.executable, "-m", "alembic", "downgrade", EXPECTED_REVISION]
+    print("CHECK expected refusal:", " ".join(command), flush=True)
+    result = subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True, check=False)
+    diagnostic = result.stdout + result.stderr
+    if result.returncode == 0 or "Workspace offboarding evidence is retained" not in diagnostic:
+        raise RuntimeError("A normal downgrade did not refuse retained workspace-offboarding evidence")
+    with conn.cursor() as cur:
+        cur.execute("SELECT version_num FROM test_schema.alembic_version ORDER BY version_num")
+        after_revision = [row[0] for row in cur.fetchall()]
+        cur.execute("SELECT count(*) FROM test_schema.workspace_offboarding_events")
+        after_rows = cur.fetchone()[0]
+    if after_revision != before_revision or after_rows != before_rows:
+        raise RuntimeError("Refused downgrade changed the migration revision or immutable journal rows")
+    print("PASS: normal downgrade refused without changing revision or retained journal rows.")
+
+
+def assert_synthetic_prefixes_removed(conn) -> None:
+    """Catch owned test rows that ordinary fixture teardown failed to remove."""
+    checks = (
+        ("users", "username LIKE 'p11t29-%' OR email LIKE 'p11t29-%'"),
+        ("tenants", "slug LIKE 'p11-t29-%' OR name LIKE 'P11-T29 %'"),
+        ("llm_budget_days", "baseline_version LIKE 'p11-t29-%'"),
+    )
+    with conn.cursor() as cur:
+        for table, predicate in checks:
+            cur.execute(f"SELECT count(*) FROM test_schema.{table} WHERE {predicate}")
+            remaining = cur.fetchone()[0]
+            if remaining:
+                raise RuntimeError(f"Cleanup failure: {remaining} owned P11-T29 rows remain in {table}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", help="perform migration, tests, downgrade, and cleanup")
@@ -153,9 +194,8 @@ def main() -> int:
     print(
         "Sequence: prepare T28 reference; advisory lock + active-session check; snapshot public+test_schema; verify baseline;"
     )
-    print(
-        "          upgrade; focused pytest/Safari; fixture cleanup; test-only downgrade; exact before/after comparison."
-    )
+    print("          upgrade; focused pytest/Safari; cleanup; normal downgrade refusal; explicit test-only downgrade;")
+    print("          exact public/test_schema layout and full reference-catalog comparison.")
     if args.plan or not args.execute:
         print("No database connection made. Pass --execute only during the approved exclusive test_schema window.")
         return 0
@@ -187,6 +227,7 @@ def main() -> int:
             public_before = inventory("public", inventory_env)
             test_before_layout = inventory(schema, inventory_env)
             before = database_snapshot(conn, schema)
+            public_reference_before = database_snapshot(conn, "public")
             if before["revision"] != [EXPECTED_REVISION]:
                 raise RuntimeError(f"STOP: expected {EXPECTED_REVISION}, found {before['revision']}")
             failure = None
@@ -210,6 +251,8 @@ def main() -> int:
                     ],
                     env,
                 )
+                assert_synthetic_prefixes_removed(conn)
+                verify_normal_downgrade_refusal(conn, migration_env)
             except BaseException as exc:
                 failure = exc
             finally:
@@ -235,12 +278,15 @@ def main() -> int:
                     print("Acceptance failed; test-schema state was downgraded when revision permitted.")
 
             after = database_snapshot(conn, schema)
+            public_reference_after = database_snapshot(conn, "public")
             test_after_layout = inventory(schema, inventory_env)
             public_after = inventory("public", inventory_env)
             if test_after_layout != test_before_layout:
                 raise RuntimeError("test_schema layout differs after downgrade")
             if public_after != public_before:
                 raise RuntimeError("public schema layout changed during P11-T29 validation")
+            if public_reference_after != public_reference_before:
+                raise RuntimeError("public schema references or catalog data changed during P11-T29 validation")
             if after != before:
                 raise RuntimeError(
                     f"test_schema revision/reference state differs after cleanup: before={before}; after={after}"

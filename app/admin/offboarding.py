@@ -87,8 +87,11 @@ async def offboarding_page(view, request, *, submit=False):
 async def offboarding_journal(view, request):
     _actor(view, request)
     export = request.query_params.get("format") == "csv"
-    async with async_session_maker() as session:
-        rows = await WorkspaceOffboardingEvent.objects.export_events(session=session, limit=1000 if export else 100)
+    try:
+        async with async_session_maker() as session:
+            rows = await WorkspaceOffboardingEvent.objects.export_events(session=session, limit=1000 if export else 100)
+    except RuntimeError:
+        raise HTTPException(503, "Workspace offboarding journal requires migration 0119") from None
     if export:
         output = StringIO()
         fields = [

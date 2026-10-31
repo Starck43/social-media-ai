@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -69,8 +70,22 @@ async def _fresh_actor(session, actor_id: int) -> None:
         raise OffboardingError(403, "superuser_required", "Права собственника платформы больше недоступны.")
 
 
+async def _journal_ready(session) -> None:
+    try:
+        await WorkspaceOffboardingEvent.objects.ensure_available(session=session)
+    except RuntimeError:
+        raise OffboardingError(
+            503, "migration_required", "Журнал удаления ещё не подготовлен. Необходимо применить миграцию 0119."
+        ) from None
+
+
 def _choices(reason_code: str, retention_policy: str) -> None:
-    if reason_code not in REASON_LABELS or retention_policy not in POLICY_LABELS:
+    if (
+        not isinstance(reason_code, str)
+        or not isinstance(retention_policy, str)
+        or reason_code not in REASON_LABELS
+        or retention_policy not in POLICY_LABELS
+    ):
         raise OffboardingError(400, "invalid_policy", "Выберите причину удаления и политику хранения.")
 
 
@@ -147,6 +162,7 @@ async def preview_offboarding(
         raise OffboardingError(400, "invalid_workspace", "Выберите одно рабочее пространство.")
     async with async_session_maker() as session:
         await _fresh_actor(session, actor_id)
+        await _journal_ready(session)
         workspace = (await session.execute(select(Tenant).where(Tenant.id == workspace_id))).scalar_one_or_none()
         if workspace is None:
             raise OffboardingError(404, "workspace_missing", "Рабочее пространство не найдено.")
@@ -188,7 +204,7 @@ def _read_review(actor_id: int, review_token: str) -> dict:
         or type(payload.get("workspace_id")) is not int
         or not 0 < payload["workspace_id"] <= 2147483647
         or not isinstance(payload.get("event_id"), str)
-        or len(payload["event_id"]) != 32
+        or re.fullmatch(r"[0-9a-f]{32}", payload["event_id"]) is None
         or not isinstance(payload.get("version"), str)
     ):
         raise OffboardingError(400, "invalid_review", "Подтверждение не принадлежит текущему пользователю.")
@@ -222,6 +238,7 @@ async def confirm_offboarding(actor_id: int, review_token: str) -> dict:
         async with async_session_maker() as session:
             async with session.begin():
                 await _fresh_actor(session, actor_id)
+                await _journal_ready(session)
                 workspace = (
                     await session.execute(select(Tenant).where(Tenant.id == payload["workspace_id"]).with_for_update())
                 ).scalar_one_or_none()

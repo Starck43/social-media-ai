@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+__source_only__ = True
+
 from app.core.access_catalog import RESOURCES, resolve_permission_key, resource_for, workspace_grants
 from app.core.permissions import has_permission, has_permission_by_codename, has_role, permission_scope
 from app.core.tenant_context import tenant_scope
@@ -138,10 +140,22 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
     actual = {
         table: (row[0], row[1], set(row[2].split()), row[3], row[4]) for table, row in migration.RESOURCES.items()
     }
+    # P11-T12 added the action-audit resource and P11-T28 added one declared
+    # workspace action after the 0096 snapshot. Keep that migration immutable
+    # and make only these post-baseline deltas explicit; every other resource
+    # identity, action and scope flag must still match.
+    actual["action_audit_events"] = ("audit.action_audit", "actionauditevent", {"view", "export"}, True, False)
+    key, model, actions, is_workspace, is_personal = actual["tenants"]
+    actual["tenants"] = (key, model, actions | {"delete"}, is_workspace, is_personal)
     assert expected == actual
     for role, pairs in migration._workspace_grant_pairs().items():
         canonical = {(resource_for(model).key, action.db_value) for model, action in workspace_grants(role)}
-        assert canonical == pairs
+        baseline_pairs = pairs | (
+            {("audit.action_audit", "view"), ("audit.action_audit", "export")}
+            if role in ("owner", "admin")
+            else set()
+        )
+        assert canonical == baseline_pairs
 
 
 def test_migration_permission_map_keeps_canonical_model_without_permissions(monkeypatch):

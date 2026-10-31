@@ -45,7 +45,7 @@
         {% endif %}
     </div>
 
-    <div class="chat-workspace-toolbar">
+    <div class="chat-workspace-toolbar" x-show="workspaceTaskId" x-cloak>
         <span class="chat-context-label" x-show="workspaceTaskId" x-cloak>
             <span x-text="workspaceTask ? 'Задача: ' + workspaceTask.name : 'Задача #' + workspaceTaskId"></span>
             <button type="button" @click="clearWorkspaceTask()" :disabled="pending || awaitingConfirmation" aria-label="Снять выбор задачи">×</button>

@@ -1,6 +1,9 @@
 function chatApp() {
         return {
-            panelOpen: window.matchMedia('(min-width: 1200px)').matches,
+            panelOpen: true,
+            modalTitle: '',
+            modalLoading: false,
+            modalError: '',
             workspaceTasks: [],
             workspaceSearch: '',
             workspaceOffset: 0,
@@ -36,6 +39,7 @@ function chatApp() {
             csrf: document.querySelector('input[name="_csrf"]')?.value || '',
 
             init() {
+                try { this.panelOpen = sessionStorage.getItem('chat.workspace.panel') !== 'closed'; } catch (_) { /* Storage may be unavailable in private sessions. */ }
                 this.loadWorkspaceTasks();
                 // Event delegation for JSON copy buttons (added via x-html)
                 document.addEventListener('click', (e) => {
@@ -60,19 +64,78 @@ function chatApp() {
                     target.addEventListener('scroll', this._onScrollBound, { passive: true });
                     window.addEventListener('resize', this._onScrollBound);
                 }
+                if (typeof ResizeObserver !== 'undefined') {
+                    this._chatResizeObserver = new ResizeObserver(() => this.onScroll());
+                    if (this.$refs.messages) this._chatResizeObserver.observe(this.$refs.messages);
+                    if (this.$refs.form) this._chatResizeObserver.observe(this.$refs.form);
+                }
                 // Initialize messages from server-rendered data
                 this.messages = this.visibleMessages(window.__chatMessages || [])
                 // Scroll to bottom on page load
                 this.$nextTick(() => { this.scrollToBottom(); this.onScroll(); })
             },
 
+            destroy() {
+                this._chatResizeObserver?.disconnect();
+                const target = this._scroller === document.scrollingElement || this._scroller === document.documentElement ? window : this._scroller;
+                target?.removeEventListener('scroll', this._onScrollBound);
+                window.removeEventListener('resize', this._onScrollBound);
+                this.stopThinking();
+            },
             toggleWorkspacePanel() {
                 this.panelOpen = !this.panelOpen;
+                try { sessionStorage.setItem('chat.workspace.panel', this.panelOpen ? 'open' : 'closed'); } catch (_) { /* Keep the panel usable without storage. */ }
                 this.$nextTick(() => {
                     const target = this.panelOpen ? this.$refs.workspacePanel : this.$refs.panelToggle;
                     target?.focus();
+                    this.onScroll();
                     if (this.panelOpen && !window.matchMedia('(min-width: 1200px)').matches) target?.scrollIntoView({block: 'start'});
                 });
+            },
+            openWorkspacePage(path, title, launcher = document.activeElement) {
+                let url;
+                try { url = new URL(path, window.location.origin); } catch (_) { return; }
+                // Keep authentication and canonical page permission checks in the iframe.
+                if (url.origin !== window.location.origin || !url.pathname.startsWith('/app/') || url.pathname.startsWith('/app/chat')) return;
+                url.searchParams.set('embedded', '1');
+                this.modalTitle = title;
+                this.modalLoading = true;
+                this.modalError = '';
+                this._modalLauncher = launcher;
+                this.$refs.workspaceFrame.src = url.href;
+                if (!this.$refs.workspaceDialog.open) this.$refs.workspaceDialog.showModal();
+            },
+            workspaceFrameLoaded() {
+                const frame = this.$refs.workspaceFrame;
+                if (!frame.hasAttribute('src')) return;
+                this.modalLoading = false;
+                try {
+                    const doc = frame.contentDocument;
+                    if (!doc || !frame.contentWindow.location.pathname.startsWith('/app/')) {
+                        this.modalError = 'Страница недоступна. Проверьте вход и доступ к данным.';
+                        return;
+                    }
+                    // Existing pages keep their scripts, forms, CSRF and permission checks.
+                    // Hide only duplicate shell navigation inside this embedded document.
+                    const style = doc.createElement('style');
+                    style.textContent = '.shell-sidebar,.shell-drawer,.shell-navbar,.shell-skip,.shell-guest-theme{display:none!important}.shell-layout{display:block!important}.shell-page{margin:0!important;min-width:0}.shell-content{padding:16px!important}';
+                    doc.head.append(style);
+                    doc.addEventListener('keydown', event => {
+                        if (event.key === 'Escape' && !doc.querySelector('dialog[open]')) {
+                            event.preventDefault();
+                            this.$refs.workspaceDialog.close();
+                        }
+                    });
+                } catch (_) { this.modalError = 'Не удалось открыть страницу в этом окне.'; }
+            },
+            workspaceModalClosed() {
+                this.$refs.workspaceFrame.removeAttribute('src');
+                this.modalLoading = false;
+                this.modalError = '';
+                const launcher = this._modalLauncher;
+                this.$nextTick(() => (launcher?.isConnected && launcher.getClientRects().length ? launcher : this.$refs.input)?.focus());
+                if (this.workspaceTaskId) this.refreshWorkspaceTask();
+                this.loadWorkspaceTasks(this.workspaceOffset);
             },
             draftAction(text) {
                 if (this.pending || this.awaitingConfirmation) return;
@@ -459,21 +522,18 @@ function chatApp() {
 
             onScroll() {
                 const scroller = this._scroller || this.scrollContainer();
-                if (!scroller) return;
-                const isDoc = scroller === document.scrollingElement || scroller === document.documentElement;
-                // Primary: is there scrollable room below (>120px)? Works even with short chats.
-                const distance = isDoc
-                    ? scroller.scrollHeight - window.innerHeight - window.scrollY
-                    : scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-                if (distance > 120) { this.autoScroll = false; return; }
-                // Secondary: input form is below the visible viewport (long page, form out of view).
                 const form = this.$refs.form;
-                if (form) {
-                    const rect = form.getBoundingClientRect();
-                    const viewport = window.innerHeight || document.documentElement.clientHeight;
-                    if (rect.top - viewport > 120) { this.autoScroll = false; return; }
+                if (!scroller || !form) return;
+                const isDoc = scroller === document.scrollingElement || scroller === document.documentElement;
+                const bounds = isDoc ? {top: 0, bottom: window.innerHeight} : scroller.getBoundingClientRect();
+                const rect = form.getBoundingClientRect();
+                // Only offer the shortcut after the entire composer is below view.
+                // A tall context panel must not make it appear beside a visible input.
+                this.autoScroll = rect.top < bounds.bottom + 80;
+                const chat = this.$refs.messages?.getBoundingClientRect();
+                if (chat && this.$refs.scrollButton) {
+                    this.$refs.scrollButton.style.left = (chat.left + chat.width / 2) + 'px';
                 }
-                this.autoScroll = true;
             },
 
             copyText(text, event) {

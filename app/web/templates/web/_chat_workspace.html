@@ -2,17 +2,23 @@
        @keydown.escape.stop="if (panelOpen) toggleWorkspacePanel()">
     <div class="chat-panel-heading">
         <h2 id="chat-workspace-title">Рабочий контекст</h2>
-        <button type="button" @click="toggleWorkspacePanel()" aria-label="Свернуть рабочий контекст">×</button>
+        <button type="button" @click="toggleWorkspacePanel()" class="chat-panel-close" aria-label="Свернуть рабочий контекст">›</button>
     </div>
     <section aria-labelledby="chat-actions-title">
         <h3 id="chat-actions-title">Быстрые действия</h3>
         <p class="chat-panel-hint">Подготовят запрос в поле ввода. Проверьте его перед отправкой.</p>
         <div class="chat-panel-actions">
-            <button type="button" @click="draftAction(starters[2].text)" :disabled="pending || awaitingConfirmation">Сбор и анализ</button>
-            <button type="button" @click="draftAction('Подготовь сводку. Сначала уточни период, источники и нужный результат.')" :disabled="pending || awaitingConfirmation">Сводка</button>
-            <button type="button" @click="draftAction(starters[3].text)" :disabled="pending || awaitingConfirmation">Расписание</button>
-            {% for item in nav if item.key == 'sources' and item.ready %}
-            <a href="{{ item.href }}" target="_blank" rel="noopener">Источники ↗</a>
+            <button type="button" @click="draftAction(starters[2].text)" :disabled="pending || awaitingConfirmation">Подготовить задачу</button>
+            <button type="button" @click="draftAction(workspaceTaskId ? 'Разбери результаты выбранной задачи: ключевые выводы, ссылки на материалы, охват и ограничения. Отдели подтверждённые данные от предположений.' : 'Разбери результаты, которые мы обсуждали: ключевые выводы, ссылки, охват и ограничения. Если данных не хватает, уточни задачу.')" :disabled="pending || awaitingConfirmation">Разобрать результат</button>
+            <button type="button" @click="draftAction('Предложи следующий шаг по текущему обсуждению' + (workspaceTaskId ? ' и выбранной задаче' : '') + '. Учти уже сделанное и ограничения. Объясни пользу и дождись моего решения перед действиями.')" :disabled="pending || awaitingConfirmation">Что дальше?</button>
+        </div>
+    </section>
+    <section aria-labelledby="chat-reference-title">
+        <h3 id="chat-reference-title">Проверить настройки</h3>
+        <p class="chat-panel-hint">Откроются поверх диалога. Черновик останется на месте.</p>
+        <div class="chat-panel-actions">
+            {% for item in nav if item.key in ('sources', 'scenarios') and item.ready %}
+            <button type="button" @click="openWorkspacePage({{ item.href | tojson | forceescape }}, {{ item.label | tojson | forceescape }})">{{ 'Источники для задачи' if item.key == 'sources' else 'Сценарии обработки' }}</button>
             {% endfor %}
         </div>
     </section>
@@ -50,7 +56,7 @@
         <template x-if="workspaceTask">
             <div class="chat-selected-task">
                 <p class="chat-task-name" x-text="workspaceTask?.name"></p>
-                <a :href="workspaceTask?.task_url" target="_blank" rel="noopener">Подробности и управление ↗</a>
+                <button type="button" @click="openWorkspacePage(workspaceTask?.task_url, workspaceTask?.name)">Настройки и управление</button>
                 <p class="chat-panel-hint" x-text="'Проверено в ' + workspaceCheckedAt + '. Обновите для актуального состояния.'"></p>
                 <h4>План задачи</h4>
                 <p x-show="!workspaceTask?.plan" class="chat-panel-hint" x-text="workspacePlanNotice(workspaceTask?.plan_status)"></p>
@@ -78,7 +84,7 @@
                         </template>
                         <ul class="chat-result-links">
                             <template x-for="analysis in (workspaceTask?.latest?.analyses || [])" :key="analysis.url">
-                                <li><a :href="analysis.url" target="_blank" rel="noopener" x-text="analysis.title"></a></li>
+                                <li><button type="button" @click="openWorkspacePage(analysis.url, analysis.title)" x-text="analysis.title"></button></li>
                             </template>
                         </ul>
                         <button type="button" @click="draftAction('Покажи результаты выбранной задачи со ссылками на материалы, охватом и ограничениями. Предложи следующий шаг.')"

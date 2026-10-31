@@ -215,6 +215,7 @@ def main() -> int:
     env["DB_SCHEMA"] = "public"
     inventory_env = env.copy()
     inventory_env["POSTGRES_URL"] = psycopg_dsn(raw)
+    inventory_env["TEST_POSTGRES_URL"] = psycopg_dsn(raw)
     env["PYTHONPATH"] = "." + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     # The P11-T28 catalog row is required by root-conftest reference checks.
     # Its helper takes/releases this same advisory lock before our snapshots.

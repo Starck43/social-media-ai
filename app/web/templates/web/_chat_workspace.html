@@ -49,35 +49,35 @@
         </div>
         <template x-if="workspaceTask">
             <div class="chat-selected-task">
-                <p class="chat-task-name" x-text="workspaceTask.name"></p>
-                <a :href="workspaceTask.task_url" target="_blank" rel="noopener">Подробности и управление ↗</a>
+                <p class="chat-task-name" x-text="workspaceTask?.name"></p>
+                <a :href="workspaceTask?.task_url" target="_blank" rel="noopener">Подробности и управление ↗</a>
                 <p class="chat-panel-hint" x-text="'Проверено в ' + workspaceCheckedAt + '. Обновите для актуального состояния.'"></p>
                 <h4>План задачи</h4>
-                <p x-show="!workspaceTask.plan" class="chat-panel-hint" x-text="workspacePlanNotice(workspaceTask.plan_status)"></p>
-                <template x-if="workspaceTask.plan">
+                <p x-show="!workspaceTask?.plan" class="chat-panel-hint" x-text="workspacePlanNotice(workspaceTask?.plan_status)"></p>
+                <template x-if="workspaceTask?.plan">
                     <dl class="chat-panel-plan">
-                        <dt>Цель</dt><dd x-text="workspaceTask.plan.goal"></dd>
-                        <dt>Данные</dt><dd x-text="workspaceTask.plan.platforms.map(p => ({vk:'ВКонтакте', telegram:'Telegram'})[p] || p).join(', ')"></dd>
-                        <dt>Источники</dt><dd x-text="({selected:'Выбрано: ' + workspaceTask.plan.source_count, discovery:'Поиск по запросам', all:'Все разрешённые источники'})[workspaceTask.plan.source_scope] || 'По сохранённому плану'"></dd>
-                        <dt>Обработка</dt><dd x-text="workspaceTask.plan.stages.length ? workspaceTask.plan.stages.map(stage => ({collect:'Сбор', analyze:'Анализ', digest:'Дайджест'})[stage] || stage).join(' → ') : 'По настройкам задачи'"></dd>
-                        <dt>Период</dt><dd x-text="workspaceWindow(workspaceTask.plan.window)"></dd>
-                        <dt>Запуск</dt><dd x-text="workspaceTask.plan.trigger?.type === 'schedule' ? 'По расписанию: ' + workspaceTask.plan.trigger.cron + (workspaceTask.plan.trigger.timezone ? ' · ' + workspaceTask.plan.trigger.timezone : '') : 'Разово'"></dd>
-                        <dt>Ограничение</dt><dd x-text="workspaceTask.plan.limit ? workspaceTask.plan.limit + ' материалов на источник или поток' : 'По настройкам задачи'"></dd>
+                        <dt>Цель</dt><dd x-text="workspaceTask?.plan?.goal"></dd>
+                        <dt>Данные</dt><dd x-text="(workspaceTask?.plan?.platforms || []).map(p => ({vk:'ВКонтакте', telegram:'Telegram'})[p] || p).join(', ')"></dd>
+                        <dt>Источники</dt><dd x-text="({selected:'Выбрано: ' + workspaceTask?.plan?.source_count, discovery:'Поиск по запросам', all:'Все разрешённые источники'})[workspaceTask?.plan?.source_scope] || 'По сохранённому плану'"></dd>
+                        <dt>Обработка</dt><dd x-text="(workspaceTask?.plan?.stages || []).length ? (workspaceTask?.plan?.stages || []).map(stage => ({collect:'Сбор', analyze:'Анализ', digest:'Дайджест'})[stage] || stage).join(' → ') : 'По настройкам задачи'"></dd>
+                        <dt>Период</dt><dd x-text="workspaceWindow(workspaceTask?.plan?.window)"></dd>
+                        <dt>Запуск</dt><dd x-text="workspaceTask?.plan?.trigger?.type === 'schedule' ? 'По расписанию: ' + workspaceTask?.plan?.trigger?.cron + (workspaceTask?.plan?.trigger?.timezone ? ' · ' + workspaceTask?.plan?.trigger?.timezone : '') : 'Разово'"></dd>
+                        <dt>Ограничение</dt><dd x-text="workspaceTask?.plan?.limit ? workspaceTask?.plan?.limit + ' материалов на источник или поток' : 'По настройкам задачи'"></dd>
                     </dl>
                 </template>
                 <button type="button" class="chat-panel-primary" @click="draftAction('Покажи актуальный план выбранной задачи, проверь доступ и ограничения. Подготовь разовый запуск и дождись моего подтверждения.')"
                         :disabled="pending || awaitingConfirmation">Обсудить запуск</button>
                 <h4>Последний запуск</h4>
-                <p x-show="!workspaceTask.latest" class="chat-panel-hint">Сведения о запуске недоступны.</p>
-                <template x-if="workspaceTask.latest">
+                <p x-show="!workspaceTask?.latest" class="chat-panel-hint">Сведения о запуске недоступны.</p>
+                <template x-if="workspaceTask?.latest">
                     <div>
-                        <p x-text="workspaceRunStatus(workspaceTask.latest.status)"></p>
-                        <p class="chat-panel-hint" x-show="workspaceTask.latest.coverage === 'partial_or_bounded'">Охват ограничен параметрами запуска; полнота данных не подтверждена.</p>
-                        <template x-if="workspaceTask.latest.progress">
-                            <p class="chat-panel-hint" x-text="'Обработано источников: ' + workspaceTask.latest.progress.completed + ' из ' + workspaceTask.latest.progress.total + (workspaceTask.latest.progress.updated_at ? ' · ' + workspaceTask.latest.progress.updated_at : '')"></p>
+                        <p x-text="workspaceRunStatus(workspaceTask?.latest?.status)"></p>
+                        <p class="chat-panel-hint" x-show="workspaceTask?.latest?.coverage === 'partial_or_bounded'">Охват ограничен параметрами запуска; полнота данных не подтверждена.</p>
+                        <template x-if="workspaceTask?.latest?.progress">
+                            <p class="chat-panel-hint" x-text="'Обработано источников: ' + workspaceTask?.latest?.progress?.completed + ' из ' + workspaceTask?.latest?.progress?.total + (workspaceTask?.latest?.progress?.updated_at ? ' · ' + workspaceTask?.latest?.progress?.updated_at : '')"></p>
                         </template>
                         <ul class="chat-result-links">
-                            <template x-for="analysis in workspaceTask.latest.analyses" :key="analysis.url">
+                            <template x-for="analysis in (workspaceTask?.latest?.analyses || [])" :key="analysis.url">
                                 <li><a :href="analysis.url" target="_blank" rel="noopener" x-text="analysis.title"></a></li>
                             </template>
                         </ul>

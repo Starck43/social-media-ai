@@ -68,13 +68,27 @@ try {
         const root = document.querySelector('.chat-page');
         const panel = document.querySelector('#chat-workspace-panel');
         let app = null;
-        const diagnostic = () => ({
-          panelOpen: app?.panelOpen ?? null,
-          panelInlineDisplay: panel?.style.display || '',
-          panelDisplay: panel ? getComputedStyle(panel).display : '',
-          expanded: root?.querySelector('.chat-panel-toggle')?.getAttribute('aria-expanded') || '',
-          activeElement: document.activeElement ? {tag: document.activeElement.tagName, id: document.activeElement.id, label: document.activeElement.getAttribute('aria-label')} : null,
-        });
+        const diagnostic = () => {
+          const toggle = root?.querySelector('.chat-panel-toggle');
+          const rect = toggle?.getBoundingClientRect();
+          return {
+            documentHasFocus: document.hasFocus(),
+            panelOpen: app?.panelOpen ?? null,
+            panelInlineDisplay: panel?.style.display || '',
+            panelDisplay: panel ? getComputedStyle(panel).display : '',
+            expanded: toggle?.getAttribute('aria-expanded') || '',
+            activeElement: document.activeElement ? {tag: document.activeElement.tagName, id: document.activeElement.id, label: document.activeElement.getAttribute('aria-label')} : null,
+            panelToggle: toggle ? {
+              tag: toggle.tagName,
+              tabindex: toggle.tabIndex,
+              disabled: toggle.disabled,
+              visible: Boolean(rect && rect.width > 0 && rect.height > 0),
+              visibility: getComputedStyle(toggle).visibility,
+              display: getComputedStyle(toggle).display,
+              isAlpineRef: Boolean(app?.$refs && app.$refs.panelToggle === toggle),
+            } : null,
+          };
+        };
         const check = (value, label) => { if (!value) throw Error(label + ' diagnostic=' + JSON.stringify(diagnostic())); checks.push(label); };
         check(root && panel, 'real chat template includes the task workspace');
         check(panel.querySelector('#chat-task-search'), 'task picker has a labelled search input');

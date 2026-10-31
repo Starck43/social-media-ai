@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,9 @@ _APPLESCRIPT = r"""on run argv
         end repeat
         if (count of addedIDs) is not 1 then error "Could not identify exactly one Safari-owned window"
         set ownedID to item 1 of addedIDs
+        tell application "Safari" to set index of (window id ownedID) to 1
+        tell application "Safari" to activate
+        delay 0.5
 
         set requestedWidths to {1600, 500}
         repeat with requestedWidth in requestedWidths
@@ -70,7 +74,15 @@ class _QuietHandler(SimpleHTTPRequestHandler):
 
 def _build_fixture(destination: Path) -> None:
     command = ["node", str(FIXTURE_BUILDER), "--fixture-only", str(destination)]
-    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, timeout=45, check=False)
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        env={**os.environ, "PYTHON": sys.executable},
+        text=True,
+        capture_output=True,
+        timeout=45,
+        check=False,
+    )
     if result.returncode:
         raise RuntimeError("T42 browser fixture build failed: " + (result.stderr or result.stdout)[-1600:])
     if not destination.is_file():

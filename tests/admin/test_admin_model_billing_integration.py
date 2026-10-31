@@ -192,7 +192,7 @@ def endpoint_case(*, enabled=True, admin=True, csrf=True, consent=True, tenant="
             "HTTPException": HTTPException,
             "settings": NS(PERSONAL_BILLING_ENABLED=enabled),
             "Tenant": NS(objects=NS(get=lookup)),
-            "get_csrf_manager": lambda request: NS(verify_token=lambda token: csrf),
+            "verify_request_token": lambda request, token: bool(csrf and token),
         },
         {
             "app.admin.actions": NS(LLMModelActions=NS(submit_test=submit, reject_test=submit.reject)),
@@ -266,17 +266,15 @@ async def test_non_generation_modes_do_not_require_billing_tenant_or_payer(mode)
 
 @pytest.mark.asyncio
 async def test_retired_paid_route_never_translates_or_dispatches():
-    auth = AsyncMock(return_value=NS(id=31))
-    lookup = AsyncMock(return_value=NS(is_active=True, is_platform_admin=True))
+    identity = AsyncMock(return_value=NS(id=31, is_active=True, is_platform_admin=True))
     handler = extracted_handler(
         "app/admin/endpoints.py",
         "llm_model_test_real",
         {
             "Form": lambda *a, **k: None,
             "HTTPException": HTTPException,
-            "get_csrf_manager": lambda request: NS(verify_token=lambda token: True),
-            "get_authenticated_user": auth,
-            "User": NS(objects=NS(prefetch_related=lambda *a: NS(get=lookup))),
+            "verify_request_token": lambda request, token: True,
+            "resolve_operator_identity": identity,
         },
         {},
     )

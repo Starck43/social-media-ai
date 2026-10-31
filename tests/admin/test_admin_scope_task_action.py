@@ -68,10 +68,8 @@ class _Request:
 
 
 def _unwrapped_action():
-    action = AgentTaskAdmin.run_now_action
-    while hasattr(action, "__wrapped__"):
-        action = action.__wrapped__
-    return action
+    """The executor behind the CSRF-checked POST, not the GET confirmation."""
+    return AgentTaskAdmin._run_task_now
 
 
 @pytest.mark.asyncio
@@ -99,12 +97,12 @@ async def test_staff_run_now_reads_only_active_workspace_task(monkeypatch):
 
     with tenant_scope(workspace_a.id), permission_scope(actor, member_grants=member_grants):
         # The real AgentTask manager lookup must hide a guessed foreign ID.
-        await action(AgentTaskAdmin(), _Request(task_b.id, actor))
+        await action(AgentTaskAdmin(), _Request(task_b.id, actor), task_b.id)
         assert dispatched == []
 
         # A task in the active workspace still dispatches under the same tenant
         # and the authenticated actor identity.
-        await action(AgentTaskAdmin(), _Request(task_a.id, actor))
+        await action(AgentTaskAdmin(), _Request(task_a.id, actor), task_a.id)
 
     assert dispatched == [
         {

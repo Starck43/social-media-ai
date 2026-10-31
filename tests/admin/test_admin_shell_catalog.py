@@ -1,9 +1,10 @@
 """Actual SQLAdmin routes/forms with explicit identity/storage doubles; no DB."""
 
 import ast
+import re
 from pathlib import Path
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -19,6 +20,8 @@ from starlette.datastructures import FormData
 from starlette.staticfiles import StaticFiles
 from test_admin_model_permission_policy import CATALOG, TYPES, user_with
 from wtforms import validators
+
+from app.admin.csrf import SESSION_ID_KEY
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -107,6 +110,13 @@ def actor(role="admin", active=True):
     return user_with(role=role, active=active)
 
 
+def token_from_page(html: str) -> str:
+    """The hidden token the edit page hands the browser (S2 binds it to the session)."""
+    match = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
+    assert match, "the edit form must carry a csrf_token field"
+    return match.group(1)
+
+
 def console(source, user=None):
     user = user if user is not None else actor()
     user.username = "verified-admin"
@@ -116,14 +126,22 @@ def console(source, user=None):
     source.models.User.objects.prefetch_related.return_value = NS(get=AsyncMock(return_value=user))
     csrf = source.csrf.CSRFTokenManager("synthetic-not-a-secret")
 
+    # Same identity resolution over HTTP as a real login: the backend seeds the
+    # session's CSRF id on authenticate, and that is where the form token binds.
+    session_id = "synthetic-session"
+
     class Auth(AuthenticationBackend):
         csrf_manager = csrf
 
         async def authenticate(self, request):
+            request.session[SESSION_ID_KEY] = session_id
             request.state.admin_user = user
             return user.has_admin_access()
 
     app = Starlette()
+    # Inside console routes `request.app` is this app; the token helpers read the
+    # manager from there.
+    app.state.csrf_manager = csrf
     app.mount("/static", StaticFiles(directory=str(ROOT / "app/static")), name="static")
     backend = source.backend.AdminAuthorizationBackend()
     admin = Admin(
@@ -133,7 +151,9 @@ def console(source, user=None):
         authorization_backend=backend,
         templates_dir=str(ROOT / "app/templates"),
     )
-    admin.templates.env.globals["csrf_token"] = csrf.generate_token
+    # Console templates mint tokens bound to the reader's session (S2), so the
+    # synthetic session carries a fixed id and every token names it.
+    admin.templates.env.globals["csrf_token"] = lambda: csrf.generate_token(session_id=session_id)
     admin.add_view(source.RoleAdmin)
     admin.add_view(source.PermissionAdmin)
     # Production identity and catalog persistence are the only replaced boundaries.
@@ -156,7 +176,15 @@ def console(source, user=None):
         factory.return_value.__enter__ = Mock(return_value=session)
         factory.return_value.__exit__ = Mock(return_value=False)
         view.session_maker = factory
-    return NS(app=app, admin=admin, backend=backend, target=target, user=user, csrf=csrf)
+    return NS(
+        app=app,
+        admin=admin,
+        backend=backend,
+        target=target,
+        user=user,
+        csrf=csrf,
+        session_id=session_id,
+    )
 
 
 @pytest.mark.asyncio
@@ -278,7 +306,13 @@ async def test_operator_cannot_edit_either_catalog_even_with_broad_grants(source
 
 def request_for(ctx, token=None):
     return NS(
-        state=NS(admin_user=ctx.user), form=AsyncMock(return_value={"csrf_token": token or ctx.csrf.generate_token()})
+        state=NS(admin_user=ctx.user),
+        # S2: verification goes through the session-bound manager, so the stub
+        # needs a session carrying the id the token was minted for, plus the
+        # app state that holds the manager.
+        session={SESSION_ID_KEY: ctx.session_id},
+        app=NS(state=NS(csrf_manager=ctx.csrf)),
+        form=AsyncMock(return_value={"csrf_token": token or ctx.csrf.generate_token(session_id=ctx.session_id)}),
     )
 
 
@@ -343,10 +377,16 @@ async def test_http_role_post_clears_grants_and_rejects_missing_csrf_for_every_r
         response = await client.post("/admin/platform-role/edit/2", data={"save": "Save"})
         assert response.status_code == 400  # SQLAdmin catches the rejected CSRF write.
         ctx.target.set_permissions.assert_not_awaited()
-        response = await client.post(
-            "/admin/platform-role/edit/2", data={"save": "Save", "csrf_token": ctx.csrf.generate_token()}
-        )
-        assert response.status_code == 302, response.text
+        # Mint the token the way the browser does: from a page in this session.
+        # The session-bound manager the page calls is this test's own instance.
+        with patch.object(source.csrf, "get_csrf_manager", lambda _request: ctx.csrf):
+            edit_page = await client.get("/admin/platform-role/edit/2")
+            token = token_from_page(edit_page.text)
+            response = await client.post(
+                "/admin/platform-role/edit/2",
+                data={"save": "Save", "csrf_token": token},
+            )
+        assert response.status_code == 302, "the confirmed write must redirect"
     ctx.target.set_permissions.assert_awaited_once_with(2, [])
 
 

@@ -1,7 +1,6 @@
 """Real workspace/binding checks with HTTP mocked; never contact Telegram."""
 
 import logging
-from inspect import unwrap
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -363,15 +362,16 @@ async def test_admin_action_uses_notification_row_workspace(workspaces, destinat
     foreign = await bind(second)
     with tenant_scope(first.id):
         row = await notify.create("Private row", "Private text", NotificationType.REPORT_READY)
-    params = {"pks": str(row.id)}
+    # S4: the recipient is operator input from the POST body, never the query.
+    recipient_id = None
     if recipient != "absent":
-        params["recipient_id"] = destination.chat_id if recipient == "owned" else foreign.chat_id
-    request = SimpleNamespace(
-        query_params=params, url_for=lambda *args, **kwargs: "http://test/admin/notification/list"
-    )
+        recipient_id = destination.chat_id if recipient == "owned" else foreign.chat_id
+    request = SimpleNamespace(url_for=lambda *args, **kwargs: "http://test/admin/notification/list")
     with tenant_scope(bypass=True):
         # Pin the action body; ASGI permission gates are covered separately.
-        response = await unwrap(NotificationAdmin.send_to_messenger_action)(NotificationAdmin(), request)
+        response = await NotificationAdmin._send_notification_to_messenger(
+            NotificationAdmin(), request, str(row.id), recipient_id
+        )
     assert response.status_code == 303
     assert len(transport.calls) == (1 if recipient == "owned" else 0)
 
@@ -460,10 +460,9 @@ async def test_ownerless_row_cannot_borrow_ambient_workspace(workspaces, destina
             return row
 
         monkeypatch.setattr(Notification.objects, "get", get)
-        request = SimpleNamespace(
-            query_params={"pks": "999", "recipient_id": destination.chat_id},
-            url_for=lambda *args, **kwargs: "http://test/admin/notification/list",
-        )
+        request = SimpleNamespace(url_for=lambda *args, **kwargs: "http://test/admin/notification/list")
         with tenant_scope(first.id, bypass=True):
-            await unwrap(NotificationAdmin.send_to_messenger_action)(NotificationAdmin(), request)
+            await NotificationAdmin._send_notification_to_messenger(
+                NotificationAdmin(), request, "999", destination.chat_id
+            )
     assert transport.calls == []

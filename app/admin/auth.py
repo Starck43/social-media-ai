@@ -4,11 +4,17 @@ from typing import Optional
 from fastapi import HTTPException, Request
 from sqladmin.authentication import AuthenticationBackend
 
-from app.admin.csrf import CSRFTokenManager
+from app.admin.csrf import (
+    SESSION_ID_KEY,
+    CSRFTokenManager,
+    ensure_session_id,
+    rotate_session_id,
+    verify_request_token,
+)
+from app.admin.identity import resolve_operator_identity
 from app.core.config import settings
 from app.core.hashing import verify_password
 from app.models import User
-from app.services.user.auth import get_authenticated_user
 from app.services.user.login_protection import (
     LoginLocked,
     clear_login_failures,
@@ -39,10 +45,10 @@ class AdminAuthBackend(AuthenticationBackend):
 
         logger.info("🔑 Admin login attempt username=%s", username)
 
-        csrf_manager = getattr(request.app.state, "csrf_manager", self.csrf_manager)
         csrf_token = form.get("csrf_token")
+        csrf_token = csrf_token if isinstance(csrf_token, str) else None
 
-        if not csrf_manager or not csrf_manager.verify_token(csrf_token):
+        if not verify_request_token(request, csrf_token):
             logger.warning("❌ Invalid CSRF token in login attempt")
             request.session["login_error"] = "Недействительный токен безопасности"
             return False
@@ -68,6 +74,13 @@ class AdminAuthBackend(AuthenticationBackend):
                     request.session["login_error"] = "Нет доступа к панели управления"
                     return False
                 access_token, _ = create_access_token(subject=str(user.id))
+
+                # Session hygiene: drop stale per-page state left over from
+                # earlier visits before the fresh login writes its own keys.
+                for key in [k for k in request.session if k == "_messages" or k.startswith("return_url_")]:
+                    del request.session[key]
+                request.session.pop("login_error", None)
+
                 request.session.update(
                     {
                         "token": access_token,
@@ -75,9 +88,8 @@ class AdminAuthBackend(AuthenticationBackend):
                         "username": user.username,
                     }
                 )
-
-                if "login_error" in request.session:
-                    del request.session["login_error"]
+                # Tokens minted for the pre-login session must not outlive it.
+                rotate_session_id(request)
 
                 await clear_login_failures(username)
                 return True
@@ -106,17 +118,16 @@ class AdminAuthBackend(AuthenticationBackend):
         if not token:
             return False
         try:
-            user = await get_authenticated_user(token=token)
+            user = await resolve_operator_identity(token, require_admin_access=True)
             if user is None or not user.is_active:
                 request.session.clear()
                 return False
-            loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
-            if loaded is None or not loaded.has_admin_access():
-                request.session.clear()
-                return False
-            request.state.admin_user = loaded
-            request.session["user_id"] = str(loaded.id)
-            request.session["username"] = loaded.username
+            request.state.admin_user = user
+            request.session["user_id"] = str(user.id)
+            request.session["username"] = user.username
+            # Sessions that predate the S2 binding get their CSRF id here.
+            if SESSION_ID_KEY not in request.session:
+                ensure_session_id(request)
             return True
         except HTTPException:
             request.session.clear()

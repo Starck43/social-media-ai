@@ -105,6 +105,13 @@ def test_resolve_marks_deferred_and_unsupported_categories_with_reasons():
     json.dumps(selection.as_dict(), ensure_ascii=False)
 
 
+def test_resolve_expands_all_inside_an_explicit_list():
+    selection = resolve_categories(["all", CATEGORY_CLIPS, CATEGORY_PEOPLE])
+
+    assert [category.category_id for category in selection.selected] == [CATEGORY_PEOPLE]
+    assert [entry["id"] for entry in selection.unavailable] == [CATEGORY_CLIPS]
+
+
 def test_resolve_unknown_category_fails_closed():
     with pytest.raises(SearchCategoryError) as caught:
         resolve_categories(["unknown-category"])

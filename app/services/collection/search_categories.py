@@ -234,7 +234,17 @@ def resolve_categories(requested: Sequence[str] | str | None, *, platform: str =
     selected: list[SearchCategory] = []
     unavailable: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for entry in entries:
+    queue = list(entries)
+    # An "all" entry inside an explicit list expands to every executable
+    # category, preserving the aggregate-only-enabled rule.
+    for index, entry in enumerate(queue):
+        if isinstance(entry, str) and entry.strip().lower() == ALL_CATEGORIES:
+            queue[index : index + 1] = [
+                category.category_id
+                for category in VK_SEARCH_CATEGORIES
+                if category.platform == platform and category.executable
+            ]
+    for entry in queue:
         category = get_category(entry, platform=platform)
         if category.category_id in seen:
             continue

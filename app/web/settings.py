@@ -251,10 +251,14 @@ async def settings_page(request: Request):
 
         context["agent_model_options"] = await chat_model_options(user_id=user.id, tenant_id=tenant_id)
 
-        # Read the last probe result from session (set by /agent/model-probe).
-        probe_result = request.session.get("agent_model_probe_result")
-        if probe_result is not None and isinstance(probe_result, dict):
-            context["probe_result"] = probe_result
+        # The Models tab and Agent form share the same compact probe outcome.
+        probe_result = request.session.get("settings_model_probe_result")
+        if isinstance(probe_result, dict) and probe_result.get("owner_user_id") == user.id:
+            selected_model_id = getattr(request.state.tenant, "agent_model_id", None)
+            if selected_model_id is None:
+                effective = next((option for option in context["agent_model_options"] if option["is_effective_default"]), None)
+                selected_model_id = effective["id"] if effective else None
+            context["probe_result"] = probe_result if probe_result.get("model_id") == selected_model_id else None
         else:
             context["probe_result"] = None
 
@@ -540,8 +544,10 @@ async def agent_model_probe(
     agent_model_id: str = Form(""),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
+    probe_mode: str = Form("local"),
+    consent: str = Form(""),
 ):
-    """Run the shared prompt-free local check; never silently call a provider."""
+    """Run the shared local check or explicitly consented bounded provider test."""
     tenant_id = action_tenant_id(request, tenant_id)
     denied = _guard_workspace_settings(request, tenant_id)
     if denied is not None:
@@ -551,19 +557,18 @@ async def agent_model_probe(
         return RedirectResponse(BACK, status_code=302)
 
     from app.models.managers.tenant_manager import tenants
-    from app.services.ai.model_probe import probe_short
+    from app.services.ai.personal_catalog import chat_model_options, validate_chat_model
 
     if await tenants.get(id=tenant_id) is None:
         add_flash(request, "error", "Пространство не найдено")
         return RedirectResponse(BACK, status_code=302)
 
     tenant = await tenants.get(id=tenant_id)
-    model = None
+    model_id = None
     if agent_model_id.strip():
         try:
-            from app.services.ai.personal_catalog import validate_chat_model
-
-            model = await validate_chat_model(
+            model_id = int(agent_model_id)
+            await validate_chat_model(
                 user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=int(agent_model_id)
             )
         except (ValueError, PermissionError):
@@ -571,13 +576,40 @@ async def agent_model_probe(
             return RedirectResponse(BACK + "?tab=agent", status_code=302)
 
     else:
-        model = await LLMModel.objects.resolve_default_model("text")
-    result = probe_short(model)
+        if tenant.agent_model_id is not None:
+            try:
+                model_id = int(tenant.agent_model_id)
+                await validate_chat_model(
+                    user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=model_id
+                )
+            except (ValueError, PermissionError):
+                model_id = None
+        else:
+            options = await chat_model_options(user_id=request.state.web_user.id, tenant_id=tenant_id)
+            effective = next((option for option in options if option["is_effective_default"]), None)
+            model_id = effective["id"] if effective else None
+    if model_id is None:
+        request.session["settings_model_probe_result"] = {
+            "model_id": None,
+            "owner_user_id": request.state.web_user.id,
+            "mode": probe_mode,
+            "ok": False,
+            "text": "Для теста выберите модель, доступную этому пространству.",
+            "limit_hint": None,
+        }
+        return RedirectResponse(f"{BACK}?tab=agent", status_code=303)
+    from .settings_llm import _run_probe
 
-    # Save probe result in session and redirect back to the settings page so
-    # the template shows it from `context["probe_result"]`.
-    request.session["agent_model_probe_result"] = result
-    return RedirectResponse(f"{BACK}?tab=agent", status_code=302)
+    response = await _run_probe(
+        request,
+        model_id=str(model_id),
+        mode=probe_mode,
+        tenant_id=tenant_id,
+        consent=consent,
+    )
+    if isinstance(response, RedirectResponse):
+        response.headers["Location"] = f"{BACK}?tab=agent"
+    return response
 
 
 @router.post("/credentials")

@@ -225,13 +225,17 @@ lazy view catalog is built. Menu visibility alone is not authorization.
 
 Additional restrictions:
 
-- Workspace deletion is reserved for the platform `superuser`. Even explicit
-  platform admin/operator grants and workspace owner/admin membership cannot
-  delegate `tenancy.workspace.delete`. Other workspace grants are unchanged.
-  Retained task-admission audit or other protected references block deletion
-  atomically through database foreign keys. The console shows a bounded message;
-  deleting a workspace does not discard that evidence. Permanent deletion audit
-  and an explicit offboarding/retention workflow remain separate work.
+- Workspace deletion is reserved for the platform `superuser`. Use the workspace
+  action **Удалить с аудитом**: choose one workspace, reason and retention policy,
+  preview the blockers, then explicitly confirm. Ordinary CRUD/bulk DELETE is
+  disabled. Explicit admin/operator grants never delegate this operation.
+  Retained task-admission audit and protected financial references block deletion.
+  Only an explicit expire-elapsed choice can remove already expired task audit
+  under the current plan policy. Workspace deletion and its permanent platform
+  receipt commit atomically; repeated confirmation returns the same receipt.
+  The owner can read/export the journal from the preview/receipt page. Migration
+  0119 must be applied before this feature can run; a missing immutable guard
+  fails closed. See [workspace offboarding](WORKSPACE_OFFBOARDING.md).
 
 - `TenantAdmin.is_accessible()` requires the `tenancy.workspace` VIEW right, not
   the platform badge and not ownership of one workspace. The owner holds it

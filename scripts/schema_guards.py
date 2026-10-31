@@ -38,6 +38,10 @@ from dataclasses import dataclass
 GUARD_FUNCTIONS: dict[str, str] = {
     # 0093 - dispatch receipts are immutable evidence.
     "reject_llm_receipt_mutation": " BEGIN RAISE EXCEPTION 'Dispatch receipts are immutable' USING ERRCODE = '55000'; END; ",
+    # 0119 - workspace offboarding journal is permanently immutable.
+    "guard_workspace_offboarding_mutation": (
+        " BEGIN RAISE EXCEPTION 'Workspace offboarding evidence is immutable' USING ERRCODE = '55000'; END; "
+    ),
     # 0094 - outcome evidence is immutable, and every row must bind to a receipt.
     "reject_llm_outcome_mutation": " BEGIN RAISE EXCEPTION 'Outcome evidence is immutable' USING ERRCODE = '55000'; END; ",
     "check_llm_outcome_receipt": (
@@ -574,6 +578,20 @@ GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
         events=("TRUNCATE",),
         for_each_row=False,
     ),
+    # 0119
+    GuardTrigger(
+        table="workspace_offboarding_events",
+        name="workspace_offboarding_events_immutable",
+        function="guard_workspace_offboarding_mutation",
+        events=("UPDATE", "DELETE"),
+    ),
+    GuardTrigger(
+        table="workspace_offboarding_events",
+        name="workspace_offboarding_events_no_truncate",
+        function="guard_workspace_offboarding_mutation",
+        events=("TRUNCATE",),
+        for_each_row=False,
+    ),
 )
 
 # Names the migrations also drop and recreate (0102 replaces the reservation
@@ -617,18 +635,31 @@ def ddl(schema: str) -> list[str]:
 
 
 def apply_schema_guards(conn, schema: str, text: Callable[[str], object]) -> None:
-    """Execute every guard statement for ``schema`` on SQLAlchemy ``conn``.
+    """Apply guards to present tables in ``schema`` on SQLAlchemy ``conn``.
 
-    Idempotent: ``CREATE OR REPLACE FUNCTION`` replaces a body and the trigger
-    is dropped and recreated, so a second call leaves the same catalog objects.
-    The caller owns the transaction; a failure here must abort it, never be
-    swallowed (a schema without guards silently accepts evidence mutations).
+    Metadata can contain later-revision tables before their migration has run;
+    skip those table triggers until the relation exists. For present tables,
+    idempotent ``CREATE OR REPLACE FUNCTION`` and drop/recreate trigger DDL
+    leave the catalog objects in a stable state. The caller owns the transaction;
+    a failure on a present table must abort it, never be swallowed.
 
     ``text`` is the caller's SQL wrapper (``sqlalchemy.text``): this module stays
     free of driver imports so the offline CI lane can load it.
     """
-    for statement in ddl(schema):
-        conn.execute(text(statement))
+    from sqlalchemy import inspect as sa_inspect
+
+    _schema(schema)
+    present_tables = set(sa_inspect(conn).get_table_names(schema=schema))
+    applicable = [trigger for trigger in GUARD_TRIGGERS if trigger.table in present_tables]
+    functions = {trigger.function for trigger in applicable}
+    for name in GUARD_FUNCTIONS:
+        if name in functions:
+            conn.execute(text(function_ddl(name, schema)))
+    for trigger in applicable:
+        if trigger.function not in GUARD_FUNCTIONS:
+            raise ValueError(f"Trigger {trigger.name} executes an unknown guard function {trigger.function!r}")
+        conn.execute(text(f'DROP TRIGGER IF EXISTS "{trigger.name}" ON {_schema(schema)}."{trigger.table}"'))
+        conn.execute(text(trigger.definition(schema)))
 
 
 def names() -> Sequence[str]:

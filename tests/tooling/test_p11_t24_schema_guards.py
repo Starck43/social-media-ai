@@ -28,9 +28,12 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
+__source_only__ = True
 ROOT = Path(__file__).resolve().parents[2]
-# Historical revisions live in Git; executable Alembic discovery contains only
-# the frozen initial baseline below.
+# Historical revisions live in Git. The initial schema stays frozen, while
+# the active post-baseline revision sources carry any later guard additions.
 MIGRATIONS = ROOT / "migrations/versions"
 # scripts is a package; register the module before exec so dataclasses resolve
 # their own module. Nothing in it imports app, Alembic or a driver.
@@ -41,9 +44,15 @@ SPEC.loader.exec_module(GUARDS)
 
 # Bulk-guarded tables and the guard each ``{table}_validate`` trigger executes.
 # Mirrors the module's ``_validate`` triggers one-for-one; the equality test
-# checks both directions. The ``llm_*`` tables and ``action_audit_events``
-# carry their own immutable/no-truncate guards instead.
-ONE_OFF_TABLES = {"llm_dispatch_receipts", "llm_outcome_events", "llm_budget_reservations", "action_audit_events"}
+# checks both directions. Receipt/action/offboarding journals carry their own
+# immutable/no-truncate guards instead.
+ONE_OFF_TABLES = {
+    "llm_dispatch_receipts",
+    "llm_outcome_events",
+    "llm_budget_reservations",
+    "action_audit_events",
+    "workspace_offboarding_events",
+}
 BULK_TABLES = {
     "personal_llm_dispatches": "check_personal_llm_dispatch_account",
     "task_billing_payers": "check_task_billing_payer_consent",
@@ -130,7 +139,9 @@ class _Scope:
         return isinstance(node, ast.Name) and node.id in self.placeholders
 
     def _names_schema(self, node):
-        """``q(SCHEMA)`` / ``quote_schema(schema)``: a quoted build-schema name."""
+        """Schema expressions, including the guarded migration ``_schema()`` helper."""
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_schema":
+            return not node.args
         if not (isinstance(node, ast.Call) and node.args):
             return False
         function = node.func
@@ -427,7 +438,7 @@ def _run_time_only(statement):
 
 def _table_of(statement):
     """Bare table a ``CREATE TRIGGER`` targets; ``None`` when it is not the placeholder schema."""
-    match = _TRIGGER_ON.search(statement)
+    match = _TRIGGER_ON.search(statement.replace('"', ""))
     if match is None:
         return None
     table = match.group("table")
@@ -442,7 +453,7 @@ def _bare(statement):
 
 
 def _function_name(statement):
-    match = _CREATE_FUNCTION.search(statement)
+    match = _CREATE_FUNCTION.search(statement.replace('"', ""))
     return match.group("name").rsplit(".", 1)[-1] if match else None
 
 
@@ -484,11 +495,15 @@ def migration_function_bodies():
     schema qualification before comparing.
     """
     bodies = {}
+    delimiter = re.compile(
+        r"\bAS\s+(?P<tag>\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)(?P<body>.*?)(?P=tag)", re.IGNORECASE | re.DOTALL
+    )
     for path, statement in migration_statements():
         name = _function_name(statement)
-        if not name or "$$" not in statement:
+        match = delimiter.search(statement)
+        if not name or match is None:
             continue
-        bodies[name] = (path.name, statement.split("$$", 1)[1].split("$$", 1)[0])
+        bodies[name] = (path.name, match.group("body"))
     return bodies
 
 
@@ -573,17 +588,22 @@ def test_the_bulk_table_map_covers_every_bulk_guarded_table():
     assert set(BULK_TABLES.values()) == validators
 
 
-def test_frozen_baseline_and_guard_module_have_the_same_trigger_contract():
+def test_frozen_baseline_and_post_baseline_migrations_match_guard_module():
     baseline = _baseline_trigger_statements()
+    revisions = migration_trigger_statements()
     expected = _module_pairs()
-    assert set(baseline) == expected, (
-        "Frozen baseline guard triggers differ from scripts/schema_guards.py: "
-        f"baseline-only={sorted(set(baseline) - expected)}, module-only={sorted(expected - set(baseline))}"
+    migration_pairs = migration_trigger_pairs()
+    assert set(baseline) | migration_pairs == expected, (
+        "Frozen baseline and later migration guards differ from scripts/schema_guards.py: "
+        f"baseline-only={sorted(set(baseline) - expected)}, "
+        f"migration-only={sorted(migration_pairs - expected)}, "
+        f"module-only={sorted(expected - set(baseline) - migration_pairs)}"
     )
+    statements = {**baseline, **revisions}
     for trigger in GUARDS.GUARD_TRIGGERS:
-        statement = baseline[(trigger.name, trigger.table)]
-        actual = _TRIGGER_EVENTS.search(statement)
-        function = _TRIGGER_FUNCTION.search(statement)
+        statement = statements[(trigger.name, trigger.table)]
+        actual = _TRIGGER_EVENTS.search(statement.replace('"', ""))
+        function = _TRIGGER_FUNCTION.search(statement.replace('"', ""))
         expected_events = re.search(r"BEFORE (.+?) ON ", trigger.definition(_SCHEMA)).group(1)
         assert actual and set(normalized(actual.group(1)).split(" or ")) == set(
             normalized(expected_events).split(" or ")
@@ -599,8 +619,9 @@ def test_guard_trigger_functions_exist():
         assert trigger.function in GUARDS.GUARD_FUNCTIONS, f"{trigger.name} executes unknown {trigger.function}"
 
 
-def test_frozen_baseline_guard_function_bodies_match_guard_module():
+def test_frozen_baseline_and_later_migration_function_bodies_match_guard_module():
     bodies = _baseline_function_bodies()
+    bodies.update({name: body for name, (_path, body) in migration_function_bodies().items()})
     assert set(bodies) == set(GUARDS.GUARD_FUNCTIONS)
     diverged = []
     for name, body in bodies.items():
@@ -674,3 +695,21 @@ def test_trigger_events_keep_migration_order():
     assert truncate.definition("s").endswith('FOR EACH STATEMENT EXECUTE FUNCTION "s"."reject_llm_receipt_mutation"()')
     column_scoped = next(t for t in GUARDS.GUARD_TRIGGERS if t.table == "sources")
     assert 'UPDATE OF "tenant_id", "owner_task_id" ON' in column_scoped.definition("s")
+
+
+def test_apply_schema_guards_skips_later_revision_triggers_when_table_is_absent():
+    from sqlalchemy import create_engine, event, text
+
+    statements = []
+    engine = create_engine("sqlite://")
+    event.listen(
+        engine, "before_cursor_execute", lambda _conn, _cursor, statement, *_args: statements.append(statement)
+    )
+    try:
+        with engine.connect() as connection:
+            GUARDS.apply_schema_guards(connection, "main", text)
+    finally:
+        engine.dispose()
+
+    assert not any("CREATE TRIGGER" in statement or "DROP TRIGGER" in statement for statement in statements)
+    assert not any("guard_workspace_offboarding_mutation" in statement for statement in statements)

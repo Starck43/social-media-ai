@@ -1,0 +1,11 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="card">
+  <div class="card-header"><h3 class="card-title">{{ title }}</h3><a class="btn ms-auto" href="?format=csv">Экспорт CSV · до 1000 записей</a></div>
+  <div class="table-responsive"><table class="table table-vcenter card-table">
+    <thead><tr><th>Дата</th><th>Пространство</th><th>Инициатор</th><th>Причина</th><th>Просроченный аудит</th><th>Квитанция</th></tr></thead>
+    <tbody>{% for row in rows %}<tr><td>{{ row.occurred_at }}</td><td>{{ row.workspace_id }}</td><td>{{ row.actor_id }}</td><td>{{ reason_labels[row.reason_code] }}</td><td>{{ row.expired_audit_count }}</td><td><code>{{ row.event_id }}</code></td></tr>{% else %}<tr><td colspan="6">Записей пока нет.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <div class="card-footer"><a href="{{ list_url }}">К списку пространств</a><small class="text-secondary ms-3">Последние 100 записей. Журнал сохраняется после удаления пространства; изменение и очистка недоступны.</small></div>
+</div>
+{% endblock %}

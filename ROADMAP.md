@@ -58,7 +58,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T49](docs/tasks/p8-t49.md) VK music search category — **TODO** · unassigned · — · `P2` · `C3`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
-- [P11-T29](docs/tasks/p11-t29.md) Durable workspace offboarding audit and retention contract — **IN_PROGRESS** · codex-p11-t29 · `01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C3`
 
 ### Priority P3
 
@@ -101,7 +100,7 @@ Use the P8 cards in the execution queue or the linked parent plan.
 
 ## [P11](docs/phases/p11-structure.md)
 
-Use the P11 cards in the execution queue or the linked parent plan.
+Accepted P11 outcomes are in the linked parent phase; register new follow-ups in the execution queue.
 
 ## Questions
 

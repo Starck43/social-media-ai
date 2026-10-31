@@ -201,7 +201,7 @@ class ActionAuditEventManager(BaseManager):
                 .all()
             )
 
-    async def delete_expired(self, *, now: datetime | None = None, batch_size: int = 500) -> int:
+    async def delete_expired(self, *, now: datetime | None = None, batch_size: int = 500, session=None) -> int:
         """Expire evidence using the workspace's existing plan retention limit.
 
         This is the only supported delete path. The DB trigger requires a
@@ -215,25 +215,27 @@ class ActionAuditEventManager(BaseManager):
             raise ValueError("Action-audit cleanup requires an aware timestamp")
         from ..tenancy.tenant import Tenant
 
-        async with self._get_owned_session() as session:
-            tenant = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
-            if tenant is None:
-                raise TenantContextError("Action-audit cleanup workspace does not exist")
-            retention_days = Tenant.PLAN_LIMITS.get(tenant.plan, {}).get("retention_days")
-            if type(retention_days) is not int or retention_days < 1:
-                raise RuntimeError("Workspace action-audit retention policy is unavailable")
-            cutoff = now - timedelta(days=retention_days)
-            await session.execute(text("SELECT set_config('app.action_audit_retention', 'on', true)"))
-            expired_ids = (
-                select(self.model.id)
-                .where(self.model.tenant_id == tenant_id, self.model.occurred_at < cutoff)
-                .order_by(self.model.id)
-                .limit(batch_size)
-            )
-            result = await session.execute(
-                delete(self.model).where(self.model.id.in_(expired_ids)).execution_options(synchronize_session=False)
-            )
-            return int(result.rowcount or 0)
+        if session is None:
+            async with self._get_owned_session() as owned:
+                return await self.delete_expired(now=now, batch_size=batch_size, session=owned)
+        tenant = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+        if tenant is None:
+            raise TenantContextError("Action-audit cleanup workspace does not exist")
+        retention_days = Tenant.PLAN_LIMITS.get(tenant.plan, {}).get("retention_days")
+        if type(retention_days) is not int or retention_days < 1:
+            raise RuntimeError("Workspace action-audit retention policy is unavailable")
+        cutoff = now - timedelta(days=retention_days)
+        await session.execute(text("SELECT set_config('app.action_audit_retention', 'on', true)"))
+        expired_ids = (
+            select(self.model.id)
+            .where(self.model.tenant_id == tenant_id, self.model.occurred_at < cutoff)
+            .order_by(self.model.id)
+            .limit(batch_size)
+        )
+        result = await session.execute(
+            delete(self.model).where(self.model.id.in_(expired_ids)).execution_options(synchronize_session=False)
+        )
+        return int(result.rowcount or 0)
 
     async def create(self, *args, **kwargs):
         raise PermissionError("Use the validated action-audit event methods")

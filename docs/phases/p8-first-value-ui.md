@@ -51,7 +51,7 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 9. [P8-T44](../tasks/p8-t44.md) — private photo/document attachments in the
    shared chat; owner requested separate implementation after the P8-T42 UI revision.
 
-10. [P8-T45](../tasks/p8-t45.md) — shared compact model probes, usage health counters and evidence-based provider quota warnings in settings.
+10. [P8-T45](../audit/p8-t45.md) — DONE 2026-10-31: shared compact model probes, invocation counters and safe quota/budget/price warnings; accepted `3d69c36a223b2023ae32fa4d1b59a9bd9d755296`, PR #291 (merge `57b5bebc2f1759d2d8543576a8c842c3d17f7acf`).
 
 **Other active P8 cards:**
 

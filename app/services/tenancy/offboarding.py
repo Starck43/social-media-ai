@@ -51,6 +51,7 @@ def _ambient_actor(actor_id: int) -> None:
         or actor_id <= 0
         or actor is None
         or actor.id != actor_id
+        or not actor.is_active
         or not actor.is_superuser
         or not is_bypass()
     ):

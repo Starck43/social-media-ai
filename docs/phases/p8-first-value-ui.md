@@ -30,6 +30,10 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
 6. [P8-T33](../tasks/p8-t33.md) — optional extension beyond the minimum pilot:
    select a bounded set of verified VK result categories, with explicit cards
    for any other requested categories before T33 closes. **IN_PROGRESS** · owner `notion-ai-p8-t33` · claim base `8c9f5222bbf5c8f69177ae4e3ad3df0682ec2877`.
+   Deferred category cards (owner decision 2026-10-31): [P8-T46](../tasks/p8-t46.md) video,
+   [P8-T47](../tasks/p8-t47.md) apps/games, [P8-T48](../tasks/p8-t48.md) owner-scoped market
+   items, [P8-T49](../tasks/p8-t49.md) music. Clips and channels stay `unsupported` in the
+   registry (no promised public search method; channels only partially map to communities).
 
 T38 can proceed from the integrated T29 foundation without waiting for the
 live VK gate. T39 reuses the accepted shared execution-scope/mutation policy in

@@ -64,6 +64,10 @@ REASON_PARTIAL_VIA_COMMUNITIES = "partially_represented_by_communities"
 
 Q5_EVIDENCE_REF = "docs/tasks/q-5.md"
 T33_CARD_REF = "docs/tasks/p8-t33.md"
+T46_CARD_REF = "docs/tasks/p8-t46.md"
+T47_CARD_REF = "docs/tasks/p8-t47.md"
+T48_CARD_REF = "docs/tasks/p8-t48.md"
+T49_CARD_REF = "docs/tasks/p8-t49.md"
 
 
 class SearchCategoryError(ValueError):
@@ -152,7 +156,7 @@ VK_SEARCH_CATEGORIES: tuple[SearchCategory, ...] = (
         status=STATUS_DEFERRED,
         reason=REASON_NOT_SELECTED,
         official_method="video.search",
-        evidence_ref=T33_CARD_REF,
+        evidence_ref=T46_CARD_REF,
     ),
     SearchCategory(
         category_id=CATEGORY_APPS,
@@ -161,7 +165,7 @@ VK_SEARCH_CATEGORIES: tuple[SearchCategory, ...] = (
         result_kind="app",
         status=STATUS_DEFERRED,
         reason=REASON_METHOD_UNVERIFIED,
-        evidence_ref=T33_CARD_REF,
+        evidence_ref=T47_CARD_REF,
     ),
     SearchCategory(
         category_id=CATEGORY_MARKET,
@@ -171,7 +175,7 @@ VK_SEARCH_CATEGORIES: tuple[SearchCategory, ...] = (
         status=STATUS_DEFERRED,
         reason=REASON_NOT_SELECTED,
         official_method="market.search",
-        evidence_ref=T33_CARD_REF,
+        evidence_ref=T48_CARD_REF,
     ),
     SearchCategory(
         category_id=CATEGORY_MUSIC,
@@ -180,7 +184,7 @@ VK_SEARCH_CATEGORIES: tuple[SearchCategory, ...] = (
         result_kind="audio",
         status=STATUS_DEFERRED,
         reason=REASON_PERMISSION_EVIDENCE,
-        evidence_ref=T33_CARD_REF,
+        evidence_ref=T49_CARD_REF,
     ),
     SearchCategory(
         category_id=CATEGORY_CLIPS,

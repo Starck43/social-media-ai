@@ -172,8 +172,11 @@ def verify_normal_downgrade_refusal(conn, env: dict[str, str]) -> None:
 def assert_synthetic_prefixes_removed(conn) -> None:
     """Catch owned test rows that ordinary fixture teardown failed to remove."""
     checks = (
-        ("users", "username LIKE 'p11t29-%' OR email LIKE 'p11t29-%'"),
-        ("tenants", "slug LIKE 'p11-t29-%' OR name LIKE 'P11-T29 %'"),
+        (
+            "users",
+            "username LIKE 'p11t29-%' OR email LIKE 'p11t29-%' OR username LIKE 'p11t28-%' OR email LIKE 'p11t28-%'",
+        ),
+        ("tenants", "slug LIKE 'p11-t29-%' OR name LIKE 'P11-T29 %' OR slug LIKE 'p11-t28-%' OR name LIKE 'P11-T28 %'"),
         ("llm_budget_days", "baseline_version LIKE 'p11-t29-%'"),
     )
     with conn.cursor() as cur:

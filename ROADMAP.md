@@ -56,6 +56,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [P11-T27](docs/tasks/p11-t27.md) Admin console audit and operator tooling hardening — **IN_PROGRESS** · notion-ai-p11-t27 · [Notion chat](https://app.notion.com/chat?t=409082a1eed08062987b00a9a2f80eb6) · `P2` · `C3`
 - [P11-T28](docs/tasks/p11-t28.md) Workspace deletion is unreachable from the admin console — **IN_PROGRESS** · codex-p11-t28 · `01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C2`
+- [P11-T29](docs/tasks/p11-t29.md) Durable workspace offboarding audit and retention contract — **TODO** · unassigned · `01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C3`
 
 ### Priority P3
 

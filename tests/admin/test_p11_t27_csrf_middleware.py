@@ -28,7 +28,7 @@ def test_the_middleware_replays_the_form_body_to_the_route():
     from starlette.responses import PlainTextResponse
     from starlette.routing import Route
 
-    from app.admin.csrf import AdminCSRFMiddleware, CSRFTokenManager, SESSION_ID_KEY
+    from app.admin.csrf import SESSION_ID_KEY, AdminCSRFMiddleware, CSRFTokenManager
 
     async def echo(request):
         form = await request.form()

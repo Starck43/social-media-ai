@@ -151,9 +151,7 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
     for role, pairs in migration._workspace_grant_pairs().items():
         canonical = {(resource_for(model).key, action.db_value) for model, action in workspace_grants(role)}
         baseline_pairs = pairs | (
-            {("audit.action_audit", "view"), ("audit.action_audit", "export")}
-            if role in ("owner", "admin")
-            else set()
+            {("audit.action_audit", "view"), ("audit.action_audit", "export")} if role in ("owner", "admin") else set()
         )
         assert canonical == baseline_pairs
 
@@ -203,8 +201,7 @@ def test_migration_permission_map_keeps_canonical_model_without_permissions(monk
     assert len(captured) == 1
     select_sql = captured[0].replace("p.action_type::text", "p.action_type")
     with sqlite3.connect(":memory:") as connection:
-        connection.executescript(
-            """
+        connection.executescript("""
             CREATE TABLE model_types (id INTEGER PRIMARY KEY, resource_key TEXT NOT NULL);
             CREATE TABLE permissions (id INTEGER PRIMARY KEY, model_type_id INTEGER NOT NULL, action_type TEXT NOT NULL);
             CREATE TABLE _access_model_map (old_id INTEGER NOT NULL, keep_id INTEGER NOT NULL, resource_key TEXT NOT NULL);
@@ -212,8 +209,7 @@ def test_migration_permission_map_keeps_canonical_model_without_permissions(monk
             INSERT INTO _access_model_map VALUES
                 (1, 1, 'collection.source'), (2, 1, 'collection.source'), (3, 1, 'collection.source');
             INSERT INTO permissions VALUES (10, 2, 'VIEW'), (11, 3, 'VIEW');
-            """
-        )
+            """)
         rows = connection.execute(select_sql).fetchall()
 
     assert rows == [
@@ -294,9 +290,7 @@ def test_migration_seeds_missing_resource_catalog_rows_idempotently():
 
     try:
         with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
+            connection.execute(text("""
                 CREATE TABLE model_types (
                     id INTEGER PRIMARY KEY,
                     app_name TEXT NOT NULL,
@@ -308,42 +302,28 @@ def test_migration_seeds_missing_resource_catalog_rows_idempotently():
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
-            """
-                )
-            )
-            connection.execute(
-                text(
-                    """
+            """))
+            connection.execute(text("""
                 INSERT INTO model_types
                     (id, app_name, model_name, table_name, description, is_managed,
                      resource_key, created_at, updated_at)
                 VALUES
                     (41, 'legacy', 'OldSource', 'sources', 'keep this row', false, NULL, 'old', 'old'),
                     (99, 'legacy', 'Mystery', 'unexpected_legacy', 'keep unknown', true, NULL, 'old', 'old')
-            """
-                )
-            )
+            """))
 
             migration._seed_resource_model_types(connection, "model_types")
-            after_first_seed = connection.execute(
-                text(
-                    """
+            after_first_seed = connection.execute(text("""
                     SELECT id, app_name, model_name, table_name, description, is_managed,
                            resource_key, created_at, updated_at
                       FROM model_types ORDER BY table_name, id
-                """
-                )
-            ).all()
+                """)).all()
             migration._seed_resource_model_types(connection, "model_types")
-            after_second_seed = connection.execute(
-                text(
-                    """
+            after_second_seed = connection.execute(text("""
                     SELECT id, app_name, model_name, table_name, description, is_managed,
                            resource_key, created_at, updated_at
                       FROM model_types ORDER BY table_name, id
-                """
-                )
-            ).all()
+                """)).all()
 
             rows_by_table = {row[3]: row for row in after_second_seed}
             assert set(rows_by_table) == set(migration.RESOURCES) | {"unexpected_legacy"}

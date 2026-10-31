@@ -69,7 +69,11 @@ const first=rows[0], local=first.querySelector('form input[name=mode][value=loca
 check(!!local,'local probe form exists');
 check(local.querySelector('input[name=_csrf]')?.value==='fixture-csrf','local probe carries CSRF');
 check(local.querySelector('input[name=model_id]')?.value==='31','local probe binds selected model');
-check(first.textContent.includes('4 успешно · 2 с ошибкой'),'compact success and failure counters visible');
+check(first.querySelector('.llm-health-success strong')?.textContent==='67%' &&
+ first.querySelector('.llm-health-failure strong')?.textContent==='33%' &&
+ first.querySelector('.llm-health-pill')?.title.includes('Успешно: 4, с ошибкой: 2') &&
+ rows[1].querySelector('.llm-health-empty')?.textContent.trim()==='Пока нет вызовов',
+ 'percentage capsule and empty state visible');
 check(first.textContent.includes('Ограничение квоты из fixture'),'current provider warning visible');
 const realDetails=first.querySelector('details.llm-real-probe');
 check(!!realDetails,'real probe is tucked behind compact disclosure');

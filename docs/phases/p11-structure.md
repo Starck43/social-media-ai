@@ -39,7 +39,8 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 
 26. [P11-T26](../audit/p11-t26.md) — DONE 2026-10-31: canonical model paths; obsolete shims removed; import/layout, fixture and offline checks passed (accepted `f955448f8387aca45a4475efeb2d2cd44ad18928`, merged `b8f372f0de16a0f512a0b6802367573737f78329`; PR #285).
 27. [P11-T27](../tasks/p11-t27.md) — Admin console audit and operator tooling hardening.
-28. [P11-T28](../tasks/p11-t28.md) — Workspace deletion is unreachable from the admin console (owner decision required: narrow catalog grant vs superuser bypass).
+28. [P11-T28](../tasks/p11-t28.md) — Workspace deletion: explicitly reserved for platform superuser; retained audit prevents deletion.
+29. [P11-T29](../tasks/p11-t29.md) — Durable workspace offboarding audit and explicit retention contract.
 
 ## Sequencing and continuity
 

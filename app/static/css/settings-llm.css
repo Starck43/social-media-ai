@@ -12,7 +12,6 @@
 }
 .llm-toolbar,
 .llm-card-heading,
-.llm-model-entry,
 .llm-actions {
   display: flex;
   align-items: center;
@@ -44,11 +43,24 @@
   font-size: 16px;
 }
 .llm-model-entry {
-  padding-block: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(196px, 236px);
+  align-items: start;
+  gap: 20px 28px;
+  padding-block: 20px;
   border-top: 1px solid var(--color-border);
 }
-.llm-model-entry > form {
-  flex-shrink: 0;
+.llm-model-info {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.llm-model-identity > strong {
+  display: block;
+  line-height: 1.4;
+}
+.llm-model-identity .llm-api-name {
+  margin-bottom: 0;
 }
 .llm-api-name {
   font-family: ui-monospace, monospace;
@@ -70,6 +82,102 @@
 .llm-default {
   color: var(--ui-accent);
   background: var(--ui-accent-soft);
+}
+.llm-model-metrics {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.llm-model-metrics-label {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.llm-health-pill {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(112px, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+.llm-health-pill > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 4px 12px;
+  font-weight: 500;
+}
+.llm-health-pill strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+.llm-health-success {
+  color: #166534;
+  background: #dcfce7;
+}
+.llm-health-failure {
+  color: #9f1239;
+  background: #ffe4e6;
+}
+.dark .llm-health-success {
+  color: #bbf7d0;
+  background: #14532d;
+}
+.dark .llm-health-failure {
+  color: #fecdd3;
+  background: #881337;
+}
+.llm-health-empty {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 12px;
+  border-color: var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-secondary);
+  font-size: 13px;
+}
+.llm-model-hint {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px !important;
+  line-height: 1.45;
+}
+.llm-model-actions {
+  display: grid;
+  justify-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+.llm-default-form,
+.llm-probe-actions,
+.llm-probe-form {
+  width: 100%;
+}
+.llm-default-form {
+  margin: 0;
+}
+.llm-default-button {
+  width: 100%;
+  color: var(--ui-accent);
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  font-weight: 600;
+}
+.llm-default-button:hover,
+.llm-probe-local:hover {
+  filter: brightness(0.97);
+}
+.dark .llm-default-button:hover,
+.dark .llm-probe-local:hover {
+  filter: brightness(1.12);
 }
 .llm-provider-fields {
   display: grid;
@@ -119,7 +227,7 @@
 .llm-catalog [data-popover-trigger] {
   color: var(--color-text);
 }
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .llm-provider-fields,
   .llm-model-fields {
     grid-template-columns: minmax(0, 1fr);
@@ -131,56 +239,105 @@
     justify-self: start;
   }
   .llm-model-entry {
-    align-items: flex-start;
-    flex-wrap: wrap;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
   }
   .llm-actions > button {
     width: 100%;
   }
 }
-.llm-health-counts {
+.llm-toolbar .llm-health-counts {
   margin-top: 6px;
   color: var(--color-text-secondary);
   font-size: 12px !important;
 }
 .llm-probe-actions {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
   gap: 8px;
-  flex-wrap: wrap;
 }
 .llm-probe-form {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-direction: column;
   gap: 8px;
-  flex-wrap: wrap;
+  margin: 0;
 }
 .llm-catalog .llm-probe-button {
-  min-height: 32px;
-  padding: 4px 10px;
-  font-size: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, filter 150ms ease;
+}
+.llm-catalog .llm-probe-local {
+  color: var(--ui-accent);
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+}
+.llm-catalog .llm-probe-real-submit {
+  color: #92400e;
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+.dark .llm-catalog .llm-probe-real-submit {
+  color: #fde68a;
+  border-color: #92400e;
+  background: #451a03;
+}
+.llm-real-probe {
+  min-width: 0;
 }
 .llm-real-probe > summary {
-  min-height: 32px !important;
-  padding: 6px 10px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px !important;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
   cursor: pointer;
 }
-.llm-real-probe[open] {
-  flex-basis: 100%;
+.llm-real-probe[open] > summary {
+  border-color: var(--ui-accent);
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+.llm-real-probe form {
+  padding: 12px;
+  border: 1px solid var(--ui-accent);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: var(--color-surface-secondary);
 }
 .llm-real-probe form label {
-  max-width: 360px;
+  max-width: 100%;
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.llm-real-probe form input[type="checkbox"] {
+  flex: 0 0 auto;
+  min-height: auto;
+  margin-top: 3px;
+}
+.llm-real-probe form .llm-probe-button {
+  align-self: stretch;
 }
 .llm-probe-status,
 .llm-probe-warning {
-  margin-top: 6px;
+  margin-top: 0;
 }
 .llm-probe-ok {
-  color: #059669;
+  color: #047857;
 }
 .llm-probe-failed,
 .llm-probe-warning {
@@ -193,7 +350,10 @@
 .dark .llm-probe-warning {
   color: #fbbf24;
 }
-@media (max-width: 640px) {
+@media (max-width: 760px) {
+  .llm-model-actions {
+    max-width: 100%;
+  }
   .llm-probe-actions,
   .llm-probe-form {
     width: 100%;

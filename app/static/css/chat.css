@@ -315,3 +315,24 @@
 @media(min-width:1200px) { .chat-workspace-panel { grid-column:2; grid-row:1; } }
 @media(max-width:1199px) { .chat-workspace-panel { max-height:50dvh; overflow-y:auto; } .chat-workspace-grid > .chat-window { grid-row:2; } .chat-workspace-panel { grid-column:1; grid-row:1; } .chat-panel-tab { grid-row:2; } }
 @media(max-width:639px) { .chat-content-dialog { width:100vw; height:100dvh; max-width:none; margin:0; border:0; border-radius:0; } }
+
+/* Photo and document attachments in the shared chat (P8-T44) */
+.chat-attachments { display:flex; flex-direction:column; gap:8px; width:100%; margin-bottom:8px; min-width:0; }
+.chat-attachment-card { display:flex; flex-direction:column; gap:4px; padding:8px 12px; border:1px solid var(--color-border); border-radius:10px; background:var(--color-surface-secondary); color:var(--color-text); font-size:13px; min-width:0; overflow-wrap:anywhere; }
+.chat-attachment-card[data-attachment-state="rejected"] { border-color:#fecdd3; background:#fff1f2; color:#9f1239; }
+.chat-attachment-card[data-attachment-state="confirm_required"] { border-color:#fde68a; }
+.chat-attachment-head { display:flex; align-items:center; gap:8px; min-width:0; flex-wrap:wrap; }
+.chat-attachment-name { font-weight:600; flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.chat-attachment-badge { flex:none; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text-secondary); }
+.chat-attachment-remove { flex:none; min-width:28px; min-height:28px; padding:0 6px; border-radius:6px; font-size:16px; line-height:1; color:var(--color-text-secondary); background:transparent; }
+.chat-attachment-remove:hover:not(:disabled) { background:var(--color-surface); color:var(--color-text); }
+.chat-attachment-meta { margin:0; font-size:12px; color:var(--color-text-secondary); }
+.chat-attachment-note { margin:0; font-size:12px; color:var(--color-text-secondary); }
+.chat-attachment-error { margin:0; font-size:12px; font-weight:500; }
+.chat-attachment-confirm { display:flex; flex-direction:column; gap:4px; margin-top:4px; padding-top:6px; border-top:1px dashed var(--color-border); font-size:12px; }
+.chat-attachment-confirm p { margin:0; }
+.chat-attachment-confirm-toggle { display:inline-flex; align-items:center; gap:6px; font-weight:500; cursor:pointer; }
+.chat-attachment-policy-body { display:flex; flex-direction:column; gap:8px; font-size:13px; line-height:1.45; }
+.chat-attachment-policy-body p { margin:0; }
+.chat-attachment-dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:12px; }
+.chat-attachment-dialog-actions button { margin-top:0; }

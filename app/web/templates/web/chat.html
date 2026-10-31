@@ -6,6 +6,7 @@
     // Pass initial server-rendered messages to Alpine
     window.__chatAwaitingConfirmation = {{ (awaiting_confirmation | default(false)) | tojson }};
     window.__chatMessages = {{ (messages | default([])) | tojson }};
+    window.__chatAttachmentPolicy = {{ (attachment_policy if attachment_policy is defined else none) | tojson }};
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
@@ -237,8 +238,46 @@
                 <button type="button" @click="clearWorkspaceTask()" :disabled="pending || awaitingConfirmation" aria-label="Убрать задачу из контекста сообщения">×</button>
             </div>
             <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input
+                type="file"
+                x-ref="attachmentInput"
+                multiple
+                :accept="attachmentAcceptAttr()"
+                @change="onFilesSelected($event)"
+                :disabled="pending || !attachmentEnabled()"
+                class="sr-only"
+                aria-label="Выбрать файлы для прикрепления"
+            >
+            <div class="chat-attachments" x-show="attachments.length" x-cloak aria-live="polite" data-chat-attachments>
+                <template x-for="att in attachments" :key="att.clientId">
+                    <div class="chat-attachment-card" :data-attachment-state="att.state">
+                        <div class="chat-attachment-head">
+                            <span class="chat-attachment-name" x-text="att.filename"></span>
+                            <span class="chat-attachment-badge" x-text="attachmentStateLabel(att)"></span>
+                            <button
+                                type="button"
+                                class="chat-attachment-remove"
+                                @click="removeAttachment(att.clientId)"
+                                :disabled="pending && !sending"
+                                :aria-label="'Удалить вложение ' + att.filename"
+                                title="Удалить файл"
+                            >×</button>
+                        </div>
+                        <p class="chat-attachment-meta" x-show="att.summary_label" x-text="att.summary_label"></p>
+                        <p class="chat-attachment-note" x-show="att.omitted_note" x-text="att.omitted_note"></p>
+                        <p class="chat-attachment-error" x-show="att.error" role="alert" x-text="att.error"></p>
+                        <div class="chat-attachment-confirm" x-show="att.requires_confirmation && att.state !== 'rejected'">
+                            <p x-text="att.confirmation_reason"></p>
+                            <label class="chat-attachment-confirm-toggle">
+                                <input type="checkbox" :checked="att.confirmed" @change="toggleAttachmentConfirm(att.clientId, $event.target.checked)">
+                                <span x-text="'Подтверждаю расход ~' + (att.estimated_tokens || 0) + ' токенов'"></span>
+                            </label>
+                        </div>
+                    </div>
+                </template>
+            </div>
             <textarea
-                name="text" rows="2" required placeholder="Напишите сообщение или /help"
+                name="text" rows="2" :required="!readyAttachments().length" placeholder="Напишите сообщение или /help"
                 x-ref="input"
                 @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendMessage(); }"
                 @input="resizeInput()" :disabled="pending" aria-label="Сообщение агенту"
@@ -246,7 +285,8 @@
             ></textarea>
             <div class="chat-composer-bar flex items-center gap-4 justify-between w-full">
                 <div class="chat-suggestions">
-                    <button type="button" class="chat-attach" @click="$refs.attachmentInfo.showModal()" aria-label="Прикрепить файл — о доступности" title="Фото и документы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9m-6 12 8-8"/></svg></button>
+                    <button type="button" class="chat-attach" @click="handleAttachClick()" :disabled="pending || awaitingConfirmation" :aria-label="attachmentEnabled() ? 'Прикрепить фото или документ' : 'Прикрепить файл — о доступности'" title="Фото и документы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9m-6 12 8-8"/></svg></button>
+                    <button type="button" class="chat-attach-limits" x-show="attachmentEnabled()" x-cloak @click="openAttachmentLimits()" :disabled="pending" aria-label="Допустимые форматы и лимиты вложений">Форматы и лимиты</button>
                     <button type="button" @click="draftAction('Помоги составить задачу. Уточни цель, источники, период и нужный результат; затем покажи план.')" :disabled="pending || awaitingConfirmation">Составить задачу</button>
                     <button type="button" @click="draftAction('Кратко подведи итог нашего диалога: решения, открытые вопросы и следующий шаг.')" :disabled="pending || awaitingConfirmation">Итог диалога</button>
                     <button type="button" @click="draftAction('/help')" :disabled="pending || awaitingConfirmation">Что ты умеешь?</button>
@@ -289,8 +329,36 @@
     </dialog>
     <dialog class="chat-attachment-dialog" x-ref="attachmentInfo" aria-labelledby="chat-attachment-title">
         <h2 id="chat-attachment-title">Фото и документы</h2>
+        {% if attachment_policy is defined and attachment_policy %}
+        <div class="chat-attachment-policy-body">
+            <p>
+                Активная модель чата: <strong x-text="attachmentPolicy?.model_name || '{{ attachment_policy.model_name }}'">{{ attachment_policy.model_name }}</strong>
+                (лимит ответа модели: <span x-text="attachmentPolicy?.model_max_tokens || {{ attachment_policy.model_max_tokens }}">{{ attachment_policy.model_max_tokens }}</span> токенов).
+            </p>
+            <p>
+                <strong>Допустимые документы для задач:</strong>
+                <code>.txt</code>, <code>.md</code>, <code>.csv</code>, <code>.tsv</code>, <code>.json</code>, <code>.pdf</code> (с текстовым слоем, до {{ attachment_policy.max_pdf_pages }} стр.), <code>.docx</code> — до {{ attachment_policy.max_document_size_label }} (до {{ attachment_policy.max_files_per_turn }} файлов за сообщение).
+            </p>
+            <p x-show="attachmentPolicy?.image_supported">
+                <strong>Изображения:</strong>
+                <code>.png</code>, <code>.jpg</code>, <code>.webp</code>, <code>.gif</code> — до {{ attachment_policy.max_image_size_label }}, до {{ attachment_policy.max_image_dimension }}×{{ attachment_policy.max_image_dimension }} пикс.
+            </p>
+            <p x-show="!attachmentPolicy?.image_supported" x-text="attachmentPolicy?.image_reason || '{{ attachment_policy.image_reason }}'"></p>
+            <p>
+                <strong>Отклоняются агентом:</strong> исполняемые файлы и скрипты (<code>.exe</code>, <code>.sh</code>, <code>.py</code>, <code>.js</code>), архивы (<code>.zip</code>, <code>.rar</code>, <code>.7z</code>), аудио/видео, бинарные таблицы и макросы (<code>.doc</code>, <code>.xls</code>, <code>.xlsx</code>, <code>.docm</code>), <code>.svg</code>, зашифрованные файлы и сканы PDF без текста.
+            </p>
+            <p>
+                <strong>Контроль расхода токенов:</strong> если вложение крупное (от ~{{ attachment_policy.confirm_token_threshold }} токенов или свыше 35% окна модели), чат предупредит и запросит подтверждение перед отправкой.
+            </p>
+        </div>
+        <div class="chat-attachment-dialog-actions">
+            <button type="button" @click="chooseFileFromDialog()" x-show="attachmentEnabled()">Выбрать файл</button>
+            <form method="dialog"><button type="submit">Понятно</button></form>
+        </div>
+        {% else %}
         <p>Прикрепление файлов пока недоступно. Сейчас помощник получает только текст сообщения. Можно вставить текст документа или ссылку и уточнить, что нужно сделать.</p>
         <form method="dialog"><button type="submit">Понятно</button></form>
+        {% endif %}
     </dialog>
 </div>
 {% endblock %}

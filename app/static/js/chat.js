@@ -18,6 +18,10 @@ function chatApp() {
             workspaceListRequest: 0,
             workspaceTaskRequest: 0,
             awaitingConfirmation: Boolean(window.__chatAwaitingConfirmation),
+            attachmentPolicy: window.__chatAttachmentPolicy || null,
+            attachments: [],
+            attachmentUploading: false,
+            attachmentSeq: 0,
             draftNotice: '',
             pending: false,
             sending: false,
@@ -235,6 +239,184 @@ function chatApp() {
             visibleMessages(items) {
                 return items.filter(m => ['user', 'assistant'].includes(m.role) && typeof m.content === 'string' && m.content.trim());
             },
+            attachmentEnabled() {
+                return Boolean(this.attachmentPolicy && this.attachmentPolicy.enabled);
+            },
+            attachmentAcceptAttr() {
+                if (!this.attachmentPolicy) return '';
+                const docs = this.attachmentPolicy.allowed_document_extensions || [];
+                const imgs = this.attachmentPolicy.allowed_image_extensions || [];
+                return [...docs, ...imgs].join(',');
+            },
+            handleAttachClick() {
+                if (!this.attachmentEnabled()) {
+                    this.$refs.attachmentInfo?.showModal();
+                    return;
+                }
+                this.$refs.attachmentInput?.click();
+            },
+            openAttachmentLimits() {
+                this.$refs.attachmentInfo?.showModal();
+            },
+            chooseFileFromDialog() {
+                this.$refs.attachmentInfo?.close();
+                if (this.attachmentEnabled()) {
+                    this.$refs.attachmentInput?.click();
+                }
+            },
+            attachmentStateLabel(att) {
+                if (!att) return '';
+                if (att.state === 'selected') return 'Выбрано — проверка…';
+                if (att.state === 'rejected') return 'Отклонено';
+                if (att.state === 'processed') return 'Обработано';
+                if (att.requires_confirmation) {
+                    return att.confirmed ? 'Подтверждено' : 'Требуется подтверждение';
+                }
+                return 'Готово к отправке';
+            },
+            readyAttachments() {
+                return this.attachments.filter(
+                    (a) => a.id && (a.state === 'uploaded' || a.state === 'confirm_required')
+                );
+            },
+            hasRejectedAttachments() {
+                return this.attachments.some((a) => a.state === 'rejected');
+            },
+            hasUnconfirmedLargeAttachments() {
+                const ready = this.readyAttachments();
+                if (!ready.length) return false;
+                if (ready.some((a) => a.requires_confirmation && !a.confirmed)) return true;
+                const threshold = this.attachmentPolicy?.confirm_token_threshold || 1500;
+                const totalTokens = ready.reduce((acc, a) => acc + (Number(a.estimated_tokens) || 0), 0);
+                return totalTokens >= threshold && !ready.every((a) => a.confirmed);
+            },
+            toggleAttachmentConfirm(clientId, checked) {
+                const item = this.attachments.find((a) => a.clientId === clientId);
+                if (item) {
+                    item.confirmed = Boolean(checked);
+                }
+            },
+            async onFilesSelected(event) {
+                const inputEl = event?.target;
+                const files = Array.from(inputEl?.files || []);
+                // Reset immediately so selecting the same file again triggers change in Safari/Chrome
+                if (inputEl) inputEl.value = '';
+                if (!files.length || !this.attachmentEnabled()) return;
+
+                const maxFiles = this.attachmentPolicy?.max_files_per_turn || 4;
+                const activeCount = this.attachments.filter((a) => a.state !== 'rejected').length;
+                if (activeCount + files.length > maxFiles) {
+                    this.notice = `Можно прикрепить не более ${maxFiles} файлов к одному сообщению.`;
+                    return;
+                }
+                this.notice = '';
+                for (const file of files) {
+                    await this.uploadAttachment(file);
+                }
+            },
+            async uploadAttachment(file) {
+                const clientId = 'att-' + (++this.attachmentSeq) + '-' + Date.now();
+                const entry = {
+                    clientId,
+                    id: null,
+                    filename: file.name || 'file',
+                    size_bytes: file.size || 0,
+                    state: 'selected',
+                    summary_label: 'Проверка формата и оценка токенов…',
+                    estimated_tokens: 0,
+                    estimated_cost_usd: 0,
+                    requires_confirmation: false,
+                    confirmation_reason: '',
+                    omitted_note: '',
+                    confirmed: false,
+                    error: '',
+                };
+                this.attachments.push(entry);
+                this.attachmentUploading = true;
+                try {
+                    const formData = new FormData();
+                    formData.append('_csrf', this.csrf);
+                    formData.append('file', file);
+                    if (this.workspaceTaskId) {
+                        formData.append('task_id', String(this.workspaceTaskId));
+                    }
+                    const response = await fetch('/app/chat/attachments', {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: formData,
+                    });
+                    let data = {};
+                    try {
+                        data = await response.json();
+                    } catch (_) {
+                        data = {};
+                    }
+                    if (!response.ok || data.error || !data.attachment) {
+                        entry.state = 'rejected';
+                        entry.summary_label = '';
+                        entry.error = data.error || `Файл отклонён (${response.status}).`;
+                        return;
+                    }
+                    const srv = data.attachment;
+                    entry.id = srv.id;
+                    entry.filename = srv.filename || entry.filename;
+                    entry.summary_label = srv.summary_label || '';
+                    entry.estimated_tokens = Number(srv.estimated_tokens) || 0;
+                    entry.estimated_cost_usd = Number(srv.estimated_cost_usd) || 0;
+                    entry.requires_confirmation = Boolean(srv.requires_confirmation);
+                    entry.confirmation_reason = srv.confirmation_reason || '';
+                    entry.omitted_note = srv.omitted_note || '';
+                    entry.state = entry.requires_confirmation ? 'confirm_required' : 'uploaded';
+                } catch (err) {
+                    console.error('Attachment upload error:', err);
+                    entry.state = 'rejected';
+                    entry.summary_label = '';
+                    entry.error = err.message || 'Не удалось загрузить файл.';
+                } finally {
+                    this.attachmentUploading = this.attachments.some((a) => a.state === 'selected');
+                }
+            },
+            async removeAttachment(clientId) {
+                const idx = this.attachments.findIndex((a) => a.clientId === clientId);
+                if (idx === -1) return;
+                const [removed] = this.attachments.splice(idx, 1);
+                if (removed?.id) {
+                    try {
+                        await fetch(`/app/chat/attachments/${encodeURIComponent(removed.id)}/delete`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Accept': 'application/json',
+                            },
+                            body: new URLSearchParams({ '_csrf': this.csrf }),
+                        });
+                    } catch (_) {
+                        // Best-effort server cleanup
+                    }
+                }
+            },
+            async cleanupStagedAttachments() {
+                const staged = this.attachments.filter((a) => a.id);
+                this.attachments = [];
+                if (!staged.length) return;
+                try {
+                    await fetch('/app/chat/attachments/cleanup', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: new URLSearchParams({ '_csrf': this.csrf }),
+                    });
+                } catch (_) {
+                    // Best-effort cleanup
+                }
+            },
             requestConfirmation(kind, id = null) {
                 if (this.pending) return;
                 this.confirmation = { kind, id, label: kind === 'clear' ? 'Очистить историю диалога?' : 'Удалить сообщение?' };
@@ -242,6 +424,12 @@ function chatApp() {
             performConfirmation() {
                 const action = this.confirmation; this.confirmation = null;
                 if (action?.kind === 'clear') this.clearHistory();
+                else if (action?.kind === 'send_large_attachments') {
+                    for (const att of this.readyAttachments()) {
+                        att.confirmed = true;
+                    }
+                    this.sendMessage(action.preset || '', true);
+                }
                 else if (action) this.deleteMessage(action.id);
             },
             isLast(message) { return this.messages.at(-1)?.id === message.id },
@@ -260,7 +448,12 @@ function chatApp() {
                 this.thinkingTimer = null
             },
             resizeInput() { const el = this.$refs.input; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 180) + 'px'; },
-            stopGeneration() { if (this.abortController) this.abortController.abort(); },
+            stopGeneration() {
+                if (this.abortController) this.abortController.abort();
+                if (this.attachments.some((a) => a.id)) {
+                    this.cleanupStagedAttachments();
+                }
+            },
             safeMarkdown(html) {
                 const doc = new DOMParser().parseFromString(html, 'text/html');
                 const allowed = new Set(['P','BR','STRONG','EM','DEL','UL','OL','LI','H1','H2','H3','H4','BLOCKQUOTE','PRE','CODE','A','TABLE','THEAD','TBODY','TR','TH','TD','HR','DIV','SPAN','BUTTON']);
@@ -351,10 +544,34 @@ function chatApp() {
                 this.$nextTick(() => this.scrollToBottom())
             },
 
-            async sendMessage(preset = '') {
+            async sendMessage(preset = '', forceConfirmLarge = false) {
                 const textarea = this.$refs.input
-                const text = (typeof preset === 'string' && preset ? preset : textarea.value).trim()
-                if (!text || this.pending || this.workspaceContextBlocked()) return
+                const rawText = (typeof preset === 'string' && preset ? preset : textarea.value).trim()
+                const readyAtts = this.readyAttachments()
+                if ((!rawText && !readyAtts.length) || this.pending || this.workspaceContextBlocked()) return
+                if (this.attachmentUploading) {
+                    this.notice = 'Дождитесь завершения проверки и загрузки вложений.'
+                    return
+                }
+                if (this.hasRejectedAttachments()) {
+                    this.notice = 'Удалите отклонённые вложения перед отправкой сообщения.'
+                    return
+                }
+                if (!forceConfirmLarge && this.hasUnconfirmedLargeAttachments()) {
+                    const totalTokens = readyAtts.reduce((acc, a) => acc + (Number(a.estimated_tokens) || 0), 0)
+                    const modelMax = this.attachmentPolicy?.model_max_tokens || 4096
+                    this.confirmation = {
+                        kind: 'send_large_attachments',
+                        preset: typeof preset === 'string' ? preset : '',
+                        label: `Крупное вложение (~${totalTokens} токенов при лимите модели ${modelMax}). Подтвердить отправку и расход токенов?`,
+                    }
+                    return
+                }
+
+                const text = rawText || 'Проанализируй прикреплённые файлы в контексте задачи.'
+                const attachmentIds = readyAtts.map((a) => a.id).join(',')
+                const confirmLarge = (forceConfirmLarge || readyAtts.some((a) => a.confirmed)) ? '1' : ''
+
                 this.notice = ''
                 this.draftNotice = '';
                 const selectedId = this.workspaceTaskId;
@@ -365,10 +582,15 @@ function chatApp() {
                 this.startThinking()
 
                 // Optimistic: show user message immediately
+                const optimisticText = readyAtts.length
+                    ? `[Вложения: ${readyAtts.map((a) => a.filename).join(', ')}]
+
+${text}`
+                    : text
                 const userMsg = {
                     id: 'pending-' + Date.now(),
                     role: 'user',
-                    content: text,
+                    content: optimisticText,
                     created_at: new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
                 }
                 this.messages.push(userMsg)
@@ -388,6 +610,8 @@ function chatApp() {
                             '_csrf': this.csrf,
                             'text': text,
                             ...(selectedId ? {task_id: selectedId} : {}),
+                            ...(attachmentIds ? {attachment_ids: attachmentIds} : {}),
+                            ...(confirmLarge ? {confirm_large: confirmLarge} : {}),
                         }),
                         signal: this.abortController.signal,
                     })
@@ -406,6 +630,11 @@ function chatApp() {
                         error.code = data.code || null
                         throw error
                     }
+
+                    for (const att of readyAtts) {
+                        att.state = 'processed'
+                    }
+                    this.attachments = []
 
                     // Replace with full transcript from server (includes user msg + assistant replies)
                     this.messages = this.visibleMessages(data.messages || [])
@@ -431,7 +660,7 @@ function chatApp() {
                     // never typed, which is exactly how a spent daily limit
                     // looked like a broken form.
                     userMsg.failed = true
-                    textarea.value = text
+                    textarea.value = rawText
                     this.notice = (err.code === 'daily_limit_reached' ? 'Лимит: ' : '') +
                         (err.message || 'Не удалось отправить сообщение.')
                     this.$nextTick(() => this.scrollToBottom())
@@ -464,6 +693,7 @@ function chatApp() {
                     if (!response.ok || data.error) throw new Error(data.error)
                     this.messages = this.visibleMessages(data.messages || [])
                     this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
+                    this.attachments = [];
                     this.pending = false;
                     this.clearWorkspaceTask();
                     if (data.warning) this.notice = data.warning

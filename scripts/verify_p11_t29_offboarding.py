@@ -150,8 +150,12 @@ def main() -> int:
     args = parser.parse_args()
     raw, schema = resolve_target()
     print(f"Target: localhost:5432/social_manager/{schema}; migration {EXPECTED_REVISION} -> {TARGET_REVISION}")
-    print("Sequence: inventory public+test_schema; verify baseline; upgrade; focused pytest; Safari via live test;")
-    print("          fixture cleanup; explicit test-only downgrade; inventory and exact catalog/reference comparison.")
+    print(
+        "Sequence: prepare T28 reference; advisory lock + active-session check; snapshot public+test_schema; verify baseline;"
+    )
+    print(
+        "          upgrade; focused pytest/Safari; fixture cleanup; test-only downgrade; exact before/after comparison."
+    )
     if args.plan or not args.execute:
         print("No database connection made. Pass --execute only during the approved exclusive test_schema window.")
         return 0

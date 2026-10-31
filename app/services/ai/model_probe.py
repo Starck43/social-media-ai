@@ -555,7 +555,14 @@ def provider_limit_hint(result: dict[str, Any], model=None) -> dict[str, str] | 
     if code is None:
         if any(
             term in text
-            for term in ("insufficient_quota", "quota_exceeded", "quota exceeded", "out of quota", "credits exhausted")
+            for term in (
+                "insufficient_quota",
+                "quota_exceeded",
+                "quota exceeded",
+                "out of quota",
+                "quota exhausted",
+                "credits exhausted",
+            )
         ):
             code = "quota"
         elif any(

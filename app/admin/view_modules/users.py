@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy.exc import IntegrityError
+from sqladmin import expose
 
 from ._shared import (
     ActionType,
@@ -375,20 +375,30 @@ class TenantAdmin(BaseAdmin, model=Tenant):
         **BaseAdmin.form_args,
     }
 
-    async def delete_model(self, request: Request, pk: Any) -> Any:
-        """Keep retained workspace evidence protected and hide database details.
+    can_delete = False
+    action_permissions = {"offboard": ActionType.DELETE}
 
-        The database FK remains the final atomic guard, including against a
-        concurrent audit append. SQLAdmin displays a failed deletion's message
-        in its list page; never expose the raw constraint/SQL in that URL.
-        """
-        try:
-            return await super().delete_model(request, pk)
-        except IntegrityError as exc:
-            raise ValueError(
-                "Нельзя удалить рабочее пространство: сохранённый аудит или связанные "
-                "защищённые записи требуют отдельной процедуры хранения и удаления."
-            ) from exc
+    async def delete_model(self, request: Request, pk: Any) -> Any:
+        """A legacy CRUD call cannot bypass the reviewed offboarding service."""
+        raise HTTPException(409, "Use the confirmed workspace offboarding action")
+
+    @action(name="offboard", label="Удалить с аудитом", add_in_list=True, add_in_detail=True)
+    async def offboard_action(self, request: Request):
+        from app.admin.offboarding import offboarding_page
+
+        return await offboarding_page(self, request)
+
+    @expose("/action/offboard", methods=["POST"])
+    async def offboard_submit(self, request: Request):
+        from app.admin.offboarding import offboarding_page
+
+        return await offboarding_page(self, request, submit=True)
+
+    @expose("/offboarding-journal", methods=["GET"])
+    async def offboarding_journal(self, request: Request):
+        from app.admin.offboarding import offboarding_journal
+
+        return await offboarding_journal(self, request)
 
     def is_accessible(self, request: Request) -> bool:
         """Workspace-wide administration is reserved for platform admins.

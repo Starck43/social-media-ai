@@ -236,4 +236,23 @@ console_page.ready();
 check(console_page.open(), ['System'], 'active route category auto-expands when storage is empty');
 check(JSON.parse(console_page.store.get(KEY)), ['System'], 'active route category is remembered');
 
+// The current page wins over a group remembered from somewhere else: the
+// console marks the category of the open view as active.
+console_page = sidebar(['Content'], 'System');
+console_page.ready();
+check(console_page.open(), ['System'], 'the category of the current page wins over stale storage');
+check(JSON.parse(console_page.store.get(KEY)), ['System'], 'the current page category replaces stale storage');
+
+// A stack written by the old behavior with no markup state keeps its newest.
+console_page = sidebar();
+console_page.ready();
+console_page.store.set(KEY, JSON.stringify(['System', 'Content']));
+check(console_page.open(), [], 'nothing is open before the page renders the stack');
+
+// A remembered category that no longer exists leaves the menu closed, without
+// resurrecting the old group.
+console_page = sidebar(['Removed']);
+console_page.ready();
+check(console_page.open(), [], 'a remembered category that no longer exists opens nothing');
+
 console.log(`${checks} admin menu single-open/restore checks passed.`);

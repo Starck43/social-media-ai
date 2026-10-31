@@ -101,6 +101,14 @@ try {
       (async () => {
         const checks = [];
         const check = (value, label) => { if (!value) throw Error(label + ' diagnostic=' + JSON.stringify(diagnostic())); checks.push(label); };
+        const waitFor = async (predicate, label, timeout = 1500) => {
+          const deadline = Date.now() + timeout;
+          while (Date.now() < deadline) {
+            if (predicate()) return true;
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+          throw Error('Timed out waiting for ' + label + ' diagnostic=' + JSON.stringify(diagnostic()));
+        };
         check(root && panel, 'real chat template includes the task workspace');
         check(panel.querySelector('#chat-task-search'), 'task picker has a labelled search input');
         check(panel.textContent.includes('Быстрые действия'), 'persistent quick action section renders');
@@ -112,6 +120,7 @@ try {
         let submitted = null;
         let failNextSnapshot = false;
         let releaseStaleSnapshot;
+        let staleResponseParsed = false;
         window.fetch = async (url, options = {}) => {
           if (url.startsWith('/app/chat/workspace/tasks?')) {
             return {ok: true, json: async () => ({tasks: [{id: 57, name: 'Fixture task'}, {id: 58, name: 'Other task'}], next_offset: null})};
@@ -141,9 +150,8 @@ try {
           }
           throw Error('Unexpected fixture request: ' + url);
         };
-        await new Promise(resolve => setTimeout(resolve, 120));
+        await waitFor(() => window.Alpine && typeof Alpine.$data(root)?.toggleWorkspacePanel === 'function', 'Alpine component initialization');
         app = Alpine.$data(root);
-        await new Promise(resolve => setTimeout(resolve, 20));
         check(Alpine && app, 'Alpine initializes the real workspace component');
         const originalToggleWorkspacePanel = app.toggleWorkspacePanel;
         app.toggleWorkspacePanel = function(...args) {
@@ -168,42 +176,43 @@ try {
         };
         const toggle = panel.querySelector('[aria-label="Свернуть рабочий контекст"]');
         if (!app.panelOpen) root.querySelector('.chat-panel-toggle').click();
-        await new Promise(resolve => setTimeout(resolve, 25));
+        await waitFor(() => app.panelOpen && getComputedStyle(panel).display !== 'none', 'panel opening before Escape');
         panel.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
-        const escapeDeadline = Date.now() + 1500;
-        while (Date.now() < escapeDeadline && (
-          app.panelOpen || getComputedStyle(panel).display !== 'none' ||
-          document.activeElement !== root.querySelector('.chat-panel-toggle')
-        )) {
-          await new Promise(resolve => requestAnimationFrame(resolve));
+        let escapeWaitError = null;
+        try {
+          await waitFor(() => !app.panelOpen && getComputedStyle(panel).display === 'none' &&
+            document.activeElement === root.querySelector('.chat-panel-toggle'), 'Escape closes panel and restores focus');
+        } catch (error) {
+          escapeWaitError = error.message;
         }
         const escapePassed = getComputedStyle(panel).display === 'none' && document.activeElement === root.querySelector('.chat-panel-toggle');
         escapeAssertion = {passed: escapePassed, beforeProbe: diagnostic()};
-        check(escapePassed, 'Escape closes panel and restores focus');
+        check(escapePassed, escapeWaitError || 'Escape closes panel and restores focus');
         root.querySelector('.chat-panel-toggle').click();
-        await new Promise(resolve => setTimeout(resolve, 25));
+        await waitFor(() => getComputedStyle(panel).display !== 'none', 'panel visibility after opening');
         check(getComputedStyle(panel).display !== 'none', 'opening the panel updates the real Alpine state');
 
         const input = panel.closest('.chat-page').querySelector('.chat-input');
         input.value = 'Existing draft';
         panel.querySelector('.chat-panel-actions button').click();
-        await new Promise(resolve => setTimeout(resolve, 25));
+        await waitFor(() => input.value.startsWith('Existing draft\n\n'), 'prepared request appends to existing draft');
         check(input.value.startsWith('Existing draft\n\n'), 'quick action appends without replacing the draft');
 
         const search = panel.querySelector('#chat-task-search');
         search.value = 'Fixture';
         search.dispatchEvent(new Event('input', {bubbles: true}));
-        await new Promise(resolve => setTimeout(resolve, 400));
+        await waitFor(() => [...panel.querySelectorAll('.chat-task-picker-list button')]
+          .some(button => button.textContent === 'Fixture task'), 'searched tasks render');
         const taskButton = [...panel.querySelectorAll('.chat-task-picker-list button')].find(button => button.textContent === 'Fixture task');
         check(taskButton, 'search results render through the real task picker');
         taskButton.click();
-        await new Promise(resolve => setTimeout(resolve, 40));
+        await waitFor(() => panel.textContent.includes('Fixture goal') && panel.textContent.includes('Fixture analysis'), 'selected task summary renders');
         check(panel.textContent.includes('Fixture goal') && panel.textContent.includes('Fixture analysis'), 'selected plan and latest result render');
         check(document.querySelector('.chat-context-label').textContent.includes('Fixture task'), 'selected task is visible beside chat');
 
         input.value = 'Ask about selected task';
         document.querySelector('.chat-send').click();
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await waitFor(() => submitted?.get('task_id') === '57' && !app.pending, 'selected-task request completes');
         check(submitted?.get('task_id') === '57', 'real chat send includes the explicit selected task ID');
         check(submitted?.get('text') === 'Ask about selected task', 'real chat send preserves the typed request');
 
@@ -213,40 +222,44 @@ try {
         app.workspaceTaskError = 'temporary refresh error';
         input.value = 'да';
         document.querySelector('.chat-send').click();
-        await new Promise(resolve => setTimeout(resolve, 35));
+        await waitFor(() => submitted?.get('text') === 'да' && !app.pending, 'confirmation reply completes during task refresh');
         check(submitted?.get('text') === 'да', 'pending confirmation can be sent while task refresh is pending');
         check(submitted?.get('task_id') === '57', 'pending reply leaves authority to the existing server confirmation state');
         app.workspaceTaskLoading = false;
         app.workspaceTaskError = '';
-        await new Promise(resolve => setTimeout(resolve, 25));
+        await waitFor(() => panel.querySelector('.chat-panel-actions button').disabled &&
+          panel.querySelector('#chat-task-search').disabled, 'workspace controls reflect pending confirmation');
         check(panel.querySelector('.chat-panel-actions button').disabled, 'task actions disable while confirmation is pending');
         check(panel.querySelector('#chat-task-search').disabled, 'task picker disables while confirmation is pending');
         app.awaitingConfirmation = false;
-        await new Promise(resolve => setTimeout(resolve, 25));
+        await waitFor(() => !panel.querySelector('#chat-task-search').disabled, 'task picker re-enables after confirmation');
 
         const clearSelection = document.querySelector('.chat-context-label button');
         clearSelection.click();
-        await new Promise(resolve => setTimeout(resolve, 25));
+        await waitFor(() => app.workspaceTaskId === null && !app.workspaceTask, 'selected task clears');
         check(app.workspaceTaskId === null && !app.workspaceTask, 'real clear control removes the selected context');
 
         const buttons = [...panel.querySelectorAll('.chat-task-picker-list button')];
         buttons.find(button => button.textContent === 'Other task').click();
-        await new Promise(resolve => setTimeout(resolve, 15));
+        await waitFor(() => app.workspaceTaskId === 58 && releaseStaleSnapshot, 'second task read begins');
         document.querySelector('.chat-context-label button').click();
-        releaseStaleSnapshot({ok: true, json: async () => ({id: 58, name: 'Stale result'})});
-        await new Promise(resolve => setTimeout(resolve, 40));
+        releaseStaleSnapshot({ok: true, json: async () => { staleResponseParsed = true; return {id: 58, name: 'Stale result'}; }});
+        await waitFor(() => staleResponseParsed && !app.workspaceTask && app.workspaceTaskId === null, 'late task response cannot restore cleared selection');
         check(!app.workspaceTask && app.workspaceTaskId === null, 'late response cannot restore a cleared task');
 
         buttons.find(button => button.textContent === 'Fixture task').click();
-        await new Promise(resolve => setTimeout(resolve, 40));
+        await waitFor(() => app.workspaceTask?.name === 'Fixture task', 'task selection reloads');
         failNextSnapshot = true;
         [...panel.querySelectorAll('button')].find(button => button.textContent.trim() === 'Обновить').click();
-        await new Promise(resolve => setTimeout(resolve, 40));
+        await waitFor(() => Boolean(app.workspaceTaskError), 'refresh error state renders');
         check(!app.workspaceTask && panel.textContent.includes('Не удалось обновить задачу'), 'refresh failure hides stale snapshot and explains recovery');
 
-        app.panelOpen = true;
-        root.classList.add('chat-panel-open');
-        await new Promise(resolve => setTimeout(resolve, 25));
+        if (!app.panelOpen) root.querySelector('.chat-panel-toggle').click();
+        await waitFor(() => app.panelOpen && getComputedStyle(panel).display !== 'none' &&
+          (innerWidth >= 1200
+            ? getComputedStyle(document.querySelector('.chat-workspace-grid')).gridTemplateColumns.split(' ').length === 2
+            : getComputedStyle(document.querySelector('.chat-workspace-grid')).gridTemplateColumns.split(' ').length === 1),
+        'workspace layout settles at measured viewport');
         const columns = getComputedStyle(document.querySelector('.chat-workspace-grid')).gridTemplateColumns.split(' ').length;
         if (innerWidth >= 1200) check(columns === 2, 'desktop panel shares the chat workspace in two columns');
         else check(columns === 1, 'mobile panel stacks without a horizontal split');

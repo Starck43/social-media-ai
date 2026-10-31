@@ -6,15 +6,89 @@ Keep those operations on a dedicated session class, using the same actor and
 active workspace as the manager layer. Application/worker sessions are unchanged.
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Iterator
+
 from fastapi import HTTPException
 from sqlalchemy import event, false, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, with_loader_criteria
 
 from app.core.access_catalog import resource_for
-from app.core.permissions import get_current_user, has_permission
-from app.core.tenant_context import current_tenant_id
+from app.core.permissions import (
+    _member_grants,
+    _operator_grant,
+    _platform_request,
+    _service_grant,
+    _workspace_owner,
+    get_current_user,
+    has_permission,
+)
+from app.core.tenant_context import current_tenant_id, is_bypass
 from app.types import ActionType
+
+_request_row_criteria: ContextVar[dict | None] = ContextVar("admin_request_row_criteria", default=None)
+_ambient_row_criteria: ContextVar[tuple[tuple, dict] | None] = ContextVar("admin_ambient_row_criteria", default=None)
+
+
+@contextmanager
+def row_criteria_scope() -> Iterator[dict]:
+    """Bind a fresh per-request cache for `row_criterion` and `_scope_reads`."""
+    cache: dict = {}
+    token = _request_row_criteria.set(cache)
+    ambient_token = _ambient_row_criteria.set(None)
+    try:
+        yield cache
+    finally:
+        _request_row_criteria.reset(token)
+        _ambient_row_criteria.reset(ambient_token)
+
+
+def _scope_cache_key() -> tuple:
+    actor = get_current_user()
+    role = getattr(actor, "role", None) if actor is not None else None
+    role_perms = getattr(role, "permissions", None) if role is not None else None
+    if isinstance(role_perms, (list, tuple, set, frozenset)):
+        perm_sig = frozenset(getattr(p, "id", id(p)) for p in role_perms)
+    else:
+        perm_sig = id(role_perms)
+    actor_grants = getattr(actor, "grants", None) if actor is not None else None
+    if isinstance(actor_grants, dict):
+        grants_sig = tuple(sorted((k, frozenset(v)) for k, v in actor_grants.items()))
+    else:
+        grants_sig = None
+    return (
+        id(actor) if actor is not None else None,
+        getattr(actor, "id", None) if actor is not None else None,
+        bool(getattr(actor, "is_active", False)),
+        bool(getattr(actor, "is_superuser", False)),
+        id(role) if role is not None else None,
+        perm_sig,
+        grants_sig,
+        current_tenant_id(),
+        is_bypass(),
+        _member_grants.get(),
+        _workspace_owner.get(),
+        _service_grant.get(),
+        _operator_grant.get(),
+        _platform_request.get(),
+        id(_may_read_private),
+        id(has_permission),
+        id(resource_for),
+    )
+
+
+def _active_criteria_cache(scope_key: tuple) -> dict:
+    request_cache = _request_row_criteria.get()
+    if request_cache is not None:
+        return request_cache
+    ambient = _ambient_row_criteria.get()
+    if ambient is not None and ambient[0] == scope_key:
+        return ambient[1]
+    fresh: dict = {}
+    _ambient_row_criteria.set((scope_key, fresh))
+    return fresh
 
 
 def _may_read_private(model, actor) -> bool:
@@ -34,8 +108,7 @@ def _may_read_private(model, actor) -> bool:
     return bool(granted)
 
 
-def row_criterion(model):
-    """An ORM predicate for private rows, or None for platform reference data."""
+def _compute_row_criterion(model):
     actor = get_current_user()
     actor_id = getattr(actor, "id", None) if getattr(actor, "is_active", False) else None
     private = (
@@ -58,6 +131,18 @@ def row_criterion(model):
     return None
 
 
+def row_criterion(model):
+    """An ORM predicate for private rows, or None for platform reference data."""
+    scope_key = _scope_cache_key()
+    cache = _active_criteria_cache(scope_key)
+    key = ("model", scope_key, model)
+    if key in cache:
+        return cache[key]
+    criterion = _compute_row_criterion(model)
+    cache[key] = criterion
+    return criterion
+
+
 class AdminSession(Session):
     """Synchronous half of the console's dedicated async session."""
 
@@ -72,12 +157,23 @@ def _scope_reads(execute_state):
         return
     from app.models import Base
 
+    scope_key = (_scope_cache_key(), id(row_criterion), len(Base.registry.mappers))
+    cache = _active_criteria_cache(scope_key[0])
+    loader_key = ("loader_criteria", scope_key)
+    criteria_pairs = cache.get(loader_key)
+    if criteria_pairs is None:
+        pairs = []
+        for mapper in Base.registry.mappers:
+            model = mapper.class_
+            criterion = row_criterion(model)
+            if criterion is not None:
+                pairs.append((model, criterion))
+        criteria_pairs = tuple(pairs)
+        cache[loader_key] = criteria_pairs
+
     statement = execute_state.statement
-    for mapper in Base.registry.mappers:
-        model = mapper.class_
-        criterion = row_criterion(model)
-        if criterion is not None:
-            statement = statement.options(with_loader_criteria(model, criterion, include_aliases=True))
+    for model, criterion in criteria_pairs:
+        statement = statement.options(with_loader_criteria(model, criterion, include_aliases=True))
     execute_state.statement = statement
 
 

@@ -85,12 +85,14 @@ function chatApp() {
             toggleWorkspacePanel() {
                 this.panelOpen = !this.panelOpen;
                 try { sessionStorage.setItem('chat.workspace.panel', this.panelOpen ? 'open' : 'closed'); } catch (_) { /* Keep the panel usable without storage. */ }
-                this.$nextTick(() => {
+                this.$nextTick(() => requestAnimationFrame(() => {
+                    // Alpine's x-show schedules visibility in a frame. Focus only
+                    // after the tab/panel is visible, including in Safari.
                     const target = this.panelOpen ? this.$refs.workspacePanel : this.$refs.panelToggle;
                     target?.focus();
                     this.onScroll();
                     if (this.panelOpen && !window.matchMedia('(min-width: 1200px)').matches) target?.scrollIntoView({block: 'start'});
-                });
+                }));
             },
             openWorkspacePage(path, title, launcher = document.activeElement) {
                 let url;

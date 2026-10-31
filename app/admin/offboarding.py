@@ -90,6 +90,8 @@ async def offboarding_journal(view, request):
     try:
         async with async_session_maker() as session:
             rows = await WorkspaceOffboardingEvent.objects.export_events(session=session, limit=1000 if export else 100)
+    except PermissionError:
+        raise HTTPException(403, "Workspace offboarding journal requires the active platform owner") from None
     except RuntimeError:
         raise HTTPException(503, "Workspace offboarding journal requires migration 0119") from None
     if export:

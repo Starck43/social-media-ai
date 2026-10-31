@@ -74,6 +74,8 @@ async def _fresh_actor(session, actor_id: int) -> None:
 async def _journal_ready(session) -> None:
     try:
         await WorkspaceOffboardingEvent.objects.ensure_available(session=session)
+    except PermissionError:
+        raise OffboardingError(403, "superuser_required", "Права собственника платформы больше недоступны.") from None
     except RuntimeError:
         raise OffboardingError(
             503, "migration_required", "Журнал удаления ещё не подготовлен. Необходимо применить миграцию 0119."

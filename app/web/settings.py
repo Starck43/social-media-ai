@@ -254,11 +254,7 @@ async def settings_page(request: Request):
         # The Models tab and Agent form share the same compact probe outcome.
         probe_result = request.session.get("settings_model_probe_result")
         if isinstance(probe_result, dict) and probe_result.get("owner_user_id") == user.id:
-            selected_model_id = getattr(request.state.tenant, "agent_model_id", None)
-            if selected_model_id is None:
-                effective = next((option for option in context["agent_model_options"] if option["is_effective_default"]), None)
-                selected_model_id = effective["id"] if effective else None
-            context["probe_result"] = probe_result if probe_result.get("model_id") == selected_model_id else None
+            context["probe_result"] = probe_result
         else:
             context["probe_result"] = None
 
@@ -579,9 +575,7 @@ async def agent_model_probe(
         if tenant.agent_model_id is not None:
             try:
                 model_id = int(tenant.agent_model_id)
-                await validate_chat_model(
-                    user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=model_id
-                )
+                await validate_chat_model(user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=model_id)
             except (ValueError, PermissionError):
                 model_id = None
         else:
@@ -591,6 +585,7 @@ async def agent_model_probe(
     if model_id is None:
         request.session["settings_model_probe_result"] = {
             "model_id": None,
+            "model_name": None,
             "owner_user_id": request.state.web_user.id,
             "mode": probe_mode,
             "ok": False,

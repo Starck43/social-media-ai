@@ -170,7 +170,7 @@
                                     name="probe_mode" value="real" class="ui-control">Реальный тест</button>
                         </div>
                         {% if probe_result %}
-                        <p role="status" class="mt-2 text-sm {{ 'text-emerald-700 dark:text-emerald-400' if probe_result.ok else 'text-rose-700 dark:text-rose-400' }}">Последняя {{ 'реальная' if probe_result.mode == 'real' else 'локальная' }} проверка в этой сессии: {{ probe_result.text }}</p>
+                        <p role="status" class="mt-2 text-sm {{ 'text-emerald-700 dark:text-emerald-400' if probe_result.ok else 'text-rose-700 dark:text-rose-400' }}">Последняя {{ 'реальная' if probe_result.mode == 'real' else 'локальная' }} проверка в этой сессии · {{ probe_result.model_name|default('модель недоступна') }} (#{{ probe_result.model_id|default('—') }}): {{ probe_result.text }}</p>
                         {% if probe_result.limit_hint %}<p role="note" class="mt-1 text-sm text-amber-700 dark:text-amber-300">{{ probe_result.limit_hint.message }}</p>{% endif %}
                         {% endif %}
                     </div>

@@ -122,12 +122,16 @@ async def _run_probe(request: Request, *, model_id: str, mode: str, tenant_id: i
     hint = result.get("limit_hint")
     request.session["settings_model_probe_result"] = {
         "model_id": int(model_id),
+        "model_name": str(model.name)[:100],
         "owner_user_id": user_id,
         "mode": mode,
         "ok": bool(result.get("ok")),
         "text": str(text)[:300],
-        "limit_hint": ({"code": str(hint.get("code", ""))[:80], "message": str(hint.get("message", ""))[:240]}
-                       if isinstance(hint, dict) else None),
+        "limit_hint": (
+            {"code": str(hint.get("code", ""))[:80], "message": str(hint.get("message", ""))[:240]}
+            if isinstance(hint, dict)
+            else None
+        ),
     }
     return RedirectResponse(BACK, status_code=303)
 

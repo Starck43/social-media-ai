@@ -87,6 +87,31 @@ def test_operator_global_data_context_does_not_bypass_action_permissions():
         assert has_role(actor, PlatformRoleType.OPERATOR)
 
 
+def test_offboarding_journal_is_platform_superuser_only_even_with_stale_admin_grants():
+    journal = resource_for("WorkspaceOffboardingEvent")
+    assert journal is not None
+    assert journal.key == "audit.workspace_offboarding"
+    assert journal.workspace is False
+    assert journal.actions == frozenset({ActionType.VIEW, ActionType.EXPORT})
+    permissions = [
+        Permission(
+            action_type=action,
+            name=f"Stale grant {action.db_value}",
+            model_type=ModelType(
+                resource_key=journal.key,
+                model_name=journal.model_name,
+                table_name=journal.table_name,
+            ),
+        )
+        for action in (ActionType.VIEW, ActionType.EXPORT)
+    ]
+    admin = user("admin", permissions)
+    owner = user("superuser")
+    for action in (ActionType.VIEW, ActionType.EXPORT):
+        assert not admin.has_perm_for("WorkspaceOffboardingEvent", action)
+        assert owner.has_perm_for("WorkspaceOffboardingEvent", action)
+
+
 @pytest.mark.parametrize("role,ai,allowed", [("viewer", False, False), ("viewer", True, True), ("owner", False, True)])
 def test_chat_permission_is_independent_from_platform_admin(role, ai, allowed):
     perms = WebPerms(user("admin"), [member(role, ai_chat_enabled=ai)], 11, workspace_grants(role))
@@ -140,11 +165,18 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
     actual = {
         table: (row[0], row[1], set(row[2].split()), row[3], row[4]) for table, row in migration.RESOURCES.items()
     }
-    # P11-T12 added the action-audit resource and P11-T28 added one declared
-    # workspace action after the 0096 snapshot. Keep that migration immutable
-    # and make only these post-baseline deltas explicit; every other resource
-    # identity, action and scope flag must still match.
+    # P11-T12 added action-audit, P11-T28 added one workspace action, and
+    # P11-T29 added the platform offboarding journal after the 0096 snapshot.
+    # Keep that migration immutable and make only these post-baseline deltas
+    # explicit; every other resource identity and scope flag must still match.
     actual["action_audit_events"] = ("audit.action_audit", "actionauditevent", {"view", "export"}, True, False)
+    actual["workspace_offboarding_events"] = (
+        "audit.workspace_offboarding",
+        "workspaceoffboardingevent",
+        {"view", "export"},
+        False,
+        False,
+    )
     key, model, actions, is_workspace, is_personal = actual["tenants"]
     actual["tenants"] = (key, model, actions | {"delete"}, is_workspace, is_personal)
     assert expected == actual

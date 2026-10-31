@@ -247,7 +247,7 @@ async def live_records():
 
 
 async def test_live_console_limits_workspace_delete_to_platform_owner(live_admin_app, live_records):
-    """Login/list/delete execute through SQLAdmin, CSRF, auth and real DB sessions."""
+    """Admin legacy DELETE refuses; only reviewed owner offboarding can delete."""
     async with admin_client(live_admin_app) as admin_client_:
         await login(admin_client_, live_records["admin"])
         listing = await admin_client_.get("/admin/tenant/list")
@@ -272,8 +272,8 @@ async def test_live_console_limits_workspace_delete_to_platform_owner(live_admin
     with platform_scope():
         assert await Tenant.objects.get(id=live_records["admin_workspace_id"]) is not None
 
-    # Verify the same real app over loopback in Safari. This exercises browser
-    # cookies/session CSRF and the actual DELETE route with the synthetic rows.
+    # Verify the same real app over loopback in Safari. The browser follows the
+    # preview and explicit-confirmation flow, then sees the retained-audit block.
     import runpy
 
     import uvicorn
@@ -325,8 +325,7 @@ async def test_live_console_limits_workspace_delete_to_platform_owner(live_admin
             headers={"X-CSRF-Token": owner_token},
         )
 
-    assert protected.status_code < 500, protected.text
-    assert "error=" in protected.text, f"Retained audit should refuse deletion through SQLAdmin: {protected.text}"
+    assert protected.status_code in {403, 409}, protected.text
     with platform_scope():
         assert await Tenant.objects.get(id=live_records["audit_workspace_id"]) is not None
     with tenant_scope(live_records["audit_workspace_id"]):

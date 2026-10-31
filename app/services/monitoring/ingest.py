@@ -33,22 +33,33 @@ def normalize_channel_post(inbound: Any) -> Optional[dict[str, Any]]:
     if type(text) is not str:
         raise ValueError("content_text_invalid")
     # File references remain placeholders, never bot-token/file URLs.
-    attachments = normalize_attachments([
-        {"type": kind, "url": None}
-        for key, kind in (("photo", "photo"), ("video", "video"),
-                          ("animation", "video"), ("video_note", "video"),
-                          ("document", "unknown"), ("audio", "unknown"),
-                          ("voice", "unknown"), ("sticker", "unknown"),
-                          ("paid_media", "unknown"), ("contact", "unknown"),
-                          ("location", "unknown"), ("venue", "unknown"), ("poll", "unknown"))
-        if key in post
-    ])
+    attachments = normalize_attachments(
+        [
+            {"type": kind, "url": None}
+            for key, kind in (
+                ("photo", "photo"),
+                ("video", "video"),
+                ("animation", "video"),
+                ("video_note", "video"),
+                ("document", "unknown"),
+                ("audio", "unknown"),
+                ("voice", "unknown"),
+                ("sticker", "unknown"),
+                ("paid_media", "unknown"),
+                ("contact", "unknown"),
+                ("location", "unknown"),
+                ("venue", "unknown"),
+                ("poll", "unknown"),
+            )
+            if key in post
+        ]
+    )
     if not text and not attachments:
         return None
     published = post.get("date")
     published_ts = float(published) if type(published) in (int, float, str) else None
 
-    return {
+    normalized = {
         "id": str(post.get("message_id", "")),
         "external_id": f"{inbound.chat_id}_{post.get('message_id', '')}",
         "text": text,
@@ -67,6 +78,14 @@ def normalize_channel_post(inbound: Any) -> Optional[dict[str, Any]]:
         "platform": "telegram",
         "message_type": "post",
     }
+    chat_meta = post.get("chat") if isinstance(post.get("chat"), dict) else {}
+    username = chat_meta.get("username")
+    msg_id_str = str(post.get("message_id", "")).strip()
+    if isinstance(username, str) and username.strip().lstrip("@") and msg_id_str.isdigit():
+        handle = username.strip().lstrip("@")
+        if handle.replace("_", "").isalnum():
+            normalized["permalink"] = f"https://t.me/{handle}/{msg_id_str}"
+    return normalized
 
 
 async def _find_source(chat_id: str) -> Optional[tuple[int, int, Optional[str]]]:
@@ -86,9 +105,13 @@ async def _find_source(chat_id: str) -> Optional[tuple[int, int, Optional[str]]]
         platform = await Platform.objects.filter(platform_type="telegram").first()
         if platform is None:
             return None
-        sources = list(await Source.objects.filter(
-            platform_id=platform.id, external_id=str(chat_id), is_active=True,
-        ).limit(2))
+        sources = list(
+            await Source.objects.filter(
+                platform_id=platform.id,
+                external_id=str(chat_id),
+                is_active=True,
+            ).limit(2)
+        )
         if not sources:
             return None
         if len(sources) != 1:

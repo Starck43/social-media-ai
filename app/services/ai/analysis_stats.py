@@ -1,6 +1,6 @@
 """Content statistics and JSON projection, separated from provider orchestration."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Optional
 
 from app.utils.date_parsing import universal_date_parser
@@ -22,7 +22,8 @@ class AnalysisStatsMixin:
 
         # Extract basic data
         texts = [item.get("text", "") for item in content]
-        from app.services.ai.analysis_render import metric_number, safe_original_url
+
+        from app.services.ai.analysis_render import extract_post_evidence, metric_number, safe_original_url
 
         coverage = {}
         values = {}
@@ -56,6 +57,7 @@ class AnalysisStatsMixin:
         total_reactions = values["reactions"]
         total_comments = values["comments"]
         total_views = values["views"]
+
         known_authors = sum(
             any(item.get(key) is not None for key in ("from_id", "owner_id", "author_id", "user_id"))
             or (isinstance(item.get("author"), dict) and item["author"].get("id") is not None)
@@ -68,18 +70,42 @@ class AnalysisStatsMixin:
             "known": min(coverage[key]["known"] for key in ("total_reactions", "total_comments", "total_views")),
             "total": total_posts,
         }
+
         originals = []
+        raw_evidence = []
         for item in content:
             url = safe_original_url(item.get("permalink") or item.get("url"))
             if url and url not in originals:
                 originals.append(url)
+            parent = item.get("parent_context") if isinstance(item.get("parent_context"), dict) else {}
+            parent_url = safe_original_url(parent.get("permalink") or parent.get("url"))
+            ext_id = item.get("external_id") or item.get("id")
+            attachments = item.get("attachments")
+            if url or parent_url or isinstance(attachments, list):
+                entry: dict[str, Any] = {
+                    "external_id": str(ext_id) if ext_id is not None else None,
+                    "content_type": str(item.get("content_type") or "post"),
+                    "permalink": url,
+                    "attachments": attachments if isinstance(attachments, list) else [],
+                }
+                if parent_url:
+                    entry["parent_permalink"] = parent_url
+                if isinstance(item.get("content_hash"), str) and item["content_hash"]:
+                    entry["content_hash"] = item["content_hash"]
+                if type(item.get("source_id")) is int:
+                    entry["source_id"] = item["source_id"]
+                if type(item.get("tenant_id")) is int:
+                    entry["tenant_id"] = item["tenant_id"]
+                raw_evidence.append(entry)
+        post_evidence = extract_post_evidence({"post_evidence": raw_evidence})
 
         # Extract and parse post dates using existing utility
         post_dates = []
         for item in content:
             pub_date = item.get("published_at") or item.get("date") or item.get("created_at")
             if parsed_date := universal_date_parser(pub_date):
-                post_dates.append(parsed_date)
+                if isinstance(parsed_date, (datetime, date)):
+                    post_dates.append(parsed_date)
 
         # Calculate content date range
         content_date_range = {}
@@ -109,7 +135,7 @@ class AnalysisStatsMixin:
             )
 
         # Calculate all statistics
-        return {
+        stats_result = {
             "total_posts": total_posts,
             "metric_coverage": coverage,
             "original_links": originals[:50],
@@ -128,6 +154,9 @@ class AnalysisStatsMixin:
             "liked_posts_count": 0,  # Данные о лайках пользователя недоступны
             "comments_to_others_count": 0,  # Данные о комментариях к чужим постам недоступны
         }
+        if post_evidence:
+            stats_result["post_evidence"] = post_evidence
+        return stats_result
 
     def _make_json_serializable(self, obj):
         """Recursively convert non-JSON serializable objects to strings/primitives."""
@@ -136,15 +165,11 @@ class AnalysisStatsMixin:
 
         if isinstance(obj, (datetime, date)):
             return obj.isoformat()
-
         if isinstance(obj, Enum):
             # return the database value or name; str(obj) also works if consistent
             return getattr(obj, "value", obj.name)
-
         if isinstance(obj, dict):
             return {k: self._make_json_serializable(v) for k, v in obj.items()}
-
         if isinstance(obj, (list, tuple, set)):
             return [self._make_json_serializable(v) for v in obj]
-
         return obj

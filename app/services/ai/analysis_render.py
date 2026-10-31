@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import ipaddress
 import math
 import re
 from typing import Any, Iterable
 from urllib.parse import urlsplit
+
+_MEDIA_TYPES = {"photo": "image", "image": "image", "video": "video", "video_file": "video"}
+_MEDIA_LABELS = {"image": "Изображение", "video": "Видео", "unknown": "Вложение"}
 
 
 def _as_list(value: Any) -> list:
@@ -27,18 +31,190 @@ def metric_number(value: Any) -> float | None:
     return number if math.isfinite(number) and number >= 0 else None
 
 
+def _is_public_host(host: str | None) -> bool:
+    if not host:
+        return False
+    cleaned = host.rstrip(".").lower()
+    if not cleaned or cleaned == "api.telegram.org" or cleaned == "localhost":
+        return False
+    if cleaned.endswith((".localhost", ".local", ".internal")):
+        return False
+    try:
+        address = ipaddress.ip_address(cleaned)
+    except ValueError:
+        return "." in cleaned
+    return bool(address.is_global)
+
+
 def safe_original_url(value: Any) -> str | None:
     """Only an explicitly saved HTTP(S) original, never a synthesized post URL."""
-    if not isinstance(value, str) or not value or len(value) > 2048 or any(ord(c) < 32 for c in value) or "\\" in value:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 2048
+        or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value)
+        or "\\" in value
+    ):
         return None
     try:
         parsed = urlsplit(value)
         if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password:
             return None
         parsed.port
+        if not _is_public_host(parsed.hostname):
+            return None
     except ValueError:
         return None
     return value
+
+
+def safe_media_url(value: Any) -> str | None:
+    """Conservative HTTPS media URL validation without downloading or DNS resolution."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 2048
+        or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value)
+        or "\\" in value
+    ):
+        return None
+    try:
+        parsed = urlsplit(value)
+        host = parsed.hostname.rstrip(".") if parsed.hostname else None
+        if (
+            parsed.scheme != "https"
+            or not host
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.port not in (None, 443)
+        ):
+            return None
+        if not _is_public_host(host):
+            return None
+    except ValueError:
+        return None
+    return value
+
+
+def extract_post_evidence(summary_data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project per-post permalink and media URL references with explicit fallback states."""
+    data = _as_dict(summary_data)
+    stats = _as_dict(data.get("content_statistics"))
+    source_meta = _as_dict(data.get("source_metadata"))
+    raw_items = _as_list(stats.get("post_evidence")) + _as_list(data.get("post_evidence"))
+    out: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str | None, str | None]] = set()
+
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            continue
+        permalink = safe_original_url(raw.get("permalink") or raw.get("url"))
+        parent_permalink = safe_original_url(raw.get("parent_permalink"))
+        raw_ext_id = raw.get("external_id")
+        ext_id = (
+            str(raw_ext_id).strip()[:128]
+            if isinstance(raw_ext_id, (str, int)) and not isinstance(raw_ext_id, bool) and str(raw_ext_id).strip()
+            else None
+        )
+        attachments: list[dict[str, str | None]] = []
+        media_urls: list[str] = []
+        seen_media_urls: set[str] = set()
+
+        raw_attachments = _as_list(raw.get("attachments"))
+        if not raw_attachments and _as_list(raw.get("media_urls")):
+            raw_attachments = [{"type": "image", "url": u} for u in _as_list(raw.get("media_urls"))]
+
+        for att in raw_attachments:
+            if not isinstance(att, dict):
+                attachments.append(
+                    {
+                        "type": "unknown",
+                        "url": None,
+                        "status": "unsupported_attachment",
+                        "label": _MEDIA_LABELS["unknown"],
+                        "fallback_label": "Неподдерживаемое вложение",
+                    }
+                )
+                continue
+            raw_type = att.get("type")
+            media_type = _MEDIA_TYPES.get(raw_type.lower(), "unknown") if isinstance(raw_type, str) else "unknown"
+            url = safe_media_url(att.get("url")) if media_type != "unknown" else None
+            if url:
+                if url in seen_media_urls:
+                    continue
+                seen_media_urls.add(url)
+                media_urls.append(url)
+                attachments.append(
+                    {
+                        "type": media_type,
+                        "url": url,
+                        "status": "available",
+                        "label": _MEDIA_LABELS[media_type],
+                        "fallback_label": None,
+                    }
+                )
+            else:
+                status = "unsupported_attachment" if media_type == "unknown" else "missing_media_url"
+                fallback = (
+                    "Неподдерживаемое вложение"
+                    if status == "unsupported_attachment"
+                    else ("Изображение без прямой ссылки" if media_type == "image" else "Видео без прямой ссылки")
+                )
+                attachments.append(
+                    {
+                        "type": media_type,
+                        "url": None,
+                        "status": status,
+                        "label": _MEDIA_LABELS[media_type],
+                        "fallback_label": fallback,
+                    }
+                )
+
+        if not permalink and not parent_permalink and not attachments and not ext_id:
+            continue
+
+        dedup_key = (ext_id, permalink)
+        if dedup_key != (None, None) and dedup_key in seen_keys:
+            continue
+        if dedup_key != (None, None):
+            seen_keys.add(dedup_key)
+
+        content_type = "comment" if str(raw.get("content_type") or "").lower() == "comment" else "post"
+        published_at = raw.get("published_at") if isinstance(raw.get("published_at"), str) else None
+        source_id = (
+            raw.get("source_id")
+            if type(raw.get("source_id")) is int
+            else (source_meta.get("source_id") if type(source_meta.get("source_id")) is int else None)
+        )
+        tenant_id = (
+            raw.get("tenant_id")
+            if type(raw.get("tenant_id")) is int
+            else (source_meta.get("tenant_id") if type(source_meta.get("tenant_id")) is int else None)
+        )
+        entry: dict[str, Any] = {
+            "external_id": ext_id,
+            "content_type": content_type,
+            "permalink": permalink,
+            "media_urls": media_urls,
+            "attachments": attachments,
+        }
+        if parent_permalink:
+            entry["parent_permalink"] = parent_permalink
+        if published_at:
+            entry["published_at"] = published_at
+        if source_id is not None:
+            entry["source_id"] = source_id
+        if tenant_id is not None:
+            entry["tenant_id"] = tenant_id
+        if isinstance(raw.get("content_hash"), str) and raw["content_hash"]:
+            entry["content_hash"] = raw["content_hash"]
+        out.append(entry)
+        if len(out) >= 50:
+            break
+
+    return out
 
 
 def merge_parsed_analysis(value: Any) -> dict[str, Any]:
@@ -74,11 +250,6 @@ def extract_text_analysis(summary_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def extract_content_statistics(summary_data: dict[str, Any]) -> dict[str, Any]:
-    """Conservative display view; stored legacy numeric aggregates stay unchanged.
-
-    Coverage is all-or-nothing for a total. Partial counts are not full totals.
-    Historical zero engagement counts without provenance are unverified (None).
-    """
     stats = _as_dict(summary_data.get("content_statistics"))
     coverage = _as_dict(stats.get("metric_coverage"))
     keys = (
@@ -258,10 +429,14 @@ def render_analysis(summary_data: dict[str, Any], *, source_name: str | None = N
     display_title = display_title or (
         f"Материалы источника «{name.strip()}»" if isinstance(name, str) and name.strip() else "Материалы источника"
     )
+    post_evidence = extract_post_evidence(data)
     originals = []
     candidates = _as_list(stats.get("original_links")) + _as_list(data.get("original_links"))
     for key in ("original_url", "post_url", "permalink"):
         candidates += [data.get(key), source_meta.get(key)]
+    for item in post_evidence:
+        if item.get("permalink"):
+            candidates.append(item["permalink"])
     for candidate in candidates:
         url = safe_original_url(candidate.get("url") if isinstance(candidate, dict) else candidate)
         if url and url not in originals:
@@ -289,6 +464,7 @@ def render_analysis(summary_data: dict[str, Any], *, source_name: str | None = N
         "coverage": analysis_coverage(data),
         "unified_summary": unified,
         "original_links": originals[:50],
+        "post_evidence": post_evidence,
         "content_window_start": window.get("earliest") or rollup.get("start") or date_range.get("first"),
         "content_window_end": window.get("latest") or rollup.get("end") or date_range.get("last"),
     }

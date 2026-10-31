@@ -8,6 +8,7 @@ seeds or migrates the schema, and every edited canonical row/grant is restored.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import socket
@@ -39,6 +40,7 @@ if (
     raise RuntimeError("STOP: only the owner-approved local social_manager/test_schema target is allowed")
 # isort: split
 
+from app.admin.csrf import SESSION_ID_KEY
 from app.core.config import settings
 from app.core.permissions import operator_permission_scope
 from app.core.personal_catalog_context import catalog_execution_scope
@@ -67,6 +69,15 @@ async def admin_client(app):
         follow_redirects=False,
     ) as client:
         yield client
+
+
+def _session_csrf_id(app, client: httpx.AsyncClient) -> str:
+    """The logged-in browser's CSRF id, read from its signed session cookie."""
+    from starlette.middleware.sessions import SessionMiddleware
+
+    signer = SessionMiddleware(app, secret_key=settings.SECRET_KEY).signer
+    payload = json.loads(base64.b64decode(signer.unsign(client.cookies["session"].encode("utf-8"))))
+    return payload[SESSION_ID_KEY]
 
 
 def csrf_token(html: str) -> str:
@@ -133,6 +144,14 @@ async def make_user():
     yield _make
     with platform_scope():
         for user_id in created:
+            target = await User.objects.prefetch_related("role").get(id=user_id)
+            if target is not None and target.is_superuser:
+                # The platform-owner role is protected by UserManager. This is
+                # an owned synthetic fixture account, so demote it first and
+                # then remove the exact row instead of leaving an inactive SU.
+                admin_role = await PlatformRole.objects.get_by_codename("admin")
+                assert admin_role is not None
+                await User.objects.update_by_id(user_id, role_id=admin_role.id)
             await User.objects.delete_user(user_id)
 
 
@@ -233,8 +252,12 @@ async def stored_label(permission_id: int) -> str:
 
 
 async def test_platform_admin_persists_role_grants_and_permission_label(admin_app, make_user, catalog_snapshot):
-    """Actual SQLAdmin forms write through the canonical managers and keep identities."""
-    admin = await make_user("admin")
+    """Actual SQLAdmin forms write through the canonical managers and keep identities.
+
+    The catalog editors are the platform owner's alone (`CatalogEditAdmin`), so
+    the actor is the owner account the console grants the edit.
+    """
+    admin = await make_user("superuser")
     async with admin_client(admin_app) as client:
         await admin_login(client, admin)
         page = await client.get(f"/admin/platform-role/edit/{catalog_snapshot.operator_id}")
@@ -300,11 +323,16 @@ async def test_denied_catalog_writes_leave_storage_unchanged(admin_app, make_use
                 with platform_scope():
                     await User.objects.update_by_id(user.id, is_active=False)
 
-        token = admin_app.state.csrf_manager.generate_token()
-        if case == "csrf_missing":
-            token = ""
-        elif case == "csrf_invalid":
-            token = token + "invalid"
+        if case in {"csrf_missing", "csrf_invalid"}:
+            # S2 binds console tokens to the reader's session: mint them the way
+            # a console page does. A missing/foreign token must still be refused
+            # by `AdminCSRFMiddleware` before the route runs.
+            token = admin_app.state.csrf_manager.generate_token(session_id=_session_csrf_id(admin_app, client))
+            token = "" if case == "csrf_missing" else token + "invalid"
+        else:
+            # The other cases are authenticated (or anonymous) but untrusted, so
+            # the refusal under test is the permission/inactivity guard, not CSRF.
+            token = "synthetic-token"
 
         role_response = await client.post(
             f"/admin/platform-role/edit/{catalog_snapshot.operator_id}",
@@ -320,8 +348,10 @@ async def test_denied_catalog_writes_leave_storage_unchanged(admin_app, make_use
         )
 
     if case in {"csrf_missing", "csrf_invalid"}:
-        assert role_response.status_code == 400, role_response.text
-        assert permission_response.status_code == 400, permission_response.text
+        # The console-wide middleware refuses a tokenless/foreign write first,
+        # so the SQLAdmin form never sees it and nothing is written.
+        assert role_response.status_code == 403, role_response.text
+        assert permission_response.status_code == 403, permission_response.text
     else:
         for response in (role_response, permission_response):
             assert response.status_code in {302, 303, 403}, response.text

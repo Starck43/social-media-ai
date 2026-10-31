@@ -23,6 +23,7 @@ from app.admin.filtered_select import FilteredSelectMultipleField
 from app.admin.formatters import format_date, format_usd, model_price, plan_badge
 from app.admin.price_fields import ExactModelPriceField
 from app.admin.role_picker import RoleChoiceField, RolePickerConverter, role_choices, role_edit
+from app.admin.secrets import hide_form_secret, seal_form_secret
 from app.admin.widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
 from app.core.hashing import get_password_hash
 from app.core.personal_catalog_context import catalog_execution_scope

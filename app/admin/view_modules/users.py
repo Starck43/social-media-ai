@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from sqladmin import expose
+
 from ._shared import (
     ActionType,
     Any,
@@ -24,11 +26,13 @@ from ._shared import (
     action,
     get_model_form,
     get_password_hash,
+    hide_form_secret,
     logger,
     logging,
     plan_badge,
     role_choices,
     role_edit,
+    seal_form_secret,
     validators,
 )
 
@@ -39,6 +43,8 @@ class UserAdmin(BaseAdmin, model=User):
     name = "Пользователь"
     name_plural = "Пользователи"
     icon = "fa fa-user"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
 
     # Право на смену чужого пароля — это право на изменение пользователя.
     # Ключ — slug, который sqladmin ставит на кнопку (`@action` slugify'ит
@@ -218,6 +224,8 @@ class RoleAdmin(PlatformRoleGrantAdmin, model=PlatformRole):
     name = "Платформенная роль"
     name_plural = "Роли"
     icon = "fa fa-shield"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
     inline_columns = ["id", "codename", "description"]
     column_list = ["id", "codename", "description"]
     column_searchable_list = ["codename"]
@@ -242,6 +250,8 @@ class PermissionAdmin(PermissionLabelAdmin, model=Permission):
     name = "Разрешение"
     name_plural = "Разрешения"
     icon = "fa fa-key"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
     inline_columns = ["id", "name", "action_type"]
     column_list = ["id", "codename", "name", "action_type"]
     column_searchable_list = ["name"]
@@ -270,6 +280,8 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     name = "Рабочее пространство"
     name_plural = "Рабочие пространства"
     icon = "fa fa-building"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
 
     inline_columns = ["id", "name", "slug", "plan", "is_active"]
     column_list = [
@@ -277,15 +289,17 @@ class TenantAdmin(BaseAdmin, model=Tenant):
         "name",
         "slug",
         "plan",
-        "plan_expires_at",
-        "entitlement_policy",
         "timezone",
         "is_active",
-        "max_sources",
-        "daily_cost_limit",
         "updated_at",
     ]
-    column_details_list = column_list + ["agent_style"]
+    column_details_list = column_list + [
+        "agent_style",
+        "plan_expires_at",
+        "entitlement_policy",
+        "max_sources",
+        "daily_cost_limit",
+    ]
     column_searchable_list = ["name", "slug"]
     column_sortable_list = ["name", "slug", "plan", "is_active"]
     column_labels = dict(
@@ -294,7 +308,7 @@ class TenantAdmin(BaseAdmin, model=Tenant):
             "name": "Название",
             "slug": "Слаг",
             "plan": "Тариф",
-            "plan_expires_at": "Plan expires at (UTC)",
+            "plan_expires_at": "План действует до",
             "entitlement_policy": "Product capabilities (static policy)",
             "timezone": "Часовой пояс",
             "is_active": "Активно",
@@ -363,6 +377,31 @@ class TenantAdmin(BaseAdmin, model=Tenant):
         **BaseAdmin.form_args,
     }
 
+    can_delete = False
+    action_permissions = {"offboard": ActionType.DELETE}
+
+    async def delete_model(self, request: Request, pk: Any) -> Any:
+        """A legacy CRUD call cannot bypass the reviewed offboarding service."""
+        raise HTTPException(409, "Use the confirmed workspace offboarding action")
+
+    @action(name="offboard", label="Удалить с аудитом", add_in_list=True, add_in_detail=True)
+    async def offboard_action(self, request: Request):
+        from app.admin.offboarding import offboarding_page
+
+        return await offboarding_page(self, request)
+
+    @expose("/action/offboard", methods=["POST"])
+    async def offboard_submit(self, request: Request):
+        from app.admin.offboarding import offboarding_page
+
+        return await offboarding_page(self, request, submit=True)
+
+    @expose("/offboarding-journal", methods=["GET"])
+    async def offboarding_journal(self, request: Request):
+        from app.admin.offboarding import offboarding_journal
+
+        return await offboarding_journal(self, request)
+
     def is_accessible(self, request: Request) -> bool:
         """Workspace-wide administration is reserved for platform admins.
 
@@ -389,6 +428,8 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
     name = "Личные креды"
     name_plural = "Личные креды"
     icon = "fa fa-user-lock"
+    category = "Пользователи и доступ"
+    category_icon = "fa fa-users"
 
     inline_columns = ["id", "platform", "kind", "label", "expires_at", "is_active"]
     column_list = ["id", "user_id", "platform", "kind", "label", "expires_at", "is_active", "updated_at"]
@@ -430,19 +471,27 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
         "label": {"label": "Метка", "description": "Для справки, например «VK OAuth (PKCE)»"},
         "secret_encrypted": {
             "label": "Секрет",
-            "description": "Вставьте токен открытым текстом — он будет зашифрован перед сохранением",
+            "description": "Шифруется до записи в БД. Пустое поле сохраняет текущий секрет — вводите только для замены",
         },
         "expires_at": {"label": "Действует до", "description": "Оставьте пустым, если срок неизвестен"},
         **BaseAdmin.form_args,
     }
 
-    async def after_model_change(self, data: dict, model: UserCredential, is_created: bool, request=None) -> None:
-        if model.secret_encrypted and not model.secret_encrypted.startswith("gAAAAA"):
-            from app.utils.crypto import encrypt_secret
+    async def on_model_change(self, data: dict, model: UserCredential, is_created: bool, request=None) -> None:
+        """Seal the secret before the row is written, not after it.
 
-            model.secret_encrypted = encrypt_secret(model.secret_encrypted)
-            await UserCredential.objects.update_by_id(model.id, secret_encrypted=model.secret_encrypted)
-        await super().after_model_change(data, model, is_created, request)
+        A blank field keeps the stored secret: the edit form never renders the
+        ciphertext, so an operator changing only the label must not be forced to
+        retype the token.
+        """
+        seal_form_secret(data, "secret_encrypted", getattr(model, "secret_encrypted", None))
+        await super().on_model_change(data, model, is_created, request)
+
+    async def get_form_data_for_edit(self, obj: Any) -> dict[str, Any]:
+        """Never render stored ciphertext back into the edit form."""
+        data = await super().get_form_data_for_edit(obj)
+        hide_form_secret(data, "secret_encrypted")
+        return data
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

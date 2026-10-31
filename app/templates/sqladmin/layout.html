@@ -3,8 +3,10 @@
 
 {% block head %}
 {{ super() }}
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <script src="{{ url_for('static', path='js/theme.js') }}"></script>
 <script src="{{ url_for('static', path='js/ui-notice.js') }}"></script>
+<script src="{{ url_for('static', path='js/admin_menu.js') }}" defer></script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/custom.css') }}">
 {% block extra_css %}{% endblock %}
@@ -110,6 +112,21 @@
 {% block tail %}
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
 <script>
+    // Every mutating console request carries the session-bound CSRF token:
+    // forms post it as a hidden field, jQuery AJAX (e.g. SQLAdmin's DELETE)
+    // sends it as a header read from the meta tag.
+    if (window.jQuery) {
+        jQuery.ajaxSetup({
+            beforeSend: function (xhr, settings) {
+                var safeMethods = /^(GET|HEAD|OPTIONS|TRACE)$/i
+                if (!safeMethods.test(settings.type) && !settings.crossDomain) {
+                    var meta = document.querySelector("meta[name=\"csrf-token\"]")
+                    if (meta && meta.content) xhr.setRequestHeader("X-CSRF-Token", meta.content)
+                }
+            }
+        })
+    }
+
     // Общие функции для всех форм аутентификации
     document.addEventListener("DOMContentLoaded", function() {
         // Автофокус на первом поле ввода

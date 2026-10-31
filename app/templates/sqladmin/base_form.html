@@ -15,6 +15,7 @@
                   method="POST"
                   enctype="multipart/form-data"
                   id="main-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="row">
                     {% if error %}
                         <div class="alert alert-danger" role="alert">{{ error }}</div>

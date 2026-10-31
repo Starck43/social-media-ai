@@ -8,7 +8,7 @@ from sqladmin.forms import ModelConverter
 from starlette.requests import Request
 
 from app.admin.base import BaseAdmin
-from app.admin.csrf import get_csrf_manager
+from app.admin.csrf import verify_request_token
 from app.core.permissions import permission_scope
 from app.models import Permission, PlatformRole, User
 
@@ -37,10 +37,9 @@ class CatalogEditAdmin(BaseAdmin):
         )
         if fresh is None or not fresh.is_superuser:
             raise HTTPException(status_code=403, detail="Нужны права собственника платформы")
-        manager = getattr(admin.authentication_backend, "csrf_manager", None) or get_csrf_manager(request)
         form = await request.form()
         token = form.get("csrf_token")
-        if not isinstance(token, str) or not manager.verify_token(token):
+        if not isinstance(token, str) or not verify_request_token(request, token):
             raise HTTPException(status_code=403, detail="Недействительный CSRF токен")
         return fresh
 

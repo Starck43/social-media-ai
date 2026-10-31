@@ -22,10 +22,13 @@ from ._shared import (
     SelectField,
     Union,
     action,
+    expose,
     get_model_form,
+    hide_form_secret,
     logger,
     logging,
     model_price,
+    seal_form_secret,
     slugify_uid,
     validators,
     widgets,
@@ -38,6 +41,8 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
     name = "Провайдер ИИ"
     name_plural = "Провайдеры ИИ"
     icon = "fa fa-server"
+    category = "ИИ и аналитика"
+    category_icon = "fa fa-robot"
     # The stock templates have no hook for a page script; these two add the UID
     # autofill next to them.
     create_template = "sqladmin/llm_create.html"
@@ -147,7 +152,7 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         },
         "encrypted_api_key": {
             "label": "API ключ",
-            "description": "Ключ будет зашифрован перед сохранением в БД",
+            "description": "Шифруется до записи в БД. Пустое поле сохраняет текущий ключ — вводите только для замены",
         },
         "is_active": {
             "label": "Активен",
@@ -279,20 +284,59 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
             data["uid"] = slug
             model.uid = slug
 
+        # The key is sealed here, before SQLAdmin writes the row. A blank field
+        # keeps the stored key, so an edit that only touches the name does not
+        # need the secret retyped.
+        seal_form_secret(data, "encrypted_api_key", getattr(model, "encrypted_api_key", None))
+
         with self._catalog_scope(request):
             await super().on_model_change(data, model, is_created, request)
 
+    async def get_form_data_for_edit(self, obj: Any) -> dict[str, Any]:
+        """Never render stored ciphertext back into the edit form."""
+        data = await super().get_form_data_for_edit(obj)
+        hide_form_secret(data, "encrypted_api_key")
+        return data
+
     @action(name="test-connection", label="🔌 Проверить подключение", add_in_list=True, add_in_detail=True)
     async def test_connection_action(self, request: Request):
-        with self._catalog_scope(request):
-            return await self._test_connection(request)
+        """Render the confirmation step; only the CSRF-checked POST calls the provider."""
+        from app.admin.actions import render_action_confirmation
 
-    async def _test_connection(self, request: Request):
         pks = request.query_params.get("pks", "")
         if not pks:
             request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
             return RedirectResponse(request.url_for("admin:list", identity=self.identity))
-        provider_id = int(pks.split(",")[0])
+
+        with self._catalog_scope(request):
+            provider = await LLMProvider.objects.get(id=int(pks.split(",")[0]))
+        if provider is None:
+            request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+
+        return await render_action_confirmation(
+            self,
+            request,
+            title="Проверить подключение провайдера",
+            message=(f"Будет отправлен короткий запрос через «{provider.name}». " "Это списывает токены провайдера."),
+            submit_label="Проверить",
+            cancel_url=request.url_for("admin:list", identity=self.identity),
+        )
+
+    @expose("/action/test-connection", methods=["POST"])
+    async def test_connection_submit(self, request: Request):
+        """Execute the confirmed provider probe; the only paid entry point."""
+        from app.admin.actions import verified_action_form
+
+        form = await verified_action_form(request)
+        pks = str(form.get("pks", ""))
+        if not pks:
+            request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+        with self._catalog_scope(request):
+            return await self._test_connection(request, int(pks.split(",")[0]))
+
+    async def _test_connection(self, request: Request, provider_id: int):
         provider = await LLMProvider.objects.get(id=provider_id)
         models = await LLMModel.objects.select_related("provider").filter(provider_id=provider_id, is_active=True).all()
         if not models:
@@ -316,12 +360,9 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
     async def after_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
+        # The API key is already sealed in `on_model_change`; nothing to rewrite
+        # after the commit.
         with self._catalog_scope(request):
-            if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
-                from app.utils.crypto import encrypt_secret
-
-                model.encrypted_api_key = encrypt_secret(model.encrypted_api_key)
-                await LLMProvider.objects.update_by_id(model.id, encrypted_api_key=model.encrypted_api_key)
             await super().after_model_change(data, model, is_created, request)
 
 
@@ -334,6 +375,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     name = "Модель ИИ"
     name_plural = "Модели ИИ"
     icon = "fa fa-microchip"
+    category = "ИИ и аналитика"
+    category_icon = "fa fa-robot"
     create_template = "sqladmin/llm_create.html"
     edit_template = "sqladmin/llm_edit.html"
 

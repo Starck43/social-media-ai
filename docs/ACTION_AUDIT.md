@@ -25,6 +25,10 @@ Keep existing records authoritative:
   particular, an audit or diagnostic log is never a payment/delivery receipt.
 - Application logs are diagnostics, not durable business receipts or audit proof.
 
+Workspace deletion has a separate, minimal platform journal and explicit
+superuser offboarding workflow: [Workspace offboarding](WORKSPACE_OFFBOARDING.md).
+It does not widen this tenant-scoped table's allowlist or member read/export rights.
+
 ## Minimal event envelope
 
 The persisted `action_audit_events` row contains only these allowlisted fields:

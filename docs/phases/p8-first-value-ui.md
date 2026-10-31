@@ -29,7 +29,7 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
    VK research-to-digest journey at the exact integrated revision.
 6. [P8-T33](../tasks/p8-t33.md) — optional extension beyond the minimum pilot:
    select a bounded set of verified VK result categories, with explicit cards
-   for any other requested categories before T33 closes.
+   for any other requested categories before T33 closes. **IN_PROGRESS** · owner `notion-ai-p8-t33` · claim base `8c9f5222bbf5c8f69177ae4e3ad3df0682ec2877`.
 
 T38 can proceed from the integrated T29 foundation without waiting for the
 live VK gate. T39 reuses the accepted shared execution-scope/mutation policy in
@@ -39,12 +39,20 @@ can build against mocked VK data while Q-5 is open. T41's live method evidence
 waits on Q-5. T41 is the integrated
 journey gate, not a way to rename or retroactively accept P8-T29.
 
-7. [P8-T42](../tasks/p8-t42.md) — persistent chat actions, explicit task context,
-   permission-filtered plan/status and responsive workspace panel.
-8. [P8-T43](../tasks/p8-t43.md) — preserve each source post permalink and its
-   media URL references from collection through analysis and agent-rendered results;
-   use source URLs only (no media downloading/storage). Coordinate overlapping chat
-   presentation with P8-T42.
+7. [P8-T42](../audit/p8-t42.md) — DONE 2026-10-31: contextual chat actions,
+   permission-filtered task plan/results, embedded pages and Safari UX refinements;
+   accepted `6a2e6de55ae417b6ec7239ad00103cba8335f161`, PR #290
+   (merge `27f83079df7488bec6c4deaf780a1032477cab47`).
+8. [P8-T43](../audit/p8-t43.md) — DONE 2026-10-31: each source post permalink,
+   per-post media URL references (or explicit missing/unsupported state),
+   `source_id` and tenant scope survive collection → analysis → agent result →
+   analytics page; reference-only media, no schema change. Accepted
+   `93a51b363eaa8f55a9eedb91bff1a1c6bf28a909`, PR #289.
+
+9. [P8-T44](../audit/p8-t44.md) — DONE 2026-10-31: private photo/document attachments in the
+   shared chat with magic-byte validation, large-file token confirmation gate and model capability checks; accepted `e1f79788`, PR #292 (merge `7c76bace940c174a2cd33d77eaf839bc9f7d4a61`).
+
+10. [P8-T45](../audit/p8-t45.md) — DONE 2026-10-31: shared compact model probes, invocation counters and safe quota/budget/price warnings; accepted `3d69c36a223b2023ae32fa4d1b59a9bd9d755296`, PR #291 (merge `57b5bebc2f1759d2d8543576a8c842c3d17f7acf`).
 
 **Other active P8 cards:**
 

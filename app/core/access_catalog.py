@@ -35,7 +35,7 @@ RESOURCES = (
         "VIEW CREATE UPDATE DELETE CONFIGURE",
         personal=True,
     ),
-    _resource("tenancy.workspace", "Tenant", "tenants", "VIEW UPDATE CONFIGURE", True),
+    _resource("tenancy.workspace", "Tenant", "tenants", "VIEW UPDATE DELETE CONFIGURE", True),
     _resource("tenancy.membership", "TenantUser", "tenant_users", "VIEW CREATE UPDATE DELETE", True),
     _resource("tenancy.workspace_role", "WorkspaceRole", "workspace_roles", "VIEW"),
     _resource("tenancy.invite", "TenantInvite", "tenant_invites", "VIEW CREATE UPDATE DELETE", True),
@@ -62,7 +62,20 @@ RESOURCES = (
     _resource("notifications.notification", "Notification", "notifications", "VIEW CREATE UPDATE DELETE", True),
     _resource("notifications.digest_run", "DigestRun", "digest_runs", "VIEW CREATE UPDATE DELETE EXPORT", True),
     _resource("audit.action_audit", "ActionAuditEvent", "action_audit_events", "VIEW EXPORT", True),
+    _resource(
+        "audit.workspace_offboarding", "WorkspaceOffboardingEvent", "workspace_offboarding_events", "VIEW EXPORT"
+    ),
 )
+# These destructive platform operations are never delegated by role grants or
+# inherited through workspace presets. Superuser still needs a declared action.
+SUPERUSER_ONLY_PERMISSIONS = frozenset(
+    {
+        ("tenancy.workspace", ActionType.DELETE),
+        ("audit.workspace_offboarding", ActionType.VIEW),
+        ("audit.workspace_offboarding", ActionType.EXPORT),
+    }
+)
+
 _BY_KEY = {r.key: r for r in RESOURCES}
 _BY_MODEL = {r.model_name: r for r in RESOURCES}
 _BY_MODEL["role"] = _BY_KEY["identity.platform_role"]
@@ -169,5 +182,5 @@ def workspace_grants(codename):
         # Everyone with AI access can operate ONLY their own conversation records.
         if r.personal:
             actions = set(r.actions)
-        grants.update((r.model_name, a) for a in actions & r.actions)
+        grants.update((r.model_name, a) for a in actions & r.actions if (r.key, a) not in SUPERUSER_ONLY_PERMISSIONS)
     return frozenset(grants)

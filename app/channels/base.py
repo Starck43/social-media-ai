@@ -13,12 +13,14 @@ logger = logging.getLogger(__name__)
 class Inbound:
     """Normalized incoming message from any channel."""
 
-    channel: str  # 'telegram' | 'max'
+    channel: str  # 'telegram' | 'max' | 'web'
     chat_id: str
     user_id: str
     text: str
     is_channel_post: bool = False  # message posted to a channel (not a DM)
     raw: dict[str, Any] = field(default_factory=dict)
+    attachments: list[dict[str, Any]] = field(default_factory=list)
+    confirm_large_attachments: bool = False
 
 
 class Channel(Protocol):

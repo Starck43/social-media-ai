@@ -11,6 +11,7 @@ from ._shared import (
     Request,
     SelectField,
     action,
+    expose,
     logger,
     logging,
     validators,
@@ -26,6 +27,8 @@ class NotificationAdmin(BaseAdmin, model=Notification):
     name = "Уведомление"
     name_plural = "Уведомления"
     icon = "fa fa-bell"
+    category = "Задачи и операции"
+    category_icon = "fa fa-cogs"
 
     # Technical archive only. No action acknowledges any User receipt.
     action_permissions = {
@@ -108,14 +111,57 @@ class NotificationAdmin(BaseAdmin, model=Notification):
         add_in_detail=False,
     )
     async def send_to_messenger_action(self, request: Request):
-        """Send notification to messenger (Telegram/VK)."""
-        from app.services.notifications.messenger import messenger_service
+        """Render the confirmation step; only the CSRF-checked POST sends."""
+        from app.admin.actions import render_action_confirmation
 
         pks = request.query_params.get("pks", "")
         if not pks:
             return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
-        pk = pks.split(",")[0]
+        try:
+            notification = await Notification.objects.get(id=int(pks.split(",")[0]))
+        except Exception:
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+        if notification is None:
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+
+        return await render_action_confirmation(
+            self,
+            request,
+            title="Отправить уведомление в мессенджер",
+            message=f"Уведомление «{notification.title}» будет отправлено в Telegram.",
+            fields=[
+                {
+                    "name": "recipient_id",
+                    "label": "ID получателя (chat_id)",
+                    "hint": "Пусто — доставка по привязкам рабочего пространства, если они настроены.",
+                }
+            ],
+            submit_label="Отправить",
+            cancel_url=request.url_for("admin:list", identity=self.identity),
+        )
+
+    @expose("/action/send-to-messenger", methods=["POST"])
+    async def send_to_messenger_submit(self, request: Request):
+        """Execute the confirmed send; the only state-changing entry point.
+
+        The recipient is operator input from the POST body — the console rule is
+        that identity never comes from path or query.
+        """
+        from app.admin.actions import verified_action_form
+
+        form = await verified_action_form(request)
+        pks = str(form.get("pks", ""))
+        if not pks:
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+        recipient = form.get("recipient_id")
+        recipient_id = str(recipient).strip() or None if recipient is not None else None
+        return await self._send_notification_to_messenger(request, pks.split(",")[0], recipient_id)
+
+    async def _send_notification_to_messenger(self, request: Request, pk: str, recipient_id: str | None):
+        """Send notification to messenger (Telegram/VK)."""
+        from app.services.notifications.messenger import messenger_service
+
         try:
             notification = await Notification.objects.get(id=int(pk))
             if notification is not None and notification.tenant_id is not None:
@@ -124,7 +170,7 @@ class NotificationAdmin(BaseAdmin, model=Notification):
                     message=notification.message,
                     notification_type=notification.notification_type,
                     messenger="telegram",
-                    recipient_id=request.query_params.get("recipient_id"),
+                    recipient_id=recipient_id,
                     tenant_id=notification.tenant_id,
                 )
                 if (result.get("telegram") or {}).get("success") is True:

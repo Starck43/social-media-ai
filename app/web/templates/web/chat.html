@@ -4,7 +4,9 @@
 {% block extra_head %}
 <script>
     // Pass initial server-rendered messages to Alpine
+    window.__chatAwaitingConfirmation = {{ (awaiting_confirmation | default(false)) | tojson }};
     window.__chatMessages = {{ (messages | default([])) | tojson }};
+    window.__chatAttachmentPolicy = {{ (attachment_policy if attachment_policy is defined else none) | tojson }};
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
@@ -18,7 +20,7 @@
 
 {% block page_heading %}Чат с агентом{% endblock %}
 {% block content %}
-<div class="chat-page flex flex-col" x-data="chatApp()">
+<div class="chat-page flex flex-col" x-data="chatApp()" :class="{'chat-panel-open': panelOpen}">
     <!-- Header -->
     <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -44,6 +46,17 @@
         {% endif %}
     </div>
 
+    <div class="chat-workspace-toolbar" x-show="workspaceTaskId" x-cloak>
+        <span class="chat-context-label" x-show="workspaceTaskId" x-cloak>
+            <span x-text="workspaceTask ? 'Задача: ' + workspaceTask.name : 'Задача #' + workspaceTaskId"></span>
+            <button type="button" @click="clearWorkspaceTask()" :disabled="pending || awaitingConfirmation" aria-label="Снять выбор задачи">×</button>
+        </span>
+
+    </div>
+    <div class="chat-workspace-grid">
+    <button type="button" class="chat-panel-tab" x-ref="panelToggle" @click="toggleWorkspacePanel()"
+            x-show="!panelOpen" x-cloak aria-controls="chat-workspace-panel" :aria-expanded="panelOpen"
+            aria-label="Открыть рабочий контекст" title="Открыть рабочий контекст">‹</button>
     <section class="chat-window" aria-label="Диалог с агентом">
         <!-- Messages area: scrolls with the whole page container -->
         <div
@@ -73,7 +86,7 @@
                 </p>
                 <div class="chat-starters">
                     <template x-for="starter in starters" :key="starter.text">
-                        <button type="button" class="chat-starter" @click="sendMessage(starter.text)" :disabled="pending">
+                        <button type="button" class="chat-starter" @click="draftAction(starter.text)" :disabled="pending || awaitingConfirmation">
                             <span class="chat-starter-icon" x-text="starter.icon" aria-hidden="true"></span>
                             <span class="chat-starter-title" x-text="starter.title"></span>
                             <span class="chat-starter-hint" x-text="starter.hint"></span>
@@ -196,12 +209,7 @@
 
         <!-- Scroll-to-input button: same arrow as the send button, centered at the bottom of the screen -->
         <button x-show="!autoScroll" x-cloak
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="opacity-0 translate-y-2"
-             x-transition:enter-end="opacity-100 translate-y-0"
-             x-transition:leave="transition ease-in duration-150"
-             x-transition:leave-start="opacity-100 translate-y-0"
-             x-transition:leave-end="opacity-0 translate-y-2"
+             x-transition.opacity.duration.150ms x-ref="scrollButton"
              @click="scrollToBottom()"
                     class="chat-scroll-bottom scroll-btn"
                     aria-label="К окну ввода"
@@ -221,45 +229,75 @@
             <button type="button" @click="performConfirmation()" :disabled="pending">Подтвердить</button>
             <button type="button" @click="confirmation = null">Отмена</button>
         </div>
+        <p x-show="awaitingConfirmation" x-cloak class="chat-notice" role="status">Помощник ждёт подтверждения. Ответьте на его вопрос перед сменой задачи.</p>
+        <p x-show="draftNotice" x-cloak class="chat-notice" role="status" x-text="draftNotice"></p>
         <!-- Composer -->
         <form @submit.prevent="sendMessage()" class="chat-composer" x-ref="form">
+            <div class="chat-context-label" x-show="workspaceTaskId" x-cloak aria-live="polite">
+                <span x-text="workspaceTask ? 'Контекст сообщения: ' + workspaceTask.name : 'Контекст сообщения: задача #' + workspaceTaskId"></span>
+                <button type="button" @click="clearWorkspaceTask()" :disabled="pending || awaitingConfirmation" aria-label="Убрать задачу из контекста сообщения">×</button>
+            </div>
             <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input
+                type="file"
+                x-ref="attachmentInput"
+                multiple
+                :accept="attachmentAcceptAttr()"
+                @change="onFilesSelected($event)"
+                :disabled="pending || !attachmentEnabled()"
+                class="sr-only"
+                aria-label="Выбрать файлы для прикрепления"
+            >
+            <div class="chat-attachments" x-show="attachments.length" x-cloak aria-live="polite" data-chat-attachments>
+                <template x-for="att in attachments" :key="att.clientId">
+                    <div class="chat-attachment-card" :data-attachment-state="att.state">
+                        <div class="chat-attachment-head">
+                            <span class="chat-attachment-name" x-text="att.filename"></span>
+                            <span class="chat-attachment-badge" x-text="attachmentStateLabel(att)"></span>
+                            <button
+                                type="button"
+                                class="chat-attachment-remove"
+                                @click="removeAttachment(att.clientId)"
+                                :disabled="pending && !sending"
+                                :aria-label="'Удалить вложение ' + att.filename"
+                                title="Удалить файл"
+                            >×</button>
+                        </div>
+                        <p class="chat-attachment-meta" x-show="att.summary_label" x-text="att.summary_label"></p>
+                        <p class="chat-attachment-note" x-show="att.omitted_note" x-text="att.omitted_note"></p>
+                        <p class="chat-attachment-error" x-show="att.error" role="alert" x-text="att.error"></p>
+                        <div class="chat-attachment-confirm" x-show="att.requires_confirmation && att.state !== 'rejected'">
+                            <p x-text="att.confirmation_reason"></p>
+                            <label class="chat-attachment-confirm-toggle">
+                                <input type="checkbox" :checked="att.confirmed" @change="toggleAttachmentConfirm(att.clientId, $event.target.checked)">
+                                <span x-text="'Подтверждаю расход ~' + (att.estimated_tokens || 0) + ' токенов'"></span>
+                            </label>
+                        </div>
+                    </div>
+                </template>
+            </div>
             <textarea
-                name="text" rows="2" required placeholder="Напишите сообщение или /help"
+                name="text" rows="2" :required="!readyAttachments().length" placeholder="Напишите сообщение или /help"
                 x-ref="input"
                 @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendMessage(); }"
                 @input="resizeInput()" :disabled="pending" aria-label="Сообщение агенту"
                 class="chat-input"
             ></textarea>
             <div class="chat-composer-bar flex items-center gap-4 justify-between w-full">
-                <!-- Presets send immediately, they never fill the input -->
                 <div class="chat-suggestions">
-                    <button type="button" @click="sendMessage('/help')" :disabled="pending">
-                        Что ты умеешь?
-                    </button>
-                    <button type="button" @click="sendMessage('Сводка за неделю')" :disabled="pending">
-                        Сводка за неделю
-                    </button>
-                    <button type="button" @click="sendMessage('Покажи мои задачи')" :disabled="pending">
-                        Мои задачи
-                    </button>
+                    <button type="button" class="chat-attach" @click="handleAttachClick()" :disabled="pending || awaitingConfirmation" :aria-label="attachmentEnabled() ? 'Прикрепить фото или документ' : 'Прикрепить файл — о доступности'" title="Фото и документы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9m-6 12 8-8"/></svg></button>
+                    <button type="button" class="chat-attach-limits" x-show="attachmentEnabled()" x-cloak @click="openAttachmentLimits()" :disabled="pending" aria-label="Допустимые форматы и лимиты вложений">Форматы и лимиты</button>
+                    <button type="button" @click="draftAction('Помоги составить задачу. Уточни цель, источники, период и нужный результат; затем покажи план.')" :disabled="pending || awaitingConfirmation">Составить задачу</button>
+                    <button type="button" @click="draftAction('Кратко подведи итог нашего диалога: решения, открытые вопросы и следующий шаг.')" :disabled="pending || awaitingConfirmation">Итог диалога</button>
+                    <button type="button" @click="draftAction('/help')" :disabled="pending || awaitingConfirmation">Что ты умеешь?</button>
+                    <button type="button" @click="draftAction('Покажи статус и доступные результаты выбранной задачи.')"
+                            x-show="workspaceTaskId" :disabled="pending || awaitingConfirmation">Статус и результаты</button>
                 </div>
-                <!-- Attach a file (placeholder until uploads exist) -->
-                <button type="button" class="chat-attach ml-auto " @click="attachFile()" :disabled="pending"
-                        aria-label="Прикрепить файл" title="Прикрепить файл">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
-                         stroke-width="1.5" stroke="currentColor">
-                        <path
-                            stroke-linecap="round" stroke-linejoin="round"
-                            d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"
-                        />
-                    </svg>
-                </button>
                 <!-- Send, or stop the turn while the agent is answering -->
                 <button
                     type="button" class="chat-send" :class="{ 'chat-send-stop': sending }"
                     @click="sending ? stopGeneration() : sendMessage()"
-                    :disabled="pending && !sending"
+                    :disabled="(pending && !sending) || workspaceContextBlocked()"
                     :aria-label="sending ? 'Остановить генерацию' : 'Отправить сообщение'"
                     :title="sending ? 'Остановить' : 'Отправить'"
                 >
@@ -276,10 +314,51 @@
             <span class="">Enter — отправить · Shift+Enter — новая строка</span>
         </p>
     </section>
-    <nav class="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm" aria-label="Управление данными и задачами">
-        {% for item in nav if item.key in ('sources', 'scenarios', 'tasks', 'digests') and item.ready %}
-        <a href="{{ item.href }}" class="text-cyan-700 hover:underline dark:text-cyan-400">{{ item.label }} →</a>
-        {% endfor %}
-    </nav>
+    {% include "web/_chat_workspace.html" %}
+    </div>
+    <dialog class="chat-content-dialog" x-ref="workspaceDialog" aria-labelledby="chat-modal-title"
+            @close="workspaceModalClosed()" @click="if ($event.target === $el && ($event.clientX < $el.getBoundingClientRect().left || $event.clientX > $el.getBoundingClientRect().right || $event.clientY < $el.getBoundingClientRect().top || $event.clientY > $el.getBoundingClientRect().bottom)) $el.close()">
+        <header class="chat-modal-heading">
+            <h2 id="chat-modal-title" x-text="modalTitle"></h2>
+            <button type="button" @click="$refs.workspaceDialog.close()" aria-label="Закрыть окно">×</button>
+        </header>
+        <p x-show="modalLoading" role="status" class="chat-panel-hint">Загружаю страницу…</p>
+        <p x-show="modalError" role="alert" x-text="modalError" class="chat-panel-hint"></p>
+        <iframe x-ref="workspaceFrame" :title="modalTitle" @load="workspaceFrameLoaded()" x-show="!modalError"
+                sandbox="allow-same-origin allow-scripts allow-forms allow-downloads allow-modals"></iframe>
+    </dialog>
+    <dialog class="chat-attachment-dialog" x-ref="attachmentInfo" aria-labelledby="chat-attachment-title">
+        <h2 id="chat-attachment-title">Фото и документы</h2>
+        {% if attachment_policy is defined and attachment_policy %}
+        <div class="chat-attachment-policy-body">
+            <p>
+                Активная модель чата: <strong x-text="attachmentPolicy?.model_name || '{{ attachment_policy.model_name }}'">{{ attachment_policy.model_name }}</strong>
+                (лимит ответа модели: <span x-text="attachmentPolicy?.model_max_tokens || {{ attachment_policy.model_max_tokens }}">{{ attachment_policy.model_max_tokens }}</span> токенов).
+            </p>
+            <p>
+                <strong>Допустимые документы для задач:</strong>
+                <code>.txt</code>, <code>.md</code>, <code>.csv</code>, <code>.tsv</code>, <code>.json</code>, <code>.pdf</code> (с текстовым слоем, до {{ attachment_policy.max_pdf_pages }} стр.), <code>.docx</code> — до {{ attachment_policy.max_document_size_label }} (до {{ attachment_policy.max_files_per_turn }} файлов за сообщение).
+            </p>
+            <p x-show="attachmentPolicy?.image_supported">
+                <strong>Изображения:</strong>
+                <code>.png</code>, <code>.jpg</code>, <code>.webp</code>, <code>.gif</code> — до {{ attachment_policy.max_image_size_label }}, до {{ attachment_policy.max_image_dimension }}×{{ attachment_policy.max_image_dimension }} пикс.
+            </p>
+            <p x-show="!attachmentPolicy?.image_supported" x-text="attachmentPolicy?.image_reason || '{{ attachment_policy.image_reason }}'"></p>
+            <p>
+                <strong>Отклоняются агентом:</strong> исполняемые файлы и скрипты (<code>.exe</code>, <code>.sh</code>, <code>.py</code>, <code>.js</code>), архивы (<code>.zip</code>, <code>.rar</code>, <code>.7z</code>), аудио/видео, бинарные таблицы и макросы (<code>.doc</code>, <code>.xls</code>, <code>.xlsx</code>, <code>.docm</code>), <code>.svg</code>, зашифрованные файлы и сканы PDF без текста.
+            </p>
+            <p>
+                <strong>Контроль расхода токенов:</strong> если вложение крупное (от ~{{ attachment_policy.confirm_token_threshold }} токенов или свыше 35% окна модели), чат предупредит и запросит подтверждение перед отправкой.
+            </p>
+        </div>
+        <div class="chat-attachment-dialog-actions">
+            <button type="button" @click="chooseFileFromDialog()" x-show="attachmentEnabled()">Выбрать файл</button>
+            <form method="dialog"><button type="submit">Понятно</button></form>
+        </div>
+        {% else %}
+        <p>Прикрепление файлов пока недоступно. Сейчас помощник получает только текст сообщения. Можно вставить текст документа или ссылку и уточнить, что нужно сделать.</p>
+        <form method="dialog"><button type="submit">Понятно</button></form>
+        {% endif %}
+    </dialog>
 </div>
 {% endblock %}

@@ -1,5 +1,8 @@
 """Isolated source/mocked handlers and real template rendering; no app, DB or provider."""
 
+# Source-only: every app boundary is isolated or a pure context helper; tests use doubles, not storage.
+__source_only__ = True
+
 import ast
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -292,7 +295,7 @@ async def test_post_requires_fresh_configure_csrf_but_no_checkbox(allowed, csrf,
             "ActionType": NS(CONFIGURE="configure"),
             "HTMLResponse": object,
             "HTTPException": HTTPException,
-            "get_csrf_manager": lambda request: NS(verify_token=lambda token: csrf),
+            "verify_request_token": lambda request, token: bool(csrf and token),
             "settings": NS(PERSONAL_BILLING_ENABLED=True),
             "Tenant": NS(objects=NS(get=AsyncMock(return_value=NS(id=3, is_active=True)))),
         },
@@ -513,11 +516,14 @@ async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_witho
 async def test_web_handler_preserves_guards_and_calls_same_short_service(allowed, csrf, exists):
     from starlette.responses import RedirectResponse
 
-    probe, post = probe_module()
-    probe.probe_short = Mock(wraps=probe.probe_short)
     selected = model()
     manager = NS(select_related=lambda *a: manager, filter=lambda **kw: manager, first=AsyncMock(return_value=selected))
     tenant_manager = NS(get=AsyncMock(return_value=NS(id=3) if exists else None))
+    run_probe = AsyncMock(return_value=NS(headers={}))
+    personal_catalog = NS(
+        validate_chat_model=AsyncMock(return_value=selected),
+        chat_model_options=AsyncMock(return_value=[]),
+    )
     handler = extracted_handler(
         "app/web/settings.py",
         "agent_model_probe",
@@ -530,22 +536,24 @@ async def test_web_handler_preserves_guards_and_calls_same_short_service(allowed
             "BACK": "/app/settings",
             "LLMModel": NS(objects=manager),
             "RedirectResponse": RedirectResponse,
+            "__package__": "app.web",
         },
         {
             "app.models.managers.tenant_manager": NS(tenants=tenant_manager),
-            "app.services.ai.model_probe": probe,
-            "app.services.ai.personal_catalog": NS(validate_chat_model=AsyncMock(return_value=selected)),
+            "app.services.ai.personal_catalog": personal_catalog,
+            "settings_llm": NS(_run_probe=run_probe),
         },
     )
     request = NS(session={}, state=NS(web_user=NS(id=selected.owner_user_id)))
-    await handler(request, agent_model_id="7", token="fake-csrf", tenant_id=3)
+    await handler(request, agent_model_id="7", token="fake-csrf", tenant_id=3, probe_mode="local", consent="")
     if allowed and csrf and exists:
-        probe.probe_short.assert_called_once_with(selected)
-        assert request.session["agent_model_probe_result"]["ok"]
+        personal_catalog.validate_chat_model.assert_awaited_once_with(
+            user_id=selected.owner_user_id, tenant_id=3, model_id=7
+        )
+        run_probe.assert_awaited_once_with(request, model_id="7", mode="local", tenant_id=3, consent="")
     else:
-        probe.probe_short.assert_not_called()
+        run_probe.assert_not_awaited()
         assert not request.session
-    post.assert_not_awaited()
 
 
 @pytest.mark.asyncio

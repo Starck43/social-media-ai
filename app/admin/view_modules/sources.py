@@ -29,6 +29,8 @@ class PlatformAdmin(BaseAdmin, model=Platform):
     name = "Платформа"
     name_plural = "Платформы"
     icon = "fa fa-globe"
+    category = "Источники и сбор"
+    category_icon = "fa fa-rss"
     # A platform cascade cannot run the per-workspace source-admission policy.
     # Disable both the SQLAdmin route/buttons and direct view-method callers.
     can_delete = False
@@ -107,6 +109,8 @@ class SourceAdmin(BaseAdmin, model=Source):
     name = "Источник"
     name_plural = "Источники"
     icon = "fa fa-rss"
+    category = "Источники и сбор"
+    category_icon = "fa fa-rss"
     # Generic SQLAdmin deletion bypasses the admission lock and task-scope guard.
     # Use the existing workspace source-deletion surfaces instead.
     can_delete = False

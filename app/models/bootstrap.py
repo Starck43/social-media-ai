@@ -11,6 +11,9 @@ def bind_managers(models):
     models.ActionAuditEvent.objects = import_module(
         "app.models.managers.action_audit_event_manager"
     ).ActionAuditEventManager()
+    models.WorkspaceOffboardingEvent.objects = import_module(
+        "app.models.managers.workspace_offboarding_manager"
+    ).WorkspaceOffboardingManager()
     models.WorkspaceRole.objects = BaseManager(models.WorkspaceRole)
     models.ModelType.objects = BaseManager(models.ModelType)
     models.LoginAttempt.objects = BaseManager(models.LoginAttempt)

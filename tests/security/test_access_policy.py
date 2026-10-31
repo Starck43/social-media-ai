@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+__source_only__ = True
+
 from app.core.access_catalog import RESOURCES, resolve_permission_key, resource_for, workspace_grants
 from app.core.permissions import has_permission, has_permission_by_codename, has_role, permission_scope
 from app.core.tenant_context import tenant_scope
@@ -85,6 +87,31 @@ def test_operator_global_data_context_does_not_bypass_action_permissions():
         assert has_role(actor, PlatformRoleType.OPERATOR)
 
 
+def test_offboarding_journal_is_platform_superuser_only_even_with_stale_admin_grants():
+    journal = resource_for("WorkspaceOffboardingEvent")
+    assert journal is not None
+    assert journal.key == "audit.workspace_offboarding"
+    assert journal.workspace is False
+    assert journal.actions == frozenset({ActionType.VIEW, ActionType.EXPORT})
+    permissions = [
+        Permission(
+            action_type=action,
+            name=f"Stale grant {action.db_value}",
+            model_type=ModelType(
+                resource_key=journal.key,
+                model_name=journal.model_name,
+                table_name=journal.table_name,
+            ),
+        )
+        for action in (ActionType.VIEW, ActionType.EXPORT)
+    ]
+    admin = user("admin", permissions)
+    owner = user("superuser")
+    for action in (ActionType.VIEW, ActionType.EXPORT):
+        assert not admin.has_perm_for("WorkspaceOffboardingEvent", action)
+        assert owner.has_perm_for("WorkspaceOffboardingEvent", action)
+
+
 @pytest.mark.parametrize("role,ai,allowed", [("viewer", False, False), ("viewer", True, True), ("owner", False, True)])
 def test_chat_permission_is_independent_from_platform_admin(role, ai, allowed):
     perms = WebPerms(user("admin"), [member(role, ai_chat_enabled=ai)], 11, workspace_grants(role))
@@ -138,10 +165,27 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
     actual = {
         table: (row[0], row[1], set(row[2].split()), row[3], row[4]) for table, row in migration.RESOURCES.items()
     }
+    # P11-T12 added action-audit, P11-T28 added one workspace action, and
+    # P11-T29 added the platform offboarding journal after the 0096 snapshot.
+    # Keep that migration immutable and make only these post-baseline deltas
+    # explicit; every other resource identity and scope flag must still match.
+    actual["action_audit_events"] = ("audit.action_audit", "actionauditevent", {"view", "export"}, True, False)
+    actual["workspace_offboarding_events"] = (
+        "audit.workspace_offboarding",
+        "workspaceoffboardingevent",
+        {"view", "export"},
+        False,
+        False,
+    )
+    key, model, actions, is_workspace, is_personal = actual["tenants"]
+    actual["tenants"] = (key, model, actions | {"delete"}, is_workspace, is_personal)
     assert expected == actual
     for role, pairs in migration._workspace_grant_pairs().items():
         canonical = {(resource_for(model).key, action.db_value) for model, action in workspace_grants(role)}
-        assert canonical == pairs
+        baseline_pairs = pairs | (
+            {("audit.action_audit", "view"), ("audit.action_audit", "export")} if role in ("owner", "admin") else set()
+        )
+        assert canonical == baseline_pairs
 
 
 def test_migration_permission_map_keeps_canonical_model_without_permissions(monkeypatch):
@@ -189,8 +233,7 @@ def test_migration_permission_map_keeps_canonical_model_without_permissions(monk
     assert len(captured) == 1
     select_sql = captured[0].replace("p.action_type::text", "p.action_type")
     with sqlite3.connect(":memory:") as connection:
-        connection.executescript(
-            """
+        connection.executescript("""
             CREATE TABLE model_types (id INTEGER PRIMARY KEY, resource_key TEXT NOT NULL);
             CREATE TABLE permissions (id INTEGER PRIMARY KEY, model_type_id INTEGER NOT NULL, action_type TEXT NOT NULL);
             CREATE TABLE _access_model_map (old_id INTEGER NOT NULL, keep_id INTEGER NOT NULL, resource_key TEXT NOT NULL);
@@ -198,8 +241,7 @@ def test_migration_permission_map_keeps_canonical_model_without_permissions(monk
             INSERT INTO _access_model_map VALUES
                 (1, 1, 'collection.source'), (2, 1, 'collection.source'), (3, 1, 'collection.source');
             INSERT INTO permissions VALUES (10, 2, 'VIEW'), (11, 3, 'VIEW');
-            """
-        )
+            """)
         rows = connection.execute(select_sql).fetchall()
 
     assert rows == [
@@ -280,9 +322,7 @@ def test_migration_seeds_missing_resource_catalog_rows_idempotently():
 
     try:
         with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
+            connection.execute(text("""
                 CREATE TABLE model_types (
                     id INTEGER PRIMARY KEY,
                     app_name TEXT NOT NULL,
@@ -294,42 +334,28 @@ def test_migration_seeds_missing_resource_catalog_rows_idempotently():
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
-            """
-                )
-            )
-            connection.execute(
-                text(
-                    """
+            """))
+            connection.execute(text("""
                 INSERT INTO model_types
                     (id, app_name, model_name, table_name, description, is_managed,
                      resource_key, created_at, updated_at)
                 VALUES
                     (41, 'legacy', 'OldSource', 'sources', 'keep this row', false, NULL, 'old', 'old'),
                     (99, 'legacy', 'Mystery', 'unexpected_legacy', 'keep unknown', true, NULL, 'old', 'old')
-            """
-                )
-            )
+            """))
 
             migration._seed_resource_model_types(connection, "model_types")
-            after_first_seed = connection.execute(
-                text(
-                    """
+            after_first_seed = connection.execute(text("""
                     SELECT id, app_name, model_name, table_name, description, is_managed,
                            resource_key, created_at, updated_at
                       FROM model_types ORDER BY table_name, id
-                """
-                )
-            ).all()
+                """)).all()
             migration._seed_resource_model_types(connection, "model_types")
-            after_second_seed = connection.execute(
-                text(
-                    """
+            after_second_seed = connection.execute(text("""
                     SELECT id, app_name, model_name, table_name, description, is_managed,
                            resource_key, created_at, updated_at
                       FROM model_types ORDER BY table_name, id
-                """
-                )
-            ).all()
+                """)).all()
 
             rows_by_table = {row[3]: row for row in after_second_seed}
             assert set(rows_by_table) == set(migration.RESOURCES) | {"unexpected_legacy"}

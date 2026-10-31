@@ -404,6 +404,13 @@ curl http://localhost:8000/readyz
 
 ## Option B: Systemd (Direct Install)
 
+> **Historical sketch — reference only; do not execute.** This is not the current
+> installation path. The supported server profiles are the isolated staging and
+> production Compose files above; use the command selector at the top of this
+> guide. The unit names, paths and `systemctl` commands below are illustrative and
+> may not match any installed host. Running them on a live server restarts
+> services and can interrupt in-flight work.
+
 ### 1. Install Dependencies
 
 ```bash

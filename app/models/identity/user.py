@@ -98,12 +98,16 @@ class User(Base, TimestampMixin):
                     cache.add((resource.key, permission.action_type))
             self._model_perms_cache = cache
 
-        from app.core.access_catalog import resource_for
+        from app.core.access_catalog import SUPERUSER_ONLY_PERMISSIONS, resource_for
 
         resource = resource_for(model_name)
         if resource is None:
             return set()
-        return {action for key, action in self._model_perms_cache if key == resource.key}
+        return {
+            action
+            for key, action in self._model_perms_cache
+            if key == resource.key and (key, action) not in SUPERUSER_ONLY_PERMISSIONS
+        }
 
     def has_perm_for(self, model_name: str, action: ActionType) -> bool:
         from app.core.access_catalog import resource_for

@@ -54,7 +54,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **TODO** · unassigned · — · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
-- [P11-T29](docs/tasks/p11-t29.md) Durable workspace offboarding audit and retention contract — **TODO** · unassigned · `01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C3`
+- [P11-T29](docs/tasks/p11-t29.md) Durable workspace offboarding audit and retention contract — **IN_PROGRESS** · codex-p11-t29 · `01a18973-e01e-7861-b0a0-143e9678824f` · `P2` · `C3`
 
 ### Priority P3
 

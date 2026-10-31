@@ -66,18 +66,13 @@ function chatApp() {
                 this.$nextTick(() => { this.scrollToBottom(); this.onScroll(); })
             },
 
-            toggleWorkspacePanel(element) {
-                const opening = !this.panelOpen;
-                this.panelOpen = opening;
-                const root = element?.closest('.chat-page') || this.$root;
-                // Wait for visibility/layout to paint without depending on Alpine's
-                // shared next-tick queue (other elements may hold it for transitions).
-                requestAnimationFrame(() => requestAnimationFrame(() => {
-                    if (this.panelOpen !== opening) return;
-                    const target = root.querySelector(opening ? '#chat-workspace-panel' : '[data-chat-panel-toggle]');
+            toggleWorkspacePanel() {
+                this.panelOpen = !this.panelOpen;
+                this.$nextTick(() => {
+                    const target = this.panelOpen ? this.$refs.workspacePanel : this.$refs.panelToggle;
                     target?.focus();
-                    if (opening && !window.matchMedia('(min-width: 1200px)').matches) target?.scrollIntoView({block: 'start'});
-                }));
+                    if (this.panelOpen && !window.matchMedia('(min-width: 1200px)').matches) target?.scrollIntoView({block: 'start'});
+                });
             },
             draftAction(text) {
                 if (this.pending || this.awaitingConfirmation) return;

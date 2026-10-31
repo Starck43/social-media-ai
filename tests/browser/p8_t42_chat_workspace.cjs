@@ -296,8 +296,9 @@ try {
         result.textContent = failure + (failureProbes ? ' focus-probes=' + JSON.stringify(failureProbes) : ' focus-probes=not-applicable');
       });
     `;
-    html = html.replace('</head>', `<style>${css}</style></head>`);
-    html = html.replace('</body>', `<script>${js}</script><script>${browserChecks}</script><script>${alpineJs}</script></body>`);
+    html = html.replace('</head>', () => `<style>${css}</style></head>`);
+    html = html.replace('</body>', () => `<script>${js}</script><script>${browserChecks}</script><script>${alpineJs}</script></body>`);
+    if (!html.includes(alpineJs)) throw Error('Alpine.js fixture bytes changed during HTML insertion');
     fs.writeFileSync(fixture, html);
     if (fixtureOnlyPath) {
         console.log(`Fixture written: ${fixture}`);

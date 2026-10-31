@@ -68,6 +68,7 @@ try {
         const root = document.querySelector('.chat-page');
         const panel = document.querySelector('#chat-workspace-panel');
         let app = null;
+        let escapeAssertion = null;
         const diagnostic = () => {
           const toggle = root?.querySelector('.chat-panel-toggle');
           const rect = toggle?.getBoundingClientRect();
@@ -145,7 +146,9 @@ try {
         )) {
           await new Promise(resolve => requestAnimationFrame(resolve));
         }
-        check(getComputedStyle(panel).display === 'none' && document.activeElement === root.querySelector('.chat-panel-toggle'), 'Escape closes panel and restores focus');
+        const escapePassed = getComputedStyle(panel).display === 'none' && document.activeElement === root.querySelector('.chat-panel-toggle');
+        escapeAssertion = {passed: escapePassed, beforeProbe: diagnostic()};
+        check(escapePassed, 'Escape closes panel and restores focus');
         root.querySelector('.chat-panel-toggle').click();
         await new Promise(resolve => setTimeout(resolve, 25));
         check(getComputedStyle(panel).display !== 'none', 'opening the panel updates the real Alpine state');
@@ -221,9 +224,32 @@ try {
         const result = document.createElement('pre');
         result.id = 'p8t42-results'; result.textContent = 'PASS ' + checks.length + ' checks';
         document.body.append(result);
-      })().catch(error => {
+      })().catch(async error => {
+        let failureProbes = null;
+        if (escapeAssertion && !escapeAssertion.passed) {
+          const toggle = document.querySelector('.chat-panel-toggle');
+          const input = document.querySelector('.chat-input');
+          const focused = () => document.activeElement === toggle;
+          failureProbes = {originalAssertion: escapeAssertion, rootRefKeys: Object.keys(app?.$refs || {})};
+          try {
+            toggle.focus();
+            failureProbes.vanillaFocus = {focused: focused(), active: document.activeElement?.tagName + '#' + (document.activeElement?.id || '')};
+            toggle.setAttribute('tabindex', '0');
+            toggle.focus();
+            failureProbes.explicitTabindexFocus = {focused: focused(), active: document.activeElement?.tagName + '#' + (document.activeElement?.id || '')};
+            input.focus();
+            failureProbes.inputFocus = {focused: document.activeElement === input, active: document.activeElement?.tagName + '#' + (document.activeElement?.id || '')};
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            toggle.focus();
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            failureProbes.toggleFocusNextFrame = {focused: focused(), active: document.activeElement?.tagName + '#' + (document.activeElement?.id || '')};
+            failureProbes.afterProbe = diagnostic();
+          } catch (probeError) {
+            failureProbes.probeError = probeError.message;
+          }
+        }
         const result = document.createElement('pre');
-        result.id = 'p8t42-results'; result.textContent = 'FAIL ' + error.message;
+        result.id = 'p8t42-results'; result.textContent = 'FAIL ' + error.message + (failureProbes ? ' focus-probes=' + JSON.stringify(failureProbes) : '');
         document.body.append(result);
       });
     `;

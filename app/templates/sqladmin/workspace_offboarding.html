@@ -1,6 +1,6 @@
 {% extends "sqladmin/layout.html" %}
 {% block content %}
-<div class="col-12 col-lg-9">
+<div class="col-12">
   <div class="card">
     <div class="card-header"><h3 class="card-title">{{ title }}</h3></div>
     <div class="card-body">
@@ -26,7 +26,15 @@
         <select class="form-select" id="reason_code" name="reason_code">{% for key, label in reason_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
         <div class="mb-3"><label class="form-label" for="retention_policy">Политика аудита</label>
         <select class="form-select" id="retention_policy" name="retention_policy">{% for key, label in policy_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
-        <small class="form-hint">Действующий аудит всегда сохраняется и блокирует удаление. Просроченный удаляется только при явном выборе.</small></div>
+        <small class="form-hint" data-policy-hint>
+          {% if preview.retained_audit_count == 0 and preview.expired_audit_count == 0 %}
+          Аудита у этого пространства нет. Оба варианта дают одно и то же: пространство удаляется полностью.
+          {% elif preview.retained_audit_count %}
+          Удерживается {{ preview.retained_audit_count }} записей аудита с действующим сроком хранения. Удаление заблокировано при любом выборе: сначала нужна плановая очистка после истечения срока.
+          {% else %}
+          Все {{ preview.expired_audit_count }} записей аудита просрочены. «Сохранить аудит» оставит их и заблокирует удаление; «Удалить просроченный аудит» разрешит удаление и запишет число стёртых записей в квитанцию.
+          {% endif %}
+        </small></div>
         <button class="btn btn-primary" type="submit">Предварительный просмотр</button>
       </form>
       {% else %}

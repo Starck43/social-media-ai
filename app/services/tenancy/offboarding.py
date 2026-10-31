@@ -23,8 +23,8 @@ REASON_LABELS = {
     "test_completed": "Завершение тестирования",
 }
 POLICY_LABELS = {
-    "preserve": "Сохранить весь существующий аудит",
-    "expire_elapsed": "Удалить только аудит с истёкшим сроком хранения",
+    "preserve": "Сохранить аудит: удалит, только если аудита нет",
+    "expire_elapsed": "Удалить просроченный аудит вместе с пространством",
 }
 REVIEW_TTL_SECONDS = 900
 MAX_EXPIRE_BATCH = 5000

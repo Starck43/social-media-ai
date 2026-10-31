@@ -58,6 +58,29 @@ main {
 .admin-menu .nav-link-title { min-width: 0; overflow-wrap: anywhere; }
 .admin-menu .nav-link.active { background: var(--tblr-navbar-active-bg); color: var(--tblr-navbar-active-color); font-weight: 600; }
 .admin-menu .nav-link:hover, .admin-sidebar-link:hover { background: var(--tblr-bg-surface-secondary); }
+.admin-menu .dropdown-toggle::after { margin-left: auto; }
+.admin-menu .dropdown-menu,
+.admin-menu .dropdown-menu[data-bs-popper] {
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    float: none;
+    min-width: 0;
+    margin: .125rem 0 .25rem .75rem !important;
+    padding: 0 0 0 .35rem;
+    background: transparent !important;
+    border: 0 !important;
+    border-left: 2px solid var(--tblr-border-color) !important;
+    border-radius: 0;
+    box-shadow: none !important;
+    color: inherit;
+}
+.admin-menu .dropdown-menu-columns,
+.admin-menu .dropdown-menu-column {
+    display: flex;
+    flex-direction: column;
+    gap: .125rem;
+}
 .admin-sidebar-footer { display: grid; gap: .5rem; border-top: 1px solid var(--tblr-border-color); padding-top: .75rem; }
 .admin-sidebar-link { display: flex; align-items: center; gap: .65rem; padding: .45rem .5rem; border-radius: .5rem; color: var(--tblr-navbar-color); }
 .admin-sidebar :focus-visible { outline: 2px solid var(--tblr-primary); outline-offset: 2px; }

@@ -39,9 +39,9 @@ STATUS_DEFERRED = "deferred"
 STATUS_UNSUPPORTED = "unsupported"
 CATEGORY_STATUSES = (STATUS_ENABLED, STATUS_MOCKED, STATUS_DEFERRED, STATUS_UNSUPPORTED)
 
-# Only these statuses may execute. ``mocked`` is executable so the mocked
-# contract can be verified; it is still not a live availability claim.
-EXECUTABLE_STATUSES = (STATUS_ENABLED, STATUS_MOCKED)
+# A mocked contract is testable, but it is not an execution permission. Only
+# method/profile evidence can move a category to ``enabled`` and make it usable.
+EXECUTABLE_STATUSES = (STATUS_ENABLED,)
 
 ALL_CATEGORIES = "all"
 
@@ -229,34 +229,30 @@ def category_catalog(*, platform: str = "vk") -> list[dict[str, Any]]:
 def resolve_categories(requested: Sequence[str] | str | None, *, platform: str = "vk") -> CategorySelection:
     """Resolve a requested category set into executable and unavailable parts.
 
-    ``None`` or ``"all"`` aggregates only executable categories; a deferred or
-    unsupported category is never silently included. An explicit list preserves
-    order, deduplicates, reports each non-executable category with its reason,
-    and fails closed on an unknown id.
+    ``None`` or ``"all"`` selects only enabled categories and reports the rest
+    as unavailable with their bounded reasons. An explicit list preserves
+    order, deduplicates, reports each non-executable category, and fails closed
+    on an unknown id.
     """
-    if requested is None or requested == ALL_CATEGORIES:
-        selected = tuple(
-            category for category in VK_SEARCH_CATEGORIES if category.platform == platform and category.executable
-        )
-        return CategorySelection(selected=selected, unavailable=())
-    if isinstance(requested, str):
-        entries: Sequence[str] = [requested]
+    entries: Sequence[str]
+    if requested is None:
+        entries = [category.category_id for category in VK_SEARCH_CATEGORIES if category.platform == platform]
+    elif isinstance(requested, str):
+        entries = [requested]
     else:
         entries = requested
 
     selected: list[SearchCategory] = []
     unavailable: list[dict[str, Any]] = []
     seen: set[str] = set()
-    queue = list(entries)
-    # An "all" entry inside an explicit list expands to every executable
-    # category, preserving the aggregate-only-enabled rule.
-    for index, entry in enumerate(queue):
+    queue: list[str] = []
+    # "all" means all declared categories were requested. Only enabled
+    # categories are selected; the rest remain visible as unavailable.
+    for entry in entries:
         if isinstance(entry, str) and entry.strip().lower() == ALL_CATEGORIES:
-            queue[index : index + 1] = [
-                category.category_id
-                for category in VK_SEARCH_CATEGORIES
-                if category.platform == platform and category.executable
-            ]
+            queue.extend(category.category_id for category in VK_SEARCH_CATEGORIES if category.platform == platform)
+        else:
+            queue.append(entry)
     for entry in queue:
         category = get_category(entry, platform=platform)
         if category.category_id in seen:
@@ -293,7 +289,14 @@ async def search_category(
     category raises a bounded error instead of returning an empty page, and a
     provider without the mapped operation fails visibly.
     """
-    resolved = category if isinstance(category, SearchCategory) else get_category(category)
+    # Always use the canonical registry record. A caller-supplied
+    # SearchCategory must not turn a mocked/deferred entry into an enabled one
+    # by constructing a different dataclass value.
+    resolved = (
+        get_category(category.category_id, platform=category.platform)
+        if isinstance(category, SearchCategory)
+        else get_category(category)
+    )
     if not resolved.executable:
         raise SearchCategoryError(
             "search_category_unavailable",

@@ -308,9 +308,12 @@ existing `search_people`, returns typed people results (never Sources) stamped
 with category provenance, and stays `mocked` — contract-tested only — while
 Q-5 owns live method/profile evidence. Video, apps/games, owner-scoped market
 items and music are `deferred` with their own task cards; clips and channels
-are `unsupported` with explicit reasons. `resolve_categories` aggregates only
-executable categories for `all` and fails closed on unknown ids; a refused or
-unavailable category raises a bounded error instead of returning an empty page.
+are `unsupported` with explicit reasons. Only `enabled` categories may
+execute: `resolve_categories` aggregates only enabled categories for `all`,
+returns the rest as unavailable with their reasons and fails closed on unknown
+ids; a refused or unavailable category raises a bounded error instead of
+returning an empty page. `search_category` always re-resolves the canonical
+registry record, so a caller-supplied category object cannot bypass the gate.
 
 Read-only catalogs share `search_categories.category_catalog`:
 

@@ -469,14 +469,53 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         add_in_detail=True,
     )
     async def run_now_action(self, request: Request):
-        """Run the selected task's job immediately; completes a @once task."""
+        """Render the confirmation step; only the CSRF-checked POST runs the task."""
+        from app.admin.actions import render_action_confirmation
         from app.core.tenant_context import current_tenant_id, tenant_scope
-        from app.jobs.dispatcher import run_task_directly
 
         pks = request.query_params.get("pks", "")
         if not pks:
             return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)
         task_id = int(pks.split(",")[0])
+
+        admin_user = self.get_admin_user(request)
+        if admin_user is None or not getattr(admin_user, "is_active", False):
+            raise HTTPException(status_code=403, detail="Доступ запрещён: оператор не аутентифицирован")
+
+        # The same scoped read the executor performs, so the page names the task
+        # only when the actor may actually see it.
+        with tenant_scope(current_tenant_id(), bypass=bool(getattr(admin_user, "is_superuser", False))):
+            task = await AgentTask.objects.get(id=task_id)
+        if task is None:
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)
+
+        return await render_action_confirmation(
+            self,
+            request,
+            title="Выполнить задачу сейчас",
+            message=(
+                f"Задача «{task.name}» будет поставлена в очередь немедленно. "
+                "Действие изменяет состояние и может списать токены провайдера."
+            ),
+            submit_label="Выполнить сейчас",
+            cancel_url=request.url_for("admin:list", identity=self.identity),
+        )
+
+    @expose("/action/run-now", methods=["POST"])
+    async def run_now_submit(self, request: Request):
+        """Execute the confirmed run; the only state-changing entry point."""
+        from app.admin.actions import verified_action_form
+
+        form = await verified_action_form(request)
+        pks = str(form.get("pks", ""))
+        if not pks:
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)
+        return await self._run_task_now(request, int(pks.split(",")[0]))
+
+    async def _run_task_now(self, request: Request, task_id: int):
+        """Run the selected task's job immediately; completes a @once task."""
+        from app.core.tenant_context import current_tenant_id, tenant_scope
+        from app.jobs.dispatcher import run_task_directly
 
         # The manual Job admission boundary (`_admit_task_run`) credits the
         # actor from the ambient permission_scope user into the Job row

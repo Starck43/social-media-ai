@@ -28,19 +28,14 @@ class _StubRequest:
 
 
 def _run_now_action():
-    """The action itself, without sqladmin's route wrappers.
+    """The executor, not the GET confirmation page.
 
-    `@action` wraps the method in `login_required` and the accessibility
-    check. Those wrappers read the *configured* admin console: once the app
-    module is imported, the authentication backend answers for the stub
-    request with "not signed in" and the action is never reached. This test
-    is about the action's own contract — the trusted operator enters the
-    admission context — so it calls the unwrapped function.
+    Since S4 the action URL only renders a confirmation; the state change lives
+    in `_run_task_now`, which the CSRF-checked POST route calls. This test is
+    about the executor's own contract — the trusted operator enters the
+    admission context — so it targets that method directly.
     """
-    func = AgentTaskAdmin.run_now_action
-    while hasattr(func, "__wrapped__"):
-        func = func.__wrapped__
-    return func
+    return AgentTaskAdmin._run_task_now
 
 
 def _admin_user(active=True, *, superuser=False):
@@ -85,7 +80,7 @@ async def test_a_trusted_active_operator_reaches_the_admission_context(monkeypat
     _patch_task_get(monkeypatch, seen)
     _patch_dispatch(monkeypatch, captured)
 
-    await _run_now_action()(AgentTaskAdmin(), request)
+    await _run_now_action()(AgentTaskAdmin(), request, 7)
 
     assert captured["task_id"] == 7
     assert captured["actor_id"] == 42
@@ -101,7 +96,7 @@ async def test_the_owner_reads_the_task_across_workspaces(monkeypatch):
     _patch_task_get(monkeypatch, seen)
     _patch_dispatch(monkeypatch, captured)
 
-    await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=_admin_user(superuser=True)))
+    await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=_admin_user(superuser=True)), 7)
 
     assert captured["task_id"] == 7
     assert seen["bypass"] is True
@@ -116,11 +111,11 @@ async def test_an_absent_or_inactive_operator_is_denied(monkeypatch):
     _patch_dispatch(monkeypatch, captured)
 
     with pytest.raises(HTTPException) as exc:
-        await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=None))
+        await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=None), 7)
     assert exc.value.status_code == 403
     assert not captured
 
     with pytest.raises(HTTPException) as exc:
-        await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=_admin_user(active=False)))
+        await _run_now_action()(AgentTaskAdmin(), _StubRequest(admin_user=_admin_user(active=False)), 7)
     assert exc.value.status_code == 403
     assert not captured

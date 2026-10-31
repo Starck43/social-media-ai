@@ -22,6 +22,7 @@ from ._shared import (
     SelectField,
     Union,
     action,
+    expose,
     get_model_form,
     hide_form_secret,
     logger,
@@ -297,15 +298,43 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 
     @action(name="test-connection", label="🔌 Проверить подключение", add_in_list=True, add_in_detail=True)
     async def test_connection_action(self, request: Request):
-        with self._catalog_scope(request):
-            return await self._test_connection(request)
+        """Render the confirmation step; only the CSRF-checked POST calls the provider."""
+        from app.admin.actions import render_action_confirmation
 
-    async def _test_connection(self, request: Request):
         pks = request.query_params.get("pks", "")
         if not pks:
             request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
             return RedirectResponse(request.url_for("admin:list", identity=self.identity))
-        provider_id = int(pks.split(",")[0])
+
+        with self._catalog_scope(request):
+            provider = await LLMProvider.objects.get(id=int(pks.split(",")[0]))
+        if provider is None:
+            request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+
+        return await render_action_confirmation(
+            self,
+            request,
+            title="Проверить подключение провайдера",
+            message=(f"Будет отправлен короткий запрос через «{provider.name}». " "Это списывает токены провайдера."),
+            submit_label="Проверить",
+            cancel_url=request.url_for("admin:list", identity=self.identity),
+        )
+
+    @expose("/action/test-connection", methods=["POST"])
+    async def test_connection_submit(self, request: Request):
+        """Execute the confirmed provider probe; the only paid entry point."""
+        from app.admin.actions import verified_action_form
+
+        form = await verified_action_form(request)
+        pks = str(form.get("pks", ""))
+        if not pks:
+            request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+        with self._catalog_scope(request):
+            return await self._test_connection(request, int(pks.split(",")[0]))
+
+    async def _test_connection(self, request: Request, provider_id: int):
         provider = await LLMProvider.objects.get(id=provider_id)
         models = await LLMModel.objects.select_related("provider").filter(provider_id=provider_id, is_active=True).all()
         if not models:

@@ -14,6 +14,7 @@ from ._shared import (
     Request,
     SelectField,
     action,
+    expose,
     json,
     logger,
     logging,
@@ -365,11 +366,52 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
         add_in_detail=True,
     )
     async def toggle_active_action(self, request: Request):
-        """Toggle scenario active status."""
+        """Render the confirmation step; only the CSRF-checked POST toggles."""
+        from app.admin.actions import render_action_confirmation
+
         pks = request.query_params.get("pks", "")
         if not pks:
             return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
+        names = []
+        for pk in pks.split(","):
+            try:
+                scenario = await AgentScenario.objects.get(id=int(pk))
+            except Exception as e:
+                logger.error(f"Error loading scenario {pk}: {e}")
+                continue
+            if scenario:
+                names.append(scenario.name)
+        if not names:
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+
+        return await render_action_confirmation(
+            self,
+            request,
+            title="Изменить активность сценариев",
+            message="Будет переключён признак активности: " + ", ".join(f"«{name}»" for name in names),
+            submit_label="Переключить",
+            cancel_url=request.url_for("admin:list", identity=self.identity),
+        )
+
+    @expose("/action/toggle-active", methods=["POST"])
+    async def toggle_active_submit(self, request: Request):
+        """Execute the confirmed toggle; the only state-changing entry point."""
+        from app.admin.actions import verified_action_form
+
+        form = await verified_action_form(request)
+        pks = str(form.get("pks", ""))
+        if not pks:
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+
+        await self._toggle_scenarios(pks)
+        return RedirectResponse(
+            url=request.url_for("admin:list", identity=self.identity),
+            status_code=303,
+        )
+
+    async def _toggle_scenarios(self, pks: str) -> None:
+        """Toggle every selected scenario; the caller has already authorised it."""
         for pk in pks.split(","):
             try:
                 scenario = await AgentScenario.objects.get(id=int(pk))
@@ -379,11 +421,6 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
                     logger.info(f"Scenario {pk} status changed to {new_status}")
             except Exception as e:
                 logger.error(f"Error toggling scenario {pk}: {e}")
-
-        return RedirectResponse(
-            url=request.url_for("admin:list", identity=self.identity),
-            status_code=303,
-        )
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

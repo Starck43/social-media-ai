@@ -43,14 +43,31 @@ _SCRIPT = r"""on run argv
         if currentPath contains "/admin/login" then error "Synthetic superuser login did not reach the console"
         tell application "Safari" to set URL of current tab of (window id windowID) to setupURL
         delay 0.6
-        tell application "Safari" to do JavaScript "(async()=>{try{const csrf=document.querySelector('[name=csrf_token]')?.value||'';const setup=await fetch('/admin/tenant/action/offboard?pks='+" & workspaceID & ");const setupText=await setup.text();const tokenMatch=setupText.match(/name=[\"']csrf_token[\"'][^>]*value=[\"']([^\"']+)/i);const csrfToken=csrf||tokenMatch?.[1]||'';const previewData=new URLSearchParams({intent:'preview',pks:" & workspaceID & ",reason_code:'owner_request',retention_policy:'preserve',csrf_token:csrfToken});const preview=await fetch('/admin/tenant/action/offboard',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:previewData});const previewText=await preview.text();const doc=new DOMParser().parseFromString(previewText,'text/html');const review=doc.querySelector('[name=review_token]')?.value||'';let confirmation={status:0,text:''};if(review && " & isProtected & "==='false'){const confirmData=new URLSearchParams({intent:'confirm',review_token:review,confirmed:'yes',csrf_token:csrfToken});const response=await fetch('/admin/tenant/action/offboard',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:confirmData});confirmation={status:response.status,text:await response.text()}}window.__p11t29={setup:setup.status,preview:preview.status,hasReview:!!review,previewHasBlocker:/retained|audit|сохранён|удалить/i.test(previewText),confirmation,protected:" & isProtected & "==='true'}}catch(e){window.__p11t29={error:String(e)}}})()" in current tab of (window id windowID)
+        tell application "Safari" to set loginResult to do JavaScript "(()=>{const f=document.querySelector('form');const reason=f?.querySelector('[name=reason_code]');const policy=f?.querySelector('[name=retention_policy]');if(!f||!reason||!policy)return 'PREVIEW_FORM_MISSING';reason.value='owner_request';policy.value='preserve';f.querySelector('button[type=submit]')?.click();return 'PREVIEW_CLICKED'})()" in current tab of (window id windowID)
+        if loginResult is not "PREVIEW_CLICKED" then error "Safari could not submit the preview form: " & loginResult
         set resultText to ""
+        set pageState to ""
         repeat 100 times
             delay 0.25
-            tell application "Safari" to set resultText to do JavaScript "JSON.stringify(window.__p11t29||{})" in current tab of (window id windowID)
-            if resultText contains "preview" or resultText contains "error" then exit repeat
+            tell application "Safari" to set pageState to do JavaScript "(()=>{if(document.querySelector('[data-offboarding-receipt]'))return 'RECEIPT';if(document.querySelector('[name=review_token]'))return 'REVIEW';if(!document.querySelector('[name=intent][value=preview]')&&document.querySelector('[data-retained-count]'))return 'BLOCKED';return 'WAIT'})()" in current tab of (window id windowID)
+            if pageState is not "WAIT" then exit repeat
         end repeat
-        if resultText does not contain "preview" and resultText does not contain "error" then error "Safari offboarding request did not finish"
+        if isProtected is "true" then
+            if pageState is not "BLOCKED" then error "Safari did not render the retained-audit blocker: " & pageState
+            tell application "Safari" to set resultText to do JavaScript "JSON.stringify({setup:true,preview:true,hasReview:!!document.querySelector('[name=review_token]'),previewHasBlocker:!!document.querySelector('[data-retained-count]')&&/срок хранения/i.test(document.body.innerText),confirmation:null,receipt:false,protected:true})" in current tab of (window id windowID)
+        else
+            if pageState is not "REVIEW" then error "Safari did not render the review confirmation form: " & pageState
+            tell application "Safari" to set loginResult to do JavaScript "(()=>{const f=document.querySelector('form');const c=f?.querySelector('[name=confirmed]');const b=f?.querySelector('button[type=submit]');if(!f||!c||!b)return 'CONFIRM_FORM_MISSING';c.checked=true;b.click();return 'CONFIRM_CLICKED'})()" in current tab of (window id windowID)
+            if loginResult is not "CONFIRM_CLICKED" then error "Safari could not submit the confirmation form: " & loginResult
+            set pageState to ""
+            repeat 100 times
+                delay 0.25
+                tell application "Safari" to set pageState to do JavaScript "document.querySelector('[data-offboarding-receipt]')?'RECEIPT':'WAIT'" in current tab of (window id windowID)
+                if pageState is "RECEIPT" then exit repeat
+            end repeat
+            if pageState is not "RECEIPT" then error "Safari did not render the deletion receipt"
+            tell application "Safari" to set resultText to do JavaScript "JSON.stringify({setup:true,preview:true,hasReview:true,previewHasBlocker:false,confirmation:'clicked',receipt:!!document.querySelector('[data-offboarding-receipt]'),protected:false})" in current tab of (window id windowID)
+        end if
     on error errorMessage number errorNumber
         if windowID is not missing value then try
             tell application "Safari" to close (window id windowID)
@@ -100,15 +117,17 @@ def run_safari_offboarding(
         payload = json.loads(result.stdout.strip())
     except (TypeError, json.JSONDecodeError) as exc:
         raise RuntimeError("Safari did not return its offboarding result: " + result.stdout[-1200:]) from exc
-    assert payload.get("setup") == 200, payload
-    assert payload.get("preview") == 200, payload
+    assert payload.get("setup") is True, payload
+    assert payload.get("preview") is True, payload
     if protected:
         assert payload.get("previewHasBlocker") is True, payload
         assert payload.get("hasReview") is False, payload
-        assert payload.get("confirmation", {}).get("status") == 0, payload
+        assert payload.get("confirmation") is None, payload
+        assert payload.get("receipt") is False, payload
     else:
         assert payload.get("hasReview") is True, payload
-        assert payload.get("confirmation", {}).get("status") == 200, payload
+        assert payload.get("confirmation") == "clicked", payload
+        assert payload.get("receipt") is True, payload
     print("PASS Safari P11-T29 preview/confirmation" if not protected else "PASS Safari P11-T29 retained-audit blocker")
     return payload
 

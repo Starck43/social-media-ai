@@ -428,8 +428,9 @@ async def test_financial_budget_restrict_fk_is_preview_blocker_and_persists(live
     assert (error.value.status_code, error.value.code) == (409, "retention_blocked")
     with platform_scope():
         assert await Tenant.objects.get(id=workspace_id) is not None
-    async with async_session_maker() as session:
-        assert await LLMBudgetDay.objects.get(id=budget.id, session=session) is not None
+    with tenant_scope(workspace_id):
+        async with async_session_maker() as session:
+            assert await LLMBudgetDay.objects.get(id=budget.id, session=session) is not None
 
 
 async def test_expire_elapsed_requires_explicit_policy_and_records_exact_count(live_records):
@@ -488,10 +489,16 @@ async def test_revoked_superuser_role_is_rechecked_in_confirmation(live_records)
     assert (error.value.status_code, error.value.code) == (403, "superuser_required")
     with platform_scope():
         assert await Tenant.objects.get(id=workspace_id) is not None
-    with actor_scope(owner):
+    # The revoked actor cannot call the superuser-only journal manager even to
+    # assert absence; inspect only this synthetic row in trusted test scope.
+    with platform_scope():
         async with async_session_maker() as session:
-            rows = await WorkspaceOffboardingEvent.objects.list_events(session=session, limit=100)
-    assert not any(row.workspace_id == workspace_id for row in rows)
+            rows = (
+                await session.execute(
+                    select(WorkspaceOffboardingEvent.id).where(WorkspaceOffboardingEvent.workspace_id == workspace_id)
+                )
+            ).all()
+    assert rows == []
 
 
 async def test_confirmation_failure_rolls_back_success_journal(live_records, monkeypatch):

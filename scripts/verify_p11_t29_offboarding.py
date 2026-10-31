@@ -187,10 +187,42 @@ def assert_synthetic_prefixes_removed(conn) -> None:
                 raise RuntimeError(f"Cleanup failure: {remaining} owned P11-T29 rows remain in {table}")
 
 
+def catalog_diff(before: dict, after: dict) -> list[str]:
+    """Describe catalog row changes without dumping unrelated snapshot data."""
+    changes = []
+    for table, rows_before in before["catalog_rows"].items():
+        rows_after = after["catalog_rows"].get(table, [])
+        key_fields = ("id",) if all("id" in row for row in rows_before + rows_after) else None
+        if key_fields:
+            old_by_key = {tuple(row[key] for key in key_fields): row for row in rows_before}
+            new_by_key = {tuple(row[key] for key in key_fields): row for row in rows_after}
+            for key in sorted(old_by_key.keys() | new_by_key.keys(), key=repr):
+                old, new = old_by_key.get(key), new_by_key.get(key)
+                if old is None:
+                    changes.append(f"{table} key={key!r} added={new!r}")
+                elif new is None:
+                    changes.append(f"{table} key={key!r} removed={old!r}")
+                elif old != new:
+                    fields = sorted(name for name in old.keys() | new.keys() if old.get(name) != new.get(name))
+                    changes.append(
+                        f"{table} key={key!r} changed="
+                        + repr({name: (old.get(name), new.get(name)) for name in fields})
+                    )
+        elif rows_before != rows_after:
+            old = {json.dumps(row, sort_keys=True, default=str) for row in rows_before}
+            new = {json.dumps(row, sort_keys=True, default=str) for row in rows_after}
+            changes.extend(f"{table} row removed={row}" for row in sorted(old - new))
+            changes.extend(f"{table} row added={row}" for row in sorted(new - old))
+    return changes
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", help="perform migration, tests, downgrade, and cleanup")
     parser.add_argument("--plan", action="store_true", help="validate and print the target without connecting")
+    parser.add_argument(
+        "--snapshot-file", help="write full before/after inventories and catalog snapshots to this file"
+    )
     args = parser.parse_args()
     raw, schema = resolve_target()
     print(f"Target: localhost:5432/social_manager/{schema}; migration {EXPECTED_REVISION} -> {TARGET_REVISION}")
@@ -292,9 +324,48 @@ def main() -> int:
             if public_reference_after != public_reference_before:
                 raise RuntimeError("public schema references or catalog data changed during P11-T29 validation")
             if after != before:
-                raise RuntimeError(
-                    f"test_schema revision/reference state differs after cleanup: before={before}; after={after}"
+                print("test_schema catalog/revision diff:", flush=True)
+                for change in catalog_diff(before, after):
+                    print("  " + change, flush=True)
+                if before["revision"] != after["revision"]:
+                    print(f"  revision: {before['revision']!r} -> {after['revision']!r}", flush=True)
+                if before["relations"] != after["relations"]:
+                    print(f"  relations: {before['relations']!r} -> {after['relations']!r}", flush=True)
+                if before["business_counts"] != after["business_counts"]:
+                    print(
+                        f"  business_counts: {before['business_counts']!r} -> {after['business_counts']!r}", flush=True
+                    )
+                if before["offboarding_event_count"] != after["offboarding_event_count"]:
+                    print(
+                        "  offboarding_event_count: "
+                        f"{before['offboarding_event_count']!r} -> {after['offboarding_event_count']!r}",
+                        flush=True,
+                    )
+            if args.snapshot_file:
+                snapshot_path = Path(args.snapshot_file).resolve()
+                snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+                snapshot_path.write_text(
+                    json.dumps(
+                        {
+                            "public_reference_before": public_reference_before,
+                            "public_reference_after": public_reference_after,
+                            "public_layout_before": public_before,
+                            "public_layout_after": public_after,
+                            "test_schema_before": before,
+                            "test_schema_after": after,
+                            "test_schema_layout_before": test_before_layout,
+                            "test_schema_layout_after": test_after_layout,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                        default=str,
+                    )
+                    + "\n",
+                    encoding="utf-8",
                 )
+                print(f"Snapshot evidence: {snapshot_path}", flush=True)
+            if after != before:
+                raise RuntimeError("test_schema revision/reference state differs after cleanup")
             print(
                 "PASS: test_schema restored to baseline; public layout unchanged; journal and reference rows match pre-run state."
             )

@@ -38,6 +38,10 @@ from dataclasses import dataclass
 GUARD_FUNCTIONS: dict[str, str] = {
     # 0093 - dispatch receipts are immutable evidence.
     "reject_llm_receipt_mutation": " BEGIN RAISE EXCEPTION 'Dispatch receipts are immutable' USING ERRCODE = '55000'; END; ",
+    # 0119 - workspace offboarding journal is permanently immutable.
+    "guard_workspace_offboarding_mutation": (
+        " BEGIN RAISE EXCEPTION 'Workspace offboarding evidence is immutable' USING ERRCODE = '55000'; END; "
+    ),
     # 0094 - outcome evidence is immutable, and every row must bind to a receipt.
     "reject_llm_outcome_mutation": " BEGIN RAISE EXCEPTION 'Outcome evidence is immutable' USING ERRCODE = '55000'; END; ",
     "check_llm_outcome_receipt": (
@@ -571,6 +575,20 @@ GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
         table="action_audit_events",
         name="action_audit_events_no_truncate",
         function="guard_action_audit_mutation",
+        events=("TRUNCATE",),
+        for_each_row=False,
+    ),
+    # 0119
+    GuardTrigger(
+        table="workspace_offboarding_events",
+        name="workspace_offboarding_events_immutable",
+        function="guard_workspace_offboarding_mutation",
+        events=("UPDATE", "DELETE"),
+    ),
+    GuardTrigger(
+        table="workspace_offboarding_events",
+        name="workspace_offboarding_events_no_truncate",
+        function="guard_workspace_offboarding_mutation",
         events=("TRUNCATE",),
         for_each_row=False,
     ),

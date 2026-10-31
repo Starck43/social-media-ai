@@ -11,7 +11,7 @@ from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 from .analysis.agent_scenario import AgentScenario
 from .analysis.ai_analytics import AIAnalytics
 from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
-from .audit import ActionAuditEvent
+from .audit import ActionAuditEvent, WorkspaceOffboardingEvent
 from .billing import (
     PersonalBillingAccount,
     PersonalBillingCutover,
@@ -87,6 +87,7 @@ __all__ = [
     "BotAction",
     "AgentAction",
     "ActionAuditEvent",
+    "WorkspaceOffboardingEvent",
     # AI models
     "LLMProvider",
     "LLMModel",

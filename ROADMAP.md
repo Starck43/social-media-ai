@@ -54,7 +54,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **IN_PROGRESS** · notion-ai-p8-t33 · [chat](https://app.notion.com/chat?t=40a3d3cc6f4080648d4000a9e3177cc4) · `P2` · `C4`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
-- [P11-T29](docs/tasks/p11-t29.md) Durable workspace offboarding audit and retention contract — **READY** · codex-p11-t29 · [PR #297](https://github.com/Starck43/social-media-ai/pull/297) · `P2` · `C3`
 
 ### Priority P3
 
@@ -97,7 +96,7 @@ Use the P8 cards in the execution queue or the linked parent plan.
 
 ## [P11](docs/phases/p11-structure.md)
 
-Use the P11 cards in the execution queue or the linked parent plan.
+Accepted P11 outcomes are in the linked parent phase; register new follow-ups in the execution queue.
 
 ## Questions
 

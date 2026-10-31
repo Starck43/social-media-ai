@@ -59,6 +59,9 @@ Public migration application is separate from repository acceptance and is not
 implied by tests or the task merge. Keep old code available for rollback before
 application. A normal downgrade refuses a non-empty permanent journal; do not
 remove audit evidence to make rollback pass. Empty downgrade is reversible.
+After journal use begins, a code rollback must retain its schema and keep
+workspace deletion disabled until the reviewed offboarding boundary is restored;
+older raw-delete code is not an acceptable rollback of the audit guarantee.
 
 Reproducible owner-local validation (load the private environment without printing
 credentials; require exclusive local PostgreSQL test-schema use):

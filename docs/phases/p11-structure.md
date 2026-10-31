@@ -2,11 +2,17 @@
 
 [Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p11)
 
-**Goal:** A modular monolith with shared application use-cases behind web/API/CLI/
-agent tools, explicit transactions, compatible contracts and measured growth.
-No task in this phase authorizes runtime topology changes or a broad rewrite.
+**Phase status: DONE 2026-10-31.** All registered selected items below are accepted.
+The modular-monolith boundaries, shared use-cases, supported tooling and operator
+contracts are delivered within each audit's limits. Conditional enterprise/locale/
+capacity specifications remain subject to their recorded selection and rollout
+gates; phase completion is not production deployment evidence.
 
-## Numbered plan and active cards
+Final accepted source: `ae2c877dd3e467dbaa1cea4b0ecad6d2d7399c01` (commit date
+2026-10-31); integrated `3130a1aa635942eb964611ed650e6d1d9379a2b1` (2026-10-31).
+[Detailed plan and sequencing history](https://github.com/Starck43/social-media-ai/blob/3130a1aa635942eb964611ed650e6d1d9379a2b1/docs/phases/p11-structure.md).
+
+## Accepted outcomes
 
 1. [P11-T01](../audit/p11-t01.md) — structural audit and reconciliation — DONE 2026-10-27 (accepted `58f6ddfb`).
 2. [P11-T02](../audit/p11-t02.md) — register follow-ups, queue priority and complexity — DONE 2026-10-27 (accepted `08fa36d4`).
@@ -21,46 +27,19 @@ No task in this phase authorizes runtime topology changes or a broad rewrite.
 11. [P11-T11](../audit/p11-t11.md) — **DONE 2026-10-29**: web/admin decomposition accepted; loader/type-introspection corrections and application/HTTP/DB checks PASS. Accepted `3c793a24c5c9f4c2356663db1dc3f1c4480973fc`; merged `edfd34e321a54147b7d2969418738f0e5f712a8f` without deployment.
 12. [P11-T12](../audit/p11-t12.md) — Durable action-audit contract and support correlation (R-10) — DONE 2026-10-29 (contract accepted `b59877ea`, integrated `c8d019ae`, PR #269; persistence accepted and merged `6ab81b14` in `bc41326a`, PR #272 — see [implementation audit](../audit/p11-t12-impl.md); no deployment, retention policy applies from the workspace plan).
 13. [P11-T13](../audit/p11-t13.md) — Manager and execution-module decomposition (R-11) — DONE 2026-10-29 (accepted `ecec9ef3`, merged `8b470c08`, PR #276; 76 passed + 10 subtests on real PostgreSQL).
-14. [P11-T14](../audit/p11-t14.md) — Canonical model imports and semantic helper reuse (R-12) — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`,
-    merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
+14. [P11-T14](../audit/p11-t14.md) — Canonical model imports and semantic helper reuse (R-12) — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`, merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
 15. [P11-T15](../audit/p11-t15.md) — Reproducible package and configuration contract (R-13) — DONE 2026-10-27 (accepted `2c4c6e5566a61f6a9b02967db1a152e4fa1140e7`).
 16. [P11-T16](../audit/p11-t16.md) — Test and reference navigation without evidence loss (R-14) — DONE 2026-10-27 (accepted `bd6120cfb698f0bc71481660c4356312985068cf`).
 17. [P11-T17](../audit/p11-t17.md) — Localizable presentation boundaries (R-15) — DONE 2026-10-29 (accepted `de03fc20`, merged `c20edcab`, PR #282; Russian-only catalog with `ru` fallback and stable message IDs at presenter/LLM error boundaries).
 18. [P11-T18](../audit/p11-t18.md) — DONE 2026-10-31: specification accepted; implementation requires a selected capability (accepted `2245dc46508f5c68f03dc3e1354a134ee851a573`, merged `fbcc3e3bd665847ad33a211bff949f4c9e79e4b7`; PR #283).
 19. [P11-T19](../audit/p11-t19.md) — DONE 2026-10-31: specification accepted; implementation/measurement gates remain (accepted `c55c07df96fa7c9d98f06377e8a641d4b92102da`, merged `10e74925e1bb552cf66e255d1ef2d95a4d9a8dfd`; PR #284).
 20. [P11-T20](../audit/p11-t20.md) — Select and specify bounded enterprise requirements (R-18) — DONE 2026-10-27; owner retained the current identity scope (accepted PR #265, `f4ecdceb`).
-
 21. [P11-T21](../audit/p11-t21.md) — minimal task-reading path and removal of redundant audit navigation — DONE 2026-10-27 (accepted `401ee050`).
 22. [P11-T22](../audit/p11-t22.md) — host shared working principles in the project rules — DONE 2026-10-27 (accepted `59027292`).
 23. [P11-T23](../audit/p11-t23.md) — Split agent-task documentation by reader — DONE 2026-10-29 (accepted `363a26e1`; owner-waived tests, docs-only).
 24. [P11-T24](../audit/p11-t24.md) — Reproduce schema guard objects in the metadata-built test schema — DONE 2026-10-28 (rebuilt-schema billing 46/46, drift test deterministic).
-25. [P11-T25](../audit/p11-t25.md) — Realign the model-layout fixtures with the migrated schema — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`,
-    merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
-
+25. [P11-T25](../audit/p11-t25.md) — Realign the model-layout fixtures with the migrated schema — DONE 2026-10-28 (accepted `a6568189f890bd225763eb4525b1964893bd50b4`, merged `829a8da8aaefe7ccda517cf941260353ee4ed77b`; PR #275).
 26. [P11-T26](../audit/p11-t26.md) — DONE 2026-10-31: canonical model paths; obsolete shims removed; import/layout, fixture and offline checks passed (accepted `f955448f8387aca45a4475efeb2d2cd44ad18928`, merged `b8f372f0de16a0f512a0b6802367573737f78329`; PR #285).
 27. [P11-T27](../audit/p11-t27.md) — DONE 2026-10-31: admin console hardening and live integration verification accepted at `1d740aa3`; merged by PR #286 at `d66e9f8c8ff1a313f5350b674c50f1ef651e1c29`.
 28. [P11-T28](../audit/p11-t28.md) — DONE 2026-10-31: workspace deletion reserved to superuser; retained audit protected; merged with P11-T27 by PR #286.
-29. [P11-T29](../tasks/p11-t29.md) — Durable workspace offboarding audit and explicit retention contract.
-
-## Sequencing and continuity
-
-This parent plan is optional navigation, not a prerequisite read for each card.
-Task findings/acceptance and exact contract pointers are task-local; the root
-audit overview is retired. Snapshot statistics and full reconciliation stay in
-pinned Git history linked from [P11-T01's audit](../audit/p11-t01.md), never in the execution read path.
-
-The owner requested all 18 follow-ups be registered on 2026-10-27, superseding
-one-at-a-time registration in the original audit draft. Execution is still
-claimed one dependency-ready task at a time. ROADMAP owns current ordering,
-complexity, status and owner; cards own scope/acceptance and predecessor links.
-
-First safety net → shared use-case → explicit transactions → typed/layered
-boundaries. Cross-cutting adapter and manager work uses the extracted seams.
-P8-T39/T40 retain user-journey/composition work; P8-T33/T34 retain connector
-pilots; P2-T08/Q-12 retain their explicit deferrals. Conditional enterprise,
-locale and capacity tasks begin with selection/specification, not activation.
-Move accepted results to docs/audit using the normal independent-review lifecycle;
-registration/integration is not implementation acceptance.
-
-**Phase status:** Active; close only after every selected item is accepted or
-explicitly descoped/transferred by the owner with recorded continuity.
+29. [P11-T29](../audit/p11-t29.md) — DONE 2026-10-31: reviewed workspace deletion, permanent platform audit and live PostgreSQL/Safari acceptance (accepted `ae2c877dd3e467dbaa1cea4b0ecad6d2d7399c01`, merged `3130a1aa635942eb964611ed650e6d1d9379a2b1`; PR #297).

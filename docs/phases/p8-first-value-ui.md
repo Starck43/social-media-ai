@@ -34,6 +34,9 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
    [P8-T47](../tasks/p8-t47.md) apps/games, [P8-T48](../tasks/p8-t48.md) owner-scoped market
    items, [P8-T49](../tasks/p8-t49.md) music. Clips and channels stay `unsupported` in the
    registry (no promised public search method; channels only partially map to communities).
+   Deferred cards claimed 2026-11-01: P8-T46/T47/T48/T49 **IN_PROGRESS** · owners
+   `notion-ai-p8-t46`/`notion-ai-p8-t47`/`notion-ai-p8-t48`/`notion-ai-p8-t49` · claim
+   base 9857f411a8292c29a41818121d0029e23c407178.
 
 T38 can proceed from the integrated T29 foundation without waiting for the
 live VK gate. T39 reuses the accepted shared execution-scope/mutation policy in

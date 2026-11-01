@@ -7,17 +7,16 @@ description: Execute one bounded task from ROADMAP.md remotely via a GitHub PR l
 
 Read this skill before claiming or starting any single task from
 [ROADMAP.md](../../../ROADMAP.md) remotely. Governing rules:
-[AGENTS.md](../../../AGENTS.md), [docs/COLLABORATION.md](../../../docs/COLLABORATION.md),
-[docs/RULES.md](../../../docs/RULES.md).
+[AGENTS.md](../../../AGENTS.md) and [docs/COLLABORATION.md](../../../docs/COLLABORATION.md).
 
 ---
 
 ## 1. Orientation
 
 1. Read fresh `dev` HEAD and open PRs touching the target files.
-2. Locate the task row in `ROADMAP.md` and its phase file
-   (`docs/phases/p<n>-<name>.md`). Read exact acceptance criteria,
-   dependencies and exclusive ownership.
+2. Locate the task row in `ROADMAP.md` and its linked active card in
+   `docs/tasks/<id>.md`; read its acceptance criteria, dependencies and owned paths.
+   Load only the relevant parent-phase context if the card needs it.
 3. Read only the relevant subsystem doc from
    [docs/DOCS_INDEX.md](../../../docs/DOCS_INDEX.md) and its call sites.
 4. Verify no other agent currently owns the row and no blocked
@@ -26,9 +25,10 @@ Read this skill before claiming or starting any single task from
 
 ## 2. Claim
 
-- Set the row to `IN_PROGRESS` and add owner name in both:
-  - `ROADMAP.md` (in-place edit, preserve foreign rows)
-  - the phase file row
+- Set the `ROADMAP.md` row to `IN_PROGRESS` with owner and dialogue; create/update
+  the linked task card with scope before solution edits. Preserve other rows.
+- Keep current status in `ROADMAP.md`; parent phases carry active-card links and
+  accepted summaries, not duplicate status rows.
 - State the synchronized `dev` base SHA in the first commit message.
 
 
@@ -65,9 +65,10 @@ Apply the **remote no-database exception** (mirrored from
 - Before marking READY the PR description must carry:
   tested SHA, exact test paths/scopes, passed/failed/skipped counts,
   execution route, deferred scenarios.
-- Update the phase file row to `READY` with the same fingerprint.
-  Never self-accept as `DONE` or delete the ROADMAP row — that is
-  Codex's job after review.
+- Update the task card with evidence and set the `ROADMAP.md` row to `READY` only
+  after every required check passes. Keep the parent phase's active-card link; do
+  not duplicate status there. Never self-accept as `DONE` or delete the row — that
+  is the auditor's job after review.
 - Synchronize `ROADMAP.md` and owned `docs/` edits with fresh `dev`
   immediately before publish; state the synchronized SHA.
 
@@ -75,11 +76,11 @@ Apply the **remote no-database exception** (mirrored from
 ## 6. Closeout checklist
 
 - [ ] Branch created from fresh `dev`, open Draft PR
-- [ ] Task claimed in ROADMAP.md and phase file
+- [ ] Task claimed in ROADMAP.md and linked task card
 - [ ] Implementation follows architecture/conventions
 - [ ] Isolated remote tests pass with explicit mocks
 - [ ] Local DB/integration validation handed off to OpenCode
 - [ ] PR description carries durable test fingerprint
-- [ ] Phase file row marked READY with evidence
+- [ ] Task card and ROADMAP row marked READY with evidence
 - [ ] ROADMAP.md synchronized to fresh dev before publish
 - [ ] No secrets/.env/migrations outside Alembic committed

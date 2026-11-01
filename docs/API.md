@@ -46,7 +46,7 @@ username=<username_or_email>&password=<password>
 ```
 
 Failed attempts count into the shared login budget
-([ADMIN](ADMIN.md#sessions-csrf-and-known-verification-limits)): an unknown
+([ADMIN](ADMIN.md#sessions-csrf-and-verification-contract)): an unknown
 account, a wrong password, an inactive account and a locked budget all answer
 `400` with the same generic detail.
 
@@ -137,7 +137,7 @@ presets without platform fallback. Operator APIs (`/users` except `/users/me`,
 `/users/roles`) require active platform operator/admin entry plus their
 route-specific action checks. Personal `/users/me`, `/auth/change-password`,
 `/llm/llm-providers` and `/llm/llm-models` (including numeric-ID subpaths) require
-active authentication without workspace membership. In the 0109 candidate,
+active authentication without workspace membership. In the integrated 0109 personal-catalog contract,
 LLM self-service is owner-scoped, not gated by operator/admin entry. The namespace
 is `/api/v1/llm/llm-*`, not `/api/v1/llm-*`; unrelated prefixes are not exempt.
 
@@ -160,8 +160,8 @@ platform console, not the active dashboard workspace. See
 | `GET/POST/PATCH/DELETE /sources` | `source` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
 | `GET/POST/PATCH/DELETE /tasks`, `PATCH /tasks/{id}/pause`, `POST /tasks/{id,run,run}` | `agenttask` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` / `UPDATE` / `UPDATE` / `UPDATE` |
 | `GET/PATCH/POST/POST/GET /credentials`, `POST /credentials/login`, `POST /credentials/oauth` | `credential` | `VIEW` / `UPDATE` / `CONFIGURE` / `CONFIGURE` / `VIEW` |
-| `GET list/detail, POST, PATCH, DELETE /llm/llm-providers` | `llmprovider` | Active-user personal self-service for these actions, owner-filtered (0109 candidate) |
-| `GET list/detail, POST, PATCH, DELETE /llm/llm-models` | `llmmodel` | Active-user personal self-service for these actions, owner-filtered (0109 candidate) |
+| `GET list/detail, POST, PATCH, DELETE /llm/llm-providers` | `llmprovider` | Active-user personal self-service for these actions, owner-filtered (integrated 0109 personal-catalog contract) |
+| `GET list/detail, POST, PATCH, DELETE /llm/llm-models` | `llmmodel` | Active-user personal self-service for these actions, owner-filtered (integrated 0109 personal-catalog contract) |
 | Dashboard endpoints | `source` / `aianalytics` / `notification` | per-endpoint |
 
 ---
@@ -576,7 +576,7 @@ keep the FK with `ondelete=SET NULL` and fall back to the workspace default.
 
 ## Notifications
 
-Authenticated global User inbox (P4-T02/P10-T27, PR #246 candidate), independent
+Authenticated global User inbox (P4-T02/P10-T27, PR #246 integrated), independent
 of `X-Tenant-ID`. An operator cannot select another user's inbox. Canonical
 prefix: `/api/v1/notifications`; the old doubled `/notifications/notifications`
 paths remain hidden compatibility aliases with the **same personal semantics**.
@@ -960,9 +960,32 @@ Authorization: Bearer <token>
 
 ---
 
+## Web chat attachments (P8-T44)
+
+These are authenticated browser-session routes under `/app`, not `/api/v1`.
+Mutation routes require CSRF and recheck the current chat actor and workspace.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/app/chat/attachments/policy` | Return the current workspace/model attachment policy and the actor's staged-file state. |
+| POST | `/app/chat/attachments` | Validate and privately stage one supported photo or document; returns a bounded policy/status response. |
+| POST | `/app/chat/attachments/cleanup` | Remove specified staged files, or all staged files owned by the current actor. |
+| POST | `/app/chat/attachments/{attachment_id}/delete` | Delete one staged file owned by the current actor. |
+
+`POST /app/chat` accepts staged `attachment_ids` and an explicit `confirm_large`
+signal. The server revalidates file ownership, workspace, current model capability
+and limits before processing. Large/high-token inputs pause before any model spend
+until the actor confirms; confirmation is bound to the actor/session and expires.
+Extracted text is untrusted input. Attachments are staged privately and cleaned up
+after the turn, cancellation or stop; no public file URL is exposed. Supported
+formats and exact byte/page/token limits are recorded in the
+[P8-T44 acceptance](audit/p8-t44.md).
+
+---
+
 ## LLM Providers
 
-### Personal catalog (PR #229 integrated; migration 0109 defined)
+### Personal catalog (PR #229 integrated; 0109 folded into baseline_0118)
 
 Both `/api/v1/llm/llm-providers` and `/api/v1/llm/llm-models` use the
 active authenticated user's personal catalog, without workspace membership or

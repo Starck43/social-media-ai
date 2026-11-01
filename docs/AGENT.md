@@ -226,6 +226,17 @@ Workspace разрешается `TenantUIMiddleware` из `tenant_users` web me
 Сессия агента — одна на (tenant, channel, chat_id): один и тот же web-пользователь
 в двух workspaces ведёт два разных диалога, а не общий транскрипт.
 
+### Photo and document attachments (P8-T44)
+
+The web chat accepts private photo and supported document attachments; this does
+not imply upload support in Telegram/MAX. Staging, read and deletion are scoped
+to the current workspace and user, and staged files are cleaned up after the
+turn or cancellation. Image turns require the selected model's image capability
+and tier eligibility. Large/high-token attachments require explicit confirmation
+before model spend. Extracted file content remains untrusted input and is handled
+with prompt-injection safeguards. See the [web-chat routes](API.md#web-chat-attachments-p8-t44)
+and [P8-T44 acceptance](audit/p8-t44.md) for route and file-validation details.
+
 ### Telegram/MAX users
 
 Для telegram/MAX users User разрешается через `tenant_users` → `user_id` → `User`.

@@ -1,6 +1,6 @@
 # Notification delivery boundaries
 
-## Personal inbox contract (P4-T02 / P10-T27, PR #246 candidate)
+## Personal inbox contract (P4-T02 / P10-T27; PR #246)
 
 A notification belongs to a **global User**, not to their active workspace or
 TenantUser membership. `notifications.tenant_id` records event origin only.
@@ -8,6 +8,8 @@ TenantUser membership. `notifications.tenant_id` records event origin only.
 `dismissed_at` and optional `snoozed_until`. There is no workspace-wide read action
 in the user interface, API or admin. The legacy `Notification.is_read` is archive
 compatibility only; historical flags are never copied into invented receipts.
+
+### Current web bell and display policy
 
 - Bell and `/app/notifications/inbox` combine only the caller's addressed events
   across active own/invited memberships. Current workspace selection never limits

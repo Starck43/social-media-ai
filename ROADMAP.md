@@ -97,6 +97,14 @@ Use the P7 cards in the execution queue or the linked parent plan.
 
 Use the P8 cards in the execution queue or the linked parent plan.
 
+## [P9](docs/phases/p9-safe-activation.md)
+
+P9's accepted outcomes and activation boundaries are summarized in the linked phase.
+
+## [P10](docs/phases/p10-audit-hardening.md)
+
+P10's accepted hardening outcomes and limitations are summarized in the linked phase.
+
 ## [P11](docs/phases/p11-structure.md)
 
 Accepted P11 outcomes are in the linked parent phase; register new follow-ups in the execution queue.

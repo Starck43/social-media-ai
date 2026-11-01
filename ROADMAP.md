@@ -56,6 +56,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T49](docs/tasks/p8-t49.md) VK music search category — **IN_PROGRESS** · notion-ai-p8-t49 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
+- [Q-15](docs/tasks/q-15.md) Documentation currentness and behavior consistency audit — **OPEN** · notion-ai · [chat](https://app.notion.com/chat?t=40a4392285878055b90300a9263b8f1d) · `P2` · `C5`
 
 ### Priority P3
 
@@ -102,5 +103,5 @@ Accepted P11 outcomes are in the linked parent phase; register new follow-ups in
 
 ## Questions
 
-Q-2/Q-5 are ordered in the execution queue; Q-12 remains owner-deferred.
+Q-2/Q-5/Q-15 are ordered in the execution queue; Q-12 remains owner-deferred.
 The P6-T05 audit's two test follow-ups were accepted under [P6-T06](docs/audit/p6-t06.md); the original audit remains historical evidence.

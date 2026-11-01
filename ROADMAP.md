@@ -59,7 +59,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-15](docs/tasks/q-15.md) Documentation currentness and behavior consistency audit — **OPEN** · notion-ai · [chat](https://app.notion.com/chat?t=40a4392285878055b90300a9263b8f1d) · `P2` · `C5`
-- [P12-T02](docs/tasks/p12-t02.md) Workspace connectors in `/app/settings?tab=connections`, `PlatformType` expansion & cloud drive mounting — **TODO** · unassigned · — · `P2` · `C3`
+- [P12-T02](docs/tasks/p12-t02.md) Workspace connectors in `/app/settings?tab=connections`, `PlatformType` expansion & cloud drive mounting — **IN_PROGRESS** · aistudio-p12-t02 · [AI Studio](https://aistudio.google.com/apps/620ec9ae-d392-40fe-bd4b-493f5f7aa1ed) · `P2` · `C3`
 
 ### Priority P3
 

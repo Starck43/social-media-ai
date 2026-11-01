@@ -29,7 +29,7 @@ class NavItem(NamedTuple):
 NAV_GROUP_LABELS: dict[str, str] = {
     "overview": "Обзор и диалог",
     "monitoring": "Мониторинг и анализ",
-    "knowledge": "Коннекторы и база знаний",
+    "knowledge": "База знаний и документы",
     "communications": "Коммуникации и поручения",
     "cases_system": "Кейсы и система",
 }
@@ -86,17 +86,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         group="monitoring",
         group_label="Мониторинг и анализ",
     ),
-    # 3. Connectors, Knowledge & Documents (P12-T02, P12-T03)
-    NavItem(
-        "connectors",
-        "#",
-        "Коннекторы и шлюзы",
-        ready=False,
-        required_permission="collection.source.view",
-        icon="layers",
-        group="knowledge",
-        group_label="Коннекторы и база знаний",
-    ),
+    # 3. Knowledge & Documents (P12-T03; connectors live in /app/settings?tab=connections per P12-T02)
     NavItem(
         "knowledge",
         "#",
@@ -105,7 +95,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="analysis.result.view",
         icon="database",
         group="knowledge",
-        group_label="Коннекторы и база знаний",
+        group_label="База знаний и документы",
     ),
     NavItem(
         "documents",
@@ -115,7 +105,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="analysis.result.view",
         icon="document",
         group="knowledge",
-        group_label="Коннекторы и база знаний",
+        group_label="База знаний и документы",
     ),
     # 4. Communications & Follow-ups (P12-T04)
     NavItem(

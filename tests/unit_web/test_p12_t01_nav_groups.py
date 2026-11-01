@@ -77,7 +77,6 @@ def test_every_nav_item_belongs_to_a_declared_domain_group() -> None:
 def test_upcoming_p12_sections_are_registered_as_unready_placeholders() -> None:
     unready = {item.key: item for item in NAV_ITEMS if not item.ready}
     assert set(unready) == {
-        "connectors",
         "knowledge",
         "documents",
         "communications",
@@ -107,10 +106,10 @@ def test_ready_routes_and_mobile_bar_remain_unchanged() -> None:
 
 
 def test_permission_filtering_applies_to_unready_p12_sections() -> None:
-    connectors = next(item for item in NAV_ITEMS if item.key == "connectors")
+    knowledge = next(item for item in NAV_ITEMS if item.key == "knowledge")
     cases = next(item for item in NAV_ITEMS if item.key == "cases")
-    assert not allows(connectors, None)
-    assert allows(connectors, _StubPerms({("collection.source", "view")}))
+    assert not allows(knowledge, None)
+    assert allows(knowledge, _StubPerms({("analysis.result", "view")}))
     assert not allows(cases, _StubPerms({("collection.source", "view")}))
     assert allows(cases, _StubPerms({("scheduling.action", "view")}))
 

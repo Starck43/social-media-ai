@@ -7,7 +7,7 @@
 **Plan — domain workspace expansion (ordered):**
 
 1. [P12-T01](../audit/p12-t01.md) — DONE 2026-11-01: domain-grouped `/app` sidebar navigation (`NavItem.group`) and `ready=False` (`· скоро`) placeholders for upcoming expansion sections.
-2. [P12-T02](../tasks/p12-t02.md) — Connectors & Research catalog (`/app/connectors`): capability matrix, redacted diagnostic health, incremental sync watermarks, and paired local gateway controls.
+2. [P12-T02](../tasks/p12-t02.md) — Connectors & Research catalog (`/app/settings?tab=connections`): capability matrix, redacted diagnostic health, incremental sync watermarks, and paired local gateway controls.
 3. [P12-T03](../tasks/p12-t03.md) — Knowledge & Documents workspace (`/app/knowledge`, `/app/documents`): ACL-filtered retrieval, page/cell/message provenance citations, OCR/freshness boundaries, and versioned document state.
 4. [P12-T04](../tasks/p12-t04.md) — Communication & Follow-up workspace (`/app/communications`, `/app/followups`): verified contacts/threads, actor-bound scheduled outbox with TTL and kill switch, and quiet-hours follow-up reminders.
 5. [P12-T05](../tasks/p12-t05.md) — Cases, supplier comparison & approvals workspace (`/app/cases`): deterministic `Decimal` comparison grid, currency/tax/pack assumptions, explicit missing prices, and version-bound approval records.
@@ -20,7 +20,7 @@
 ## Draft Jinja2 Templates & Continuity with `/app/settings`
 
 Draft Jinja2 templates for all 6 expansion views are checked into `app/web/templates/web/`:
-- `app/web/templates/web/connectors.html` (`P12-T02`)
+- `app/web/templates/web/settings.html` (`tab=connections` extended in `P12-T02`)
 - `app/web/templates/web/knowledge.html` (`P12-T03`)
 - `app/web/templates/web/documents.html` (`P12-T03`)
 - `app/web/templates/web/communications.html` (`P12-T04`)

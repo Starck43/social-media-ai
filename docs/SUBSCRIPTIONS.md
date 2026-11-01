@@ -1,27 +1,29 @@
-# Self-service subscriptions — P2-T16 contract draft
+# Self-service subscriptions — P2-T16 configuration contract
 
-Configuration foundation only. YooKassa is selected; no checkout, provider
-request, payment persistence or subscription activation is implemented or accepted
-by this increment. Track decisions in the linked task
-PR; current status/owner live in [ROADMAP](../ROADMAP.md), scope in the
-[P2-T16 card](tasks/p2-t16.md).
+Configuration foundation only. YooKassa is selected; checkout, provider requests,
+payment persistence and subscription activation were not included in the accepted
+increment. The owner closed P2-T16 at this scope on 2026-10-27; broader lifecycle
+work is not an active task and must be registered before implementation. See the
+[P2-T16 acceptance record](audit/p2-t16.md).
 
-## Current source and dependency
+## Source snapshot and dependency
 
-Inspected dev: `6ff77b4447e11c92ed2d49f7ade8b76c3c37b852`.
-Included claim base: `5c3c6f65f15ad7a33525253ea153de68f68932e2`.
-Use existing registration, workspace membership and plan-comparison surfaces.
-Current source has operator-managed tenant tiers but no selected subscription
-payment provider or verified checkout/webhook implementation.
+Planning snapshot inspected before P2-T16 integration: dev
+`6ff77b4447e11c92ed2d49f7ade8b76c3c37b852`; included claim base
+`5c3c6f65f15ad7a33525253ea153de68f68932e2`. That snapshot predates the accepted
+provider-configuration increment and showed operator-managed tenant tiers but no
+selected subscription provider or verified checkout/webhook implementation. On
+the integrated source, the selected provider and safe defaults are recorded in
+the [P2-T16 acceptance](audit/p2-t16.md); checkout/webhook implementation is not
+claimed here. Use existing registration, workspace-membership and plan-comparison
+surfaces if a separately registered implementation is approved.
 
 P2-T15's entitlement/expiry contract was in deferred PR #253
-(`b60998200d5216e6032a58b38a19030324bda699` at planning time). As of this
-refresh (2026-10-27) the owner-approved sequence #246 → #252 → #253 is
-integrated into dev (merges `4e74318c`, `83c1f79a`, `67acbd53`) and migration
-0117 is the current integrated head; those fields/services are now in dev and
-are consumed by this task, not copied from any branch.
-P2-T16 was never part of that sequence and still has no implicit merge
-authorization beyond the owner's per-PR decisions.
+(`b60998200d5216e6032a58b38a19030324bda699` at planning time). As of the
+2026-10-27 refresh, the owner-approved sequence #246 → #252 → #253 was integrated
+into dev (merges `4e74318c`, `83c1f79a`, `67acbd53`) and migration 0117 was the
+integrated head; those fields/services are consumed, not copied from a branch.
+P2-T16 was accepted separately as a configuration-only increment.
 
 ## Remaining lifecycle decisions before checkout implementation
 
@@ -31,9 +33,9 @@ authorization beyond the owner's per-PR decisions.
 2. Define configurable offers (plan, period, currency, price, version and payment
    environment). Do not finalize capability packaging or real prices in code;
    test-only synthetic offers must never become live purchasable offers.
-3. Establish how accepted P2-T15 is consumed after integration, then reserve a
-   free Alembic revision against fresh dev and open PRs. No number is reserved
-   by this planning document and no dependency on absent revisions is created.
+3. If a separately registered implementation is approved, recheck the integrated
+   migration graph and reserve a distinct revision on its actual head. This plan
+   does not reserve a number or create a dependency on absent revisions.
 
 ## Selected provider and official contract
 
@@ -75,22 +77,20 @@ Read the official [quick start](https://yookassa.ru/developers/payment-acceptanc
   handling needs bounded bodies, abuse controls and safe error handling; no route
   is exposed in this increment.
 
-## Migration 0117 dependency (refreshed 2026-10-27)
+## Entitlement migration dependency
 
-P2-T15's `0117` owns nullable `tenants.plan_expires_at` and
-`entitlement_usage`; this task must consume, not recreate or replace, them.
-After #246 (0113–0116) integrated, 0117 was re-parented onto 0116 and merged
-as `67acbd53`; it is the current single alembic head, and it was applied to the
-local dev DB per the owner's 2026-10-27 integration instruction.
+P2-T15's revision `0117` introduced nullable `tenants.plan_expires_at` and
+`entitlement_usage`; this scope must consume, not recreate or replace, them. That
+numbered history was folded into the Q-14 frozen `baseline_0118`; `0119` is the
+checked-in follow-up for workspace offboarding. Q-14 verified the local public
+and test schemas against the baseline, not every deployment target. Follow
+[DEPLOYMENT](DEPLOYMENT.md) for target-state inspection and migration transition.
 
-Refresh performed on integrated dev: 0117 confirmed present in the actual
-migration graph. When the subscription purchases/events/receipts schema design
-is approved, reserve a distinct free revision on the actual integrated head —
-0118 is free at this refresh — and inspect the graph again before reserving.
-No 0118 or other number is reserved by this increment, and no migration is
-added now. A missing schema/prerequisite must fail closed at future
-activation, not trigger runtime DDL or silently grant plan access without
-expiry.
+Any separately approved subscription schema must reserve a distinct revision
+from the actual integrated head after rechecking the graph. No migration number
+is reserved by this document, and no migration is added here. A missing
+schema/prerequisite must fail closed at future activation, not trigger runtime
+DDL or silently grant plan access without expiry.
 
 ## Required security and lifecycle contract
 
@@ -120,9 +120,11 @@ expiry.
 ## Validation and execution boundaries
 
 No tests, database access, migration application, runtime startup, external
-provider calls, deployment or subagents were performed for this draft. It is
-not evidence of checkout functionality or readiness. P2-T15's unrun tests remain
-unrun; neither this assignment nor green checks from other work replace them.
+provider calls, deployment or subagents were performed while drafting this
+planning document. The separate P2-T16 configuration checks and acceptance are
+recorded in the [P2-T16 audit](audit/p2-t16.md); they do not prove checkout
+functionality or readiness. P2-T15's deferred behavioral tests remain unrun; this
+document or unrelated green checks do not replace them.
 
 Provider selection and the official test contract are recorded in the PR;
 checkout persistence and lifecycle implementation remain incomplete. Before running tests establish their permitted scope, read tests/AGENTS

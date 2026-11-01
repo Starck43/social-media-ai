@@ -73,14 +73,16 @@ binding before accepting evidence; fake callbacks and browser redirects never
 grant access. The official contract and remaining work live in
 [SUBSCRIPTIONS](SUBSCRIPTIONS.md).
 
-**Migration dependency:** consume P2-T15 revision `0117` (integrated into dev
-as `67acbd53`, 2026-10-27, and the current single alembic head) for
-`tenants.plan_expires_at` and `entitlement_usage`; never duplicate those
-columns/tables, rewrite or re-apply 0117. When the subscription schema design
-is approved, reserve a distinct free number on the actual integrated head —
-0118 is free at this refresh — after re-inspecting the graph. Do not depend on
-absent revisions. The #246 → #252 → #253 integration gates are already
-satisfied by that merge sequence.
+**Migration dependency:** P2-T15 first introduced `tenants.plan_expires_at` and
+`entitlement_usage` in revision `0117`; Q-14 later incorporated that schema into
+frozen `baseline_0118`. The checked-in migration chain now has follow-up `0119`
+for workspace offboarding; `0118` is not a free revision number. Do not recreate
+the entitlement fields or replay the removed numbered migrations. Fresh-schema
+and legacy-schema transition rules are in [DEPLOYMENT](DEPLOYMENT.md). Before
+any separately approved subscription-schema work, inspect the actual integrated
+graph and reserve a distinct revision on its current head; never infer it from an
+old planning snapshot. The #246 → #252 → #253 integration sequence is historical
+and complete.
 
 ## Optional same-host runtime observation
 

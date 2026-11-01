@@ -57,8 +57,14 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-15](docs/tasks/q-15.md) Documentation currentness and behavior consistency audit — **OPEN** · notion-ai · [chat](https://app.notion.com/chat?t=40a4392285878055b90300a9263b8f1d) · `P2` · `C5`
+- [P12-T02](docs/tasks/p12-t02.md) Connectors & Research catalog and paired gateway diagnostics (`/app/connectors`) — **TODO** · unassigned · — · `P2` · `C3`
 
 ### Priority P3
+
+- [P12-T03](docs/tasks/p12-t03.md) Knowledge & Documents workspace with ACL-aware citations (`/app/knowledge`, `/app/documents`) — **TODO** · unassigned · — · `P3` · `C4`
+- [P12-T04](docs/tasks/p12-t04.md) Communication, verified contacts, scheduled outbox & follow-ups (`/app/communications`, `/app/followups`) — **TODO** · unassigned · — · `P3` · `C4`
+- [P12-T05](docs/tasks/p12-t05.md) Cases, deterministic supplier comparison & document approvals (`/app/cases`) — **TODO** · unassigned · — · `P3` · `C4`
+- [P12-T06](docs/tasks/p12-t06.md) Shared evidence drawer (`context-panel`) and `/app/chat` domain context handoff — **TODO** · unassigned · — · `P3` · `C3`
 
 
 ## Deferred by explicit owner decision
@@ -97,9 +103,21 @@ Use the P7 cards in the execution queue or the linked parent plan.
 
 Use the P8 cards in the execution queue or the linked parent plan.
 
+## [P9](docs/phases/p9-safe-activation.md)
+
+P9's accepted outcomes and activation boundaries are summarized in the linked phase.
+
+## [P10](docs/phases/p10-audit-hardening.md)
+
+P10's accepted hardening outcomes and limitations are summarized in the linked phase.
+
 ## [P11](docs/phases/p11-structure.md)
 
 Accepted P11 outcomes are in the linked parent phase; register new follow-ups in the execution queue.
+
+## [P12](docs/phases/p12-domain-workspace-expansion.md)
+
+Use the P12 cards in the execution queue or the linked parent plan.
 
 ## Questions
 

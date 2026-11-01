@@ -1,11 +1,13 @@
 # Action audit and support correlation contract (P11-T12)
 
-**State:** implementation in progress in [PR #272](https://github.com/Starck43/social-media-ai/pull/272).
-The implementation adds tenant-scoped persistence, task-admission hooks,
-read-only API views/export, and plan-aligned retention. Alembic revision `0118`
-is authorized only against `test_schema`; no production/public-schema apply or
-backfill is authorized. Database-backed acceptance and cleanup verification
-remain pending.
+**State:** implementation integrated and accepted through P11-T12 / PR #272
+(code `6ab81b14`, merge `bc41326a`). The implementation provides tenant-scoped
+persistence, task-admission hooks, read-only API views/export and plan-aligned
+retention; see the [implementation audit](audit/p11-t12-impl.md) and
+[contract acceptance](audit/p11-t12.md). The former standalone migration `0118`
+was incorporated into the Q-14 frozen `baseline_0118`; `0119` follows it for
+workspace offboarding. This does not certify or authorize a production rollout;
+verify each target using the [deployment procedure](DEPLOYMENT.md).
 
 ## Purpose and boundaries
 
@@ -139,7 +141,12 @@ sink retention is not controlled by this application. No legal-hold workflow is
 implemented here; production lifecycle acceptance must verify the applicable
 hold/offboarding policy before enabling destructive cleanup.
 
-## Required verification before implementation acceptance
+## Verification and rollout gates
+
+The PR #272 implementation met its recorded acceptance checks; see the linked
+audit above. These criteria remain the contract for future changes and broader
+rollout. Production lifecycle approval remains separate, and no legal-hold
+workflow is implemented here.
 
 A complete acceptance run must prove, at minimum:
 

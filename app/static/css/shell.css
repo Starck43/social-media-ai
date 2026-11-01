@@ -657,3 +657,14 @@ body[data-shell-section="chat"] .shell-content {
 .shell-popover[data-popover-select] .shell-theme-check { grid-column: 2; grid-row: 1 / span 2; }
 .shell-select-chevron { display: block; width: 7px; height: 7px; margin: 0 4px 3px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); flex-shrink: 0; }
 [data-popover-trigger][aria-expanded="true"] .shell-select-chevron { transform: rotate(225deg); margin-bottom: -3px; }
+
+.shell-nav-group {
+	font-size: .7rem;
+	font-weight: 600;
+	color: var(--color-text-secondary);
+	padding: 10px 10px 2px;
+	letter-spacing: .02em;
+}
+html[data-sidebar-collapsed="true"] .shell-sidebar .shell-nav-group {
+	display: none;
+}

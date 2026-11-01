@@ -6,7 +6,7 @@ This nomination and every service target below require the owner's explicit
 approval of an exact document commit. Assignment to write the draft is not a
 signature, pilot launch, operational SLA or permission to perform external actions.
 
-Task: [P8-T13](tasks/p8-t13.md). Parent: [P8](phases/p8-first-value-ui.md).
+Task record: [P8-T13 audit](audit/p8-t13.md). Parent: [P8](phases/p8-first-value-ui.md).
 This is a manual operating contract over existing signals, not new telemetry,
 a support integration, a delivery feature or production-readiness acceptance.
 

@@ -82,8 +82,12 @@ contract: versioned namespaced grants, workspace expiry, shared decisions and
 durable per-job usage. Catalog v1 grants `*` without capability quotas to all
 three plans; existing `PLAN_LIMITS` and the deployment member ceiling are not
 changed. Provider credentials/scopes and LLM payer consent remain independent.
-Alembic 0117 is required before using the new fields; its application and all
-application/database tests are deferred by the owner, not verified here.
+The fields were introduced in migration 0117 and are included in the Q-14
+`baseline_0118`; migration 0119 is its current follow-up for workspace
+offboarding. Q-14 verified the local public/test-schema transition, but that does
+not prove another target's revision. Follow [deployment guidance](DEPLOYMENT.md)
+before using the fields on a target. P2-T15 behavioral/application tests remain
+deferred by the owner.
 
 ## Tables
 
@@ -99,7 +103,7 @@ application/database tests are deferred by the owner, not verified here.
 **No TenantScopedMixin does not mean globally shared authority.** `Platform`,
 `ModelType`, `Permission`, `Role`, `User` and tenancy lookup tables have no tenant
 marker. Social `Platform` is a system-wide catalog, including across users;
-`UserCredential` remains personal. In the 0109 candidate, `LLMProvider` and
+`UserCredential` remains personal. In the integrated 0109 personal-catalog contract, `LLMProvider` and
 `LLMModel` are also personal, filtered by `owner_user_id`, with a composite
 model/provider owner FK. They are shared only across their user's workspaces,
 not among different users. See [the 0109 contract](#personal-llm-catalog-0109-source-contract-code-integrated-rollout-pending).

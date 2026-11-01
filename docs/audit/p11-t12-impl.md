@@ -97,3 +97,12 @@ retention and a reviewable `0118`. Findings 1, 3, 4 and 5 are corrected in the
 lane; findings 6 and 7 are recorded for their owners (retention batch behaviour,
 pre-existing harness/flash drift). Integration waits for the owner's choice
 (push to PR #272 or merge the lane).
+
+## Later integration record
+
+The P11 phase closeout subsequently records this implementation integrated
+through PR #272 as code `6ab81b14` in merge `bc41326a`; see the
+[P11 phase summary](../phases/p11-structure.md). Q-14 later folded the former
+standalone `0118` migration into `baseline_0118` ([baseline audit](q-14.md)).
+The source pins, checks and nonblocking findings above remain historical; this
+integration record does not imply production deployment.

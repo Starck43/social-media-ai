@@ -1,8 +1,9 @@
 # Product capability entitlements
 
-P2-T15 foundation, catalog version 1. This is a source contract, not acceptance
-or migration/test evidence. Current evidence and resume point live in the
-[P2-T15 card](tasks/p2-t15.md) and its PR.
+P2-T15 foundation, catalog version 1. This is a source contract, not independent
+behavioral acceptance or evidence for any arbitrary target database. Current
+status, deferred validation and resume point live in the [P2-T15 card](tasks/p2-t15.md)
+and its PR; deployment migration guidance is in [DEPLOYMENT](DEPLOYMENT.md).
 
 ## Scope
 
@@ -31,18 +32,15 @@ The expiry boundary is inclusive: `now >= plan_expires_at` denies the operation.
 
 ## Persistence and execution
 
-Alembic revision 0117 adds nullable `tenants.plan_expires_at` and
-`entitlement_usage`. It does not set expiry or change existing plan names.
-P2-T16 can populate expiry through a separately verified subscription flow.
-Revision 0117 was created as a temporary independent branch based on 0112
-while open PR #246 reserved revisions 0113–0116. Following the
-owner-approved integration order (#246 → #252 → #253), #246 and #252 are now
-merged; after verifying that 0117 has never been applied and the revision
-number remains free, this revision is based on 0116, forming the single chain
-0112 → 0113 → 0114 → 0115 → 0116 → 0117. Do not start code requiring these
-columns before the separately approved and validated migration rollout.
-Downgrade drops usage evidence; preserve/export needed audit data before an
-authorized rollback.
+The entitlement fields (`tenants.plan_expires_at` and `entitlement_usage`) were
+introduced by P2-T15 migration `0117`; they do not set expiry or change existing
+plan names. P2-T16 selected provider configuration only; no checkout flow
+populates expiry. After Q-14, the fields are part of the frozen
+`baseline_0118`; the current follow-up migration is `0119`. Q-14 verified the
+repository baseline transition for the local public and test schemas, but does
+not establish any other target's state. Follow [DEPLOYMENT](DEPLOYMENT.md) for
+approved target inspection and transition. Downgrading the historical entitlement
+schema drops usage evidence; preserve/export it before any authorized rollback.
 
 Preview and task admission read rights without consuming them. Admission checks
 the effective source snapshot and collection intent in the existing task-run
@@ -94,10 +92,13 @@ product packaging, new screen or non-social integration is implemented.
 
 ## Deferred validation
 
-The owner explicitly postponed tests and migration application. Required follow-up
-covers pure decisions/wildcards/expiry edges, cross-tenant and actor attribution,
+The owner explicitly postponed P2-T15 behavioral and application-level validation.
+Q-14 later verified the repository baseline transition for local public and test
+schemas; that does not replace P2-T15's deferred behavior/concurrency tests or
+establish any other target's schema. Required follow-up covers pure
+decisions/wildcards/expiry edges, cross-tenant and actor attribution,
 all admission routes, queued downgrade/expiry, source and search derivation,
 concurrent quota races/idempotency, durable log retention, structured denials,
 API/CLI/chat/admin/settings rendering, Alembic upgrade/downgrade and cleanup on
 an exclusively owned synthetic PostgreSQL schema. No application/DB/concurrency
-PASS, READY, independent audit, production readiness or merge is implied.
+PASS, READY, independent behavioral acceptance or production readiness is implied.

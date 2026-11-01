@@ -1,27 +1,27 @@
 # Data Model Reference
 
-This repository model reference is based on `dev` HEAD
-`e79583e719e97ba16945b31db20267d40d297b0d`, which already contains migration
-0104 and its model changes; the admin UI source is
-`41875179261341ae823b1d37f7b0b61e3d260b76` and the billing/preferences source
-is `143dfae7bb52974f129818394b63a625fd799da4`. The source-declared Alembic
-head is **0104**. This document is a repository model reference, not a
-production deployment record: it describes ORM and migration definitions, not
-the revision or integrity of a running database. No application import,
-database inspection or migration was run for this update. Schema comes from
-`settings.DB_SCHEMA`; never hardcode it in application code.
+This repository model reference was reviewed against `dev` at
+`bdbeafb3148316d0800bfb8d6880c10d560e039d`; subsequent Q-15 changes are
+documentation-only. The checked-in migration graph is
+`baseline_0118` → `0119` (workspace offboarding). This is a repository model
+reference, not a target-database record: it describes ORM and migration
+definitions, not the revision or integrity of any running database. No
+application import, database inspection or migration was run for this docs
+review. The table inventory was counted from checked-in model declarations.
+Schema comes from `settings.DB_SCHEMA`; never hardcode it in application code.
 
 
-### Personal catalog (0109 defined; operational rollout separate)
+### Personal catalog (integrated; deployment rollout separate)
 
 PR #229 and UI dependency #230 are integrated in dev
 `b34353645fe37de53c97c4d022c05af0044dc8ba`. This model reference and inventory
-describe source definitions, not a fresh database inspection. This integration
-did not upgrade a working/deployment schema; prior isolated migration
-acceptance remains in the evidence ledger. PostgreSQL/ASGI and browser evidence
-remains pinned to the original execution SHAs; none is attributed as a rerun on
-final dev. See
-[implementation evidence](audit/personal-llm-ownership.md).
+describe source definitions, not a fresh database inspection. The personal-catalog
+integration itself did not upgrade a deployment schema; Q-14 later reconciled the
+local public/test schemas to the frozen baseline, which does not prove any other
+target's state. PostgreSQL/ASGI and browser evidence remains pinned to the original
+execution SHAs; none is attributed as a rerun on final dev. See
+[implementation evidence](audit/personal-llm-ownership.md) and the [Q-14 baseline
+audit](audit/q-14.md).
 
 The public facade is [app.models](../app/models/__init__.py); canonical definitions
 live in domain packages. [bootstrap](../app/models/bootstrap.py) binds managers
@@ -55,32 +55,26 @@ activation and whole-gate acceptance are distinct states.
 
 ### Table inventory
 
-The source defines **50 mapped tables and 3 association tables**:
+The source defines **53 mapped tables and 3 association tables**:
 
 | Domain | Mapped tables | Association tables |
 | --- | --- | --- |
 | Identity | `users`, `roles`, `permissions`, `model_types`, `user_credentials`, `login_attempts` | `role_permission` |
-| Tenancy | `tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, `workspace_roles` | `workspace_role_permission` |
+| Tenancy | `tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, `workspace_roles`, `entitlement_usage` | `workspace_role_permission` |
 | Collection | `platforms`, `sources`, `collected_items`, `collection_seen`, `collection_candidates`, `collection_lane_runs` | — |
 | Analysis | `agent_scenarios`, `ai_analytics`, `analyzed_content_receipts` | — |
 | LLM | `llm_providers`, `llm_models`, `llm_attempts`, `llm_dispatch_receipts`, `llm_outcome_events`, `llm_budget_days`, `llm_budget_reservations` | — |
+| Billing | `personal_billing_accounts`, `task_billing_payers`, `personal_llm_dispatches`, `personal_billing_cutovers`, `personal_legacy_attribution_consents`, `personal_legacy_attributions`, `personal_llm_billing_incidents`, `personal_llm_bound_policies`, `personal_llm_budget_days`, `personal_llm_ledger_entries`, `personal_llm_reservation_states`, `personal_llm_reservations` | — |
 | Scheduling | `agent_tasks`, `jobs` | `agent_task_sources` |
 | Actions | `bot_actions` (public AgentAction / legacy BotAction, one mapper) | — |
+| Audit | `action_audit_events`, `workspace_offboarding_events` | — |
 | Notifications | `notifications`, `digest_runs`, `notification_preferences`, `notification_receipts` | — |
 | Agent | `agent_sessions`, `agent_messages`, `agent_memory`, `agent_feedback` | — |
 
-The 12 additional billing tables are declared in [billing](../app/models/billing):
-`personal_billing_accounts`, `task_billing_payers`, `personal_llm_dispatches`,
-`personal_billing_cutovers`, `personal_legacy_attribution_consents`,
-`personal_legacy_attributions`, `personal_llm_billing_incidents`,
-`personal_llm_bound_policies`, `personal_llm_budget_days`,
-`personal_llm_ledger_entries`, `personal_llm_reservation_states` and
-`personal_llm_reservations`. They are part of the mapped tables above, not
-additional associations. Personal account identity is independent of workspace
-membership; task payer changes require explicit consent. Reviewed daily
-baselines, bound policies, reservations and immutable ledger settlement are
-separate from legacy analytics projections. Their owning P2 tasks remain open;
-this candidate does not accept billing cutover or provision a target schema.
+Personal billing tables remain separate from workspace membership; task payer
+changes require explicit consent. Reviewed daily baselines, bound policies,
+reservations and immutable ledger settlement are separate from legacy analytics
+projections. The models do not imply a billing cutover or a target-schema state.
 
 [NotificationPreference](../app/models/notifications/notification_preference.py)
 stores per-user bell presentation settings, optimistic version and quiet hours;
@@ -100,7 +94,7 @@ acknowledgement, recipient permission or messenger delivery.
 ## Catalog and identity tables
 
 These tables do not all share one authorization boundary: social Platform is
-global; providers/models are personal in the 0109 candidate.
+global; providers/models are personal in the integrated 0109 personal-catalog contract.
 Timestamp fields apply to the catalog/identity models below except `platforms`.
 Association tables have no timestamps. LLM evidence/budget timestamp exceptions
 are stated in their own section.
@@ -169,7 +163,7 @@ successful login deletes the account row; the address row decays with
 
 Relationships: provider and text/image/video scenario model references. Only models carry the default flag; migration 0091 removed the provider-level flag. `LLMModelManager.set_default()` clears overlapping defaults per capability **within the same user**, under an owner row lock. The public personal catalog service performs bundle/default writes atomically; raw manager default/owner reassignment is prohibited. Standard/quality resolution prefers that flag, cost-efficient resolution sorts by combined tariff first, and multimodal resolution prefers broader capabilities within the default rank; all exclude inactive providers. Every capability — text, image, video and audio — resolves inside the acting owner's personal catalog: `resolve_default_model`, the analyzer's bounded failover queue and `get_model_for_capability` share one ownership predicate and drop another owner's model or provider before ranking, so a fallback never decrypts a key it does not own. `AGENT_MODEL` is a name lookup through that same gate, not an ownership bypass. Cost evidence resolves its tariff row by the attempt's `llm_model_id` (allocated before the HTTP call), not by name; a legacy name-only envelope is matched inside the acting catalog and stays unknown when the name is ambiguous, so no workspace is ever priced with another user's rates. These are application invariants, not database unique constraints. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
 
-SQLAdmin LLM create/edit is disabled in the 0109 candidate; configuration goes
+SQLAdmin LLM create/edit is disabled in the integrated 0109 personal-catalog contract; configuration goes
 through owner-checked personal services/UI. `pricing_token_unit` does not convert
 raw amounts by itself. New models default to USD per 1M; existing models retain the
 legacy 1K unit until explicitly classified. Cache fields are always USD per
@@ -508,6 +502,15 @@ The same user sees addressed events from own and invited spaces. Existing shared
 flags do not imply recipients; migration 0113 creates no historical receipts.
 See [notification contract](NOTIFICATIONS.md) for navigation and transport separation.
 
+## Platform-scoped offboarding evidence
+
+`WorkspaceOffboardingEvent` maps `workspace_offboarding_events`, a permanent
+platform journal with numeric actor/workspace identities but no actor or workspace
+foreign keys, so the receipt survives deletion of either subject. Only a
+succeeded operation is stored; reason and retention policy are allowlisted and
+mutation/truncation are rejected by database guards. The full authorization,
+transaction and rollback contract is in [WORKSPACE_OFFBOARDING](WORKSPACE_OFFBOARDING.md).
+
 ## Tenant-scoped conversation, memory and action audit
 
 All tables here are tenant-scoped; timestamps are listed per model.
@@ -670,7 +673,11 @@ Selected milestones, not a complete replay audit:
 
 | Revision | Change |
 | --- | --- |
-| 0113–0116 (PR #246 candidate) | Personal notification receipts/lifecycle; additive claim states; general action/approval/idempotency fields; transition history |
+| 0113–0116 (PR #246, integrated) | Personal notification receipts/lifecycle; additive claim states; general action/approval/idempotency fields; transition history; later folded into baseline |
+| 0117 (P2-T15, integrated) | Workspace capability entitlements and usage; later folded into baseline |
+| 0118 (P11-T12, integrated) | Durable task-admission action audit; later folded into baseline |
+| `baseline_0118` (Q-14) | Frozen schema baseline replacing the prior numbered migration history |
+| 0119 (P11-T29) | Permanent workspace-offboarding journal and guarded deletion workflow; follows `baseline_0118` |
 | 0031 / 0060 | Analytics cost tracking / sub-cent Numeric precision |
 | 0041 / 0042 / 0043 | Task queue / digest runs / agent tables |
 | 0044 | Tenancy foundation |
@@ -710,14 +717,14 @@ Selected milestones, not a complete replay audit:
 | **0106** | Add VK search source type and remove retired task action lists |
 | **0107** | Add model price units, nullable cache tariffs and usage evidence; preserve legacy pricing snapshots |
 
-Static inspection of all checked-in `revision` / `down_revision` declarations,
-including tuple merge parents, gives the single source head **0107**, with chain
-0096 → 0097 → 0098 → 0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106 → 0107.
-The 0096/31-table inventory belongs to the earlier admin documentation audit. This is not
-`alembic current`, an `alembic check`, a replay rehearsal or target-schema
-acceptance. The migrations are the checked-in repository chain; migration 0104
-has been applied on user approval to the local `public` schema and read-only
-re-verified, as recorded in the P5-T04 phase note.
+The checked-in graph at this review has one root, `baseline_0118`, and one
+follow-up, `0119` (`down_revision = "baseline_0118"`). Q-14 replaced the earlier
+numbered history with the frozen baseline; the table above retains selected
+historical milestones. This is static source structure, not `alembic current`, an
+`alembic check`, a replay rehearsal or acceptance of any arbitrary target
+schema. Q-14 verified the baseline transition for the local public and test
+schemas; P11-T29 validated `0119` on the local test schema. Neither record
+certifies a production deployment.
 
 Before running this ORM against any target, verify its actual revision and
 catalog compatibility under the project's approval rules. Existing owner-local

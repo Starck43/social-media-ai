@@ -15,6 +15,7 @@
 | P9 | [Safe activation and platform access](p9-safe-activation.md) |
 | P10 | [Source-audit hardening](p10-audit-hardening.md) |
 | P11 | [Structure, interfaces and scale readiness](p11-structure.md) |
+| P12 | [Domain workspace and navigation expansion](p12-domain-workspace-expansion.md) |
 
 A phase has a goal, action plan, product backlink and task/audit links. Close it
 when all plan items are accepted; retain a dry outcome summary, completion date,

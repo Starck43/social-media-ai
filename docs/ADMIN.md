@@ -68,7 +68,7 @@ Providers and models are personal to a user and may be shared across that user's
 workspaces. Console action grants do not widen row ownership or permit another
 user's key use. Settings → Models remains the atomic provider/model/default flow;
 SQLAdmin uses the same managers. See [TENANCY](TENANCY.md#personal-llm-catalog-0109-source-contract-code-integrated-rollout-pending),
-[MODELS](MODELS.md#personal-catalog-0109-defined-operational-rollout-separate) and the
+[MODELS](MODELS.md#personal-catalog-integrated-deployment-rollout-separate) and the
 [ownership audit](audit/personal-llm-ownership.md) for the canonical ownership,
 rollout and source-pinned evidence.
 
@@ -372,9 +372,13 @@ base view plus **16 model views** — grouped into 5 SQLAdmin domain categories
 (`Система`, `Пользователи и доступ`, `Источники и сбор`, `ИИ и аналитика`,
 `Задачи и операции`). `RelatedAdmin._build_menu` wraps each category in
 `_ScopedCategoryMenu`, hiding any category whose child views are all invisible or
-inaccessible to the current operator. Paths shown below are the SQLAdmin list
-routes; available menu entries and operations depend on grants. Unspecified
-CRUD/export flags inherit SQLAdmin defaults, not a promise of safe
+inaccessible to the current operator. Desktop categories are single-open
+submenus: a header toggles its group and folds the others; opening a model link
+keeps its category expanded. On load, one category is restored from rendered
+state, the current page, or the newest remembered category, in that order. This
+presentation behavior does not change view authorization. Paths shown below are
+the SQLAdmin list routes; available menu entries and operations depend on grants.
+Unspecified CRUD/export flags inherit SQLAdmin defaults, not a promise of safe
 business-workflow execution.
 
 | View | Category | Model | List path | Explicit restriction / purpose |

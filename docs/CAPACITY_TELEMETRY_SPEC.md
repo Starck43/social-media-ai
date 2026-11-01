@@ -160,4 +160,4 @@ and remain limited to that environment.
 - [P11-T08 accepted task-launch admission limits](audit/p11-t08.md)
 - [Queue and claim lifecycle](AGENT_TASKS_QUEUE.md#how-a-run-happens)
 - [Operational visibility and support](BUSINESS_PRODUCTION_READINESS.md#prd-08--operational-visibility-and-support)
-- [Scale decision gates](PRODUCT_PLAN.md#scale)
+- [Expansion sequence and scale gates](PRODUCT_PLAN.md#expansion-sequence)

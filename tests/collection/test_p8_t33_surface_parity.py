@@ -15,6 +15,10 @@ from pathlib import Path
 import pytest
 
 from app.services.collection.search_categories import CATEGORY_PEOPLE, STATUS_MOCKED
+from tests.shared.vk_search_contracts import no_external_search_io
+
+__source_only__ = True
+pytestmark = pytest.mark.usefixtures("no_external_search_io")
 
 
 def _catalog_payload(payload):

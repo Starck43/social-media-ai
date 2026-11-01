@@ -12,6 +12,10 @@ from app.services.collection.adapters.vk import VKCollectionAdapter
 from app.services.collection.pages import CollectionProviderError
 from app.services.social.vk_client import VKClient
 from app.types import SourceType
+from tests.shared.vk_search_contracts import no_external_search_io
+
+__source_only__ = True
+pytestmark = pytest.mark.usefixtures("no_external_search_io")
 
 
 class _Platform:

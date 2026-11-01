@@ -7,8 +7,9 @@ collector; stage B exercises it with mocked client responses.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from app.core.config import settings
 from app.services.collection.adapters.base import CollectionProvider
@@ -131,6 +132,130 @@ class VKCollectionAdapter(CollectionProvider):
             total=None,
             search=False,
             warnings=(),
+        )
+
+    async def search_videos(
+        self,
+        query: str,
+        limit: int,
+        cursor: str | None,
+    ) -> Page[Candidate]:
+        """`video.search`: typed video results (P8-T46).
+
+        Mocked contract while Q-5 owns live method/profile evidence; a video
+        result is a candidate, never a Source. The `video.search` ceiling is
+        offset-bounded like the other VK search methods.
+        """
+        return await self._category_search_page("video.search", query, limit, cursor, self._video, {"extended": 1})
+
+    async def search_apps(
+        self,
+        query: str,
+        limit: int,
+        cursor: str | None,
+    ) -> Page[Candidate]:
+        """`apps.getCatalog` with the official `q` catalog search string (P8-T47).
+
+        Mocked contract while Q-5 owns live method/profile evidence; an app or
+        game result is a candidate, never a Source. Official quota note: the
+        method allows at most 60 requests per minute per IP or id. Paging bounds
+        do not enforce a cross-client minute quota; Q-5 still gates enablement.
+        """
+        return await self._category_search_page(
+            "apps.getCatalog", query, limit, cursor, self._app, {"extended": 1, "platform": "web"}
+        )
+
+    async def search_market_items(
+        self,
+        query: str,
+        owner_id: int,
+        limit: int,
+        cursor: str | None,
+    ) -> Page[Candidate]:
+        """`market.search` scoped to the selected owner/community (P8-T48).
+
+        Mocked contract while Q-5 owns live method/profile evidence; a market
+        item is a candidate, never a Source unless the user explicitly adds a
+        supported target. ``owner_id`` is required and negative for communities,
+        exactly as VK scopes market catalogues.
+        """
+        if type(owner_id) is not int or owner_id == 0:
+            raise CollectionProviderError("vk_owner_invalid", "market search requires a numeric owner id")
+        return await self._category_search_page(
+            "market.search", query, limit, cursor, self._market_item, {"owner_id": owner_id, "extended": 1}
+        )
+
+    async def search_audios(
+        self,
+        query: str,
+        limit: int,
+        cursor: str | None,
+    ) -> Page[Candidate]:
+        """`audio.search` mocked contract (P8-T49).
+
+        Not bound in the search-category registry: music keeps its separate
+        permission gate (`deferred`, `separate_permission_evidence_required`)
+        because the official `audio` access right is granted only per request
+        via VK support. This operation exists so the contract is testable; it
+        must not be dispatched until that evidence is recorded, and no audio
+        scope may be requested for post research. An audio result is never a
+        Source.
+        """
+        return await self._category_search_page("audio.search", query, limit, cursor, self._audio, {})
+
+    async def _category_search_page(
+        self,
+        method: str,
+        query: str,
+        limit: int,
+        cursor: str | None,
+        convert: Callable[[Mapping[str, Any]], Candidate],
+        extra_params: dict[str, Any],
+    ) -> Page[Candidate]:
+        """One bounded category read, with no retry/fan-out or token resolution here.
+
+        The client owns bounded rate-limit retries. Count raw slots for paging,
+        not valid candidates, so partial data cannot repeat or skip a page.
+        """
+        offset = decode_offset_cursor(cursor)
+        count = _page_size(limit)
+        if offset >= _SEARCH_CEILING:
+            return Page(warnings=("vk_search_offset_ceiling",))
+        count = min(count, _SEARCH_CEILING - offset)
+        params = {**extra_params, "q": query, "count": count, "offset": offset}
+        try:
+            data = await self.client._search_response(method, params, self.owner_user_id, require_user=False)
+        except Exception as error:  # noqa: BLE001 - never expose provider text
+            _raise_category_search_error(error)
+        warnings: list[str] = []
+        if data is not None and not isinstance(data, Mapping):
+            warnings.append("vk_search_partial_response")
+        raw_items = data.get("items") if isinstance(data, Mapping) else None
+        if raw_items is None:
+            raw_items = []
+        elif not isinstance(raw_items, (list, tuple)):
+            warnings.append("vk_search_partial_response")
+            raw_items = []
+        if len(raw_items) > count:
+            warnings.append("vk_search_partial_response")
+        rows = raw_items[:count]
+        candidates = _valid_candidates(convert(row) for row in rows if isinstance(row, Mapping))
+        if method == "market.search":
+            candidates = [item for item in candidates if item["evidence"]["owner_id"] == extra_params["owner_id"]]
+        if len(candidates) != len(rows):
+            warnings.append("vk_search_partial_response")
+        if offset + len(rows) >= _SEARCH_CEILING:
+            warnings.append("vk_search_offset_ceiling")
+        total = _as_int(data.get("count")) if isinstance(data, Mapping) else None
+        return self._page(
+            candidates,
+            raw_count=len(rows),
+            offset=offset,
+            page_size=count,
+            limit=limit,
+            total=total,
+            search=True,
+            warnings=tuple(dict.fromkeys(warnings)),
         )
 
     async def search_posts(
@@ -575,6 +700,106 @@ class VKCollectionAdapter(CollectionProvider):
         }
 
     @staticmethod
+    def _video(row: Mapping[str, Any]) -> Candidate:
+        video_id = _category_identity(row.get("id"))
+        owner_id = _category_identity(row.get("owner_id"), signed=True)
+        external_id = f"{owner_id}_{video_id}" if owner_id is not None and video_id is not None else None
+        return {
+            "platform": "vk",
+            "kind": "video",
+            "external_id": external_id,
+            "name": row.get("title"),
+            "url": f"https://vk.com/video{external_id}" if external_id else None,
+            "city": None,
+            "metrics": {
+                "views": row.get("views"),
+                "duration": row.get("duration"),
+            },
+            "evidence": {
+                "owner_id": owner_id,
+                "video_id": video_id,
+            },
+        }
+
+    @staticmethod
+    def _app(row: Mapping[str, Any]) -> Candidate:
+        app_id = _category_identity(row.get("id"))
+        screen_name = row.get("screen_name")
+        return {
+            "platform": "vk",
+            "kind": "app",
+            "external_id": str(app_id) if app_id is not None else None,
+            "name": row.get("title"),
+            "url": (
+                f"https://vk.com/{screen_name}"
+                if screen_name
+                else (f"https://vk.com/app{app_id}" if app_id is not None else None)
+            ),
+            "city": None,
+            "metrics": {
+                "members_count": row.get("members_count"),
+                "app_type": row.get("type"),
+            },
+            "evidence": {
+                "app_id": app_id,
+            },
+        }
+
+    @staticmethod
+    def _market_item(row: Mapping[str, Any]) -> Candidate:
+        item_id = _category_identity(row.get("id"))
+        owner_id = _category_identity(row.get("owner_id"), signed=True)
+        external_id = f"{owner_id}_{item_id}" if owner_id is not None and item_id is not None else None
+        price = row.get("price") if isinstance(row.get("price"), Mapping) else {}
+        amount = price.get("amount")
+        try:
+            price_value = int(amount) / 100 if amount is not None else None
+        except (TypeError, ValueError):
+            price_value = None
+        currency = price.get("currency") if isinstance(price.get("currency"), Mapping) else {}
+        return {
+            "platform": "vk",
+            "kind": "market_item",
+            "external_id": external_id,
+            "name": row.get("title"),
+            "url": f"https://vk.com/market{owner_id}?w=product{external_id}" if external_id else None,
+            "city": None,
+            "metrics": {
+                "price": price_value,
+                "currency": currency.get("name"),
+                "availability": row.get("availability"),
+            },
+            "evidence": {
+                "owner_id": owner_id,
+                "market_item_id": item_id,
+            },
+        }
+
+    @staticmethod
+    def _audio(row: Mapping[str, Any]) -> Candidate:
+        audio_id = _category_identity(row.get("id"))
+        owner_id = _category_identity(row.get("owner_id"), signed=True)
+        external_id = f"{owner_id}_{audio_id}" if owner_id is not None and audio_id is not None else None
+        artist = row.get("artist")
+        title = row.get("title")
+        name = f"{artist} — {title}" if artist and title else (title or artist)
+        return {
+            "platform": "vk",
+            "kind": "audio",
+            "external_id": external_id,
+            "name": name,
+            "url": f"https://vk.com/audio{external_id}" if external_id else None,
+            "city": None,
+            "metrics": {
+                "duration": row.get("duration"),
+            },
+            "evidence": {
+                "owner_id": owner_id,
+                "audio_id": audio_id,
+            },
+        }
+
+    @staticmethod
     def _community(row: Mapping[str, Any]) -> Candidate:
         external_id = row.get("external_id") or row.get("id")
         # VK community owner ids are negative. `groups.search` already returns
@@ -623,6 +848,36 @@ class VKCollectionAdapter(CollectionProvider):
         if isinstance(error, SourceRateLimited):
             raise CollectionProviderError("rate_limited", "VK rate limit did not clear", retryable=True) from error
         raise error
+
+
+def _category_identity(value: Any, *, signed: bool = False) -> int | None:
+    if isinstance(value, bool):
+        return None
+    # Never truncate a float or accept a composite/string identifier as an ID.
+    if not isinstance(value, (int, str)):
+        return None
+    number = _as_int(value)
+    return number if number is not None and (number != 0 if signed else number > 0) else None
+
+
+def _raise_category_search_error(error: Exception) -> None:
+    """Fixed operator-safe codes; provider text must not reach a surface/log."""
+    if isinstance(error, CollectionProviderError):
+        raise error
+    if isinstance(error, SourceRateLimited):
+        raise CollectionProviderError("rate_limited", "VK rate limit did not clear", retryable=True) from None
+    text = str(error)
+    code = re.search(r"(?:API|API error|Ошибка API)\s*\((\d+)\)", text, re.IGNORECASE)
+    number = int(code.group(1)) if code else None
+    if (
+        isinstance(error, AuthorizationRequired)
+        or number in {5, 1051}
+        or text in {"vk_selected_authorization_error", "vk_selected_profile_error"}
+    ):
+        raise CollectionProviderError("credentials", "VK category credentials/profile are unavailable") from None
+    if number in {7, 15, 200, 201, 203} or text in {"vk_selected_permission_error", "vk_selected_access_error"}:
+        raise CollectionProviderError("permission", "VK category access is denied") from None
+    raise CollectionProviderError("provider_error", "VK category search failed") from None
 
 
 def _page_size(limit: int) -> int:

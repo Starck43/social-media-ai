@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from starlette.responses import JSONResponse
+
 from ._shared import (
     ActionType,
     AgentScenario,

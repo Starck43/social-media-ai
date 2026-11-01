@@ -7,8 +7,9 @@ collector; stage B exercises it with mocked client responses.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from app.core.config import settings
 from app.services.collection.adapters.base import CollectionProvider
@@ -145,35 +146,7 @@ class VKCollectionAdapter(CollectionProvider):
         result is a candidate, never a Source. The `video.search` ceiling is
         offset-bounded like the other VK search methods.
         """
-        offset = decode_offset_cursor(cursor)
-        count = _page_size(limit)
-        params: dict[str, Any] = {"q": query, "count": count, "offset": offset, "extended": 1}
-        try:
-            data = await self.client._search_response(
-                "video.search",
-                params,
-                self.owner_user_id,
-                require_user=False,
-            )
-        except Exception as error:  # noqa: BLE001
-            self._raise_translated(error)
-        raw_items = data.get("items") if isinstance(data, Mapping) else None
-        rows = [row for row in (raw_items or []) if isinstance(row, Mapping)]
-        candidates = _valid_candidates(self._video(row) for row in rows)
-        total = _as_int(data.get("count")) if isinstance(data, Mapping) else None
-        warnings: list[str] = []
-        if offset + len(rows) >= _SEARCH_CEILING:
-            warnings.append("vk_search_offset_ceiling")
-        return self._page(
-            candidates,
-            raw_count=len(rows),
-            offset=offset,
-            page_size=count,
-            limit=limit,
-            total=total,
-            search=True,
-            warnings=tuple(warnings),
-        )
+        return await self._category_search_page("video.search", query, limit, cursor, self._video, {"extended": 1})
 
     async def search_apps(
         self,
@@ -185,43 +158,11 @@ class VKCollectionAdapter(CollectionProvider):
 
         Mocked contract while Q-5 owns live method/profile evidence; an app or
         game result is a candidate, never a Source. Official quota note: the
-        method allows at most 60 requests per minute per IP or id; the shared
-        page/search ceilings keep paging bounded below that.
+        method allows at most 60 requests per minute per IP or id. Paging bounds
+        do not enforce a cross-client minute quota; Q-5 still gates enablement.
         """
-        offset = decode_offset_cursor(cursor)
-        count = _page_size(limit)
-        params: dict[str, Any] = {
-            "q": query,
-            "count": count,
-            "offset": offset,
-            "extended": 1,
-            "platform": "web",
-        }
-        try:
-            data = await self.client._search_response(
-                "apps.getCatalog",
-                params,
-                self.owner_user_id,
-                require_user=False,
-            )
-        except Exception as error:  # noqa: BLE001
-            self._raise_translated(error)
-        raw_items = data.get("items") if isinstance(data, Mapping) else None
-        rows = [row for row in (raw_items or []) if isinstance(row, Mapping)]
-        candidates = _valid_candidates(self._app(row) for row in rows)
-        total = _as_int(data.get("count")) if isinstance(data, Mapping) else None
-        warnings: list[str] = []
-        if offset + len(rows) >= _SEARCH_CEILING:
-            warnings.append("vk_search_offset_ceiling")
-        return self._page(
-            candidates,
-            raw_count=len(rows),
-            offset=offset,
-            page_size=count,
-            limit=limit,
-            total=total,
-            search=True,
-            warnings=tuple(warnings),
+        return await self._category_search_page(
+            "apps.getCatalog", query, limit, cursor, self._app, {"extended": 1, "platform": "web"}
         )
 
     async def search_market_items(
@@ -238,42 +179,10 @@ class VKCollectionAdapter(CollectionProvider):
         supported target. ``owner_id`` is required and negative for communities,
         exactly as VK scopes market catalogues.
         """
-        if not isinstance(owner_id, int) or isinstance(owner_id, bool):
+        if type(owner_id) is not int or owner_id == 0:
             raise CollectionProviderError("vk_owner_invalid", "market search requires a numeric owner id")
-        offset = decode_offset_cursor(cursor)
-        count = _page_size(limit)
-        params: dict[str, Any] = {
-            "owner_id": owner_id,
-            "q": query,
-            "count": count,
-            "offset": offset,
-            "extended": 1,
-        }
-        try:
-            data = await self.client._search_response(
-                "market.search",
-                params,
-                self.owner_user_id,
-                require_user=False,
-            )
-        except Exception as error:  # noqa: BLE001
-            self._raise_translated(error)
-        raw_items = data.get("items") if isinstance(data, Mapping) else None
-        rows = [row for row in (raw_items or []) if isinstance(row, Mapping)]
-        candidates = _valid_candidates(self._market_item(row) for row in rows)
-        total = _as_int(data.get("count")) if isinstance(data, Mapping) else None
-        warnings: list[str] = []
-        if offset + len(rows) >= _SEARCH_CEILING:
-            warnings.append("vk_search_offset_ceiling")
-        return self._page(
-            candidates,
-            raw_count=len(rows),
-            offset=offset,
-            page_size=count,
-            limit=limit,
-            total=total,
-            search=True,
-            warnings=tuple(warnings),
+        return await self._category_search_page(
+            "market.search", query, limit, cursor, self._market_item, {"owner_id": owner_id, "extended": 1}
         )
 
     async def search_audios(
@@ -292,25 +201,52 @@ class VKCollectionAdapter(CollectionProvider):
         scope may be requested for post research. An audio result is never a
         Source.
         """
+        return await self._category_search_page("audio.search", query, limit, cursor, self._audio, {})
+
+    async def _category_search_page(
+        self,
+        method: str,
+        query: str,
+        limit: int,
+        cursor: str | None,
+        convert: Callable[[Mapping[str, Any]], Candidate],
+        extra_params: dict[str, Any],
+    ) -> Page[Candidate]:
+        """One bounded category read, with no retry/fan-out or token resolution here.
+
+        The client owns bounded rate-limit retries. Count raw slots for paging,
+        not valid candidates, so partial data cannot repeat or skip a page.
+        """
         offset = decode_offset_cursor(cursor)
         count = _page_size(limit)
-        params: dict[str, Any] = {"q": query, "count": count, "offset": offset}
+        if offset >= _SEARCH_CEILING:
+            return Page(warnings=("vk_search_offset_ceiling",))
+        count = min(count, _SEARCH_CEILING - offset)
+        params = {**extra_params, "q": query, "count": count, "offset": offset}
         try:
-            data = await self.client._search_response(
-                "audio.search",
-                params,
-                self.owner_user_id,
-                require_user=False,
-            )
-        except Exception as error:  # noqa: BLE001
-            self._raise_translated(error)
-        raw_items = data.get("items") if isinstance(data, Mapping) else None
-        rows = [row for row in (raw_items or []) if isinstance(row, Mapping)]
-        candidates = _valid_candidates(self._audio(row) for row in rows)
-        total = _as_int(data.get("count")) if isinstance(data, Mapping) else None
+            data = await self.client._search_response(method, params, self.owner_user_id, require_user=False)
+        except Exception as error:  # noqa: BLE001 - never expose provider text
+            _raise_category_search_error(error)
         warnings: list[str] = []
+        if data is not None and not isinstance(data, Mapping):
+            warnings.append("vk_search_partial_response")
+        raw_items = data.get("items") if isinstance(data, Mapping) else None
+        if raw_items is None:
+            raw_items = []
+        elif not isinstance(raw_items, (list, tuple)):
+            warnings.append("vk_search_partial_response")
+            raw_items = []
+        if len(raw_items) > count:
+            warnings.append("vk_search_partial_response")
+        rows = raw_items[:count]
+        candidates = _valid_candidates(convert(row) for row in rows if isinstance(row, Mapping))
+        if method == "market.search":
+            candidates = [item for item in candidates if item["evidence"]["owner_id"] == extra_params["owner_id"]]
+        if len(candidates) != len(rows):
+            warnings.append("vk_search_partial_response")
         if offset + len(rows) >= _SEARCH_CEILING:
             warnings.append("vk_search_offset_ceiling")
+        total = _as_int(data.get("count")) if isinstance(data, Mapping) else None
         return self._page(
             candidates,
             raw_count=len(rows),
@@ -319,7 +255,7 @@ class VKCollectionAdapter(CollectionProvider):
             limit=limit,
             total=total,
             search=True,
-            warnings=tuple(warnings),
+            warnings=tuple(dict.fromkeys(warnings)),
         )
 
     async def search_posts(
@@ -765,8 +701,8 @@ class VKCollectionAdapter(CollectionProvider):
 
     @staticmethod
     def _video(row: Mapping[str, Any]) -> Candidate:
-        video_id = row.get("id")
-        owner_id = _as_int(row.get("owner_id"))
+        video_id = _category_identity(row.get("id"))
+        owner_id = _category_identity(row.get("owner_id"), signed=True)
         external_id = f"{owner_id}_{video_id}" if owner_id is not None and video_id is not None else None
         return {
             "platform": "vk",
@@ -787,7 +723,7 @@ class VKCollectionAdapter(CollectionProvider):
 
     @staticmethod
     def _app(row: Mapping[str, Any]) -> Candidate:
-        app_id = row.get("id")
+        app_id = _category_identity(row.get("id"))
         screen_name = row.get("screen_name")
         return {
             "platform": "vk",
@@ -811,8 +747,8 @@ class VKCollectionAdapter(CollectionProvider):
 
     @staticmethod
     def _market_item(row: Mapping[str, Any]) -> Candidate:
-        item_id = row.get("id")
-        owner_id = _as_int(row.get("owner_id"))
+        item_id = _category_identity(row.get("id"))
+        owner_id = _category_identity(row.get("owner_id"), signed=True)
         external_id = f"{owner_id}_{item_id}" if owner_id is not None and item_id is not None else None
         price = row.get("price") if isinstance(row.get("price"), Mapping) else {}
         amount = price.get("amount")
@@ -841,8 +777,8 @@ class VKCollectionAdapter(CollectionProvider):
 
     @staticmethod
     def _audio(row: Mapping[str, Any]) -> Candidate:
-        audio_id = row.get("id")
-        owner_id = _as_int(row.get("owner_id"))
+        audio_id = _category_identity(row.get("id"))
+        owner_id = _category_identity(row.get("owner_id"), signed=True)
         external_id = f"{owner_id}_{audio_id}" if owner_id is not None and audio_id is not None else None
         artist = row.get("artist")
         title = row.get("title")
@@ -912,6 +848,36 @@ class VKCollectionAdapter(CollectionProvider):
         if isinstance(error, SourceRateLimited):
             raise CollectionProviderError("rate_limited", "VK rate limit did not clear", retryable=True) from error
         raise error
+
+
+def _category_identity(value: Any, *, signed: bool = False) -> int | None:
+    if isinstance(value, bool):
+        return None
+    # Never truncate a float or accept a composite/string identifier as an ID.
+    if not isinstance(value, (int, str)):
+        return None
+    number = _as_int(value)
+    return number if number is not None and (number != 0 if signed else number > 0) else None
+
+
+def _raise_category_search_error(error: Exception) -> None:
+    """Fixed operator-safe codes; provider text must not reach a surface/log."""
+    if isinstance(error, CollectionProviderError):
+        raise error
+    if isinstance(error, SourceRateLimited):
+        raise CollectionProviderError("rate_limited", "VK rate limit did not clear", retryable=True) from None
+    text = str(error)
+    code = re.search(r"(?:API|API error|Ошибка API)\s*\((\d+)\)", text, re.IGNORECASE)
+    number = int(code.group(1)) if code else None
+    if (
+        isinstance(error, AuthorizationRequired)
+        or number in {5, 1051}
+        or text in {"vk_selected_authorization_error", "vk_selected_profile_error"}
+    ):
+        raise CollectionProviderError("credentials", "VK category credentials/profile are unavailable") from None
+    if number in {7, 15, 200, 201, 203} or text in {"vk_selected_permission_error", "vk_selected_access_error"}:
+        raise CollectionProviderError("permission", "VK category access is denied") from None
+    raise CollectionProviderError("provider_error", "VK category search failed") from None
 
 
 def _page_size(limit: int) -> int:

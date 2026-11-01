@@ -39,6 +39,10 @@ from app.services.collection.search_categories import (
     vk_search_categories,
 )
 from app.services.social.vk_client import VKClient
+from tests.shared.vk_search_contracts import no_external_search_io
+
+__source_only__ = True
+pytestmark = pytest.mark.usefixtures("no_external_search_io")
 
 
 class _Platform:
@@ -98,8 +102,8 @@ def test_no_category_is_live_enabled_while_q5_owns_profile_evidence():
 def test_every_requested_category_keeps_an_explicit_status_and_reason():
     by_id = {category.category_id: category for category in vk_search_categories()}
 
-    for category_id in ("video", "apps", "market", "music"):
-        assert by_id[category_id].status == "deferred"
+    for category_id, status in (("video", "mocked"), ("apps", "mocked"), ("market", "mocked"), ("music", "deferred")):
+        assert by_id[category_id].status == status
         assert by_id[category_id].reason
         assert by_id[category_id].executable is False
     assert by_id[CATEGORY_CLIPS].status == "unsupported"
@@ -258,7 +262,7 @@ async def test_deferred_category_fails_visibly_instead_of_an_empty_page():
     adapter = VKCollectionAdapter(client)
 
     with pytest.raises(SearchCategoryError) as caught:
-        await search_category(adapter, "video", "ремонт", limit=5)
+        await search_category(adapter, "music", "ремонт", limit=5)
 
     assert caught.value.code == "search_category_unavailable"
     assert "deferred" in caught.value.message

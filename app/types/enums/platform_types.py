@@ -7,11 +7,17 @@ from app.utils.db_enums import DatabaseEnum, database_enum
 
 @database_enum
 class PlatformType(DatabaseEnum, Enum):
-    """Social media platforms."""
+    """Social media, corporate, cloud drive, and local gateway platforms."""
 
     # Format: NAME = ("db_value", "Display Name", "Emoji")
     VK = ("vk", "ВКонтакте", "🔵")
     TELEGRAM = ("telegram", "Telegram", "✈️")
+    EMAIL = ("email", "Почта IMAP/SMTP", "✉️")
+    BITRIX24 = ("bitrix24", "Битрикс24 CRM", "🏢")
+    ONEC = ("onec", "1С:Предприятие OData", "📊")
+    YANDEX_DISK = ("yandex_disk", "Яндекс.Диск", "☁️")
+    MAILRU_CLOUD = ("mailru_cloud", "Облако Mail.ru", "🌩️")
+    LOCAL_GATEWAY = ("local_gateway", "Локальный шлюз", "🖧")
 
     def __init__(self, db_value, display_name, emoji):
         self._db_value = db_value
@@ -64,7 +70,7 @@ class PlatformType(DatabaseEnum, Enum):
 
 @database_enum
 class SourceType(DatabaseEnum, Enum):
-    """Types of content sources in social networks."""
+    """Types of content sources in social networks and external connectors."""
 
     # Format: NAME = ("db_value", "Display Name", "Emoji")
 
@@ -88,6 +94,9 @@ class SourceType(DatabaseEnum, Enum):
     SUPERGROUP = ("supergroup", "Супергруппа", "👥+")
     BOT = ("bot", "Бот", "🤖")
     BROADCAST = ("broadcast", "Рассылка", "📻")
+
+    # Cloud drive & document folder mounting (P12-T02)
+    DRIVE_FOLDER = ("drive_folder", "Папка облачного диска", "📁")
 
     def __init__(self, db_value, display_name, emoji):
         self._db_value = db_value

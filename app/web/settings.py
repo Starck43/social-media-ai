@@ -61,6 +61,12 @@ MANAGER_TABS: frozenset[str] = frozenset({"agent", "channels"})
 SELF_SERVICE_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
     "vk": (("user_token", "VK: личный токен вручную"),),
     "telegram": (("session", "Telegram: файл сессии MTProto"),),
+    "email": (("app_password", "Почта: пароль приложения IMAP/SMTP"),),
+    "bitrix24": (("webhook_secret", "Битрикс24: входящий вебхук или OAuth-ключ"),),
+    "onec": (("odata_credentials", "1С OData: учётные данные публикации"),),
+    "yandex_disk": (("oauth_token", "Яндекс.Диск: OAuth-токен или пароль приложения"),),
+    "mailru_cloud": (("webdav_password", "Облако Mail.ru: пароль приложения WebDAV"),),
+    "local_gateway": (("mtls_fingerprint", "Локальный шлюз: отпечаток парного сертификата"),),
 }
 
 #: Access levels an owner gives a member (see `app/services/tenancy/member_roles.py`).
@@ -272,6 +278,11 @@ async def settings_page(request: Request):
         from app.models.managers.user_credential_manager import user_credentials
         from app.services.social.connections import CONNECTIONS, connection_statuses
 
+        try:
+            from app.services.social.connections import build_workspace_connectors
+        except ImportError:
+            build_workspace_connectors = None
+
         credentials = await user_credentials.web_metadata_for_user(user_id=user.id)
         statuses = {status.platform: status for status in await connection_statuses(user.id)}
         context["connections"] = [
@@ -287,6 +298,13 @@ async def settings_page(request: Request):
             }
             for spec in CONNECTIONS
         ]
+        if callable(build_workspace_connectors):
+            context["workspace_connectors"] = build_workspace_connectors(
+                credentials=credentials,
+                statuses=statuses,
+                tenant_id=tenant_id,
+                username=getattr(user, "username", None),
+            )
     elif tab == "channels" and manage:
         from app.models.managers.tenant_manager import TenantChannelManager
 

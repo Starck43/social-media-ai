@@ -386,7 +386,9 @@ async def test_capability_never_sends_credentials_to_an_alternate_endpoint(world
     import app.channels.telegram as transport
 
     row = await approved(world)
-    monkeypatch.setattr(transport, "API_BASE", endpoint)
+    monkeypatch.setattr(
+        "app.services.social.platform_config.load_platform_config", AsyncMock(return_value={"api_base_url": endpoint})
+    )
     with pytest.raises(PermissionError, match="official HTTPS"):
         await execute(row)
     assert await AgentAction.objects.telegram_message_targets() == []

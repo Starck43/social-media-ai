@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.api.deps import require_model_perm
 from app.models import User, UserCredential
 from app.schemas.credential import CredentialLoginRequest, CredentialOauthRequest, CredentialResponse
+from app.services.social.platform_config import load_platform_config
 from app.types import ActionType
 
 router = APIRouter(tags=["credentials"])
@@ -163,9 +164,10 @@ async def test_credentials(
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 if platform == "vk":
+                    config = await load_platform_config("vk")
                     resp = await client.get(
-                        f"{settings.VK_API_BASE_URL.rstrip('/')}/account.getProfileInfo",
-                        params={"access_token": token, "v": settings.VK_API_VERSION},
+                        f"{config['api_base_url'].rstrip('/')}/account.getProfileInfo",
+                        params={"access_token": token, "v": config["api_version"]},
                     )
                     if not 200 <= resp.status_code < 300:
                         status = credential_http_error(resp.status_code)
@@ -178,7 +180,9 @@ async def test_credentials(
                         else:
                             status = credential_provider_error("vk", data)
                 elif platform == "telegram":
-                    resp = await client.get(f"{settings.TELEGRAM_API_BASE_URL.rstrip('/')}/bot{token}/getMe")
+                    resp = await client.get(
+                        f"{(await load_platform_config('telegram'))['api_base_url'].rstrip('/')}/bot{token}/getMe"
+                    )
                     if not 200 <= resp.status_code < 300:
                         status = credential_http_error(resp.status_code)
                     else:

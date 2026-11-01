@@ -79,7 +79,7 @@ def on_version_apply(
     # post-migration reconciler after either upgrade or downgrade: it could
     # recreate permission rows or normalize unrelated catalog state while the
     # migration is restoring the exact pre-revision registry snapshot.
-    if step.is_migration and step.up_revision_id == "0119":
+    if step.is_migration and step.up_revision_id in {"0119", "0120"}:
         return
     from scripts.migrations.register_model_types import register_model_types
 

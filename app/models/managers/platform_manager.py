@@ -1,235 +1,213 @@
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING, Any
-
-from .base_manager import BaseManager
+from typing import TYPE_CHECKING, Any, Optional
 
 from app.utils.enum_helpers import get_enum_value
 
+from .base_manager import BaseManager
+
 if TYPE_CHECKING:
-	from ..collection.platform import Platform
-	from app.types import PlatformType
+    from app.types import PlatformType
+
+    from ..collection.platform import Platform
 
 
-class PlatformManager(BaseManager['Platform']):
-	"""
-	Manager for Platform model with specialized methods for platform management.
-	
-	Provides methods for:
-	— Managing active platforms
-	— Rate limit tracking
-	— Sync status monitoring
-	— Platform statistics
-	
-	Note: By default, only active platforms (is_active=True) are returned.
-	"""
+class PlatformManager(BaseManager["Platform"]):
+    """
+    Manager for Platform model with specialized methods for platform management.
 
-	def __init__(self):
-		from ..collection.platform import Platform
-		super().__init__(Platform)
+    Provides methods for:
+    — Managing active platforms
+    — Rate limit tracking
+    — Sync status monitoring
+    — Platform statistics
 
-	async def get_by_name(
-		self,
-		name: str,
-		is_active: Optional[bool] = True
-	) -> Optional['Platform']:
-		"""
-		Get platform by exact name match.
+    Note: By default, only active platforms (is_active=True) are returned.
+    """
 
-		Args:
-			name: Platform name to search for
-			is_active: Filter by active status (default: True)
+    def __init__(self):
+        from ..collection.platform import Platform
 
-		Returns:
-			Platform object if found, None otherwise
-		"""
-		qs = self.filter(name=name)
-		
-		if is_active is not None:
-			qs = qs.filter(is_active=is_active)
-		
-		return await qs.first()
+        super().__init__(Platform)
 
-	async def get_active_platforms(
-		self,
-		platform_type: Optional['PlatformType'] = None
-	) -> list['Platform']:
-		"""
-		Get all active platforms.
+    async def get_by_name(self, name: str, is_active: Optional[bool] = True) -> Optional["Platform"]:
+        """
+        Get platform by exact name match.
 
-		Args:
-			platform_type: An optional filter by platform type
+        Args:
+                name: Platform name to search for
+                is_active: Filter by active status (default: True)
 
-		Returns:
-			List of active Platform objects
-		"""
-		qs = self.filter(is_active=True)
-		
-		if platform_type:
-			qs = qs.filter(platform_type=platform_type)
-		
-		return list(await qs)
+        Returns:
+                Platform object if found, None otherwise
+        """
+        qs = self.filter(name=name)
 
-	async def get_by_type(
-		self,
-		platform_type: 'PlatformType',
-		is_active: Optional[bool] = True
-	) -> list['Platform']:
-		"""
-		Get platforms by type.
+        if is_active is not None:
+            qs = qs.filter(is_active=is_active)
 
-		Args:
-			platform_type: Type of platform (VKONTAKTE, TELEGRAM, etc.)
-			is_active: Filter by active status (default: True)
+        return await qs.first()
 
-		Returns:
-			List of Platform objects
-		"""
-		qs = self.filter(platform_type=platform_type)
-		
-		if is_active is not None:
-			qs = qs.filter(is_active=is_active)
-		
-		return list(await qs)
+    async def get_active_platforms(self, platform_type: Optional["PlatformType"] = None) -> list["Platform"]:
+        """
+        Get all active platforms.
 
-	async def create_platform(
-		self,
-		name: str,
-		platform_type: 'PlatformType',
-		base_url: str,
-		params: Optional[dict] = None,
-		is_active: bool = True
-	) -> 'Platform':
-		"""
-		Create a new platform with validation.
+        Args:
+                platform_type: An optional filter by platform type
 
-		Args:
-			name: Platform name (e.g., 'VK', 'Telegram')
-			platform_type: Type of platform
-			base_url: Base URL for the platform
-			params: API configuration parameters
-			is_active: Whether the platform is active
+        Returns:
+                List of active Platform objects
+        """
+        qs = self.filter(is_active=True)
 
-		Returns:
-			Created Platform object
+        if platform_type:
+            qs = qs.filter(platform_type=platform_type)
 
-		Raises:
-			ValueError: If platform with same name already exists
-		"""
-		existing = await self.get_by_name(name, is_active=None)
-		if existing:
-			raise ValueError(f"Platform with name '{name}' already exists")
+        return list(await qs)
 
-		return await self.create(
-			name=name,
-			platform_type=platform_type,
-			base_url=base_url,
-			params=params or {},
-			is_active=is_active
-		)
+    async def get_by_type(self, platform_type: "PlatformType", is_active: Optional[bool] = True) -> list["Platform"]:
+        """
+        Get platforms by type.
 
-	async def get_with_sources(
-		self,
-		platform_id: int
-	) -> Optional['Platform']:
-		"""
-		Get platform with prefetched sources relationship.
+        Args:
+                platform_type: Type of platform (VKONTAKTE, TELEGRAM, etc.)
+                is_active: Filter by active status (default: True)
 
-		Args:
-			platform_id: Platform ID
+        Returns:
+                List of Platform objects
+        """
+        qs = self.filter(platform_type=platform_type)
 
-		Returns:
-			Platform object with sources loaded
-		"""
-		return await (
-			self.filter(id=platform_id)
-			.prefetch_related("sources")
-			.first()
-		)
+        if is_active is not None:
+            qs = qs.filter(is_active=is_active)
 
-	async def bulk_update_status(
-		self,
-		platform_ids: list[int],
-		is_active: bool
-	) -> int:
-		"""
-		Update active status for multiple platforms.
+        return list(await qs)
 
-		Args:
-			platform_ids: List of platform IDs
-			is_active: New active status
+    async def create_platform(
+        self,
+        name: str,
+        platform_type: "PlatformType",
+        base_url: str,
+        params: Optional[dict] = None,
+        is_active: bool = True,
+    ) -> "Platform":
+        """
+        Create a new platform with validation.
 
-		Returns:
-			Amount updated platforms
-		"""
-		if not platform_ids:
-			return 0
+        Args:
+                name: Platform name (e.g., 'VK', 'Telegram')
+                platform_type: Type of platform
+                base_url: Base URL for the platform
+                params: API configuration parameters
+                is_active: Whether the platform is active
 
-		updated_count = 0
-		for platform_id in platform_ids:
-			result = await self.update_by_id(platform_id, is_active=is_active)
-			if result:
-				updated_count += 1
+        Returns:
+                Created Platform object
 
-		return updated_count
+        Raises:
+                ValueError: If platform with same name already exists
+        """
+        from app.services.social.platform_config import initial_platform_params
 
-	async def get_stats(self) -> dict:
-		"""
-		Get statistics for all platforms.
+        if await self.get_by_type(platform_type, is_active=None):
+            raise ValueError("A shared platform of this type already exists")
 
-		Returns:
-			Dictionary with platform statistics
-		"""
-		from ..collection.source import Source
-		
-		# Get all platforms (including inactive for complete stats)
-		all_platforms = await self.filter()
-		
-		stats: dict[str, Any] = {
-			'total': len(all_platforms),
-			'active': len([p for p in all_platforms if p.is_active]),
-			'inactive': len([p for p in all_platforms if not p.is_active]),
-			'by_type': {},
-			'sources_per_platform': {}
-		}
+        existing = await self.get_by_name(name, is_active=None)
+        if existing:
+            raise ValueError(f"Platform with name '{name}' already exists")
 
-		for platform in all_platforms:
-			# Count by type
-			type_name = get_enum_value(platform.platform_type)
-			stats['by_type'][type_name] = stats['by_type'].get(type_name, 0) + 1
-			
-			# Count sources for this platform
-			sources = await Source.objects.filter(platform_id=platform.id)
-			stats['sources_per_platform'][platform.name] = len(sources)
-		
-		return stats
+        return await self.create(
+            name=name,
+            platform_type=platform_type,
+            base_url=base_url,
+            params=initial_platform_params(platform_type, params),
+            is_active=is_active,
+        )
 
-	async def search_platforms(
-		self,
-		query: str,
-		is_active: Optional[bool] = True
-	) -> list['Platform']:
-		"""
-		Search platforms by name.
+    async def get_with_sources(self, platform_id: int) -> Optional["Platform"]:
+        """
+        Get platform with prefetched sources relationship.
 
-		Args:
-			query: Search query string
-			is_active: Filter by active status (default: True)
+        Args:
+                platform_id: Platform ID
 
-		Returns:
-			List of matching Platform objects
-		"""
-		# Get platforms with optional active filter
-		if is_active is not None:
-			platforms = list(await self.filter(is_active=is_active))
-		else:
-			platforms = list(await self.filter())
-		
-		# Filter by name in memory
-		if query:
-			platforms = [
-				p for p in platforms
-				if query.lower() in (p.name or '').lower()
-			]
-		
-		return platforms
+        Returns:
+                Platform object with sources loaded
+        """
+        return await self.filter(id=platform_id).prefetch_related("sources").first()
+
+    async def bulk_update_status(self, platform_ids: list[int], is_active: bool) -> int:
+        """
+        Update active status for multiple platforms.
+
+        Args:
+                platform_ids: List of platform IDs
+                is_active: New active status
+
+        Returns:
+                Amount updated platforms
+        """
+        if not platform_ids:
+            return 0
+
+        updated_count = 0
+        for platform_id in platform_ids:
+            result = await self.update_by_id(platform_id, is_active=is_active)
+            if result:
+                updated_count += 1
+
+        return updated_count
+
+    async def get_stats(self) -> dict:
+        """
+        Get statistics for all platforms.
+
+        Returns:
+                Dictionary with platform statistics
+        """
+        from ..collection.source import Source
+
+        # Get all platforms (including inactive for complete stats)
+        all_platforms = await self.filter()
+
+        stats: dict[str, Any] = {
+            "total": len(all_platforms),
+            "active": len([p for p in all_platforms if p.is_active]),
+            "inactive": len([p for p in all_platforms if not p.is_active]),
+            "by_type": {},
+            "sources_per_platform": {},
+        }
+
+        for platform in all_platforms:
+            # Count by type
+            type_name = get_enum_value(platform.platform_type)
+            stats["by_type"][type_name] = stats["by_type"].get(type_name, 0) + 1
+
+            # Count sources for this platform
+            sources = await Source.objects.filter(platform_id=platform.id)
+            stats["sources_per_platform"][platform.name] = len(sources)
+
+        return stats
+
+    async def search_platforms(self, query: str, is_active: Optional[bool] = True) -> list["Platform"]:
+        """
+        Search platforms by name.
+
+        Args:
+                query: Search query string
+                is_active: Filter by active status (default: True)
+
+        Returns:
+                List of matching Platform objects
+        """
+        # Get platforms with optional active filter
+        if is_active is not None:
+            platforms = list(await self.filter(is_active=is_active))
+        else:
+            platforms = list(await self.filter())
+
+        # Filter by name in memory
+        if query:
+            platforms = [p for p in platforms if query.lower() in (p.name or "").lower()]
+
+        return platforms

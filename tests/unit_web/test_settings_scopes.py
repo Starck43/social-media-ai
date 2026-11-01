@@ -18,7 +18,6 @@ SOURCE = ROOT / "app/web/settings.py"
 def extracted():
     names = {
         "_personal_access",
-        "_platform_access",
         "_workspace_access",
         "_visible_tabs",
         "_visible_tab",
@@ -41,7 +40,7 @@ def extracted():
         node.args.defaults = [ast.Constant(None) for _ in node.args.defaults]
         node.args.kw_defaults = [ast.Constant(None) if n is not None else None for n in node.args.kw_defaults]
     ns = {
-        "TABS": ("account", "connections", "models", "workspace", "team", "agent", "channels", "platforms"),
+        "TABS": ("account", "connections", "models", "workspace", "team", "agent", "channels"),
         "MANAGER_TABS": frozenset({"agent", "channels"}),
         "BACK": "/app/settings",
         "HTMLResponse": HTMLResponse,
@@ -446,7 +445,7 @@ async def test_platform_admin_does_not_gain_web_bypass_or_settings_mutation(gate
     assert owner.context["is_superuser"] is False
     assert operator.context["is_superuser"] is False
     assert operator.context["settings_manage"] is False
-    assert "platforms" in operator.context["visible_tabs"]
+    assert "platforms" not in operator.context["visible_tabs"]
     assert "platforms" not in owner.context["visible_tabs"]
     assert calls == []
 

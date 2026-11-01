@@ -14,8 +14,8 @@
 {% block content %}
 <div class="settings-page">
     <p class="text-sm ui-muted">Личные настройки принадлежат вам. Настройки пространства действуют для команды.</p>
-    {% set section_labels = {'account': 'Мой аккаунт', 'connections': 'Мои подключения', 'workspace': 'Пространство', 'team': 'Команда', 'agent': 'Агент для чата', 'channels': 'Каналы доставки', 'models': 'Модели ИИ', 'platforms': 'Платформы'} %}
-    {% set section_hints = {'account': 'Профиль и показ уведомлений.', 'connections': 'Ваши аккаунты и ключи для сбора данных. Они не принадлежат команде.', 'workspace': 'Название, часовой пояс расписаний и лимиты команды.', 'team': 'Роли участников действуют только в этом пространстве и не меняют роль аккаунта.', 'agent': 'Модель и параметры ответов для всех чатов этого пространства.', 'channels': 'Куда отправлять дайджесты пространства.', 'models': 'Ваши провайдеры и модели, общие для всех ваших пространств.', 'platforms': 'Общий каталог платформ для всех пространств. Доступен только администратору.'} %}
+    {% set section_labels = {'account': 'Мой аккаунт', 'connections': 'Мои подключения', 'workspace': 'Пространство', 'team': 'Команда', 'agent': 'Агент для чата', 'channels': 'Каналы доставки', 'models': 'Модели ИИ'} %}
+    {% set section_hints = {'account': 'Профиль и показ уведомлений.', 'connections': 'Ваши аккаунты и ключи для сбора данных. Они не принадлежат команде.', 'workspace': 'Название, часовой пояс расписаний и лимиты команды.', 'team': 'Роли участников действуют только в этом пространстве и не меняют роль аккаунта.', 'agent': 'Модель и параметры ответов для всех чатов этого пространства.', 'channels': 'Куда отправлять дайджесты пространства.', 'models': 'Ваши провайдеры и модели, общие для всех ваших пространств.'} %}
     <div class="settings-layout">
         <aside class="settings-sidebar">
             <details class="settings-menu" open>
@@ -38,9 +38,7 @@
                 <h2>{{ section_labels[tab] }}</h2>
                 <p class="ui-muted">{{ section_hints[tab] }}</p>
             </header>
-            {% if tab == 'platforms' %}
-                {% include 'web/_settings_platforms.html' %}
-            {% elif tab == 'models' %}
+            {% if tab == 'models' %}
                 {% include 'web/_settings_llm.html' %}
             {% elif tab == 'account' %}
                 <section class="mt-6 ui-card" aria-label="Мой аккаунт">

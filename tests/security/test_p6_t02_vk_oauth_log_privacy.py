@@ -85,6 +85,11 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         doubles.update(
             {
                 "app.core.config": module("app.core.config", settings=self.settings),
+                "app.services.social.platform_config": module(
+                    "app.services.social.platform_config",
+                    load_platform_config=AsyncMock(return_value={"redirect_uri": "https://example.invalid/callback"}),
+                    require_config_param=lambda params, key: params[key],
+                ),
                 "app.services.social.credentials": module(
                     "app.services.social.credentials", resolve_token=self.resolve
                 ),

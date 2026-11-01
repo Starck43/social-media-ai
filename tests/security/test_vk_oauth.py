@@ -69,7 +69,8 @@ async def owner_user(bootstrap_tenant_id):
         role_id=role.id,
     )
     await TenantUserManager().add_web_member(tenant_id=bootstrap_tenant_id, user_id=user.id, role="owner")
-    return user
+    yield user
+    await User.objects.delete_user(user.id)
 
 
 @pytest.fixture

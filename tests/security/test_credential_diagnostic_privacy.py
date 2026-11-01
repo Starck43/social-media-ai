@@ -128,7 +128,15 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.token = AsyncMock(return_value=SECRET)
         self.load_session = AsyncMock(return_value=None)
         self.check_session = AsyncMock(return_value="error: authorization_error")
-        self.endpoint = load_function("app/api/v1/endpoints/credentials.py", "test_credentials")
+        self.endpoint = load_function(
+            "app/api/v1/endpoints/credentials.py",
+            "test_credentials",
+            {
+                "load_platform_config": AsyncMock(
+                    return_value={"api_base_url": "https://api.example.invalid", "api_version": "5.199"}
+                )
+            },
+        )
         self.settings = SimpleNamespace(
             VK_API_BASE_URL="https://vk.example.invalid",
             VK_API_VERSION="5.199",

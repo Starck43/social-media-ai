@@ -858,3 +858,13 @@ select `analyze`, matching sources/scenario and trigger, then supply the separat
 `pipeline` and `digest.window` fields from the [shared contract](AGENT_TASKS_PLAN.md#composed-research-and-digest-plans-p8-t40).
 Run now and schedules generate a digest only. External delivery is a separate
 confirmed task action with fresh rights and frozen per-part receipts.
+
+
+### Shared platform configuration
+
+Platform management is SQLAdmin-only (removed from web Settings). One globally
+unique record per platform type owns non-secret API settings in `params` JSON.
+There is no user/tenant copy or runtime environment overlay. Existing platform
+create/update grants continue to apply; deletion remains disabled. Preserve the
+reserved `_migration_0120` archival key when editing migrated JSON. See
+[configuration and safe migration/rollback](CONFIGURATION.md#shared-platform-configuration).

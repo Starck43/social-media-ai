@@ -101,7 +101,21 @@ are stated in their own section.
 
 ### `platforms`
 
-[Source](../app/models/collection/platform.py). Fields: `id` PK; `name` String(50), unique/non-null; `platform_type` native enum; `base_url` String(255), non-null; `params` JSON, non-null, default dict; `is_active` nullable Boolean, default true. No rate-limit columns, `created_at` or `updated_at` are declared. Reverse relationship: `sources`.
+[Source](../app/models/collection/platform.py). Global catalog, never user- or
+tenant-owned. Fields: `id` PK; `name` String(50), unique/non-null (display name);
+`platform_type` native enum, globally unique (`uq_platforms_type`); `base_url`
+String(255), non-null (public site URL, not API configuration); `params` mutable
+JSON object, non-null; `is_active` nullable Boolean, default true. No rate-limit
+columns, `created_at` or `updated_at` are declared. Reverse relationship: `sources`.
+
+`params` owns API endpoints/version, VK OAuth URLs and arbitrary non-secret provider parameters.
+Creation materializes defaults once; existing reads never overlay environment
+values. Top-level JSON edits are tracked; replace a nested object to persist
+nested edits. Migration 0120 consolidates compatible type variants, preserves
+source IDs and records inert rollback evidence in reserved `_migration_0120`.
+Conflicting config/public URLs or colliding source identities abort transactionally;
+no user's value silently wins. Historical rollback evidence is not a runtime
+configuration source. See [migration safeguards](CONFIGURATION.md#shared-platform-configuration).
 
 ### `roles`
 

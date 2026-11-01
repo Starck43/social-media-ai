@@ -1675,25 +1675,22 @@ No payer identity, prompt, credential or provider payload is rendered. Legacy
 attempts without payer attribution stay outside the ledger projection. The page
 performs no writes and creates no billing account or reservation.
 
-### Global platform catalog in web Settings
+### Shared platform catalog (SQLAdmin only)
 
-`GET /app/settings?tab=platforms` selects the actual Settings section (not an
-admin-console redirect). Only an active authenticated platform administrator
-receives this tab/data; workspace ownership and operator grants do not open it.
-The section is available without a workspace. Other workspace tabs retain their
-membership checks and do not inherit platform authority.
+Platform records are global, with one row per `platform_type`. There is no
+user/workspace platform configuration API. `GET /app/settings?tab=platforms`
+uses the ordinary unknown-tab fallback; no platform data is loaded or rendered.
+`POST /app/settings/platforms` is removed (404/405), including for administrators.
 
-`POST /app/settings/platforms` rechecks the platform-admin role and `_csrf` before
-any manager call. Fields: `platform_id` (0/omitted creates, positive edits), `name`
-(nonempty, max 50), `base_url` (HTTP(S), max 255, no URL username/password),
-`enabled=on` (omitted means inactive); create additionally requires
-`platform_type=vk|telegram`. Existing platform type and params are not changed.
-Uses the existing Platform manager. Handler denial is 403; missing edit target is
-404; successful save or validation/uniqueness feedback redirects to the tab with
-a flash message. No delete, sync, live API probe, personal credentials or global
-provider/model editing is exposed by this section.
-See [tenancy boundaries](TENANCY.md#web-settings-and-ownedgranted-workspace-context)
-and [deletion policy](MODEL_DELETION.md).
+Authorized SQLAdmin platform management remains available under the existing
+platform action grants. `params` JSON is the only runtime configuration source
+for VK/Telegram API endpoints, VK API version and VK OAuth URLs; diagnostic API/CLI, collection
+and Telegram delivery all use it. Missing/inactive/duplicate configuration fails
+closed before provider I/O. Personal credentials and deployment-owned secrets
+retain their separate secure stores; platform configuration never grants access
+to another user's credentials or sources. Deletion remains disabled in SQLAdmin.
+See [configuration and migration](CONFIGURATION.md#shared-platform-configuration)
+and [tenancy boundaries](TENANCY.md#web-settings-and-ownedgranted-workspace-context).
 
 ### Action-audit support reads (P11-T12)
 

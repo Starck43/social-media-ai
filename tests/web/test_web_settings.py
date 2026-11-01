@@ -63,7 +63,6 @@ def test_unknown_tab_falls_back_to_workspace() -> None:
         "models",
         "agent",
         "channels",
-        "platforms",
     }
     assert _tab_of(_R("account")) == "account"
 

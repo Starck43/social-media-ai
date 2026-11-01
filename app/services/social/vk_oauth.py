@@ -43,10 +43,10 @@ import httpx
 from app.core.config import settings
 from app.services.social.credential_diagnostics import credential_exception_status
 from app.services.social.credentials import resolve_token
+from app.services.social.platform_config import load_platform_config, require_config_param
 
 logger = logging.getLogger(__name__)
 
-OAUTH_TOKEN_URL = "https://id.vk.ru/oauth2/auth"
 
 _ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
 
@@ -149,10 +149,14 @@ async def build_authorize_url(
     if not app:
         raise RuntimeError("VK app_id is not configured (env VK_APP_ID or vault vk/app_id)")
 
+    config = await load_platform_config("vk")
+    callback = require_config_param(config, "redirect_uri")
+    if redirect_uri is not None and redirect_uri != callback:
+        raise ValueError("OAuth callback must match shared Platform configuration")
     params: dict[str, str] = {
         "response_type": "code",
         "client_id": app,
-        "redirect_uri": redirect_uri or settings.VK_REDIRECT_URI,
+        "redirect_uri": callback,
         "state": state,
         "code_challenge": code_challenge(verifier),
         "code_challenge_method": "S256",
@@ -160,7 +164,7 @@ async def build_authorize_url(
     if scope:
         params["scope"] = scope
     query = "&".join(f"{k}={v}" for k, v in params.items())
-    url = f"{settings.VK_OAUTH_BASE_URL}/authorize?{query}"
+    url = f"{require_config_param(config, 'oauth_base_url')}/authorize?{query}"
 
     await _store_pending(user_id=user_id, state=state, verifier=verifier, tenant_id=tenant_id)
     logger.info("Built VK ID authorize URL for workspace %s", tenant_id)
@@ -168,8 +172,10 @@ async def build_authorize_url(
 
 
 async def _post_form(payload: dict[str, str]) -> dict[str, Any]:
+    config = await load_platform_config("vk")
+    token_url = require_config_param(config, "oauth_token_url")
     async with httpx.AsyncClient(timeout=settings.VK_REQUEST_TIMEOUT) as client:
-        res = await client.post(OAUTH_TOKEN_URL, data=payload)
+        res = await client.post(token_url, data=payload)
         res.raise_for_status()
         return res.json()
 
@@ -192,7 +198,7 @@ async def complete_authorization(code: str, state: str, device_id: Optional[str]
     payload: dict[str, str] = {
         "grant_type": "authorization_code",
         "code_verifier": verifier,
-        "redirect_uri": settings.VK_REDIRECT_URI,
+        "redirect_uri": require_config_param(await load_platform_config("vk"), "redirect_uri"),
         "code": code,
         "client_id": app_id,
         "state": state,

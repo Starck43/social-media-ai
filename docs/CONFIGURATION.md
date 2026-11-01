@@ -478,3 +478,52 @@ The legacy `send_critical_alert` signature discards title/message/error details
 and emits a generic operator event. No new env variable or schema migration is
 needed. These rules apply to the notification service, not to the independently
 reviewed digest transport. See [notification contract and setup impact](NOTIFICATIONS.md).
+
+
+## Shared platform configuration
+
+`Platform.params` is the only runtime source for VK/Telegram API configuration.
+An example VK record contains:
+
+```json
+{"api_base_url": "https://api.vk.com/method", "api_version": "5.199", "auth_type": "oauth"}
+```
+
+VK also stores `oauth_base_url`, `oauth_token_url` and `redirect_uri` in this JSON;
+OAuth authorize/exchange/refresh consume it, with no hard-coded token endpoint
+or callback override. Telegram uses `api_base_url` and `auth_type`. Manage the shared record through
+SQLAdmin under the existing platform action grants, not `/app/settings`.
+`base_url` remains public-link metadata, distinct from the API endpoint.
+`platform_type` is globally unique. Defaults are materialized on creation, not
+reapplied when reading a persisted record. Inactive, missing or malformed config
+blocks provider requests instead of falling back to a process-wide value.
+Deployment transport timeouts, application identity and credentials keep their
+existing settings/vault ownership; `params` must not contain new credentials.
+
+### Migration 0120 and rollback
+
+Before applying to a working schema, back up the database and validate 0120 on
+`test_schema`; production/public application still needs separate authorization.
+Current schema has no Platform user/tenant ownership column. Legacy per-user-like
+variants are multiple names with the same type; migration groups them by type,
+retains the lowest ID and remaps source foreign keys without changing source IDs.
+Non-conflicting JSON objects are merged recursively, preserving custom values.
+A duplicate's explicit inactive status keeps the shared record inactive.
+
+Conflicting values (including nested values), differing public URLs, unknown
+foreign-key references or colliding `(tenant, platform, external_id)` source
+identities abort before writes. Reconcile explicitly and retry; no silent
+last-user-wins merge, secret printing or automatic source deletion occurs.
+The original records and source mapping are retained as inert reserved
+`params._migration_0120` rollback evidence, never consulted by runtime clients.
+Do not edit this reserved key. Downgrade restores exact records/references only
+when config and source identities still match the migration snapshot; otherwise
+it refuses destructive rollback and requires a reviewed export/reconciliation or
+backup restore. Empty-catalog rollback also requires a backup.
+
+`VK_API_BASE_URL`, `VK_API_VERSION`, `VK_OAUTH_BASE_URL`, `VK_REDIRECT_URI` and
+`TELEGRAM_API_BASE_URL` remain accepted only
+as legacy **one-time migration inputs** for missing JSON keys. Existing JSON wins.
+They do not override records or act as runtime fallbacks after migration; change
+the shared JSON to reconfigure an existing platform. No provider calls occur in
+migration. Newly created records use the application's bootstrap defaults.

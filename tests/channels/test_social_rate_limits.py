@@ -304,12 +304,23 @@ def stub_collect_job(monkeypatch):
         return None
 
     def install(sources, behaviour):
-        async def fake_resolve(task, payload=None):
+        from unittest.mock import AsyncMock
+
+        # This statistics contract doubles execution admission; entitlement
+        # authorization has its own real-scope tests and is not bypassed here.
+        monkeypatch.setattr("app.models.managers.entitlement_manager.EntitlementManager.admit_execution", AsyncMock())
+
+        async def fake_resolve(task, payload=None, *, discovered_source_ids=None):
             return sources
 
-        async def fake_collect(self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, **kwargs):
+        async def fake_collect(
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, **kwargs
+        ):
             return await behaviour(source)
 
+        # Lane evidence is a persistence side effect, outside this doubled
+        # outcome-summary contract; never leave synthetic lane rows behind.
+        monkeypatch.setattr(handlers, "_record_lane_evidence", AsyncMock())
         monkeypatch.setattr(handlers, "_load_task", fake_load_task)
         monkeypatch.setattr(handlers, "_resolve_sources", fake_resolve)
         monkeypatch.setattr("app.services.monitoring.collector.ContentCollector.__init__", lambda self: None)
@@ -319,7 +330,18 @@ def stub_collect_job(monkeypatch):
 
 
 def _job_source(source_id, name):
-    return SimpleNamespace(id=source_id, name=name, external_id=name, params={})
+    return SimpleNamespace(
+        id=source_id,
+        tenant_id=1,
+        name=name,
+        external_id=name,
+        params={},
+        source_type="GROUP",
+        platform_id=1,
+        platform=SimpleNamespace(platform_type="vk"),
+        last_checked=None,
+        last_item_id=None,
+    )
 
 
 async def test_collect_job_records_a_deferred_source_apart_from_errors(stub_collect_job):

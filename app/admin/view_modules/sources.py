@@ -96,7 +96,7 @@ class PlatformAdmin(BaseAdmin, model=Platform):
         "params": {
             "label": "Настройки API запросов",
             "description": (
-                "JSON. api_base_url — базовый URL метода (пусто = значение из настроек приложения); "
+                "JSON — единственный источник общих настроек. api_base_url — обязательный URL API; "
                 "api_version — версия API (VK); auth_type — тип авторизации. "
                 'Пример: {"api_base_url": "https://api.vk.com/method", "api_version": "5.199", "auth_type": "oauth"}'
             ),

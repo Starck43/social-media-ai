@@ -12,6 +12,8 @@ import typer
 from rich import print as rprint
 from rich.table import Table
 
+from app.services.social.platform_config import load_platform_config
+
 app = typer.Typer(name="credentials", help="Manage platform credentials (personal vault + env)")
 
 
@@ -251,16 +253,19 @@ async def _ping(platform: str, token: str) -> str:
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             if platform == "vk":
+                config = await load_platform_config("vk")
                 resp = await client.get(
-                    f"{settings.VK_API_BASE_URL.rstrip('/')}/account.getProfileInfo",
-                    params={"access_token": token, "v": settings.VK_API_VERSION},
+                    f"{config['api_base_url'].rstrip('/')}/account.getProfileInfo",
+                    params={"access_token": token, "v": config["api_version"]},
                 )
                 data = resp.json()
                 if "response" in data:
                     return "ok"
                 return f"error: {data.get('error', {}).get('error_msg', resp.status_code)}"
             if platform == "telegram":
-                resp = await client.get(f"{settings.TELEGRAM_API_BASE_URL.rstrip('/')}/bot{token}/getMe")
+                resp = await client.get(
+                    f"{(await load_platform_config('telegram'))['api_base_url'].rstrip('/')}/bot{token}/getMe"
+                )
                 data = resp.json()
                 if data.get("ok"):
                     return f"ok (bot @{data['result'].get('username', '?')})"

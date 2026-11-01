@@ -887,7 +887,9 @@ def _page_size(limit: int) -> int:
 
 
 def _api_version(client: VKClient) -> str:
-    return (getattr(client.platform, "params", None) or {}).get("api_version") or settings.VK_API_VERSION
+    from app.services.social.platform_config import require_platform_param
+
+    return require_platform_param(client.platform, "api_version")
 
 
 def _source_type(source: Any) -> SourceType:

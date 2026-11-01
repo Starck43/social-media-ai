@@ -73,15 +73,22 @@ def _scope() -> int:
     return tenant_id
 
 
-def _transport():
-    from app.channels.telegram import API_BASE, TelegramChannel
+async def _transport():
+    from app.channels.telegram import TelegramChannel
+    from app.services.social.platform_config import PlatformConfigurationError, load_platform_config
 
-    if API_BASE != "https://api.telegram.org":
+    try:
+        api_base = (await load_platform_config("telegram"))["api_base_url"]
+    except PlatformConfigurationError:
+        raise PermissionError("Telegram platform configuration unavailable") from None
+    if api_base != "https://api.telegram.org":
         raise PermissionError("This capability requires the official HTTPS Telegram endpoint")
-    channel = TelegramChannel()
+    # This is a guard on the shared config, not an alternate endpoint source.
+    # Rechecked by the channel immediately before I/O, preventing a config race.
+    channel = TelegramChannel(expected_api_base=api_base)
     if not channel.enabled or not isinstance(channel.token, str):
         raise PermissionError("Telegram transport unavailable")
-    identity = hashlib.sha256(f"{API_BASE}\x00{channel.token}".encode()).hexdigest()
+    identity = hashlib.sha256(f"{api_base}\x00{channel.token}".encode()).hexdigest()
     return channel, identity
 
 
@@ -124,7 +131,7 @@ async def targets(manager):
     from app.models import TenantChannel
 
     try:
-        _transport()
+        await _transport()
         async with manager._get_owned_session() as session:
             await _owner(manager, session)
             bindings = (
@@ -152,7 +159,7 @@ async def propose(manager, *, binding_id, text, idempotency_key):
     async with manager._get_owned_session() as session:
         await _owner(manager, session)
         binding = await _target(session, binding_id)
-        _, transport_identity = _transport()
+        _, transport_identity = await _transport()
         values = dict(
             tenant_id=_scope(),
             idempotency_key=idempotency_key,
@@ -220,7 +227,7 @@ async def _reserve(manager, action_id, expected_payload_hash):
         if not (fingerprint == expected_payload_hash == row.payload_hash == row.approved_payload_hash):
             return None
         binding = await _target(session, row.payload["binding_id"])
-        channel, transport_identity = _transport()
+        channel, transport_identity = await _transport()
         if (
             row.target_ref != f"tenant-channel:{binding.id}"
             or binding.chat_id != row.payload["destination_id"]
@@ -313,7 +320,7 @@ async def _send(manager, reservation):
             actor, member = await _owner(manager, session)
             row = await manager._locked(session, reservation.action_id)
             binding = await _target(session, reservation.binding_id)
-            _, identity = _transport()
+            _, identity = await _transport()
             if (
                 row is None
                 or row.status != BotActionStatus.CLAIMED

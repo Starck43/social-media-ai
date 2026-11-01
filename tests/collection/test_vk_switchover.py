@@ -21,7 +21,7 @@ from app.services.social.vk_client import VKClient
 
 
 class _Platform:
-    params = {}
+    params = {"api_base_url": "https://api.vk.com/method", "api_version": "5.199"}
     platform_type = None
 
 

@@ -401,6 +401,7 @@ async def _seed_reference_rows() -> None:
 async def _seed_platforms() -> None:
     """One row per platform, so tests can select them by platform_type."""
     from app.models import Platform
+    from app.services.social.platform_config import initial_platform_params
     from app.types import PlatformType
 
     for platform_type, name, base_url in _PLATFORM_SEED:
@@ -409,7 +410,7 @@ async def _seed_platforms() -> None:
                 name=name,
                 platform_type=PlatformType[platform_type.upper()].db_value,
                 base_url=base_url,
-                params={},
+                params=initial_platform_params(platform_type),
             )
 
 

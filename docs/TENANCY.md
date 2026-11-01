@@ -193,10 +193,11 @@ implicitly receive every action when registered.
 
 The shared core policy checks active workspace grants with a user/tenant-bound
 context. Workspace web and client API operations never inherit platform
-privileges, including for a platform admin. The explicit global Platforms
-settings section is a narrow exception: active platform admins may read/create/
-update the global platform catalog; this grants no workspace bypass or provider/
-model administration. Admin and explicit operator API paths require active operator
+privileges, including for a platform admin. Platforms are a global catalog with
+one row per type, not a per-user configuration. Web Settings exposes no Platforms
+section or write endpoint; authorized catalog/configuration management remains in
+SQLAdmin. Global platform configuration grants no workspace bypass or provider/model
+administration. Admin and explicit operator API paths require active operator
 entry and platform action grants; a global data scope alone grants no action.
 Personal credential endpoints additionally constrain `user_id` to their caller.
 The web queue is scoped to the current membership and requires job permissions;

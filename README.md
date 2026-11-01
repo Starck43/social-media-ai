@@ -55,3 +55,9 @@ Existing flat environment keys/defaults remain supported. `Settings.database`,
 `.security`, `.collection` and `.llm` expose frozen subsystem snapshots from the
 resolved settings object, with no second environment reader. See
 [configuration precedence and safe diagnostics](docs/CONFIGURATION.md#configuration-precedence).
+
+
+VK/Telegram API endpoints, VK API version and VK OAuth URLs are now read exclusively from the
+shared `Platform.params` JSON. Legacy endpoint/version environment keys are
+one-time migration inputs, not runtime overrides; see
+[shared platform configuration](docs/CONFIGURATION.md#shared-platform-configuration).

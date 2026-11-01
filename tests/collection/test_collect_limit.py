@@ -18,7 +18,7 @@ from app.types import SourceType
 
 
 class _Platform:
-    params = {}
+    params = {"api_base_url": "https://api.vk.com/method", "api_version": "5.199"}
     platform_type = "vk"
 
 
@@ -34,10 +34,7 @@ def _install_fetcher(monkeypatch, *, total=None):
     async def fake_fetch(self, method, params):
         count = params.get("count", 50)
         offset = params.get("offset", 0)
-        items = [
-            {"id": offset + i, "date": 1700000000 + i, "text": f"post-{offset + i}"}
-            for i in range(count)
-        ]
+        items = [{"id": offset + i, "date": 1700000000 + i, "text": f"post-{offset + i}"} for i in range(count)]
         data = {"response": {"items": items, "count": total or count}}
         if total is not None:
             data["response"]["total_count"] = total

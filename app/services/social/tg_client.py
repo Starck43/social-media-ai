@@ -474,7 +474,9 @@ class TelegramClient(BaseClient):
 
             import httpx
 
-            api_base = settings.TELEGRAM_API_BASE_URL.rstrip("/")
+            from app.services.social.platform_config import require_platform_param
+
+            api_base = require_platform_param(self.platform, "api_base_url")
             timeout = settings.TELEGRAM_REQUEST_TIMEOUT
             async with httpx.AsyncClient() as client:
                 resp = await client.post(

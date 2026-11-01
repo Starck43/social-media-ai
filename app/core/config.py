@@ -146,13 +146,15 @@ class Settings(BaseSettings):
     VK_CLIENT_ACCESS_KEY: str | None = Field(
         default=None, repr=False
     )  # VK console "Защищённый ключ" — OAuth client secret
+    # Legacy migration inputs only (0120). Runtime uses Platform.params.
     VK_API_BASE_URL: str = "https://api.vk.com/method"
-    VK_OAUTH_BASE_URL: str = "https://id.vk.ru"  # VK ID (OAuth 2.1): /authorize + /oauth2/auth
-    VK_REDIRECT_URI: str = "http://localhost/api/v1/social/callback"  # VK OAuth callback (must be public)
+    VK_OAUTH_BASE_URL: str = "https://id.vk.ru"  # Legacy 0120 migration input only
+    VK_REDIRECT_URI: str = "http://localhost/api/v1/social/callback"  # Legacy 0120 migration input only
     VK_API_VERSION: str = "5.199"
     VK_REQUEST_TIMEOUT: float = 30.0
 
     TELEGRAM_BOT_TOKEN: str | None = Field(default=None, repr=False)
+    # Legacy migration input only (0120); ignored by runtime.
     TELEGRAM_API_BASE_URL: str = "https://api.telegram.org"
     TELEGRAM_REQUEST_TIMEOUT: float = 30.0
     # Env fallback for the MTProto session (L2 Telegram). Prefer the personal vault

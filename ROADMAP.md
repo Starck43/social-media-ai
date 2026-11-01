@@ -47,7 +47,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [Q-16](docs/tasks/q-16.md) Shared Platform catalog and canonical JSON configuration — **IN_PROGRESS** · notion-ai-q16 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C4`
+- [Q-16](docs/tasks/q-16.md) Shared Platform catalog and canonical JSON configuration — **READY** · notion-ai-q16 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C4`
 
 
 

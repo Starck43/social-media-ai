@@ -59,14 +59,14 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-15](docs/tasks/q-15.md) Documentation currentness and behavior consistency audit — **OPEN** · notion-ai · [chat](https://app.notion.com/chat?t=40a4392285878055b90300a9263b8f1d) · `P2` · `C5`
-- [P12-T02](docs/tasks/p12-t02.md) Connectors & Research catalog and paired gateway diagnostics (`/app/connectors`) — **TODO** · unassigned · — · `P2` · `C3`
+- [P12-T02](docs/tasks/p12-t02.md) Workspace connectors in `/app/settings?tab=connections`, `PlatformType` expansion & cloud drive mounting — **TODO** · unassigned · — · `P2` · `C3`
 
 ### Priority P3
 
 - [P12-T03](docs/tasks/p12-t03.md) Knowledge & Documents workspace with ACL-aware citations (`/app/knowledge`, `/app/documents`) — **TODO** · unassigned · — · `P3` · `C4`
 - [P12-T04](docs/tasks/p12-t04.md) Communication, verified contacts, scheduled outbox & follow-ups (`/app/communications`, `/app/followups`) — **TODO** · unassigned · — · `P3` · `C4`
-- [P12-T05](docs/tasks/p12-t05.md) Cases, deterministic supplier comparison & document approvals (`/app/cases`) — **TODO** · unassigned · — · `P3` · `C4`
-- [P12-T06](docs/tasks/p12-t06.md) Shared evidence drawer (`context-panel`) and `/app/chat` domain context handoff — **TODO** · unassigned · — · `P3` · `C3`
+- [P12-T05](docs/tasks/p12-t05.md) Cases, deterministic supplier comparison & document approvals (`/app/cases`) — **TODO** · unassigned · — · `P3` · `C3`
+- [P12-T06](docs/tasks/p12-t06.md) Shared evidence drawer (`context-panel`), P12 router/nav activation & `/app/chat` context handoff — **TODO** · unassigned · — · `P3` · `C3`
 
 
 ## Deferred by explicit owner decision

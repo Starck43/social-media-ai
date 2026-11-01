@@ -49,10 +49,12 @@ criteria live once in [BUSINESS_PRODUCTION_READINESS](BUSINESS_PRODUCTION_READIN
 | First value, diagnostics and support | [P8](phases/p8-first-value-ui.md) | [Visibility](BUSINESS_PRODUCTION_READINESS.md#prd-08--operational-visibility-and-support) |
 | Controlled activation | [P9](phases/p9-safe-activation.md) | [Activation](BUSINESS_PRODUCTION_READINESS.md#prd-09--safe-action-activation-and-honest-release-claims) |
 | Verified security/correctness findings | [P10](phases/p10-audit-hardening.md) | Task-selected gate |
+| Structure, interfaces and scale readiness | [P11](phases/p11-structure.md) | Task-selected gate |
+| Domain workspace and navigation expansion | [P12](phases/p12-domain-workspace-expansion.md) | Expansion sequence pilot gates |
 
 ## Expansion sequence
 
-Each direction needs a pilot, bounded supported scope and its own task acceptance.
+Each direction needs a pilot, bounded supported scope and its own task acceptance. Stage plan and multi-agent wave matrix: [P12](phases/p12-domain-workspace-expansion.md).
 Existing source/channel capability never implies a new read/write capability.
 
 | Direction | Outcome | Boundary before implementation |

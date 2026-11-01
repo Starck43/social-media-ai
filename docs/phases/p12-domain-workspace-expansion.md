@@ -16,3 +16,15 @@
 **Continuity and boundaries:**
 - P12 does not block closure of the social milestone in [P8](p8-first-value-ui.md). Once the owner selects a concrete non-social connector pilot, [P8-T34](../tasks/p8-t34.md) transfers into P12 alongside P12-T02.
 - Every section lands behind `NavItem(..., ready=False)` until its underlying service, permission catalog entry, and acceptance checks are verified.
+
+## Draft Jinja2 Templates & Continuity with `/app/settings`
+
+Draft Jinja2 templates for all 6 expansion views are checked into `app/web/templates/web/`:
+- `app/web/templates/web/connectors.html` (`P12-T02`)
+- `app/web/templates/web/knowledge.html` (`P12-T03`)
+- `app/web/templates/web/documents.html` (`P12-T03`)
+- `app/web/templates/web/communications.html` (`P12-T04`)
+- `app/web/templates/web/followups.html` (`P12-T04`)
+- `app/web/templates/web/cases.html` (`P12-T05`)
+
+Each draft template extends `web/base.html`, obeys `StrictUndefined` and `test_all_base_children_supply_a_heading_and_no_content_h1`, and preserves full continuity with existing `/app/settings` tabs (`account`, `connections`, `models`, `workspace`, `team`, `agent`, `channels`, `platforms`). Personal and workspace configuration remains in `/app/settings?tab=...`, while daily operational queues and domain registries live in their respective `/app/*` sections.

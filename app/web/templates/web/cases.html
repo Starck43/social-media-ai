@@ -1,0 +1,69 @@
+{% extends "web/base.html" %}
+{% block title %}Кейсы и сравнение КП — AI Assistant{% endblock %}
+{% block page_heading %}Кейсы и сравнение КП{% endblock %}
+{% block page_actions %}
+<a href="/app/documents" class="ui-control">Версии документов</a>
+<a href="/app/actions" class="ui-control">Журнал действий</a>
+{% endblock %}
+{% block right_panel %}
+<div class="space-y-3 text-sm">
+    <h2 class="font-semibold">Детерминированный расчёт (P12-T05)</h2>
+    <p class="text-xs ui-muted">Вся арифметика, пересчёт валют, НДС и нормализация единиц упаковки выполняются серверным сервисом на <code>Decimal</code> (<code>ROUND_HALF_EVEN</code>). Пустые цены помечаются как <code>MISSING_PRICE</code> и никогда не додумываются моделью.</p>
+</div>
+{% endblock %}
+{% block content %}
+<div class="space-y-6" data-p12-draft="cases">
+    <section class="ui-card">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <p class="text-xs ui-muted font-mono">CASE-2026-042 · Тип: QUOTATION · Формула: calc.procurement.v2.4 (Decimal)</p>
+                <h2 class="mt-1 text-base font-semibold">Закупка полимерного сырья и упаковки на ноябрьский производственный цикл</h2>
+                <p class="mt-1 text-xs ui-muted">Курсы ЦБ РФ на срез 2026-11-01: 1 USD = 92.50 RUB, 1 EUR = 100.20 RUB. Одобренное решение фиксируется неизменяемым снимком.</p>
+            </div>
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-700/50">Черновой шаблон P12-T05</span>
+        </div>
+    </section>
+
+    <section class="ui-card overflow-x-auto" aria-label="Таблица сравнения предложений поставщиков">
+        <h3 class="text-sm font-semibold mb-3">Сравнение коммерческих предложений (расчёт без НДС, валюта RUB)</h3>
+        <table class="w-full text-left text-xs border-collapse">
+            <thead>
+                <tr class="border-b border-slate-200 dark:border-slate-800 ui-muted">
+                    <th class="py-2 pr-4">Позиция / Объём</th>
+                    <th class="py-2 px-4">Поставщик</th>
+                    <th class="py-2 px-4">Упаковка и срок</th>
+                    <th class="py-2 px-4 text-right">Цена за ед. (Decimal)</th>
+                    <th class="py-2 px-4 text-right">Итого по строке</th>
+                    <th class="py-2 pl-4 text-right">Источник (якорь)</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
+                <tr>
+                    <td class="py-2.5 pr-4 font-sans font-medium">Гранула ПНД ПЭ2НТ11-9 (20 т)</td>
+                    <td class="py-2.5 px-4 font-sans">ООО «ТехПолимер-Восток»</td>
+                    <td class="py-2.5 px-4 font-sans">1 т (мешки 25 кг) · 7 дн.</td>
+                    <td class="py-2.5 px-4 text-right">148 500,00 ₽</td>
+                    <td class="py-2.5 px-4 text-right font-semibold">2 970 000,00 ₽</td>
+                    <td class="py-2.5 pl-4 text-right">KP_TechPolymer.xlsx · C14</td>
+                </tr>
+                <tr>
+                    <td class="py-2.5 pr-4 font-sans font-medium">Катализатор КС-4 (240 кг)</td>
+                    <td class="py-2.5 px-4 font-sans">ООО «ТехПолимер-Восток»</td>
+                    <td class="py-2.5 px-4 font-sans">Канистра 12 кг · 7 дн.</td>
+                    <td class="py-2.5 px-4 text-right text-rose-600 dark:text-rose-400 font-semibold">MISSING_PRICE</td>
+                    <td class="py-2.5 px-4 text-right text-rose-600 dark:text-rose-400">Требуется дозапрос</td>
+                    <td class="py-2.5 pl-4 text-right">KP_TechPolymer.xlsx · E17</td>
+                </tr>
+                <tr>
+                    <td class="py-2.5 pr-4 font-sans font-medium">Катализатор КС-4 (240 кг)</td>
+                    <td class="py-2.5 px-4 font-sans">АО «СибНефтеХим-Трейд»</td>
+                    <td class="py-2.5 px-4 font-sans">Короб 12 кг · 12 дн.</td>
+                    <td class="py-2.5 px-4 text-right">4 208,40 ₽ (42 EUR)</td>
+                    <td class="py-2.5 px-4 text-right font-semibold">1 010 016,00 ₽</td>
+                    <td class="py-2.5 pl-4 text-right">Письмо UID 9804 · стр. 3</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

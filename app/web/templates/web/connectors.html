@@ -1,0 +1,63 @@
+{% extends "web/base.html" %}
+{% block title %}Коннекторы и шлюзы — AI Assistant{% endblock %}
+{% block page_heading %}Коннекторы и шлюзы{% endblock %}
+{% block page_actions %}
+<a href="/app/settings?tab=connections" class="ui-control">Мои подключения в Настройках</a>
+<a href="/app/sources" class="ui-control">Источники сбора</a>
+{% endblock %}
+{% block right_panel %}
+<div class="space-y-3 text-sm">
+    <h2 class="font-semibold">Паспорт коннектора (P12-T02)</h2>
+    <p class="text-xs ui-muted">Личные токены OAuth и ключи участников хранятся и обновляются в разделе <a href="/app/settings?tab=connections" class="underline">Настройки → Мои подключения</a>. Здесь отображаются объектные возможности коннекторов, водяные знаки синхронизации и парные локальные шлюзы.</p>
+    <dl class="space-y-2 text-xs">
+        <div><dt class="ui-muted">Разделение прав</dt><dd class="font-mono">read/sync != send/delete</dd></div>
+        <div><dt class="ui-muted">Локальный шлюз</dt><dd class="font-mono">paired mTLS · canonical paths only</dd></div>
+        <div><dt class="ui-muted">Диагностика</dt><dd>Без раскрытия сырых секретов и исключений провайдера</dd></div>
+    </dl>
+</div>
+{% endblock %}
+{% block content %}
+<div class="space-y-6" data-p12-draft="connectors">
+    <section class="ui-card">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <h2 class="text-sm font-semibold">Преемственность с разделом «Настройки → Мои подключения»</h2>
+                <p class="mt-1 text-xs ui-muted">Личные учётные данные участников (VK OAuth, Telegram MTProto, ручные ключи) остаются на вкладке <a href="/app/settings?tab=connections" class="underline">Настройки → Мои подключения</a>, а глобальный справочник платформ — на вкладке <a href="/app/settings?tab=platforms" class="underline">Настройки → Платформы</a>. Этот раздел управляет исследовательскими источниками (почта, веб/видео) и парными локальными шлюзами пространства.</p>
+            </div>
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-700/50">Черновой шаблон P12-T02</span>
+        </div>
+    </section>
+
+    {% set items = connectors_list|default([
+        {"id": "vk-oauth", "title": "VK Standalone OAuth · Сообщества и категории поиска", "kind": "Социальная платформа", "read_ops": "groups.getById, wall.get, newsfeed.search", "write_ops": "Только чтение", "watermark": "wall_post_id=884120 · окно 24ч", "boundary": "cloud", "status": "Активно · токен в Настройках → Мои подключения"},
+        {"id": "imap-mail", "title": "Корпоративная почта закупок (IMAP/SMTP TLS)", "kind": "Почтовый коннектор", "read_ops": "mailbox.folder.search, attachment.extract", "write_ops": "outbox.approved.send (по TTL-акцепту)", "watermark": "UIDVALIDITY=44019 · UIDNEXT=9842", "boundary": "company", "status": "Папки: INBOX/Поставщики, Договоры-2026"},
+        {"id": "web-video", "title": "Исследовательский коннектор Веб и Видео-стенограмм", "kind": "Исследования (Research)", "read_ops": "web.article.snapshot, video.transcript.fetch", "write_ops": "Нет операций записи", "watermark": "snapshot_rev=2026-11-01T09:50Z", "boundary": "cloud", "status": "Ограничение: анализ субтитров не является полным аудиовизуальным анализом"},
+        {"id": "local-gw", "title": "Парный локальный шлюз · Файловый сервер Снабжение-01", "kind": "Paired Local Gateway", "read_ops": "folder.canonical.read (/srv/contracts/2026, /srv/specs)", "write_ops": "Shell и запись запрещены", "watermark": "inotify_seq=771204 · 142 файла", "boundary": "local_only", "status": "Проверка symlink/traversal пройдена · лимит 25 МБ/файл"}
+    ]) %}
+
+    <div class="space-y-4">
+        {% for c in items %}
+        <section class="ui-card" aria-labelledby="conn-draft-{{ c.id }}">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs ui-muted font-mono">{{ c.kind }} · граница данных: {{ c.boundary }}</p>
+                    <h2 id="conn-draft-{{ c.id }}" class="mt-1 text-base font-semibold">{{ c.title }}</h2>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <a href="/app/settings?tab=connections" class="ui-control text-xs">Ключи в Настройках</a>
+                    {% if c.boundary == 'local_only' %}
+                    <button type="button" class="ui-control text-xs">Отозвать доступ шлюза</button>
+                    {% endif %}
+                </div>
+            </div>
+            <dl class="mt-4 grid gap-3 sm:grid-cols-3 text-xs">
+                <div><dt class="ui-muted">Операции чтения и синхронизации</dt><dd class="mt-0.5 font-mono">{{ c.read_ops }}</dd></div>
+                <div><dt class="ui-muted">Операции отправки и записи</dt><dd class="mt-0.5 font-mono">{{ c.write_ops }}</dd></div>
+                <div><dt class="ui-muted">Водяной знак (watermark)</dt><dd class="mt-0.5 font-mono">{{ c.watermark }}</dd></div>
+            </dl>
+            <p class="mt-3 text-xs ui-muted">Диагностика: {{ c.status }}</p>
+        </section>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "web/base.html" %}
+{% block title %}Фоллоу-апы и сроки — AI Assistant{% endblock %}
+{% block page_heading %}Фоллоу-апы и сроки{% endblock %}
+{% block page_actions %}
+<a href="/app/communications" class="ui-control">Коммуникации и Outbox</a>
+<a href="/app/settings?tab=account#account-notifications" class="ui-control">Тихие часы в Настройках</a>
+{% endblock %}
+{% block right_panel %}
+<div class="space-y-3 text-sm">
+    <h2 class="font-semibold">Контроль напоминаний (P12-T04)</h2>
+    <p class="text-xs ui-muted">Личные настройки показа уведомлений и тихих часов устройства находятся в <a href="/app/settings?tab=account" class="underline">Настройки → Мой аккаунт</a>. Неточные даты из переписки требуют подтверждения человеком.</p>
+</div>
+{% endblock %}
+{% block content %}
+<div class="space-y-6" data-p12-draft="followups">
+    <section class="ui-card">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <h2 class="text-sm font-semibold">Доказательные напоминания: неотвеченные запросы, обязательства и сроки договоров</h2>
+                <p class="mt-1 text-xs ui-muted">Учитывает тихие часы из <a href="/app/settings?tab=account" class="underline">Настройки → Мой аккаунт</a>, подавляет дубли и требует подтверждения неточных дат («в начале следующей недели»).</p>
+            </div>
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-700/50">Черновой шаблон P12-T04</span>
+        </div>
+    </section>
+
+    {% set reminders = followup_items|default([
+        {"id": "fu-1", "kind": "Неотвеченный запрос (48ч)", "title": "Ожидается заполненная цена по позиции «Катализатор КС-4» (ячейка E17)", "due": "2026-11-01 16:00 MSK · дата точная", "evidence": "Письмо UID 9817 · KP_TechPolymer_Nov2026.xlsx"},
+        {"id": "fu-2", "kind": "Обязательство из переписки (дата неточная)", "title": "Передать согласованный график приёмки на складе в Подольске", "due": "Распознано: «в начале следующей недели» → требует подтверждения (03.11 10:00)", "evidence": "Telegram-тред #412 · сообщение от 2026-10-30 17:44"},
+        {"id": "fu-3", "kind": "Истечение срока договора", "title": "Окончание действия валютной оговорки к Договору ДП-2026/114", "due": "2026-11-15 18:00 MSK · дубли подавлены", "evidence": "/srv/contracts/2026/dp_114_rev3.pdf · Стр. 7, п. 4.2"}
+    ]) %}
+
+    <div class="space-y-4">
+        {% for f in reminders %}
+        <section class="ui-card" aria-labelledby="fu-title-{{ f.id }}">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs ui-muted font-mono">{{ f.kind }} · {{ f.due }}</p>
+                    <h2 id="fu-title-{{ f.id }}" class="mt-1 text-base font-semibold">{{ f.title }}</h2>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" class="ui-control text-xs">Подтвердить дату</button>
+                    <button type="button" class="ui-control text-xs">Отложить (Snooze)</button>
+                </div>
+            </div>
+            <p class="mt-2 text-xs ui-muted font-mono">Первоисточник: {{ f.evidence }}</p>
+        </section>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

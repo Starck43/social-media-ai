@@ -52,7 +52,8 @@
     {% if menu_id == 'desktop' %}<button type="button" class="shell-icon-button shell-collapse" data-sidebar-collapse aria-label="Свернуть навигацию" aria-expanded="true" aria-controls="nav-desktop" title="Свернуть / развернуть навигацию">{{ icon('sidebar-collapse') }}</button>{% endif %}
 </div>
 <nav id="nav-{{ menu_id }}" class="shell-daily-nav" aria-label="Основные разделы">
-{% if tenant %}{% for item in nav if item.key != 'settings' %}
+{% if tenant %}{% set ns = namespace(group='') %}{% for item in nav if item.key != 'settings' %}
+{% set group_label = item.group_label|default('') %}{% if group_label and group_label != ns.group %}{% set ns.group = group_label %}<span class="shell-nav-group" role="presentation">{{ group_label }}</span>{% endif %}
 {% if item.ready %}<a href="{{ item.href }}" aria-label="{{ item.label }}" data-tooltip="{{ item.label }}" {% if section == item.key %}aria-current="page"{% endif %}>{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }}</span></a>
 {% else %}<span class="shell-unavailable" aria-disabled="true">{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }} · скоро</span></span>{% endif %}
 {% endfor %}{% endif %}

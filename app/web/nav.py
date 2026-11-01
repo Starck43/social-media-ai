@@ -22,22 +22,159 @@ class NavItem(NamedTuple):
     ready: bool = True
     required_permission: str | None = None  # catalog key, e.g. "collection.source.view"
     icon: str = "circle"
+    group: str = "overview"
+    group_label: str = ""
+
+
+NAV_GROUP_LABELS: dict[str, str] = {
+    "overview": "Обзор и диалог",
+    "monitoring": "Мониторинг и анализ",
+    "knowledge": "Коннекторы и база знаний",
+    "communications": "Коммуникации и поручения",
+    "cases_system": "Кейсы и система",
+}
 
 
 # The shell and mobile drawer consume the same permission-filtered daily sections.
 NAV_ITEMS: tuple[NavItem, ...] = (
-    NavItem("dashboard", "/app/", "Обзор", icon="home"),
-    NavItem("sources", "/app/sources", "Источники", required_permission="collection.source.view", icon="database"),
-    NavItem("scenarios", "/app/scenarios", "Сценарии", required_permission="analysis.scenario.view", icon="layers"),
-    NavItem("tasks", "/app/tasks", "Задачи", required_permission="scheduling.task.view", icon="calendar"),
-    NavItem("actions", "/app/actions", "Действия", required_permission="scheduling.action.view", icon="document"),
-    NavItem("analytics", "/app/analytics", "Аналитика", required_permission="analysis.result.view", icon="chart"),
+    # 1. Overview & Agent dialogue
+    NavItem("dashboard", "/app/", "Обзор", icon="home", group="overview", group_label="Обзор и диалог"),
+    NavItem("chat", "/app/chat", "Чат с агентом", icon="message", group="overview", group_label="Обзор и диалог"),
+    # 2. Social monitoring & analysis (first vertical)
     NavItem(
-        "digests", "/app/digests", "Дайджесты", required_permission="notifications.digest_run.view", icon="document"
+        "sources",
+        "/app/sources",
+        "Источники",
+        required_permission="collection.source.view",
+        icon="database",
+        group="monitoring",
+        group_label="Мониторинг и анализ",
     ),
-    NavItem("jobs", "/app/jobs", "Очередь задач", required_permission="scheduling.job.view", icon="list"),
-    NavItem("chat", "/app/chat", "Чат с агентом", icon="message"),
-    NavItem("settings", "/app/settings", "Настройки", icon="settings"),
+    NavItem(
+        "scenarios",
+        "/app/scenarios",
+        "Сценарии",
+        required_permission="analysis.scenario.view",
+        icon="layers",
+        group="monitoring",
+        group_label="Мониторинг и анализ",
+    ),
+    NavItem(
+        "tasks",
+        "/app/tasks",
+        "Задачи",
+        required_permission="scheduling.task.view",
+        icon="calendar",
+        group="monitoring",
+        group_label="Мониторинг и анализ",
+    ),
+    NavItem(
+        "analytics",
+        "/app/analytics",
+        "Аналитика",
+        required_permission="analysis.result.view",
+        icon="chart",
+        group="monitoring",
+        group_label="Мониторинг и анализ",
+    ),
+    NavItem(
+        "digests",
+        "/app/digests",
+        "Дайджесты",
+        required_permission="notifications.digest_run.view",
+        icon="document",
+        group="monitoring",
+        group_label="Мониторинг и анализ",
+    ),
+    # 3. Connectors, Knowledge & Documents (P12-T02, P12-T03)
+    NavItem(
+        "connectors",
+        "#",
+        "Коннекторы и шлюзы",
+        ready=False,
+        required_permission="collection.source.view",
+        icon="layers",
+        group="knowledge",
+        group_label="Коннекторы и база знаний",
+    ),
+    NavItem(
+        "knowledge",
+        "#",
+        "База знаний",
+        ready=False,
+        required_permission="analysis.result.view",
+        icon="database",
+        group="knowledge",
+        group_label="Коннекторы и база знаний",
+    ),
+    NavItem(
+        "documents",
+        "#",
+        "Документы и ревизии",
+        ready=False,
+        required_permission="analysis.result.view",
+        icon="document",
+        group="knowledge",
+        group_label="Коннекторы и база знаний",
+    ),
+    # 4. Communications & Follow-ups (P12-T04)
+    NavItem(
+        "communications",
+        "#",
+        "Коммуникации и Outbox",
+        ready=False,
+        required_permission="scheduling.action.view",
+        icon="message",
+        group="communications",
+        group_label="Коммуникации и поручения",
+    ),
+    NavItem(
+        "followups",
+        "#",
+        "Фоллоу-апы и сроки",
+        ready=False,
+        required_permission="scheduling.task.view",
+        icon="calendar",
+        group="communications",
+        group_label="Коммуникации и поручения",
+    ),
+    # 5. Cases & System execution (P12-T05 + existing actions/jobs/settings)
+    NavItem(
+        "cases",
+        "#",
+        "Кейсы и сравнение КП",
+        ready=False,
+        required_permission="scheduling.action.view",
+        icon="chart",
+        group="cases_system",
+        group_label="Кейсы и система",
+    ),
+    NavItem(
+        "actions",
+        "/app/actions",
+        "Действия",
+        required_permission="scheduling.action.view",
+        icon="document",
+        group="cases_system",
+        group_label="Кейсы и система",
+    ),
+    NavItem(
+        "jobs",
+        "/app/jobs",
+        "Очередь задач",
+        required_permission="scheduling.job.view",
+        icon="list",
+        group="cases_system",
+        group_label="Кейсы и система",
+    ),
+    NavItem(
+        "settings",
+        "/app/settings",
+        "Настройки",
+        icon="settings",
+        group="cases_system",
+        group_label="Кейсы и система",
+    ),
 )
 
 # Sections that fit the fixed mobile bar. Capped deliberately: seven full labels
@@ -71,8 +208,10 @@ def allows(item: NavItem, perms: Any) -> bool:
 def section_of(path: str) -> NavItem | None:
     """The gated section a `/app` path belongs to, or None (dashboard, settings, auth)."""
     for item in NAV_ITEMS:
-        if (item.required_permission is not None or item.key == "chat") and (
-            path == item.href or path.startswith(item.href + "/")
+        if (
+            item.ready
+            and (item.required_permission is not None or item.key == "chat")
+            and (path == item.href or path.startswith(item.href + "/"))
         ):
             return item
     return None

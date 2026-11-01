@@ -147,10 +147,9 @@ class Settings(BaseSettings):
         default=None, repr=False
     )  # VK console "Защищённый ключ" — OAuth client secret
     # Legacy migration inputs only (0120). Runtime uses Platform.params.
-    VK_API_BASE_URL: str = "https://api.vk.com/method"
     VK_OAUTH_BASE_URL: str = "https://id.vk.ru"  # Legacy 0120 migration input only
     VK_REDIRECT_URI: str = "http://localhost/api/v1/social/callback"  # Legacy 0120 migration input only
-    VK_API_VERSION: str = "5.199"
+    # Endpoints, version and OAuth URLs live in Platform.params: no runtime fallback.
     VK_REQUEST_TIMEOUT: float = 30.0
 
     TELEGRAM_BOT_TOKEN: str | None = Field(default=None, repr=False)

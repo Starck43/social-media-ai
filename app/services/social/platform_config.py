@@ -34,6 +34,15 @@ def platform_key(value: Any) -> str:
     return str(getattr(value, "db_value", value)).lower()
 
 
+def bootstrap_params() -> dict[str, dict]:
+    """Return a deep copy of the bootstrap map.
+
+    Creation defaults and migration defaults must come from one place: a second
+    hand-maintained copy is how the OAuth keys went missing from 0120.
+    """
+    return deepcopy(_BOOTSTRAP)
+
+
 def initial_platform_params(kind: Any, params: dict | None = None) -> dict:
     """Materialize creation defaults once, preserving all supplied custom keys."""
     if params is not None and not isinstance(params, dict):

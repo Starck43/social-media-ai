@@ -521,9 +521,11 @@ when config and source identities still match the migration snapshot; otherwise
 it refuses destructive rollback and requires a reviewed export/reconciliation or
 backup restore. Empty-catalog rollback also requires a backup.
 
-`VK_API_BASE_URL`, `VK_API_VERSION`, `VK_OAUTH_BASE_URL`, `VK_REDIRECT_URI` and
-`TELEGRAM_API_BASE_URL` remain accepted only
-as legacy **one-time migration inputs** for missing JSON keys. Existing JSON wins.
-They do not override records or act as runtime fallbacks after migration; change
-the shared JSON to reconfigure an existing platform. No provider calls occur in
-migration. Newly created records use the application's bootstrap defaults.
+`VK_OAUTH_BASE_URL` and `VK_REDIRECT_URI` are the only legacy **one-time
+migration inputs**: an existing VK row without those keys takes the registered
+callback and authorize base from them, and `oauth_token_url` follows the
+authorize base. Existing JSON wins. They do not override records or act as
+runtime fallbacks after migration; change the shared JSON to reconfigure an
+existing platform. A platform type with no catalog row is created from the
+application's bootstrap defaults, and downgrade removes the rows the migration
+created. No provider calls occur in migration.

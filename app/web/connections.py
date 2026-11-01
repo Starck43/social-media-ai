@@ -51,10 +51,15 @@ async def connection_authorize(request: Request, platform: str, next: str = ""):
         return RedirectResponse(BACK, status_code=302)
 
     if platform == "vk":
+        from app.services.social.platform_config import PlatformConfigurationError
         from app.services.social.vk_oauth import build_authorize_url
 
         try:
             url = await build_authorize_url(tenant_id, user_id=user_id)
+        except PlatformConfigurationError as e:
+            # A missing/invalid shared catalog entry is an operator fix, not a 500.
+            add_flash(request, "error", f"Общая конфигурация платформы недоступна: {e}")
+            return RedirectResponse(BACK, status_code=302)
         except RuntimeError as e:
             add_flash(request, "error", f"{e}. Задайте VK_APP_ID / VK_CLIENT_ACCESS_KEY в конфигурации")
             return RedirectResponse(BACK, status_code=302)

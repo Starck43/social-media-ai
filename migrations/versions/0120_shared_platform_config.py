@@ -25,6 +25,13 @@ depends_on = None
 ARCHIVE = "_migration_0120"
 CONSTRAINT = "uq_platforms_type"
 
+# Public-link metadata for a type that has no catalog row yet. Kept here rather
+# than imported from the application so a historical revision stays frozen.
+BOOTSTRAP_ROWS = {
+    "vk": ("ВКонтакте", "https://vk.com"),
+    "telegram": ("Телеграм", "https://t.me"),
+}
+
 
 def _merge(left: dict, right: dict) -> dict:
     result = deepcopy(left)
@@ -56,7 +63,9 @@ def _plan(rows: list[dict], sources: list[dict], defaults: dict) -> tuple[list[d
             mapping[row["id"]] = canonical["id"]
         canonical["params"] = {**defaults.get(kind, {}), **params}
         # Preserve explicit global disablement rather than enable an inactive variant.
-        canonical["is_active"] = all(row["is_active"] is True for row in group)
+        # NULL is unset, not a disablement: the column is nullable and the model
+        # treats an absent value as active, so only an explicit False disables.
+        canonical["is_active"] = all(row["is_active"] is not False for row in group)
         merged.append(canonical)
     seen = set()
     for row in sources:
@@ -65,6 +74,66 @@ def _plan(rows: list[dict], sources: list[dict], defaults: dict) -> tuple[list[d
             raise ValueError("platform_source_identity_conflict: reconcile duplicate sources before retrying 0120")
         seen.add(identity)
     return merged, mapping
+
+
+def _defaults() -> dict:
+    """Bootstrap defaults for a migrated catalog, from the application's map.
+
+    `VK_REDIRECT_URI` and `VK_OAUTH_BASE_URL` remain the only accepted legacy
+    inputs: an existing deployment registered its callback there, and the
+    migrated row has to keep it. `oauth_token_url` follows the authorize base.
+    Every other endpoint comes from the bootstrap map alone.
+    """
+    from app.services.social.platform_config import bootstrap_params
+
+    defaults = bootstrap_params()
+    vk = defaults.setdefault("vk", {})
+    authorize_base = (settings.VK_OAUTH_BASE_URL or "").strip().rstrip("/")
+    if authorize_base:
+        vk["oauth_base_url"] = authorize_base
+        vk["oauth_token_url"] = f"{authorize_base}/oauth2/auth"
+    redirect_uri = (settings.VK_REDIRECT_URI or "").strip()
+    if redirect_uri:
+        vk["redirect_uri"] = redirect_uri
+    return defaults
+
+
+def _bootstrap_missing(bind, platforms, merged: list[dict], defaults: dict) -> list[int]:
+    """Create a row for each platform type the catalog has none of.
+
+    Without this, a deployment whose catalog held only one type loses the other
+    one entirely, and every consumer of that type fails closed after migration.
+    """
+    present = {row["platform_type"] for row in merged}
+    created: list[int] = []
+    next_id = (bind.execute(sa.select(sa.func.max(platforms.c.id))).scalar() or 0) + 1
+    for kind, (name, base_url) in BOOTSTRAP_ROWS.items():
+        if kind in present:
+            continue
+        merged.append(
+            {
+                "id": next_id,
+                "name": name,
+                "platform_type": kind,
+                "base_url": base_url,
+                "params": deepcopy(defaults.get(kind, {})),
+                "is_active": True,
+            }
+        )
+        created.append(next_id)
+        next_id += 1
+    return created
+
+
+def _ensure_unique_constraint(bind, schema) -> None:
+    """Create the type constraint unless the schema already carries it.
+
+    A `Base.metadata.create_all` schema builds it from the model, so an
+    unconditional create would abort the upgrade on that path.
+    """
+    names = {c["name"] for c in sa.inspect(bind).get_unique_constraints("platforms", schema=schema)}
+    if CONSTRAINT not in names:
+        op.create_unique_constraint(CONSTRAINT, "platforms", ["platform_type"], schema=schema)
 
 
 def _tables():
@@ -99,11 +168,9 @@ def upgrade() -> None:
             )
         ).mappings()
     ]
-    defaults = {
-        "vk": {"api_base_url": settings.VK_API_BASE_URL, "api_version": settings.VK_API_VERSION, "auth_type": "oauth"},
-        "telegram": {"api_base_url": settings.TELEGRAM_API_BASE_URL, "auth_type": "bot"},
-    }
+    defaults = _defaults()
     merged, mapping = _plan(rows, refs, defaults)
+    created = _bootstrap_missing(bind, platforms, merged, defaults)
     for row in merged:
         params = row["params"]
         if not isinstance(params.get("api_base_url"), str) or not params["api_base_url"].strip():
@@ -112,7 +179,12 @@ def upgrade() -> None:
             raise ValueError("platform_api_version_missing")
     if any(ARCHIVE in row["params"] for row in rows):
         raise ValueError("platform_reserved_archive_key: review 0120 before migrating")
-    snapshot = {"original": deepcopy(rows), "merged": deepcopy(merged), "sources": refs}
+    snapshot = {
+        "original": deepcopy(rows),
+        "merged": deepcopy(merged),
+        "sources": refs,
+        "created": list(created),
+    }
     for row in merged:
         row["params"][ARCHIVE] = deepcopy(snapshot)
     for old_id, canonical_id in mapping.items():
@@ -120,12 +192,24 @@ def upgrade() -> None:
             bind.execute(sources.update().where(sources.c.platform_id == old_id).values(platform_id=canonical_id))
             bind.execute(platforms.delete().where(platforms.c.id == old_id))
     for row in merged:
-        bind.execute(
-            platforms.update()
-            .where(platforms.c.id == row["id"])
-            .values(params=row["params"], is_active=row["is_active"])
-        )
-    op.create_unique_constraint(CONSTRAINT, "platforms", ["platform_type"], schema=schema)
+        if row["id"] in created:
+            bind.execute(
+                platforms.insert().values(
+                    id=row["id"],
+                    name=row["name"],
+                    platform_type=row["platform_type"],
+                    base_url=row["base_url"],
+                    params=row["params"],
+                    is_active=row["is_active"],
+                )
+            )
+        else:
+            bind.execute(
+                platforms.update()
+                .where(platforms.c.id == row["id"])
+                .values(params=row["params"], is_active=row["is_active"])
+            )
+    _ensure_unique_constraint(bind, schema)
 
 
 def downgrade() -> None:
@@ -157,6 +241,9 @@ def downgrade() -> None:
     if normalized != snapshot["merged"] or refs != expected_refs:
         raise ValueError("platform_rollback_changed_data: reconcile post-0120 writes before downgrade")
     op.drop_constraint(CONSTRAINT, "platforms", schema=schema, type_="unique")
+    # Rows this revision created have no pre-migration counterpart to restore.
+    for created_id in snapshot.get("created") or []:
+        bind.execute(platforms.delete().where(platforms.c.id == created_id))
     existing = {r["id"] for r in current}
     for row in originals:
         if row["id"] in existing:

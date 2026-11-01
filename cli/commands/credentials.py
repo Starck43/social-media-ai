@@ -12,7 +12,7 @@ import typer
 from rich import print as rprint
 from rich.table import Table
 
-from app.services.social.platform_config import load_platform_config
+from app.services.social.platform_config import PlatformConfigurationError, load_platform_config
 
 app = typer.Typer(name="credentials", help="Manage platform credentials (personal vault + env)")
 
@@ -205,6 +205,10 @@ def oauth_credential(
         user_id = await _resolve_user_id(user, tenant_id) if user else await _workspace_owner_id(tenant_id)
         try:
             url = await build_authorize_url(tenant_id, user_id=user_id)
+        except PlatformConfigurationError as e:
+            rprint(f"[red]Общая конфигурация платформы недоступна: {e}[/red]")
+            rprint("[dim]Проверьте запись VK в каталоге платформ (SQLAdmin)[/dim]")
+            raise typer.Exit(1) from None
         except RuntimeError as e:
             rprint(f"[red]{e}[/red]")
             rprint("[dim]Set VK_APP_ID / VK_SERVICE_KEY in .env first[/dim]")

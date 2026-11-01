@@ -11,6 +11,7 @@ from html import escape
 from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import HTMLResponse, JSONResponse
 
+from app.services.social.platform_config import PlatformConfigurationError
 from app.services.social.vk_oauth import build_authorize_url, complete_authorization
 
 router = APIRouter(tags=["social"])
@@ -46,6 +47,8 @@ async def vk_oauth_start(request: Request):
         raise HTTPException(status_code=403, detail="No active workspace")
     try:
         url = await build_authorize_url(tenant_id, user_id=user_id)
+    except PlatformConfigurationError as e:
+        raise HTTPException(status_code=503, detail=f"Platform configuration unavailable: {e}") from None
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     return JSONResponse({"authorize_url": url, "tenant_id": tenant_id})

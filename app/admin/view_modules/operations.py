@@ -117,8 +117,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     @expose("/vk-connections", methods=["GET"])
     async def vk_connections(self, request: Request):
         """Metadata for the signed-in operator's own workspace connection only."""
-        from starlette.responses import JSONResponse
-
         from app.core.permissions import permission_scope
         from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
         from app.services.social.vk_connections import connection_catalog

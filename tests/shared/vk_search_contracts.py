@@ -66,7 +66,13 @@ METHODS = {"video": "video.search", "apps": "apps.getCatalog", "market": "market
 
 
 def quota_adapter(responses):
-    """Execute the real bounded BaseClient read/retry loop, but never token code."""
+    """Execute the real bounded BaseClient read/retry loop, but never token code.
+
+    The instance-level `_make_request` assignment deliberately overrides the
+    class-wide tripwire installed by `no_external_search_io`: the whole point of
+    this double is to drive the real `_fetch_page` quota loop, so the transport
+    has to be reachable. It stays an `AsyncMock`, so no socket is ever opened.
+    """
     from app.services.social.vk_client import VKClient
 
     client = VKClient(SimpleNamespace(platform_type="vk", params={}))

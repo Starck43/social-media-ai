@@ -153,29 +153,33 @@ VK_SEARCH_CATEGORIES: tuple[SearchCategory, ...] = (
         platform="vk",
         label="Видео",
         result_kind="video",
-        status=STATUS_DEFERRED,
-        reason=REASON_NOT_SELECTED,
+        status=STATUS_MOCKED,
+        reason=REASON_PROFILE_UNVERIFIED,
         official_method="video.search",
-        evidence_ref=T46_CARD_REF,
+        adapter_operation="search_videos",
+        evidence_ref=Q5_EVIDENCE_REF,
     ),
     SearchCategory(
         category_id=CATEGORY_APPS,
         platform="vk",
         label="Приложения и игры",
         result_kind="app",
-        status=STATUS_DEFERRED,
-        reason=REASON_METHOD_UNVERIFIED,
-        evidence_ref=T47_CARD_REF,
+        status=STATUS_MOCKED,
+        reason=REASON_PROFILE_UNVERIFIED,
+        official_method="apps.getCatalog",
+        adapter_operation="search_apps",
+        evidence_ref=Q5_EVIDENCE_REF,
     ),
     SearchCategory(
         category_id=CATEGORY_MARKET,
         platform="vk",
         label="Товары сообщества",
         result_kind="market_item",
-        status=STATUS_DEFERRED,
-        reason=REASON_NOT_SELECTED,
+        status=STATUS_MOCKED,
+        reason=REASON_PROFILE_UNVERIFIED,
         official_method="market.search",
-        evidence_ref=T48_CARD_REF,
+        adapter_operation="search_market_items",
+        evidence_ref=Q5_EVIDENCE_REF,
     ),
     SearchCategory(
         category_id=CATEGORY_MUSIC,
@@ -280,6 +284,7 @@ async def search_category(
     limit: int,
     cursor: str | None = None,
     city: CityRef | None = None,
+    owner_id: int | None = None,
 ) -> Page[Candidate]:
     """Execute one category through the provider's existing typed operation.
 
@@ -310,7 +315,21 @@ async def search_category(
         )
     if resolved.category_id == CATEGORY_PEOPLE:
         page = await operation(query, city, limit, cursor)
-    else:  # pragma: no cover - no second executable category exists yet
+    elif resolved.category_id == CATEGORY_MARKET:
+        if owner_id is None:
+            raise SearchCategoryError(
+                "search_category_owner_required",
+                f"{resolved.platform} search category {resolved.category_id!r} requires an owner/community scope",
+            )
+        page = await operation(query, owner_id, limit, cursor)
+    elif resolved.category_id in (CATEGORY_VIDEO, CATEGORY_APPS):
+        page = await operation(query, limit, cursor)
+    elif resolved.category_id == CATEGORY_MUSIC:  # pragma: no cover - binding withheld while the rights gate is open
+        raise SearchCategoryError(
+            "search_category_unavailable",
+            f"{resolved.platform} search category {resolved.category_id!r} awaits separate permission evidence",
+        )
+    else:  # pragma: no cover - no other executable category exists yet
         raise SearchCategoryError(
             "search_category_unavailable",
             f"{resolved.platform} search category {resolved.category_id!r} has no dispatch binding",

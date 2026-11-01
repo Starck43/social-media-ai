@@ -14,6 +14,7 @@ from app.core.tenant_context import tenant_scope
 from app.models import Platform, Source
 from app.types import SourceType
 from cli.run import resolve_sources, run_handler
+from tests.shared.platform_catalog import shared_platform
 
 
 async def _resolve(src, tenant_id):
@@ -28,14 +29,8 @@ async def _run(job_type, payload, tenant_id):
 
 @pytest.fixture
 async def platform():
-    p = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type="vk",
-        base_url="https://vk.com",
-        params={},
-    )
+    p = await shared_platform("vk")
     yield p
-    await Platform.objects.delete_by_id(p.id)
 
 
 @pytest.fixture

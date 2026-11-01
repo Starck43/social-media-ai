@@ -11,18 +11,13 @@ import pytest
 
 from app.models import AgentTask, Platform, Source
 from app.types import SourceType
+from tests.shared.platform_catalog import shared_platform
 
 
 @pytest.fixture
 async def platform():
-    p = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type="vk",
-        base_url="https://vk.com",
-        params={},
-    )
+    p = await shared_platform("vk")
     yield p
-    await Platform.objects.delete_by_id(p.id)
 
 
 @pytest.fixture

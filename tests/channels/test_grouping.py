@@ -11,20 +11,15 @@ import pytest
 from app.models import AIAnalytics, Platform, Source
 from app.services.ai.grouping import group_analytics
 from app.types import PeriodType, PlatformType, SourceType
+from tests.shared.platform_catalog import shared_platform
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
 async def platform():
-    p = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type=PlatformType.VK.db_value,
-        base_url="https://vk.com",
-        params={},
-    )
+    p = await shared_platform(PlatformType.VK.db_value)
     yield p
-    await Platform.objects.delete_by_id(p.id)
 
 
 @pytest.fixture

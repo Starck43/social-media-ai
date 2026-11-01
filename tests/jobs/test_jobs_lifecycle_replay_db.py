@@ -71,8 +71,6 @@ class JobLifecycleReplayDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 await Tenant.objects.delete_by_id(tenant.id)
             if self.user is not None:
                 await User.objects.delete_user(self.user.id)
-            if self.platform is not None:
-                await Platform.objects.delete_by_id(self.platform.id)
         finally:
             from app.core.database import async_engine
 

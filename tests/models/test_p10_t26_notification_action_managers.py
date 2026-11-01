@@ -17,6 +17,7 @@ from app.core.permissions import operator_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import AgentScenario, BotAction, Notification, Platform, Source, Tenant
 from app.types import AgentActionType, BotActionStatus, NotificationType, PlatformType, SourceType
+from tests.shared.platform_catalog import shared_platform
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 
@@ -78,9 +79,7 @@ async def test_notification_bulk_operations_stay_inside_the_workspace(workspaces
 @pytest.fixture
 async def action_refs(workspaces):
     with tenant_scope(bypass=True):
-        platform = await Platform.objects.create(
-            name=f"p10t26_{uuid.uuid4().hex[:8]}", platform_type=PlatformType.VK.db_value, base_url="https://vk.com"
-        )
+        platform = await shared_platform(PlatformType.VK.db_value)
     refs = {}
     try:
         for tenant in workspaces:
@@ -101,7 +100,6 @@ async def action_refs(workspaces):
                 await BotAction.objects.filter(tenant_id=tenant.id).delete()
                 await Source.objects.filter(tenant_id=tenant.id).delete()
                 await AgentScenario.objects.filter(tenant_id=tenant.id).delete()
-            await Platform.objects.delete_by_id(platform.id)
 
 
 async def _action(scenario_id: int, source_id: int) -> BotAction:

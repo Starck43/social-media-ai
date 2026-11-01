@@ -50,6 +50,7 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import Platform, PlatformRole, Source, Tenant, User
 from app.types import PlatformType, SourceType
+from tests.shared.platform_catalog import shared_platform
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 PASSWORD = "Synthetic-Admin-Delete-K3!"
@@ -158,13 +159,7 @@ async def owned_workspace():
             tenant = await Tenant.objects.create(
                 name=f"Admin delete {marker}", slug=f"admin-del-{marker}", plan="business"
             )
-            platform = await Platform.objects.create(
-                name=f"{marker}",
-                platform_type=PlatformType.TELEGRAM,
-                base_url="https://synthetic.invalid",
-                params={},
-                is_active=True,
-            )
+            platform = await shared_platform(PlatformType.TELEGRAM.db_value)
         with tenant_scope(tenant.id), service_permission_scope("source", "create"):
             source = await Source.objects.create(
                 platform_id=platform.id,
@@ -176,11 +171,8 @@ async def owned_workspace():
     finally:
         with platform_scope():
             await Tenant.objects.delete_by_id(tenant.id)
-            async with async_session_maker() as session:
-                async with session.begin():
-                    row = await session.get(Platform, platform.id)
-                    if row is not None:
-                        await session.delete(row)
+            # The platform row is shared catalog reference data, not owned by
+            # this test, so it is never deleted here.
 
 
 async def _source_rows(platform_id: int, tenant_id: int) -> int:

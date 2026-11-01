@@ -93,6 +93,7 @@ from app.types import ActionType, PlatformRoleType, SourceType, WorkspaceRoleTyp
 from app.web import dashboard  # noqa: E402
 from tests.p11_t12_audit_cleanup import purge_tenant_audit_events  # noqa: E402
 from tests.web.test_web_settings import PASSWORD, _client, _login, _name, _register  # noqa: E402
+from tests.shared.platform_catalog import shared_platform
 
 pytestmark = pytest.mark.tenancy
 
@@ -148,9 +149,7 @@ async def home():
                 user, tenant_id = await _register(client, prefix)
                 users.append(user)
                 tenant_ids.append(tenant_id)
-        platform = await Platform.objects.create(
-            name=_name("HomePlatform"), platform_type="telegram", base_url="https://example.invalid", params={}
-        )
+        platform = await shared_platform("telegram")
         with tenant_scope(bypass=True), operator_permission_scope():
             for index, tenant_id in enumerate(tenant_ids):
                 next_run = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -269,8 +268,6 @@ async def home():
             for tenant_id in tenant_ids:
                 await purge_tenant_audit_events(tenant_id)
                 await tenants.delete_by_id(tenant_id)
-            if platform is not None:
-                await Platform.objects.delete_by_id(platform.id)
 
 
 async def actor(home, level):

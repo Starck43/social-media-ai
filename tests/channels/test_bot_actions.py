@@ -26,11 +26,16 @@ async def action_world(personal_world):
         yield personal_world
 
 
-def _make_platform() -> Platform:
+def _make_platform(kind: PlatformType = PlatformType.VK) -> Platform:
+    """Unsaved catalog object for client-level dry runs.
+
+    The catalog allows one row per type, so a per-test name is meaningless; the
+    bootstrap params are materialized the same way a created row would be.
+    """
     return Platform(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type=PlatformType.VK.db_value,
-        base_url="https://vk.com",
+        name=kind.db_value,
+        platform_type=kind.db_value,
+        base_url="https://vk.com" if kind is PlatformType.VK else "https://t.me",
         params={},
     )
 
@@ -274,7 +279,7 @@ class TestWriteClients:
             async def _should_stop_pagination(self, *args, **kwargs):
                 return True
 
-        client = TestableTelegramClient(platform=_make_platform())
+        client = TestableTelegramClient(platform=_make_platform(PlatformType.TELEGRAM))
         result = await client.send_message(
             chat_id=123456,
             text="Test message",

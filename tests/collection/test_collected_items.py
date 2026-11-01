@@ -30,6 +30,7 @@ from app.models import (
 from app.services.collection.pages import Page
 from app.services.monitoring.selection import SelectionScope
 from app.types import SourceType
+from tests.shared.platform_catalog import shared_platform
 
 
 def _items(n=3):
@@ -42,12 +43,7 @@ def _items(n=3):
 
 @pytest.fixture
 async def source():
-    p = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type="vk",
-        base_url="https://vk.com",
-        params={},
-    )
+    p = await shared_platform("vk")
     s = await Source.objects.create(
         platform_id=p.id,
         name="stage-src",
@@ -60,7 +56,6 @@ async def source():
     await CollectionCandidate.objects.filter(source_id=s.id).delete()
     await CollectionLaneRun.objects.filter(lane_id=f"source:{s.id}").delete()
     await Source.objects.delete_by_id(s.id)
-    await Platform.objects.delete_by_id(p.id)
 
 
 @pytest.fixture(autouse=True)
@@ -1029,9 +1024,7 @@ async def test_prune_deletes_analyses_older_than_data_retention(monkeypatch):
         with tenant_scope(bypass=True):
             for label in ("own", "other"):
                 tenants.append(await Tenant.objects.create(name=f"ret-{label}-{suffix}", slug=f"ret-{label}-{suffix}"))
-            platform = await Platform.objects.create(
-                name=f"vk_{suffix}", platform_type="vk", base_url="https://vk.com", params={}
-            )
+            platform = await shared_platform("vk")
         own, other = tenants
         for tenant in tenants:
             with tenant_scope(tenant.id), service_permission_scope("source", "create"):
@@ -1090,8 +1083,6 @@ async def test_prune_deletes_analyses_older_than_data_retention(monkeypatch):
                 await AgentScenario.objects.delete_by_id(scenario.id)
             for src in sources:
                 await Source.objects.delete_by_id(src.id)
-            if platform is not None:
-                await Platform.objects.delete_by_id(platform.id)
             for tenant in reversed(tenants):
                 await Tenant.objects.delete_by_id(tenant.id)
 

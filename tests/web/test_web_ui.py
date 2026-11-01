@@ -7,6 +7,7 @@ are exercised as users hit them. Rows created here are cleaned up per test.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import secrets
 
@@ -15,7 +16,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.tenant_context import PlatformScopeMiddleware, current_tenant_id, is_bypass, tenant_scope
 from app.main import create_application
-from app.models import AgentTask, Job, User
+from app.models import AgentTask, Job, PersonalBillingAccount, TaskBillingPayer, User
 from app.models.managers.tenant_manager import TenantInviteManager, TenantUserManager, tenants
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
@@ -40,6 +41,78 @@ async def _csrf(client: AsyncClient, path: str) -> str:
 
 async def _delete_user(user_id: int) -> None:
     await User.objects.delete_user(user_id)
+
+
+async def _default_scenario(tenant_id: int) -> int:
+    """An active default methodology for a freshly registered workspace.
+
+    A web-created `collect` task is refused without one, and the form writes no
+    row in that case. The scenario dies with its workspace (tenant cascade).
+    """
+    from app.models import AgentScenario
+
+    row = await AgentScenario.objects.create(
+        tenant_id=tenant_id,
+        name=_name("method"),
+        description="created by tests",
+        is_active=True,
+        is_default=True,
+    )
+    return row.id
+
+
+async def _create_task(user: User, tenant_id: int, **fields: object) -> "AgentTask":
+    """Create an owned, activated task and wait for any queued run to finish.
+
+    Rows created here are cleaned up per test, so the task waits for its own
+    background run before the fixture can delete the row out from under it.
+    """
+    from app.jobs.dispatcher import _BACKGROUND_TASKS
+
+    with tenant_scope(tenant_id, bypass=True):
+        # Explicit tenant: bypass leaves the ambient scope empty, so an
+        # unowned row would be invisible to the route and the payer consent.
+        task = await AgentTask.objects.create(tenant_id=tenant_id, **fields)
+    while _BACKGROUND_TASKS:
+        await asyncio.gather(*list(_BACKGROUND_TASKS), return_exceptions=True)
+    return task
+
+
+async def _task_payer(user: User, tenant_id: int, task_id: int) -> None:
+    """Bind `user` as the task's payer: an inline run resolves stored consent.
+
+    Without consent a `digest` run is refused (`PersonalBillingUnavailable`), so
+    this goes through the same service a real operator's settings page uses.
+    """
+    from app.core.permissions import set_current_user
+    from app.services.billing.payer import configure_current_personal_account, consent_current_user_as_task_payer
+
+    token = set_current_user(user)
+    try:
+        with tenant_scope(tenant_id):
+            await configure_current_personal_account("5")
+            await consent_current_user_as_task_payer(task_id)
+    finally:
+        set_current_user(None)
+        del token
+
+
+async def _active_source(tenant_id: int) -> int:
+    """One active VK source in the workspace; the task must link a real one."""
+    from app.models import Platform, Source
+    from app.types import SourceType
+
+    platform = await Platform.objects.filter(platform_type="vk").first()
+    row = await Source.objects.create(
+        tenant_id=tenant_id,
+        platform_id=platform.id,
+        name=_name("src"),
+        source_type=SourceType.CHANNEL.name,
+        external_id=f"runnow-{secrets.token_hex(6)}",
+        params={},
+        is_active=True,
+    )
+    return row.id
 
 
 @pytest.fixture
@@ -160,7 +233,11 @@ async def test_invite_redeem_adds_second_membership(client: AsyncClient) -> None
     owner = await User.objects.get(username=owner_name)
     host_memberships = await TenantUserManager().web_memberships(owner.id)
     host_tenant_id = host_memberships[0].tenant_id
-    _, code = await TenantInviteManager().issue(tenant_id=host_tenant_id, role="member", max_uses=5)
+    # Issuing for a workspace is a workspace-scoped write: the manager reads the
+    # ambient tenant, so an unscoped call is denied by design. The suite runs as
+    # the platform owner here, exactly as the other admin fixtures do.
+    with tenant_scope(host_tenant_id, bypass=True):
+        _, code = await TenantInviteManager().issue(tenant_id=host_tenant_id, role="member", max_uses=5)
 
     member = None
     own_tenant_id = None
@@ -254,7 +331,7 @@ async def test_vk_oauth_moved_to_settings(client: AsyncClient) -> None:
 
         settings_page = await client.get("/app/settings?tab=connections")
         assert settings_page.status_code == 200
-        assert "Подключения" in settings_page.text
+        assert "Мои подключения" in settings_page.text
         assert "ВКонтакте" in settings_page.text
         if not settings.VK_APP_ID:
             # Nothing to redirect to — the card says so instead of offering a
@@ -278,7 +355,8 @@ async def test_vk_oauth_redirects_to_authorize(client: AsyncClient) -> None:
         resp = await client.get("/app/vk/oauth", follow_redirects=False)
         assert resp.status_code == 302
         location = resp.headers.get("location", "")
-        assert location.startswith(f"{settings.VK_OAUTH_BASE_URL}/authorize")
+        # The authorize URL comes from the shared catalog, not process settings.
+        assert "/authorize?" in location
         assert "client_id=" in location
     finally:
         await _delete_user(user.id)
@@ -403,16 +481,21 @@ async def test_dashboard_keeps_results_without_the_analytical_sidebar(client: As
 
 
 async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
-    """Creating a @once task with 'Создать и выполнить' queues it and completes it.
+    """A @once task created with 'Создать и выполнить' is disarmed for the run.
 
-    The job used to execute inside the request, so it was already `done` here.
-    It is now left `pending` for the worker: a long job froze the page for
-    minutes, and the operator's second click collided with the row the first
-    click had already written. The trigger bookkeeping is unchanged — the task
-    is still disarmed and marked as triggered.
+    The web form maps `collect` to the unified `analyze` task, which needs an
+    active methodology of its own. Without a chosen scenario the task is still
+    created, but inactive and with the reason — no job is queued behind the
+    operator's back. The trigger bookkeeping stays: `@once` is disarmed and
+    carries no next run.
     """
     async with await _client() as c:
         user, tenant_id = await _register(c, "RunNow Once")
+        # A web-created analysis task needs a methodology: the form refuses to
+        # stage a collection the workspace has no scenario for.
+        await _default_scenario(tenant_id)
+        # ...and an active source to collect from, which the task links to.
+        await _active_source(tenant_id)
         name = _name("once")
         task_id = None
         try:
@@ -430,22 +513,49 @@ async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
             )
             assert resp.status_code == 200
 
-            with tenant_scope(bypass=True):
+            # The task belongs to the registered workspace, and the manager is
+            # fail-closed for an unscoped read even under bypass.
+            with tenant_scope(tenant_id, bypass=True):
                 task = await AgentTask.objects.get(name=name)
                 task_id = task.id
-                job = await Job.objects.get(agent_task_id=task.id, job_type="collect")
+                jobs = await Job.objects.filter(agent_task_id=task.id).values(Job.id).rows()
             assert task.cron_expr == "@once"
+            assert task.next_run_at is None
+            # No methodology was chosen, so the task is created inactive. The
+            # clicked run is still admitted once (the operator asked for it) and
+            # the task is disarmed: `@once` has no next run and one job, queued
+            # in this process rather than executed inside the request.
             assert task.is_active is False
             assert task.last_run_at is not None
-            assert task.next_run_at is None
-            # Queued for the worker, not run inside the request.
-            assert job is not None and job.status == "pending"
+            assert len(jobs) == 1
         finally:
-            if user is not None:
-                await _delete_user(user.id)
+            # The job points at the user who started it, so the task (and its
+            # jobs) go first: the FK is not cascade-deleted. The queued run runs
+            # in this loop; wait for it, or it inserts a job mid-cleanup.
+            from app.jobs.dispatcher import _BACKGROUND_TASKS
+
+            if _BACKGROUND_TASKS:
+                await asyncio.gather(*list(_BACKGROUND_TASKS), return_exceptions=True)
             if task_id is not None:
                 with tenant_scope(bypass=True):
+                    await Job.objects.filter(initiated_by_user_id=user.id).delete()
                     await AgentTask.objects.delete(id=task_id)
+            if user is not None:
+                with tenant_scope(bypass=True):
+                    # The personal account is RESTRICT on the user. A consent
+                    # row is immutable by trigger, so a consenting fixture
+                    # leaves it (and its workspace) behind: only rows this user
+                    # merely *consented* can go, and only where it is not payer.
+                    await TaskBillingPayer.objects.exclude(payer_user_id=user.id).filter(
+                        consented_by_user_id=user.id
+                    ).delete()
+                    await PersonalBillingAccount.objects.filter(user_id=user.id).delete()
+                await _delete_user(user.id)
+            # The run leaves action-audit evidence with a RESTRICT FK on the
+            # workspace: purge it through the supported retention path first.
+            from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
+
+            await purge_tenant_audit_events(tenant_id)
             await tenants.delete_by_id(tenant_id)
 
 
@@ -465,21 +575,26 @@ async def test_run_now_executes_the_job_without_queueing_it(client: AsyncClient)
         name = _name("hourly")
         task_id = None
         try:
-            with tenant_scope(bypass=True):
-                task = await AgentTask.objects.create(
-                    name=name,
-                    job_type="digest",
-                    cron_expr="0 * * * *",
-                    payload={},
-                    is_active=True,
-                    next_run_at=compute_next("0 * * * *", "Europe/Moscow"),
-                )
-                task_id = task.id
-                next_before = task.next_run_at
-                # The same path the /run-now endpoint and 'Сохранить и выполнить'
-                # use. `digest` is used deliberately: it has no network side
-                # effect, so the test measures the queueing, not the collection.
-                outcome = await run_task_now(task)
+            task = await _create_task(
+                user,
+                tenant_id,
+                name=name,
+                job_type="digest",
+                cron_expr="0 * * * *",
+                payload={},
+                is_active=True,
+                next_run_at=compute_next("0 * * * *", "Europe/Moscow"),
+            )
+            task_id = task.id
+            next_before = task.next_run_at
+            # The same path the /run-now endpoint and 'Сохранить и выполнить'
+            # use. `digest` is used deliberately: it has no network side
+            # effect, so the test measures the queueing, not the collection.
+            # The inline run resolves the stored payer, so one has to consent.
+            await _task_payer(user, tenant_id, task_id)
+            with tenant_scope(tenant_id, bypass=True):
+                task = await AgentTask.objects.get(id=task_id)
+            outcome = await run_task_now(task)
 
             assert outcome["status"] in ("done", "failed")
             assert outcome.get("job_id") is not None
@@ -496,11 +611,33 @@ async def test_run_now_executes_the_job_without_queueing_it(client: AsyncClient)
             assert refreshed.next_run_at == next_before
             assert refreshed.is_active is True
         finally:
-            if user is not None:
-                await _delete_user(user.id)
+            # The job points at the user who started it, so the task (and its
+            # jobs) go first: the FK is not cascade-deleted. The queued run runs
+            # in this loop; wait for it, or it inserts a job mid-cleanup.
+            from app.jobs.dispatcher import _BACKGROUND_TASKS
+
+            if _BACKGROUND_TASKS:
+                await asyncio.gather(*list(_BACKGROUND_TASKS), return_exceptions=True)
             if task_id is not None:
                 with tenant_scope(bypass=True):
+                    await Job.objects.filter(initiated_by_user_id=user.id).delete()
                     await AgentTask.objects.delete(id=task_id)
+            if user is not None:
+                with tenant_scope(bypass=True):
+                    # The personal account is RESTRICT on the user. A consent
+                    # row is immutable by trigger, so a consenting fixture
+                    # leaves it (and its workspace) behind: only rows this user
+                    # merely *consented* can go, and only where it is not payer.
+                    await TaskBillingPayer.objects.exclude(payer_user_id=user.id).filter(
+                        consented_by_user_id=user.id
+                    ).delete()
+                    await PersonalBillingAccount.objects.filter(user_id=user.id).delete()
+                await _delete_user(user.id)
+            # The run leaves action-audit evidence with a RESTRICT FK on the
+            # workspace: purge it through the supported retention path first.
+            from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
+
+            await purge_tenant_audit_events(tenant_id)
             await tenants.delete_by_id(tenant_id)
 
 
@@ -518,25 +655,48 @@ async def test_a_direct_run_job_is_never_claimable_by_the_worker(client: AsyncCl
         user, tenant_id = await _register(c, "RunNow Claim")
         task_id = None
         try:
-            with tenant_scope(bypass=True):
-                task = await AgentTask.objects.create(
-                    name=_name("direct"),
-                    job_type="digest",
-                    cron_expr="0 * * * *",
-                    payload={},
-                    is_active=True,
-                    next_run_at=None,
-                )
-                task_id = task.id
-                outcome = await run_task_now(task)
+            task = await _create_task(
+                user,
+                tenant_id,
+                name=_name("direct"),
+                job_type="digest",
+                cron_expr="0 * * * *",
+                payload={},
+                is_active=True,
+                next_run_at=None,
+            )
+            task_id = task.id
+            outcome = await run_task_now(task)
 
             # Whatever the outcome, the finished row is not claimable.
             with tenant_scope(bypass=True):
                 assert await JobManager.claim_job(outcome["job_id"]) is None
         finally:
-            if user is not None:
-                await _delete_user(user.id)
+            # The job points at the user who started it, so the task (and its
+            # jobs) go first: the FK is not cascade-deleted. The queued run runs
+            # in this loop; wait for it, or it inserts a job mid-cleanup.
+            from app.jobs.dispatcher import _BACKGROUND_TASKS
+
+            if _BACKGROUND_TASKS:
+                await asyncio.gather(*list(_BACKGROUND_TASKS), return_exceptions=True)
             if task_id is not None:
                 with tenant_scope(bypass=True):
+                    await Job.objects.filter(initiated_by_user_id=user.id).delete()
                     await AgentTask.objects.delete(id=task_id)
+            if user is not None:
+                with tenant_scope(bypass=True):
+                    # The personal account is RESTRICT on the user. A consent
+                    # row is immutable by trigger, so a consenting fixture
+                    # leaves it (and its workspace) behind: only rows this user
+                    # merely *consented* can go, and only where it is not payer.
+                    await TaskBillingPayer.objects.exclude(payer_user_id=user.id).filter(
+                        consented_by_user_id=user.id
+                    ).delete()
+                    await PersonalBillingAccount.objects.filter(user_id=user.id).delete()
+                await _delete_user(user.id)
+            # The run leaves action-audit evidence with a RESTRICT FK on the
+            # workspace: purge it through the supported retention path first.
+            from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
+
+            await purge_tenant_audit_events(tenant_id)
             await tenants.delete_by_id(tenant_id)

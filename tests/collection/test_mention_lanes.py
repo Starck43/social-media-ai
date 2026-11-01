@@ -39,6 +39,7 @@ from app.services.collection.intent import parse_collection_intent
 from app.services.collection.mention_lanes import mention_lane_queries, mention_note
 from app.services.collection.planner import query_source_spec
 from app.types import SourceType
+from tests.shared.platform_catalog import shared_platform
 
 # --- phrase derivation (no database) ----------------------------------------
 
@@ -98,14 +99,8 @@ async def platform():
     if existing is not None:
         yield existing
         return
-    created = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type="vk",
-        base_url="https://vk.com",
-        params={},
-    )
+    created = await shared_platform("vk")
     yield created
-    await Platform.objects.delete_by_id(created.id)
 
 
 @pytest.fixture

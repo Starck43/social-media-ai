@@ -10,6 +10,7 @@ from app.models import CollectedItem, Job, Platform, Source
 from app.models.managers.tenant_manager import tenants
 from app.types import SourceType
 from cli.commands.collect import _parse_date
+from tests.shared.platform_catalog import shared_platform
 
 
 @pytest.mark.parametrize(
@@ -48,12 +49,7 @@ async def test_a_tenant_scoped_collect_gets_a_job_and_stamps_run_id(monkeypatch)
         # The CLI runs with the tenant guard off and resolves the workspace
         # explicitly (see cli/commands/collect.py::_run), so set up the same way.
         with tenant_scope(bypass=True):
-            platform = await Platform.objects.create(
-                name=f"vk_{uuid.uuid4().hex[:8]}",
-                platform_type="vk",
-                base_url="https://vk.com",
-                params={},
-            )
+            platform = await shared_platform("vk")
             source = await Source.objects.create(
                 tenant_id=tenant.id,
                 platform_id=platform.id,
@@ -92,7 +88,6 @@ async def test_a_tenant_scoped_collect_gets_a_job_and_stamps_run_id(monkeypatch)
             await Job.objects.delete_by_id(job_id)
             job_id = None
             await Source.objects.delete_by_id(source.id)
-            await Platform.objects.delete_by_id(platform.id)
     finally:
         with tenant_scope(bypass=True):
             if job_id is not None:

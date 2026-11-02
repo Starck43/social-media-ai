@@ -67,6 +67,9 @@ def test_return_navigation(page, target):
     html = BeautifulSoup(render(page), "html.parser")
     assert html.select_one(f'#page-actions a[href="{target}"]')
     assert html.select_one("[data-evidence-empty]")
+    actions = html.select_one("[data-evidence-empty-actions]")
+    assert len(actions.select("a")) == 2
+    assert "flex-wrap" in actions["class"]
 
 
 def test_evidence_handoff_attributes_and_escape():

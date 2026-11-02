@@ -40,8 +40,10 @@
     <section class="ui-card" data-evidence-empty>
         <h2 class="text-sm font-semibold">Нет доступных сохранённых записей</h2>
         <p class="mt-2 text-xs ui-muted">Нет записей, подходящих под запрос и выбранный фильтр, или у вас нет к ним доступа.</p>
-        <a href="/app/settings?tab=connections" class="ui-control mt-3">Подключить источник</a>
-        <a href="/app/sources" class="ui-control mt-3">Управление источниками</a>
+        <div class="mt-4 flex flex-wrap gap-3" data-evidence-empty-actions>
+            <a href="/app/settings?tab=connections" class="ui-control inline-flex items-center">Подключить источник</a>
+            <a href="/app/sources" class="ui-control inline-flex items-center">Управление источниками</a>
+        </div>
     </section>
     {% endfor %}
 </div>

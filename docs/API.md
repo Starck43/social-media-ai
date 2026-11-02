@@ -1740,3 +1740,23 @@ delivery 409. The service rechecks the caller and each frozen destination,
 reuses per-part digest receipts, and never rebuilds the report. Sent parts are
 skipped; uncertain parts require review. This does not enable automatic sends
 or live VK search.
+
+
+## Workspace mail connection settings (P12-T08)
+
+These are CSRF-protected web form endpoints, not public generic credential CRUD:
+
+| Route | Contract |
+| --- | --- |
+| `POST /app/settings/workspace-connections` | Create, or replace caller-owned connection by optional `connection_id`; `provider_id`, `method`, `label`, `account_login`, `app_password`. Only Mail.ru/Yandex app-password forms are enabled. Secret required on edits too. Unknown/duplicate keys and posted tenant/server overrides are rejected. Save is not verification. |
+| `POST /app/settings/workspace-connections/{id}/check` | Explicit remote IMAP login check; form contains only `_csrf`. No reading or sending. |
+| `POST /app/settings/workspace-connections/{id}/disable` | Disable and clear the local secret; form contains only `_csrf`. |
+
+The current authenticated workspace, fresh active web membership, caller ownership
+and workspace `source.create` preset grant are required for all mutations/checks.
+No platform admin bypass. Foreign IDs return 403 without revealing their owner.
+Successful actions redirect 303 to the existing connections tab. Validation
+failures redirect with a generic value-free message. Existing personal
+VK/Telegram credential and OAuth routes are unchanged; legacy settings creation
+of generic business keys is rejected. Migration 0121 and limitations are in
+[connector configuration](CONNECTOR_CONFIGURATION.md).

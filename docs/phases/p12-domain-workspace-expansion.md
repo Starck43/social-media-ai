@@ -14,11 +14,12 @@
    - Building on `Q-16` (`d3a4a40c`), `Platform` (`app/models/collection/platform.py`) remains the global catalog of known external systems (1 row per `platform_type`, managed via SQLAdmin / `_BOOTSTRAP` in `app/services/social/platform_config.py`).
    - Both `PlatformType` and `SourceType` live in `app/types/enums/platform_types.py` and use the 3-tuple format `("db_value", "Display Name", "Emoji")`.
    - Extend `PlatformType` with 6 new values (`email`, `bitrix24`, `onec`, `yandex_disk`, `mailru_cloud`, `local_gateway`) and `SourceType` with `DRIVE_FOLDER = ("drive_folder", "Папка облачного диска", "📁")`.
-3. **Per-User, Per-Workspace Credentials (`UserCredential`):**
-   - `UserCredential` (`app/models/identity/user_credential.py`) already has `platform: String(30)`, `kind: String(30)`, `secret_encrypted: Text`, and `meta: JSON`.
-   - Store workspace scoping (`"tenant_id": current_tenant.id`) and non-secret parameters (`portal_url`, `odata_url`, `imap_host`, `account_login`, `data_boundary`) in `UserCredential.meta` (and optional `tenant_id` filter in `app/services/social/connections.py`), avoiding destructive public-schema migrations while enforcing strict per-workspace isolation.
+3. **Explicit Workspace Connections (P12-T08):**
+   - `Platform.params` remains global non-secret API configuration. Versioned provider/method/form contracts live in `app/integrations/catalog/`.
+   - Mail.ru/Yandex Mail instances use `WorkspaceConnection` with explicit tenant + owner and separate encrypted `WorkspaceConnectionSecret` (migration 0121). Configuration, storage and IMAP login checks are implemented; synchronization and sending are not.
+   - This supersedes the earlier proposal to scope new business connections only through `UserCredential.meta`. Existing personal VK/Telegram credentials and legacy consumers remain unchanged and are not auto-bound to a workspace. See [connector contract](../CONNECTOR_CONFIGURATION.md).
 4. **Cloud Drive & Document Connection Flow (`SourceType.DRIVE_FOLDER`):**
-   - Mounted folders on Yandex Disk (`https://cloud-api.yandex.net/v1/disk/resources`) or Mail.ru Cloud WebDAV (`https://webdav.cloud.mail.ru`) are persisted as `Source(platform_id=..., source_type=SourceType.DRIVE_FOLDER, external_id="disk:/Договоры 2026", params={"credential_id": cred.id, "allowed_extensions": [".pdf", ".docx", ".xlsx"]})`.
+   - The existing descriptor contract (not an implemented drive adapter or the new mail-connection storage): mounted folders on Yandex Disk (`https://cloud-api.yandex.net/v1/disk/resources`) or Mail.ru Cloud WebDAV (`https://webdav.cloud.mail.ru`) are persisted as `Source(platform_id=..., source_type=SourceType.DRIVE_FOLDER, external_id="disk:/Договоры 2026", params={"credential_id": cred.id, "allowed_extensions": [".pdf", ".docx", ".xlsx"]})`.
 5. **Zero-Conflict Parallelism Rule (`app/web/nav.py` & `app/web/__init__.py`):**
    - Wave 1/2 domain tasks (`P12-T03`, `P12-T04`, `P12-T05`) create **only** their own service package (`app/services/<domain>/`), route module (`app/web/<section>.py`), template (`app/web/templates/web/<section>.html`), and isolated unit test (`tests/unit_web/test_p12_t0X_*.py`).
    - They **must NOT edit `app/web/nav.py`, `app/web/__init__.py`, or `tests/unit_web/test_p12_t01_nav_groups.py`**.

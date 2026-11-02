@@ -201,39 +201,51 @@ def test_settings_template_renders_workspace_connectors_catalog():
     connections = _load_connections()
     fixtures = runpy.run_path(str(ROOT / "tests/shared/settings_layout_fixtures.py"))
     ctx = fixtures["context"]("connections")
+    # One card per connector: the catalog facts ride along with the operator card
+    # instead of rendering a second, read-only list. This is the shape
+    # `settings_page` builds, so the template is exercised as it ships.
+    details = {
+        card["platform_type"]: card
+        for card in connections.build_workspace_connectors(
+            credentials=[
+                NS(
+                    id=21,
+                    platform="yandex_disk",
+                    kind="oauth_token",
+                    is_active=True,
+                    meta={"tenant_id": 7, "mounted_folders": ["disk:/Договоры 2026"]},
+                )
+            ],
+            statuses={},
+            tenant_id=7,
+            username="sergey",
+        )
+    }
     ctx["connections"] = [
         dict(
-            platform="vk",
-            title="ВКонтакте",
-            purpose="Личное подключение",
-            is_oauth=True,
-            manual_hint="Сохраните личный ключ",
-            status=NS(
-                platform="vk",
-                tone="ok",
-                state="connected",
-                label="Подключено",
-                detail="ВКонтакте · действует до 01.12.2026",
-                is_configured=True,
+            platform=spec.platform,
+            title=spec.title,
+            purpose=spec.purpose,
+            is_oauth=spec.is_oauth,
+            manual_hint=spec.manual_hint,
+            status=(
+                NS(
+                    platform=spec.platform,
+                    tone="ok",
+                    state="connected",
+                    label="Подключено",
+                    detail="действует до 01.12.2026",
+                    is_configured=True,
+                )
+                if spec.platform == "vk"
+                else None
             ),
-            manual_kinds=[("user_token", "VK")],
+            manual_kinds=[("user_token", spec.title)] if spec.platform == "vk" else [],
             rows=[],
+            details=details.get(spec.platform),
         )
+        for spec in connections.CONNECTIONS
     ]
-    ctx["workspace_connectors"] = connections.build_workspace_connectors(
-        credentials=[
-            NS(
-                id=21,
-                platform="yandex_disk",
-                kind="oauth_token",
-                is_active=True,
-                meta={"tenant_id": 7, "mounted_folders": ["disk:/Договоры 2026"]},
-            )
-        ],
-        statuses={},
-        tenant_id=7,
-        username="sergey",
-    )
 
     html = fixtures["environment"]().get_template("web/settings.html").render(**ctx)
     assert 'data-p12-connectors="workspace-connectors"' in html
@@ -243,6 +255,15 @@ def test_settings_template_renders_workspace_connectors_catalog():
     assert "Облако Mail.ru" in html
     assert "Локальный шлюз" in html
     assert "disk:/Договоры 2026" in html
+    # The P12 catalog is the renderer, but the technical vocabulary stays inside
+    # the collapsed details block rather than in the visible card.
+    assert "PlatformType" not in html
+    assert "UserCredential.meta.tenant_id" not in html
+    assert "SourceType.DRIVE_FOLDER" not in html
+    assert "Технические детали" in html
+    # One grid, and a card may not repeat: each connector appears once.
+    assert html.count('data-p12-connectors="workspace-connectors"') == 1
+    assert html.count('id="conn-ws-vk"') == 1
 
 
 @pytest.mark.asyncio
@@ -302,6 +323,7 @@ async def test_settings_page_connections_tab_populates_workspace_connectors(monk
     conn_mod.CONNECTIONS = connections.CONNECTIONS
     conn_mod.connection_statuses = fake_statuses
     conn_mod.build_workspace_connectors = connections.build_workspace_connectors
+    conn_mod.credential_matches_workspace = connections.credential_matches_workspace
 
     monkeypatch.setitem(sys.modules, "app.models.managers.user_credential_manager", vault_mod)
     monkeypatch.setitem(sys.modules, "app.services.social.connections", conn_mod)
@@ -341,8 +363,10 @@ async def test_settings_page_connections_tab_populates_workspace_connectors(monk
     )
     resp = await ns["settings_page"](req)
     assert resp.context["tab"] == "connections"
+    assert "workspace_connectors" not in resp.context
     assert len(resp.context["connections"]) == 8
-    assert len(resp.context["workspace_connectors"]) == 8
-    yd_card = next(c for c in resp.context["workspace_connectors"] if c["platform_type"] == "yandex_disk")
-    assert yd_card["health_status"] == "connected"
-    assert yd_card["mounted_folders"] == ["disk:/Договоры 2026"]
+    yd_card = next(c for c in resp.context["connections"] if c["platform"] == "yandex_disk")
+    assert yd_card["details"]["health_status"] == "connected"
+    assert yd_card["details"]["mounted_folders"] == ["disk:/Договоры 2026"]
+    # The personal rows follow the active workspace only.
+    assert [row.id for row in yd_card["rows"]] == [501]

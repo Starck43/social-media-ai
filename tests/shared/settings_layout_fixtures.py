@@ -185,6 +185,7 @@ def context(mode):
                 manual_kinds=[("user_token", "Личный токен")],
                 rows=[],
                 manual_hint="Резервный способ подключения",
+                details=None,
             )
         ],
     )

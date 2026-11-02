@@ -199,6 +199,8 @@ def gateway(monkeypatch):
         "app.services.social.connections": dict(
             CONNECTIONS=[NS(platform="vk", title="VK", purpose="Own", is_oauth=True, manual_hint="")],
             connection_statuses=statuses,
+            build_workspace_connectors=lambda **kwargs: [],
+            credential_matches_workspace=lambda meta, tenant_id: True,
         ),
         "app.services.ai.llm_client": dict(default_model_sort_key=lambda m: m.name),
         "app.services.ai.personal_catalog": dict(chat_model_options=model_options),

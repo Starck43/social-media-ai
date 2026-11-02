@@ -276,15 +276,27 @@ async def settings_page(request: Request):
         context.update(await settings_llm_context(request))
     elif tab == "connections":
         from app.models.managers.user_credential_manager import user_credentials
-        from app.services.social.connections import CONNECTIONS, connection_statuses
-
-        try:
-            from app.services.social.connections import build_workspace_connectors
-        except ImportError:
-            build_workspace_connectors = None
+        from app.services.social.connections import (
+            CONNECTIONS,
+            build_workspace_connectors,
+            connection_statuses,
+            credential_matches_workspace,
+        )
 
         credentials = await user_credentials.web_metadata_for_user(user_id=user.id)
         statuses = {status.platform: status for status in await connection_statuses(user.id)}
+        # One card per connector: the P12 catalog decides which connectors exist
+        # and supplies the display facts, the pre-P12 spec keeps the operator
+        # wording and the interactive parts (buttons, manual key form).
+        details = {
+            card["platform_type"]: card
+            for card in build_workspace_connectors(
+                credentials=credentials,
+                statuses=statuses,
+                tenant_id=tenant_id,
+                username=getattr(user, "username", None),
+            )
+        }
         context["connections"] = [
             {
                 "platform": spec.platform,
@@ -294,17 +306,16 @@ async def settings_page(request: Request):
                 "manual_hint": spec.manual_hint,
                 "status": statuses.get(spec.platform),
                 "manual_kinds": SELF_SERVICE_KINDS.get(spec.platform, ()),
-                "rows": [row for row in credentials if row.platform == spec.platform],
+                "rows": [
+                    row
+                    for row in credentials
+                    if row.platform == spec.platform
+                    and credential_matches_workspace(getattr(row, "meta", None), tenant_id)
+                ],
+                "details": details.get(spec.platform),
             }
             for spec in CONNECTIONS
         ]
-        if callable(build_workspace_connectors):
-            context["workspace_connectors"] = build_workspace_connectors(
-                credentials=credentials,
-                statuses=statuses,
-                tenant_id=tenant_id,
-                username=getattr(user, "username", None),
-            )
     elif tab == "channels" and manage:
         from app.models.managers.tenant_manager import TenantChannelManager
 

@@ -2,8 +2,9 @@
 
 This repository model reference was reviewed against `dev` at
 `bdbeafb3148316d0800bfb8d6880c10d560e039d`; subsequent Q-15 changes are
-documentation-only. The checked-in migration graph is
-`baseline_0118` → `0119` (workspace offboarding). This is a repository model
+documentation-only. At that review the migration graph was
+`baseline_0118` → `0119` (workspace offboarding); the later Q-16 migration
+`0120` follows `0119` (shared platform configuration). This is a repository model
 reference, not a target-database record: it describes ORM and migration
 definitions, not the revision or integrity of any running database. No
 application import, database inspection or migration was run for this docs
@@ -55,7 +56,7 @@ activation and whole-gate acceptance are distinct states.
 
 ### Table inventory
 
-The source defines **53 mapped tables and 3 association tables**:
+At the pinned review revision, the source defined **53 mapped tables and 3 association tables**:
 
 | Domain | Mapped tables | Association tables |
 | --- | --- | --- |
@@ -692,6 +693,7 @@ Selected milestones, not a complete replay audit:
 | 0118 (P11-T12, integrated) | Durable task-admission action audit; later folded into baseline |
 | `baseline_0118` (Q-14) | Frozen schema baseline replacing the prior numbered migration history |
 | 0119 (P11-T29) | Permanent workspace-offboarding journal and guarded deletion workflow; follows `baseline_0118` |
+| 0120 (Q-16) | Shared platform configuration; follows `0119` |
 | 0031 / 0060 | Analytics cost tracking / sub-cent Numeric precision |
 | 0041 / 0042 / 0043 | Task queue / digest runs / agent tables |
 | 0044 | Tenancy foundation |
@@ -731,9 +733,10 @@ Selected milestones, not a complete replay audit:
 | **0106** | Add VK search source type and remove retired task action lists |
 | **0107** | Add model price units, nullable cache tariffs and usage evidence; preserve legacy pricing snapshots |
 
-The checked-in graph at this review has one root, `baseline_0118`, and one
-follow-up, `0119` (`down_revision = "baseline_0118"`). Q-14 replaced the earlier
-numbered history with the frozen baseline; the table above retains selected
+At the Q-15 review revision the graph had one root, `baseline_0118`, and one
+follow-up, `0119` (`down_revision = "baseline_0118"`). Revision `0120` was
+subsequently added after `0119`; inspect the source graph before any migration.
+Q-14 replaced the earlier numbered history with the frozen baseline; the table above retains selected
 historical milestones. This is static source structure, not `alembic current`, an
 `alembic check`, a replay rehearsal or acceptance of any arbitrary target
 schema. Q-14 verified the baseline transition for the local public and test

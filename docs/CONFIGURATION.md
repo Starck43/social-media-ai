@@ -75,9 +75,9 @@ grant access. The official contract and remaining work live in
 
 **Migration dependency:** P2-T15 first introduced `tenants.plan_expires_at` and
 `entitlement_usage` in revision `0117`; Q-14 later incorporated that schema into
-frozen `baseline_0118`. The checked-in migration chain now has follow-up `0119`
-for workspace offboarding; `0118` is not a free revision number. Do not recreate
-the entitlement fields or replay the removed numbered migrations. Fresh-schema
+frozen `baseline_0118`. The checked-in chain continues with `0119` for workspace
+offboarding and `0120` for shared platform configuration; `0118` is not a free
+revision number. Do not recreate the entitlement fields or replay the removed numbered migrations. Fresh-schema
 and legacy-schema transition rules are in [DEPLOYMENT](DEPLOYMENT.md). Before
 any separately approved subscription-schema work, inspect the actual integrated
 graph and reserve a distinct revision on its current head; never infer it from an

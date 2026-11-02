@@ -81,9 +81,10 @@ Read the official [quick start](https://yookassa.ru/developers/payment-acceptanc
 
 P2-T15's revision `0117` introduced nullable `tenants.plan_expires_at` and
 `entitlement_usage`; this scope must consume, not recreate or replace, them. That
-numbered history was folded into the Q-14 frozen `baseline_0118`; `0119` is the
-checked-in follow-up for workspace offboarding. Q-14 verified the local public
-and test schemas against the baseline, not every deployment target. Follow
+numbered history was folded into the Q-14 frozen `baseline_0118`; `0119` follows
+it for workspace offboarding and `0120` follows `0119` for shared platform
+configuration. Q-14 verified the local public and test schemas against the
+baseline, not every deployment target. Follow
 [DEPLOYMENT](DEPLOYMENT.md) for target-state inspection and migration transition.
 
 Any separately approved subscription schema must reserve a distinct revision

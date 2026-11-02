@@ -3,6 +3,7 @@
    (see `app/web/deps.py::render`) rather than taking it per call — the tier
    names are the same on every page. #}
 {% from "web/_macros.html" import connection_badge, control, plan_badge, plan_comparison_table, popover_select, switch_toggle with context %}
+{% from "web/components/provider.html" import provider_header with context %}
 {% block title %}Настройки — AI Monitor{% endblock %}
 {% block page_heading %}Настройки{% endblock %}
 {% block extra_head %}
@@ -310,12 +311,7 @@
                                  data-connector-platform="{{ card.platform }}"
                                  aria-labelledby="conn-{{ card.platform }}">
                             <div class="flex flex-wrap items-start justify-between gap-4">
-                                <div class="min-w-0">
-                                    <h2 id="conn-{{ card.platform }}" class="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                        {{ card.title }}
-                                    </h2>
-                                    <p class="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{{ card.purpose }}</p>
-                                </div>
+                                {{ provider_header(card.provider|default(none), card.title, card.purpose, 'conn-' ~ card.platform) }}
                                 {% if card.status and card.platform in ('vk', 'telegram') %}
                                     {{ connection_badge(card.status) }}
                                 {% endif %}

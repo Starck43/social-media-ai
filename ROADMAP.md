@@ -63,7 +63,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P3
 
 - [P12-T08](docs/tasks/p12-t08.md) Provider-specific workspace connector configuration — **IN_PROGRESS** · notion-ai-p12-t08 · [chat](https://app.notion.com/chat?t=40c2c46c1139804687a500a9690c52dd) · `P2` · `C4`
-- [P12-T06](docs/tasks/p12-t06.md) Shared evidence drawer (`context-panel`), P12 router/nav activation & `/app/chat` context handoff — **TODO** · unassigned · — · `P3` · `C3`
+- [P12-T06](docs/tasks/p12-t06.md) Shared evidence drawer (`context-panel`), P12 router/nav activation & `/app/chat` context handoff — **IN_PROGRESS** · aistudio-p12-t06 · — · `P3` · `C3`
 
 
 ## Deferred by explicit owner decision

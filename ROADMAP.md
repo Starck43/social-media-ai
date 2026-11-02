@@ -62,12 +62,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P3
 
-- [P12-T03](docs/tasks/p12-t03.md) Knowledge & Documents workspace with ACL-aware citations (`/app/knowledge`, `/app/documents`) — **IN_PROGRESS** · aistudio-p12-t03 · [PR #300](https://github.com/Starck43/social-media-ai/pull/300) · routes unreachable, see [P12-T09](docs/tasks/p12-t09.md) · `P3` · `C4`
 - [P12-T08](docs/tasks/p12-t08.md) Provider-specific workspace connector configuration — **IN_PROGRESS** · notion-ai-p12-t08 · [chat](https://app.notion.com/chat?t=40c2c46c1139804687a500a9690c52dd) · `P2` · `C4`
-- [P12-T04](docs/tasks/p12-t04.md) Communication, verified contacts, scheduled outbox & follow-ups (`/app/communications`, `/app/followups`) — **IN_PROGRESS** · aistudio-p12-t04 · [PR #301](https://github.com/Starck43/social-media-ai/pull/301) · routes unreachable, see [P12-T09](docs/tasks/p12-t09.md) · `P3` · `C4`
-- [P12-T05](docs/tasks/p12-t05.md) Cases, deterministic supplier comparison & document approvals (`/app/cases`) — **IN_PROGRESS** · aistudio-p12-t05 · [PR #302](https://github.com/Starck43/social-media-ai/pull/302) · routes unreachable, see [P12-T09](docs/tasks/p12-t09.md) · `P3` · `C3`
 - [P12-T06](docs/tasks/p12-t06.md) Shared evidence drawer (`context-panel`), P12 router/nav activation & `/app/chat` context handoff — **TODO** · unassigned · — · `P3` · `C3`
-- [P12-T09](docs/tasks/p12-t09.md) Activate the P12 Wave 2 routers and navigation (`/app/knowledge`, `/app/documents`, `/app/communications`, `/app/followups`, `/app/cases`) — **IN_PROGRESS** · opencode · — · `P3` · `C3`
 
 
 ## Deferred by explicit owner decision

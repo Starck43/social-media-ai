@@ -104,4 +104,12 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
   Planning requested; implementation and connector-pilot activation are not started.
 
 - [P12-T13](../tasks/p12-t13.md): prepare file-workspace slice 1 contracts and
-  candidate-provider review; pilot selection and P8-T34 scheduling remain owner decisions.
+  candidate-provider review.
+- [P8-T34](../tasks/p8-t34.md): owner-selected Yandex Disk pilot, transferred from
+  P8; one folder, read-only. Folder-level restrictions and mutation safety are
+  required; no provider writes or delete operation in this pilot.
+
+- [P12-T15](../tasks/p12-t15.md): user-managed per-folder restrictions and
+  separately gated, explicitly approved file mutations after the read-only pilot.
+
+- [P12-T17](../tasks/p12-t17.md): improve navigation, spacing and clarity across the existing evidence workspaces.

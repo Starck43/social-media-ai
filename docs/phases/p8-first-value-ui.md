@@ -71,10 +71,8 @@ journey gate, not a way to rename or retroactively accept P8-T29.
 - [P8-T18](../audit/p8-t18.md) — Model tests in single-owner mode; accepted 2026-10-28, integrated in dev (cherry-pick `4616c583`)
 - [P8-T20](../audit/p8-t20.md) — Provider cost evidence and diagnostic controls; accepted 2026-10-28, integrated in dev (cherry-pick `4d3ce50e`)
 - [P8-T36](../audit/p8-t36.md) — reusable horizontal relationship picker; accepted 2026-10-27, integrated in PR #244 (merge `682dbe37`)
-**Deferred beyond the social milestone:** [P8-T34](../tasks/p8-t34.md) keeps the
-future non-social connector direction. It is not a current P8 social release
-gate. P8 cannot be marked fully closed while this deferred item remains attached
-to P8; first move it to a future phase or record an explicit owner cancellation.
+**Transferred to P12:** [P8-T34](../tasks/p8-t34.md) is the owner-selected
+Yandex Disk read-only pilot. It is not a P8 social release gate.
 
 **Accepted history:**
 
@@ -106,6 +104,6 @@ to P8; first move it to a future phase or record an explicit owner cancellation.
 
 - [P8-T32](../audit/p8-t32.md) — collapsed related rows and permission-aware links; accepted; date not recorded; source `9534f9a`.
 
-**Phase status:** Active phase; close only after active plan items are accepted
-and the deferred P8-T34 item has been transferred to a future phase or explicitly
-cancelled by the owner. Existing diagnostic/support tasks remain independent.
+**Phase status:** Active phase; close only after active plan items are accepted.
+P8-T34 was transferred to P12 by owner selection; existing diagnostic/support
+tasks remain independent.

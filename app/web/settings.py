@@ -1035,6 +1035,7 @@ async def workspace_connection_save(request: Request):
 
 @router.post("/workspace-connections/{connection_id}/{operation}")
 async def workspace_connection_action(request: Request, connection_id: int, operation: str):
+    from app.integrations.catalog import WORKSPACE_PROVIDER_IDS
     from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
 
     form = await request.form()
@@ -1047,7 +1048,10 @@ async def workspace_connection_action(request: Request, connection_id: int, oper
         return HTMLResponse("Действие не найдено", status_code=404)
     try:
         arguments = dict(
-            tenant_id=request.state.tenant_id, actor_id=request.state.web_user.id, connection_id=connection_id
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            connection_id=connection_id,
+            allowed_provider_ids=WORKSPACE_PROVIDER_IDS,
         )
         if operation == "check":
             result = await workspace_connections.verify(**arguments)
@@ -1066,3 +1070,59 @@ async def workspace_connection_action(request: Request, connection_id: int, oper
     except ConnectionDenied:
         return HTMLResponse("Подключение недоступно", status_code=403)
     return RedirectResponse(f"{BACK}?tab=connections#conn-ws-email", status_code=303)
+
+
+@router.post("/yandex-connections")
+async def yandex_connection_save(request: Request):
+    """Save one private, unverified read-only connection; never call a provider."""
+    from app.models.managers.workspace_connection_manager import ConnectionDenied
+    from app.services.file_workspace.connections import FolderConnectionInputError, create_yandex_connection
+
+    form = await request.form()
+    token = form.get("_csrf", "")
+    if not isinstance(token, str) or not _personal_access(request) or not ensure_csrf(request, token):
+        return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
+    expected = {"_csrf", "label", "root", "oauth_token", "scope_ack"}
+    if set(form) != expected or any(len(form.getlist(key)) != 1 for key in form) or form.get("scope_ack") != "on":
+        return HTMLResponse("Некорректная форма", status_code=400)
+    try:
+        await create_yandex_connection(
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            label=form["label"],
+            root=form["root"],
+            oauth_token=form["oauth_token"],
+        )
+    except ConnectionDenied:
+        return HTMLResponse("Подключение недоступно", status_code=403)
+    except FolderConnectionInputError:
+        add_flash(request, "error", "Проверьте путь папки и токен. Сохранённые токены не показываются.")
+    except RuntimeError:
+        return HTMLResponse("Не удалось безопасно сохранить подключение", status_code=503)
+    else:
+        add_flash(request, "success", "Подключение сохранено. Доступ не проверен; просмотр файлов ещё не включён.")
+    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-yandex_disk", status_code=303)
+
+
+@router.post("/yandex-connections/{connection_id}/disable")
+async def yandex_connection_disable(request: Request, connection_id: int):
+    """Remove only the caller's Yandex secret; remote OAuth revocation is separate."""
+    from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
+
+    form = await request.form()
+    token = form.get("_csrf", "")
+    if not isinstance(token, str) or not _personal_access(request) or not ensure_csrf(request, token):
+        return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
+    if set(form) != {"_csrf"} or len(form.getlist("_csrf")) != 1:
+        return HTMLResponse("Некорректная форма", status_code=400)
+    try:
+        await workspace_connections.disable(
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            connection_id=connection_id,
+            expected_provider="yandex_disk",
+        )
+    except ConnectionDenied:
+        return HTMLResponse("Подключение недоступно", status_code=403)
+    add_flash(request, "success", "Подключение отключено и токен удалён. Отзовите доступ приложения в Яндексе.")
+    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-yandex_disk", status_code=303)

@@ -1,17 +1,17 @@
 {% extends "web/base.html" %}
 
-{% block title %}Документы и ревизии — AI Assistant{% endblock %}
-{% block page_heading %}Документы и ревизии{% endblock %}
+{% block title %}Документы и версии — AI Assistant{% endblock %}
+{% block page_heading %}Документы и версии{% endblock %}
 
 {% block page_actions %}
-<a href="/app/knowledge" class="ui-control">Поиск в базе знаний</a>
-<a href="/app/cases" class="ui-control">Кейсы и согласования</a>
+<a href="/app/knowledge" class="ui-control">← К базе знаний</a>
+<a href="/app/cases" class="ui-control">Предложения</a>
 {% endblock %}
 
 {% block right_panel %}
 <div class="space-y-3 text-sm">
-    <h2 class="font-semibold">Контракт версионности (P12-T03)</h2>
-    <p class="text-xs ui-muted">Любая правка текста документа автоматически аннулирует предыдущее одобрение (<code>edits invalidate approval</code>). Продуктовый клик согласования не является квалифицированной ЭЦП.</p>
+    <h2 class="font-semibold">О версиях документов</h2>
+    <p class="text-xs ui-muted">Изменение текста отменяет прежнее одобрение. Одобрение в приложении не является квалифицированной электронной подписью.</p>
 </div>
     {% include "web/_evidence_details.html" %}
 {% endblock %}
@@ -21,8 +21,8 @@
     <section class="ui-card">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
-                <h2 class="text-sm font-semibold">Версионная переписка, спецификации и контроль неизменяемости акцепта</h2>
-                <p class="mt-1 text-xs ui-muted">Неподдерживаемые или нестандартные условия контрагента остаются явно видимыми для оператора. Одобренная ревизия блокируется от скрытых изменений.</p>
+                <h2 class="text-sm font-semibold">Сохранённые версии документов</h2>
+                <p class="mt-1 text-xs ui-muted">Просматривайте доступные версии и их источники. Нестандартные условия требуют отдельной проверки.</p>
             </div>
             <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-700/50">Сохранённые записи</span>
         </div>

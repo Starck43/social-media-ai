@@ -7,22 +7,20 @@ in plain user-friendly Russian, with version-bound approval status and transpare
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
-from app.services.cases.approvals import CANONICAL_CASE_RECORD, CONNECTOR_STORAGE_LAYERS
-from app.services.cases.calculator import CANONICAL_COMPARISON_ROWS
+from app.services.knowledge.workspace import snippet_rows
 from app.web.deps import render
 
 router = APIRouter()
 
 
 @router.get("/cases")
-async def cases_page(request: Request):
+async def cases_page(request: Request, boundary: str = Query("cloud", pattern="^(local_only|company|cloud)$")):
     """Render procurement case comparison table and version-bound approval card."""
     return render(
         request,
         "web/cases.html",
-        case_record=CANONICAL_CASE_RECORD,
-        comparison_rows=CANONICAL_COMPARISON_ROWS,
-        connector_storage_layers=CONNECTOR_STORAGE_LAYERS,
+        evidence_rows=await snippet_rows("case", boundary),
+        boundary=boundary,
     )

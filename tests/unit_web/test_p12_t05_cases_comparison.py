@@ -13,8 +13,6 @@ Covers:
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 import types
 from decimal import Decimal
 from pathlib import Path
@@ -22,6 +20,9 @@ from typing import Any
 
 import pytest
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
+
+from tests.shared.evidence_fixtures import evidence_row, workspace_double
+from tests.source_import_isolation import load_isolated_source as _isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,15 +33,8 @@ class NS(types.SimpleNamespace):
 
 
 def load_isolated_source(module_name: str, file_path: Path, mocked_deps: dict[str, Any] | None = None):
-    """Load module directly from source file with isolated sys.modules."""
-    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
-    mod = importlib.util.module_from_spec(spec)
-    if mocked_deps:
-        for k, v in mocked_deps.items():
-            sys.modules[k] = v
-    assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    return mod
+    """Keep route/service doubles module-local, including deferred imports."""
+    return _isolated_source(module_name, file_path, mocked_deps)
 
 
 def _load_cases_calculator():
@@ -231,15 +225,17 @@ def test_cases_jinja_template_strict_rendering():
     calc = _load_cases_calculator()
     approvals = _load_cases_approvals()
 
-    context["case_record"] = approvals.CANONICAL_CASE_RECORD
-    context["comparison_rows"] = calc.CANONICAL_COMPARISON_ROWS
-    context["connector_storage_layers"] = approvals.CONNECTOR_STORAGE_LAYERS
+    # Financial normalization and version-bound approval tests above are unchanged.
+    # The catalog must no longer present their examples as discovered records.
+    context["evidence_rows"] = [evidence_row("case")]
+    context["boundary"] = "cloud"
 
     rendered = template.render(**context)
     assert 'data-p12-cases="cases-comparison"' in rendered
-    assert "CASE-2026-042" in rendered
-    assert "Гранула ПНД ПЭ2НТ11-9" in rendered
-    assert "MISSING_PRICE" in rendered
+    assert "Stored test evidence" in rendered
+    assert "Test-only evidence text" in rendered
+    assert 'data-evidence-context-type="case"' in rendered
+    assert "CASE-2026-042" not in rendered
     assert "app/integrations/catalog/" in rendered
     assert "Platform.params" in rendered
 
@@ -263,17 +259,17 @@ async def test_fastapi_domain_router_cases():
             "app.services.cases.calculator": _load_cases_calculator(),
             "app.services.cases.approvals": _load_cases_approvals(),
             "app.web.deps": fake_deps,
+            "app.services.knowledge.workspace": workspace_double(),
         },
     )
 
     req = NS(state=NS(web_user=NS(id=1)))
-    resp = await cases_web.cases_page(req)
+    resp = await cases_web.cases_page(req, boundary="cloud")
     assert resp.status_code == 200
     assert rendered_calls[-1][0] == "web/cases.html"
     ctx = rendered_calls[-1][1]
-    assert "case_record" in ctx
-    assert "comparison_rows" in ctx
-    assert len(ctx["comparison_rows"]) >= 3
+    assert ctx["evidence_rows"] == [evidence_row("case")]
+    assert ctx["boundary"] == "cloud"
 
 
 def test_cases_page_is_reachable_from_the_application():

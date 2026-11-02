@@ -6,20 +6,20 @@ content hashes, and revision approval statuses.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
-from app.services.knowledge.documents import CANONICAL_DOCUMENTS
+from app.services.knowledge.workspace import document_rows
 from app.web.deps import render
 
 router = APIRouter()
 
 
 @router.get("/documents")
-async def documents_page(request: Request):
+async def documents_page(request: Request, boundary: str = Query("cloud", pattern="^(local_only|company|cloud)$")):
     """Render versioned documents page with immutable SHA256 hashes and approval states."""
     return render(
         request,
         "web/documents.html",
-        documents=CANONICAL_DOCUMENTS,
-        versioned_documents=CANONICAL_DOCUMENTS,
+        evidence_rows=await document_rows(boundary),
+        boundary=boundary,
     )

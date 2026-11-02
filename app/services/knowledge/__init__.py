@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from .documents import (
-    CANONICAL_DOCUMENTS,
     STATUS_APPROVED,
     STATUS_DRAFT,
     STATUS_DRAFT_INVALIDATED,
@@ -17,7 +16,6 @@ from .documents import (
 )
 from .retrieval import (
     BOUNDARY_LEVELS,
-    CANONICAL_SNIPPETS,
     assemble_llm_citations_context,
     build_citation_anchor,
     build_knowledge_snippet,
@@ -27,8 +25,6 @@ from .retrieval import (
 
 __all__ = [
     "BOUNDARY_LEVELS",
-    "CANONICAL_SNIPPETS",
-    "CANONICAL_DOCUMENTS",
     "STATUS_APPROVED",
     "STATUS_DRAFT",
     "STATUS_DRAFT_INVALIDATED",

@@ -25,79 +25,12 @@ STATUS_LABELS: dict[str, str] = {
     STATUS_REJECTED: "Отклонено",
 }
 
-CANONICAL_DOCUMENTS: list[dict[str, Any]] = [
-    {
-        "id": "doc-114",
-        "title": "Спецификация № 8 к Договору ДП-2026/114 (Партия ноябрь)",
-        "counterparty": "ООО «ТехПолимер-Восток»",
-        "version": "v3.2",
-        "content_hash": "sha256:3b90e441c8a2",
-        "hash": "sha256:3b90e441c8a2",
-        "updated_at": "2026-11-01T10:06:00Z",
-        "status": "Согласовано владельцем (saloon.as · 10:06)",
-        "status_code": STATUS_APPROVED,
-        "approved_by": "saloon.as",
-        "unsupported_terms_note": "Неподдерживаемое условие в п. 6 («автопролонгация штрафа без акта сверки») выделено для юриста.",
-        "warning": "Неподдерживаемое условие в п. 6 («автопролонгация штрафа без акта сверки») выделено для юриста.",
-        "body_text": "Поставка полиэтилена низкого давления марки ПЭ2НТ11-9 в объеме 60 тонн по цене 148 500,00 руб./т без НДС. Условия оплаты: 30% предоплата, 70% по факту поставки партии на склад Покупателя.",
-        "revisions": [
-            {
-                "version": "v3.0",
-                "content_hash": "sha256:1a2b3c4d5e6f",
-                "author": "saloon.as",
-                "created_at": "2026-10-30T09:00:00Z",
-            },
-            {
-                "version": "v3.1",
-                "content_hash": "sha256:7f8e9d0a1b2c",
-                "author": "saloon.as",
-                "created_at": "2026-10-31T14:30:00Z",
-            },
-            {
-                "version": "v3.2",
-                "content_hash": "sha256:3b90e441c8a2",
-                "author": "saloon.as",
-                "created_at": "2026-11-01T10:06:00Z",
-            },
-        ],
-    },
-    {
-        "id": "doc-09",
-        "title": "Протокол разногласий к договору экспедирования № ТЭ-88/26",
-        "counterparty": "АО «ТрансЛогистик-Сибирь»",
-        "version": "v1.4-edit",
-        "content_hash": "sha256:d192f0047a11",
-        "hash": "sha256:d192f0047a11",
-        "updated_at": "2026-11-01T11:20:00Z",
-        "status": "Требуется повторное согласование после правки текста",
-        "status_code": STATUS_DRAFT_INVALIDATED,
-        "approved_by": None,
-        "unsupported_terms_note": "Изменён лимит ответственности перевозчика при температурном режиме.",
-        "warning": "Изменён лимит ответственности перевозчика при температурном режиме.",
-        "body_text": "Пункт 4.1 изложить в следующей редакции: Экспедитор несет материальную ответственность за повреждение или порчу груза, вызванные нарушением согласованного температурного режима (от -5°C до +25°C).",
-        "revisions": [
-            {
-                "version": "v1.3",
-                "content_hash": "sha256:a1b2c3d4e5f6",
-                "author": "saloon.as",
-                "created_at": "2026-10-29T16:00:00Z",
-            },
-            {
-                "version": "v1.4-edit",
-                "content_hash": "sha256:d192f0047a11",
-                "author": "saloon.as",
-                "created_at": "2026-11-01T11:20:00Z",
-            },
-        ],
-    },
-]
-
 
 def compute_content_hash(body_text: str) -> str:
-    """Compute deterministic SHA-256 hash prefix for document text."""
+    """Compute the full deterministic SHA-256 digest for a revision snapshot."""
     normalized = (body_text or "").encode("utf-8")
     digest = hashlib.sha256(normalized).hexdigest()
-    return f"sha256:{digest[:12]}"
+    return f"sha256:{digest}"
 
 
 def create_versioned_document(

@@ -17,6 +17,7 @@ import pytest
 from fastapi import APIRouter
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from tests.shared.evidence_fixtures import workspace_double
 from tests.source_import_isolation import load_isolated_source
 
 __source_only__ = True
@@ -74,6 +75,7 @@ def _load_chat_web(fake_render=None):
             "app.web.nav": fake_nav,
             "app.agent.runtime": fake_runtime,
             "app.services.chat_attachments": fake_att,
+            "app.services.knowledge.workspace": workspace_double(),
         },
     )
 
@@ -155,6 +157,7 @@ async def test_chat_page_scoped_context_from_query_params():
         ),
         headers={},
         query_params={},
+        session={},
     )
 
     resp = await chat_web.chat_page(
@@ -175,7 +178,7 @@ async def test_chat_page_scoped_context_from_query_params():
     assert scoped is not None
     assert scoped["type"] == "case"
     assert scoped["id"] == "case-2026-042"
-    assert scoped["title"] == "Закупка полимерного сырья"
+    assert scoped["title"] == "Stored test evidence"  # Server resolution, not the untrusted query label.
     assert scoped["boundary"] == "company"
     assert scoped["is_local_only"] is False
 
@@ -199,6 +202,7 @@ async def test_chat_page_scoped_context_local_only_boundary():
         ),
         headers={},
         query_params={},
+        session={},
     )
 
     resp = await chat_web.chat_page(
@@ -231,11 +235,12 @@ async def test_chat_page_ajax_returns_scoped_context():
         ),
         headers={"x-requested-with": "XMLHttpRequest"},
         query_params={},
+        session={},
     )
 
     resp = await chat_web.chat_page(
         req,
-        context_type="outbox",
+        context_type="communication",
         context_id="out-101",
         boundary="cloud",
         context_title="Письмо ООО «ТехПолимер»",
@@ -286,6 +291,6 @@ def test_chat_template_renders_scoped_context_banner():
     rendered = template.render(**context)
     assert "data-chat-scoped-context" in rendered
     assert "Рамочный договор ДП-2026/114" in rendered
-    assert "local_only: внешние LLM отключены" in rendered
+    assert "local_only: отправка в чат заблокирована" in rendered
     assert "data-local-only-badge" in rendered
     assert "Снять контекст" in rendered

@@ -1,0 +1,41 @@
+<form method="get" class="ui-card flex flex-wrap gap-3">
+    {% if q is defined %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+    <label for="evidence-boundary">Граница обработки</label>
+    <select id="evidence-boundary" name="boundary" class="ui-control">
+        {% for value, label in [('cloud', 'Облачная: только cloud'), ('company', 'Корпоративная: company и cloud'), ('local_only', 'Локальная: все разрешённые записи')] %}
+        <option value="{{ value }}" {% if boundary == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit" class="ui-control">Показать</button>
+</form>
+<div class="space-y-4" data-evidence-catalog>
+    {% for row in evidence_rows %}
+    <article class="ui-card" aria-labelledby="evidence-{{ row.context_type }}-{{ row.context_id }}">
+        <h2 id="evidence-{{ row.context_type }}-{{ row.context_id }}" class="text-sm font-semibold">{{ row.title }}</h2>
+        <p class="text-xs ui-muted font-mono">{{ row.source_ref }} · {{ row.data_boundary }} · {{ row.acl_scope }}</p>
+        {% if row.context_type == 'document' %}
+        <p class="text-xs">Ревизия {{ row.version }} · {{ row.status }}{% if row.approved_by %} · {{ row.approved_by }}{% endif %} · {{ row.counterparty }}</p>
+        {% endif %}
+        <blockquote class="mt-3 rounded border border-slate-200 dark:border-slate-800 p-3 text-sm">{{ row.excerpt }}</blockquote>
+        <p class="mt-3 text-xs ui-muted font-mono">{{ row.citation_anchor }} · {{ row.revision_hash }}</p>
+        {% if row.extraction_limit_note %}<p class="text-xs ui-muted">{{ row.extraction_limit_note }}</p>{% endif %}
+        {% if row.context_type == 'document' and row.unsupported_terms_note %}<p class="text-xs ui-muted">{{ row.unsupported_terms_note }}</p>{% endif %}
+        <div class="mt-3 flex flex-wrap gap-3">
+            <button type="button" class="ui-control text-xs" data-evidence-trigger
+                data-evidence-title="{{ row.title }}" data-evidence-ref="{{ row.source_ref }}"
+                data-evidence-hash="{{ row.revision_hash }}" data-evidence-anchor="{{ row.citation_anchor }}"
+                data-evidence-boundary="{{ row.data_boundary }}"
+                data-evidence-context-type="{{ row.context_type }}" data-evidence-context-id="{{ row.context_id }}"
+                data-context-type="{{ row.context_type }}" data-context-id="{{ row.context_id }}">Свидетельство</button>
+            <a href="{{ row.chat_url }}" class="ui-control text-xs" data-evidence-chat-link>Обсудить в чате с контекстом</a>
+        </div>
+    </article>
+    {% else %}
+    <section class="ui-card" data-evidence-empty>
+        <h2 class="text-sm font-semibold">Нет доступных сохранённых записей</h2>
+        <p class="mt-2 text-xs ui-muted">В этом пространстве нет записей, подходящих под права, запрос и выбранную границу. Демо-данные не подставляются.</p>
+        <a href="/app/settings?tab=connections" class="ui-control mt-3">Подключить источник</a>
+        <a href="/app/sources" class="ui-control mt-3">Управление источниками</a>
+    </section>
+    {% endfor %}
+</div>

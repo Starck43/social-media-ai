@@ -47,6 +47,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
+- [P12-T10](docs/tasks/p12-t10.md) Unified provider presentation catalog — **IN_PROGRESS** · notion-ai-p12-t10 · [chat](https://app.notion.com/chat?t=40c2c46c1139804687a500a9690c52dd) · `P2` · `C4`
+
 
 
 

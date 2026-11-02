@@ -83,3 +83,5 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 - [P12-T08](../tasks/p12-t08.md): provider catalog, workspace connection configuration and
   safe credential UX. **DONE 2026-11-02**, merge `f36a1a53` (PR #304), migration 0121
   applied to `public`. Review: [audit/p12-t08.md](../audit/p12-t08.md).
+
+- [P12-T10](../tasks/p12-t10.md): unify provider presentation metadata and reusable cards/forms without enabling unimplemented transports.

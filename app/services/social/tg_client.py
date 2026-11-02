@@ -51,9 +51,7 @@ class TelegramClient(BaseClient):
             return await self._collect_mtproto(source)
 
         if mode == MODE_AUTO:
-            from app.services.social.tg_session import load_session
-
-            if await load_session() is not None:
+            if await self._source_session(source) is not None:
                 logger.info(f"Telegram source {source.id} in auto mode - L2 session available, pulling via MTProto")
                 return await self._collect_mtproto(source)
             logger.info(f"Telegram source {source.id} in auto mode - no L2 session, falling back to L1 (push)")
@@ -63,6 +61,26 @@ class TelegramClient(BaseClient):
         logger.info(f"Telegram source {source.id} is push-based (L1) - pull collection skipped")
         return []
 
+    async def _source_session(self, source: Source):
+        """Resolve the selected owner freshly; never substitute a revoked one."""
+        from app.services.social.credentials import AuthorizationRequired
+        from app.services.social.owner import resolve_source_owner
+        from app.services.social.tg_session import load_session
+
+        owner_user_id = await resolve_source_owner(source)
+        params = source.params or {}
+        selected = params.get("token_owner") is not None or getattr(source, "owner_user_id", None) is not None
+        if selected and owner_user_id is None:
+            raise AuthorizationRequired(
+                "Личный владелец Telegram-источника недоступен",
+                platform="telegram",
+                hint="Проверьте членство владельца и подключите его личную сессию.",
+            )
+        session = await load_session(user_id=owner_user_id)
+        if owner_user_id is None and session is not None:
+            logger.warning("Telegram source %s uses a legacy deployment-wide session", source.id)
+        return session
+
     async def _collect_mtproto(self, source: Source) -> list[Any] | list[dict | None]:
         """L2 pull: fetch messages newer than the last durably admitted watermark.
 
@@ -71,11 +89,9 @@ class TelegramClient(BaseClient):
         told why — as opposed to an empty list, which reads as "nothing new".
         """
         from app.services.social.credentials import AuthorizationRequired
-        from app.services.social.owner import resolve_source_owner
-        from app.services.social.tg_session import build_client, load_session
+        from app.services.social.tg_session import build_client
 
-        owner_user_id = await resolve_source_owner(source)
-        session = await load_session(user_id=owner_user_id)
+        session = await self._source_session(source)
         if session is None:
             raise AuthorizationRequired(
                 f"Нужна Telegram-сессия для источника {source.name}",

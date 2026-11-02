@@ -48,14 +48,15 @@ class TelegramSession:
 async def load_session(user_id: Optional[int] = None) -> Optional[TelegramSession]:
     """Resolve api_id/api_hash/session from the personal vault or env.
 
-    With `user_id` the parts come from `user_credentials` (env as fallback);
-    without it, only env is consulted. Returns None when any part is missing —
+    With `user_id` all parts come only from that user's vault; without it,
+    the legacy deployment environment remains available. Returns None when any part is missing —
     partial configuration never produces a half-working client. Never logs the
     secrets.
     """
-    api_id = await resolve_token("telegram", kinds=("api_id",), owner_user_id=user_id)
-    api_hash = await resolve_token("telegram", kinds=("api_hash",), owner_user_id=user_id)
-    session = await resolve_token("telegram", kinds=("session",), owner_user_id=user_id)
+    allow_env = user_id is None
+    api_id = await resolve_token("telegram", kinds=("api_id",), owner_user_id=user_id, allow_env=allow_env)
+    api_hash = await resolve_token("telegram", kinds=("api_hash",), owner_user_id=user_id, allow_env=allow_env)
+    session = await resolve_token("telegram", kinds=("session",), owner_user_id=user_id, allow_env=allow_env)
 
     if not (api_id and api_hash and session):
         return None

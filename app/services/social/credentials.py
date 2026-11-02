@@ -149,14 +149,15 @@ async def resolve_token(
     kinds: Optional[tuple[str, ...]] = None,
     required: bool = False,
     owner_user_id: Optional[int] = None,
+    allow_env: bool = True,
 ) -> Optional[str]:
     """Return a usable secret for `platform`: user vault first, env as fallback.
 
     `owner_user_id` selects the *personal* vault (`user_credentials`): pass it
     when the secret belongs to a person (VK L2 `user_token` for a specific user,
     e.g. from `Source.params["token_owner"]`). Without it, only env fallback
-    applies. `tenant_id` is accepted for backward compatibility but is no longer
-    consulted — there is no workspace-scoped vault anymore.
+    applies. `allow_env=False` restricts a personal selection to its own vault.
+    `tenant_id` is accepted for backward compatibility but is no longer consulted — there is no workspace-scoped vault anymore.
     """
     wanted = kinds or KIND_PREFERENCE.get(platform, ())
 
@@ -166,9 +167,10 @@ async def resolve_token(
             if secret:
                 logger.info(f"Resolved {platform}/{kind} credential from user vault for user {owner_user_id}")
                 return secret
-        secret = _from_env(platform, kind)
-        if secret:
-            return secret
+        if allow_env:
+            secret = _from_env(platform, kind)
+            if secret:
+                return secret
 
     if required:
         raise CredentialMissing(

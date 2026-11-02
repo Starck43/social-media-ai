@@ -199,7 +199,7 @@ TELEGRAM_SESSION=         # L2 MTProto (StringSession, never printed)
 TELEGRAM_ADMIN_CHAT_ID=   # fixed-template operator alerts only
 
 # Telegram (Channels)
-TELEGRAM_OWNER_IDS=       # comma-separated Telegram user ids for agent chat
+TELEGRAM_OWNER_IDS=       # Telegram user IDs eligible for owner bootstrap
 # Digest recipients: workspace channel bindings in DB, not env
 
 # MAX
@@ -341,7 +341,7 @@ or for provider-side rate limiting.
 | `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |
 | `TELEGRAM_SESSION` | `None` | Telegram StringSession (L2 MTProto) |
 | `TELEGRAM_ADMIN_CHAT_ID` | `None` | Fixed operator-alert catalog only; no workspace/digest fallback |
-| `TELEGRAM_OWNER_IDS` | `""` | Comma-separated Telegram user IDs allowed to chat with the agent |
+| `TELEGRAM_OWNER_IDS` | `""` | Telegram user IDs eligible for owner bootstrap; existing membership and runtime authorization are separate |
 | `TELEGRAM_DIGEST_CHANNEL_ID` | `""` | Deprecated; ignored by digest delivery (use workspace bindings) |
 | `MAX_BOT_TOKEN` | `None` | MAX bot access token |
 | `MAX_API_URL` | `https://platform-api2.max.ru` | MAX API base URL |

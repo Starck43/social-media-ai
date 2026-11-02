@@ -37,6 +37,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from urllib.parse import urlencode
 
 import httpx
 
@@ -163,7 +164,7 @@ async def build_authorize_url(
     }
     if scope:
         params["scope"] = scope
-    query = "&".join(f"{k}={v}" for k, v in params.items())
+    query = urlencode(params)
     url = f"{require_config_param(config, 'oauth_base_url')}/authorize?{query}"
 
     await _store_pending(user_id=user_id, state=state, verifier=verifier, tenant_id=tenant_id)

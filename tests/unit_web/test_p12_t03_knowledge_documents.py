@@ -279,7 +279,7 @@ def test_documents_jinja_template_strict_rendering():
 
     rendered = template.render(**context)
     assert 'data-p12-documents="documents-catalog"' in rendered
-    assert "Документы и ревизии" in rendered
+    assert "Документы и версии" in rendered
     assert "Stored test evidence" in rendered
     assert "sha256:fixture" in rendered
     assert "Fixture counterparty" in rendered

@@ -1,33 +1,33 @@
 {% extends "web/base.html" %}
 
 {% block title %}Закупки и сравнение предложений — AI Assistant{% endblock %}
-{% block page_heading %}Закупки и сравнение предложений поставщиков{% endblock %}
+{% block page_heading %}Сравнение предложений{% endblock %}
 
 {% block page_actions %}
-<a href="/app/documents" class="ui-control">Версии договоров</a>
-<a href="/app/settings?tab=connections" class="ui-control">Настройки подключений</a>
+<a href="/app/documents" class="ui-control">← К документам</a>
+<a href="/app/settings?tab=connections" class="ui-control">Подключения</a>
 {% endblock %}
 
 {% block right_panel %}
 <div class="space-y-3 text-sm">
-    <h2 class="font-semibold">Точный расчёт без догадок ИИ</h2>
+    <h2 class="font-semibold">О записях</h2>
     <p class="text-xs ui-muted">
-        Пересчёт валют, учёт НДС и приведение разных упаковок к единой цене за единицу товара выполняются сервером по строгим финансовым правилам.
-        Если поставщик не указал цену в прайсе, строка явно помечается как <strong>«Цена не указана — нужен запрос поставщику»</strong>.
+        Здесь показаны доступные сохранённые записи о предложениях. Проверяйте исходные данные перед принятием решения.
     </p>
     <p class="text-xs ui-muted">
-        Любое изменение курсов валют, ставки НДС или текста спецификации автоматически сбрасывает предыдущее согласование и требует повторной проверки руководителем.
+        Наличие записи не означает, что сравнение или согласование выполнено.
     </p>
 </div>
     {% include "web/_evidence_details.html" %}
 {% endblock %}
 
 {% block content %}
-<p class="ui-card text-xs ui-muted">Ниже — сохранённые свидетельства. Их наличие не подтверждает отправку сообщения, запуск напоминания или согласование кейса.</p>
 <div class="space-y-6" data-p12-cases="cases-comparison">
     {% include "web/_evidence_rows.html" %}
 
-    <section class="ui-card" aria-label="Как хранятся и защищаются подключения к почте и дискам">
+    <details class="ui-card">
+        <summary class="cursor-pointer text-sm font-semibold">Подробнее о настройках подключений</summary>
+        <div class="mt-4">
         <div class="space-y-1 mb-3">
             <h3 class="text-sm font-semibold">Откуда поступают прайс-листы и как защищены настройки подключений (P12-T08)</h3>
             <p class="text-xs ui-muted">
@@ -79,6 +79,7 @@
                 </tbody>
             </table>
         </div>
-    </section>
+    </div>
+    </details>
 </div>
 {% endblock %}

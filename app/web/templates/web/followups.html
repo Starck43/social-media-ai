@@ -1,31 +1,30 @@
 {% extends "web/base.html" %}
 
-{% block title %}Фоллоу-апы и сроки — AI Assistant{% endblock %}
-{% block page_heading %}Фоллоу-апы и сроки{% endblock %}
+{% block title %}Договорённости и сроки — AI Assistant{% endblock %}
+{% block page_heading %}Договорённости и сроки{% endblock %}
 
 {% block page_actions %}
-<a href="/app/communications" class="ui-control">Коммуникации и Outbox</a>
-<a href="/app/settings?tab=account#account-notifications" class="ui-control">Тихие часы в Настройках</a>
+<a href="/app/communications" class="ui-control">← К переписке</a>
+<a href="/app/settings?tab=account#account-notifications" class="ui-control">Уведомления</a>
 {% endblock %}
 
 {% block right_panel %}
 <div class="space-y-3 text-sm">
-    <h2 class="font-semibold">Контроль напоминаний (P12-T04)</h2>
+    <h2 class="font-semibold">О сроках</h2>
     <p class="text-xs ui-muted">Личные настройки показа уведомлений и тихих часов устройства находятся в <a href="/app/settings?tab=account" class="underline">Настройки → Мой аккаунт</a>. Неточные даты из переписки требуют подтверждения человеком.</p>
 </div>
     {% include "web/_evidence_details.html" %}
 {% endblock %}
 
 {% block content %}
-<p class="ui-card text-xs ui-muted">Ниже — сохранённые свидетельства. Их наличие не подтверждает отправку сообщения, запуск напоминания или согласование кейса.</p>
 <div class="space-y-6" data-p12-followups="followups-catalog">
     <section class="ui-card">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
-                <h2 class="text-sm font-semibold">Доказательные напоминания: неотвеченные запросы, обязательства и сроки договоров</h2>
-                <p class="mt-1 text-xs ui-muted">Тихие часы настраиваются в <a href="/app/settings?tab=account" class="underline">Настройки → Мой аккаунт</a>, Свидетельства сами по себе не запускают напоминания; неточные даты требуют подтверждения («в начале следующей недели»).</p>
+                <h2 class="text-sm font-semibold">Запросы, обязательства и сроки</h2>
+                <p class="mt-1 text-xs ui-muted">Посмотрите сохранённые записи о договорённостях. Они не запускают напоминания автоматически; неточные даты нужно подтвердить.</p>
             </div>
-            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">Сохранённые свидетельства</span>
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">Сохранённые записи</span>
         </div>
     </section>
 

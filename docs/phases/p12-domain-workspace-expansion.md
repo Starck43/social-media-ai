@@ -76,3 +76,7 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 - `app/web/templates/web/communications.html` (`P12-T04` — expects `outbox_items: list[dict]`)
 - `app/web/templates/web/followups.html` (`P12-T04` — expects `followup_items: list[dict]`)
 - `app/web/templates/web/cases.html` (`P12-T05` — expects `case_record: dict`, `comparison_rows: list[dict]`)
+
+## Provider-specific connector follow-up
+
+- [P12-T08](../tasks/p12-t08.md): provider catalog, workspace connection configuration and safe credential UX.

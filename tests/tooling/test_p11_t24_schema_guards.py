@@ -136,7 +136,15 @@ class _Scope:
                     self.flags.setdefault(target.id, value.value)
 
     def _is_schema(self, node):
-        return isinstance(node, ast.Name) and node.id in self.placeholders
+        # Post-baseline revisions also bind `schema = settings.DB_SCHEMA`
+        # directly. Recognize only this known setting, not arbitrary attributes.
+        direct_setting = (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "settings"
+            and node.attr == "DB_SCHEMA"
+        )
+        return direct_setting or (isinstance(node, ast.Name) and node.id in self.placeholders)
 
     def _names_schema(self, node):
         """Schema expressions, including the guarded migration ``_schema()`` helper."""
@@ -713,3 +721,10 @@ def test_apply_schema_guards_skips_later_revision_triggers_when_table_is_absent(
 
     assert not any("CREATE TRIGGER" in statement or "DROP TRIGGER" in statement for statement in statements)
     assert not any("guard_workspace_offboarding_mutation" in statement for statement in statements)
+
+
+def test_direct_schema_setting_is_resolved_but_unknown_attributes_are_not():
+    scope = _Scope(ast.parse("schema = settings.DB_SCHEMA"))
+    assert scope.text["schema"] == _SCHEMA
+    other = _Scope(ast.parse("schema = provider.target"))
+    assert "schema" not in other.text

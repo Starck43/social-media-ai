@@ -36,6 +36,19 @@ from dataclasses import dataclass
 # Every ``{s}`` is the target schema, quoted once at render time. It appears
 # only in table references: NEW/OLD rows and keywords are never qualified.
 GUARD_FUNCTIONS: dict[str, str] = {
+    # 0122 - reproduce the existing immutable document contract on fresh schemas.
+    "guard_document_revision_content": (
+        " BEGIN IF ROW(NEW.id, NEW.tenant_id, NEW.document_id, NEW.version, NEW.body_text, "
+        "NEW.content_hash, NEW.author, NEW.created_at, NEW.unsupported_terms_note) IS DISTINCT FROM "
+        "ROW(OLD.id, OLD.tenant_id, OLD.document_id, OLD.version, OLD.body_text, "
+        "OLD.content_hash, OLD.author, OLD.created_at, OLD.unsupported_terms_note) THEN "
+        "RAISE EXCEPTION 'Document revision content is immutable; append a revision' "
+        "USING ERRCODE = '23514'; END IF; RETURN NEW; END; "
+    ),
+    # 0124 - immutable metadata observations, with connection-lifecycle deletion.
+    "guard_file_observation": (
+        " BEGIN RAISE EXCEPTION 'File metadata observations are immutable' USING ERRCODE = '23514'; END; "
+    ),
     # 0093 - dispatch receipts are immutable evidence.
     "reject_llm_receipt_mutation": " BEGIN RAISE EXCEPTION 'Dispatch receipts are immutable' USING ERRCODE = '55000'; END; ",
     # 0119 - workspace offboarding journal is permanently immutable.
@@ -462,6 +475,18 @@ def _immutable_guards() -> list[GuardTrigger]:
 
 
 GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
+    GuardTrigger(
+        table="document_revisions",
+        name="document_revision_content_immutable",
+        function="guard_document_revision_content",
+        events=("UPDATE",),
+    ),
+    GuardTrigger(
+        table="file_catalog_observations",
+        name="file_observation_immutable",
+        function="guard_file_observation",
+        events=("UPDATE",),
+    ),
     # 0093
     GuardTrigger(
         table="llm_dispatch_receipts",

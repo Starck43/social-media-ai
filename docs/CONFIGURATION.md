@@ -11,9 +11,9 @@ The application reads config from `app/core/config.py` (Pydantic `Settings`).
 
 | Scope | Storage | Purpose |
 |---|---|---|
-| VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`, `VK_CLIENT_ACCESS_KEY`, `VK_REDIRECT_URI` | Application identity, L1 service access and registered OAuth callback; a client secret is not a user's access token. |
+| VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`; shared `Platform.params` | App identity, L1 service access, OAuth endpoints and registered callback. Legacy inputs are described below. |
 | Shared Telegram bot | env: `TELEGRAM_BOT_TOKEN` | Bot API transport; one bot may serve multiple workspaces. |
-| Personal integrations | encrypted `user_credentials` | User VK access/refresh tokens and Telegram MTProto sessions; existing collection-owner resolution selects the user. |
+| Personal integrations | `user_credentials` | VK access tokens and Telegram MTProto sessions are encrypted. At source snapshot `bc508702`, VK refresh metadata was plaintext; see P12-T14 for the proposed cutover and current delivery status. |
 | Workspace digest recipients | `tenant_channels`, active and `is_digest_target=True` | Owned destination IDs for this workspace only; use existing binding workflow, then Settings → Channels to toggle digests. |
 | Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Fixed-template operator-alert destination; never a workspace notification fallback. |
 | Agent access bootstrap | `TELEGRAM_OWNER_IDS` | Telegram **user IDs**, not chat/channel IDs; distinct from the notification destination and workspace memberships. |
@@ -188,8 +188,8 @@ ADMIN_ENABLED=true
 # VK
 VK_APP_ID=
 VK_SERVICE_KEY=             # VK "Сервисный ключ доступа" (L1)
-VK_CLIENT_ACCESS_KEY=       # VK "Защищённый ключ" (OAuth client secret)
-VK_REDIRECT_URI=https://your-domain/api/v1/social/callback
+VK_CLIENT_ACCESS_KEY=       # compatibility credential; current VK ID exchange does not send it
+# OAuth callback is configured in shared Platform.params.redirect_uri, not an env overlay.
 
 # Telegram (Bot API)
 TELEGRAM_BOT_TOKEN=
@@ -334,8 +334,8 @@ or for provider-side rate limiting.
 |---|---|---|
 | `VK_APP_ID` | `None` | VK application ID |
 | `VK_SERVICE_KEY` | `None` | VK service token (L1) — console "Сервисный ключ доступа" |
-| `VK_CLIENT_ACCESS_KEY` | `None` | VK OAuth client secret — console "Защищённый ключ" |
-| `VK_REDIRECT_URI` | `http://localhost/api/v1/social/callback` | OAuth callback; set the registered public HTTPS URL in production |
+| `VK_CLIENT_ACCESS_KEY` | `None` | Legacy client-secret resolver setting; current VK ID exchange does not send it. Retained for compatibility, not required by this implementation. |
+| `VK_REDIRECT_URI` | `http://localhost/api/v1/social/callback` | Legacy one-time migration 0120 input only; runtime callback is `Platform.params.redirect_uri`. |
 | `TELEGRAM_BOT_TOKEN` | `None` | Telegram bot token |
 | `TELEGRAM_API_ID` | `None` | Telegram API ID (L2 MTProto) |
 | `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |

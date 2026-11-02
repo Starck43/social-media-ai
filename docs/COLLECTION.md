@@ -46,15 +46,16 @@ Resolution order per platform (first hit wins):
 
 | Platform | Kinds, in order | Env fallback |
 | --- | --- | --- |
-| `vk` | `user_token`, `service_token` | `VK_APP_ID` + `VK_CLIENT_ACCESS_KEY` (OAuth app), `VK_SERVICE_KEY` (service/L1) |
+| `vk` | `user_token`, `service_token` | `VK_APP_ID` (OAuth app), `VK_SERVICE_KEY` (service/L1); `VK_CLIENT_ACCESS_KEY` remains a legacy resolver setting and is not sent in the current VK ID exchange |
 | `telegram` | `bot_token` | `TELEGRAM_BOT_TOKEN`; L2 parts `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` / `TELEGRAM_SESSION` |
 | `max` | `bot_token` | `MAX_BOT_TOKEN` |
 
 `vk/user_token` is a **personal** secret: it is consulted only when the caller
 supplies an owner user. Collection takes that owner from
 `app.services.social.owner.resolve_source_owner(source)` — an explicit
-`Source.params["token_owner"]` (accepted only when the user is an active member
-of the source's workspace) or, by default, the workspace owner. The refresh
+`Source.params["token_owner"]` or `Source.owner_user_id`, revalidated against
+active workspace membership. No workspace owner is silently substituted; an
+unresolved personal owner means service-only access where that mode is allowed. The refresh
 token is stored in the `meta` JSON of the `vk/user_token` row (see
 [VK L2 via OAuth](#vk-l2-via-oauth-pkce)).
 
@@ -81,9 +82,8 @@ button*:
 | `missing` | never connected | yes |
 | `unconfigured` | the deployment has no app credentials | no |
 
-The distinction that matters is `renewable` vs `reauth`. VK access tokens live
-**1 hour** and are renewed automatically; showing «войдите заново» for that
-every hour is what pushed people to log out and re-authorize for no reason. A
+The distinction that matters is `renewable` vs `reauth`; a stored refresh does
+not prove the provider will renew it or that the configured key is readable. A
 renewal failure is recorded as `meta.refresh_failed_at` and treated as `reauth`
 for `REFRESH_FAILURE_COOLDOWN` (6 h) — the UI then asks for a re-login instead of
 retrying a refresh token that is known to be spent.
@@ -397,28 +397,25 @@ Setup (one-time, deployment-wide app; per-user authorize):
 
 ```bash
 # App credentials are env config (one VK app per deployment):
-#   VK_APP_ID, VK_CLIENT_ACCESS_KEY in .env
+#   VK_APP_ID in deployment config; callback and OAuth URLs in shared Platform.params
+#   VK_CLIENT_ACCESS_KEY is retained for compatibility, not sent by this exchange
 python -m cli.main credentials oauth vk --user <id> [--tenant owner]   # runs the flow
 ```
 
 `credentials oauth vk` builds the authorize URL, opens it in the browser, and
 waits (up to `--wait` seconds, default 180) for the callback to write the token
-to the **personal vault of `--user`** (default: the workspace owner). On VK's
-side the user consents and VK redirects to the **public**
-callback `VK_REDIRECT_URI` (default `http://localhost/api/v1/social/callback`,
-`GET /api/v1/social/callback`).
+to the **personal vault of `--user`**. The registered callback must match
+`Platform.params.redirect_uri`; `VK_REDIRECT_URI` is only a legacy migration
+input, not a runtime override. The bootstrap default is localhost for local
+development and must not be mistaken for a production callback.
 
-Why the callback is public: VK redirects the user's browser there, so it cannot
-require our bearer token. Security comes from a **signed `state`** — the state is
-`"{tenant_id}.{user_id}.{verifier}.{hmac}"` over `SECRET_KEY`, so the callback recovers the
-workspace and the PKCE verifier without any server-side session, and a forged or
-tampered state is rejected before any code is exchanged.
-
-Auto-refresh: VK access tokens age out in **1 hour** and cannot be extended, but
-each authorization also yields a **refresh token valid for 180 days** that is
-renewed silently. `resolve_token("vk", ...)` calls `renew_if_expiring()`, which
-renews ~5 minutes *before* the expiry rather than after it — a run that starts at
-10:59 would otherwise carry a token that dies mid-request.
+The callback is reached through the browser without a bearer token. The app
+uses a random, single-use state and an encrypted server-side pending PKCE
+verifier with a short expiry; it does not encode a signed user or verifier in
+the state. Provider-side application profile, permissions and token lifetimes
+must be verified separately; no success or fixed lifetime follows merely from
+configured values. At source snapshot `bc508702`, the refresh secret was stored in metadata;
+see P12-T14 for the proposed encrypted-storage migration and current status.
 
 Two VK ID rules shape `refresh_user_token()`:
 
@@ -434,9 +431,7 @@ Two VK ID rules shape `refresh_user_token()`:
 A missing `app_id` leaves the flow unchanged — the row is skipped with a warning,
 as before.
 
-Consequence for the product: **re-authorization is a ~6-monthly event, not a
-routine chore.** Anything in the UI that asks for a login more often than that is
-reporting a bug, not a fact.
+Re-authorization timing depends on the provider and failures; do not promise a fixed interval.
 
 ## Source parameters
 

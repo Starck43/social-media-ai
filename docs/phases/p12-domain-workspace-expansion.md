@@ -108,3 +108,6 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 - [P8-T34](../tasks/p8-t34.md): owner-selected Yandex Disk pilot, transferred from
   P8; one folder, read-only. Folder-level restrictions and mutation safety are
   required; no provider writes or delete operation in this pilot.
+
+- [P12-T15](../tasks/p12-t15.md): user-managed per-folder restrictions and
+  separately gated, explicitly approved file mutations after the read-only pilot.

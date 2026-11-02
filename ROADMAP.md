@@ -62,7 +62,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P3
 
-- [P12-T03](docs/tasks/p12-t03.md) Knowledge & Documents workspace with ACL-aware citations (`/app/knowledge`, `/app/documents`) — **IN_PROGRESS** · aistudio-p12-t03 · [AI Studio](https://aistudio.google.com/apps/620ec9ae-d392-40fe-bd4b-493f5f7aa1ed) · `P3` · `C4`
+- [P12-T03](docs/tasks/p12-t03.md) Knowledge & Documents workspace with ACL-aware citations (`/app/knowledge`, `/app/documents`) — **IN_PROGRESS** · aistudio-p12-t03 · [PR #300](https://github.com/Starck43/social-media-ai/pull/300) · `P3` · `C4`
 - [P12-T04](docs/tasks/p12-t04.md) Communication, verified contacts, scheduled outbox & follow-ups (`/app/communications`, `/app/followups`) — **TODO** · unassigned · — · `P3` · `C4`
 - [P12-T05](docs/tasks/p12-t05.md) Cases, deterministic supplier comparison & document approvals (`/app/cases`) — **TODO** · unassigned · — · `P3` · `C3`
 - [P12-T06](docs/tasks/p12-t06.md) Shared evidence drawer (`context-panel`), P12 router/nav activation & `/app/chat` context handoff — **TODO** · unassigned · — · `P3` · `C3`

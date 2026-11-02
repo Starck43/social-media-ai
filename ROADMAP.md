@@ -34,7 +34,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P0
 
 - [P12-T14](docs/tasks/p12-t14.md) Credential security and explicit connector configuration — **IN_PROGRESS** · notion-ai-p12-t14 · [dialogue](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P0` · `C5`
-- [P12-T16](docs/tasks/p12-t16.md) Personal source ownership, auth preflight and actionable authorisation notices — **IN_PROGRESS** · opencode-p12-t16 · local owner dialogue 2026-11-02 · `P0` · `C4`
+- [P12-T16](docs/tasks/p12-t16.md) Personal source ownership, auth preflight and actionable authorisation notices — **READY** · opencode-p12-t16 · [PR #312](https://github.com/Starck43/social-media-ai/pull/312) · `P0` · `C4`
 
 
 

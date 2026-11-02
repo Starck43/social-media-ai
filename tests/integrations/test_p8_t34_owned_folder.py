@@ -288,3 +288,104 @@ async def test_viewer_can_read_own_connection_but_cannot_cross_owner(workspace_d
         with actor(workspace_data, user=1) as args:
             with pytest.raises(ConnectionDenied):
                 await list_owned_folder(**args, folder="/work", client=client)
+
+
+async def test_create_connection_encrypts_secret_and_can_read_with_mock(workspace_data, caplog):
+    from app.services.file_workspace.connections import create_yandex_connection
+    from app.utils.crypto import decrypt_secret
+
+    with actor(workspace_data) as args:
+        result = await create_yandex_connection(
+            tenant_id=args["tenant_id"],
+            actor_id=args["actor_id"],
+            label="Документы",
+            root="/work",
+            oauth_token=TEST_TOKEN,
+        )
+        assert result["state"] == "unverified" and TEST_TOKEN not in repr(result)
+        async with async_session_maker() as session:
+            row = await session.get(WorkspaceConnection, result["id"])
+            secret = await session.get(WorkspaceConnectionSecret, result["id"])
+            assert row.owner_user_id == args["actor_id"] and row.tenant_id == args["tenant_id"]
+            assert row.config == {"file_policy": {"version": 1, "root": "/work", "restrictions": []}}
+            assert TEST_TOKEN not in secret.secret_encrypted and decrypt_secret(secret.secret_encrypted) == TEST_TOKEN
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, json=provider_response()))
+        ) as client:
+            page = await list_owned_folder(**{**args, "connection_id": result["id"]}, folder="/work", client=client)
+        assert {item.name for item in page.items} == {"private", "report.txt"}
+    assert TEST_TOKEN not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "label,root,token",
+    [
+        ("label", "/work/../other", TEST_TOKEN),
+        ("label", "/work/%2f", TEST_TOKEN),
+        ("bad\nlabel", "/work", TEST_TOKEN),
+        ("label", "/work", "bad\ntoken"),
+        ("label", "/work", ""),
+        ("label", None, TEST_TOKEN),
+    ],
+)
+async def test_create_rejects_bad_input_without_echo_or_write(workspace_data, label, root, token):
+    from sqlalchemy import func
+
+    from app.services.file_workspace.connections import FolderConnectionInputError, create_yandex_connection
+
+    with actor(workspace_data) as args:
+        async with async_session_maker() as session:
+            before = (await session.execute(select(func.count()).select_from(WorkspaceConnection))).scalar_one()
+        with pytest.raises(FolderConnectionInputError) as exc:
+            await create_yandex_connection(
+                tenant_id=args["tenant_id"], actor_id=args["actor_id"], label=label, root=root, oauth_token=token
+            )
+        assert TEST_TOKEN not in str(exc.value) and "bad\ntoken" not in str(exc.value)
+        async with async_session_maker() as session:
+            after = (await session.execute(select(func.count()).select_from(WorkspaceConnection))).scalar_one()
+        assert after == before
+
+
+async def test_create_requires_current_actor_and_create_grant(workspace_data):
+    from app.services.file_workspace.connections import create_yandex_connection
+
+    with actor(workspace_data) as args:
+        with pytest.raises(ConnectionDenied):
+            await create_yandex_connection(
+                tenant_id=args["tenant_id"],
+                actor_id=workspace_data.users[1].id,
+                label="x",
+                root="/work",
+                oauth_token=TEST_TOKEN,
+            )
+        async with async_session_maker() as session, session.begin():
+            await session.execute(
+                update(TenantUser)
+                .where(TenantUser.tenant_id == args["tenant_id"], TenantUser.user_id == args["actor_id"])
+                .values(role_id=workspace_data.roles["viewer"])
+            )
+        with pytest.raises(ConnectionDenied):
+            await create_yandex_connection(
+                tenant_id=args["tenant_id"], actor_id=args["actor_id"], label="x", root="/work", oauth_token=TEST_TOKEN
+            )
+
+
+async def test_failed_encryption_rolls_back_setup(workspace_data, monkeypatch):
+    from sqlalchemy import func
+
+    from app.services.file_workspace import connections
+
+    def fail(_):
+        raise RuntimeError("simulated encryption failure")
+
+    monkeypatch.setattr(connections, "encrypt_secret", fail)
+    with actor(workspace_data) as args:
+        async with async_session_maker() as session:
+            before = (await session.execute(select(func.count()).select_from(WorkspaceConnection))).scalar_one()
+        with pytest.raises(RuntimeError):
+            await connections.create_yandex_connection(
+                tenant_id=args["tenant_id"], actor_id=args["actor_id"], label="x", root="/work", oauth_token=TEST_TOKEN
+            )
+        async with async_session_maker() as session:
+            after = (await session.execute(select(func.count()).select_from(WorkspaceConnection))).scalar_one()
+        assert after == before

@@ -54,7 +54,7 @@ class ConnectionDenied(PermissionError):
         super().__init__("connection_unavailable")
 
 
-async def _authorize(session, tenant_id, actor_id, *, write=False):
+async def _authorize(session, tenant_id, actor_id, *, write=False, require_source_view=False):
     if any(type(value) is not int or value <= 0 for value in (tenant_id, actor_id)):
         raise ConnectionDenied()
     actor = get_current_user()
@@ -90,9 +90,12 @@ async def _authorize(session, tenant_id, actor_id, *, write=False):
             select(WorkspaceRole.codename).where(WorkspaceRole.id == member.role_id).with_for_update(read=True)
         )
     ).scalar_one_or_none()
-    if role is None or (write and ("source", ActionType.CREATE) not in workspace_grants(role)):
+    grants = workspace_grants(role) if role is not None else frozenset()
+    if role is None or (write and ("source", ActionType.CREATE) not in grants):
         raise ConnectionDenied()
-    return ("source", ActionType.CREATE) in workspace_grants(role)
+    if require_source_view and ("source", ActionType.VIEW) not in grants:
+        raise ConnectionDenied()
+    return ("source", ActionType.CREATE) in grants
 
 
 def _projection(row):
@@ -200,20 +203,26 @@ class WorkspaceConnectionManager:
         except IntegrityError:
             raise InvalidConnectorInput("duplicate_account") from None
 
-    async def disable(self, *, tenant_id, actor_id, connection_id):
+    async def disable(self, *, tenant_id, actor_id, connection_id, expected_provider=None, allowed_provider_ids=None):
         async with async_session_maker() as session, session.begin():
             await _authorize(session, tenant_id, actor_id, write=True)
             row = await _connection(session, tenant_id, actor_id, connection_id)
+            if expected_provider is not None and row.provider_id != expected_provider:
+                raise ConnectionDenied()
+            if allowed_provider_ids is not None and row.provider_id not in allowed_provider_ids:
+                raise ConnectionDenied()
             row.is_active, row.state, row.checked_at, row.check_code = False, "disabled", None, None
             # Remove the local secret on disable; reactivation needs a new password.
             secret_row = await session.get(WorkspaceConnectionSecret, row.id)
             if secret_row is not None:
                 secret_row.secret_encrypted = ""
 
-    async def verify(self, *, tenant_id, actor_id, connection_id):
+    async def verify(self, *, tenant_id, actor_id, connection_id, allowed_provider_ids=None):
         async with async_session_maker() as session, session.begin():
             await _authorize(session, tenant_id, actor_id, write=True)
             row = await _connection(session, tenant_id, actor_id, connection_id)
+            if allowed_provider_ids is not None and row.provider_id not in allowed_provider_ids:
+                raise ConnectionDenied()
             if not row.is_active:
                 raise ConnectionDenied()
             if (

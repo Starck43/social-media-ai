@@ -54,7 +54,7 @@ class ConnectionDenied(PermissionError):
         super().__init__("connection_unavailable")
 
 
-async def _authorize(session, tenant_id, actor_id, *, write=False):
+async def _authorize(session, tenant_id, actor_id, *, write=False, require_source_view=False):
     if any(type(value) is not int or value <= 0 for value in (tenant_id, actor_id)):
         raise ConnectionDenied()
     actor = get_current_user()
@@ -90,9 +90,12 @@ async def _authorize(session, tenant_id, actor_id, *, write=False):
             select(WorkspaceRole.codename).where(WorkspaceRole.id == member.role_id).with_for_update(read=True)
         )
     ).scalar_one_or_none()
-    if role is None or (write and ("source", ActionType.CREATE) not in workspace_grants(role)):
+    grants = workspace_grants(role) if role is not None else frozenset()
+    if role is None or (write and ("source", ActionType.CREATE) not in grants):
         raise ConnectionDenied()
-    return ("source", ActionType.CREATE) in workspace_grants(role)
+    if require_source_view and ("source", ActionType.VIEW) not in grants:
+        raise ConnectionDenied()
+    return ("source", ActionType.CREATE) in grants
 
 
 def _projection(row):

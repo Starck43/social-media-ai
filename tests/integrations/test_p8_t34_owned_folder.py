@@ -389,3 +389,100 @@ async def test_failed_encryption_rolls_back_setup(workspace_data, monkeypatch):
         async with async_session_maker() as session:
             after = (await session.execute(select(func.count()).select_from(WorkspaceConnection))).scalar_one()
         assert after == before
+
+
+async def test_assembled_settings_save_and_disable_without_provider_io(workspace_data, caplog):
+    import re
+    from urllib.parse import urlencode
+
+    from app.core.hashing import get_password_hash
+    from app.main import create_application
+
+    password = "p8t34-test-password"
+    async with async_session_maker() as session, session.begin():
+        await session.execute(
+            update(User)
+            .where(User.id.in_([u.id for u in workspace_data.users]))
+            .values(hashed_password=get_password_hash(password))
+        )
+    app = create_application()
+    csrf_re = re.compile(r'name="_csrf" value="([^"]+)"')
+
+    async def login(client, user):
+        page = await client.get("/app/login")
+        csrf = csrf_re.search(page.text).group(1)
+        response = await client.post(
+            "/app/login", data={"username": user.username, "password": password, "_csrf": csrf}
+        )
+        assert response.status_code in (302, 303)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=False) as client:
+        await login(client, workspace_data.users[0])
+        page = await client.get("/app/settings?tab=connections")
+        assert page.status_code == 200
+        assert 'action="/app/settings/yandex-connections"' in page.text
+        assert "может охватывать весь диск" in page.text and "ещё в разработке" in page.text
+        csrf = csrf_re.search(page.text).group(1)
+        form = {
+            "_csrf": csrf,
+            "label": "Mock personal disk",
+            "root": "/work",
+            "oauth_token": TEST_TOKEN,
+            "scope_ack": "on",
+        }
+        assert (await client.post("/app/settings/yandex-connections", data={**form, "_csrf": "bad"})).status_code == 403
+        assert (
+            await client.post(
+                "/app/settings/yandex-connections", data={k: v for k, v in form.items() if k != "scope_ack"}
+            )
+        ).status_code == 400
+        assert (
+            await client.post("/app/settings/yandex-connections", data={**form, "tenant_id": "123"})
+        ).status_code == 400
+        duplicate = urlencode([*form.items(), ("scope_ack", "on")])
+        assert (
+            await client.post(
+                "/app/settings/yandex-connections",
+                content=duplicate,
+                headers={"content-type": "application/x-www-form-urlencoded"},
+            )
+        ).status_code == 400
+        response = await client.post("/app/settings/yandex-connections", data=form)
+        assert response.status_code == 303 and TEST_TOKEN not in response.text
+        async with async_session_maker() as session:
+            row = (
+                await session.execute(
+                    select(WorkspaceConnection).where(WorkspaceConnection.label == "Mock personal disk")
+                )
+            ).scalar_one()
+            cid = row.id
+            assert row.owner_user_id == workspace_data.users[0].id and row.state == "unverified"
+        refreshed = await client.get("/app/settings?tab=connections")
+        assert "Mock personal disk" in refreshed.text and TEST_TOKEN not in refreshed.text
+        assert f'data-yandex-connection="{cid}"' in refreshed.text
+        assert f'data-workspace-connection="{cid}"' not in refreshed.text
+        assert (
+            await client.post(f"/app/settings/workspace-connections/{cid}/check", data={"_csrf": csrf})
+        ).status_code == 403
+        assert (
+            await client.post(f"/app/settings/yandex-connections/{cid}/disable", data={"_csrf": "bad"})
+        ).status_code == 403
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver", follow_redirects=False
+        ) as other:
+            await login(other, workspace_data.users[1])
+            other_page = await other.get("/app/settings?tab=connections")
+            other_csrf = csrf_re.search(other_page.text).group(1)
+            assert "Mock personal disk" not in other_page.text
+            assert (
+                await other.post(f"/app/settings/yandex-connections/{cid}/disable", data={"_csrf": other_csrf})
+            ).status_code == 403
+        assert (
+            await client.post(f"/app/settings/yandex-connections/{cid}/disable", data={"_csrf": csrf})
+        ).status_code == 303
+        async with async_session_maker() as session:
+            row = await session.get(WorkspaceConnection, cid)
+            secret = await session.get(WorkspaceConnectionSecret, cid)
+            assert row.is_active is False and row.state == "disabled" and secret.secret_encrypted == ""
+    assert TEST_TOKEN not in caplog.text

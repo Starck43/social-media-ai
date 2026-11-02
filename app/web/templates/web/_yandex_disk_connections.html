@@ -1,0 +1,34 @@
+<p class="mt-3 text-sm ui-muted">Пилот: настройка одной папки только для чтения. Просмотр и открытие файлов ещё в разработке. Сохранение не проверяет доступ и не обращается к Яндекс.Диску.</p>
+<p class="mt-2 text-sm ui-muted">Разрешение Яндекса на чтение может охватывать весь диск. Выбранная папка ограничивает только работу этого приложения, не других приложений. Запись и удаление в пилоте выключены.</p>
+{% for row in workspace_connection_rows|default([]) if row.provider_id|default('') == 'yandex_disk' %}
+<article class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3" data-yandex-connection="{{ row.id }}">
+    <h3 class="font-medium">{{ row.label }}</h3>
+    <p class="mt-2 text-sm" role="status">{% if row.is_active %}Сохранено · доступ не проверен{% else %}Отключено{% endif %}</p>
+    {% if row.is_active and workspace_connection_write|default(false) %}
+    <form method="post" action="/app/settings/yandex-connections/{{ row.id }}/disable" class="mt-3">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="ui-control">Отключить</button>
+    </form>
+    {% endif %}
+</article>
+{% endfor %}
+{% if workspace_connection_write|default(false) %}
+<details class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+    <summary class="cursor-pointer text-sm font-medium">Добавить Яндекс.Диск</summary>
+    <p class="mt-2 text-sm ui-muted">Используйте личный OAuth-токен с разрешением на чтение, без разрешения на запись. Права токена пока не проверяются автоматически. Токен сохранится зашифрованным и повторно не показывается.</p>
+    <form method="post" action="/app/settings/yandex-connections" class="mt-3 space-y-3" autocomplete="off">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <label class="block text-sm" for="yandex-file-label">Название подключения</label>
+        <input class="ui-control w-full" id="yandex-file-label" name="label" maxlength="100" placeholder="Например: Рабочие документы">
+        <label class="block text-sm" for="yandex-file-root">Путь выбранной папки на Диске</label>
+        <input class="ui-control w-full" id="yandex-file-root" name="root" required placeholder="/Документы">
+        <p class="text-xs ui-muted">Начните путь с /, без конечного /; символ % пока не поддерживается.</p>
+        <label class="block text-sm" for="yandex-file-token">OAuth-токен</label>
+        <input class="ui-control w-full" id="yandex-file-token" name="oauth_token" type="password" autocomplete="off" required>
+        <label class="block text-sm"><input type="checkbox" name="scope_ack" value="on" required> Понимаю, что разрешение Яндекса может охватывать весь диск.</label>
+        <button class="ui-control">Сохранить подключение</button>
+    </form>
+</details>
+{% else %}
+<p class="mt-3 text-sm ui-muted">Создавать и отключать свои подключения могут владелец, соадминистратор и менеджер активного пространства.</p>
+{% endif %}

@@ -1,48 +1,77 @@
 {% extends "web/base.html" %}
+
 {% block title %}Коммуникации и Outbox — AI Assistant{% endblock %}
 {% block page_heading %}Коммуникации и Outbox{% endblock %}
+
 {% block page_actions %}
 <a href="/app/followups" class="ui-control">Фоллоу-апы и сроки</a>
 <a href="/app/settings?tab=channels" class="ui-control">Каналы доставки в Настройках</a>
 {% endblock %}
+
 {% block right_panel %}
 <div class="space-y-3 text-sm">
     <h2 class="font-semibold">Жизненный цикл отправки (P12-T04)</h2>
-    <p class="text-xs ui-muted font-mono">draft → validated → approved/scheduled → claimed → confirmed/failed/unknown</p>
-    <p class="text-xs ui-muted">Подтверждение связывает актора, тенант, точного получателя, хеш версии текста и TTL. При таймауте (<code>unknown</code>) слепой повтор запрещён.</p>
+    <p class="text-xs ui-muted font-mono">draft → validated → approved/scheduled → claimed → sent / uncertain_delivery / failed</p>
+    <p class="text-xs ui-muted">Подтверждение связывает актора, точного получателя, хеш версии текста и TTL. При таймауте (<code>uncertain_delivery</code>) слепой повтор запрещён.</p>
 </div>
 {% endblock %}
+
 {% block content %}
-<div class="space-y-6" data-p12-draft="communications">
+<div class="space-y-6" data-p12-communications="communications-outbox">
     <section class="ui-card">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
                 <h2 class="text-sm font-semibold">Верифицированные контакты, треды и очередь одобренной отправки (Outbox)</h2>
                 <p class="mt-1 text-xs ui-muted">Настройка целевых каналов доставки дайджестов остаётся на вкладке <a href="/app/settings?tab=channels" class="underline">Настройки → Каналы доставки</a>. Здесь управляются адресные ответы контрагентам с проверкой неоднозначных маршрутов, TTL и кнопкой экстренной отмены (Kill Switch).</p>
             </div>
-            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-700/50">Черновой шаблон P12-T04</span>
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">Рабочая очередь P12-T04</span>
         </div>
     </section>
 
-    {% set outbox = outbox_messages|default([
-        {"id": "out-101", "recipient": "Игорь Смирнов · ООО «ТехПолимер-Восток»", "channel": "Email (IMAP/SMTP)", "subject": "Re: КП на ноябрьскую партию ПНД и запрос цены по Катализатору КС-4", "state": "VALIDATED · Готово к акцепту", "ttl": "TTL до 14:00 MSK · sha256:88a1c04f", "note": "Маршрут верифицирован (procurement@company.ru → smirnov@techpolymer.ru)"},
-        {"id": "out-102", "recipient": "Елена Ковалёва · АО «ТрансЛогистик-Сибирь»", "channel": "Telegram", "subject": "Согласование протокола разногласий ТЭ-88/26", "state": "DRAFT · Заблокировано (неоднозначный маршрут)", "ttl": "Требуется ручной выбор между @ekovaleva_logist и @elena_sibtrans", "note": "Контракт PRODUCT_PLAN.md: неоднозначные контакты требуют ручной проверки перед отправкой."}
-    ]) %}
-
+    {% set items = outbox_items|default(outbox_messages|default([])) %}
     <div class="space-y-4">
-        {% for m in outbox %}
+        {% for m in items %}
         <section class="ui-card" aria-labelledby="outbox-title-{{ m.id }}">
             <div class="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                    <p class="text-xs ui-muted font-mono">{{ m.channel }} · {{ m.state }} · {{ m.ttl }}</p>
-                    <h2 id="outbox-title-{{ m.id }}" class="mt-1 text-base font-semibold">{{ m.recipient }} — {{ m.subject }}</h2>
+                <div class="space-y-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-xs font-mono font-semibold text-sky-400">{{ m.channel }}</span>
+                        <span class="text-xs ui-muted">·</span>
+                        <span class="text-xs font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">{{ m.state }}</span>
+                        {% if m.route_verified %}
+                            <span class="text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/60">Маршрут верифицирован</span>
+                        {% else %}
+                            <span class="text-xs px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800/60">Маршрут не подтверждён</span>
+                        {% endif %}
+                    </div>
+                    <h2 id="outbox-title-{{ m.id }}" class="text-base font-semibold">{{ m.recipient_label }} — {{ m.subject }}</h2>
+                    <p class="text-xs ui-muted font-mono">
+                        {{ m.content_hash }}
+                        {% if m.ttl_expires_at %} · TTL: {{ m.ttl_expires_at }}{% endif %}
+                        {% if m.bound_actor %} · Актор: {{ m.bound_actor }}{% endif %}
+                        {% if m.scheduled_at %} · Запланировано: {{ m.scheduled_at }}{% endif %}
+                    </p>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button type="button" class="ui-control text-xs">Одобрить отправку (TTL)</button>
-                    <button type="button" class="ui-control text-xs">Отменить (Kill Switch)</button>
+                    {% if m.route_verified and m.state in ['validated', 'draft'] %}
+                        <button type="button" class="ui-control text-xs">Одобрить отправку (TTL)</button>
+                    {% endif %}
+                    {% if m.state not in ['sent', 'cancelled'] %}
+                        <button type="button" class="ui-control text-xs text-rose-400 hover:text-rose-300">Отменить (Kill Switch)</button>
+                    {% endif %}
                 </div>
             </div>
-            <p class="mt-3 text-xs ui-muted">{{ m.note }}</p>
+
+            {% if m.route_warning %}
+                <div class="mt-2 text-xs text-amber-400 bg-amber-950/40 border border-amber-800/50 rounded px-2.5 py-1.5">
+                    <strong>Внимание маршрута:</strong> {{ m.route_warning }}
+                </div>
+            {% endif %}
+
+            <div class="mt-3 text-xs text-zinc-300 bg-zinc-900/60 p-2.5 rounded border border-zinc-800">
+                <span class="ui-muted font-mono text-[11px] block mb-1">Предпросмотр сообщения:</span>
+                {{ m.body_preview }}
+            </div>
         </section>
         {% endfor %}
     </div>

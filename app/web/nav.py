@@ -99,7 +99,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(
         "documents",
         "/app/documents",
-        "Документы и ревизии",
+        "Документы и версии",
         required_permission="analysis.result.view",
         icon="document",
         group="knowledge",
@@ -109,7 +109,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(
         "communications",
         "/app/communications",
-        "Коммуникации и Outbox",
+        "Переписка",
         required_permission="scheduling.action.view",
         icon="message",
         group="communications",
@@ -118,7 +118,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(
         "followups",
         "/app/followups",
-        "Фоллоу-апы и сроки",
+        "Договорённости",
         required_permission="scheduling.task.view",
         icon="calendar",
         group="communications",
@@ -128,7 +128,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(
         "cases",
         "/app/cases",
-        "Кейсы и сравнение КП",
+        "Предложения",
         required_permission="scheduling.action.view",
         icon="chart",
         group="cases_system",

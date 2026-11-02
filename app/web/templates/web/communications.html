@@ -1,32 +1,31 @@
 {% extends "web/base.html" %}
 
-{% block title %}Коммуникации и Outbox — AI Assistant{% endblock %}
-{% block page_heading %}Коммуникации и Outbox{% endblock %}
+{% block title %}Переписка — AI Assistant{% endblock %}
+{% block page_heading %}Переписка{% endblock %}
 
 {% block page_actions %}
-<a href="/app/followups" class="ui-control">Фоллоу-апы и сроки</a>
-<a href="/app/settings?tab=channels" class="ui-control">Каналы доставки в Настройках</a>
+<a href="/app/chat" class="ui-control">← К чату</a>
+<a href="/app/followups" class="ui-control">Договорённости</a>
 {% endblock %}
 
 {% block right_panel %}
 <div class="space-y-3 text-sm">
-    <h2 class="font-semibold">Жизненный цикл отправки (P12-T04)</h2>
-    <p class="text-xs ui-muted font-mono">draft → validated → approved/scheduled → claimed → sent / uncertain_delivery / failed</p>
-    <p class="text-xs ui-muted">Подтверждение связывает актора, точного получателя, хеш версии текста и TTL. При таймауте (<code>uncertain_delivery</code>) слепой повтор запрещён.</p>
+    <h2 class="font-semibold">О переписке</h2>
+
+    <p class="text-xs ui-muted">Здесь показаны сохранённые фрагменты переписки и сведения о доставке. Наличие записи не означает, что сообщение отправлено.</p>
 </div>
     {% include "web/_evidence_details.html" %}
 {% endblock %}
 
 {% block content %}
-<p class="ui-card text-xs ui-muted">Ниже — сохранённые свидетельства. Их наличие не подтверждает отправку сообщения, запуск напоминания или согласование кейса.</p>
 <div class="space-y-6" data-p12-communications="communications-outbox">
     <section class="ui-card">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
-                <h2 class="text-sm font-semibold">Сохранённые свидетельства переписки и доставки</h2>
-                <p class="mt-1 text-xs ui-muted">Настройка целевых каналов доставки дайджестов остаётся на вкладке <a href="/app/settings?tab=channels" class="underline">Настройки → Каналы доставки</a>. Здесь показаны индексированные свидетельства; управление отправкой, TTL и экстренной отменой (Kill Switch) не выполняется.</p>
+                <h2 class="text-sm font-semibold">Сохранённые записи переписки</h2>
+                <p class="mt-1 text-xs ui-muted">Здесь можно изучить доступные записи, но не отправить сообщение. Каналы доставки дайджестов настраиваются в <a href="/app/settings?tab=channels" class="underline">настройках</a>.</p>
             </div>
-            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">Сохранённые свидетельства</span>
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">Сохранённые записи</span>
         </div>
     </section>
 

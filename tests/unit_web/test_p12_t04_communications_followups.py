@@ -310,12 +310,12 @@ def test_communications_jinja_template_strict_rendering():
 
     rendered = template.render(**context)
     assert 'data-p12-communications="communications-outbox"' in rendered
-    assert "Коммуникации и Outbox" in rendered
+    assert "Переписка" in rendered
     assert "Stored test evidence" in rendered
     assert 'data-evidence-context-type="communication"' in rendered
     assert "Маршрут верифицирован" not in rendered
     assert "sha256:fixture" in rendered
-    assert "Kill Switch" in rendered
+    assert "не отправить сообщение" in rendered
 
 
 def test_followups_jinja_template_strict_rendering():
@@ -330,7 +330,7 @@ def test_followups_jinja_template_strict_rendering():
 
     rendered = template.render(**context)
     assert 'data-p12-followups="followups-catalog"' in rendered
-    assert "Фоллоу-апы и сроки" in rendered
+    assert "Договорённости и сроки" in rendered
     assert "Stored test evidence" in rendered
     assert "Test-only evidence text" in rendered
     assert 'data-evidence-context-type="followup"' in rendered

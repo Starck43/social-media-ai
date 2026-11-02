@@ -86,6 +86,9 @@ it for workspace offboarding and `0120` follows `0119` for shared platform
 configuration. Q-14 verified the local public and test schemas against the
 baseline, not every deployment target. Follow
 [DEPLOYMENT](DEPLOYMENT.md) for target-state inspection and migration transition.
+Later repository revisions `0121`–`0123` add P12 connection, evidence and
+source-owner/auth-notice structures; they do not introduce subscription or
+checkout persistence and do not reserve a migration number for this plan.
 
 Any separately approved subscription schema must reserve a distinct revision
 from the actual integrated head after rechecking the graph. No migration number

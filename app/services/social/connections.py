@@ -120,9 +120,9 @@ CONNECTIONS: tuple[ConnectionSpec, ...] = (
         platform="email",
         kind="app_password",
         title="Почта IMAP/SMTP",
-        purpose="Чтение входящих веток поставщиков и контролируемая отправка согласованных писем",
+        purpose="Настройка почтовых аккаунтов пространства и проверка входа по IMAP; отправка выключена",
         mode="manual",
-        manual_hint="Укажите пароль приложения IMAP/SMTP; адрес сервера и папки хранятся в параметрах пространства.",
+        manual_hint="Выберите сервис, укажите адрес ящика и отдельный пароль приложения.",
         category_label="Почтовый коннектор",
         auth_protocol="IMAP4rev1 / SMTP TLS",
         data_boundary="company",
@@ -346,6 +346,11 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
     if expires_at is None or expires_at > now:
         account = meta.get("user_id")
         who = f" · VK ID {account}" if account else ""
+        # These business connector records do not prove a remote verification.
+        if platform not in ("vk", "telegram"):
+            return ConnectionStatus(
+                platform, "connected", "Сохранено", "Данные сохранены; подключение не проверено", False, True
+            )
         return ConnectionStatus(
             platform,
             "connected",
@@ -589,9 +594,9 @@ def build_workspace_connectors(
         if active_rows or raw_state in ("connected", "renewable"):
             health_status = "connected"
             health_diagnostic = (
-                f"Подключено ({len(active_rows)} активн.) · проверка секретов и канонических путей пройдена"
+                f"Сохранено активных записей: {len(active_rows)} · подключение не проверено"
                 if active_rows
-                else (getattr(status, "detail", "") or "Токен активен · проверка пройдена")
+                else (getattr(status, "detail", "") or "Данные сохранены; подключение не проверено")
             )
         elif raw_state == "reauth":
             health_status = "degraded"
@@ -604,8 +609,8 @@ def build_workspace_connectors(
             health_diagnostic = "Ключ в текущем пространстве ещё не добавлен — используйте форму ручного ввода выше"
 
         latest_meta = sanitize_connector_meta(getattr(active_rows[0], "meta", None)) if active_rows else {}
-        mounted = list(latest_meta.get("mounted_folders") or spec.default_mounted_folders)
-        watermark = str(latest_meta.get("watermark") or spec.default_watermark)
+        mounted = list(latest_meta.get("mounted_folders") or ())
+        watermark = str(latest_meta.get("watermark") or "Нет данных о синхронизации")
         boundary = str(latest_meta.get("data_boundary") or bootstrap.get("data_boundary") or spec.data_boundary)
 
         cards.append(

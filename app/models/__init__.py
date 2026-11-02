@@ -35,6 +35,7 @@ from .collection import (
     Source,
 )
 from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
+from .integrations import WorkspaceConnection, WorkspaceConnectionSecret
 from .llm import (
     LLMAttempt,
     LLMBudgetDay,
@@ -68,6 +69,8 @@ __all__ = [
     "TenantInvite",
     "TenantChannel",
     "UserCredential",
+    "WorkspaceConnection",
+    "WorkspaceConnectionSecret",
     "PersonalBillingAccount",
     "TaskBillingPayer",
     "PersonalLLMDispatch",

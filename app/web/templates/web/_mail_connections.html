@@ -1,0 +1,71 @@
+{# P12-T08: same versioned field contract supplies both forms and validation. #}
+<p class="mt-3 text-sm ui-muted">Выберите почтовый сервис. Сервер и TLS настроены автоматически. У каждого пространства свои подключения; сохранённые пароли не показываются. Отправка писем выключена.</p>
+{% for row in workspace_connection_rows|default([]) %}
+<article class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3" data-workspace-connection="{{ row.id }}">
+    <h3 class="font-medium">{{ row.label }}</h3>
+    <p class="text-sm ui-muted">{{ row.provider_label }} · {{ row.account_login }}</p>
+    <p class="mt-2 text-sm" role="status">{{ row.state_label }}{% if row.checked_at %} · {{ row.checked_at.strftime('%d.%m.%Y %H:%M UTC') }}{% endif %}</p>
+    {% if row.check_detail %}<p class="text-xs ui-muted">{{ row.check_detail }}</p>{% endif %}
+    {% if workspace_connection_write|default(false) %}
+    <div class="mt-3 flex flex-wrap gap-2">
+        {% if row.is_active %}
+        <form method="post" action="/app/settings/workspace-connections/{{ row.id }}/check">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="ui-control">Проверить вход по IMAP</button>
+        </form>
+        <form method="post" action="/app/settings/workspace-connections/{{ row.id }}/disable">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="ui-control">Отключить</button>
+        </form>
+        {% endif %}
+    </div>
+    <details class="mt-3">
+        <summary class="cursor-pointer text-sm">Изменить или восстановить подключение</summary>
+        <form method="post" action="/app/settings/workspace-connections" class="mt-3 space-y-3">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="hidden" name="connection_id" value="{{ row.id }}">
+            <input type="hidden" name="provider_id" value="{{ row.provider_id }}">
+            <input type="hidden" name="method" value="{{ row.auth_method }}">
+            <label class="block text-sm" for="mail-edit-label-{{ row.id }}">Название подключения</label>
+            <input class="ui-control w-full" id="mail-edit-label-{{ row.id }}" name="label" maxlength="100" value="{{ row.label }}">
+            {% for provider in workspace_providers|default([]) if provider.id == row.provider_id %}
+            {% for field in provider.methods[0].fields %}
+            <label class="block text-sm" for="mail-edit-{{ row.id }}-{{ field.name }}">{{ field.label }}</label>
+            <input class="ui-control w-full" id="mail-edit-{{ row.id }}-{{ field.name }}" name="{{ field.name }}" type="{{ 'password' if field.kind == 'secret' else field.kind }}" {% if field.required %}required{% endif %} maxlength="{{ 254 if field.kind == 'email' else 8192 }}" autocomplete="{{ 'new-password' if field.kind == 'secret' else 'off' }}" {% if field.kind != 'secret' %}value="{{ row.account_login }}"{% endif %}>
+            {% if field.hint %}<p class="text-xs ui-muted">{{ field.hint }}</p>{% endif %}
+            {% endfor %}
+            {% endfor %}
+            <p class="text-xs ui-muted">Введите новый пароль приложения. Сохранение сбрасывает результат проверки. Смену сервиса оформляйте новым подключением.</p>
+            <button class="ui-control">Сохранить изменения</button>
+        </form>
+    </details>
+    {% endif %}
+</article>
+{% endfor %}
+{% if workspace_connection_write|default(false) %}
+{% for provider in card.provider_forms %}
+<details class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3" data-provider="{{ provider.id }}">
+    <summary class="cursor-pointer text-sm font-medium">Добавить {{ provider.label }}</summary>
+    {% for method in provider.methods %}
+    <p class="mt-2 text-sm ui-muted">{{ method.hint }}</p>
+    <a href="{{ provider.source_url }}" target="_blank" rel="noopener noreferrer" class="text-sm text-sky-600">Инструкция: как получить пароль приложения</a>
+    <form method="post" action="/app/settings/workspace-connections" class="mt-3 space-y-3">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="provider_id" value="{{ provider.id }}">
+        <input type="hidden" name="method" value="{{ method.id }}">
+        <label class="block text-sm" for="mail-label-{{ provider.id }}">Название подключения</label>
+        <input class="ui-control w-full" id="mail-label-{{ provider.id }}" name="label" maxlength="100" placeholder="Например: Почта отдела закупок">
+        {% for field in method.fields %}
+        <label class="block text-sm" for="mail-{{ provider.id }}-{{ field.name }}">{{ field.label }}</label>
+        <input class="ui-control w-full" id="mail-{{ provider.id }}-{{ field.name }}" name="{{ field.name }}" type="{{ 'password' if field.kind == 'secret' else field.kind }}" {% if field.required %}required{% endif %} maxlength="{{ 254 if field.kind == 'email' else 8192 }}" autocomplete="{{ 'new-password' if field.kind == 'secret' else 'off' }}" placeholder="{{ field.example }}">
+        {% if field.hint %}<p class="text-xs ui-muted">{{ field.hint }}</p>{% endif %}
+        {% endfor %}
+        <button class="ui-control">Сохранить подключение</button>
+        <p class="text-xs ui-muted">Пароль хранится зашифрованным. Сохранение не обращается к провайдеру. Отдельная кнопка проверки выполнит только вход по IMAP.</p>
+    </form>
+    {% endfor %}
+</details>
+{% endfor %}
+{% else %}
+<p class="mt-3 text-sm ui-muted">Создавать и проверять свои подключения могут владелец, соадминистратор и менеджер активного пространства.</p>
+{% endif %}

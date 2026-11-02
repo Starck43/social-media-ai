@@ -38,6 +38,8 @@ generic source-owned DB notification and emit only a generic operator event.
 Missing admin configuration does not redirect messages to a client workspace.
 See [notification boundaries and remaining limits](NOTIFICATIONS.md).
 
+See [connector configuration](CONNECTOR_CONFIGURATION.md) for provider-specific mail forms, encrypted workspace connections, IMAP checks and migration 0121.
+
 ## Workspace subscription provider (P2-T16 foundation)
 
 `SUBSCRIPTION_PAYMENT_PROVIDER=yookassa` selects YooKassa API v3 by default.

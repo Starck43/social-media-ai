@@ -53,6 +53,8 @@ def bind_managers(models):
     models.AgentMemory.objects = import_module("app.models.managers.agent_memory_manager").AgentMemoryManager()
     models.Platform.objects = import_module("app.models.managers.platform_manager").PlatformManager()
     models.LLMModel.objects = import_module("app.models.managers.llm_model_manager").LLMModelManager()
+    models.WorkspaceConnection.objects = BaseManager(models.WorkspaceConnection)
+    models.WorkspaceConnectionSecret.objects = BaseManager(models.WorkspaceConnectionSecret)
     models.UserCredential.objects = import_module("app.models.managers.user_credential_manager").UserCredentialManager()
     models.LLMAttempt.objects = import_module("app.models.managers.llm_attempt_manager").LLMAttemptManager()
     models.AIAnalytics.objects = import_module("app.models.managers.ai_analytics_manager").AIAnalyticsManager()

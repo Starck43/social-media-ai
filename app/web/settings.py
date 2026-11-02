@@ -61,12 +61,6 @@ MANAGER_TABS: frozenset[str] = frozenset({"agent", "channels"})
 SELF_SERVICE_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
     "vk": (("user_token", "VK: личный токен вручную"),),
     "telegram": (("session", "Telegram: файл сессии MTProto"),),
-    "email": (("app_password", "Почта: пароль приложения IMAP/SMTP"),),
-    "bitrix24": (("webhook_secret", "Битрикс24: входящий вебхук или OAuth-ключ"),),
-    "onec": (("odata_credentials", "1С OData: учётные данные публикации"),),
-    "yandex_disk": (("oauth_token", "Яндекс.Диск: OAuth-токен или пароль приложения"),),
-    "mailru_cloud": (("webdav_password", "Облако Mail.ru: пароль приложения WebDAV"),),
-    "local_gateway": (("mtls_fingerprint", "Локальный шлюз: отпечаток парного сертификата"),),
 }
 
 #: Access levels an owner gives a member (see `app/services/tenancy/member_roles.py`).
@@ -297,6 +291,20 @@ async def settings_page(request: Request):
                 username=getattr(user, "username", None),
             )
         }
+        from app.integrations.catalog import WORKSPACE_PROVIDERS
+        from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
+
+        try:
+            workspace_rows, can_configure = await workspace_connections.list_for_actor(
+                tenant_id=tenant_id, actor_id=user.id
+            )
+        except ConnectionDenied:
+            workspace_rows, can_configure = [], False
+        context.update(
+            workspace_connection_rows=workspace_rows,
+            workspace_connection_write=can_configure,
+            workspace_providers=WORKSPACE_PROVIDERS,
+        )
         context["connections"] = [
             {
                 "platform": spec.platform,
@@ -306,6 +314,7 @@ async def settings_page(request: Request):
                 "manual_hint": spec.manual_hint,
                 "status": statuses.get(spec.platform),
                 "manual_kinds": SELF_SERVICE_KINDS.get(spec.platform, ()),
+                "provider_forms": WORKSPACE_PROVIDERS if spec.platform == "email" else (),
                 "rows": [
                     row
                     for row in credentials
@@ -572,7 +581,8 @@ async def credential_store(
 ):
     """Store one of the caller's own personal secrets.
 
-    No permission gate on purpose: a row here is keyed by `users.id`, so a user
+    Only VK/Telegram personal fallback flows are accepted. A row here is keyed
+    by `users.id`, so a user
     writes only their own vault and needs no right to do it. What *does* need a
     right is using someone else's — that is `owner.py::resolve_source_owner`.
 
@@ -980,3 +990,78 @@ async def channel_update(
     await TenantChannelManager().update_by_id(channel.id, is_digest_target=is_digest_target == "on")
     add_flash(request, "success", "Настройка канала сохранена")
     return RedirectResponse(f"{BACK}?tab=channels", status_code=302)
+
+
+@router.post("/workspace-connections")
+async def workspace_connection_save(request: Request):
+    """Catalog fields only; duplicate/unknown form keys fail closed, secrets never echoed."""
+    from app.integrations.catalog import InvalidConnectorInput
+    from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
+
+    form = await request.form()
+    csrf_token = form.get("_csrf", "")
+    if not isinstance(csrf_token, str) or not _personal_access(request) or not ensure_csrf(request, csrf_token):
+        return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
+    # Never trust a posted workspace id (including a platform superuser's request).
+    tenant_id = request.state.tenant_id
+    allowed = {"_csrf", "provider_id", "method", "label", "connection_id", "account_login", "app_password"}
+    try:
+        if set(form) - allowed or any(len(form.getlist(key)) != 1 for key in form):
+            raise InvalidConnectorInput("unknown_field")
+        raw_id = form.get("connection_id", "")
+        connection_id = int(raw_id) if raw_id else None
+        await workspace_connections.save(
+            tenant_id=tenant_id,
+            actor_id=request.state.web_user.id,
+            provider_id=form.get("provider_id", ""),
+            method=form.get("method", ""),
+            label=form.get("label", ""),
+            connection_id=connection_id,
+            values={key: form[key] for key in ("account_login", "app_password") if key in form},
+        )
+    except ConnectionDenied:
+        return HTMLResponse("Подключение недоступно", status_code=403)
+    except (InvalidConnectorInput, ValueError, TypeError):
+        add_flash(
+            request,
+            "error",
+            "Проверьте поля формы. Этот ящик, возможно, уже добавлен: измените существующее подключение.",
+        )
+    else:
+        add_flash(request, "success", "Подключение сохранено. Доступ ещё не проверен; отправка писем выключена.")
+    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-email", status_code=303)
+
+
+@router.post("/workspace-connections/{connection_id}/{operation}")
+async def workspace_connection_action(request: Request, connection_id: int, operation: str):
+    from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
+
+    form = await request.form()
+    csrf_token = form.get("_csrf", "")
+    if not isinstance(csrf_token, str) or not _personal_access(request) or not ensure_csrf(request, csrf_token):
+        return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
+    if set(form) != {"_csrf"} or len(form.getlist("_csrf")) != 1:
+        return HTMLResponse("Некорректная форма", status_code=400)
+    if operation not in ("check", "disable"):
+        return HTMLResponse("Действие не найдено", status_code=404)
+    try:
+        arguments = dict(
+            tenant_id=request.state.tenant_id, actor_id=request.state.web_user.id, connection_id=connection_id
+        )
+        if operation == "check":
+            result = await workspace_connections.verify(**arguments)
+            add_flash(
+                request,
+                "success" if result["state"] == "verified" else "error",
+                result["state_label"] + ". " + result["check_detail"],
+            )
+        else:
+            await workspace_connections.disable(**arguments)
+            add_flash(
+                request,
+                "success",
+                "Подключение отключено, локальный пароль удалён. Для отзыва доступа удалите пароль приложения у провайдера.",
+            )
+    except ConnectionDenied:
+        return HTMLResponse("Подключение недоступно", status_code=403)
+    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-email", status_code=303)

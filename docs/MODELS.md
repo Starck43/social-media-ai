@@ -153,6 +153,23 @@ timestamp with time zone; timestamps. Unique (`scope`, `identifier`). A
 successful login deletes the account row; the address row decays with
 `LOGIN_TIMEOUT_MINUTES`.
 
+### Workspace provider connections (0121)
+
+[Source](../app/models/integrations/connection.py). `workspace_connections` is
+explicitly tenant-scoped and caller-owned: integer `id`, tenant/owner FKs CASCADE,
+platform/provider/method, catalog schema version, label, normalized account key,
+non-secret JSON config, active flag, constrained verification state, nullable
+check code/time and timestamps. Unique `(tenant_id, owner_user_id, provider_id,
+auth_method, account_key)` permits multiple distinct mailboxes, not duplicate
+instances of the same account in one owner's workspace.
+
+`workspace_connection_secrets` has a one-to-one PK/FK `connection_id` CASCADE,
+Fernet ciphertext and timestamps. Disable clears the ciphertext. These are
+internal records, not new generic CRUD/permission resources. Use the guarded
+transactional manager, never raw model managers for interactive operations.
+No personal `user_credentials` row is migrated or shared implicitly. Details:
+[connector configuration](CONNECTOR_CONFIGURATION.md).
+
 ### `llm_providers`
 
 [Source](../app/models/llm/llm_provider.py). Fields: `id` PK; `owner_user_id` non-null indexed FK → users RESTRICT; `uid` String(100), non-null/unique per owner; `name` String(255), non-null (display label, not globally unique); `description` nullable Text; `api_format` String(20), non-null/default `openai`; `base_url` String(500), non-null; `auth_header` nullable String(200); `encrypted_api_key` nullable Text; `is_active` Boolean. Relationship: models. No `is_default` column. Secret accessor is **`get_api_key()`**, masked display `decrypted_key_masked()`; never log plaintext. Personal catalog shared across one user's workspaces. Numeric ID/owner are immutable; display name and UID are editable. Credential decryption requires the personal owner, not an operator override. Composite unique (`id`, `owner_user_id`) supports model ownership FK.

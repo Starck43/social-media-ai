@@ -298,8 +298,8 @@
             {# ── connections ────────────────────────────────────────────────── #}
             {% elif tab == 'connections' %}
                 <p class="mt-6 text-sm text-slate-600 dark:text-slate-400">
-                    Личный доступ нужен для сбора закрытых сообществ и истории. Один раз подключили —
-                    токен продлевается сам, повторно входить не придётся.
+                    Личный доступ нужен для сбора закрытых сообществ и истории.
+                    Сохранение данных не означает, что подключение проверено.
                 </p>
 
                 <div class="mt-4 grid grid-cols-1 items-start lg:grid-cols-2"
@@ -316,16 +316,25 @@
                                     </h2>
                                     <p class="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{{ card.purpose }}</p>
                                 </div>
-                                {% if card.status %}
+                                {% if card.status and card.platform in ('vk', 'telegram') %}
                                     {{ connection_badge(card.status) }}
                                 {% endif %}
                             </div>
 
-                            {% if card.status and card.status.detail %}
+                            {% if card.platform == 'email' and card.provider_forms|default([]) %}
+                                {% include 'web/_mail_connections.html' %}
+                            {% elif card.platform not in ('vk', 'telegram') %}
+                                <p class="mt-3 text-xs text-amber-700 dark:text-amber-300">
+                                    Адаптер и форма этого сервиса пока недоступны. Старый ключ не настраивает подключение
+                                    пространства и не проверяет доступ к сервису.
+                                </p>
+                            {% endif %}
+
+                            {% if card.status and card.status.detail and card.platform in ('vk', 'telegram') %}
                                 <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">{{ card.status.detail }}</p>
                             {% endif %}
 
-                            {% if card.details is defined and card.details %}
+                            {% if card.details is defined and card.details and card.platform != 'email' %}
                                 {# Facts an operator does not act on: collapsed so the card
                                    reads as "connect your account", not as a catalog dump. #}
                                 <details class="mt-3 text-xs">
@@ -363,7 +372,7 @@
                                         Обновить доступ
                                     </a>
                                 {% endif %}
-                                {% if card.status and card.status.state in ('connected', 'renewable') %}
+                                {% if card.platform in ('vk', 'telegram') and card.status and card.status.state in ('connected', 'renewable') %}
                                     <form method="post" action="/app/connections/{{ card.platform }}/disconnect" class="inline">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                                         <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -372,6 +381,23 @@
                                     </form>
                                 {% endif %}
                             </div>
+
+                            {% if card.platform not in ('vk', 'telegram') and card.rows %}
+                            <details class="mt-3 text-xs">
+                                <summary>Старые личные ключи (не подключения пространства)</summary>
+                                {% for row in card.rows %}
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                    <span>{{ row.label or row.kind }} · {{ 'активен' if row.is_active else 'отключён' }}</span>
+                                    {% if row.is_active %}
+                                    <form method="post" action="/app/settings/credentials/{{ row.id }}/disable">
+                                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        <button class="ui-control">Отключить старый ключ</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </details>
+                            {% endif %}
 
                             {# Manual entry: the only way in for a platform without OAuth, and a
                                deliberate escape hatch otherwise. Expanded when it is the

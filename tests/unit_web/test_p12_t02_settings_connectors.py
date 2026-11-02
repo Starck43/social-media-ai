@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import runpy
+import secrets
 import types
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -12,6 +13,7 @@ import pytest
 from tests.source_import_isolation import load_isolated_source
 
 __source_only__ = True
+SAMPLE_SECRET = secrets.token_hex(18)
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -150,7 +152,7 @@ def test_workspace_connectors_tenant_scoping_and_secret_redaction():
                 "mounted_folders": ["disk:/Договоры 2026/Спецификации"],
                 "watermark": "disk_rev=2026-11-01T12:00Z",
                 "oauth_token": "secret-token-must-not-leak",
-                "webdav_password": "secret-password-must-not-leak",
+                "webdav_password": SAMPLE_SECRET,
             },
         ),
         NS(
@@ -189,7 +191,7 @@ def test_workspace_connectors_tenant_scoping_and_secret_redaction():
     assert yd["mounted_folders"] == ["disk:/Договоры 2026/Спецификации"]
     assert yd["watermark"] == "disk_rev=2026-11-01T12:00Z"
     assert "secret-token-must-not-leak" not in str(yd)
-    assert "secret-password-must-not-leak" not in str(yd)
+    assert SAMPLE_SECRET not in str(yd)
 
     # Bitrix24 credential for tenant 999 must not activate tenant 7 card
     bx = by_platform["bitrix24"]
@@ -287,16 +289,8 @@ async def test_settings_page_connections_tab_populates_workspace_connectors(monk
         if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "SELF_SERVICE_KINDS":
             self_service_kinds = ast.literal_eval(node.value)
 
-    assert set(self_service_kinds) == {
-        "vk",
-        "telegram",
-        "email",
-        "bitrix24",
-        "onec",
-        "yandex_disk",
-        "mailru_cloud",
-        "local_gateway",
-    }
+    # Business descriptors must not enable generic secret collection.
+    assert set(self_service_kinds) == {"vk", "telegram"}
     allowed_kinds = {kind for kinds in self_service_kinds.values() for kind, _ in kinds}
     for forbidden in ("bot_token", "app_id", "client_secret"):
         assert forbidden not in allowed_kinds
@@ -327,6 +321,20 @@ async def test_settings_page_connections_tab_populates_workspace_connectors(monk
 
     monkeypatch.setitem(sys.modules, "app.models.managers.user_credential_manager", vault_mod)
     monkeypatch.setitem(sys.modules, "app.services.social.connections", conn_mod)
+
+    workspace_mod = types.ModuleType("app.models.managers.workspace_connection_manager")
+
+    class Denied(PermissionError):
+        pass
+
+    class FakeConnections:
+        async def list_for_actor(self, **kwargs):
+            assert kwargs == {"tenant_id": 7, "actor_id": 101}
+            return [{"id": 900, "state": "unverified"}], True
+
+    workspace_mod.ConnectionDenied = Denied
+    workspace_mod.workspace_connections = FakeConnections()
+    monkeypatch.setitem(sys.modules, "app.models.managers.workspace_connection_manager", workspace_mod)
 
     ns = {
         "TABS": ("account", "connections", "models", "workspace", "team", "agent", "channels"),
@@ -363,6 +371,10 @@ async def test_settings_page_connections_tab_populates_workspace_connectors(monk
     )
     resp = await ns["settings_page"](req)
     assert resp.context["tab"] == "connections"
+    assert resp.context["workspace_connection_rows"] == [{"id": 900, "state": "unverified"}]
+    email_card = next(c for c in resp.context["connections"] if c["platform"] == "email")
+    assert {p.id for p in email_card["provider_forms"]} == {"yandex_mail", "mailru_mail"}
+    assert email_card["manual_kinds"] == ()
     assert "workspace_connectors" not in resp.context
     assert len(resp.context["connections"]) == 8
     yd_card = next(c for c in resp.context["connections"] if c["platform"] == "yandex_disk")

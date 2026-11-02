@@ -1,8 +1,8 @@
 """Owner-bound, read-only metadata access for a configured Yandex connection.
 
-There is intentionally no public route or connection-configuration flow yet.
-The stored policy must be written by a future authorized settings flow, never
-constructed from a request. No share policy is supported in this first slice.
+There is intentionally no public folder-browsing route or job yet. The stored
+policy is loaded from the owned connection, never constructed from a request.
+No share policy is supported in this first slice.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from app.core.database import async_session_maker
 from app.integrations.catalog import CATALOG_VERSION
 from app.integrations.file_workspace.policy import FileOperation, FolderRestriction, ReadOnlyFolderPolicy
 from app.integrations.file_workspace.yandex_disk import DiskPage, MetadataError, list_folder
+from app.integrations.file_workspace.yandex_http import YandexMetadataClient
 from app.models import WorkspaceConnectionSecret
 from app.models.managers.workspace_connection_manager import ConnectionDenied, _authorize, _connection
 from app.utils.crypto import decrypt_secret
@@ -56,18 +57,22 @@ async def list_owned_folder(
     actor_id: int,
     connection_id: int,
     folder: str,
-    client: httpx.AsyncClient,
+    client: httpx.AsyncClient | YandexMetadataClient | None = None,
     offset: int = 0,
     limit: int = 100,
 ) -> DiskPage:
     """List one authorized page, re-reading membership, connection and policy.
 
-    `client` is application-controlled, not a request parameter. Shared locks on
-    actor/membership and an exclusive lock on the connection remain held during
+    By default this uses the fixed-endpoint, pinned transport. An injected
+    `client` is trusted application/test code, never a request parameter. Shared
+    locks on actor/membership and an exclusive lock on the connection remain held during
     bounded network work, serializing revocation/connection changes. The caller
-    must supply an outbound-network-reviewed client with safe DNS/proxy policy.
-    This service does not create, update or validate provider credentials.
+    must not expose a custom client to external input. Production browsing remains
+    gated on combined transport and route review. This service does not create,
+    update or validate provider credentials.
     """
+    if client is None:
+        client = YandexMetadataClient()
     async with async_session_maker() as session, session.begin():
         await _authorize(session, tenant_id, actor_id, require_source_view=True)
         connection = await _connection(session, tenant_id, actor_id, connection_id)

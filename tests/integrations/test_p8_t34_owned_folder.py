@@ -486,3 +486,146 @@ async def test_assembled_settings_save_and_disable_without_provider_io(workspace
             secret = await session.get(WorkspaceConnectionSecret, cid)
             assert row.is_active is False and row.state == "disabled" and secret.secret_encrypted == ""
     assert TEST_TOKEN not in caplog.text
+
+
+@pytest.fixture
+def pinned_http(monkeypatch):
+    """Real bounded transport and service with a fake TLS opener, never sockets."""
+    import json
+
+    from app.integrations.file_workspace.yandex_http import YandexMetadataClient
+    from app.services.file_workspace import yandex_reader
+
+    state = SimpleNamespace(calls=[], response=provider_response(), status=b"200 OK", entered=None, release=None)
+
+    class Reader:
+        def __init__(self):
+            body = json.dumps(state.response).encode()
+            self.data = (
+                b"HTTP/1.1 " + state.status + b"\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+            )
+
+        async def read(self, count):
+            if state.entered is not None:
+                state.entered.set()
+                await state.release.wait()
+            head, self.data = self.data[:count], self.data[count:]
+            return head
+
+    class Writer:
+        def __init__(self):
+            self.data = b""
+            self.closed = False
+
+        def write(self, data):
+            self.data += data
+
+        async def drain(self):
+            pass
+
+        def close(self):
+            self.closed = True
+
+        async def wait_closed(self):
+            pass
+
+    async def opener():
+        reader, writer = Reader(), Writer()
+        state.calls.append(writer)
+        return reader, writer
+
+    monkeypatch.setattr(yandex_reader, "YandexMetadataClient", lambda: YandexMetadataClient(_opener=opener))
+    return state
+
+
+async def test_default_transport_checks_owner_tenant_and_restricted_children(workspace_data, pinned_http, caplog):
+    import logging
+
+    caplog.set_level(logging.DEBUG)
+    with actor(workspace_data) as args:
+        page = await list_owned_folder(**args, folder="/work")
+        assert [item.name for item in page.items] == ["report.txt"]
+        for folder in ("/work/private", "/workspace", "/work/../private"):
+            with pytest.raises(ConnectionDenied):
+                await list_owned_folder(**args, folder=folder)
+    for user, tenant in ((1, 0), (0, 1), (1, 1)):
+        with actor(workspace_data, user=user, tenant=tenant) as args:
+            with pytest.raises(ConnectionDenied):
+                await list_owned_folder(**args, folder="/work")
+    assert len(pinned_http.calls) == 1
+    writer = pinned_http.calls[0]
+    assert writer.closed and b"GET /v1/disk/resources?" in writer.data
+    assert f"OAuth {TEST_TOKEN}".encode() in writer.data
+    assert TEST_TOKEN not in caplog.text and "disk:/work" not in caplog.text
+
+
+@pytest.mark.parametrize("revoked", ["membership", "role", "connection", "secret", "policy"])
+async def test_default_transport_revoked_access_never_opens(workspace_data, pinned_http, revoked):
+    with actor(workspace_data) as args:
+        async with async_session_maker() as session, session.begin():
+            if revoked in {"membership", "role"}:
+                values = {"is_active": False} if revoked == "membership" else {"role_id": None}
+                await session.execute(
+                    update(TenantUser)
+                    .where(TenantUser.tenant_id == args["tenant_id"], TenantUser.user_id == args["actor_id"])
+                    .values(**values)
+                )
+            elif revoked == "secret":
+                await session.execute(
+                    delete(WorkspaceConnectionSecret).where(
+                        WorkspaceConnectionSecret.connection_id == args["connection_id"]
+                    )
+                )
+            else:
+                values = {"is_active": False} if revoked == "connection" else {"config": {"file_policy": {}}}
+                await session.execute(
+                    update(WorkspaceConnection).where(WorkspaceConnection.id == args["connection_id"]).values(**values)
+                )
+        with pytest.raises(ConnectionDenied):
+            await list_owned_folder(**args, folder="/work")
+    assert pinned_http.calls == []
+
+
+async def test_default_transport_reauthorization_error_is_sanitized(workspace_data, pinned_http, caplog):
+    from app.integrations.file_workspace.yandex_disk import MetadataError
+
+    pinned_http.status = b"401 Unauthorized"
+    with actor(workspace_data) as args:
+        with pytest.raises(MetadataError, match="^reauthorization_required$"):
+            await list_owned_folder(**args, folder="/work")
+    assert len(pinned_http.calls) == 1 and pinned_http.calls[0].closed
+    assert TEST_TOKEN not in caplog.text
+
+
+async def test_default_transport_revocation_waits_and_blocks_next_request(workspace_data, pinned_http):
+    pinned_http.entered, pinned_http.release = asyncio.Event(), asyncio.Event()
+    with actor(workspace_data) as args:
+        reading = asyncio.create_task(list_owned_folder(**args, folder="/work"))
+        revoking = None
+        try:
+            await asyncio.wait_for(pinned_http.entered.wait(), timeout=5)
+
+            async def revoke():
+                async with async_session_maker() as session, session.begin():
+                    await session.execute(
+                        update(WorkspaceConnection)
+                        .where(WorkspaceConnection.id == args["connection_id"])
+                        .values(is_active=False)
+                    )
+
+            revoking = asyncio.create_task(revoke())
+            await asyncio.sleep(0.1)
+            assert not revoking.done()
+            pinned_http.release.set()
+            assert (await asyncio.wait_for(reading, timeout=5)).items
+            await asyncio.wait_for(revoking, timeout=5)
+            with pytest.raises(ConnectionDenied):
+                await list_owned_folder(**args, folder="/work")
+            assert len(pinned_http.calls) == 1 and pinned_http.calls[0].closed
+        finally:
+            pinned_http.release.set()
+            if not reading.done():
+                reading.cancel()
+                await asyncio.gather(reading, return_exceptions=True)
+            if revoking is not None and not revoking.done():
+                await asyncio.wait_for(revoking, timeout=5)

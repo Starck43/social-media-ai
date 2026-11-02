@@ -777,6 +777,15 @@ class ContentCollector:
 				"profiles": profiles_report,
 				"collection": _collection_summary(collection_context),
 			}
+			# A run that only had the deployment credential says which platform
+			# needed the personal one and what the person can do about it. It is
+			# not an error: the numbers above are real, just narrower.
+			narrowed = getattr(client, "narrowed_by", None)
+			if narrowed is not None:
+				result["narrowed_access"] = {
+					"platform": narrowed.platform,
+					"hint": narrowed.hint,
+				}
 			if analysis_errors is not None:
 				result["analysis_errors"] = analysis_errors
 			return result

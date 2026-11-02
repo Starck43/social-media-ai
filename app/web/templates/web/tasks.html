@@ -577,6 +577,24 @@
 
             <template x-if="runModal.data.run_progress_html"><div x-html="runModal.data.run_progress_html"></div></template>
             <template x-if="runModal.data.run_progress_html && runModal.data.outcome === 'partial'"><p class="mt-4 text-sm text-amber-700 dark:text-amber-300">Выполнено частично. Подробности у источников на странице задачи.</p></template>
+            {# Collected, but only through the deployment credential: the numbers
+               are real and narrower than a personal account would show. The fix
+               is offered here, so nobody has to hunt for the right settings page. #}
+            <template x-if="runModal.data.narrowed_platforms && runModal.data.narrowed_platforms.length">
+                <div class="mt-4 space-y-2">
+                    <template x-for="item in runModal.data.narrowed_platforms" :key="item.platform">
+                        <div class="rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/40">
+                            <p class="text-sm text-amber-900 dark:text-amber-200">
+                                <span class="font-medium">Собрано узко · <span x-text="item.sources.length"></span> источник(ов)</span>
+                                <span x-text="' — ' + (item.hint || 'личный доступ не подключён, часть записей могла быть не видна')"></span>
+                            </p>
+                            <a :href="item.destination"
+                               class="mt-2 inline-block rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+                               x-text="'Подключить личный доступ и собрать полнее →'"></a>
+                        </div>
+                    </template>
+                </div>
+            </template>
             <template x-if="runModal.data.run_progress_html && runModal.data.status === 'failed'"><p class="mt-4 text-sm text-rose-700 dark:text-rose-300" x-text="runModal.data.error"></p></template>
             <template x-if="runModal.data.task_url"><a :href="runModal.data.task_url" class="mt-4 inline-block rounded-lg bg-cyan-600 px-4 py-3 text-sm text-white">Открыть задачу →</a></template>
             <template x-if="runModal.loading">

@@ -269,9 +269,13 @@ async def source_add(
     mode: str = "auto",
     token_owner: int | None = None,
 ) -> dict:
+    from app.core.permissions import get_current_user
     from app.models import Platform
     from app.models.managers.source_manager import SourceManager
     from app.types import SourceType
+
+    actor_id = getattr(get_current_user(), "id", None)
+    actor_id = actor_id if isinstance(actor_id, int) and not isinstance(actor_id, bool) and actor_id > 0 else None
 
     platform_key = _PLATFORM_ALIASES.get(platform.strip().lower())
     if platform_key is None:
@@ -333,6 +337,9 @@ async def source_add(
         external_id=external_id.strip(),
         name=name or external_id.strip(),
         params=params or None,
+        # An agent-created source belongs to the member on whose behalf the
+        # tool ran, not to the workspace owner.
+        owner_user_id=actor_id,
     )
     # The created row is detached from its session: reading `source.platform`
     # here would raise a detached lazy-load error instead of confirming the

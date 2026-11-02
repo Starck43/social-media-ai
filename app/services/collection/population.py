@@ -16,7 +16,7 @@ created.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -448,6 +448,10 @@ async def resolve_population(
         platform=platform_key,
         workspace_sources=workspace_sources,
     )
+    if owner_user_id is not None:
+        # Lanes created here belong to the member the caller resolved for this
+        # run; never to the workspace owner by default. The plan is frozen.
+        plan = replace(plan, owner_user_id=int(owner_user_id))
     plan_skips = [
         f"{_brief(decision.raw)}: {decision.reason}"
         for decision in plan.decisions

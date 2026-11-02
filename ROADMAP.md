@@ -60,7 +60,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-15](docs/tasks/q-15.md) Documentation currentness and behavior consistency audit — **OPEN** · notion-ai-q15 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C5`
-- [P12-T11](docs/tasks/p12-t11.md) Real knowledge/document data, honest ACL and evidence triggers behind the P12 pages — **TODO** · unassigned · — · `P2` · `C4`
+- [P12-T11](docs/tasks/p12-t11.md) Real knowledge/document data, honest ACL and evidence triggers behind the P12 pages — **IN_PROGRESS** · Notion AI · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 
 ### Priority P3
 

@@ -83,14 +83,11 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 - [P12-T08](../tasks/p12-t08.md): provider catalog, workspace connection configuration and
   safe credential UX. **DONE 2026-11-02**, merge `f36a1a53` (PR #304), migration 0121
   applied to `public`. Review: [audit/p12-t08.md](../audit/p12-t08.md).
-<<<<<<< HEAD
-
-- [P12-T10](../tasks/p12-t10.md): unify provider presentation metadata and reusable cards/forms without enabling unimplemented transports.
-=======
 - [P12-T10](../tasks/p12-t10.md): unified provider presentation catalog. **DONE 2026-11-02**,
   merge `3a4af09e` (PR #305). Code-owned descriptors, local SVG glyphs, shared
   components; no transport, migration or production change.
-- [P12-T11](../tasks/p12-t11.md): real knowledge/document storage, workspace-derived ACL
-  and `data-evidence-*` triggers so the accepted drawer (P12-T06) opens on real rows.
-  The Wave 2 pages currently render hardcoded demo records.
->>>>>>> 04d67824 (docs(P12-T10): card for real workspace-page data, ACL and evidence triggers)
+- [P12-T11](../audit/p12-t11.md): **DONE 2026-11-02**. Persisted tenant-isolated
+  knowledge/document evidence, workspace ACL and working drawer/chat handoff;
+  accepted source `f5cabb09e536515000532e6767f108ec79775a17`, merge `5651d37c`
+  ([PR #306](https://github.com/Starck43/social-media-ai/pull/306)). Migration 0122
+  validated only in test_schema; public apply/deployment remain separately gated.

@@ -34,6 +34,7 @@ from .collection import (
     Platform,
     Source,
 )
+from .file_workspace import FileCatalogObject, FileCatalogObservation
 from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
 from .integrations import WorkspaceConnection, WorkspaceConnectionSecret
 from .knowledge import DocumentRevision, KnowledgeDocument, KnowledgeSnippet
@@ -51,6 +52,8 @@ from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
 __all__ = [
+    "FileCatalogObject",
+    "FileCatalogObservation",
     "KnowledgeSnippet",
     "KnowledgeDocument",
     "DocumentRevision",

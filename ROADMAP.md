@@ -34,7 +34,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P0
 
 - [P12-T14](docs/tasks/p12-t14.md) Credential security and explicit connector configuration — **IN_PROGRESS** · notion-ai-p12-t14 · [dialogue](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P0` · `C5`
-- [P12-T16](docs/tasks/p12-t16.md) Personal source ownership, auth preflight and actionable authorisation notices — **READY** · opencode-p12-t16 · [PR #312](https://github.com/Starck43/social-media-ai/pull/312) · `P0` · `C4`
 
 
 
@@ -65,7 +64,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-15](docs/tasks/q-15.md) Documentation currentness and behavior consistency audit — **OPEN** · notion-ai-q15 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C5`
 
-- [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C5`
+- [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **TODO** · notion-ai-p12-t12 (plan in [PR #307](https://github.com/Starck43/social-media-ai/pull/307), implementation unassigned) · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C5`
 - [P12-T13](docs/tasks/p12-t13.md) File workspace pilot contracts and capability review — **IN_PROGRESS** · notion-ai-p12-t13 · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C3`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **IN_PROGRESS** · notion-ai-p8-t34 · [owner selection and dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`

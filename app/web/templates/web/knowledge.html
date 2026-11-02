@@ -5,14 +5,14 @@
 {% block page_heading %}База знаний{% endblock %}
 
 {% block page_actions %}
-<a href="/app/documents" class="ui-control">Версии документов</a>
-<a href="/app/chat" class="ui-control">Открыть чат с агентом</a>
+<a href="/app/documents" class="ui-control">Перейти к документам</a>
+<a href="/app/chat" class="ui-control">← К чату</a>
 {% endblock %}
 
 {% block right_panel %}
 <div class="space-y-3 text-sm">
-    <h2 class="font-semibold">Доказательная цитата (P12-T03)</h2>
-    <p class="text-xs ui-muted">Фильтрация прав тенанта, актора и источника выполняется до выборки фрагментов и передачи в модель. Права проверяются по текущей роли пространства и ACL сохранённой записи.</p>
+    <h2 class="font-semibold">Источник записи</h2>
+    <p class="text-xs ui-muted">Здесь можно посмотреть источник выбранного фрагмента. Доступ проверяется при просмотре и перед передачей в чат.</p>
 
 </div>
     {% include "web/_evidence_details.html" %}
@@ -23,8 +23,8 @@
     <section class="ui-card">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
-                <h2 class="text-sm font-semibold">Поиск по разрешённым папкам и почтовым ящикам (ACL-aware retrieval)</h2>
-                <p class="mt-1 text-xs ui-muted">Каждый найденный фрагмент сохраняет ссылку на документ, страницу, ячейку таблицы или UID письма, а также явно указывает ограничения распознавания (OCR) и свежести.</p>
+                <h2 class="text-sm font-semibold">Поиск по сохранённым фрагментам</h2>
+                <p class="mt-1 text-xs ui-muted">Найдите доступные записи и посмотрите их источник. Сохранённые фрагменты не обязательно содержат ссылку на оригинал.</p>
             </div>
             <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-700/50">Сохранённые записи</span>
         </div>
@@ -33,7 +33,7 @@
             <input type="hidden" name="boundary" value="{{ boundary }}">
             <label for="kn-search" class="sr-only">Поисковый запрос</label>
             <input id="kn-search" name="q" value="{{ q|default('') }}" placeholder="Поиск по сохранённым фрагментам" class="{{ control('flex-1 min-w-[240px]') }}">
-            <button type="submit" class="ui-control">Найти с проверкой ACL</button>
+            <button type="submit" class="ui-control">Найти</button>
         </form>
     </section>
 

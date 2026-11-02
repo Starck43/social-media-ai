@@ -1,12 +1,18 @@
-<form method="get" class="ui-card flex flex-wrap gap-3">
+{% from "web/_macros.html" import popover_select %}
+<form method="get" class="ui-card space-y-3">
     {% if q is defined %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
-    <label for="evidence-boundary">Граница обработки</label>
-    <select id="evidence-boundary" name="boundary" class="ui-control">
-        {% for value, label in [('cloud', 'Облачная: только cloud'), ('company', 'Корпоративная: company и cloud'), ('local_only', 'Локальная: все разрешённые записи')] %}
-        <option value="{{ value }}" {% if boundary == value %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-    </select>
-    <button type="submit" class="ui-control">Показать</button>
+    <label for="evidence-boundary-trigger" class="block text-sm font-medium">Какие записи показать</label>
+    <div class="flex flex-wrap items-end gap-3">
+        <div class="min-w-0 w-full sm:w-80">
+            {{ popover_select('boundary', 'evidence-boundary', [
+                ('cloud', 'Облачные', ''),
+                ('company', 'Корпоративные и облачные', ''),
+                ('local_only', 'Все доступные, включая локальные', '')
+            ], current=boundary, allow_empty=false, label='Какие записи показать') }}
+        </div>
+        <button type="submit" class="ui-control">Показать</button>
+    </div>
+    <p class="text-xs ui-muted">Доступные записи зависят от ваших прав. Выбор не меняет место обработки данных.</p>
 </form>
 <div class="space-y-4" data-evidence-catalog>
     {% for row in evidence_rows %}
@@ -26,16 +32,18 @@
                 data-evidence-hash="{{ row.revision_hash }}" data-evidence-anchor="{{ row.citation_anchor }}"
                 data-evidence-boundary="{{ row.data_boundary }}"
                 data-evidence-context-type="{{ row.context_type }}" data-evidence-context-id="{{ row.context_id }}"
-                data-context-type="{{ row.context_type }}" data-context-id="{{ row.context_id }}">Свидетельство</button>
-            <a href="{{ row.chat_url }}" class="ui-control text-xs" data-evidence-chat-link>Обсудить в чате с контекстом</a>
+                data-context-type="{{ row.context_type }}" data-context-id="{{ row.context_id }}">Источник записи</button>
+            <a href="{{ row.chat_url }}" class="ui-control text-xs" data-evidence-chat-link>Обсудить в чате</a>
         </div>
     </article>
     {% else %}
     <section class="ui-card" data-evidence-empty>
         <h2 class="text-sm font-semibold">Нет доступных сохранённых записей</h2>
-        <p class="mt-2 text-xs ui-muted">В этом пространстве нет записей, подходящих под права, запрос и выбранную границу. Демо-данные не подставляются.</p>
-        <a href="/app/settings?tab=connections" class="ui-control mt-3">Подключить источник</a>
-        <a href="/app/sources" class="ui-control mt-3">Управление источниками</a>
+        <p class="mt-2 text-xs ui-muted">Нет записей, подходящих под запрос и выбранный фильтр, или у вас нет к ним доступа.</p>
+        <div class="mt-4 flex flex-wrap gap-3" data-evidence-empty-actions>
+            <a href="/app/settings?tab=connections" class="ui-control inline-flex items-center">Подключить источник</a>
+            <a href="/app/sources" class="ui-control inline-flex items-center">Управление источниками</a>
+        </div>
     </section>
     {% endfor %}
 </div>

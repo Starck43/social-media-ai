@@ -610,6 +610,7 @@ ${text}`
                             '_csrf': this.csrf,
                             'text': text,
                             ...(selectedId ? {task_id: selectedId} : {}),
+                            ...(window.__chatEvidenceContext ? {context_type: window.__chatEvidenceContext.type, context_id: window.__chatEvidenceContext.context_id, boundary: window.__chatEvidenceContext.boundary} : {}),
                             ...(attachmentIds ? {attachment_ids: attachmentIds} : {}),
                             ...(confirmLarge ? {confirm_large: confirmLarge} : {}),
                         }),

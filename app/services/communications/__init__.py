@@ -1,7 +1,6 @@
 """Communications and follow-up workspace services (P12-T04)."""
 
 from app.services.communications.followups import (
-    CANONICAL_FOLLOWUP_ITEMS,
     STATUS_CONFIRMED,
     STATUS_DISMISSED,
     STATUS_LABELS,
@@ -17,7 +16,6 @@ from app.services.communications.followups import (
     snooze_followup,
 )
 from app.services.communications.outbox import (
-    CANONICAL_OUTBOX_ITEMS,
     STATE_APPROVED,
     STATE_CANCELLED,
     STATE_CLAIMED,
@@ -57,7 +55,6 @@ __all__ = [
     "STATE_FAILED",
     "STATE_CANCELLED",
     "OUTBOX_STATE_LABELS",
-    "CANONICAL_OUTBOX_ITEMS",
     "CommunicationError",
     "RouteNotVerifiedError",
     "ApprovalExpiredError",
@@ -80,7 +77,6 @@ __all__ = [
     "STATUS_SNOOZED",
     "STATUS_DISMISSED",
     "STATUS_LABELS",
-    "CANONICAL_FOLLOWUP_ITEMS",
     "detect_imprecise_date",
     "is_in_quiet_hours",
     "adjust_for_quiet_hours",

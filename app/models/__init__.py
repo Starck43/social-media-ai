@@ -36,6 +36,7 @@ from .collection import (
 )
 from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
 from .integrations import WorkspaceConnection, WorkspaceConnectionSecret
+from .knowledge import DocumentRevision, KnowledgeDocument, KnowledgeSnippet
 from .llm import (
     LLMAttempt,
     LLMBudgetDay,
@@ -50,6 +51,9 @@ from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
 __all__ = [
+    "KnowledgeSnippet",
+    "KnowledgeDocument",
+    "DocumentRevision",
     # Base classes
     "Base",
     "TimestampMixin",

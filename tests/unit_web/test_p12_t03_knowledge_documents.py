@@ -16,6 +16,7 @@ from types import SimpleNamespace as NS
 import pytest
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
+from tests.shared.evidence_fixtures import evidence_row, workspace_double
 from tests.source_import_isolation import load_isolated_source
 
 __source_only__ = True
@@ -142,18 +143,18 @@ def test_retrieval_acl_filtering_and_data_boundary_isolation():
     filtered_company = retrieval.filter_snippets_by_acl(
         test_pool, user_scopes={"contracts:legal", "procurement:team"}, allowed_boundary="company"
     )
-    assert set(s["id"] for s in filtered_company) == {"s1", "s2"}
+    assert set(s["id"] for s in filtered_company) == {"s2", "s3"}
 
     # 3. Cloud query with contracts:legal scope only:
     filtered_cloud_legal = retrieval.filter_snippets_by_acl(
         test_pool, user_scopes={"contracts:legal"}, allowed_boundary="cloud"
     )
-    assert set(s["id"] for s in filtered_cloud_legal) == {"s1", "s3"}
+    assert set(s["id"] for s in filtered_cloud_legal) == {"s3"}
     assert not any(s["id"] == "s2" for s in filtered_cloud_legal)
 
     # 4. Wildcard scope allows all ACLs within boundary limit
     filtered_wildcard = retrieval.filter_snippets_by_acl(test_pool, user_scopes={"*"}, allowed_boundary="cloud")
-    assert len(filtered_wildcard) == 3
+    assert [s["id"] for s in filtered_wildcard] == ["s3"]
 
 
 def test_retrieval_search_query_and_citation_assembly():
@@ -161,7 +162,21 @@ def test_retrieval_search_query_and_citation_assembly():
     retrieval = _load_knowledge_retrieval()
 
     # Search by keyword
-    results = retrieval.search_knowledge_snippets("валютной", user_scopes={"*"}, allowed_boundary="cloud")
+    fixture = retrieval.build_knowledge_snippet(
+        "s1",
+        "ДП-2026/114",
+        "fixture://contract",
+        "public",
+        "cloud",
+        "page 2",
+        "sha256:fixture",
+        "валютной",
+        "fixture extraction",
+    )
+    assert retrieval.search_knowledge_snippets("валютной") == []
+    results = retrieval.search_knowledge_snippets(
+        "валютной", snippets=[fixture], user_scopes={"*"}, allowed_boundary="cloud"
+    )
     assert len(results) >= 1
     assert any("ДП-2026/114" in r["title"] for r in results)
 
@@ -240,16 +255,16 @@ def test_knowledge_jinja_template_strict_rendering():
     context = _build_base_template_context()
 
     retrieval = _load_knowledge_retrieval()
-    context["knowledge_snippets"] = retrieval.CANONICAL_SNIPPETS
+    context["evidence_rows"] = [evidence_row()]
     context["q"] = "полимерного"
     context["boundary"] = "cloud"
 
     rendered = template.render(**context)
     assert 'data-p12-knowledge="knowledge-catalog"' in rendered
     assert "База знаний" in rendered
-    assert "Рамочный договор поставки полимерного сырья" in rendered
-    assert "sha256:9c4a18f2" in rendered
-    assert "contracts:read" in rendered
+    assert "Stored test evidence" in rendered
+    assert "sha256:fixture" in rendered
+    assert "collection.source.view" in rendered
 
 
 def test_documents_jinja_template_strict_rendering():
@@ -259,15 +274,15 @@ def test_documents_jinja_template_strict_rendering():
     context = _build_base_template_context()
 
     doc_mod = _load_knowledge_documents()
-    context["documents"] = doc_mod.CANONICAL_DOCUMENTS
-    context["versioned_documents"] = doc_mod.CANONICAL_DOCUMENTS
+    context["evidence_rows"] = [evidence_row("document")]
+    context["boundary"] = "cloud"
 
     rendered = template.render(**context)
     assert 'data-p12-documents="documents-catalog"' in rendered
     assert "Документы и ревизии" in rendered
-    assert "Спецификация № 8 к Договору ДП-2026/114" in rendered
-    assert "sha256:3b90e441c8a2" in rendered
-    assert "ООО «ТехПолимер-Восток»" in rendered
+    assert "Stored test evidence" in rendered
+    assert "sha256:fixture" in rendered
+    assert "Fixture counterparty" in rendered
     assert "saloon.as" in rendered
 
 
@@ -288,7 +303,7 @@ async def test_fastapi_domain_routers_knowledge_and_documents(monkeypatch):
         "_p12_t03_web_knowledge",
         ROOT / "app/web/knowledge.py",
         {
-            "app.services.knowledge.retrieval": _load_knowledge_retrieval(),
+            "app.services.knowledge.workspace": workspace_double(),
             "app.web.deps": fake_deps,
         },
     )
@@ -297,24 +312,24 @@ async def test_fastapi_domain_routers_knowledge_and_documents(monkeypatch):
         "_p12_t03_web_documents",
         ROOT / "app/web/documents.py",
         {
-            "app.services.knowledge.documents": _load_knowledge_documents(),
+            "app.services.knowledge.workspace": workspace_double(),
             "app.web.deps": fake_deps,
         },
     )
 
-    req = NS(state=NS(web_user=NS(id=1, scopes=["public", "contracts:read"])))
+    req = NS(state=NS(web_user=NS(id=1)))
 
     # Test knowledge router
     resp_kn = await knowledge_web.knowledge_page(req, q="ДП-2026", boundary="cloud")
     assert resp_kn.status_code == 200
     assert rendered_calls[-1][0] == "web/knowledge.html"
-    assert len(rendered_calls[-1][1]["knowledge_snippets"]) >= 1
+    assert len(rendered_calls[-1][1]["evidence_rows"]) >= 1
 
     # Test documents router
-    resp_doc = await documents_web.documents_page(req)
+    resp_doc = await documents_web.documents_page(req, boundary="cloud")
     assert resp_doc.status_code == 200
     assert rendered_calls[-1][0] == "web/documents.html"
-    assert len(rendered_calls[-1][1]["documents"]) >= 2
+    assert rendered_calls[-1][1]["evidence_rows"] == [evidence_row("document")]
 
 
 def test_knowledge_and_documents_are_registered():

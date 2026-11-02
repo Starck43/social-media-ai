@@ -5,7 +5,6 @@ from app.services.cases.approvals import (
     APPROVAL_STATE_INVALIDATED,
     APPROVAL_STATE_LABELS,
     APPROVAL_STATE_PENDING,
-    CANONICAL_CASE_RECORD,
     CONNECTOR_STORAGE_LAYERS,
     DEFAULT_FORMULA_VERSION,
     approve_case_record,
@@ -14,7 +13,6 @@ from app.services.cases.approvals import (
     update_case_assumptions,
 )
 from app.services.cases.calculator import (
-    CANONICAL_COMPARISON_ROWS,
     DEFAULT_FX_RATES_TO_RUB,
     DEFAULT_VAT_RATE_PERCENT,
     MISSING_PRICE,
@@ -35,8 +33,6 @@ __all__ = [
     "APPROVAL_STATE_INVALIDATED",
     "APPROVAL_STATE_LABELS",
     "APPROVAL_STATE_PENDING",
-    "CANONICAL_CASE_RECORD",
-    "CANONICAL_COMPARISON_ROWS",
     "CONNECTOR_STORAGE_LAYERS",
     "CalculationInputError",
     "DEFAULT_FORMULA_VERSION",

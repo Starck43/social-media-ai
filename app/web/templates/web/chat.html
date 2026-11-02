@@ -6,6 +6,7 @@
     // Pass initial server-rendered messages to Alpine
     window.__chatAwaitingConfirmation = {{ (awaiting_confirmation | default(false)) | tojson }};
     window.__chatMessages = {{ (messages | default([])) | tojson }};
+    window.__chatEvidenceContext = {{ (scoped_context if scoped_context is defined else none) | tojson }};
     window.__chatAttachmentPolicy = {{ (attachment_policy if attachment_policy is defined else none) | tojson }};
 </script>
 
@@ -69,7 +70,7 @@
                     {% endif %}
                     {% if scoped_context.is_local_only %}
                     <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200" data-local-only-badge>
-                        local_only: внешние LLM отключены
+                        local_only: отправка в чат заблокирована
                     </span>
                     {% else %}
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
@@ -79,9 +80,9 @@
                 </div>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400">
                     {% if scoped_context.is_local_only %}
-                    Сообщения обрабатываются строго локальной моделью без передачи во внешние облачные сервисы.
+                    Отправка заблокирована: локальный маршрут обработки не настроен. Данные не передаются в облако.
                     {% else %}
-                    Агент использует привязанный объект при формировании ответов и проверке фактов.
+                    Контекст повторно проверяется перед отправкой. Для company отправка заблокирована до настройки корпоративного маршрута.
                     {% endif %}
                 </p>
             </div>

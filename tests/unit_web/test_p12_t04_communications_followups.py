@@ -14,7 +14,6 @@ Covers:
 
 from __future__ import annotations
 
-import importlib.util
 import types
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +21,9 @@ from typing import Any
 
 import pytest
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
+
+from tests.shared.evidence_fixtures import evidence_row, workspace_double
+from tests.source_import_isolation import load_isolated_source as _isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,17 +34,8 @@ class NS(types.SimpleNamespace):
 
 
 def load_isolated_source(module_name: str, file_path: Path, mocked_deps: dict[str, Any] | None = None):
-    """Load module directly from source file with isolated sys.modules."""
-    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
-    mod = importlib.util.module_from_spec(spec)
-    if mocked_deps:
-        for k, v in mocked_deps.items():
-            import sys
-
-            sys.modules[k] = v
-    assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    return mod
+    """Keep route/service doubles module-local, including deferred imports."""
+    return _isolated_source(module_name, file_path, mocked_deps)
 
 
 def _load_communications_outbox():
@@ -310,15 +303,18 @@ def test_communications_jinja_template_strict_rendering():
     context = _build_base_template_context()
 
     outbox = _load_communications_outbox()
-    context["outbox_items"] = outbox.CANONICAL_OUTBOX_ITEMS
-    context["outbox_messages"] = outbox.CANONICAL_OUTBOX_ITEMS
+    # Evidence is not a claim that a message was verified or sent.
+    # Outbox lifecycle coverage above remains unchanged.
+    context["evidence_rows"] = [evidence_row("communication")]
+    context["boundary"] = "cloud"
 
     rendered = template.render(**context)
     assert 'data-p12-communications="communications-outbox"' in rendered
     assert "Коммуникации и Outbox" in rendered
-    assert "Игорь Смирнов · ООО «ТехПолимер-Восток»" in rendered
-    assert "Маршрут верифицирован" in rendered
-    assert "sha256:88a1c04f9012a67e" in rendered
+    assert "Stored test evidence" in rendered
+    assert 'data-evidence-context-type="communication"' in rendered
+    assert "Маршрут верифицирован" not in rendered
+    assert "sha256:fixture" in rendered
     assert "Kill Switch" in rendered
 
 
@@ -329,15 +325,16 @@ def test_followups_jinja_template_strict_rendering():
     context = _build_base_template_context()
 
     followups = _load_communications_followups()
-    context["followup_items"] = followups.CANONICAL_FOLLOWUP_ITEMS
-    context["reminders"] = followups.CANONICAL_FOLLOWUP_ITEMS
+    context["evidence_rows"] = [evidence_row("followup")]
+    context["boundary"] = "cloud"
 
     rendered = template.render(**context)
     assert 'data-p12-followups="followups-catalog"' in rendered
     assert "Фоллоу-апы и сроки" in rendered
-    assert "ООО «ТехПолимер-Восток»" in rendered
-    assert "Катализатор КС-4" in rendered
-    assert "21:00–08:00" in rendered
+    assert "Stored test evidence" in rendered
+    assert "Test-only evidence text" in rendered
+    assert 'data-evidence-context-type="followup"' in rendered
+    assert "Катализатор КС-4" not in rendered
 
 
 @pytest.mark.asyncio
@@ -358,6 +355,7 @@ async def test_fastapi_domain_routers_communications_and_followups(monkeypatch):
         {
             "app.services.communications.outbox": _load_communications_outbox(),
             "app.web.deps": fake_deps,
+            "app.services.knowledge.workspace": workspace_double(),
         },
     )
     followups_web = load_isolated_source(
@@ -366,22 +364,23 @@ async def test_fastapi_domain_routers_communications_and_followups(monkeypatch):
         {
             "app.services.communications.followups": _load_communications_followups(),
             "app.web.deps": fake_deps,
+            "app.services.knowledge.workspace": workspace_double(),
         },
     )
 
     req = NS(state=NS(web_user=NS(id=1)))
 
     # Test communications router
-    resp_comm = await comm_web.communications_page(req)
+    resp_comm = await comm_web.communications_page(req, boundary="cloud")
     assert resp_comm.status_code == 200
     assert rendered_calls[-1][0] == "web/communications.html"
-    assert len(rendered_calls[-1][1]["outbox_items"]) >= 2
+    assert rendered_calls[-1][1]["evidence_rows"] == [evidence_row("communication")]
 
     # Test followups router
-    resp_fu = await followups_web.followups_page(req)
+    resp_fu = await followups_web.followups_page(req, boundary="cloud")
     assert resp_fu.status_code == 200
     assert rendered_calls[-1][0] == "web/followups.html"
-    assert len(rendered_calls[-1][1]["followup_items"]) >= 2
+    assert rendered_calls[-1][1]["evidence_rows"] == [evidence_row("followup")]
 
 
 def test_communications_and_followups_are_registered():

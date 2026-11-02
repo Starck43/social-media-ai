@@ -6,20 +6,20 @@ outbox lifecycle state machines, content hashes, TTL approvals, and kill-switch 
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
-from app.services.communications.outbox import CANONICAL_OUTBOX_ITEMS
+from app.services.knowledge.workspace import snippet_rows
 from app.web.deps import render
 
 router = APIRouter()
 
 
 @router.get("/communications")
-async def communications_page(request: Request):
+async def communications_page(request: Request, boundary: str = Query("cloud", pattern="^(local_only|company|cloud)$")):
     """Render communications outbox catalog with verified routes and lifecycle controls."""
     return render(
         request,
         "web/communications.html",
-        outbox_items=CANONICAL_OUTBOX_ITEMS,
-        outbox_messages=CANONICAL_OUTBOX_ITEMS,
+        evidence_rows=await snippet_rows("communication", boundary),
+        boundary=boundary,
     )

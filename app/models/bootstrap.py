@@ -7,6 +7,10 @@ def bind_managers(models):
     from .managers.base_manager import BaseManager
     from .managers.role_manager import RoleManager
 
+    knowledge = import_module("app.models.managers.knowledge_manager")
+    models.KnowledgeSnippet.objects = knowledge.EvidenceManager(models.KnowledgeSnippet)
+    models.KnowledgeDocument.objects = knowledge.EvidenceManager(models.KnowledgeDocument)
+    models.DocumentRevision.objects = knowledge.DocumentRevisionManager(models.DocumentRevision)
     models.PlatformRole.objects = RoleManager(models.PlatformRole)
     models.ActionAuditEvent.objects = import_module(
         "app.models.managers.action_audit_event_manager"

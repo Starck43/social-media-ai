@@ -19,7 +19,7 @@ import re
 from datetime import timezone
 
 from dateutil import parser as dateutil_parser
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.web.chat_workspace import router as workspace_router
@@ -226,16 +226,21 @@ async def chat_page(
     if denied is not None:
         return denied
 
-    scoped_context: dict[str, Any] | None = None
-    if context_type or context_id:
-        scoped_context = {
-            "type": context_type or "object",
-            "id": context_id or "",
-            "boundary": boundary or "cloud",
-            "title": context_title or context_id or "Объект",
-            "ref": context_ref or context_id or "",
-            "is_local_only": (boundary == "local_only"),
+    scoped_context = None
+    if context_type or context_id or boundary:
+        from app.services.knowledge.workspace import resolve_context
+
+        scoped_context = await resolve_context(context_type, context_id, boundary)
+        # Selection persists server-side so stripping POST fields cannot silently
+        # turn a local-bound conversation into an ordinary external turn.
+        request.session["evidence_context"] = {
+            "context_type": context_type,
+            "context_id": context_id,
+            "boundary": boundary,
+            "tenant_id": getattr(request.state, "tenant_id", None),
         }
+    elif not is_ajax:
+        request.session.pop("evidence_context", None)
 
     from app.agent.runtime import web_session_id
 
@@ -328,6 +333,26 @@ async def chat_send(
         return RedirectResponse("/app/chat", status_code=302)
     user, tenant_id = actor
 
+    saved_context = request.session.get("evidence_context") or {}
+    if saved_context and saved_context.get("tenant_id") != tenant_id:
+        raise HTTPException(403, "Контекст принадлежит другому пространству. Снимите выбор.")
+    selected_context = None
+    # Reject a forged replacement of the selected record/boundary. A GET handoff
+    # is required to change context; a normal GET /app/chat explicitly clears it.
+    if saved_context:
+        for key, value in (("context_type", context_type), ("context_id", context_id), ("boundary", boundary)):
+            if isinstance(value, str) and value != saved_context[key]:
+                raise HTTPException(403, "Контекст изменился. Откройте его повторно.")
+        context_type, context_id, boundary = (saved_context[k] for k in ("context_type", "context_id", "boundary"))
+    if any(isinstance(value, str) and value for value in (context_type, context_id, boundary)):
+        from app.services.knowledge.workspace import resolve_context
+
+        selected_context = await resolve_context(context_type, context_id, boundary)
+        # The shared runtime currently has no end-to-end local/company routing
+        # guarantee. Refuse, rather than claiming a local badge makes it safe.
+        if selected_context["data_boundary"] != "cloud":
+            raise HTTPException(403, "Этот контекст нельзя передавать в облачный чат. Локальный маршрут не настроен.")
+
     raw_att_ids = attachment_ids if isinstance(attachment_ids, str) else ""
     parsed_att_ids = [item.strip() for item in raw_att_ids.split(",") if item.strip()]
     confirm_large_flag = (confirm_large if isinstance(confirm_large, str) else "").strip().lower() in {
@@ -392,6 +417,13 @@ async def chat_send(
                 return JSONResponse({"error": exc.message, "code": exc.code}, status_code=exc.status_code)
             add_flash(request, "error", exc.message)
             return RedirectResponse("/app/chat", status_code=302)
+
+    if selected_context:
+        text = (
+            f"[Сохранённый контекст: {selected_context['title']} | {selected_context['source_ref']} | "
+            f"{selected_context['citation_anchor']} | {selected_context['revision_hash']}]\n"
+            f"{selected_context['excerpt']}\n\n{text}"
+        )
 
     from app.agent.runtime import LIMIT_REACHED_PREFIX, handle_web_message
 

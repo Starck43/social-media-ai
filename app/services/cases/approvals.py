@@ -161,18 +161,3 @@ def update_case_assumptions(
         updated["bound_signature"] = None
 
     return updated
-
-
-CANONICAL_CASE_RECORD: dict[str, Any] = create_case_record(
-    code="CASE-2026-042",
-    title="Закупка полимерного сырья и катализатора на ноябрьский цикл",
-    stage_label="Сравнение предложений и согласование закупки",
-    doc_kind="Сводная таблица предложений и проект спецификации № 8",
-    doc_version_hash="sha256:6f28a904c11e",
-    formula_version=DEFAULT_FORMULA_VERSION,
-    assumptions_note=(
-        "Цены приведены к рублям (₽) без НДС (ставка НДС 20%). " "Курсы пересчёта: 1 USD = 92,50 ₽ · 1 EUR = 100,20 ₽."
-    ),
-    approval_state=APPROVAL_STATE_APPROVED,
-    approved_actor="saloon.as (Руководитель закупок)",
-)

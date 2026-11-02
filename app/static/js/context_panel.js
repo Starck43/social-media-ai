@@ -15,7 +15,7 @@
 
         document.addEventListener('click', function(event) {
             const trigger = event.target.closest('[data-evidence-trigger], [data-evidence-ref], [data-evidence-anchor]');
-            if (!trigger) return;
+            if (!trigger || panel.contains(trigger)) return;
 
             // Do not override explicit close buttons
             if (event.target.closest('[data-dialog-close]')) return;
@@ -25,8 +25,8 @@
             const hash = trigger.getAttribute('data-evidence-hash') || '';
             const anchor = trigger.getAttribute('data-evidence-anchor') || ref;
             const boundary = trigger.getAttribute('data-evidence-boundary') || 'cloud';
-            const contextType = trigger.getAttribute('data-context-type') || 'object';
-            const contextId = trigger.getAttribute('data-context-id') || ref || '';
+            const contextType = trigger.getAttribute('data-evidence-context-type') || trigger.getAttribute('data-context-type') || 'object';
+            const contextId = trigger.getAttribute('data-evidence-context-id') || trigger.getAttribute('data-context-id') || ref || '';
 
             // Update panel elements if dynamic fields exist
             const titleEl = panel.querySelector('[data-evidence-title]');
@@ -58,9 +58,8 @@
                 if (contextType) url.searchParams.set('context_type', contextType);
                 if (contextId) url.searchParams.set('context_id', contextId);
                 if (boundary) url.searchParams.set('boundary', boundary);
-                if (title) url.searchParams.set('context_title', title);
-                if (ref) url.searchParams.set('context_ref', ref);
                 chatLink.href = url.pathname + url.search;
+                chatLink.hidden = false;
             }
 
             // Open panel dialog

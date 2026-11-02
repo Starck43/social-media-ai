@@ -348,6 +348,27 @@ class RefreshClaimTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.oauth.refresh_user_token(7))
         self.assertEqual(self.vault.row.meta["refresh_attempt"]["state"], "failed")
 
+    async def test_endpoint_preflight_releases_only_its_own_unsent_claim(self):
+        self.post.side_effect = self.oauth.OAuthPreflightError("unsafe config")
+        self.assertIsNone(await self.oauth.refresh_user_token(7))
+        self.assertNotIn("refresh_attempt", self.vault.row.meta)
+        self.assertNotIn("refresh_failed_at", self.vault.row.meta)
+        self.assertEqual(self.vault.row.refresh_secret_encrypted, "encrypted:old-refresh")
+        self.post.side_effect = None
+        self.assertEqual(await self.oauth.refresh_user_token(7), "new-access")
+
+    async def test_preflight_failure_cannot_clear_new_login_state(self):
+        async def post(payload):
+            await self.oauth._store_vault_token(
+                user_id=7, access_token="login-access", refresh_token="login-refresh", expires_in=3600, meta={}
+            )
+            raise self.oauth.OAuthPreflightError("unsafe config")
+
+        self.post.side_effect = post
+        self.assertIsNone(await self.oauth.refresh_user_token(7))
+        self.assertEqual(self.vault.row.refresh_secret_encrypted, "encrypted:login-refresh")
+        self.assertNotIn("refresh_attempt", self.vault.row.meta)
+
     async def test_secret_failure_text_is_not_logged(self):
         self.post.side_effect = RuntimeError("PRIVATE_REFRESH_SENTINEL")
         with self.assertLogs(self.oauth.logger, logging.WARNING) as captured:

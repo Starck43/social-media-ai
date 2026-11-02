@@ -505,6 +505,25 @@ needed. These rules apply to the notification service, not to the independently
 reviewed digest transport. See [notification contract and setup impact](NOTIFICATIONS.md).
 
 
+## VK OAuth endpoint trust boundary
+
+`Platform.params` supplies the URLs; deployment policy `VK_OAUTH_ALLOWED_HOSTS`
+(default `id.vk.ru`) is a comma-separated list of **exact hostnames** trusted
+to receive OAuth material. Authorize and token endpoints must use HTTPS on port
+443 and match the allowlist; redirects are not followed. A reviewed custom
+proxy must be explicitly allowlisted before use, so existing custom endpoints
+may be refused after this security change until an operator configures them.
+Only allow hosts under the operator's control and review DNS/egress policy; this
+is not a DNS-pinning or compromised-host defense.
+
+The callback is still the shared catalog value, not an env overlay; it must be
+HTTPS except exact localhost/loopback HTTP in `ENVIRONMENT=development`. The
+operator must verify that the configured callback exactly matches the provider's
+registered callback; local validation cannot query or prove that registration.
+Rejected configuration produces no OAuth HTTP request. During refresh a rejected
+preflight releases its own unsent claim; network/ambiguous failures remain
+fenced and need reauthorization. Never enter tokens or secrets into hostnames.
+
 ## Shared platform configuration
 
 `Platform.params` is the only runtime source for VK/Telegram API configuration.

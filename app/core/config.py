@@ -146,6 +146,8 @@ class Settings(BaseSettings):
     VK_CLIENT_ACCESS_KEY: str | None = Field(
         default=None, repr=False
     )  # VK console "Защищённый ключ" — OAuth client secret
+    # Deployment egress trust boundary; exact OAuth hostnames, comma-separated.
+    VK_OAUTH_ALLOWED_HOSTS: str = "id.vk.ru"
     # Legacy migration inputs only (0120). Runtime uses Platform.params.
     VK_OAUTH_BASE_URL: str = "https://id.vk.ru"  # Legacy 0120 migration input only
     VK_REDIRECT_URI: str = "http://localhost/api/v1/social/callback"  # Legacy 0120 migration input only

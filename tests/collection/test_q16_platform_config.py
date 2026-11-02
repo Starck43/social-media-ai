@@ -146,6 +146,7 @@ async def test_oauth_uses_shared_authorize_token_and_callback_urls(monkeypatch):
     )
     monkeypatch.setattr(vk_oauth, "load_platform_config", AsyncMock(return_value=config))
     monkeypatch.setattr(settings, "VK_APP_ID", "synthetic")
+    monkeypatch.setattr(settings, "VK_OAUTH_ALLOWED_HOSTS", "auth.shared.invalid")
     pending = AsyncMock()
     monkeypatch.setattr(vk_oauth, "_store_pending", pending)
     url = await vk_oauth.build_authorize_url(1, user_id=1)

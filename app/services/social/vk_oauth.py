@@ -37,7 +37,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 
@@ -47,6 +47,41 @@ from app.services.social.credentials import resolve_token
 from app.services.social.platform_config import load_platform_config, require_config_param
 
 logger = logging.getLogger(__name__)
+
+
+class OAuthPreflightError(RuntimeError):
+    """OAuth configuration was rejected before any provider request."""
+
+
+def _oauth_url(config: dict, key: str, *, callback: bool = False) -> str:
+    """Fail closed on untrusted token endpoints and unsafe callbacks.
+
+    The catalog owns the URL. Deployment controls the exact host allowlist for
+    outbound OAuth endpoints; HTTP callbacks are only permitted for local dev.
+    """
+    try:
+        raw = config.get(key) if isinstance(config, dict) else None
+        if not isinstance(raw, str) or not raw or any(ord(c) <= 32 or ord(c) == 127 or c == "\\" for c in raw):
+            raise ValueError
+        value = require_config_param(config, key)
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        if not hostname or not hostname.isascii() or parsed.username or parsed.password:
+            raise ValueError
+        if callback:
+            local = hostname in ("localhost", "127.0.0.1", "::1")
+            if parsed.scheme != "https" and not (
+                parsed.scheme == "http" and local and settings.ENVIRONMENT == "development"
+            ):
+                raise ValueError
+        else:
+            allowed = {part.strip().lower() for part in settings.VK_OAUTH_ALLOWED_HOSTS.split(",") if part.strip()}
+            if parsed.scheme != "https" or parsed.port not in (None, 443) or hostname.lower() not in allowed:
+                raise ValueError
+        return value
+    except (ValueError, TypeError, AttributeError):
+        # Neither the rejected URL nor its embedded values belong in diagnostics.
+        raise OAuthPreflightError("VK OAuth configuration is not allowed") from None
 
 
 _ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
@@ -151,7 +186,7 @@ async def build_authorize_url(
         raise RuntimeError("VK app_id is not configured (env VK_APP_ID or vault vk/app_id)")
 
     config = await load_platform_config("vk")
-    callback = require_config_param(config, "redirect_uri")
+    callback = _oauth_url(config, "redirect_uri", callback=True)
     if redirect_uri is not None and redirect_uri != callback:
         raise ValueError("OAuth callback must match shared Platform configuration")
     params: dict[str, str] = {
@@ -165,7 +200,7 @@ async def build_authorize_url(
     if scope:
         params["scope"] = scope
     query = urlencode(params)
-    url = f"{require_config_param(config, 'oauth_base_url')}/authorize?{query}"
+    url = f"{_oauth_url(config, 'oauth_base_url')}/authorize?{query}"
 
     await _store_pending(user_id=user_id, state=state, verifier=verifier, tenant_id=tenant_id)
     logger.info("Built VK ID authorize URL for workspace %s", tenant_id)
@@ -173,9 +208,13 @@ async def build_authorize_url(
 
 
 async def _post_form(payload: dict[str, str]) -> dict[str, Any]:
-    config = await load_platform_config("vk")
-    token_url = require_config_param(config, "oauth_token_url")
-    async with httpx.AsyncClient(timeout=settings.VK_REQUEST_TIMEOUT) as client:
+    try:
+        config = await load_platform_config("vk")
+    except ValueError:
+        # Catalog validation failed before any request was possible.
+        raise OAuthPreflightError("VK OAuth configuration is not allowed") from None
+    token_url = _oauth_url(config, "oauth_token_url")
+    async with httpx.AsyncClient(timeout=settings.VK_REQUEST_TIMEOUT, follow_redirects=False) as client:
         res = await client.post(token_url, data=payload)
         res.raise_for_status()
         return res.json()
@@ -199,7 +238,7 @@ async def complete_authorization(code: str, state: str, device_id: Optional[str]
     payload: dict[str, str] = {
         "grant_type": "authorization_code",
         "code_verifier": verifier,
-        "redirect_uri": require_config_param(await load_platform_config("vk"), "redirect_uri"),
+        "redirect_uri": _oauth_url(await load_platform_config("vk"), "redirect_uri", callback=True),
         "code": code,
         "client_id": app_id,
         "state": state,
@@ -375,8 +414,14 @@ async def _renew_user_token(user_id: int, *, margin: timedelta, explicit: bool =
         async with user_credentials.locked_vk_token(user_id=user_id) as (session, current):
             if _owns_refresh_attempt(current, row_id, attempt_id):
                 failed_meta = dict(current.meta or {})
-                failed_meta["refresh_attempt"] = {**failed_meta["refresh_attempt"], "state": "failed"}
-                await _mark_refresh_failed(user_credentials, current, failed_meta, session=session)
+                if isinstance(exc, OAuthPreflightError):
+                    # The endpoint was rejected before HTTP, so the token has
+                    # not been sent. Release only this still-owned claim.
+                    failed_meta.pop("refresh_attempt", None)
+                    await user_credentials.update_by_id(row_id, session=session, meta=failed_meta)
+                else:
+                    failed_meta["refresh_attempt"] = {**failed_meta["refresh_attempt"], "state": "failed"}
+                    await _mark_refresh_failed(user_credentials, current, failed_meta, session=session)
         return None
 
     async with user_credentials.locked_vk_token(user_id=user_id) as (session, current):

@@ -10,6 +10,7 @@ def test_yandex_setup_is_separate_from_mail_and_never_displays_secret():
     ctx = context("connections")
     ctx.update(
         workspace_connection_write=True,
+        yandex_browse_csrf="session-bound-browse-token",
         workspace_providers=WORKSPACE_PROVIDERS,
         workspace_connection_rows=[
             dict(
@@ -57,6 +58,8 @@ def test_yandex_setup_is_separate_from_mail_and_never_displays_secret():
     assert 'action="/app/settings/yandex-connections"' in html
     assert 'name="oauth_token" type="password"' in html
     assert 'name="scope_ack"' in html and "может охватывать весь диск" in html
+    assert 'action="/app/settings/yandex-connections/91/browse"' in html
+    assert 'value="session-bound-browse-token"' in html
     assert 'data-yandex-connection="91"' in html and 'data-workspace-connection="91"' not in html
     assert 'data-workspace-connection="92"' in html and 'data-yandex-connection="92"' not in html
     assert "Disk &amp; safe" in html and "DO-NOT-RENDER" not in html

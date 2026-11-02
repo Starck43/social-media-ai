@@ -629,3 +629,207 @@ async def test_default_transport_revocation_waits_and_blocks_next_request(worksp
                 await asyncio.gather(reading, return_exceptions=True)
             if revoking is not None and not revoking.done():
                 await asyncio.wait_for(revoking, timeout=5)
+
+
+class _FormsParser:
+    """Parse rendered HTML with the standard library, without browser or network."""
+
+    @staticmethod
+    def parse(html):
+        from html.parser import HTMLParser
+
+        class Parser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.forms = []
+                self.tags = []
+                self.current = None
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                self.tags.append(tag)
+                if tag == "form":
+                    self.current = {"action": attrs.get("action"), "fields": {}, "text": ""}
+                    self.forms.append(self.current)
+                elif tag == "input" and self.current is not None and "name" in attrs:
+                    self.current["fields"][attrs["name"]] = attrs.get("value", "")
+
+            def handle_endtag(self, tag):
+                if tag == "form":
+                    self.current = None
+
+            def handle_data(self, text):
+                if self.current is not None:
+                    self.current["text"] += text
+
+        parser = Parser()
+        parser.feed(html)
+        return parser
+
+
+async def test_assembled_browse_csrf_privacy_and_authorization(workspace_data, pinned_http, caplog):
+    import logging
+    import re
+    from urllib.parse import urlencode
+
+    from app.core.hashing import get_password_hash
+    from app.main import create_application
+    from app.services.file_workspace.connections import create_yandex_connection
+
+    caplog.set_level(logging.DEBUG)
+    password = "p8t34-test-password"
+    async with async_session_maker() as session, session.begin():
+        await session.execute(
+            update(User)
+            .where(User.id.in_([u.id for u in workspace_data.users]))
+            .values(hashed_password=get_password_hash(password))
+        )
+    with actor(workspace_data, user=1) as args:
+        other = await create_yandex_connection(
+            tenant_id=args["tenant_id"],
+            actor_id=args["actor_id"],
+            label="Other disk",
+            root="/work",
+            oauth_token=TEST_TOKEN,
+        )
+    dangerous = '<img src=x onerror="alert(1)">'
+    pinned_http.response["_embedded"]["items"].extend(
+        [
+            {"path": f"disk:/work/{dangerous}", "name": dangerous, "type": "file"},
+            {"path": "disk:/work/subfolder", "name": "subfolder", "type": "dir"},
+        ]
+    )
+    app = create_application()
+    transport = httpx.ASGITransport(app=app)
+    cid = workspace_data.connection_id
+    endpoint = f"/app/settings/yandex-connections/{cid}/browse"
+
+    async def login_and_get_browse_token(client, user, connection_id):
+        login = await client.get("/app/login")
+        csrf = re.search(r'name="_csrf" value="([^"]+)"', login.text).group(1)
+        response = await client.post(
+            "/app/login", data={"username": user.username, "password": password, "_csrf": csrf}
+        )
+        assert response.status_code in (302, 303)
+        settings_page = await client.get("/app/settings?tab=connections")
+        parsed = _FormsParser.parse(settings_page.text)
+        form = next(
+            form
+            for form in parsed.forms
+            if form["action"] == f"/app/settings/yandex-connections/{connection_id}/browse"
+        )
+        return form["fields"]["_csrf"]
+
+    async with (
+        httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=False) as owner,
+        httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=False) as stranger,
+    ):
+        csrf = await login_and_get_browse_token(owner, workspace_data.users[0], cid)
+        other_csrf = await login_and_get_browse_token(stranger, workspace_data.users[1], other["id"])
+        assert (await owner.get(endpoint)).status_code == 405
+        assert (await owner.post(endpoint, data={"_csrf": "bad"})).status_code == 403
+        # The legacy unbound web CSRF token is not accepted for this route.
+        unbound = app.state.csrf_manager.generate_token()
+        assert (await owner.post(endpoint, data={"_csrf": unbound})).status_code == 403
+        assert (await owner.post(endpoint, data={"_csrf": other_csrf})).status_code == 403
+        assert (await stranger.post(endpoint, data={"_csrf": csrf})).status_code == 403
+        assert (await stranger.post(endpoint, data={"_csrf": other_csrf})).status_code == 403
+        duplicate = urlencode([("_csrf", csrf), ("_csrf", csrf)])
+        assert (
+            await owner.post(endpoint, content=duplicate, headers={"content-type": "application/x-www-form-urlencoded"})
+        ).status_code == 400
+        assert (await owner.post(endpoint, data={"_csrf": csrf, "tenant_id": "123"})).status_code == 400
+        assert (
+            await owner.post(endpoint, data={"_csrf": csrf, "folder": "/work", "offset": "1000001"})
+        ).status_code == 400
+        assert (
+            await owner.post(
+                endpoint, content=b"a=" + b"x" * 65536, headers={"content-type": "application/x-www-form-urlencoded"}
+            )
+        ).status_code == 400
+        assert (
+            await owner.post(endpoint, data={"_csrf": csrf, "folder": "/work/private", "offset": "0"})
+        ).status_code == 403
+        assert (
+            await owner.post(endpoint, data={"_csrf": csrf, "folder": "/work/../private", "offset": "0"})
+        ).status_code == 403
+        assert pinned_http.calls == []
+
+        response = await owner.post(endpoint, data={"_csrf": csrf})
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert "default-src 'none'" in response.headers["content-security-policy"]
+        assert TEST_TOKEN not in response.text and "report.txt" in response.text
+        parsed = _FormsParser.parse(response.text)
+        assert "script" not in parsed.tags and "img" not in parsed.tags
+        assert dangerous not in response.text and "&lt;img" in response.text
+        assert "Папка: subfolder" in response.text and "Папка: private" not in response.text
+        child = next(form for form in parsed.forms if "subfolder" in form["text"])
+        fields = child["fields"]
+        assert fields["folder"] == "disk:/work/subfolder"
+        assert len(pinned_http.calls) == 1 and pinned_http.calls[0].closed
+        pinned_http.response = {"path": "disk:/work/subfolder", "type": "dir", "_embedded": {"offset": 0, "items": []}}
+        nested = await owner.post(endpoint, data=fields)
+        nested_parsed = _FormsParser.parse(nested.text)
+        assert nested.status_code == 200 and "нет доступных элементов" in nested.text
+        back = next(form for form in nested_parsed.forms if "На уровень выше" in form["text"])
+        assert back["fields"]["folder"] == "disk:/work"
+        assert len(pinned_http.calls) == 2
+        async with async_session_maker() as session, session.begin():
+            await session.execute(
+                update(WorkspaceConnection).where(WorkspaceConnection.id == cid).values(is_active=False)
+            )
+        assert (await owner.post(endpoint, data=fields)).status_code == 403
+        assert len(pinned_http.calls) == 2
+    assert TEST_TOKEN not in caplog.text
+
+
+async def test_assembled_browse_pagination_and_provider_error(workspace_data, pinned_http):
+    import re
+
+    from app.core.hashing import get_password_hash
+    from app.main import create_application
+
+    password = "p8t34-test-password"
+    async with async_session_maker() as session, session.begin():
+        await session.execute(
+            update(User)
+            .where(User.id == workspace_data.users[0].id)
+            .values(hashed_password=get_password_hash(password))
+        )
+    pinned_http.response = {
+        "path": "disk:/work",
+        "type": "dir",
+        "_embedded": {
+            "offset": 0,
+            "items": [{"path": f"disk:/work/item-{i}", "name": f"item-{i}", "type": "file"} for i in range(100)],
+        },
+    }
+    app = create_application()
+    transport = httpx.ASGITransport(app=app)
+    endpoint = f"/app/settings/yandex-connections/{workspace_data.connection_id}/browse"
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=False) as client:
+        login = await client.get("/app/login")
+        csrf = re.search(r'name="_csrf" value="([^"]+)"', login.text).group(1)
+        await client.post(
+            "/app/login", data={"username": workspace_data.users[0].username, "password": password, "_csrf": csrf}
+        )
+        settings_page = await client.get("/app/settings?tab=connections")
+        settings_parsed = _FormsParser.parse(settings_page.text)
+        csrf = next(form for form in settings_parsed.forms if form["action"] == endpoint)["fields"]["_csrf"]
+        first = await client.post(endpoint, data={"_csrf": csrf})
+        assert first.status_code == 200
+        parsed = _FormsParser.parse(first.text)
+        next_form = next(form for form in parsed.forms if "Следующая страница" in form["text"])
+        fields = next_form["fields"]
+        assert fields["offset"] == "100" and fields["folder"] == "disk:/work"
+        pinned_http.response["_embedded"] = {"offset": 100, "items": []}
+        second = await client.post(endpoint, data=fields)
+        assert second.status_code == 200 and "Предыдущая страница" in second.text
+        assert "Следующая страница" not in second.text
+        pinned_http.status = b"401 Unauthorized"
+        error = await client.post(endpoint, data={"_csrf": csrf})
+        assert error.status_code == 503 and "Проверьте токен" in error.text
+        assert TEST_TOKEN not in error.text and error.headers["cache-control"] == "no-store"
+        assert len(pinned_http.calls) == 3 and all(writer.closed for writer in pinned_http.calls)

@@ -8,13 +8,14 @@ No share policy is supported in this first slice.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 import httpx
 
 from app.core.database import async_session_maker
 from app.integrations.catalog import CATALOG_VERSION
-from app.integrations.file_workspace.policy import FileOperation, FolderRestriction, ReadOnlyFolderPolicy
-from app.integrations.file_workspace.yandex_disk import DiskPage, MetadataError, list_folder
+from app.integrations.file_workspace.policy import FileOperation, FolderRestriction, ReadOnlyFolderPolicy, _components
+from app.integrations.file_workspace.yandex_disk import DiskPage, MetadataError, _disk_path, list_folder
 from app.integrations.file_workspace.yandex_http import YandexMetadataClient
 from app.models import WorkspaceConnectionSecret
 from app.models.managers.workspace_connection_manager import ConnectionDenied, _authorize, _connection
@@ -56,7 +57,7 @@ async def list_owned_folder(
     tenant_id: int,
     actor_id: int,
     connection_id: int,
-    folder: str,
+    folder: str | None = None,
     client: httpx.AsyncClient | YandexMetadataClient | None = None,
     offset: int = 0,
     limit: int = 100,
@@ -86,6 +87,11 @@ async def list_owned_folder(
         ):
             raise ConnectionDenied()
         policy = _stored_policy(connection.config)
+        # The root comes from the freshly loaded authorized connection, never
+        # a posted tenant, URL or a previously cached policy.
+        root = connection.config["file_policy"]["root"]
+        if folder is None:
+            folder = root
         if not policy.permits(folder, FileOperation.LIST):
             raise ConnectionDenied()
         secret = await session.get(WorkspaceConnectionSecret, connection.id)
@@ -97,6 +103,9 @@ async def list_owned_folder(
             raise ConnectionDenied() from None
         try:
             async with asyncio.timeout(_TOTAL_TIMEOUT):
-                return await list_folder(client, token=token, folder=folder, policy=policy, offset=offset, limit=limit)
+                page = await list_folder(client, token=token, folder=folder, policy=policy, offset=offset, limit=limit)
+                return replace(
+                    page, current_path=_disk_path(_components(folder)), root_path=_disk_path(_components(root))
+                )
         except TimeoutError:
             raise MetadataError("provider_unavailable") from None

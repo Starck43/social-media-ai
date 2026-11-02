@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Папка Яндекс.Диска</title>
+<style>
+  :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; background: #f9f8f7; color: #2c2c2b; }
+  * { box-sizing: border-box; }
+  body { max-width: 808px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 8px 0 16px; }
+  p { margin: 12px 0; } .muted { color: #625f5a; } .path { overflow-wrap: anywhere; }
+  .eyebrow { margin-top: 32px; font-size: 14px; font-weight: 650; letter-spacing: .03em; color: #625f5a; }
+  a { color: #075eac; } a:focus-visible, button:focus-visible { outline: 3px solid #2783de; outline-offset: 3px; }
+  ul { list-style: none; padding: 0; margin: 24px 0; border-top: 1px solid #a19f9a; }
+  li { padding: 12px 0; border-bottom: 1px solid #a19f9a; overflow-wrap: anywhere; }
+  form { display: inline; }
+  button { font: inherit; min-height: 44px; padding: 8px 12px; cursor: pointer; color: #2c2c2b; background: #fff; border: 1px solid #817f7b; border-radius: 8px; text-align: left; max-width: 100%; overflow-wrap: anywhere; }
+  button:hover { background: #f0efed; }
+  .navigation { display: flex; gap: 12px; flex-wrap: wrap; margin: 24px 0; }
+  @media (prefers-color-scheme: dark) {
+    :root { background: #191919; color: #fff; } .muted, .eyebrow { color: #c1c1c1; }
+    a { color: #8ac2ff; } ul, li { border-color: #818181; }
+    button { color: #fff; background: #202020; border-color: #a4a4a4; } button:hover { background: #383836; }
+  }
+  @media (max-width: 480px) { body { padding: 24px 16px 48px; } }
+</style>
+</head>
+<body>
+<main>
+  <a href="/app/settings?tab=connections#conn-ws-yandex_disk">← К подключениям</a>
+  <p class="eyebrow">ЛИЧНОЕ ПОДКЛЮЧЕНИЕ · ТОЛЬКО ЧТЕНИЕ</p>
+  <h1>Папка Яндекс.Диска</h1>
+  {% if error %}
+  <p role="alert">{{ error }}</p>
+  {% else %}
+  <p class="muted">Только просмотр названий. Открытие и анализ файлов пока недоступны; запись и удаление отключены.</p>
+  <p class="path"><strong>Папка:</strong> {{ page.current_path }}</p>
+  <p class="muted">Список запрашивается у Диска и может меняться между страницами.</p>
+  {% if parent %}
+  <form method="post" action="/app/settings/yandex-connections/{{ connection_id }}/browse">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input type="hidden" name="folder" value="{{ parent }}">
+    <input type="hidden" name="offset" value="0">
+    <button type="submit">↑ На уровень выше</button>
+  </form>
+  {% endif %}
+  {% if page.items %}
+  <ul aria-label="Содержимое папки">
+    {% for item in page.items %}
+    <li>{% if item.kind == 'dir' %}
+      <form method="post" action="/app/settings/yandex-connections/{{ connection_id }}/browse">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="folder" value="{{ item.path }}">
+        <input type="hidden" name="offset" value="0">
+        <button type="submit">Папка: {{ item.name }}</button>
+      </form>
+      {% else %}<span>Файл: {{ item.name }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p>На этой странице нет доступных элементов.</p>{% endif %}
+  {% if page.truncated %}<p role="status">Достигнут предел просмотра списка; продолжение недоступно.</p>{% endif %}
+  <nav class="navigation" aria-label="Страницы папки">
+    {% if previous_offset is not none %}
+    <form method="post" action="/app/settings/yandex-connections/{{ connection_id }}/browse">
+      <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="folder" value="{{ page.current_path }}"><input type="hidden" name="offset" value="{{ previous_offset }}">
+      <button type="submit">Предыдущая страница</button>
+    </form>
+    {% endif %}
+    {% if page.next_offset is not none %}
+    <form method="post" action="/app/settings/yandex-connections/{{ connection_id }}/browse">
+      <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="folder" value="{{ page.current_path }}"><input type="hidden" name="offset" value="{{ page.next_offset }}">
+      <button type="submit">Следующая страница</button>
+    </form>
+    {% endif %}
+  </nav>
+  {% endif %}
+</main>
+</body>
+</html>

@@ -55,6 +55,9 @@ class DiskPage:
     # A continuation hint, not a provider snapshot or proof of complete scan.
     next_offset: int | None
     truncated: bool = False
+    # Populated only by the owner-bound service after its policy check.
+    current_path: str | None = None
+    root_path: str | None = None
 
 
 def _disk_path(parts: tuple[str, ...]) -> str:

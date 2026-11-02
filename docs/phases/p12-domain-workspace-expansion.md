@@ -87,6 +87,9 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 
 - [P12-T10](../tasks/p12-t10.md): unify provider presentation metadata and reusable cards/forms without enabling unimplemented transports.
 =======
+- [P12-T10](../tasks/p12-t10.md): unified provider presentation catalog. **DONE 2026-11-02**,
+  merge `3a4af09e` (PR #305). Code-owned descriptors, local SVG glyphs, shared
+  components; no transport, migration or production change.
 - [P12-T11](../tasks/p12-t11.md): real knowledge/document storage, workspace-derived ACL
   and `data-evidence-*` triggers so the accepted drawer (P12-T06) opens on real rows.
   The Wave 2 pages currently render hardcoded demo records.

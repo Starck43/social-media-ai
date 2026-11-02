@@ -58,6 +58,38 @@
             x-show="!panelOpen" x-cloak aria-controls="chat-workspace-panel" :aria-expanded="panelOpen"
             aria-label="Открыть рабочий контекст" title="Открыть рабочий контекст">‹</button>
     <section class="chat-window" aria-label="Диалог с агентом">
+        {% if scoped_context %}
+        <div class="chat-scoped-context-banner p-3 m-3 mb-0 rounded-lg border {% if scoped_context.is_local_only %}border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40{% else %}border-cyan-200 bg-cyan-50/70 dark:border-cyan-900/60 dark:bg-cyan-950/30{% endif %} flex flex-wrap items-center justify-between gap-3 text-xs" data-chat-scoped-context>
+            <div class="space-y-0.5">
+                <div class="flex items-center gap-2">
+                    <span class="font-semibold text-slate-800 dark:text-slate-200">Привязанный контекст:</span>
+                    <span class="font-medium text-cyan-800 dark:text-cyan-300" data-context-title>{{ scoped_context.title }}</span>
+                    {% if scoped_context.ref %}
+                    <span class="font-mono text-[11px] text-slate-500 dark:text-slate-400">({{ scoped_context.ref }})</span>
+                    {% endif %}
+                    {% if scoped_context.is_local_only %}
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200" data-local-only-badge>
+                        local_only: внешние LLM отключены
+                    </span>
+                    {% else %}
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                        контур: {{ scoped_context.boundary }}
+                    </span>
+                    {% endif %}
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                    {% if scoped_context.is_local_only %}
+                    Сообщения обрабатываются строго локальной моделью без передачи во внешние облачные сервисы.
+                    {% else %}
+                    Агент использует привязанный объект при формировании ответов и проверке фактов.
+                    {% endif %}
+                </p>
+            </div>
+            <a href="/app/chat" class="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 underline whitespace-nowrap">
+                Снять контекст
+            </a>
+        </div>
+        {% endif %}
         <!-- Messages area: scrolls with the whole page container -->
         <div
             class="chat-messages min-h-0 flex-1 space-y-4 p-4 md:p-5" role="log" aria-live="polite"

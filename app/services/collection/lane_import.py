@@ -107,6 +107,9 @@ class LaneImportPlan:
     # The sources already linked to the task plus the reused ones; the new
     # lanes join them at apply time.
     linked_source_ids: list[int] = field(default_factory=list)
+    # The member whose credential a newly created lane collects with; None means
+    # the lane is service-credential only. Never inferred from the workspace owner.
+    owner_user_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -396,6 +399,9 @@ async def apply_lane_import(plan: LaneImportPlan) -> LaneImportResult:
                 params=dict(LANE_PARAMS),
                 owner_task_id=plan.task_id,
                 is_active=True,
+                # A lane created for a task collects with the credential of the
+                # member who started it, not with the workspace owner's.
+                owner_user_id=plan.owner_user_id,
             )
             created.append(row.id)
             lane_ids.append(row.id)

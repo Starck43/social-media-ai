@@ -357,12 +357,15 @@ def source_connection_spec(source: Any) -> Optional[ConnectionSpec]:
 def source_uses_personal_token(source: Any) -> bool:
     """True when this source's collection layer can require the owner's L2 secret.
 
-    `pull`/`user` both consult it (as L1 then, where allowed, L2); `push` never
-    does. `owner.resolve_source_owner` decides *whose* token, this decides
-    whether the question is asked at all.
+    Every mode except `push` may fall back from the deployment credential to a
+    personal one, including a missing mode and `auto` — an imported lane stores
+    `auto`, and treating it as "no personal credential" is what made those
+    sources invisible to both the banner and the preflight. `push` collects
+    through a bot and never asks. `owner.resolve_source_owner` decides *whose*
+    token; this decides whether the question is asked at all.
     """
     mode = (getattr(source, "params", None) or {}).get("mode", "pull")
-    return mode in ("pull", "user")
+    return mode != "push"
 
 
 async def source_connection_status(source: Any) -> Optional[ConnectionStatus]:
@@ -370,14 +373,47 @@ async def source_connection_status(source: Any) -> Optional[ConnectionStatus]:
 
     A source may collect with a teammate's token (`Source.params["token_owner"]`),
     so the caller's own connection says nothing about it. Returns None for a
-    push source or an ownerless workspace.
+    push source.
     """
     status = await source_connection_statuses([source])
     return status.get(getattr(source, "id", None))
 
 
-async def source_connection_statuses(sources: Iterable[Any]) -> dict[Any, ConnectionStatus]:
+def is_service_only(status: Optional[ConnectionStatus]) -> bool:
+    """True when the source has no usable personal credential and runs on L1.
+
+    `unconfigured` is the status of an owner-less source (nobody to resolve) and
+    of a deployment without the platform's app. Both mean the same thing for the
+    run: collection keeps working through the deployment credential, and the
+    person must be told that the view may be narrower.
+    """
+    return status is not None and status.state == "unconfigured"
+
+
+def blocks_collection(status: Optional[ConnectionStatus]) -> bool:
+    """True when the owner's personal credential is missing or must be re-made.
+
+    `renewable` is deliberately not blocking: an expiring token renews itself on
+    the next run, so asking the user to fix it would be a false alarm.
+    """
+    return status is not None and status.state in ("missing", "reauth")
+
+
+def authorisation_target(platform: str) -> str:
+    """Where a person goes to grant personal access for `platform`."""
+    spec = CONNECTIONS_BY_PLATFORM.get(platform)
+    if spec is not None and spec.is_oauth:
+        return f"/app/connections/{platform}/authorize?next=/app/sources"
+    return "/app/settings?tab=connections"
+
+
+async def source_connection_statuses(
+    sources: Iterable[Any], *, owner_overrides: dict[Any, Optional[int]] | None = None
+) -> dict[Any, ConnectionStatus]:
     """`{source.id: ConnectionStatus}` for a whole page of sources.
+
+    `owner_overrides` lets a caller that already resolved owners (a list page, a
+    preflight) pass them in, so the same answer is not recomputed per source.
 
     A list page asks about every row, and each answer costs two queries: one to
     resolve the owner, one to read the vault. Twenty sources would pay forty, and
@@ -390,6 +426,7 @@ async def source_connection_statuses(sources: Iterable[Any]) -> dict[Any, Connec
     """
     from app.services.social.owner import resolve_source_owner
 
+    _UNSET = object()
     owners: dict[tuple, Optional[int]] = {}
     statuses: dict[tuple, ConnectionStatus] = {}
     result: dict[Any, ConnectionStatus] = {}
@@ -398,9 +435,14 @@ async def source_connection_statuses(sources: Iterable[Any]) -> dict[Any, Connec
         spec = source_connection_spec(source)
         if spec is None:
             continue
-        owner_key = (getattr(source, "tenant_id", None), (getattr(source, "params", None) or {}).get("token_owner"))
+        owner_key = (
+            getattr(source, "tenant_id", None),
+            (getattr(source, "params", None) or {}).get("token_owner"),
+            getattr(source, "owner_user_id", None),
+        )
         if owner_key not in owners:
-            owners[owner_key] = await resolve_source_owner(source)
+            override = (owner_overrides or {}).get(getattr(source, "id", None), _UNSET)
+            owners[owner_key] = override if override is not _UNSET else await resolve_source_owner(source)
         owner_id = owners[owner_key]
         status_key = (spec.platform, owner_id)
         if status_key not in statuses:

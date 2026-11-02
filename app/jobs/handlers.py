@@ -774,6 +774,9 @@ async def _run_mention_lanes_step(
     task_id = _log_id(getattr(task, "id", None))
     if task_id is None:
         return None
+    # The member who started the run owns any lane created here. Never the
+    # workspace owner: a lane's personal credential is that member's own.
+    lane_owner_user_id = _log_id(task_payload.get("_trusted_initiated_by_user_id"))
     try:
         intent = parse_collection_intent(task_payload)
     except CollectionIntentError as error:
@@ -815,7 +818,9 @@ async def _run_mention_lanes_step(
         source_ids: list[int] = []
         for platform_key in sorted(platform_keys):
             specs = [query_source_spec(task_id=int(task.id), platform=platform_key, query=phrase) for phrase in phrases]
-            result = await ensure_query_lanes(task, specs, platform=platform_key, dry_run=dry_run)
+            result = await ensure_query_lanes(
+                task, specs, platform=platform_key, dry_run=dry_run, owner_user_id=lane_owner_user_id
+            )
             created += len(result.created_source_ids)
             reused += len(result.reused_source_ids)
             linked += len(result.linked_source_ids)
@@ -1385,6 +1390,13 @@ async def _handle_collect_with_access(
                     "dry_run": bool((result or {}).get("dry_run")),
                     **({"preview": (result or {}).get("preview")} if (result or {}).get("dry_run") else {}),
                     **({"selection": (result or {}).get("selection")} if (result or {}).get("selection") else {}),
+                    # Set when only the deployment credential could be used: the
+                    # row still counts as collected, and names what was missing.
+                    **(
+                        {"narrowed_access": (result or {}).get("narrowed_access")}
+                        if (result or {}).get("narrowed_access")
+                        else {}
+                    ),
                 }
             )
             if analysis_errors:
@@ -1449,7 +1461,30 @@ async def _handle_collect_with_access(
             stats["task_budget"]["limit_reached"] = True
             stats["task_budget"]["sources_skipped"] = len(sources) - source_index - 1
             break
+    await _notify_source_authorisation(sources, stats)
     return stats
+
+
+async def _notify_source_authorisation(sources: list[Any], stats: dict[str, Any]) -> None:
+    """Tell each owner, personally, which platform needs their authorisation.
+
+    Only sources the run actually failed on are reported; a source that
+    authorised fine says nothing. The notice is personal (one inbox row per
+    owner and platform), deduplicated across attempts, and carries no token or
+    provider text.
+    """
+    auth_ids = {
+        row.get("source_id")
+        for row in stats.get("per_source") or []
+        if isinstance(row, dict) and row.get("outcome") == "auth_required"
+    }
+    if not auth_ids:
+        return
+    from app.services.social.source_access import authorisation_reports, notify_authorisation_required
+
+    reports = await authorisation_reports(sources, required_source_ids=auth_ids)
+    if reports:
+        await notify_authorisation_required(reports)
 
 
 async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:

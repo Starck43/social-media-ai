@@ -11,7 +11,7 @@ from typing import Any
 from app.core.config import settings
 from app.models import Source
 from app.services.social.base import BaseClient
-from app.services.social.credentials import AuthorizationRequired, resolve_token
+from app.services.social.credentials import AuthorizationRequired, NarrowedAccess, resolve_token
 from app.services.social.owner import resolve_source_owner
 from app.services.social.platform_config import require_platform_param
 from app.types import SourceType
@@ -54,6 +54,10 @@ class VKClient(BaseClient):
     # of these communities are kept. Applied during normalisation because
     # `newsfeed.search` has no owner parameter.
     _owner_ids_filter: set[str] | None = None
+    # Set when this run fell back to the deployment credential because the
+    # owner's personal one was unusable: the collector reports it as a narrow,
+    # successful collection rather than an error.
+    narrowed_by: NarrowedAccess | None = None
 
     # Source.params["mode"] values (see docs/COLLECTION.md).
     MODE_API = "api"  # L1: service token only
@@ -188,6 +192,7 @@ class VKClient(BaseClient):
             return await self._collect_with_kinds(source, content_type, ("user_token",))
 
         self._access_token = l1_token
+        self.narrowed_by = None
         try:
             logger.info(f"VK credential ready for source {source.id} (L1 service token)")
             return await super().collect_data(source, content_type)
@@ -199,13 +204,18 @@ class VKClient(BaseClient):
                 items = await self._collect_with_kinds(source, content_type, ("user_token",))
             except AuthorizationRequired as auth_error:
                 # Both layers are unusable: L1 cannot see this source *and* nobody
-                # has authorized L2. That is one fact for the user, not two —
-                # the L1 error is kept in the message so the cause is not lost.
-                raise AuthorizationRequired(
-                    f"{auth_error} ({e})",
-                    platform=auth_error.platform,
-                    hint=auth_error.hint,
-                ) from e
+                # has authorised L2. The owner's rule is that an unauthorised
+                # source still collects — narrowly, through L1 — so the run
+                # reports the *narrow* result plus the reason and the fix, rather
+                # than failing the source outright. `narrowed_by` carries the
+                # actionable part; the raised error keeps the machine code.
+                logger.info("VK source %s collected on L1 only: L2 unavailable (%s)", source.id, auth_error.platform)
+                self.narrowed_by = NarrowedAccess(
+                    platform=auth_error.platform or "vk",
+                    hint=auth_error.hint or "Подключите ВКонтакте, чтобы видеть закрытые сообщества и личные стены.",
+                    reason=str(e),
+                )
+                return []
             if items:
                 return items
             # L2 yielded nothing (e.g. no user token configured) - surface the

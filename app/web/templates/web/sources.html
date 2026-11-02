@@ -145,6 +145,14 @@
                         {% if conn.needs_action and not conn.can_connect %}
                             <p class="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{{ conn.detail }}</p>
                         {% endif %}
+                        {# Service-only: no member's personal credential is used, so
+                           the deployment credential collects and the view may be
+                           narrower. Not an error, and not a silent green either. #}
+                        {% if source.id in service_only_source_ids %}
+                            <p class="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                                сбор через общий доступ — добавьте личный доступ, чтобы видеть больше
+                            </p>
+                        {% endif %}
                     {% else %}
                         <span class="text-slate-600 dark:text-slate-400">—</span>
                     {% endif %}

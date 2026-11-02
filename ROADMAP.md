@@ -50,6 +50,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
+- [P12-T17](docs/tasks/p12-t17.md) Evidence workspace UI navigation and clarity — **IN_PROGRESS** · notion-ai-p12-t17 · [dialogue](https://app.notion.com/chat?t=40cd5248ae6680959dcf00a982bce27c) · `P2` · `C3`
+
 
 
 

@@ -111,3 +111,5 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 
 - [P12-T15](../tasks/p12-t15.md): user-managed per-folder restrictions and
   separately gated, explicitly approved file mutations after the read-only pilot.
+
+- [P12-T17](../tasks/p12-t17.md): improve navigation, spacing and clarity across the existing evidence workspaces.

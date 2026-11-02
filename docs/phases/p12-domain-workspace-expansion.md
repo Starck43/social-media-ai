@@ -97,3 +97,16 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 - [P12-T12](../tasks/p12-t12.md): plan an originals-first file workspace, compact
   version-aware agent knowledge, safe original-file opening and approved actions.
   Planning requested; implementation and connector-pilot activation are not started.
+
+План реализации P12-T12 хранится внутри карточки; последовательность срезов:
+
+1. Выбор одного пилота, контракты, privacy/retention и числовые budgets.
+2. Read-only каталог выбранной папки и безопасное открытие оригиналов.
+3. Анализ по запросу, компактный индекс/выводы, storage controls.
+4. Типизированные поручения, предпросмотр/одобрение и проверенная запись.
+5. Paired local-only execution без cloud fallback, затем следующие адаптеры.
+6. Проверка полезности, хранения/масштаба и end-to-end приёмка срезов.
+
+Не снимать DEFERRED с P8-T34 автоматически; scheduling/выбор адаптера требуют
+решения владельца. Эта плановая карточка не утверждает готовность дисков,
+поддержку любых форматов или разрешение публичной миграции.

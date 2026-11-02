@@ -11,11 +11,16 @@ from .actions import router as actions_router
 from .analytics import router as analytics_router
 from .auth import router as auth_router
 from .billing import router as billing_router
+from .cases import router as cases_router
 from .chat import router as chat_router
+from .communications import router as communications_router
 from .connections import router as connections_router
 from .dashboard import router as dashboard_router
 from .digests import router as digests_router
+from .documents import router as documents_router
+from .followups import router as followups_router
 from .jobs import router as jobs_router
+from .knowledge import router as knowledge_router
 from .notifications import router as notifications_router
 from .onboarding import router as onboarding_router
 from .scenarios import router as scenarios_router
@@ -31,10 +36,15 @@ web_router.include_router(actions_router)
 web_router.include_router(billing_router)
 web_router.include_router(analytics_router)
 web_router.include_router(dashboard_router)
+web_router.include_router(cases_router)
 web_router.include_router(chat_router)
+web_router.include_router(communications_router)
 web_router.include_router(connections_router)
 web_router.include_router(digests_router)
+web_router.include_router(documents_router)
+web_router.include_router(followups_router)
 web_router.include_router(jobs_router)
+web_router.include_router(knowledge_router)
 web_router.include_router(notifications_router)
 web_router.include_router(onboarding_router)
 web_router.include_router(scenarios_router)

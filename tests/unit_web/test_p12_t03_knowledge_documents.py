@@ -317,14 +317,18 @@ async def test_fastapi_domain_routers_knowledge_and_documents(monkeypatch):
     assert len(rendered_calls[-1][1]["documents"]) >= 2
 
 
-def test_zero_conflict_rule_nav_and_init_untouched():
-    """Verify that Wave 1/2 domain tasks do NOT modify app/web/nav.py or app/web/__init__.py."""
+def test_knowledge_and_documents_are_registered():
+    """The pages must exist in the app, not only as callable handlers.
+
+    This test used to assert the opposite — that the routers were absent from
+    `app/web/__init__.py` and the nav entries stayed `ready=False` — which
+    locked in a 404 for `/app/knowledge` and `/app/documents`. P12-T09 activated
+    them; the application-level check lives in `tests/web/test_p12_routes.py`.
+    """
     nav_text = (ROOT / "app/web/nav.py").read_text()
     init_text = (ROOT / "app/web/__init__.py").read_text()
 
-    # Knowledge and documents must remain unready placeholders until Wave 3 (P12-T06)
-    assert '"knowledge",' in nav_text
-    assert '"documents",' in nav_text
-    assert "ready=False" in nav_text
-    assert "knowledge_router" not in init_text
-    assert "documents_router" not in init_text
+    assert '"/app/knowledge"' in nav_text
+    assert '"/app/documents"' in nav_text
+    assert "knowledge_router" in init_text
+    assert "documents_router" in init_text

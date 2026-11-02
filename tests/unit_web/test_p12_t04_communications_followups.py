@@ -9,7 +9,7 @@ Covers:
   - T04.2: Imprecise date detection and human confirmation gate
   - T04.3: StrictUndefined Jinja2 template rendering for web/communications.html and web/followups.html
   - T04.3: FastAPI router endpoints for /communications and /followups
-  - Zero-Conflict rule: ensures app/web/nav.py and app/web/__init__.py are not modified in Wave 2.
+  - Reachability: `/app/communications` and `/app/followups` are registered in the application.
 """
 
 from __future__ import annotations
@@ -384,14 +384,19 @@ async def test_fastapi_domain_routers_communications_and_followups(monkeypatch):
     assert len(rendered_calls[-1][1]["followup_items"]) >= 2
 
 
-def test_zero_conflict_rule_nav_and_init_untouched():
-    """Verify that Wave 1/2 domain tasks do NOT modify app/web/nav.py or app/web/__init__.py."""
+def test_communications_and_followups_are_registered():
+    """The pages must exist in the app, not only as callable handlers.
+
+    This test used to assert the opposite — that the routers were absent from
+    `app/web/__init__.py` and the nav entries stayed `ready=False` — which
+    locked in a 404 for `/app/communications` and `/app/followups`. P12-T09
+    activated them; the application-level check lives in
+    `tests/web/test_p12_routes.py`.
+    """
     nav_text = (ROOT / "app/web/nav.py").read_text()
     init_text = (ROOT / "app/web/__init__.py").read_text()
 
-    # Communications and followups must remain unready placeholders until Wave 3 (P12-T06)
-    assert '"communications",' in nav_text
-    assert '"followups",' in nav_text
-    assert "ready=False" in nav_text
-    assert "communications_router" not in init_text
-    assert "followups_router" not in init_text
+    assert '"/app/communications"' in nav_text
+    assert '"/app/followups"' in nav_text
+    assert "communications_router" in init_text
+    assert "followups_router" in init_text

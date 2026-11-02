@@ -8,7 +8,7 @@ Covers:
   - T05.2: 4-entity connector storage architecture metadata (P12-T08 alignment)
   - T05.3: StrictUndefined Jinja2 rendering of web/cases.html with user-friendly Russian wording
   - T05.3: FastAPI router `/cases` rendering web/cases.html with `case_record` and `comparison_rows`
-  - Zero-Conflict rule: ensures app/web/nav.py and app/web/__init__.py are untouched in Wave 2.
+  - Reachability: the `/app/cases` route is registered in the application's router table.
 """
 
 from __future__ import annotations
@@ -276,11 +276,17 @@ async def test_fastapi_domain_router_cases():
     assert len(ctx["comparison_rows"]) >= 3
 
 
-def test_zero_conflict_rule_nav_and_init_untouched():
-    """Verify that P12-T05 does NOT modify app/web/nav.py or app/web/__init__.py."""
+def test_cases_page_is_reachable_from_the_application():
+    """The page must exist in the app, not only as a callable handler.
+
+    This test used to assert the opposite — that `cases_router` was absent from
+    `app/web/__init__.py` — which locked in a 404 for `/app/cases`. The
+    application-level check lives in `tests/web/test_p12_routes.py`; here the
+    point is that the P12 test suite cannot pass by calling the handler
+    directly.
+    """
     nav_text = (ROOT / "app/web/nav.py").read_text()
     init_text = (ROOT / "app/web/__init__.py").read_text()
 
-    assert '"cases",' in nav_text
-    assert "ready=False" in nav_text
-    assert "cases_router" not in init_text
+    assert '"/app/cases"' in nav_text
+    assert "cases_router" in init_text

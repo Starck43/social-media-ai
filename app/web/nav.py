@@ -89,9 +89,8 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     # 3. Knowledge & Documents (P12-T03; connectors live in /app/settings?tab=connections per P12-T02)
     NavItem(
         "knowledge",
-        "#",
+        "/app/knowledge",
         "База знаний",
-        ready=False,
         required_permission="analysis.result.view",
         icon="database",
         group="knowledge",
@@ -99,9 +98,8 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     ),
     NavItem(
         "documents",
-        "#",
+        "/app/documents",
         "Документы и ревизии",
-        ready=False,
         required_permission="analysis.result.view",
         icon="document",
         group="knowledge",
@@ -110,9 +108,8 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     # 4. Communications & Follow-ups (P12-T04)
     NavItem(
         "communications",
-        "#",
+        "/app/communications",
         "Коммуникации и Outbox",
-        ready=False,
         required_permission="scheduling.action.view",
         icon="message",
         group="communications",
@@ -120,9 +117,8 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     ),
     NavItem(
         "followups",
-        "#",
+        "/app/followups",
         "Фоллоу-апы и сроки",
-        ready=False,
         required_permission="scheduling.task.view",
         icon="calendar",
         group="communications",
@@ -131,9 +127,8 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     # 5. Cases & System execution (P12-T05 + existing actions/jobs/settings)
     NavItem(
         "cases",
-        "#",
+        "/app/cases",
         "Кейсы и сравнение КП",
-        ready=False,
         required_permission="scheduling.action.view",
         icon="chart",
         group="cases_system",

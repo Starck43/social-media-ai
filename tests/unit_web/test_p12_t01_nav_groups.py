@@ -74,17 +74,26 @@ def test_every_nav_item_belongs_to_a_declared_domain_group() -> None:
         assert item.group_label == NAV_GROUP_LABELS[item.group]
 
 
-def test_upcoming_p12_sections_are_registered_as_unready_placeholders() -> None:
-    unready = {item.key: item for item in NAV_ITEMS if not item.ready}
-    assert set(unready) == {
-        "knowledge",
-        "documents",
-        "communications",
-        "followups",
-        "cases",
+def test_p12_sections_are_live_and_gated() -> None:
+    """Wave 2 used to be placeholders; P12-T09 activated them.
+
+    A section is live only when its nav entry points at a real path and the
+    path belongs to a gated section, so `section_of` can enforce the
+    permission. Routes themselves are checked in `tests/web/test_p12_routes.py`.
+    """
+    p12 = {
+        "knowledge": "/app/knowledge",
+        "documents": "/app/documents",
+        "communications": "/app/communications",
+        "followups": "/app/followups",
+        "cases": "/app/cases",
     }
-    assert all(item.href == "#" for item in unready.values())
-    assert section_of("#") is None
+    for key, href in p12.items():
+        item = next(item for item in NAV_ITEMS if item.key == key)
+        assert item.ready, f"{key} is still a placeholder"
+        assert item.href == href
+        assert section_of(href) == item
+        assert item.required_permission is not None
 
 
 def test_ready_routes_and_mobile_bar_remain_unchanged() -> None:
@@ -100,12 +109,17 @@ def test_ready_routes_and_mobile_bar_remain_unchanged() -> None:
         "actions": "/app/actions",
         "jobs": "/app/jobs",
         "settings": "/app/settings",
+        "knowledge": "/app/knowledge",
+        "documents": "/app/documents",
+        "communications": "/app/communications",
+        "followups": "/app/followups",
+        "cases": "/app/cases",
     }
     assert [item.key for item in MOBILE_NAV_ITEMS] == ["dashboard", "sources", "tasks", "jobs"]
     assert all(item.ready and item.href.startswith("/app") for item in MOBILE_NAV_ITEMS)
 
 
-def test_permission_filtering_applies_to_unready_p12_sections() -> None:
+def test_permission_filtering_applies_to_p12_sections() -> None:
     knowledge = next(item for item in NAV_ITEMS if item.key == "knowledge")
     cases = next(item for item in NAV_ITEMS if item.key == "cases")
     assert not allows(knowledge, None)

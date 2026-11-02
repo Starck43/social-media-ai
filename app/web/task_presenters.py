@@ -1026,6 +1026,10 @@ def _diagnostics_view(job: "Job", source_id: int | None = None) -> dict[str, Any
                 "new_items": new_items if type(new_items) is int and 0 <= new_items <= 10**9 else None,
                 "eligible": eligible if type(eligible) is int and 0 <= eligible <= 10**9 else None,
                 "rejected": rejected if type(rejected) is int and 0 <= rejected <= 10**9 else None,
+                # Present when the source collected on the deployment credential
+                # only: the reason, and where the person authorises without
+                # leaving this modal.
+                "narrowed_access": _narrowed_access(row.get("narrowed_access") or collection.get("narrowed_access")),
             }
         )
     return {
@@ -1037,6 +1041,60 @@ def _diagnostics_view(job: "Job", source_id: int | None = None) -> dict[str, Any
         "remaining": remaining,
         "error_code": code,
         "source_errors": source_errors,
+        # One entry per platform whose sources ran on the deployment credential:
+        # the modal shows «собрано узко» with the authorisation link inline.
+        "narrowed_platforms": _narrowed_platforms(source_errors),
+    }
+
+
+def _narrowed_platforms(source_errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group the per-source narrowing notes by platform, in first-seen order.
+
+    The modal names the platform once with a count instead of repeating the same
+    sentence for every source that ran on L1.
+    """
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in source_errors:
+        access = row.get("narrowed_access")
+        if not isinstance(access, dict):
+            continue
+        platform = access["platform"]
+        entry = grouped.setdefault(
+            platform,
+            {
+                "platform": platform,
+                "hint": access["hint"],
+                "destination": access["destination"],
+                "sources": [],
+            },
+        )
+        sources = entry["sources"]
+        name = row.get("name")
+        if isinstance(name, str) and name and len(sources) < 10:
+            sources.append(name)
+    return list(grouped.values())
+
+
+def _narrowed_access(value: Any) -> dict[str, str] | None:
+    """Bounded "collected on the deployment credential" note for one source.
+
+    `hint` is written for a person and is the only text shown; `destination` is
+    the authorisation page for that platform, so the modal can offer the fix in
+    place. Unknown platforms fall back to the connections tab rather than a
+    broken link.
+    """
+    if not isinstance(value, dict):
+        return None
+    platform = value.get("platform")
+    hint = value.get("hint")
+    if not isinstance(platform, str) or not platform.strip():
+        return None
+    from app.services.social.connections import authorisation_target
+
+    return {
+        "platform": platform[:32],
+        "hint": (hint if isinstance(hint, str) else "")[:200],
+        "destination": authorisation_target(platform.strip()),
     }
 
 

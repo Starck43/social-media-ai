@@ -1390,6 +1390,13 @@ async def _handle_collect_with_access(
                     "dry_run": bool((result or {}).get("dry_run")),
                     **({"preview": (result or {}).get("preview")} if (result or {}).get("dry_run") else {}),
                     **({"selection": (result or {}).get("selection")} if (result or {}).get("selection") else {}),
+                    # Set when only the deployment credential could be used: the
+                    # row still counts as collected, and names what was missing.
+                    **(
+                        {"narrowed_access": (result or {}).get("narrowed_access")}
+                        if (result or {}).get("narrowed_access")
+                        else {}
+                    ),
                 }
             )
             if analysis_errors:

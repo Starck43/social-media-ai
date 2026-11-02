@@ -433,6 +433,8 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
 
     inline_columns = ["id", "platform", "kind", "label", "expires_at", "is_active"]
     column_list = ["id", "user_id", "platform", "kind", "label", "expires_at", "is_active", "updated_at"]
+    # Export uses an explicit allowlist; neither secret column nor metadata may leak.
+    column_export_list = column_list
     column_searchable_list = ["platform", "kind", "label"]
     column_sortable_list = ["user_id", "platform", "kind", "expires_at", "is_active"]
     column_default_sort = [("updated_at", True)]

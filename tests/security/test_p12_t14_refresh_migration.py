@@ -102,3 +102,21 @@ def test_malformed_legacy_refresh_aborts_without_discarding_it(migration_schema)
         col["name"] for col in sa.inspect(conn).get_columns("user_credentials", schema=settings.DB_SCHEMA)
     }
     assert conn.execute(sa.select(table.c.meta)).scalar_one() == {"refresh_token": ["bad"]}
+
+
+def test_verbose_sql_logging_prevents_migration(migration_schema, monkeypatch):
+    import logging
+
+    conn, table, migration, fernet = migration_schema
+    _seed(conn, table, fernet.encrypt(b"SYNTHETIC_ACCESS").decode())
+    logger = logging.getLogger("sqlalchemy.engine.Engine")
+    old_level = logger.level
+    logger.setLevel(logging.INFO)
+    try:
+        with pytest.raises(RuntimeError, match="Disable SQL"):
+            migration.upgrade()
+    finally:
+        logger.setLevel(old_level)
+    assert "refresh_secret_encrypted" not in {
+        col["name"] for col in sa.inspect(conn).get_columns("user_credentials", schema=settings.DB_SCHEMA)
+    }

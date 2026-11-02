@@ -43,9 +43,10 @@ def _connection():
     if context.is_offline_mode():
         raise RuntimeError("VK refresh migration requires an online transaction")
     bind = op.get_bind()
-    if bind.engine.echo or logging.getLogger("sqlalchemy.engine").isEnabledFor(logging.DEBUG):
+    if bind.engine.echo or bind.engine.logger.isEnabledFor(logging.INFO):
         raise RuntimeError("Disable SQL and result logging before VK refresh migration")
     # Freeze old and new writers until all rows and the check constraint commit.
+    bind.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
     quote = bind.dialect.identifier_preparer.quote
     schema = bind.dialect.identifier_preparer.quote_schema(settings.DB_SCHEMA)
     bind.exec_driver_sql(f"LOCK TABLE {schema}.{quote('user_credentials')} IN ACCESS EXCLUSIVE MODE")

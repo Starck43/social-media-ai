@@ -554,3 +554,44 @@ runtime fallbacks after migration; change the shared JSON to reconfigure an
 existing platform. A platform type with no catalog row is created from the
 application's bootstrap defaults, and downgrade removes the rows the migration
 created. No provider calls occur in migration.
+
+## Credential-key rotation (reviewed maintenance only)
+
+`CREDENTIALS_KEY` protects personal vault entries (including VK access and
+refresh), workspace connection secrets and personal LLM-provider API keys.
+Changing the environment key alone makes existing ciphertext unreadable. After
+migration 0124 is integrated and reviewed, the rotation utility covers all of
+these stores in a single PostgreSQL transaction; it is not an automatic deploy
+step. Empty disconnected connection placeholders are preserved.
+
+A live dry run or apply needs separate owner approval. Prepare and verify a
+restorable encrypted database backup and retain the old key securely; decide
+backup retention separately because old database pages/backups can contain
+legacy plaintext refresh tokens. Stop **all** application writers and keep them
+stopped through the configuration switch. Supply the current `CREDENTIALS_KEY`
+and the replacement `P12T14_NEW_CREDENTIALS_KEY` through protected environment
+configuration, not command-line arguments, chat, logs or version control.
+
+With the correct, explicitly authorized database and schema selected, the
+following dry run locks the relevant tables and verifies that every stored
+ciphertext can be read using the old key; it makes no changes:
+
+```bash
+python -m scripts.ops.rotate_credentials_key --target-approved --writers-stopped
+```
+
+Only after the owner approves apply and the backup and stopped-writer checks:
+
+```bash
+python -m scripts.ops.rotate_credentials_key --target-approved --writers-stopped --backup-confirmed --apply
+```
+
+The program fails closed on a missing database guard, old revision, malformed or
+wrong key, empty required secret or unreadable ciphertext. It never prints key,
+plaintext or ciphertext values. It locks with a bounded wait and updates all
+known stores together; a failed transaction rolls back. After a successful
+commit, keep writers stopped while securely installing and verifying the new key
+on every application instance before restart. If commit outcome is unknown, do
+not retry blindly or restart: have the authorized operator determine which key
+can read the vault and use the reviewed backup/forward-recovery plan. Rotating a
+key does not remove plaintext from previous database pages or backups.

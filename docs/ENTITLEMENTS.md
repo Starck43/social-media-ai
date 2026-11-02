@@ -36,8 +36,8 @@ The entitlement fields (`tenants.plan_expires_at` and `entitlement_usage`) were
 introduced by P2-T15 migration `0117`; they do not set expiry or change existing
 plan names. P2-T16 selected provider configuration only; no checkout flow
 populates expiry. After Q-14, the fields are part of the frozen
-`baseline_0118`; the current follow-up migration is `0119`. Q-14 verified the
-repository baseline transition for the local public and test schemas, but does
+`baseline_0118`; `0119` and `0120` follow it in the checked-in chain. Q-14
+verified the repository baseline transition for the local public and test schemas, but does
 not establish any other target's state. Follow [DEPLOYMENT](DEPLOYMENT.md) for
 approved target inspection and transition. Downgrading the historical entitlement
 schema drops usage evidence; preserve/export it before any authorized rollback.

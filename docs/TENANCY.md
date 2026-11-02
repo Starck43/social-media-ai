@@ -83,9 +83,9 @@ durable per-job usage. Catalog v1 grants `*` without capability quotas to all
 three plans; existing `PLAN_LIMITS` and the deployment member ceiling are not
 changed. Provider credentials/scopes and LLM payer consent remain independent.
 The fields were introduced in migration 0117 and are included in the Q-14
-`baseline_0118`; migration 0119 is its current follow-up for workspace
-offboarding. Q-14 verified the local public/test-schema transition, but that does
-not prove another target's revision. Follow [deployment guidance](DEPLOYMENT.md)
+`baseline_0118`; migration 0119 follows it for workspace offboarding, and
+0120 follows 0119 for shared platform configuration. Q-14 verified the local
+public/test-schema transition, but that does not prove another target's revision. Follow [deployment guidance](DEPLOYMENT.md)
 before using the fields on a target. P2-T15 behavioral/application tests remain
 deferred by the owner.
 

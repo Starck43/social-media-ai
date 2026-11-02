@@ -22,10 +22,10 @@ from dateutil import parser as dateutil_parser
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from .chat_workspace import router as workspace_router
-from .chat_workspace import selected_task, workspace_denied
-from .deps import add_flash, ensure_csrf, render, render_section_denied
-from .nav import section_of
+from app.web.chat_workspace import router as workspace_router
+from app.web.chat_workspace import selected_task, workspace_denied
+from app.web.deps import add_flash, ensure_csrf, render, render_section_denied
+from app.web.nav import section_of
 
 router = APIRouter(prefix="/chat")
 router.include_router(workspace_router)
@@ -204,10 +204,19 @@ def _chat_denied(request: Request, is_ajax: bool):
 
 @router.get("")
 @router.get("/")
-async def chat_page(request: Request):
+async def chat_page(
+    request: Request,
+    context_type: str | None = None,
+    context_id: str | None = None,
+    boundary: str | None = None,
+    context_title: str | None = None,
+    context_ref: str | None = None,
+):
     """Render the transcript; opens no session and spends nothing.
 
     For AJAX requests returns JSON so the client can update the DOM.
+    Supports P12-T06 domain context scoping via query params:
+    context_type, context_id, boundary (cloud/company/local_only), context_title, context_ref.
     """
     is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
         request.headers.get("accept") or ""
@@ -217,14 +226,27 @@ async def chat_page(request: Request):
     if denied is not None:
         return denied
 
+    scoped_context: dict[str, Any] | None = None
+    if context_type or context_id:
+        scoped_context = {
+            "type": context_type or "object",
+            "id": context_id or "",
+            "boundary": boundary or "cloud",
+            "title": context_title or context_id or "Объект",
+            "ref": context_ref or context_id or "",
+            "is_local_only": (boundary == "local_only"),
+        }
+
     from app.agent.runtime import web_session_id
 
     user = getattr(request.state, "web_user", None)
     tenant_id = getattr(request.state, "tenant_id", None)
     if user is None or tenant_id is None:
         if is_ajax:
-            return JSONResponse({"messages": [], "is_owner": False})
-        return render(request, "web/chat.html", section="chat", messages=[], is_owner=False)
+            return JSONResponse({"messages": [], "is_owner": False, "scoped_context": scoped_context})
+        return render(
+            request, "web/chat.html", section="chat", messages=[], is_owner=False, scoped_context=scoped_context
+        )
 
     messages = []
     session_id = await web_session_id(user.id)
@@ -251,6 +273,7 @@ async def chat_page(request: Request):
                 "awaiting_confirmation": await _confirmation_pending(user.id),
                 "is_owner": _is_owner(request),
                 "attachment_policy": policy_dict,
+                "scoped_context": scoped_context,
             }
         )
 
@@ -262,6 +285,7 @@ async def chat_page(request: Request):
         is_owner=_is_owner(request),
         awaiting_confirmation=await _confirmation_pending(user.id),
         attachment_policy=policy_dict,
+        scoped_context=scoped_context,
     )
 
 
@@ -273,6 +297,9 @@ async def chat_send(
     task_id: int | None = Form(None),
     attachment_ids: str | None = Form(None),
     confirm_large: str | None = Form(None),
+    context_type: str | None = Form(None),
+    context_id: str | None = Form(None),
+    boundary: str | None = Form(None),
 ):
     """Run one agent turn and show the answer on the same page.
 

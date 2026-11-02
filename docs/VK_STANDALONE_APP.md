@@ -33,9 +33,12 @@ communities, clips, goods, video) has no public equivalent.
    A Standalone app redirects to `https://oauth.vk.com/blank.html`; the current
    app redirects to `http://localhost/api/v1/social/callback` (a web app), and
    that is what the platform refuses.
-2. Put the new app id and its client secret into `.env`
-   (`VK_APP_ID`, `VK_CLIENT_ACCESS_KEY`) and set `VK_REDIRECT_URI` to
-   `https://oauth.vk.com/blank.html`.
+2. Configure `VK_APP_ID` for the selected app and have an authorized operator
+   set its registered callback and OAuth endpoints in the shared VK
+   `Platform.params`. `VK_REDIRECT_URI` is a legacy bootstrap/migration input,
+   not a runtime override for an existing record. The current OAuth flow does
+   not send `VK_CLIENT_ACCESS_KEY`; the compatibility setting remains available.
+   Provider requirements for a particular application profile are unverified.
 3. Authorize the workspace owner for the new app (the CLI command
    `python -m cli.main credentials oauth vk` starts the PKCE flow; the personal
    token lands in the vault with the app's rights).

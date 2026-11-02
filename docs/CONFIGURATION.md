@@ -11,9 +11,9 @@ The application reads config from `app/core/config.py` (Pydantic `Settings`).
 
 | Scope | Storage | Purpose |
 |---|---|---|
-| VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`, `VK_CLIENT_ACCESS_KEY`, `VK_REDIRECT_URI` | Application identity, L1 service access and registered OAuth callback; a client secret is not a user's access token. |
+| VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`; shared `Platform.params` for OAuth endpoints and callback | Application identity and L1 service access. `VK_CLIENT_ACCESS_KEY` and `VK_REDIRECT_URI` remain compatibility settings; the latter is a bootstrap/migration input. |
 | Shared Telegram bot | env: `TELEGRAM_BOT_TOKEN` | Bot API transport; one bot may serve multiple workspaces. |
-| Personal integrations | encrypted `user_credentials` | User VK access/refresh tokens and Telegram MTProto sessions; existing collection-owner resolution selects the user. |
+| Personal integrations | `user_credentials` | Personal VK and Telegram credentials; VK access tokens are encrypted, while legacy VK refresh-token metadata is plaintext until the separately reviewed storage cutover lands. |
 | Workspace digest recipients | `tenant_channels`, active and `is_digest_target=True` | Owned destination IDs for this workspace only; use existing binding workflow, then Settings → Channels to toggle digests. |
 | Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Fixed-template operator-alert destination; never a workspace notification fallback. |
 | Agent access bootstrap | `TELEGRAM_OWNER_IDS` | Telegram **user IDs**, not chat/channel IDs; distinct from the notification destination and workspace memberships. |
@@ -51,6 +51,10 @@ platform-level runtime configuration; email has two provider definitions.
 `app/static/icons/providers/` contains neutral local glyphs, not official logos.
 Reusable Jinja macros in `app/web/templates/web/components/provider.html` render
 icons, headings and fields; templates must never inline untrusted SVG or secrets.
+
+VK OAuth currently sends the application ID and may send a service token, but
+not `VK_CLIENT_ACCESS_KEY`. This describes implementation, not verified provider
+requirements for every app profile. The setting is retained for compatibility.
 
 VK and Telegram keep their existing personal-credential flows. Yandex Mail and
 Mail.ru Mail support workspace configuration and an explicit IMAP login check
@@ -188,8 +192,8 @@ ADMIN_ENABLED=true
 # VK
 VK_APP_ID=
 VK_SERVICE_KEY=             # VK "Сервисный ключ доступа" (L1)
-VK_CLIENT_ACCESS_KEY=       # VK "Защищённый ключ" (OAuth client secret)
-VK_REDIRECT_URI=https://your-domain/api/v1/social/callback
+VK_CLIENT_ACCESS_KEY=       # compatibility client-secret setting; not sent by current VK OAuth flow
+VK_REDIRECT_URI=https://your-domain/api/v1/social/callback  # bootstrap/migration input only
 
 # Telegram (Bot API)
 TELEGRAM_BOT_TOKEN=
@@ -334,8 +338,8 @@ or for provider-side rate limiting.
 |---|---|---|
 | `VK_APP_ID` | `None` | VK application ID |
 | `VK_SERVICE_KEY` | `None` | VK service token (L1) — console "Сервисный ключ доступа" |
-| `VK_CLIENT_ACCESS_KEY` | `None` | VK OAuth client secret — console "Защищённый ключ" |
-| `VK_REDIRECT_URI` | `http://localhost/api/v1/social/callback` | OAuth callback; set the registered public HTTPS URL in production |
+| `VK_CLIENT_ACCESS_KEY` | `None` | Compatibility client-secret setting; the current VK OAuth flow does not send it. Provider requirements are not verified. |
+| `VK_REDIRECT_URI` | `http://localhost/api/v1/social/callback` | Legacy bootstrap/migration input; existing VK records use the registered callback in shared `Platform.params`. |
 | `TELEGRAM_BOT_TOKEN` | `None` | Telegram bot token |
 | `TELEGRAM_API_ID` | `None` | Telegram API ID (L2 MTProto) |
 | `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |

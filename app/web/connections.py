@@ -60,8 +60,13 @@ async def connection_authorize(request: Request, platform: str, next: str = ""):
             # A missing/invalid shared catalog entry is an operator fix, not a 500.
             add_flash(request, "error", f"Общая конфигурация платформы недоступна: {e}")
             return RedirectResponse(BACK, status_code=302)
-        except RuntimeError as e:
-            add_flash(request, "error", f"{e}. Задайте VK_APP_ID / VK_CLIENT_ACCESS_KEY в конфигурации")
+        except RuntimeError:
+            # Runtime errors may contain sensitive details; do not echo them.
+            add_flash(
+                request,
+                "error",
+                "Не удалось начать авторизацию VK. Проверьте VK_APP_ID и настройки хранилища с администратором.",
+            )
             return RedirectResponse(BACK, status_code=302)
         return RedirectResponse(url, status_code=302)
 

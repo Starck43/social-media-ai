@@ -25,7 +25,7 @@ people.
 
 Two sources, one reader (`app/services/social/credentials.py`):
 
-- **personal vault** — `user_credentials`, encrypted with Fernet under
+- **personal vault** — `user_credentials`, with access secrets encrypted under
   `CREDENTIALS_KEY`, keyed by `users.id` and shared across the workspaces that
   user belongs to. Holds the L2 (user) secrets: VK `user_token` and the Telegram
   MTProto parts (`api_id`, `api_hash`, `session`). Read only when the caller
@@ -46,7 +46,7 @@ Resolution order per platform (first hit wins):
 
 | Platform | Kinds, in order | Env fallback |
 | --- | --- | --- |
-| `vk` | `user_token`, `service_token` | `VK_APP_ID` + `VK_CLIENT_ACCESS_KEY` (OAuth app), `VK_SERVICE_KEY` (service/L1) |
+| `vk` | `user_token`, `service_token` | `VK_APP_ID` (OAuth application ID), `VK_SERVICE_KEY` (service/L1) |
 | `telegram` | `bot_token` | `TELEGRAM_BOT_TOKEN`; L2 parts `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` / `TELEGRAM_SESSION` |
 | `max` | `bot_token` | `MAX_BOT_TOKEN` |
 
@@ -397,22 +397,24 @@ Setup (one-time, deployment-wide app; per-user authorize):
 
 ```bash
 # App credentials are env config (one VK app per deployment):
-#   VK_APP_ID, VK_CLIENT_ACCESS_KEY in .env
+#   VK_APP_ID in .env; OAuth endpoints and callback in shared Platform.params
+#   VK_CLIENT_ACCESS_KEY is retained for compatibility; this OAuth flow does not send it.
 python -m cli.main credentials oauth vk --user <id> [--tenant owner]   # runs the flow
 ```
 
 `credentials oauth vk` builds the authorize URL, opens it in the browser, and
 waits (up to `--wait` seconds, default 180) for the callback to write the token
 to the **personal vault of `--user`** (default: the workspace owner). On VK's
-side the user consents and VK redirects to the **public**
-callback `VK_REDIRECT_URI` (default `http://localhost/api/v1/social/callback`,
-`GET /api/v1/social/callback`).
+side the user consents and VK redirects to the **public** callback configured
+in the shared VK `Platform.params` (`GET /api/v1/social/callback`). The legacy
+`VK_REDIRECT_URI` is a bootstrap/migration input, not an override for an existing
+shared record.
 
 Why the callback is public: VK redirects the user's browser there, so it cannot
-require our bearer token. Security comes from a **signed `state`** — the state is
-`"{tenant_id}.{user_id}.{verifier}.{hmac}"` over `SECRET_KEY`, so the callback recovers the
-workspace and the PKCE verifier without any server-side session, and a forged or
-tampered state is rejected before any code is exchanged.
+require our bearer token. The authorization flow generates a random opaque `state`
+and stores the user, workspace and encrypted PKCE verifier in a short-lived
+`oauth_pending` vault row. The callback consumes that row before the code exchange;
+unknown or expired state is rejected.
 
 Auto-refresh: VK access tokens age out in **1 hour** and cannot be extended, but
 each authorization also yields a **refresh token valid for 180 days** that is

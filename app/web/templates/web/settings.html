@@ -319,6 +319,8 @@
 
                             {% if card.platform == 'email' and card.provider_forms|default([]) %}
                                 {% include 'web/_mail_connections.html' %}
+                            {% elif card.platform == 'yandex_disk' %}
+                                {% include 'web/_yandex_disk_connections.html' %}
                             {% elif card.platform not in ('vk', 'telegram') %}
                                 <p class="mt-3 text-xs text-amber-700 dark:text-amber-300">
                                     Адаптер и форма этого сервиса пока недоступны. Старый ключ не настраивает подключение
@@ -337,6 +339,7 @@
                                     <summary class="cursor-pointer text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">
                                         Технические детали
                                     </summary>
+                                    {% if card.platform == 'yandex_disk' %}<p class="mt-2 ui-muted">Старые данные источника не являются проверенным подключением Диска.</p>{% endif %}
                                     <dl class="mt-2 space-y-1 text-slate-600 dark:text-slate-400">
                                         <div><dt class="inline">Категория: </dt><dd class="inline">{{ card.details.category_label }}</dd></div>
                                         {% if card.details.credential_owner %}

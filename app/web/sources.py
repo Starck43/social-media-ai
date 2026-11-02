@@ -87,9 +87,10 @@ async def _workspace_members(tenant_id: int) -> list:
 def _validate_token_owner(form_value: str, member_ids: set[int]) -> tuple[int | None, str | None]:
     """Resolve the posted `token_owner` to a member id, or report why not.
 
-    Empty means "no explicit owner" — collection then falls back to the
-    workspace owner (`owner.resolve_source_owner`). A value that is not an
-    active member is an error, not something to persist and drop later.
+    Empty means "no explicit pin" — collection then uses the credential of the
+    member who added the source (`Source.owner_user_id`), never the workspace
+    owner's. A value that is not an active member is an error, not something to
+    persist and drop later.
     """
     raw = (form_value or "").strip()
     if not raw:
@@ -246,6 +247,14 @@ async def sources_list(request: Request):
     # One pass, one set of queries: `_connection_banners` reads the same mapping.
     source_connections = await source_connection_statuses(sources)
     connection_banners = _connection_banners(sources, source_connections)
+    # A source with no personal owner collects through the deployment
+    # credential only. That is not an error, but it must not read as healthy
+    # either: the row says so, so nobody wonders why the view is narrower.
+    from app.services.social.connections import is_service_only
+
+    service_only_source_ids = {
+        source.id for source in sources if is_service_only(source_connections.get(source.id))
+    }
     stale_sources = await _stale_sources_summary(request, sources)
 
     # A lane row (`owner_task_id`) names its owning task: the marker on the row
@@ -289,6 +298,7 @@ async def sources_list(request: Request):
         members=await _workspace_members(request.state.tenant_id) if request.state.tenant_id else [],
         user_sources_json=user_sources_data,
         source_connections=source_connections,
+        service_only_source_ids=service_only_source_ids,
         connection_banners=connection_banners,
         lane_tasks=lane_tasks,
         delete_blockers=delete_blockers,
@@ -325,6 +335,11 @@ async def source_add(
     denied = guard_web(request, "source", "create", back=back)
     if denied is not None:
         return denied
+
+    # The authenticated member who adds the source owns its personal credential.
+    actor = getattr(request.state, "web_user", None)
+    actor_id = getattr(actor, "id", None)
+    user_id = actor_id if isinstance(actor_id, int) and actor_id > 0 else None
 
     if mode not in dict(COLLECTION_MODES):
         # Never write an unknown mode: the collector would accept the row and
@@ -388,6 +403,8 @@ async def source_add(
             source_type=st,
             is_active=True,
             params=params,
+            # The member who added the source collects with their own credential.
+            owner_user_id=user_id,
         )
 
     add_flash(request, "success", f"Источник '{clean_name}' добавлен")

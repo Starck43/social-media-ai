@@ -59,7 +59,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-15](docs/tasks/q-15.md) Documentation currentness and behavior consistency audit — **OPEN** · notion-ai · [chat](https://app.notion.com/chat?t=40a4392285878055b90300a9263b8f1d) · `P2` · `C5`
 - [P12-T02](docs/tasks/p12-t02.md) Workspace connectors in `/app/settings?tab=connections`, `PlatformType` expansion & cloud drive mounting — **DONE** · aistudio-p12-t02 · [PR #299](https://github.com/Starck43/social-media-ai/pull/299) · `P2` · `C3`
-- [P12-T07](docs/tasks/p12-t07.md) Settings connections page: one connector list and a responsive card grid — **IN_PROGRESS** · opencode · — · `P2` · `C2`
 
 ### Priority P3
 

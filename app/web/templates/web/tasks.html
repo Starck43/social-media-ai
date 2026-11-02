@@ -732,7 +732,7 @@
                                         <p x-text="'Разрешённые методы: ' + (selectedVkConnection().allowed_methods || []).join(', ')"></p>
                                         <p x-text="'Требования к scopes методов: ' + JSON.stringify(selectedVkConnection().method_scopes)"></p>
                                         <p x-text="'Срок действия: ' + (selectedVkConnection().expires_at || 'не задан')"></p>
-                                        <a x-show="selectedVkConnection().reauthorization_required || selectedVkConnection().state === 'renewal_available'"
+                                        <a x-show="selectedVkConnection().reauthorization_required || ['renewal_available', 'renewal_unverified'].includes(selectedVkConnection().state)"
                                            href="/app/connections/vk/authorize?next=/app/tasks" class="text-cyan-700 underline">Продлить или подключить VK заново</a>
                                     </div>
                                 </template>

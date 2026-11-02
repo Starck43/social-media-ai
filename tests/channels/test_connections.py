@@ -138,9 +138,9 @@ async def test_expired_but_renewable_is_not_the_users_problem(credentials_key, a
         meta={"refresh_token": "refresh-1"},
     )
     status = await connection_status("vk", web_user.id)
-    assert status.state == "renewable"
+    assert status.state == "renewal_unverified"
     assert status.needs_action is False, "a token that renews itself must never nag"
-    assert status.tone == "ok"
+    assert status.tone == "warn"
 
 
 async def test_expired_without_refresh_asks_for_a_reauth(credentials_key, app_configured, web_user):
@@ -183,7 +183,7 @@ async def test_an_old_refresh_failure_stops_worrying(credentials_key, app_config
         },
     )
     status = await connection_status("vk", web_user.id)
-    assert status.state == "renewable"
+    assert status.state == "renewal_unverified"
     assert status.needs_action is False
 
 

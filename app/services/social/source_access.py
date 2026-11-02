@@ -122,8 +122,8 @@ async def service_only(sources: Iterable[Any]) -> set[Any]:
 async def preflight(sources: Iterable[Any]) -> list[PlatformPreflight]:
     """What a manual run must say about personal access, per platform.
 
-    `renewable` is not reported: the token renews itself on the next run, so
-    asking the person to fix it would be a false alarm.
+    `renewal_unverified` is not blocked before an attempt: stored metadata
+    does not prove the key is readable or the provider will renew the token.
     """
     blocked: dict[str, list[Any]] = {}
     service: dict[str, list[Any]] = {}
@@ -163,12 +163,16 @@ class AuthRequiredReport:
 
     @property
     def title(self) -> str:
-        name = CONNECTIONS_BY_PLATFORM[self.platform].title if self.platform in CONNECTIONS_BY_PLATFORM else self.platform
+        name = (
+            CONNECTIONS_BY_PLATFORM[self.platform].title if self.platform in CONNECTIONS_BY_PLATFORM else self.platform
+        )
         return f"{name}: нужен ваш личный доступ"
 
     @property
     def message(self) -> str:
-        name = CONNECTIONS_BY_PLATFORM[self.platform].title if self.platform in CONNECTIONS_BY_PLATFORM else self.platform
+        name = (
+            CONNECTIONS_BY_PLATFORM[self.platform].title if self.platform in CONNECTIONS_BY_PLATFORM else self.platform
+        )
         noun = "источнику" if self.source_count % 10 == 1 and self.source_count % 100 != 11 else "источникам"
         return (
             f"{self.source_count} {noun} {name} не собрались: нет вашей личной авторизации. "

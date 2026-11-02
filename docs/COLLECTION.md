@@ -76,17 +76,22 @@ button*:
 | State | Condition | `needs_action` |
 | --- | --- | --- |
 | `connected` | row present, not expired | no |
-| `renewable` | expired, but a `refresh_token` renews it silently | **no** |
+| `renewal_unverified` | expired, refresh metadata exists; key and provider are not yet checked | **no** |
 | `reauth` | no refresh token, or the last renewal failed | yes |
 | `missing` | never connected | yes |
 | `unconfigured` | the deployment has no app credentials | no |
 
-The distinction that matters is `renewable` vs `reauth`. VK access tokens live
-**1 hour** and are renewed automatically; showing «войдите заново» for that
+The distinction that matters is `renewal_unverified` vs `reauth`. VK access tokens
+can be renewed automatically, but stored metadata alone does not prove the key
+is readable or the provider will accept renewal; showing «войдите заново» for that
 every hour is what pushed people to log out and re-authorize for no reason. A
 renewal failure is recorded as `meta.refresh_failed_at` and treated as `reauth`
 for `REFRESH_FAILURE_COOLDOWN` (6 h) — the UI then asks for a re-login instead of
-retrying a refresh token that is known to be spent.
+retrying a refresh token that is known to be spent. A known unreadable refresh
+secret instead directs the user to an administrator, not an ineffective re-login.
+These state values change the former `renewable`/`renewal_available` response
+to `renewal_unverified`; external API consumers must handle the new value. The
+metadata-only status does not proactively detect a wrong key or provider refusal.
 
 Consumers: the navbar (`TenantUIMiddleware` → `connection_alerts`, rendered only
 when non-empty), `/app/settings?tab=connections` (one card per platform),
@@ -101,7 +106,7 @@ list of sources sharing one token costs two queries rather than two per row.
 
 Two properties templates get for free instead of re-deriving them:
 `ConnectionStatus.fix_href` is empty unless the state needs action *and* the
-platform can be fixed, so a healthy or self-renewing badge is inert, and it points
+platform can be fixed, so a healthy or unverified-renewal badge is inert, and it points
 at the settings tab for a `manual` platform that has no authorize endpoint at all.
 
 Adding a platform is one `ConnectionSpec` row plus, for OAuth, a branch in

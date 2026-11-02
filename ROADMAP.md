@@ -61,6 +61,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [Q-15](docs/tasks/q-15.md) Documentation currentness and behavior consistency audit — **OPEN** · notion-ai-q15 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C5`
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C5`
+- [P12-T13](docs/tasks/p12-t13.md) File workspace pilot contracts and capability review — **IN_PROGRESS** · notion-ai-p12-t13 · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C3`
 
 ### Priority P3
 

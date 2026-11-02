@@ -150,11 +150,13 @@ def main() -> int:
         links.extend((path, destination) for destination in destinations)
 
     errors: list[tuple[Path, str, str]] = []
+    local_link_count = 0
     for source, destination in links:
         destination = html.unescape(destination).replace(r"\(", "(").replace(r"\)", ")")
         parsed = urlsplit(destination)
         if parsed.scheme or destination.startswith("//"):
             continue
+        local_link_count += 1
 
         path_part = unquote(parsed.path)
         target = (source.parent / path_part).resolve() if path_part else (ROOT / source).resolve()
@@ -177,7 +179,7 @@ def main() -> int:
                 errors.append((source, destination, "missing anchor"))
 
     print(
-        f"{len(contents)} tracked Markdown files, {len(links)} local-link candidates, "
+        f"{len(contents)} tracked Markdown files, {local_link_count} local-link candidates, "
         f"{len(errors)} detected errors"
     )
     for source, destination, reason in errors[:100]:

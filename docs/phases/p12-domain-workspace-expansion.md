@@ -80,4 +80,6 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 
 ## Provider-specific connector follow-up
 
-- [P12-T08](../tasks/p12-t08.md): provider catalog, workspace connection configuration and safe credential UX.
+- [P12-T08](../tasks/p12-t08.md): provider catalog, workspace connection configuration and
+  safe credential UX. **DONE 2026-11-02**, merge `f36a1a53` (PR #304), migration 0121
+  applied to `public`. Review: [audit/p12-t08.md](../audit/p12-t08.md).

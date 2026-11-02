@@ -61,7 +61,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P3
 
-- [P12-T08](docs/tasks/p12-t08.md) Provider-specific workspace connector configuration — **READY** · notion-ai-p12-t08 · [chat](https://app.notion.com/chat?t=40c2c46c1139804687a500a9690c52dd) · `P2` · `C4`
 
 
 ## Deferred by explicit owner decision

@@ -33,6 +33,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
+- [P12-T14](docs/tasks/p12-t14.md) Credential security and explicit connector configuration — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P0` · `C5`
+
 
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed) · — · `P0` · `C3`

@@ -92,6 +92,11 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
   ([PR #306](https://github.com/Starck43/social-media-ai/pull/306)). Migration 0122
   validated only in test_schema; public apply/deployment remain separately gated.
 
+## Credential and connector security follow-up
+
+- [P12-T14](../tasks/p12-t14.md): plan and implement protected personal credentials,
+  explicit source selection, deployment configuration and owner-bootstrap safeguards.
+
 ## File-workspace continuation
 
 - [P12-T12](../tasks/p12-t12.md): plan an originals-first file workspace, compact

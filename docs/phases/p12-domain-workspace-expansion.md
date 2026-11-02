@@ -91,3 +91,9 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
   accepted source `f5cabb09e536515000532e6767f108ec79775a17`, merge `5651d37c`
   ([PR #306](https://github.com/Starck43/social-media-ai/pull/306)). Migration 0122
   validated only in test_schema; public apply/deployment remain separately gated.
+
+## File-workspace continuation
+
+- [P12-T12](../tasks/p12-t12.md): plan an originals-first file workspace, compact
+  version-aware agent knowledge, safe original-file opening and approved actions.
+  Planning requested; implementation and connector-pilot activation are not started.

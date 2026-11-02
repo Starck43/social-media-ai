@@ -56,7 +56,7 @@ async def test_missing_credential_is_actionable_for_its_person(monkeypatch):
 async def test_expired_credential_with_refresh_token_is_renewable_not_reauth(monkeypatch):
     row = SimpleNamespace(
         expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
-        meta={"refresh_token": "present"},
+        meta={"refresh_available": True},
     )
     stub_vault_row(monkeypatch, row)
 
@@ -81,3 +81,16 @@ async def test_expired_credential_without_refresh_token_requests_reauthenticatio
     assert status.state == "reauth"
     assert status.needs_action is True
     assert status.tone == "bad"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["pending", "failed", "unreadable"])
+async def test_expired_credential_with_unresolved_refresh_is_not_renewable(monkeypatch, state):
+    row = SimpleNamespace(
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        meta={"refresh_available": True, "refresh_attempt": {"state": state}},
+    )
+    stub_vault_row(monkeypatch, row)
+    status = await connections.connection_status("vk", 505)
+    assert status.state == "reauth"
+    assert status.needs_action is True

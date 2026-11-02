@@ -312,7 +312,7 @@ def _vault_state(row: Any) -> tuple[str, bool]:
     if moment > datetime.now(timezone.utc):
         return "connected", False
     meta = row.meta if isinstance(row.meta, Mapping) else {}
-    if isinstance(meta.get("refresh_token"), str) and meta["refresh_token"]:
+    if not meta.get("refresh_attempt") and meta.get("refresh_available") is True:
         return "renewal_available", False
     return "reauthorization_required", True
 

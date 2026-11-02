@@ -44,7 +44,8 @@ class Vault:
         self.row = SimpleNamespace(
             id=19,
             user_id=7,
-            meta={"refresh_token": "old-refresh", "device_id": "device", "custom": "keep"},
+            meta={"refresh_available": True, "device_id": "device", "custom": "keep"},
+            refresh_secret_encrypted="encrypted:old-refresh",
             expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
             secret_encrypted="encrypted:old-access",
         )
@@ -94,6 +95,7 @@ class RefreshClaimTests(unittest.IsolatedAsyncioTestCase):
         self.settings = SimpleNamespace(VK_APP_ID="app")
         self.resolve = AsyncMock(return_value="service")
         self.encrypt = Mock(side_effect=lambda x: "encrypted:" + x)
+        self.decrypt = Mock(side_effect=lambda x: x.removeprefix("encrypted:"))
         names = [
             "app",
             "app.core",
@@ -122,7 +124,9 @@ class RefreshClaimTests(unittest.IsolatedAsyncioTestCase):
                 "app.services.social.credential_diagnostics": source(
                     "_p12_actual_diagnostics", "app/services/social/credential_diagnostics.py"
                 ),
-                "app.utils.crypto": module("app.utils.crypto", encrypt_secret=self.encrypt),
+                "app.utils.crypto": module(
+                    "app.utils.crypto", encrypt_secret=self.encrypt, decrypt_secret=self.decrypt
+                ),
             }
         )
         self.imports = patch.dict(sys.modules, doubles)
@@ -180,7 +184,9 @@ class RefreshClaimTests(unittest.IsolatedAsyncioTestCase):
         self.post.side_effect = post
         self.assertIsNone(await self.oauth.refresh_user_token(7))
         self.assertEqual(self.vault.row.secret_encrypted, "encrypted:login-access")
-        self.assertEqual(self.vault.row.meta["refresh_token"], "login-refresh")
+        self.assertEqual(self.vault.row.refresh_secret_encrypted, "encrypted:login-refresh")
+        self.assertIs(self.vault.row.meta["refresh_available"], True)
+        self.assertNotIn("refresh_token", self.vault.row.meta)
         self.assertNotIn("refresh_failed_at", self.vault.row.meta)
 
     async def test_success_is_fenced_against_new_login(self):
@@ -192,7 +198,9 @@ class RefreshClaimTests(unittest.IsolatedAsyncioTestCase):
 
         self.post.side_effect = post
         self.assertIsNone(await self.oauth.refresh_user_token(7))
-        self.assertEqual(self.vault.row.meta["refresh_token"], "login-refresh")
+        self.assertEqual(self.vault.row.refresh_secret_encrypted, "encrypted:login-refresh")
+        self.assertIs(self.vault.row.meta["refresh_available"], True)
+        self.assertNotIn("refresh_token", self.vault.row.meta)
         self.assertEqual(self.vault.row.secret_encrypted, "encrypted:login-access")
 
     async def test_no_finalization_after_row_replacement(self):
@@ -254,7 +262,9 @@ class RefreshClaimTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_rotated_refresh_never_falls_back(self):
         self.post.return_value = {"access_token": "new-access", "expires_in": 3600}
         await self.oauth.refresh_user_token(7)
-        self.assertEqual(self.vault.row.meta["refresh_token"], "")
+        self.assertIsNone(self.vault.row.refresh_secret_encrypted)
+        self.assertIs(self.vault.row.meta["refresh_available"], False)
+        self.assertNotIn("refresh_token", self.vault.row.meta)
 
     async def test_success_preserves_unrelated_metadata(self):
         await self.oauth.refresh_user_token(7)
@@ -267,7 +277,9 @@ class RefreshClaimTests(unittest.IsolatedAsyncioTestCase):
         await self.oauth._store_vault_token(
             user_id=7, access_token="login", refresh_token="login-refresh", expires_in=3600, meta={"scope": "scope"}
         )
-        self.assertEqual(self.vault.row.meta["refresh_token"], "login-refresh")
+        self.assertEqual(self.vault.row.refresh_secret_encrypted, "encrypted:login-refresh")
+        self.assertIs(self.vault.row.meta["refresh_available"], True)
+        self.assertNotIn("refresh_token", self.vault.row.meta)
         self.assertEqual(self.vault.row.meta["custom"], "keep")
         self.assertNotIn("refresh_failed_at", self.vault.row.meta)
         self.assertNotIn("refresh_attempt", self.vault.row.meta)
@@ -278,8 +290,9 @@ class RefreshClaimTests(unittest.IsolatedAsyncioTestCase):
             user_id=7, access_token="login", refresh_token=None, expires_in=None, meta={"user_id": 9}
         )
         self.assertEqual(self.vault.row.meta["user_id"], 9)
-        self.assertIn("refresh_token", self.vault.row.meta)
-        self.assertIsNone(self.vault.row.meta["refresh_token"])
+        self.assertNotIn("refresh_token", self.vault.row.meta)
+        self.assertIs(self.vault.row.meta["refresh_available"], False)
+        self.assertIsNone(self.vault.row.refresh_secret_encrypted)
 
     async def test_invalid_identifiers_do_not_enter_vault(self):
         with patch.object(self.vault, "locked_vk_token", side_effect=AssertionError("must not enter")):
@@ -298,9 +311,25 @@ class RefreshClaimTests(unittest.IsolatedAsyncioTestCase):
         self.post.assert_not_awaited()
 
     async def test_missing_refresh_no_http(self):
-        self.vault.row.meta.pop("refresh_token")
+        self.vault.row.refresh_secret_encrypted = None
+        self.vault.row.meta["refresh_available"] = False
         self.assertIsNone(await self.oauth.refresh_user_token(7))
         self.post.assert_not_awaited()
+
+    async def test_wrong_key_never_contacts_provider_or_logs_secret(self):
+        self.decrypt.side_effect = ValueError("PRIVATE_REFRESH_SENTINEL")
+        with self.assertLogs(self.oauth.logger, logging.WARNING) as captured:
+            self.assertIsNone(await self.oauth.refresh_user_token(7))
+        self.assertEqual(self.vault.row.meta["refresh_attempt"]["state"], "unreadable")
+        self.assertNotIn("PRIVATE_REFRESH_SENTINEL", "\n".join(captured.output))
+        self.post.assert_not_awaited()
+
+    async def test_malformed_rotated_secret_never_replays(self):
+        self.post.return_value = {"access_token": "new-access", "refresh_token": ["invalid"]}
+        self.assertIsNone(await self.oauth.refresh_user_token(7))
+        self.assertEqual(self.vault.row.meta["refresh_attempt"]["state"], "failed")
+        self.assertIsNone(await self.oauth.refresh_user_token(7))
+        self.post.assert_awaited_once()
 
     async def test_custom_margin_is_checked_under_claim_lock(self):
         self.vault.row.expires_at = datetime.now(timezone.utc) + timedelta(minutes=3)

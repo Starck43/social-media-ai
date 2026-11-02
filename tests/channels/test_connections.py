@@ -87,6 +87,15 @@ async def _store(user_id, *, platform="vk", kind="user_token", expires_at=None, 
     if expires_at is not None:
         values["expires_at"] = expires_at
     if meta is not None:
+        meta = dict(meta)
+        # The test inputs represent VK provider responses; never write their
+        # synthetic refresh value into metadata after the migration.
+        if platform == "vk" and kind == "user_token" and "refresh_token" in meta:
+            from app.utils.crypto import encrypt_secret
+
+            refresh = meta.pop("refresh_token")
+            values["refresh_secret_encrypted"] = encrypt_secret(refresh) if refresh else None
+            meta["refresh_available"] = bool(refresh)
         values["meta"] = meta
     if values:
         row = await user_credentials.update_by_id(row.id, **values)
@@ -174,6 +183,8 @@ async def test_an_old_refresh_failure_stops_worrying(credentials_key, app_config
         },
     )
     status = await connection_status("vk", web_user.id)
+    assert status.state == "renewable"
+    assert status.needs_action is False
 
 
 # ── the navbar contract ─────────────────────────────────────────────────────
@@ -244,7 +255,12 @@ async def test_the_rotated_refresh_token_replaces_the_old_one(credentials_key, a
     monkeypatch.setattr(vk_oauth, "_post_form", fake_post)
 
     assert await vk_oauth.refresh_user_token(web_user.id) == "fresh"
-    assert (await _vk_row(web_user.id)).meta["refresh_token"] == "rotated"
+    from app.utils.crypto import decrypt_secret
+
+    row = await _vk_row(web_user.id)
+    assert decrypt_secret(row.refresh_secret_encrypted) == "rotated"
+    assert row.meta["refresh_available"] is True
+    assert "refresh_token" not in row.meta
 
 
 async def test_a_response_without_a_refresh_token_does_not_keep_the_spent_one(
@@ -261,7 +277,10 @@ async def test_a_response_without_a_refresh_token_does_not_keep_the_spent_one(
     monkeypatch.setattr(vk_oauth, "_post_form", fake_post)
 
     await vk_oauth.refresh_user_token(web_user.id)
-    assert (await _vk_row(web_user.id)).meta["refresh_token"] == ""
+    row = await _vk_row(web_user.id)
+    assert row.refresh_secret_encrypted is None
+    assert row.meta["refresh_available"] is False
+    assert "refresh_token" not in row.meta
 
 
 async def test_a_failed_refresh_is_recorded_not_retried_blindly(credentials_key, app_configured, web_user, monkeypatch):
@@ -282,7 +301,10 @@ async def test_a_failed_refresh_is_recorded_not_retried_blindly(credentials_key,
     row = await _vk_row(web_user.id)
     assert row.meta.get("refresh_failed_at")
     # The refresh token itself is untouched: the failure may well be transient.
-    assert row.meta["refresh_token"] == "old-refresh"
+    from app.utils.crypto import decrypt_secret
+
+    assert decrypt_secret(row.refresh_secret_encrypted) == "old-refresh"
+    assert "refresh_token" not in row.meta
 
     status = await connection_status("vk", web_user.id)
     assert status.state == "reauth"
@@ -324,7 +346,8 @@ async def test_a_fresh_token_is_left_alone(credentials_key, app_configured, web_
 
     monkeypatch.setattr(vk_oauth, "_post_form", never_called)
 
-    assert await vk_oauth.renew_if_expiring(web_user.id) is None
+    # The concurrency fence returns the freshly re-read token without HTTP.
+    assert await vk_oauth.renew_if_expiring(web_user.id) == "secret-value"
 
 
 async def test_resolve_token_renews_a_token_that_is_about_to_expire(
@@ -351,3 +374,90 @@ async def test_resolve_token_renews_a_token_that_is_about_to_expire(
     with tenant_scope(tenant.id):
         token = await resolve_token("vk", kinds=("user_token",), owner_user_id=web_user.id)
     assert token == "renewed"
+
+
+def _p12t14_refresh_process(user_id, key, entered, release, request_count, results):
+    """Separate interpreter/connection, mocked provider; no real VK requests."""
+    import asyncio
+
+    from app.core.config import settings as child_settings
+    from app.services.social import vk_oauth as child_oauth
+
+    child_settings.CREDENTIALS_KEY = key
+    child_settings.VK_APP_ID = "synthetic-app"
+
+    async def no_service_token(*args, **kwargs):
+        return None
+
+    async def synthetic_provider(payload):
+        with request_count.get_lock():
+            request_count.value += 1
+        entered.set()
+        if not await asyncio.to_thread(release.wait, 15):
+            raise RuntimeError("synthetic test timed out")
+        return {
+            "access_token": "synthetic-rotated-access",
+            "refresh_token": "synthetic-rotated-refresh",
+            "expires_in": 3600,
+        }
+
+    child_oauth.resolve_token = no_service_token
+    child_oauth._post_form = synthetic_provider
+    try:
+        value = asyncio.run(child_oauth.refresh_user_token(user_id))
+        results.put("renewed" if value == "synthetic-rotated-access" else "no-renewal")
+    except BaseException:
+        results.put("worker-error")
+
+
+async def test_two_processes_never_replay_one_refresh(credentials_key, app_configured, web_user):
+    import asyncio
+    import multiprocessing
+    import queue
+
+    await _store(
+        web_user.id,
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        meta={"refresh_token": "synthetic-original-refresh"},
+    )
+    context = multiprocessing.get_context("spawn")
+    entered, release = context.Event(), context.Event()
+    requests = context.Value("i", 0)
+    results = context.Queue()
+    first = context.Process(
+        target=_p12t14_refresh_process, args=(web_user.id, credentials_key, entered, release, requests, results)
+    )
+    second = context.Process(
+        target=_p12t14_refresh_process, args=(web_user.id, credentials_key, entered, release, requests, results)
+    )
+    try:
+        first.start()
+        assert await asyncio.to_thread(entered.wait, 15), "first process did not enter the mock provider"
+        second.start()
+        try:
+            follower = await asyncio.to_thread(results.get, True, 15)
+        except queue.Empty:
+            pytest.fail("second process did not finish while refresh was pending")
+        assert follower == "no-renewal"
+        release.set()
+        try:
+            winner = await asyncio.to_thread(results.get, True, 15)
+        except queue.Empty:
+            pytest.fail("first process did not finish after release")
+        assert winner == "renewed"
+        assert requests.value == 1
+        row = await _vk_row(web_user.id)
+        from app.utils.crypto import decrypt_secret
+
+        assert decrypt_secret(row.refresh_secret_encrypted) == "synthetic-rotated-refresh"
+        assert "refresh_token" not in row.meta
+        assert "refresh_attempt" not in row.meta
+    finally:
+        release.set()
+        for process in (first, second):
+            if process.pid is not None:
+                await asyncio.to_thread(process.join, 5)
+                if process.is_alive():
+                    process.terminate()
+                    await asyncio.to_thread(process.join, 5)
+        results.close()

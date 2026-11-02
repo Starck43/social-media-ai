@@ -296,7 +296,16 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
 
     # Expired. Whether that is the user's problem depends entirely on whether a
     # refresh token can renew it — the single distinction this module exists for.
-    if meta.get("refresh_token"):
+    if meta.get("refresh_attempt"):
+        return ConnectionStatus(
+            platform,
+            "reauth",
+            "Нужно войти заново",
+            "Предыдущее продление не завершено или ключ недоступен — войдите ещё раз",
+            True,
+            True,
+        )
+    if meta.get("refresh_available") is True:
         return ConnectionStatus(
             platform,
             "renewable",

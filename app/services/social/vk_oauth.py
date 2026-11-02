@@ -252,11 +252,14 @@ async def _store_vault_token(
         # this newly authorized session.
         stored_meta = dict(row.meta or {}) if row is not None else {}
         stored_meta.update(meta)
-        stored_meta["refresh_token"] = refresh_token
+        # Never persist a secret or a caller-supplied status flag in metadata.
+        stored_meta.pop("refresh_token", None)
+        stored_meta["refresh_available"] = bool(refresh_token)
         stored_meta.pop("refresh_attempt", None)
         stored_meta.pop("refresh_failed_at", None)
         values = {
             "secret_encrypted": encrypt_secret(access_token),
+            "refresh_secret_encrypted": encrypt_secret(refresh_token) if refresh_token else None,
             "expires_at": expires_at,
             "meta": stored_meta,
         }
@@ -283,9 +286,8 @@ async def refresh_user_token(user_id: int) -> Optional[str]:
     Success/failure is fenced by both row ID and claim ID; an old request cannot
     overwrite a newer login, revoke or successful rotation.
 
-    This concurrency slice preserves legacy secret representation. Encrypted
-    storage and both status readers must cut over together after the shared
-    file handoff; it is not safe to deploy this as the complete security fix.
+    Refresh material is encrypted at rest. Both status surfaces use only the
+    transactionally maintained non-secret availability indicator.
     """
     return await _renew_user_token(user_id, margin=_RENEW_MARGIN, explicit=True)
 
@@ -293,7 +295,7 @@ async def refresh_user_token(user_id: int) -> Optional[str]:
 async def _renew_user_token(user_id: int, *, margin: timedelta, explicit: bool = False) -> Optional[str]:
     from app.models.managers.user_credential_manager import user_credentials
     from app.services.social.connections import REFRESH_FAILURE_COOLDOWN
-    from app.utils.crypto import encrypt_secret
+    from app.utils.crypto import decrypt_secret, encrypt_secret
 
     if type(user_id) is not int or user_id <= 0 or not settings.VK_APP_ID:
         return None
@@ -325,8 +327,19 @@ async def _renew_user_token(user_id: int, *, margin: timedelta, explicit: bool =
                 return None
             if now - failed < REFRESH_FAILURE_COOLDOWN:
                 return None
-        refresh = meta.get("refresh_token")
-        if not refresh:
+        encrypted_refresh = row.refresh_secret_encrypted
+        if not encrypted_refresh or meta.get("refresh_available") is not True:
+            return None
+        try:
+            refresh = decrypt_secret(encrypted_refresh)
+            if not isinstance(refresh, str) or not refresh:
+                raise ValueError("Empty refresh secret")
+        except (ValueError, RuntimeError, TypeError):
+            # No provider request was sent. Do not reveal the secret or claim a
+            # renewable session when the configured key cannot read the vault.
+            meta["refresh_attempt"] = {"state": "unreadable"}
+            await user_credentials.update_by_id(row.id, session=session, meta=meta)
+            logger.warning("VK ID refresh unavailable user_id=%s code=unreadable_secret", user_id)
             return None
         row_id = row.id
         meta["refresh_attempt"] = {"id": attempt_id, "state": "pending", "started_at": now.isoformat()}
@@ -352,6 +365,10 @@ async def _renew_user_token(user_id: int, *, margin: timedelta, explicit: bool =
         if data.get("expires_in"):
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(data["expires_in"]))
         encrypted_access = encrypt_secret(access)
+        rotated_refresh = data.get("refresh_token")
+        if rotated_refresh is not None and not isinstance(rotated_refresh, str):
+            raise ValueError("Invalid refresh token response")
+        encrypted_refresh = encrypt_secret(rotated_refresh) if rotated_refresh else None
     except Exception as exc:
         logger.warning("VK ID refresh failed user_id=%s code=%s", user_id, credential_exception_status(exc))
         async with user_credentials.locked_vk_token(user_id=user_id) as (session, current):
@@ -366,13 +383,19 @@ async def _renew_user_token(user_id: int, *, margin: timedelta, explicit: bool =
             return None
         current_meta = dict(current.meta or {})
         # Never fall back to a spent refresh token, even if VK omits its replacement.
-        current_meta["refresh_token"] = data.get("refresh_token") or ""
+        current_meta.pop("refresh_token", None)
+        current_meta["refresh_available"] = bool(encrypted_refresh)
         if data.get("user_id"):
             current_meta["user_id"] = data["user_id"]
         current_meta.pop("refresh_failed_at", None)
         current_meta.pop("refresh_attempt", None)
         await user_credentials.update_by_id(
-            row_id, session=session, secret_encrypted=encrypted_access, expires_at=expires_at, meta=current_meta
+            row_id,
+            session=session,
+            secret_encrypted=encrypted_access,
+            refresh_secret_encrypted=encrypted_refresh,
+            expires_at=expires_at,
+            meta=current_meta,
         )
     logger.info("VK ID user token refreshed for user %s", user_id)
     return access

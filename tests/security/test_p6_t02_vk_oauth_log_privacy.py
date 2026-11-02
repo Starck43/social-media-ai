@@ -64,7 +64,8 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.row = SimpleNamespace(
             id=19,
             user_id=7,
-            meta={"refresh_token": SECRETS[1], "device_id": SECRETS[2]},
+            meta={"refresh_available": True, "device_id": SECRETS[2]},
+            refresh_secret_encrypted="cipher:" + SECRETS[1],
             expires_at=None,
         )
         self.manager = SimpleNamespace(newest=AsyncMock(return_value=self.row), update_by_id=AsyncMock())
@@ -83,6 +84,7 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.manager.locked_vk_token = locked_vk_token
         self.manager.update_by_id.side_effect = write
         self.encrypt = Mock(side_effect=lambda value: "cipher:" + value)
+        self.decrypt = Mock(side_effect=lambda value: value.removeprefix("cipher:"))
         self.resolve = AsyncMock(return_value="SERVICE_SECRET_SENTINEL")
         self.settings = SimpleNamespace(VK_APP_ID="12345")
         diagnostics = load_source("_p6_t02_actual_diagnostics", "app/services/social/credential_diagnostics.py")
@@ -117,7 +119,9 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                     "app.models.managers.user_credential_manager",
                     user_credentials=self.manager,
                 ),
-                "app.utils.crypto": module("app.utils.crypto", encrypt_secret=self.encrypt),
+                "app.utils.crypto": module(
+                    "app.utils.crypto", encrypt_secret=self.encrypt, decrypt_secret=self.decrypt
+                ),
             }
         )
         self.import_patch = patch.dict(sys.modules, doubles)
@@ -231,7 +235,9 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.update_by_id.await_count, 2)
         stored = self.manager.update_by_id.await_args.kwargs
         self.assertEqual(stored["secret_encrypted"], "cipher:" + SECRETS[0])
-        self.assertEqual(stored["meta"]["refresh_token"], "ROTATED_SECRET_SENTINEL")
+        self.assertEqual(stored["refresh_secret_encrypted"], "cipher:ROTATED_SECRET_SENTINEL")
+        self.assertIs(stored["meta"]["refresh_available"], True)
+        self.assertNotIn("refresh_token", stored["meta"])
         self.assertEqual(stored["meta"]["device_id"], SECRETS[2])
         self.assertNotIn("refresh_failed_at", stored["meta"])
         self.assertGreaterEqual((stored["expires_at"] - before).total_seconds(), 3600)
@@ -240,7 +246,10 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_absent_rotated_refresh_never_reuses_spent_value(self):
         self.post.return_value = {"access_token": SECRETS[0]}
         await self.oauth.refresh_user_token(7)
-        self.assertEqual(self.manager.update_by_id.await_args.kwargs["meta"]["refresh_token"], "")
+        values = self.manager.update_by_id.await_args.kwargs
+        self.assertIsNone(values["refresh_secret_encrypted"])
+        self.assertIs(values["meta"]["refresh_available"], False)
+        self.assertNotIn("refresh_token", values["meta"])
         self.assert_private_logs()
 
     async def test_missing_application_does_not_read_vault(self):

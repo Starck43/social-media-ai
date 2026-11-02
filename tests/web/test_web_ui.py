@@ -16,7 +16,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.tenant_context import PlatformScopeMiddleware, current_tenant_id, is_bypass, tenant_scope
 from app.main import create_application
-from app.models import AgentTask, Job, PersonalBillingAccount, TaskBillingPayer, User
+from app.models import AgentTask, Job, PersonalBillingAccount, User
 from app.models.managers.tenant_manager import TenantInviteManager, TenantUserManager, tenants
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
@@ -542,14 +542,13 @@ async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
                     await AgentTask.objects.delete(id=task_id)
             if user is not None:
                 with tenant_scope(bypass=True):
-                    # The personal account is RESTRICT on the user. A consent
-                    # row is immutable by trigger, so a consenting fixture
-                    # leaves it (and its workspace) behind: only rows this user
-                    # merely *consented* can go, and only where it is not payer.
-                    await TaskBillingPayer.objects.exclude(payer_user_id=user.id).filter(
-                        consented_by_user_id=user.id
-                    ).delete()
                     await PersonalBillingAccount.objects.filter(user_id=user.id).delete()
+                # Both payer references are RESTRICT and the consent rows are
+                # append-only: the fixture-owned workspace has to drop them
+                # before its user and workspace can go.
+                from tests.shared.payer_cleanup import purge_task_payer_consents
+
+                await purge_task_payer_consents(tenant_id)
                 await _delete_user(user.id)
             # The run leaves action-audit evidence with a RESTRICT FK on the
             # workspace: purge it through the supported retention path first.
@@ -624,14 +623,13 @@ async def test_run_now_executes_the_job_without_queueing_it(client: AsyncClient)
                     await AgentTask.objects.delete(id=task_id)
             if user is not None:
                 with tenant_scope(bypass=True):
-                    # The personal account is RESTRICT on the user. A consent
-                    # row is immutable by trigger, so a consenting fixture
-                    # leaves it (and its workspace) behind: only rows this user
-                    # merely *consented* can go, and only where it is not payer.
-                    await TaskBillingPayer.objects.exclude(payer_user_id=user.id).filter(
-                        consented_by_user_id=user.id
-                    ).delete()
                     await PersonalBillingAccount.objects.filter(user_id=user.id).delete()
+                # Both payer references are RESTRICT and the consent rows are
+                # append-only: the fixture-owned workspace has to drop them
+                # before its user and workspace can go.
+                from tests.shared.payer_cleanup import purge_task_payer_consents
+
+                await purge_task_payer_consents(tenant_id)
                 await _delete_user(user.id)
             # The run leaves action-audit evidence with a RESTRICT FK on the
             # workspace: purge it through the supported retention path first.
@@ -685,14 +683,13 @@ async def test_a_direct_run_job_is_never_claimable_by_the_worker(client: AsyncCl
                     await AgentTask.objects.delete(id=task_id)
             if user is not None:
                 with tenant_scope(bypass=True):
-                    # The personal account is RESTRICT on the user. A consent
-                    # row is immutable by trigger, so a consenting fixture
-                    # leaves it (and its workspace) behind: only rows this user
-                    # merely *consented* can go, and only where it is not payer.
-                    await TaskBillingPayer.objects.exclude(payer_user_id=user.id).filter(
-                        consented_by_user_id=user.id
-                    ).delete()
                     await PersonalBillingAccount.objects.filter(user_id=user.id).delete()
+                # Both payer references are RESTRICT and the consent rows are
+                # append-only: the fixture-owned workspace has to drop them
+                # before its user and workspace can go.
+                from tests.shared.payer_cleanup import purge_task_payer_consents
+
+                await purge_task_payer_consents(tenant_id)
                 await _delete_user(user.id)
             # The run leaves action-audit evidence with a RESTRICT FK on the
             # workspace: purge it through the supported retention path first.

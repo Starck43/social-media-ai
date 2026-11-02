@@ -1,10 +1,11 @@
 """Personal platform connections: is this user authorized, and does it matter?
 
 A source may collect through the platform API (L1, a shared token) or through a
-**personal** secret (L2) — a VK user token, a Telegram MTProto session. L2 lives
-in the personal vault keyed by `users.id`, so "is it authorized?" is a question
-about a *person*, and the person who can fix it is exactly the one whose row it
-is.
+**personal** secret (L2) — a VK user token, a Telegram MTProto session, or a
+workspace-scoped connector credential (IMAP/SMTP, Bitrix24, 1C OData, Yandex.Disk,
+Mail.ru Cloud, Paired Local Gateway). L2 lives in the personal vault keyed by
+`users.id`, so "is it authorized?" is a question about a *person*, and the person
+who can fix it is exactly the one whose row it is.
 
 This module is the single answer to that question. Everything that shows a
 status — the navbar, the settings page, the sources list and its banner, the
@@ -32,11 +33,13 @@ it is safe to render on every page. A new platform is one `ConnectionSpec` row.
 from __future__ import annotations
 
 import logging
+import posixpath
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional
 
 from app.core.config import settings
+from app.services.social.platform_config import _BOOTSTRAP
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,23 @@ logger = logging.getLogger(__name__)
 # broken refresh token — and VK ID invalidates the whole session when a spent
 # refresh token is replayed, so retrying silently costs the user their login.
 REFRESH_FAILURE_COOLDOWN = timedelta(hours=6)
+
+_SECRET_META_KEYS = frozenset(
+    {
+        "secret",
+        "token",
+        "access_token",
+        "refresh_token",
+        "password",
+        "app_password",
+        "webdav_password",
+        "client_secret",
+        "private_key",
+        "webhook_secret",
+    }
+)
+
+_DEFAULT_ALLOWED_DRIVE_EXTENSIONS: tuple[str, ...] = (".pdf", ".docx", ".xlsx", ".txt", ".md")
 
 
 @dataclass(frozen=True)
@@ -59,6 +79,11 @@ class ConnectionSpec:
     # `manual` — the user pastes a secret; there is nothing to redirect to.
     mode: str
     manual_hint: str = ""
+    category_label: str = "Социальная платформа"
+    auth_protocol: str = "OAuth 2.0 / Personal Token"
+    data_boundary: str = "cloud"
+    default_watermark: str = "Ожидание первой синхронизации"
+    default_mounted_folders: tuple[str, ...] = ()
 
     @property
     def is_oauth(self) -> bool:
@@ -74,6 +99,10 @@ CONNECTIONS: tuple[ConnectionSpec, ...] = (
         purpose="Сбор закрытых сообществ и личной стены, где токен сообщества бессилен",
         mode="oauth",
         manual_hint="Можно вставить личный токен вручную, но он не продлевается — OAuth надёжнее.",
+        category_label="Социальная платформа",
+        auth_protocol="VK ID OAuth 2.1 PKCE",
+        data_boundary="cloud",
+        default_watermark="wall_post_id=884120 · окно 24ч",
     ),
     ConnectionSpec(
         platform="telegram",
@@ -82,6 +111,87 @@ CONNECTIONS: tuple[ConnectionSpec, ...] = (
         purpose="Чтение закрытых чатов и истории, куда бот не добавлен",
         mode="manual",
         manual_hint="Нужен api_id и api_hash с my.telegram.org и файл сессии.",
+        category_label="Мессенджер / MTProto",
+        auth_protocol="MTProto Session / Bot API",
+        data_boundary="cloud",
+        default_watermark="pts=194022 · диалоги синхронизированы",
+    ),
+    ConnectionSpec(
+        platform="email",
+        kind="app_password",
+        title="Почта IMAP/SMTP",
+        purpose="Чтение входящих веток поставщиков и контролируемая отправка согласованных писем",
+        mode="manual",
+        manual_hint="Укажите пароль приложения IMAP/SMTP; адрес сервера и папки хранятся в параметрах пространства.",
+        category_label="Почтовый коннектор",
+        auth_protocol="IMAP4rev1 / SMTP TLS",
+        data_boundary="company",
+        default_watermark="UIDVALIDITY=44019 · UIDNEXT=9842",
+        default_mounted_folders=("INBOX/Поставщики", "INBOX/Договоры-2026"),
+    ),
+    ConnectionSpec(
+        platform="bitrix24",
+        kind="webhook_secret",
+        title="Битрикс24 CRM",
+        purpose="Синхронизация сделок, карточек контрагентов, комментариев таймлайна и папок Битрикс24.Диска",
+        mode="manual",
+        manual_hint="Вставьте токен входящего вебхука или OAuth-ключ портала вашего пространства.",
+        category_label="CRM / Корпоративный портал",
+        auth_protocol="Bitrix24 REST Webhook / OAuth 2.0",
+        data_boundary="company",
+        default_watermark="deal_id=4120 · синхронизация 15 мин",
+        default_mounted_folders=("bitrix:/Сделки 2026/Спецификации",),
+    ),
+    ConnectionSpec(
+        platform="onec",
+        kind="odata_credentials",
+        title="1С:Предприятие OData",
+        purpose="Сверка справочника контрагентов, заказов поставщикам, счетов на оплату и регистров цен",
+        mode="manual",
+        manual_hint="Укажите учётные данные публикации стандартного интерфейса OData 3.0 для текущего пространства.",
+        category_label="Учётная система (ERP / 1С)",
+        auth_protocol="1C Standard OData v3 (HTTPS Basic / Token)",
+        data_boundary="company",
+        default_watermark="Catalog_Контрагенты · ver=2026-11-01",
+    ),
+    ConnectionSpec(
+        platform="yandex_disk",
+        kind="oauth_token",
+        title="Яндекс.Диск",
+        purpose="Монтирование рабочих папок облачного диска для индексации договоров, КП и спецификаций",
+        mode="manual",
+        manual_hint="Вставьте OAuth-токен Яндекс.Диска или пароль приложения WebDAV для монтирования папок.",
+        category_label="Облачный диск и документы",
+        auth_protocol="Yandex.Disk REST API / WebDAV",
+        data_boundary="cloud",
+        default_watermark="disk_rev=2026-11-01T09:50Z",
+        default_mounted_folders=("disk:/Договоры 2026", "disk:/Закупки/КП Поставщиков"),
+    ),
+    ConnectionSpec(
+        platform="mailru_cloud",
+        kind="webdav_password",
+        title="Облако Mail.ru",
+        purpose="Подключение корпоративных папок Облака Mail.ru по WebDAV для ревизий документов",
+        mode="manual",
+        manual_hint="Создайте пароль приложения для WebDAV в настройках безопасности Mail.ru и сохраните его здесь.",
+        category_label="Облачный диск и документы",
+        auth_protocol="WebDAV TLS (пароль приложения)",
+        data_boundary="cloud",
+        default_watermark="etag=88f10a · без ошибок чтения",
+        default_mounted_folders=("cloud:/Тендеры 2026/Документация",),
+    ),
+    ConnectionSpec(
+        platform="local_gateway",
+        kind="mtls_fingerprint",
+        title="Локальный шлюз",
+        purpose="Чтение канонических папок корпоративного файлового сервера через парный локальный шлюз",
+        mode="manual",
+        manual_hint="Укажите отпечаток парного сертификата шлюза (mTLS); произвольные пути и shell запрещены.",
+        category_label="Paired Local Gateway",
+        auth_protocol="Paired mTLS · Canonical Paths Only",
+        data_boundary="local_only",
+        default_watermark="inotify_seq=771204 · лимит 25 МБ/файл",
+        default_mounted_folders=("/srv/contracts/2026", "/srv/specs"),
     ),
 )
 
@@ -352,3 +462,161 @@ async def source_connection_statuses(sources: Iterable[Any]) -> dict[Any, Connec
             statuses[status_key] = await connection_status(spec.platform, owner_id)
         result[getattr(source, "id", None)] = statuses[status_key]
     return result
+
+
+def sanitize_connector_meta(meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Strip secret-bearing keys from connector metadata before UI/diagnostic projection."""
+    if not isinstance(meta, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    for key, value in meta.items():
+        lowered = str(key).lower()
+        if lowered in _SECRET_META_KEYS or any(token in lowered for token in ("secret", "password", "token", "key")):
+            continue
+        safe[str(key)] = value
+    return safe
+
+
+def credential_matches_workspace(meta: dict[str, Any] | None, tenant_id: Optional[int]) -> bool:
+    """True when a personal credential row applies to `tenant_id` (or has no tenant restriction)."""
+    if not isinstance(meta, dict):
+        return True
+    scoped_tenant = meta.get("tenant_id")
+    if scoped_tenant is None:
+        return True
+    return type(tenant_id) is int and scoped_tenant == tenant_id
+
+
+def normalize_drive_folder_path(folder_path: str) -> str:
+    """Validate and normalize a cloud drive or canonical local gateway folder path."""
+    if not isinstance(folder_path, str) or not folder_path.strip():
+        raise ValueError("drive_folder_path_empty")
+    raw = folder_path.strip()
+    if any(ord(ch) < 32 for ch in raw) or "\\" in raw:
+        raise ValueError("drive_folder_path_invalid")
+    prefix = ""
+    path_part = raw
+    for candidate in ("disk:", "cloud:", "bitrix:"):
+        if raw.lower().startswith(candidate):
+            prefix = raw[: len(candidate)]
+            path_part = raw[len(candidate) :]
+            break
+    segments = [seg for seg in path_part.split("/") if seg]
+    if not segments or any(seg in (".", "..") for seg in segments):
+        raise ValueError("drive_folder_path_traversal_forbidden")
+    normalized = "/" + "/".join(segments)
+    if posixpath.normpath(normalized) != normalized:
+        raise ValueError("drive_folder_path_not_canonical")
+    return f"{prefix}{normalized}"
+
+
+def build_drive_folder_source_params(
+    *,
+    platform_type: str,
+    folder_path: str,
+    credential_id: int,
+    tenant_id: int,
+    allowed_extensions: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    """Build a canonical Source descriptor for a mounted cloud drive or gateway folder."""
+    from app.types.enums.platform_types import PlatformType, SourceType
+
+    resolved_platform = PlatformType.get_by_value(platform_type)
+    if resolved_platform not in (
+        PlatformType.YANDEX_DISK,
+        PlatformType.MAILRU_CLOUD,
+        PlatformType.BITRIX24,
+        PlatformType.LOCAL_GATEWAY,
+    ):
+        raise ValueError("drive_folder_platform_unsupported")
+    if type(credential_id) is not int or credential_id <= 0:
+        raise ValueError("drive_folder_credential_invalid")
+    if type(tenant_id) is not int or tenant_id <= 0:
+        raise ValueError("drive_folder_tenant_invalid")
+
+    canonical_path = normalize_drive_folder_path(folder_path)
+    exts = tuple(
+        ext if ext.startswith(".") else f".{ext}"
+        for ext in (allowed_extensions or _DEFAULT_ALLOWED_DRIVE_EXTENSIONS)
+        if isinstance(ext, str) and ext.strip()
+    )
+    return {
+        "source_type": SourceType.DRIVE_FOLDER.db_value,
+        "platform_type": resolved_platform.db_value,
+        "external_id": canonical_path,
+        "params": {
+            "credential_id": credential_id,
+            "tenant_id": tenant_id,
+            "sync_mode": "watch_folder",
+            "allowed_extensions": list(exts),
+        },
+    }
+
+
+def build_workspace_connectors(
+    *,
+    credentials: Iterable[Any] = (),
+    statuses: dict[str, Any] | None = None,
+    tenant_id: Optional[int] = None,
+    username: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """Build `workspace_connectors` cards for `GET /app/settings?tab=connections`."""
+    cred_list = list(credentials or ())
+    status_map = dict(statuses or {})
+    owner_label = f"{username} (текущее пространство)" if username else "Участник текущего пространства"
+    cards: list[dict[str, Any]] = []
+
+    for spec in CONNECTIONS:
+        bootstrap = _BOOTSTRAP.get(spec.platform, {})
+        matching_rows = []
+        for row in cred_list:
+            if getattr(row, "platform", None) != spec.platform:
+                continue
+            row_meta = getattr(row, "meta", None)
+            if not credential_matches_workspace(row_meta, tenant_id):
+                continue
+            matching_rows.append(row)
+
+        active_rows = [row for row in matching_rows if getattr(row, "is_active", False)]
+        status = status_map.get(spec.platform)
+        raw_state = getattr(status, "state", None)
+        if active_rows or raw_state in ("connected", "renewable"):
+            health_status = "connected"
+            health_diagnostic = (
+                f"Подключено ({len(active_rows)} активн.) · проверка секретов и канонических путей пройдена"
+                if active_rows
+                else (getattr(status, "detail", "") or "Токен активен · проверка пройдена")
+            )
+        elif raw_state == "reauth":
+            health_status = "degraded"
+            health_diagnostic = getattr(status, "detail", "") or "Требуется повторная авторизация участника"
+        elif matching_rows:
+            health_status = "paused"
+            health_diagnostic = "Ключ сохранён, но отключён участником в этом пространстве"
+        else:
+            health_status = "unconfigured"
+            health_diagnostic = "Ключ в текущем пространстве ещё не добавлен — используйте форму ручного ввода выше"
+
+        latest_meta = sanitize_connector_meta(getattr(active_rows[0], "meta", None)) if active_rows else {}
+        mounted = list(latest_meta.get("mounted_folders") or spec.default_mounted_folders)
+        watermark = str(latest_meta.get("watermark") or spec.default_watermark)
+        boundary = str(latest_meta.get("data_boundary") or bootstrap.get("data_boundary") or spec.data_boundary)
+
+        cards.append(
+            {
+                "id": f"ws-conn-{spec.platform}",
+                "name": spec.title,
+                "platform_type": spec.platform,
+                "category_label": spec.category_label,
+                "auth_protocol": spec.auth_protocol,
+                "credential_owner": owner_label if active_rows else "Не привязан к участнику",
+                "data_boundary": boundary,
+                "capabilities": list(bootstrap.get("capabilities", ())),
+                "write_capabilities": list(bootstrap.get("write_capabilities", ())),
+                "mounted_folders": mounted,
+                "watermark": watermark,
+                "health_status": health_status,
+                "health_diagnostic": health_diagnostic,
+            }
+        )
+    return cards

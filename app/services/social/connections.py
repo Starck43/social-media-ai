@@ -296,23 +296,29 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
 
     row = await _vault_row(user_id, platform, spec.kind)
     if row is None:
-        if not spec.is_oauth or not settings.VK_APP_ID:
-            # Nothing the user could do about it: the deployment has no app.
+        if spec.is_oauth and settings.VK_APP_ID:
             return ConnectionStatus(
                 platform,
-                "unconfigured",
-                "Не настроено оператором",
-                "Развертывание не зарегистрировано в VK ID — подключение недоступно",
-                False,
-                False,
+                "missing",
+                "Не подключено",
+                f"Нужен личный доступ: {spec.purpose.lower()}",
+                True,
+                True,
             )
+        # Nothing the user could do about it: the deployment has no app to
+        # redirect to. That is the operator's problem, and the reason differs
+        # per platform, so say it once rather than blaming every card on VK.
         return ConnectionStatus(
             platform,
-            "missing",
-            "Не подключено",
-            f"Нужен личный доступ: {spec.purpose.lower()}",
-            True,
-            True,
+            "unconfigured",
+            "Не настроено оператором",
+            (
+                "Развертывание не зарегистрировано в VK ID — подключение недоступно"
+                if spec.is_oauth
+                else "Оператор не включил этот коннектор — можно добавить ключ вручную"
+            ),
+            False,
+            False,
         )
 
     meta = row.meta or {}

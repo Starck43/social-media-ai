@@ -41,6 +41,7 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 		Index("idx_sources_external_id", "external_id"),
 		Index("idx_sources_last_checked", "last_checked"),
 		Index("ix_sources_owner_task_id", "owner_task_id"),
+		Index("ix_sources_owner_user_id", "owner_user_id"),
 		{"schema": settings.DB_SCHEMA},
 	)
 
@@ -70,6 +71,16 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 		ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="CASCADE"),
 		nullable=True,
 		comment="Task-scoped query lane; hidden from the global source list",
+	)
+	# The member whose personal credential the source collects with. Set from the
+	# authenticated actor on creation and never from client input: a workspace may
+	# only collect with a token its own member granted. NULL means no personal
+	# credential at all (service credential only) — never "borrow the owner's".
+	# `ON DELETE SET NULL` keeps the source and its history when an account goes.
+	owner_user_id: Mapped[int | None] = mapped_column(
+		ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="SET NULL"),
+		nullable=True,
+		comment="Member whose personal L2 credential this source collects with; NULL = service-only",
 	)
 
 	# Relationships

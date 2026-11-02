@@ -4,8 +4,9 @@
 - `api` (L1): service token only; a layer-1 error (15/5) is re-raised.
 - `user` (L2): user token only.
 - `auto` (default): try L1 (service token); on a layer-1 error retry with the
-  L2 (user token) when one is configured. If neither layer succeeds, the L1
-  error is re-raised rather than silently returning an empty result.
+  L2 (user token) when one is configured. If L2 is missing or also fails, the
+  run still succeeded — narrowly: it returns an empty list with `narrowed_by`
+  set, which the UI turns into a reason plus an authorisation link.
 
 The token resolution and the shared collector are stubbed, so these tests never
 touch the VK API or the real credentials vault.
@@ -109,6 +110,26 @@ async def test_auto_falls_back_to_user_token_on_error_15(creds, stub_collector):
     assert seen == ["SVC", "USR"]  # L1 failed -> retried with L2
 
 
+async def test_auto_collects_on_l1_only_when_nobody_authorised(creds, stub_collector):
+    """Unauthorised is not a failure: L1 collects narrowly and says why.
+
+    Both layers are unusable (L1 cannot see it, nobody granted L2), which used to
+    raise. The owner's rule is that the source still collects — narrowly — and
+    the run names the platform and the fix instead of failing the source.
+    """
+    creds.service, creds.user = "SVC", None
+    seen = stub_collector(fail_tokens=("SVC",))
+
+    client = VKClient(_Platform())
+    items = await client.collect_data(_source())
+
+    assert items == []
+    assert seen == ["SVC"]
+    assert client.narrowed_by is not None
+    assert client.narrowed_by.platform == "vk"
+    assert "Подключите" in client.narrowed_by.hint
+
+
 async def test_auto_re_raises_when_both_layers_fail(creds, stub_collector):
     creds.service, creds.user = "SVC", "USR"
     seen = stub_collector(fail_tokens=("SVC", "USR"))
@@ -121,16 +142,23 @@ async def test_auto_re_raises_when_both_layers_fail(creds, stub_collector):
     assert seen == ["SVC", "USR"]
 
 
-async def test_auto_re_raises_layer1_error_when_no_user_token(creds, stub_collector):
+async def test_auto_without_user_token_collects_narrow_and_records_reason(creds, stub_collector):
+    """No L2 configured is the same fact as nobody authorised it: collect narrowly.
+
+    The run no longer raises for this case — the source reports an empty,
+    narrow collection with `narrowed_by` set, which is what the modal turns
+    into «собрано узко» plus the authorisation link.
+    """
     creds.service, creds.user = "SVC", None
     seen = stub_collector(fail_tokens=("SVC",))
 
     client = VKClient(_Platform())
-    with pytest.raises(RuntimeError) as ei:
-        await client.collect_data(_source())
+    items = await client.collect_data(_source())
 
-    assert "15" in str(ei.value)
-    assert seen == ["SVC"]  # no L2 to fall back to -> L1 error surfaces
+    assert items == []
+    assert seen == ["SVC"]
+    assert client.narrowed_by is not None
+    assert "15" in client.narrowed_by.reason
 
 
 async def test_auto_uses_l1_without_error(creds, stub_collector):

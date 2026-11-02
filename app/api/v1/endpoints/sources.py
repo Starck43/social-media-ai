@@ -67,6 +67,10 @@ async def create_source(
     _user=Depends(require_model_perm("source", ActionType.CREATE)),
 ):
     """Create a new source in the current workspace."""
+    # The actor who adds a source owns its personal collection credential. Taken
+    # from the authenticated session, never from the request body.
+    actor_id = getattr(_user, "id", None)
+    actor_id = actor_id if isinstance(actor_id, int) and not isinstance(actor_id, bool) and actor_id > 0 else None
     # Verify platform exists
     platform = await Platform.objects.get(id=request.platform_id)
     if not platform:
@@ -85,6 +89,7 @@ async def create_source(
         source_type=source_type,
         external_id=request.external_id.strip()[:100],
         params=request.params or {},
+        owner_user_id=actor_id,
     )
 
     return SourceResponse(

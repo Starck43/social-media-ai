@@ -174,6 +174,7 @@ class SourceManager(BaseManager["Source"]):
         name: Optional[str] = None,
         params: Optional[dict] = None,
         is_active: bool = True,
+        owner_user_id: Optional[int] = None,
     ) -> "Source":
         """
         Create a new source with validation.
@@ -185,6 +186,8 @@ class SourceManager(BaseManager["Source"]):
                 name: Optional display name
                 params: Optional parameters for collection
                 is_active: Whether the source is active
+                owner_user_id: The member whose personal credential it collects
+                    with; None means service credential only
 
         Returns:
                 Created Source object
@@ -204,6 +207,7 @@ class SourceManager(BaseManager["Source"]):
             name=name or f"Source {external_id}",
             params=params or {},
             is_active=is_active,
+            owner_user_id=owner_user_id,
         )
 
     async def search_sources(

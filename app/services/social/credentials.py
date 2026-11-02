@@ -20,6 +20,7 @@ it, never put it into an LLM prompt, never echo it into a chat.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -46,6 +47,21 @@ class AuthorizationRequired(RuntimeError):
         super().__init__(message)
         self.platform = platform
         self.hint = hint
+
+
+@dataclass(frozen=True)
+class NarrowedAccess:
+    """A source that collected through the deployment credential because the
+    owner's personal one was unavailable.
+
+    Not a failure: the run continued, the numbers are real, and they are simply
+    narrower than a personal account would have shown. `hint` is the sentence a
+    person reads, `reason` is the bounded provider-side cause kept for support.
+    """
+
+    platform: str
+    hint: str
+    reason: str = ""
 
 
 # Ordered kinds per platform: the first available one wins. A VK user token sees

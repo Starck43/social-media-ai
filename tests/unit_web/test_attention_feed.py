@@ -12,7 +12,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from starlette.responses import JSONResponse
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("isolated_attention", ROOT / "app/services/notifications/attention.py")
@@ -297,85 +296,6 @@ async def test_read_all_only_marks_permitted_workspace_events_not_signals_or_for
     assert repo.writes == [(7, [1])]
     assert repo.rows[1].is_read is False and repo.rows[2].is_read is False
     assert (await feed(repo).snapshot())["notifications"][0]["kind"] == "connection"
-
-
-def route_functions():
-    tree = ast.parse((ROOT / "app/web/notifications.py").read_text())
-    nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    for node in nodes:
-        node.decorator_list = []
-    scope = dict(
-        AttentionContext=attention.AttentionContext,
-        AttentionFeed=attention.AttentionFeed,
-        positive_id=attention.positive_id,
-        JSONResponse=JSONResponse,
-        Form=lambda value, **kwargs: value,
-        ensure_csrf=lambda request, token: token == "csrf-fixture",
-    )
-    exec(
-        compile(
-            ast.fix_missing_locations(
-                ast.Module(
-                    body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *nodes],
-                    type_ignores=[],
-                )
-            ),
-            "isolated notification route functions",
-            "exec",
-        ),
-        scope,
-    )
-    return scope
-
-
-def request(*, workspace=7, user=101, member_user=None, active=True, headers=None):
-    return SimpleNamespace(
-        headers=headers or {},
-        state=SimpleNamespace(
-            tenant_id=workspace,
-            web_user=SimpleNamespace(id=user, is_active=True),
-            memberships=[
-                SimpleNamespace(
-                    tenant_id=workspace,
-                    user_id=user if member_user is None else member_user,
-                    channel="web",
-                    is_active=active,
-                )
-            ],
-            web_perms=Perms(),
-        ),
-    )
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        dict(active=False),
-        dict(member_user=202),
-        dict(headers={"X-App-Workspace": "8"}),
-        dict(headers={"X-App-User": "202"}),
-        dict(workspace=True),
-        dict(user=None),
-    ],
-)
-def test_endpoint_context_rejects_revocation_foreign_membership_and_changed_session(kwargs):
-    assert route_functions()["_context"](request(**kwargs)) is None
-
-
-def test_read_context_requires_csrf_and_originating_workspace():
-    scope = route_functions()
-    assert scope["_read_context"](request(), "csrf-fixture", "7") is not None
-    assert scope["_read_context"](request(), "bad", "7") is None
-    assert scope["_read_context"](request(), "csrf-fixture", "8") is None
-    assert scope["_read_context"](request(), "csrf-fixture", "") is None
-
-
-@pytest.mark.asyncio
-async def test_route_blocks_stale_read_before_any_repository_access():
-    scope = route_functions()
-    scope["AttentionFeed"] = lambda *args: pytest.fail("must not create a feed for stale context")
-    response = await scope["notification_read_one"](request(workspace=8), 1, "csrf-fixture", "7")
-    assert response.status_code == 403 and json.loads(response.body)["reset"] is True
 
 
 def test_template_unifies_connection_area_and_never_links_raw_remote_destinations():

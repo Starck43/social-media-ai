@@ -56,6 +56,9 @@ dev = [
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "aiosqlite==0.22.1",
+    # tests/unit_web/test_p12_t17_evidence_ui.py parses rendered HTML with
+    # BeautifulSoup. Without it pytest fails during collection, not in the test.
+    "beautifulsoup4==4.15.0",
     "black==25.1.0",
     "isort==6.0.1",
     "mypy==2.4.0",

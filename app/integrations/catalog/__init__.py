@@ -7,11 +7,12 @@ Other descriptors never enable an adapter or grant network access.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Mapping
 
-CATALOG_VERSION = 1
+CATALOG_VERSION = 1  # Saved mail contract remains compatible.
+PRESENTATION_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,13 @@ class Provider:
     # of a working adapter or permission to connect to arbitrary hosts.
     defaults: tuple[tuple[str, str | int | bool], ...] = ()
     source_url: str = ""
+    description: str = ""
+    category: str = ""
+    icon_asset: str = ""
+    availability: str = "unavailable"  # personal | mail_check | unavailable
+    capabilities: tuple[str, ...] = ()
+    setup_hint: str = ""
+    auth_protocol: str = ""
 
 
 _MAIL_FIELDS = (
@@ -135,6 +143,115 @@ MAILRU_CLOUD = Provider(
         ),
     ),
 )
+# Presentation is code-owned. A descriptor, field schema or icon does not
+# authorize a connection or implement a transport. Availability describes the
+# existing route, not health, account permissions or future capabilities.
+BITRIX24 = Provider(
+    "bitrix24",
+    "bitrix24",
+    "Битрикс24 CRM",
+    (Method("webhook_secret", "Входящий вебхук", (Field("webhook_secret", "Вебхук", kind="secret"),)),),
+)
+ONEC = Provider(
+    "onec",
+    "onec",
+    "1С:Предприятие OData",
+    (
+        Method(
+            "odata_credentials",
+            "Учётные данные OData",
+            (Field("login", "Логин"), Field("password", "Пароль", kind="secret")),
+        ),
+    ),
+)
+LOCAL_GATEWAY = Provider(
+    "local_gateway",
+    "local_gateway",
+    "Локальный шлюз",
+    (Method("mtls_fingerprint", "Отпечаток сертификата", (Field("mtls_fingerprint", "Отпечаток сертификата"),)),),
+)
+
+VK = replace(
+    VK,
+    description="Сбор закрытых сообществ и личной стены, где токен сообщества бессилен",
+    category="Социальная платформа",
+    icon_asset="icons/providers/vk.svg",
+    availability="personal",
+    capabilities=("personal_access",),
+    setup_hint="Можно вставить личный токен вручную, но он не продлевается — OAuth надёжнее.",
+    auth_protocol="VK ID OAuth 2.1 PKCE",
+)
+TELEGRAM = replace(
+    TELEGRAM,
+    description="Чтение закрытых чатов и истории, куда бот не добавлен",
+    category="Мессенджер / MTProto",
+    icon_asset="icons/providers/telegram.svg",
+    availability="personal",
+    capabilities=("personal_access",),
+    setup_hint="Нужен api_id и api_hash с my.telegram.org и файл сессии.",
+    auth_protocol="MTProto Session / Bot API",
+)
+MAILRU = replace(
+    MAILRU,
+    description="Настройка ящика и проверка входа по IMAP; отправка и синхронизация недоступны.",
+    category="Почтовый коннектор",
+    icon_asset="icons/providers/mailru-mail.svg",
+    availability="mail_check",
+    capabilities=("save_configuration", "imap_login_check"),
+    setup_hint="Создайте отдельный пароль приложения для Почты.",
+    auth_protocol="IMAP TLS",
+)
+YANDEX_MAIL = replace(
+    YANDEX_MAIL,
+    description="Настройка ящика и проверка входа по IMAP; отправка и синхронизация недоступны.",
+    category="Почтовый коннектор",
+    icon_asset="icons/providers/yandex-mail.svg",
+    availability="mail_check",
+    capabilities=("save_configuration", "imap_login_check"),
+    setup_hint="Разрешите IMAP и создайте пароль приложения.",
+    auth_protocol="IMAP TLS",
+)
+YANDEX_DISK = replace(
+    YANDEX_DISK,
+    description="Подключение папок Яндекс.Диска пока не реализовано.",
+    category="Облачный диск и документы",
+    icon_asset="icons/providers/yandex-disk.svg",
+    setup_hint="Форма и транспорт пока недоступны.",
+    auth_protocol="OAuth-токен (планируется)",
+)
+MAILRU_CLOUD = replace(
+    MAILRU_CLOUD,
+    description="Подключение папок Облака Mail.ru пока не реализовано.",
+    category="Облачный диск и документы",
+    icon_asset="icons/providers/mailru-cloud.svg",
+    setup_hint="Форма и транспорт пока недоступны.",
+    auth_protocol="WebDAV (планируется)",
+)
+BITRIX24 = replace(
+    BITRIX24,
+    description="Синхронизация с Битрикс24 пока не реализована.",
+    category="CRM / Корпоративный портал",
+    icon_asset="icons/providers/bitrix24.svg",
+    setup_hint="Форма и транспорт пока недоступны.",
+    auth_protocol="REST Webhook (планируется)",
+)
+ONEC = replace(
+    ONEC,
+    description="Подключение к 1С по OData пока не реализовано.",
+    category="Учётная система (ERP / 1С)",
+    icon_asset="icons/providers/onec.svg",
+    setup_hint="Форма и транспорт пока недоступны.",
+    auth_protocol="OData (планируется)",
+)
+LOCAL_GATEWAY = replace(
+    LOCAL_GATEWAY,
+    description="Подключение локального шлюза пока не реализовано.",
+    category="Локальный шлюз",
+    icon_asset="icons/providers/local-gateway.svg",
+    setup_hint="Форма и транспорт пока недоступны.",
+    auth_protocol="Парный mTLS (планируется)",
+)
+
 PROVIDERS: Mapping[str, Provider] = MappingProxyType(
     {
         p.id: p
@@ -145,6 +262,9 @@ PROVIDERS: Mapping[str, Provider] = MappingProxyType(
             YANDEX_MAIL,
             YANDEX_DISK,
             MAILRU_CLOUD,
+            BITRIX24,
+            ONEC,
+            LOCAL_GATEWAY,
         )
     }
 )

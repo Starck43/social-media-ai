@@ -1,3 +1,4 @@
+{% from "web/components/provider.html" import provider_icon, provider_fields with context %}
 {# P12-T08: same versioned field contract supplies both forms and validation. #}
 <p class="mt-3 text-sm ui-muted">Выберите почтовый сервис. Сервер и TLS настроены автоматически. У каждого пространства свои подключения; сохранённые пароли не показываются. Отправка писем выключена.</p>
 {% for row in workspace_connection_rows|default([]) %}
@@ -29,11 +30,7 @@
             <label class="block text-sm" for="mail-edit-label-{{ row.id }}">Название подключения</label>
             <input class="ui-control w-full" id="mail-edit-label-{{ row.id }}" name="label" maxlength="100" value="{{ row.label }}">
             {% for provider in workspace_providers|default([]) if provider.id == row.provider_id %}
-            {% for field in provider.methods[0].fields %}
-            <label class="block text-sm" for="mail-edit-{{ row.id }}-{{ field.name }}">{{ field.label }}</label>
-            <input class="ui-control w-full" id="mail-edit-{{ row.id }}-{{ field.name }}" name="{{ field.name }}" type="{{ 'password' if field.kind == 'secret' else field.kind }}" {% if field.required %}required{% endif %} maxlength="{{ 254 if field.kind == 'email' else 8192 }}" autocomplete="{{ 'new-password' if field.kind == 'secret' else 'off' }}" {% if field.kind != 'secret' %}value="{{ row.account_login }}"{% endif %}>
-            {% if field.hint %}<p class="text-xs ui-muted">{{ field.hint }}</p>{% endif %}
-            {% endfor %}
+            {{ provider_fields(provider.methods[0], 'mail-edit-' ~ row.id, row.account_login) }}
             {% endfor %}
             <p class="text-xs ui-muted">Введите новый пароль приложения. Сохранение сбрасывает результат проверки. Смену сервиса оформляйте новым подключением.</p>
             <button class="ui-control">Сохранить изменения</button>
@@ -45,7 +42,8 @@
 {% if workspace_connection_write|default(false) %}
 {% for provider in card.provider_forms %}
 <details class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3" data-provider="{{ provider.id }}">
-    <summary class="cursor-pointer text-sm font-medium">Добавить {{ provider.label }}</summary>
+    <summary class="cursor-pointer text-sm font-medium">{{ provider_icon(provider) }} Добавить {{ provider.label }}</summary>
+    <p class="mt-2 text-sm ui-muted">{{ provider.description }}</p>
     {% for method in provider.methods %}
     <p class="mt-2 text-sm ui-muted">{{ method.hint }}</p>
     <a href="{{ provider.source_url }}" target="_blank" rel="noopener noreferrer" class="text-sm text-sky-600">Инструкция: как получить пароль приложения</a>
@@ -55,11 +53,7 @@
         <input type="hidden" name="method" value="{{ method.id }}">
         <label class="block text-sm" for="mail-label-{{ provider.id }}">Название подключения</label>
         <input class="ui-control w-full" id="mail-label-{{ provider.id }}" name="label" maxlength="100" placeholder="Например: Почта отдела закупок">
-        {% for field in method.fields %}
-        <label class="block text-sm" for="mail-{{ provider.id }}-{{ field.name }}">{{ field.label }}</label>
-        <input class="ui-control w-full" id="mail-{{ provider.id }}-{{ field.name }}" name="{{ field.name }}" type="{{ 'password' if field.kind == 'secret' else field.kind }}" {% if field.required %}required{% endif %} maxlength="{{ 254 if field.kind == 'email' else 8192 }}" autocomplete="{{ 'new-password' if field.kind == 'secret' else 'off' }}" placeholder="{{ field.example }}">
-        {% if field.hint %}<p class="text-xs ui-muted">{{ field.hint }}</p>{% endif %}
-        {% endfor %}
+        {{ provider_fields(method, 'mail-' ~ provider.id) }}
         <button class="ui-control">Сохранить подключение</button>
         <p class="text-xs ui-muted">Пароль хранится зашифрованным. Сохранение не обращается к провайдеру. Отдельная кнопка проверки выполнит только вход по IMAP.</p>
     </form>

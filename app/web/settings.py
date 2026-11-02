@@ -291,7 +291,7 @@ async def settings_page(request: Request):
                 username=getattr(user, "username", None),
             )
         }
-        from app.integrations.catalog import WORKSPACE_PROVIDERS
+        from app.integrations.catalog import PROVIDERS, WORKSPACE_PROVIDERS
         from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
 
         try:
@@ -308,6 +308,7 @@ async def settings_page(request: Request):
         context["connections"] = [
             {
                 "platform": spec.platform,
+                "provider": PROVIDERS.get(spec.platform),
                 "title": spec.title,
                 "purpose": spec.purpose,
                 "is_oauth": spec.is_oauth,

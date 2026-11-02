@@ -40,6 +40,29 @@ See [notification boundaries and remaining limits](NOTIFICATIONS.md).
 
 See [connector configuration](CONNECTOR_CONFIGURATION.md) for provider-specific mail forms, encrypted workspace connections, IMAP checks and migration 0121.
 
+### Provider presentation catalog
+
+`app/integrations/catalog/` is the code-owned, versioned source for provider
+labels, descriptions, categories, local icon paths, form fields, setup guidance,
+availability and the narrowly implemented capabilities. Presentation changes do not
+change the saved mail contract (`CATALOG_VERSION`); version that contract only
+with an explicit compatibility plan. `Platform` is a separate
+platform-level runtime configuration; email has two provider definitions.
+`app/static/icons/providers/` contains neutral local glyphs, not official logos.
+Reusable Jinja macros in `app/web/templates/web/components/provider.html` render
+icons, headings and fields; templates must never inline untrusted SVG or secrets.
+
+VK and Telegram keep their existing personal-credential flows. Yandex Mail and
+Mail.ru Mail support workspace configuration and an explicit IMAP login check
+only: no mailbox synchronization or sending. Yandex Disk, Mail.ru Cloud,
+Bitrix24, 1C and local gateway are catalog descriptors only: their schemas and
+icons do not enable forms, network access, transport, synchronization or writes.
+`availability` is presentation metadata, not authorization or proof of health.
+The workspace manager's allowlist, role/tenant checks and encrypted secret
+storage remain authoritative. Catalog fields and `Platform.params` are not a
+place for user secrets; deployment credentials remain in the secret store.
+
+
 ## Workspace subscription provider (P2-T16 foundation)
 
 `SUBSCRIPTION_PAYMENT_PROVIDER=yookassa` selects YooKassa API v3 by default.

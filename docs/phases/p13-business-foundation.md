@@ -68,7 +68,7 @@ assignments are exceptions to the complexity guideline. Owner items are decision
 
 | Lane | Task | Why now |
 | --- | --- | --- |
-| Owner / integrator | Merge planning PR #341 to `dev` before task claims | Planning only; P13-T01 stays IN_PROGRESS until its required link check passes and it is independently accepted |
+| Auditor / integrator | Independently audit and merge planning PR #341 to `dev` before task claims | Planning only; P13-T01 remains IN_PROGRESS pending independent audit; D1–D9 remain open |
 | Remote | P13-T06 coverage gate and provider mocks | New files only (`scripts/ci/`, `tests/shared/`) |
 | Remote | P18-T01 local connector protocol (preparation only) | Read #327 draft contracts; final work and acceptance wait for P12-T12 integration and D6 as required by the card |
 | Remote | P13-T05 audit codes and API conventions | No migration; rebase after #308 (both touch `app/api/v1`) |

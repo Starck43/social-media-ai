@@ -86,8 +86,10 @@ quota and GC contracts; this seam authorizes none of it.
 
 P8-T34 owns reviewed network/credentials/full exact-file read/version integrity
 and original-open. P12-T13 owns capability/processing/retention/limit review;
-P12-T15 owns policy editing/sharing/approved writes. Those integration reviews
-remain pending, not implicitly approved by mocks or a coordination comment.
+P12-T15 owns policy editing/sharing/approved writes. The shared engineering
+interface and conservative inactive-preparation limits are now settled in the
+[admission contract](FILE_WORKSPACE_ADMISSION.md); real authority/version/consent
+implementations and activation checks remain undelivered.
 
 Focused no-DB tests use only synthetic authority and async context-managed
 streams. Cover stage order, IDs/context/nonce binding, unsupported boundaries,

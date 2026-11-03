@@ -4,6 +4,7 @@ Parent: [P12-T12](tasks/p12-t12.md), [draft PR #327](https://github.com/Starck43
 Inputs: [bounded read](FILE_WORKSPACE_CONTENT_READ.md),
 [line evidence](FILE_WORKSPACE_LINE_EVIDENCE.md),
 [unverified candidates](FILE_WORKSPACE_INSIGHT_CANDIDATES.md).
+Shared engineering interface: [admission contract](FILE_WORKSPACE_ADMISSION.md).
 Review owner: [P12-T13](tasks/p12-t13.md); real read/version adapter: [P8-T34](https://github.com/Starck43/social-media-ai/pull/313).
 
 ## Status and deliberately small scope
@@ -20,8 +21,10 @@ full canonical text, mirror, file backup, vector index or workspace knowledge
 projection. Selected quotes are still private content, not anonymized metadata.
 A hash is neither anonymous nor a permission nor a provider content version.
 
-All requirements below describe future work. The proposed defaults need P12-T13
-and owner approval plus implementation/local verification before activation.
+The coordinated P12-T13 review selects these conservative bounds for inactive
+preparation in the [admission contract](FILE_WORKSPACE_ADMISSION.md). Durable
+implementation, deployment-policy approval and local verification are still
+required before activation; actual processing/retention consent is independent.
 Missing policy, consent, version semantics, storage guarantees or authority means
 no save/release, not a permissive fallback. Retention consent is distinct from
 READ, cloud processing, external-model egress/spend and sharing permissions.
@@ -180,7 +183,7 @@ linearizable provider state or physical memory erasure from application checks.
 
 ## Proposed pilot quotas and admission accounting
 
-These are reviewable ceilings, **not existing plan entitlements**. Do not borrow
+These are conservative engineering ceilings, **not existing plan entitlements**. Do not borrow
 [tenant plan retention](TENANCY.md#plans-and-quotas) or catalog limits as approval.
 Count every retained row, including expired/invalidated rows awaiting purge, and
 all outstanding reservations. No silent eviction, truncation or auto-upgrade.

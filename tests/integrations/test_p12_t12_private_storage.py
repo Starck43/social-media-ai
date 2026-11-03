@@ -13,6 +13,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import delete, func, select, update
 
 from app.core.database import async_session_maker
+from app.core.tenant_context import tenant_scope
 from app.integrations.file_workspace.content_read import ReadPlainText
 from app.integrations.file_workspace.insight_candidates import InsightCandidate, InsightCandidateBatch
 from app.integrations.file_workspace.line_evidence import LineRange, build_line_evidence
@@ -28,6 +29,7 @@ from app.models.file_workspace.private_insights import (
 )
 from app.models.managers.file_insight_manager import POLICY_REVISION, FileInsightManager, PrivateInsightUnavailable
 from app.services.file_workspace.private_insights import PrivateInsightWorkflow
+from app.services.file_workspace.private_maintenance import purge_expired_private_insights
 from tests.shared.file_catalog_fixtures import actor, admit
 from tests.shared.file_catalog_fixtures import data as catalog_data
 from tests.shared.file_catalog_fixtures import manager as catalog
@@ -79,6 +81,22 @@ class SyntheticVersion:
             receipt.provider_object_id,
             datetime.now(timezone.utc),
         )
+
+
+async def _expire_attempt(request):
+    old = datetime.now(timezone.utc) - timedelta(hours=25)
+    async with async_session_maker() as session, session.begin():
+        await session.execute(
+            update(FileInsightAttempt)
+            .where(FileInsightAttempt.id == request.nonce)
+            .values(captured_at=old, expires_at=old + timedelta(hours=24))
+        )
+
+
+async def _result_for(store, args, object_id):
+    source, batch, receipt = await completed(store, args, object_id)
+    result = await PrivateInsightWorkflow(store).save(source, batch, receipt, versions=SyntheticVersion())
+    return source, batch, receipt, result
 
 
 async def setup(store, args):
@@ -219,3 +237,132 @@ async def test_expired_attempt_gc_is_idempotent(data, store):
         assert await store.purge_expired(**args) == 0
         with pytest.raises(PrivateInsightUnavailable):
             await store.read_context(request)
+
+
+@pytest.mark.asyncio
+async def test_runtime_gc_removes_only_expired_private_content_in_bounded_batches(data, store):
+    with actor(data) as args:
+        object_id = await setup(store, args)
+        expired = await _result_for(store, args, object_id)
+        current = await _result_for(store, args, object_id)
+        await _expire_attempt(expired[0].context.request)
+
+        with tenant_scope(bypass=True):
+            assert await purge_expired_private_insights(limit=1) == 1
+            assert await purge_expired_private_insights(limit=1) == 0
+
+        async with async_session_maker() as session:
+            assert await session.get(FileInsightAttempt, expired[0].context.request.nonce) is None
+            assert await session.get(FilePrivateInsight, expired[3].id) is None
+            assert await session.get(FileInsightAttempt, current[0].context.request.nonce) is not None
+            assert await session.get(FilePrivateInsight, current[3].id) is not None
+
+
+@pytest.mark.asyncio
+async def test_runtime_gc_skips_rows_locked_by_owner_transactions(data, store):
+    with actor(data) as args:
+        object_id = await setup(store, args)
+        first = await completed(store, args, object_id)
+        second = await completed(store, args, object_id)
+        await _expire_attempt(first[0].context.request)
+        await _expire_attempt(second[0].context.request)
+
+        async with async_session_maker() as locked, locked.begin():
+            await locked.scalar(
+                select(FileInsightAttempt)
+                .where(FileInsightAttempt.id == first[0].context.request.nonce)
+                .with_for_update()
+            )
+            with tenant_scope(bypass=True):
+                assert await purge_expired_private_insights(limit=1) == 1
+            assert await locked.get(FileInsightAttempt, first[0].context.request.nonce) is not None
+
+        with tenant_scope(bypass=True):
+            assert await purge_expired_private_insights(limit=1) == 1
+            assert await purge_expired_private_insights(limit=1) == 0
+
+
+@pytest.mark.asyncio
+async def test_private_manager_preserves_clock_highwater_on_rollback_denial(data, store):
+    with actor(data) as args:
+        await setup(store, args)
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
+        async with async_session_maker() as session, session.begin():
+            mount = await session.get(FileInsightMount, args["connection_id"])
+            mount.clock_highwater = future
+
+        with pytest.raises(PrivateInsightUnavailable):
+            await store.consent_state(**args)
+
+        async with async_session_maker() as session:
+            mount = await session.get(FileInsightMount, args["connection_id"])
+            assert mount.clock_highwater == future
+            mount.clock_highwater = datetime.now(timezone.utc)
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_forget_object_racing_external_read_prevents_late_save(data, store):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class PausedVersion:
+        async def verify(self, source, receipt):
+            entered.set()
+            await release.wait()
+            return await SyntheticVersion().verify(source, receipt)
+
+    with actor(data) as args:
+        object_id = await setup(store, args)
+        source, batch, receipt = await completed(store, args, object_id)
+        save = asyncio.create_task(PrivateInsightWorkflow(store).save(source, batch, receipt, versions=PausedVersion()))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        await store.forget_object(**args, object_id=object_id)
+        release.set()
+        with pytest.raises(PrivateInsightUnavailable):
+            await save
+
+        async with async_session_maker() as session:
+            assert await session.get(FileInsightAttempt, receipt.nonce) is None
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(FilePrivateInsight)
+                    .where(FilePrivateInsight.connection_id == args["connection_id"])
+                )
+                == 0
+            )
+
+
+@pytest.mark.asyncio
+async def test_private_save_enforces_exact_last_byte_of_connection_quota(data, store, monkeypatch):
+    from app.integrations.file_workspace import retention_quota
+    from app.services.file_workspace.private_admission import prepare_private_payload
+    from app.services.file_workspace.private_insights import OwnedAdmissionAuthority
+
+    with actor(data) as args:
+        object_id = await setup(store, args)
+        first = await _result_for(store, args, object_id)
+        second = await completed(store, args, object_id)
+        second_payload = await prepare_private_payload(
+            second[0],
+            second[1],
+            second[2],
+            authority=OwnedAdmissionAuthority(store),
+            versions=SyntheticVersion(),
+        )
+        async with async_session_maker() as session:
+            used = await session.scalar(
+                select(func.sum(FilePrivateInsight.charged_size)).where(
+                    FilePrivateInsight.connection_id == args["connection_id"]
+                )
+            )
+        assert used == len(first[3].payload)
+
+        monkeypatch.setattr(retention_quota, "CONNECTION_BYTE_LIMIT", used + len(second_payload) - 1)
+        with pytest.raises(PrivateInsightUnavailable):
+            await PrivateInsightWorkflow(store).save(*second, versions=SyntheticVersion())
+
+        monkeypatch.setattr(retention_quota, "CONNECTION_BYTE_LIMIT", used + len(second_payload))
+        accepted = await PrivateInsightWorkflow(store).save(*second, versions=SyntheticVersion())
+        assert len(accepted.payload) == len(second_payload)

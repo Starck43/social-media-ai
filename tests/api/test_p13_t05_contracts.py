@@ -1,5 +1,6 @@
 """DB-exempt: isolated FastAPI apps, fake membership context, no providers."""
 
+import secrets
 from types import SimpleNamespace
 
 import pytest
@@ -258,7 +259,7 @@ def test_settings_parse_and_application_wire_docs_policy(flag):
 
     settings = Settings(
         _env_file=None,
-        SECRET_KEY="synthetic-only-test-secret",
+        SECRET_KEY=secrets.token_urlsafe(32),
         POSTGRES_URL="postgresql://synthetic.invalid/unused",
         ENVIRONMENT="production",
         API_DOCS_ENABLED=flag,

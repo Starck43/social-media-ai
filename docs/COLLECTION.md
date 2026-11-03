@@ -32,9 +32,10 @@ Two sources, one reader (`app/services/social/credentials.py`):
   passes an `owner_user_id`.
 - **environment** — application/infrastructure config, one-per-deployment:
   `vk/app_id`, `vk/client_secret`, `vk/service_token` (service/L1 token),
-  `telegram/bot_token`, `max/bot_token` (the shared bots) and the Telegram
-  MTProto env fallback. Always the last resort, so an unconfigured install
-  still boots.
+  `telegram/bot_token`, `max/bot_token` (the shared bots) and application login
+  configuration. There is no MTProto session fallback from environment;
+  `TELEGRAM_SESSION` is deprecated and ignored. An unconfigured install boots
+  without borrowing a personal Telegram account.
 
 ```
 resolve_token("vk", owner_user_id=uid)   # personal vault first, then env
@@ -353,6 +354,15 @@ channels/listener.py  ->  services/monitoring/ingest.py  ->  AIAnalyzer.base_ana
   it never receives `channel_post` updates.
 
 ### L2: MTProto user session (Telethon)
+
+**P12-T14 rollout gate:** the legacy collector described here still uses a
+user-scoped vault, not explicit workspace grants. The intended model is one
+personal authorization plus independently consented workspace bindings; see
+[personal account reuse](CONNECTOR_ACCOUNT_REUSE.md). The new draft persistence/API
+is not yet wired to this collector or to an initial phone/code/2FA web login. Do
+not present legacy CLI storage or a grant record as a completed workspace-isolated
+connection. `POST /api/v1/credentials/login` refuses terminal login with a fixed
+409 instead of running `input()` in a request worker.
 
 For historical depth and channels the bot cannot join, set the source's
 `Source.params["mode"] = "user"`. The collect job then pulls messages over

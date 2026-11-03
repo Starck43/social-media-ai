@@ -4,8 +4,12 @@ Mail.ru Mail and Yandex Mail can be configured at
 `/app/settings?tab=connections`, in the existing single Email card. This delivers
 **configuration, encrypted storage and an explicit IMAP login check**, not a mail
 client, synchronization job, outbox or SMTP sender. Saving never calls a provider.
-VK OAuth/manual user tokens and Telegram sessions retain their existing personal
-flows. Other business connectors remain unavailable: a descriptor is not an adapter.
+VK OAuth/manual user tokens retain their existing personal flow. Telegram
+workspace consent and same-user cross-workspace reuse are specified in
+[personal account reuse](CONNECTOR_ACCOUNT_REUSE.md); that draft foundation is not
+yet a completed authorization/runtime journey. Mail configuration does not gain
+credential reuse implicitly. Other business connectors remain unavailable: a
+descriptor is not an adapter.
 
 ## Storage boundaries
 

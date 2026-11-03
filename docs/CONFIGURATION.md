@@ -13,7 +13,8 @@ The application reads config from `app/core/config.py` (Pydantic `Settings`).
 |---|---|---|
 | VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`, `VK_CLIENT_ACCESS_KEY`, `VK_REDIRECT_URI` | Application identity, L1 service access and registered OAuth callback; a client secret is not a user's access token. |
 | Shared Telegram bot | env: `TELEGRAM_BOT_TOKEN` | Bot API transport; one bot may serve multiple workspaces. |
-| Personal integrations | encrypted `user_credentials` | User VK access/refresh tokens and Telegram MTProto sessions; existing collection-owner resolution selects the user. |
+| Legacy personal integrations | encrypted `user_credentials` | Current VK tokens and legacy Telegram vault sessions; user-scoped, not workspace-consented. Telegram rollout requires the grant-based path below. |
+| Personal-account reuse foundation (draft) | encrypted `personal_connector_authorizations` + `workspace_authorization_grants` | Single personal authorization, explicit independent consent in each workspace; Telegram-only persistence/API, not yet initial login or runtime integration. |
 | Workspace digest recipients | `tenant_channels`, active and `is_digest_target=True` | Owned destination IDs for this workspace only; use existing binding workflow, then Settings → Channels to toggle digests. |
 | Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Fixed-template operator-alert destination; never a workspace notification fallback. |
 | Agent access bootstrap | `TELEGRAM_OWNER_IDS` | Telegram **user IDs**, not chat/channel IDs; distinct from the notification destination and workspace memberships. |
@@ -52,7 +53,11 @@ platform-level runtime configuration; email has two provider definitions.
 Reusable Jinja macros in `app/web/templates/web/components/provider.html` render
 icons, headings and fields; templates must never inline untrusted SVG or secrets.
 
-VK and Telegram keep their existing personal-credential flows. Yandex Mail and
+See [personal account reuse](CONNECTOR_ACCOUNT_REUSE.md) for the owner-approved
+per-workspace consent model and its explicit delivery gates. Telegram must not
+use a deployment-wide personal session. The legacy HTTP terminal login is now
+refused with a fixed 409 until supported web authorization is implemented.
+VK retains its existing personal-credential flow. Yandex Mail and
 Mail.ru Mail support workspace configuration and an explicit IMAP login check
 only: no mailbox synchronization or sending. Yandex Disk, Mail.ru Cloud,
 Bitrix24, 1C and local gateway are catalog descriptors only: their schemas and

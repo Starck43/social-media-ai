@@ -36,7 +36,7 @@ def _protect_telegram_binding(source, changes):
         raise PermissionError("telegram_source_picker_required")
     if not has_binding:
         return
-    for key in ("platform_id", "external_id", "owner_user_id"):
+    for key in ("tenant_id", "platform_id", "external_id", "owner_user_id"):
         if key in changes and changes[key] != getattr(source, key):
             raise PermissionError("telegram_source_picker_required")
     for key in ("telegram_authorization", "token_owner", "mode"):

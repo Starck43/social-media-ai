@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_object_session
+
+from app.models.managers.source_manager import _protect_telegram_binding
+
 from ._shared import (
     ActionType,
     Any,
@@ -117,6 +122,45 @@ class SourceAdmin(BaseAdmin, model=Source):
 
     async def delete_model(self, request: Request, pk: Any) -> None:
         raise HTTPException(status_code=403, detail="admin_source_delete_disabled")
+
+    async def insert_model(self, request: Request, data: dict) -> Any:
+        params = data.get("params")
+        if type(params) is dict and "telegram_authorization" in params:
+            raise HTTPException(status_code=403, detail="telegram_source_picker_required")
+        return await super().insert_model(request, data)
+
+    async def on_model_change(self, data: dict, model: Source, is_created: bool, request: Request) -> None:
+        """Protect Telegram picker consent in SQLAdmin's own write transaction."""
+        if is_created:
+            params = data.get("params")
+            if type(params) is dict and "telegram_authorization" in params:
+                raise HTTPException(status_code=403, detail="telegram_source_picker_required")
+            return
+        if model is None:
+            raise HTTPException(status_code=404, detail="admin_source_not_found")
+        session = async_object_session(model)
+        if session is None:
+            raise HTTPException(status_code=403, detail="telegram_source_update_unavailable")
+        # SQLAdmin selected the row before this hook without a lock. Re-read it
+        # under FOR UPDATE in the same transaction and refresh the identity map:
+        # an intervening picker change cannot be overwritten from stale form data.
+        current = await session.scalar(
+            select(Source).where(Source.id == model.id).with_for_update().execution_options(populate_existing=True)
+        )
+        if current is None:
+            raise HTTPException(status_code=404, detail="admin_source_not_found")
+        changes = dict(data)
+        for relationship, column in (("tenant", "tenant_id"), ("platform", "platform_id")):
+            if relationship in changes:
+                value = changes.pop(relationship)
+                value = getattr(value, "id", value)
+                if type(value) is str and value.isdecimal():
+                    value = int(value)
+                changes[column] = value
+        try:
+            _protect_telegram_binding(current, changes)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail="telegram_source_picker_required") from exc
 
     # Проверка источника ставит задачу сбора и пишет в карточку источника.
     action_permissions = {"check-source": ActionType.UPDATE}

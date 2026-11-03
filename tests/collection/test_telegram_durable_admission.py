@@ -262,6 +262,18 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.locked.last_item_id, "90")
         self.assertEqual(self.locked.params["telegram_l2_last_item_id"], "50")
 
+    async def test_first_bot_push_does_not_seed_personal_cursor_from_bot_highwater(self):
+        self.source.last_item_id = "900"
+        self.locked.last_item_id = "900"
+        await self.admit(wake_analysis=True)
+        self.assertEqual(self.locked.last_item_id, "900")
+        self.assertEqual(self.locked.params, {"telegram_l2_last_item_id": "0"})
+
+        # The first personal pull starts independently and advances only its own cursor.
+        await self.admit()
+        self.assertEqual(self.locked.last_item_id, "900")
+        self.assertEqual(self.locked.params, {"telegram_l2_last_item_id": "20"})
+
     async def test_l2_own_cursor_advances_without_regressing_shared_max(self):
         self.locked.params = {"telegram_l2_last_item_id": "10", "keep": True}
         await self.admit()

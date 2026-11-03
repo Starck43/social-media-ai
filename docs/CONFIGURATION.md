@@ -596,7 +596,8 @@ step. At unified head `p12t14_accounts` it also rotates the single encrypted
 personal authorization bundle, not a copy in each workspace grant. Head
 `p12t14_tg_login` additionally rotates encrypted temporary login material. Empty
 disconnected/revoked placeholders are preserved. Only reviewed single heads
-`0124`, `p12t14_accounts` and `p12t14_tg_login` are supported;
+`0124`, the reviewed `p12t14_*` generations, `p12t12_catalog` and file
+revisions `0125`-`0128` are supported;
 unknown/future/multiple heads or a store layout that does not match the head are refused rather than silently
 omitting an encrypted store.
 
@@ -631,3 +632,14 @@ on every application instance before restart. If commit outcome is unknown, do
 not retry blindly or restart: have the authorized operator determine which key
 can read the vault and use the reviewed backup/forward-recovery plan. Rotating a
 key does not remove plaintext from previous database pages or backups.
+
+### Private file results during credential-key rotation
+
+At the combined 0128 head, the dry run reports private consent mounts, attempts
+and retained results. Apply refuses if private mounts exist unless the operator
+explicitly approves `--private-results-purge-approved` in addition to the backup
+and stopped-writer flags. This clears private consent and purges compact results
+using the normal invalidation fence; originals/catalog metadata remain. It is
+not result re-encryption. An error rolls back credential changes and purge in the
+same transaction. Users must grant consent again and perform a fresh read.
+Never change the environment key alone or disable the revocation triggers.

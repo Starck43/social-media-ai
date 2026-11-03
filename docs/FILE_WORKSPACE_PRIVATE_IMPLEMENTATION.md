@@ -75,8 +75,12 @@ DB crash; operational clock, restore and consistency validation remain gates.
 Outstanding read ledgers have hard object/connection/owner/tenant limits
 16/100/200/1000, including abandoned entries until purge. These are separate from
 payload quotas. `purge_expired` deletes at most 100 expired attempt ledgers per
-owner connection; result rows cascade, freeing logical quota exactly once. No
-background scheduler or automatic source regeneration. Operational SQL/index/WAL/
+owner connection; result rows cascade, freeing logical quota exactly once.
+The existing worker maintenance loop also purges at most 100 expired attempts
+per pass under its trusted bypass, using the database clock and SKIP LOCKED.
+Web-only maintenance performs the same bounded purge independently of job
+cleanup failures. Full worker batches retry after one second; no content is
+regenerated. Statement and lock timeouts bound the cleanup transaction. Operational SQL/index/WAL/
 backup capacity is not covered by logical JSON quotas.
 
 ## Revocation and deletion
@@ -141,3 +145,25 @@ Revocation cannot retract bytes already delivered.
 
 Before enabling, follow the linked local handoff. Mocked HTTP and synthetic
 tests are not provider, deployment or local DB evidence.
+
+## Combined migration and key lifecycle
+
+The unpublished catalog migration is `p12t12_catalog`, following
+`p12t14_tg_retention`; search/scans/traversal/private state follow as 0125-0128.
+This preserves the encrypted-refresh `0124` history. Both original PR heads and
+the reconciled original plan are retained in integration ancestry.
+
+The credential rotation utility recognizes the combined schema generations.
+At 0128, dry-run output includes private mount/attempt/result counts. Apply
+refuses while a private mount exists unless `--private-results-purge-approved`
+is explicitly supplied. Approved rotation uses the normal invalidation fence
+and clears private consent and results in the same transaction; it never
+disables triggers. Any later failure rolls the credential changes and purge
+back together. New consent and a new read are required afterward. This is not
+private-result re-encryption or provider revocation. Working-key rotation was
+not performed; tests use synthetic keys and a disposable database.
+
+The metadata schema bootstrap installs the same 0128 helper, hook functions and
+eight triggers as Alembic, gated on their required tables. The offline inventory
+checks complete function bodies, including multiple DDL declarations in one
+`op.execute`, without importing application/driver code.

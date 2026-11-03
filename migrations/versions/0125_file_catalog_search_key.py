@@ -10,7 +10,7 @@ this migration. Backfill is bounded in memory, not a provider or content read.
 import unicodedata
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 from app.core.config import settings
 
@@ -26,6 +26,8 @@ def _search_key(value):
 
 
 def upgrade():
+    if context.is_offline_mode():
+        raise RuntimeError("0125 requires an online connection to backfill search keys")
     schema = settings.DB_SCHEMA
     op.add_column("file_catalog_objects", sa.Column("name_search", sa.Text(), nullable=True), schema=schema)
     table = sa.table(

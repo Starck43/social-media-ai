@@ -926,4 +926,3 @@ AST of 11 Python files, targeted formatting/diff hygiene only, NO new tests or
 provider/DB/migration execution. All runtime/cursor/consumer/regression evidence
 remains in final tests then independent audit. Whole-task code estimate ~70%, not
 acceptance. Next: permission-scoped explicit source picker API/web UI. Keep Draft.
-

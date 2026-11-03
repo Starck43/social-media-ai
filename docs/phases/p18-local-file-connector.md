@@ -48,4 +48,4 @@ TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text s
 
 ## Dependencies and gates
 
-[P18-T01](../audit/p18-t01.md) protocol is accepted; an independent security review remains required before any desktop code. P12-T12's delivered increment is integrated (merge `48caea61`). Platforms: Windows, macOS, Linux.
+[P18-T01](../audit/p18-t01.md) protocol is accepted; an independent security review ([Q-19](../tasks/q-19.md)) remains required before any desktop code. P12-T12's delivered increment is integrated (merge `48caea61`). Platforms: Windows, macOS, Linux.

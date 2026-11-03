@@ -198,4 +198,7 @@ Document management (TZ module 6); use the P19 cards in the execution queue.
 ## Questions
 
 Q-2/Q-5/Q-18 are ordered in the execution queue; Q-12 remains owner-deferred.
+- [Q-19](docs/tasks/q-19.md) Local connector protocol: second-party security review and real-device evidence — **TODO** · open
+  The P18-T01 protocol is accepted as a design; no line of it has been exercised by a running system. Tracked so acceptance is
+  never read as verification.
 The P6-T05 audit's two test follow-ups were accepted under [P6-T06](docs/audit/p6-t06.md); the original audit remains historical evidence.

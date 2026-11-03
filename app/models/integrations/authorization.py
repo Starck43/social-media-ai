@@ -5,6 +5,7 @@ Use the permission-scoped connector_authorizations service, never the legacy vau
 """
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -30,6 +31,7 @@ class PersonalConnectorAuthorization(Base, TimestampMixin):
         UniqueConstraint("id", "owner_user_id", name="uq_personal_connector_owner"),
         CheckConstraint("state IN ('active','reauth','revoked')", name="ck_personal_connector_state"),
         CheckConstraint("revision > 0", name="ck_personal_connector_revision"),
+        CheckConstraint("execution_generation >= 0", name="ck_personal_connector_execution_generation"),
         {"schema": settings.DB_SCHEMA},
     )
 
@@ -43,6 +45,8 @@ class PersonalConnectorAuthorization(Base, TimestampMixin):
     subject_key: Mapped[str] = Column(String(320), nullable=False)
     state: Mapped[str] = Column(String(20), nullable=False, default="active", server_default="active")
     revision: Mapped[int] = Column(Integer, nullable=False, default=1, server_default="1")
+    # Runtime fencing epoch, NOT consent/envelope revision. Never reset/reuse.
+    execution_generation: Mapped[int] = Column(BigInteger, nullable=False, default=0, server_default="0")
     secret_encrypted: Mapped[str] = Column(Text, nullable=False)
 
 

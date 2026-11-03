@@ -435,8 +435,9 @@ Draft revision `p12t14_accounts` follows encrypted-refresh revision `0124`, crea
 two new empty tables, constraints and sequences. It deliberately imports no
 legacy sessions/keys, creates no generic secret CRUD grants and skips unrelated
 catalog reconciliation. The unified P12-T14 branch has one migration head: `0123` -> `0124` ->
-`p12t14_accounts` -> `p12t14_tg_login`. The latter adds only the empty encrypted
-login-attempt table and indexes. Earlier slice-only sibling graphs are historical and must not be
+`p12t14_accounts` -> `p12t14_tg_login` -> `p12t14_tg_runtime`. Login adds only
+the empty encrypted attempt table/indexes; runtime adds a nonnegative BIGINT
+execution epoch, initially zero, without reading or copying any session. Earlier slice-only sibling graphs are historical and must not be
 applied as a separate combined release. This does not authorize deployment.
 
 Validate upgrade/downgrade on a dedicated synthetic schema first. Downgrade drops
@@ -461,3 +462,49 @@ Still required for P12-T14 completion:
 - Assembled authenticated web/DOM journey tests with fake provider, migration graph
   integration and independent review. Existing service/ASGI tests are not proof of
   a completed web authorization or a live Telegram connection.
+
+
+## Code-first runtime continuation (not activated or acceptance-tested)
+
+The private runtime modules now allocate a monotonically increasing account
+`execution_generation` while owning the existing PostgreSQL account guard. This
+is NOT the consent/envelope revision. Overflow fails closed; never reset/reuse
+an epoch. Downgrading this column requires stopping/draining every runtime
+writer/guard first; no old execution may survive downgrade/re-upgrade or a
+restore that rolls epochs backward. Migration code is authored, not applied.
+
+Each application RPC uses a fresh before/after check of the original lock,
+source/owner/grant/revision, epoch, running persisted JobClaim, exact admitted
+source snapshot/payload, and current initiator/payer web-membership permissions.
+Manual actors come from the acquired Job row. Scheduled runs pin the existing
+explicit payer account and latest consent; no source-owner or ambient-operator
+fallback. Old jobs without an explicit source snapshot fail closed in this new
+path; consumers still need migration. These checks do not reserve AI spending.
+
+A private history-only Telethon adapter has a 120-second outer lifetime, a
+100-application-request budget, a 10-second per-request boundary and at most
+1,000 history messages. Connection setup is limited to 20 seconds and awaited
+disconnect to five seconds. Its in-memory existing session key is never saved
+outside the client; no login, message send, exported DC sender, automatic
+application retry/reconnect/flood sleep, updates or background keepalive is
+allowed. Nested entity resolution and pagination use the same send gate. Fixed
+errors and a silent library logger do not echo provider/session details.
+Telethon MTProto transport acknowledgements/retransmission are not an
+application-level exactly-once guarantee. A request already sent cannot be
+recalled; withdrawal/claim loss rejects its response and subsequent output.
+
+A batch can make only one admission attempt. Output must use its yielded WRITE
+transaction, holding consent/account/epoch, job, actor rights and scheduled payer
+rows stable to commit, with post-callback rechecks. A later separate transaction
+is not protected. No model/provider/sender work belongs inside this gate; unknown
+commit outcomes never authorize automatic replay. Python copies already read by
+trusted internal code cannot be recalled or zeroized.
+
+These modules are intentionally **not wired to the collector or legacy session
+path**. Staging reuse, collection orchestration, source UI, recovery and consumer
+compatibility remain next code steps. Per the owner's latest workflow, this
+continuation adds/runs no tests yet: only formatting, AST parsing and diff hygiene
+are recorded, not runtime evidence. The final shared test phase must cover the
+pinned Telethon private API, provider fakes, every RPC/batch/timeout/cancellation
+path, lost-backend/epoch/job/payer races, migration history and independent audit
+before rollout consideration. Earlier slice test counts do not cover this code.

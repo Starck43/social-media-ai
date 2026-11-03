@@ -89,6 +89,7 @@ def on_version_apply(
         "0124",
         "p12t14_accounts",
         "p12t14_tg_login",
+        "p12t14_tg_runtime",
     }:
         return
     from scripts.migrations.register_model_types import register_model_types

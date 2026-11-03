@@ -176,3 +176,22 @@ PostgreSQL transaction/race or full browser/provider acceptance evidence.
 it and other tasks' PRs/branches are intentionally unchanged. Never interpret the
 single-PR workflow as authority to edit another task, apply a public migration,
 read/copy real sessions, contact a live provider, rotate a key or deploy.
+
+
+## Code-first execution epoch and bounded adapter (unvalidated)
+
+Private modules now add a per-account BIGINT epoch, persisted JobClaim and exact
+source/payload pin, fresh initiator or explicitly consented scheduled-payer rights,
+a bounded history-only Telethon send gate, and a generation/job-aware output
+transaction. The adapter permits no login/send/exported sender, application retry,
+reconnect, flood sleep, update receiver or background keepalive. Its dependency on
+Telethon private APIs is a specific final-test/audit gate. Already-sent requests
+cannot be recalled; stale/withdrawn responses and receipts must be rejected.
+
+No collector route is activated; the legacy collector remains unchanged. New
+staging/orchestration and consumer migration are still required. Runtime migration
+code is NOT applied. Downgrade/epoch rollback requires draining all runtimes first.
+These additions are deliberately untested under the owner's revised code-first
+workflow: no new tests or test execution until the final shared phase. Formatting
+and AST/diff checks are not acceptance. Previous test fingerprints apply only to
+their earlier trees; no READY, merge, provider-health or deployment claim.

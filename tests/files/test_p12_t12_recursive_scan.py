@@ -127,14 +127,23 @@ async def test_child_error_and_worker_interruption_preserve_folder_queue_and_off
     assert calls == [(ROOT, 0), (ROOT, 1), (ROOT + "/a", 0), (ROOT + "/a", 0), (ROOT + "/a", 1)]
 
 
-async def test_real_competing_mock_workers_have_one_claim_and_one_provider_read(data):
+async def test_real_competing_mock_workers_have_one_claim_and_one_provider_read(data, monkeypatch):
     entered, release = asyncio.Event(), asyncio.Event()
     calls = []
+    original = scan.list_owned_folder
 
-    async def handle(request):
-        calls.append(request.url.params["path"])
+    async def gated_reader(**kwargs):
+        # Pause after the durable claim but before P8-T34's reader takes its
+        # connection lock across network I/O. Pausing inside the transport would
+        # block the competing check on that lock until the reader timed out.
         entered.set()
         await release.wait()
+        return await original(**kwargs)
+
+    monkeypatch.setattr(scan, "list_owned_folder", gated_reader)
+
+    def handle(request):
+        calls.append(request.url.params["path"])
         return response(ROOT, 0, [])
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
@@ -144,9 +153,9 @@ async def test_real_competing_mock_workers_have_one_claim_and_one_provider_read(
             try:
                 await asyncio.wait_for(entered.wait(), timeout=5)
                 with pytest.raises(scan.ScanBusy):
-                    await scan.resume_catalog_scan(**args, client=client)
+                    await asyncio.wait_for(scan.resume_catalog_scan(**args, client=client), timeout=5)
                 with pytest.raises(scan.ScanBusy):
-                    await scan.start_catalog_scan(**args, folder=ROOT, recursive=True)
+                    await asyncio.wait_for(scan.start_catalog_scan(**args, folder=ROOT, recursive=True), timeout=5)
             finally:
                 release.set()
                 await asyncio.wait_for(task, timeout=5)

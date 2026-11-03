@@ -90,7 +90,9 @@ async def _write_telegram_items(
         raise ContentAdmissionError("content_source_unavailable")
     previous = cursor_value(locked.last_item_id)
     params = dict(locked.params or {})
-    pull_cursor = cursor_value(params.get("telegram_l2_last_item_id", previous))
+    # Bot API writes own last_item_id; an absent personal MTProto cursor must
+    # begin at zero rather than inherit the Bot high-water mark.
+    pull_cursor = cursor_value(params.get("telegram_l2_last_item_id", "0"))
     written = await CollectedItem.objects.admit_items(session, rows)
     if type(written) is not int or written < 0 or written > len(rows):
         raise ContentAdmissionError("content_receipt_invalid")

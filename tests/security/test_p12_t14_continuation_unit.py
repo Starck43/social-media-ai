@@ -74,10 +74,58 @@ def test_bot_allowlist_is_exact(params):
     assert not is_bot_push(params)
 
 
+def test_telethon_connect_accepts_only_the_pinned_config_envelope():
+    from telethon import functions
+    from telethon.tl.alltlobjects import LAYER
+
+    request = functions.InvokeWithLayerRequest(
+        LAYER,
+        functions.InvokeWithoutUpdatesRequest(
+            functions.InitConnectionRequest(
+                123,
+                "synthetic-device",
+                "synthetic-system",
+                "synthetic-app",
+                "en",
+                "",
+                "en",
+                functions.help.GetConfigRequest(),
+            )
+        ),
+    )
+    assert runtime._is_connect_config_request(request, functions=functions, layer=LAYER, connecting=True)
+    assert not runtime._is_connect_config_request(request, functions=functions, layer=LAYER + 1, connecting=True)
+    assert not runtime._is_connect_config_request(request, functions=functions, layer=LAYER, connecting=False)
+    assert not runtime._is_connect_config_request(
+        functions.InvokeWithLayerRequest(
+            LAYER,
+            functions.InvokeWithoutUpdatesRequest(
+                functions.InitConnectionRequest(
+                    123,
+                    "synthetic-device",
+                    "synthetic-system",
+                    "synthetic-app",
+                    "en",
+                    "",
+                    "en",
+                    functions.InvokeWithoutUpdatesRequest(functions.help.GetConfigRequest()),
+                )
+            ),
+        ),
+        functions=functions,
+        layer=LAYER,
+        connecting=True,
+    )
+    assert not runtime._is_connect_config_request(
+        functions.InvokeWithoutUpdatesRequest(request), functions=functions, layer=LAYER, connecting=True
+    )
+
+
 @pytest.mark.parametrize(
     "changes",
     [
         {"external_id": "@another"},
+        {"tenant_id": 2},
         {"platform_id": 8},
         {"owner_user_id": 8},
         {"params": {}},

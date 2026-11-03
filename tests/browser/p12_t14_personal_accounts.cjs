@@ -163,6 +163,32 @@ async function main() {
               contrast.every((value) => value >= 4.5),
               "declared text colors need AA contrast",
             );
+            const control = page.locator(".telegram-account-select");
+            if (await control.count()) {
+              await control.focus();
+              const controlContrast = await control.evaluate((element) => {
+                const luminance = (color) => {
+                  const values = (color.match(/[\d.]+/g) || []).map(Number).slice(0, 3);
+                  const linear = values.map((value) => {
+                    value /= 255;
+                    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+                  });
+                  return linear.reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+                };
+                const style = getComputedStyle(element);
+                const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+                return {
+                  border: ratio(luminance(style.borderTopColor), luminance(style.backgroundColor)),
+                  focus: ratio(luminance(style.outlineColor), luminance(style.backgroundColor)),
+                  outlineWidth: parseFloat(style.outlineWidth),
+                  focusVisible: element.matches(":focus-visible"),
+                };
+              });
+              assert.ok(controlContrast.border >= 3, "select border needs 3:1 contrast");
+              assert.ok(controlContrast.focus >= 3, "keyboard focus needs 3:1 contrast");
+              assert.ok(controlContrast.outlineWidth >= 3);
+              assert.equal(controlContrast.focusVisible, true);
+            }
             if (mode === "empty") {
               if (width === 390)
                 await page

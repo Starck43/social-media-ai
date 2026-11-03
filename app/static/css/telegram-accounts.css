@@ -152,7 +152,8 @@ html.dark .telegram-accounts-error {
   font: inherit;
   color: inherit;
   background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #767676);
+  /* Keep the control boundary visible even when the shared shell token is pale. */
+  border: 1px solid #767676;
   border-radius: 8px;
 }
 .telegram-accounts :is(a, button, select, input):focus-visible {

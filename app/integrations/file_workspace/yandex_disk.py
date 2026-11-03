@@ -7,11 +7,29 @@ selected root for each call. A folder policy alone does not establish those righ
 from __future__ import annotations
 
 import json
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 import httpx
 
 from app.integrations.file_workspace.policy import FileOperation, ReadOnlyFolderPolicy, _components
+
+
+class MetadataClient(Protocol):
+    """The narrow streaming interface required by the metadata reader."""
+
+    def stream(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any],
+        headers: dict[str, str],
+        timeout: httpx.Timeout,
+        follow_redirects: bool,
+    ) -> AbstractAsyncContextManager[Any]: ...
+
 
 _METADATA_URL = "https://cloud-api.yandex.net/v1/disk/resources"
 _MAX_RESPONSE_BYTES = 256 * 1024
@@ -37,6 +55,9 @@ class DiskPage:
     # A continuation hint, not a provider snapshot or proof of complete scan.
     next_offset: int | None
     truncated: bool = False
+    # Populated only by the owner-bound service after its policy check.
+    current_path: str | None = None
+    root_path: str | None = None
 
 
 def _disk_path(parts: tuple[str, ...]) -> str:
@@ -44,7 +65,7 @@ def _disk_path(parts: tuple[str, ...]) -> str:
 
 
 async def list_folder(
-    client: httpx.AsyncClient,
+    client: MetadataClient,
     *,
     token: str,
     folder: str,

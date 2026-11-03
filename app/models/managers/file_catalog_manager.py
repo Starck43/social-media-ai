@@ -20,7 +20,13 @@ from app.core.database import async_session_maker
 from app.integrations.catalog import CATALOG_VERSION
 from app.integrations.file_workspace.policy import FileOperation, _components
 from app.integrations.file_workspace.yandex_disk import DiskItem, DiskPage
-from app.models import FileCatalogObject, FileCatalogObservation, WorkspaceConnection, WorkspaceConnectionSecret
+from app.models import (
+    FileCatalogObject,
+    FileCatalogObservation,
+    FileCatalogScan,
+    WorkspaceConnection,
+    WorkspaceConnectionSecret,
+)
 from app.models.managers.workspace_connection_manager import ConnectionDenied, _authorize, _connection
 from app.services.file_workspace.yandex_reader import _stored_policy
 

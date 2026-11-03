@@ -17,7 +17,7 @@ Owner estimate (TZ): 3–4 weeks — not a repository commitment.
 TZ 1.1–1.4, adapted:
 
 - **Connector:** OAuth 2.0 with refresh (decision D2 keeps the webhook as an admin alternative); contacts, companies, leads, deals; incremental sync every 15 min by `DATE_MODIFY` watermark; optional real-time event handlers (R-14); 2 req/s per portal with `batch` (R-11).
-- **Contacts:** imported into the contact core as identities (R-02, R-16); birthday, anniversary and allowlisted custom fields encrypted ([P13-T02](../tasks/p13-t02.md)); duplicates surfaced for [P15-T03](../tasks/p15-t03.md) merge.
+- **Contacts:** imported into the contact core as identities (R-02, R-16); birthday, anniversary and allowlisted custom fields encrypted ([P13-T02 accepted](../audit/p13-t02.md)); duplicates surfaced for [P15-T03](../tasks/p15-t03.md) merge.
 - **Greetings:** reminders 7/3/1 days ahead; AI drafts; history prevents repeats; scheduled sending with approval; delivery via email/Telegram bot/MAX bot.
 - **Mass messaging:** selected contacts, channel choice, `{name}`/`{company}` personalization, delivery tracking, retry, unsubscribe; consent basis and channel limits per R-10/D7.
 
@@ -33,7 +33,7 @@ Kept as in TZ under `/api/v1/integrations/bitrix/…`: `connect`, `connections`,
 
 ## Acceptance
 
-TZ criteria with adaptations: OAuth connection (T01); automatic 15-min sync (T02); upcoming birthdays 7/3/1 days (T04); AI personalized greetings (T04); sending via selected channel (T05, after P15); history without repeats (T04); batch for 100+ contacts with consent/unsubscribe (T06); personal data Fernet-encrypted (T02 via [P13-T02](../tasks/p13-t02.md)); ≤ 2 req/s (T01).
+TZ criteria with adaptations: OAuth connection (T01); automatic 15-min sync (T02); upcoming birthdays 7/3/1 days (T04); AI personalized greetings (T04); sending via selected channel (T05, after P15); history without repeats (T04); batch for 100+ contacts with consent/unsubscribe (T06); personal data Fernet-encrypted (T02 via [P13-T02 accepted](../audit/p13-t02.md)); ≤ 2 req/s (T01).
 
 ## Plan
 

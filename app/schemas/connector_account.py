@@ -79,6 +79,8 @@ class TelegramLoginMetadata(_MetadataResponse):
     authorization_id: PositiveId | None
     grant_id: PositiveId | None
 
+    recovery_authorization_id: PositiveId | None = None
+
     @field_serializer("expires_at")
     def serialize_expires_at(self, value: datetime) -> str:
         # Preserve the existing jsonable_encoder datetime spelling, including

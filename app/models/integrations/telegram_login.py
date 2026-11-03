@@ -29,6 +29,11 @@ class TelegramLoginAttempt(Base, TenantScopedMixin, TimestampMixin):
         CheckConstraint(
             "revision > 0 AND code_attempts >= 0 AND password_attempts >= 0", name="ck_telegram_login_counters"
         ),
+        CheckConstraint(
+            "(recovery_authorization_id IS NULL AND recovery_revision IS NULL) OR "
+            "(recovery_authorization_id IS NOT NULL AND recovery_revision IS NOT NULL AND recovery_revision > 0)",
+            name="ck_telegram_login_recovery_pin",
+        ),
         Index(
             "uq_telegram_login_pending_owner",
             "owner_user_id",
@@ -56,3 +61,10 @@ class TelegramLoginAttempt(Base, TenantScopedMixin, TimestampMixin):
     grant_id = Column(
         Integer, ForeignKey(f"{settings.DB_SCHEMA}.workspace_authorization_grants.id", ondelete="SET NULL")
     )
+
+    # A recovery attempt is bound before provider I/O. It cannot create a
+    # different subject or silently replace an account changed since consent.
+    recovery_authorization_id = Column(
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.personal_connector_authorizations.id", ondelete="CASCADE")
+    )
+    recovery_revision = Column(Integer)

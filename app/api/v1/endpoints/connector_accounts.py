@@ -193,6 +193,29 @@ async def begin_telegram_login(payload: TelegramLoginStart, user: User = Depends
     )
 
 
+class TelegramReauthorizationStart(TelegramLoginStart, AuthorizationSelection):
+    authorization_id: StrictInt = Field(gt=0)
+
+
+@router.post("/telegram/reauthorize", response_model=TelegramLoginMetadata, responses=_LOGIN_RESPONSES)
+async def begin_telegram_reauthorization(
+    payload: TelegramReauthorizationStart, user: User = Depends(get_authenticated_user)
+):
+    return await _call(
+        telegram_logins.start,
+        **_scope(user),
+        request_id=payload.request_id,
+        phone=payload.phone.get_secret_value(),
+        authorization_id=payload.authorization_id,
+        expected_revision=payload.expected_revision,
+    )
+
+
+@router.get("/telegram/login-request/{request_id}", response_model=TelegramLoginMetadata)
+async def telegram_login_request_status(request_id: UUID, user: User = Depends(get_authenticated_user)):
+    return await _call(telegram_logins.status_by_request, **_scope(user), request_id=request_id)
+
+
 @router.get("/telegram/login/{attempt_id}", response_model=TelegramLoginMetadata)
 async def telegram_login_status(attempt_id: UUID, user: User = Depends(get_authenticated_user)):
     return await _call(telegram_logins.status, **_scope(user), attempt_id=str(attempt_id))

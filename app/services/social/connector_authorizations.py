@@ -366,6 +366,36 @@ async def _record_telegram_result(session, *, tenant_id, actor_id, result: Verif
     return _account_projection(account), grant
 
 
+async def _record_telegram_recovery(session, *, actor_id, authorization_id, expected_revision, result):
+    """Replace only the provider-verified same subject; no workspace is reconsented.
+
+    The caller has freshly authorized its actor and owns the claimed login row.
+    This routine does not read/decrypt the old envelope, so wrong-key recovery
+    needs a new login, not access to lost credentials. All writes are atomic.
+    """
+    if type(result) is not VerifiedTelegramResult:
+        raise AuthorizationUnavailable()
+    _positive(result.subject_id)
+    _positive(expected_revision)
+    account = await _account(session, actor_id, authorization_id, include_secret=False)
+    if (
+        account.provider_id != PROVIDER
+        or account.auth_method != METHOD
+        or account.revision != expected_revision
+        or account.subject_key != str(result.subject_id)
+    ):
+        raise AuthorizationUnavailable()
+    material = {"api_id": result.api_id, "api_hash": result.api_hash, "session": result.session}
+    _validate_material(material)
+    account.revision += 1
+    account.execution_generation += 1
+    account.state = "active"
+    account.secret_encrypted = encrypt_secret(json.dumps({"identity": _identity(account), "material": material}))
+    await session.execute(update(Grant).where(Grant.authorization_id == account.id).values(is_active=False))
+    await session.flush()
+    return _account_projection(account)
+
+
 async def record_telegram_result(*, tenant_id, actor_id, result: VerifiedTelegramResult):
     """Internal trusted completion; no public session-import or legacy migration."""
     from sqlalchemy.exc import IntegrityError

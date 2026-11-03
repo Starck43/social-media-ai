@@ -578,3 +578,31 @@ workspace/source-bound CSRF. Unknown commit outcomes require reload, not replay.
 This checkpoint completes the supplied untested source-picker patch, not tested
 acceptance. Runtime remains default OFF. API, CSRF/DOM, PostgreSQL races and
 accessibility checks are deferred to the final shared validation phase.
+
+## Same-subject recovery and browser onboarding (code-first, untested)
+
+The new browser journey under `/app/settings/telegram-accounts/workspace/login`
+uses bounded exact forms and expiring CSRF bound to session, actor, workspace,
+request/target or attempt/revision/operation. It provides phone, code, 2FA,
+status-only refresh and cancellation; no input is echoed. An uncertain start can
+be rediscovered by its request UUID without resending; an ambiguous processing
+step is never automatically retried. Workspace CREATE + VIEW rights are checked
+again at each state transition. Personal metadata/revoke still works without
+membership; login/recovery intentionally requires an authorized workspace.
+
+`POST /api/v1/connector-accounts/telegram/reauthorize` accepts an explicit owned
+account and expected revision plus the normal bounded login inputs. The attempt
+pins that target before provider I/O. Completion must verify exactly the same
+Telegram subject; another subject, stale revision, missing key, cancelled/expired
+attempt or lost rights cannot replace it. Recovery does not read the old envelope.
+It atomically increments consent revision/execution generation, replaces the sole
+encrypted session, and disables ALL old workspace grants. No grant is implicitly
+reactivated, including the initiating workspace: the user must explicitly attach
+the new revision there, reselect it for sources and enqueue fresh jobs. Another
+workspace requires its own consent. Local recovery/revoke never logs out a remote
+Telegram session; review Telegram's session list separately when needed.
+
+Migration `p12t14_tg_recovery` follows `p12t14_tg_runtime`, adding nullable target
+pins to existing attempts without reading sessions. Stop/drain writers before
+rollback; no old provider result may survive dropping these pins. No migration
+has been executed and this code is not certified by earlier test fingerprints.

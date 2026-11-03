@@ -52,6 +52,8 @@ async def telegram_login_step(operation, material, secret=None):
         material["api_hash"],
         request_retries=0,
         connection_retries=0,
+        auto_reconnect=False,
+        retry_delay=0,
         timeout=10,
         flood_sleep_threshold=0,
         receive_updates=False,

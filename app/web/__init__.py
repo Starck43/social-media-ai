@@ -29,6 +29,7 @@ from .settings import router as settings_router
 from .settings_llm import router as settings_llm_router
 from .sources import router as sources_router
 from .tasks import router as tasks_router
+from .telegram_login import router as telegram_login_router
 from .vk import router as vk_router
 
 web_router = APIRouter(prefix="/app", tags=["web"])
@@ -54,6 +55,7 @@ web_router.include_router(settings_router)
 web_router.include_router(settings_llm_router)
 web_router.include_router(sources_router)
 web_router.include_router(tasks_router)
+web_router.include_router(telegram_login_router)
 web_router.include_router(vk_router)
 
 __all__ = ["web_router"]

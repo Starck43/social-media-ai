@@ -10,7 +10,7 @@
         <h2 id="telegram-accounts-scope">Только ваши локальные авторизации</h2>
         <p>Здесь показаны сохранённые Telegram/MTProto-идентичности. Список доступен и без участия в пространствах. Наличие записи не подтверждает, что Telegram принимает сессию.</p>
         <p><strong>Локальный отзыв действует во всех пространствах:</strong> он удаляет зашифрованный материал этой авторизации и отключает все её разрешения. Он не завершает сессию на стороне Telegram и не изменяет старое хранилище учётных данных.</p>
-        <p class="ui-muted">Повторный вход, восстановление и выбор аккаунта для источника пока недоступны на этой странице. Реальные сессии Telegram проверяйте отдельно в настройках Telegram.</p>
+        <p class="ui-muted">Вход и восстановление выполняются через настройки активного пространства с правом создания источников. После восстановления разрешения пространств нужно подтвердить заново. Реальные сессии Telegram проверяйте отдельно в настройках Telegram.</p>
     </section>
     {% if account_error %}
     <section class="ui-card telegram-accounts-error" role="alert"><h2>Данные недоступны</h2><p>{{ account_error }}</p><a href="/app/settings/telegram-accounts">Обновить список</a></section>
@@ -25,6 +25,7 @@
                 <span class="ui-badge {% if account.state == 'active' %}ui-neutral{% elif account.state == 'reauth' %}ui-negative{% else %}ui-positive{% endif %}">{{ {'active': 'Сохранена локально', 'reauth': 'Нужен повторный вход', 'revoked': 'Отозвана локально'}[account.state] }}</span>
             </div>
             <p class="ui-muted">Локальная запись № {{ account.authorization_id }} · ревизия {{ account.revision }}</p>
+            <a class="telegram-accounts-back" href="/app/settings/telegram-accounts/workspace/login?authorization_id={{ account.authorization_id }}&amp;expected_revision={{ account.revision }}">Восстановить эту авторизацию через повторный вход</a>
             {% if account.state == 'revoked' %}
             <p>В новом хранилище эта авторизация недоступна для использования. Повторное подключение не выполнялось.</p>
             {% else %}

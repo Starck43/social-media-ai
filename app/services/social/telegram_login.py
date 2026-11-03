@@ -23,6 +23,10 @@ from app.models import TelegramLoginAttempt as Attempt
 from app.models.managers.workspace_connection_manager import ConnectionDenied, _authorize
 from app.services.social.connector_authorizations import (
     AuthorizationAlreadyExists,
+    AuthorizationUnavailable,
+    _account,
+    _positive,
+    _record_telegram_recovery,
     _record_telegram_result,
 )
 from app.services.social.telegram_login_provider import LoginProgress, TelegramProviderFailure, telegram_login_step
@@ -56,11 +60,12 @@ def _projection(row):
         "password_attempts_remaining": max(0, LIMITS["password"] - row.password_attempts),
         "authorization_id": row.authorization_id,
         "grant_id": row.grant_id,
+        "recovery_authorization_id": getattr(row, "recovery_authorization_id", None),
     }
 
 
 def _identity(row):
-    return {
+    identity = {
         "purpose": "telegram_login",
         "format": 1,
         "id": row.id,
@@ -69,6 +74,11 @@ def _identity(row):
         "revision": row.revision,
         "state": row.state,
     }
+    if getattr(row, "recovery_authorization_id", None) is not None:
+        identity.update(
+            recovery_authorization_id=row.recovery_authorization_id, recovery_revision=row.recovery_revision
+        )
+    return identity
 
 
 def _validate(material):
@@ -138,8 +148,13 @@ def _private_logging():
 
 
 class TelegramLoginManager:
-    async def start(self, *, tenant_id, actor_id, request_id, phone):
+    async def start(self, *, tenant_id, actor_id, request_id, phone, authorization_id=None, expected_revision=None):
         _private_logging()
+        if (authorization_id is None) != (expected_revision is None):
+            raise LoginRejected("invalid_login_input", 422)
+        if authorization_id is not None:
+            _positive(authorization_id)
+            _positive(expected_revision)
         try:
             request_key = str(UUID(str(request_id)))
         except (ValueError, TypeError, AttributeError):
@@ -175,13 +190,25 @@ class TelegramLoginManager:
                     _finish(row, "expired", "login_expired")
             for row in rows:
                 if row.request_key == request_key:
-                    if row.tenant_id != tenant_id:
+                    if (
+                        row.tenant_id != tenant_id
+                        or row.recovery_authorization_id != authorization_id
+                        or row.recovery_revision != expected_revision
+                    ):
                         raise LoginRejected()
                     return _projection(row)  # Same request cannot cause another send-code.
             if any(row.state in PENDING for row in rows):
                 raise LoginRejected("login_already_pending")
             if sum(row.created_at >= now - TTL for row in rows) >= 3:
                 raise LoginRejected("login_rate_limited", 429)
+            if authorization_id is not None:
+                account = await _account(session, actor_id, authorization_id, include_secret=False)
+                if (
+                    account.provider_id != "telegram"
+                    or account.auth_method != "mtproto"
+                    or account.revision != expected_revision
+                ):
+                    raise AuthorizationUnavailable()
             api_id = settings.TELEGRAM_API_ID
             if not isinstance(api_id, str) or not re.fullmatch(r"[0-9]{1,10}", api_id):
                 raise LoginRejected("login_configuration_unavailable", 503)
@@ -203,6 +230,8 @@ class TelegramLoginManager:
                 code_attempts=0,
                 password_attempts=0,
                 expires_at=now + TTL,
+                recovery_authorization_id=authorization_id,
+                recovery_revision=expected_revision,
             )
             try:
                 _seal(row, material)
@@ -217,6 +246,30 @@ class TelegramLoginManager:
         async with async_session_maker() as session, session.begin():
             await _authorize(session, tenant_id, actor_id, require_source_view=True)
             row = await _row(session, tenant_id, actor_id, attempt_id)
+            await _expire(session, row)
+            return _projection(row)
+
+    async def status_by_request(self, *, tenant_id, actor_id, request_id):
+        """Rediscover an uncertain start without ever calling the provider."""
+        try:
+            key = str(UUID(str(request_id)))
+        except (ValueError, TypeError, AttributeError):
+            raise LoginRejected("invalid_login_input", 422) from None
+        async with async_session_maker() as session, session.begin():
+            await _authorize(session, tenant_id, actor_id, require_source_view=True)
+            row = (
+                await session.execute(
+                    select(Attempt)
+                    .where(
+                        Attempt.tenant_id == tenant_id,
+                        Attempt.owner_user_id == actor_id,
+                        Attempt.request_key == key,
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                raise ConnectionDenied()
             await _expire(session, row)
             return _projection(row)
 
@@ -315,15 +368,26 @@ class TelegramLoginManager:
             if phase == "authorized" and operation in {"code", "password"}:
                 try:
                     async with session.begin_nested():
-                        account, grant = await _record_telegram_result(
-                            session, tenant_id=tenant_id, actor_id=actor_id, result=progress.result
-                        )
+                        if row.recovery_authorization_id is None:
+                            account, grant = await _record_telegram_result(
+                                session, tenant_id=tenant_id, actor_id=actor_id, result=progress.result
+                            )
+                        else:
+                            account = await _record_telegram_recovery(
+                                session,
+                                actor_id=actor_id,
+                                authorization_id=row.recovery_authorization_id,
+                                expected_revision=row.recovery_revision,
+                                result=progress.result,
+                            )
+                            grant = None
                 except (AuthorizationAlreadyExists, IntegrityError):
                     _finish(row, "failed", "account_already_exists")
                 except (ValueError, RuntimeError, ConnectionDenied):
                     _finish(row, "failed", "secret_unavailable")
                 else:
-                    row.authorization_id, row.grant_id = account["authorization_id"], grant["grant_id"]
+                    row.authorization_id = account["authorization_id"]
+                    row.grant_id = grant["grant_id"] if grant is not None else None
                     _finish(row, "completed")
                 return _projection(row)
             valid = {"begin": {"code"}, "code": {"invalid_code", "password"}, "password": {"invalid_password"}}

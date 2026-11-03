@@ -11,6 +11,8 @@
         <p>Пространство: <strong>{{ tenant.name if tenant else 'недоступно' }}</strong>. Здесь показаны только ваши локальные записи. Подключение не проверяет доступность сессии Telegram.</p>
         <p>Отключение здесь не удаляет личную авторизацию и не завершает сессию Telegram. Другие пространства не затрагиваются. Для источника нужен отдельный явный выбор; личный сбор включается отдельно после проверок.</p>
     </section>
+    <a class="telegram-accounts-back" href="/app/settings/telegram-accounts/workspace/login">Войти в новый личный аккаунт Telegram</a>
+    <a class="telegram-accounts-back" href="/app/settings/telegram-accounts">Мои авторизации и восстановление</a>
     {% if grant_error %}
     <section class="ui-card" role="alert"><h2>Данные недоступны</h2><p>{{ grant_error }}</p><a href="/app/settings/telegram-accounts/workspace">Обновить</a></section>
     {% else %}

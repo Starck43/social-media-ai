@@ -65,9 +65,9 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q-18-owner-decisions.md)):
 
 - [P13-T01](docs/tasks/p13-t01.md) Business-module plan registration and TZ review — **IN_PROGRESS** · notion-ai-p13-t01 ([PR #341](https://github.com/Starck43/social-media-ai/pull/341)) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C2`
-- [P13-T03](docs/tasks/p13-t03.md) Shared external-API rate limiter and retry policy — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P13-T03](docs/tasks/p13-t03.md) Shared external-API rate limiter and retry policy — **IN_PROGRESS** · notion-ai-p13-t03 · [dialogue](https://app.notion.com/chat?t=40db8cc34a7980cf864f00a99b1fae7b) · `P2` · `C3`
 - [P13-T04](docs/tasks/p13-t04.md) Business write-approval workflow and command ledger — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
-- [P13-T05](docs/tasks/p13-t05.md) Audit codes, business API conventions and OpenAPI contract — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P13-T05](docs/tasks/p13-t05.md) Audit codes, business API conventions and OpenAPI contract — **IN_PROGRESS** · notion-ai-p13-t05 · [dialogue](https://app.notion.com/chat?t=40d9f429293c80f4bf8000a9f5aa8a58) · `P2` · `C3`
 - [P13-T07](docs/tasks/p13-t07.md) Contact core: contacts, identities and consent — **READY** · notion-ai-p13-t07 · [dialogue](https://app.notion.com/chat?t=40d9f429293c80f4bf8000a9f5aa8a58) · `P2` · `C4`
 - [P13-T08](docs/tasks/p13-t08.md) OAuth 2.0 workspace-connection framework (authorization code + refresh) — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 - [P14-T01](docs/tasks/p14-t01.md) Bitrix24 connection: OAuth 2.0 portal authorization and health — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`

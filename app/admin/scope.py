@@ -201,6 +201,10 @@ class AdminScopeMiddleware:
         """
         if path == DASHBOARD_PREFIX or path.startswith(f"{DASHBOARD_PREFIX}/"):
             return True
+        # This page reads only the actor's own accounts. Its optional workspace
+        # section rechecks active membership through the connection managers.
+        if path.rstrip("/") == "/admin/personal-connectors":
+            return False
         parts = path.split("/")
         if len(parts) < 3 or not parts[2]:
             return False

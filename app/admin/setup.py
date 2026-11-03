@@ -12,6 +12,7 @@ from app.core.database import async_engine
 from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
+from .connector_registry import ConnectorRegistryAdmin
 from .inlines import related_inlines
 from .registry import TableRegistryAdmin
 from .related import RelatedAdmin, related_controls, related_token
@@ -138,6 +139,7 @@ def setup_admin(app):
     # The owner's read-only map of every table, first in the menu so the widest
     # surface is not buried under the model pages it summarises.
     admin.add_view(TableRegistryAdmin)
+    admin.add_view(ConnectorRegistryAdmin)
     for view_class in view_configs:
         admin.add_view(view_class)
 

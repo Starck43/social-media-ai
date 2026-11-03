@@ -367,8 +367,7 @@ ahead of that verification and will report any findings. No migration is introdu
 
 ## Registered model pages
 
-`setup_admin()` registers **17 menu entries** — the owner-only `TableRegistryAdmin`
-base view plus **16 model views** — grouped into 5 SQLAdmin domain categories
+`setup_admin()` registers **18 menu entries** — two base views and **16 model views** — grouped into 5 SQLAdmin domain categories
 (`Система`, `Пользователи и доступ`, `Источники и сбор`, `ИИ и аналитика`,
 `Задачи и операции`). `RelatedAdmin._build_menu` wraps each category in
 `_ScopedCategoryMenu`, hiding any category whose child views are all invisible or
@@ -384,6 +383,7 @@ business-workflow execution.
 | View | Category | Model | List path | Explicit restriction / purpose |
 | --- | --- | --- | --- | --- |
 | `TableRegistryAdmin` | `Система` | *(BaseView)* | `/admin/registry` | Owner-only read-only schema registry cached by metadata signature |
+| `ConnectorRegistryAdmin` | `Пользователи и доступ` | *(BaseView)* | `/admin/personal-connectors` | Read-only own personal authorizations, connections and grants through their existing actor-scoped managers; no secrets or config |
 | `UserAdmin` | `Пользователи и доступ` | `User` | `/admin/user/list` | Account forms use rank-limited role picker on edit; password action is separate |
 | `RoleAdmin` | `Пользователи и доступ` | `PlatformRole` | `/admin/platform-role/list` | Owner-only permission grant editor; catalog identities remain fixed |
 | `PermissionAdmin` | `Пользователи и доступ` | `Permission` | `/admin/permission/list` | Fixed catalog; owner may edit display name only |

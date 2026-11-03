@@ -83,14 +83,17 @@ async def create_source(
     if source_type is None:
         raise HTTPException(status_code=422, detail=f"Неизвестный source_type: {request.source_type}")
 
-    source = await Source.objects.create(
-        platform_id=request.platform_id,
-        name=request.name.strip()[:255],
-        source_type=source_type,
-        external_id=request.external_id.strip()[:100],
-        params=request.params or {},
-        owner_user_id=actor_id,
-    )
+    try:
+        source = await Source.objects.create(
+            platform_id=request.platform_id,
+            name=request.name.strip()[:255],
+            source_type=source_type,
+            external_id=request.external_id.strip()[:100],
+            params=request.params or {},
+            owner_user_id=actor_id,
+        )
+    except PermissionError:
+        raise HTTPException(status_code=409, detail="telegram_source_picker_required") from None
 
     return SourceResponse(
         id=source.id,
@@ -128,7 +131,10 @@ async def update_source(
     if "name" in updates:
         updates["name"] = updates["name"].strip()[:255]
 
-    await Source.objects.update_by_id(source_id, **updates)
+    try:
+        await Source.objects.update_by_id(source_id, **updates)
+    except PermissionError:
+        raise HTTPException(status_code=409, detail="telegram_source_picker_required") from None
 
     source = await Source.objects.get(id=source_id)
     if source is None:

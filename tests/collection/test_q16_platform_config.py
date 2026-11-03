@@ -146,11 +146,14 @@ async def test_oauth_uses_shared_authorize_token_and_callback_urls(monkeypatch):
     )
     monkeypatch.setattr(vk_oauth, "load_platform_config", AsyncMock(return_value=config))
     monkeypatch.setattr(settings, "VK_APP_ID", "synthetic")
+    monkeypatch.setattr(settings, "VK_OAUTH_ALLOWED_HOSTS", "auth.shared.invalid")
     pending = AsyncMock()
     monkeypatch.setattr(vk_oauth, "_store_pending", pending)
     url = await vk_oauth.build_authorize_url(1, user_id=1)
     assert url.startswith("https://auth.shared.invalid/authorize?")
-    assert "https://callback.shared.invalid/social" in url
+    from urllib.parse import parse_qs, urlsplit
+
+    assert parse_qs(urlsplit(url).query)["redirect_uri"] == ["https://callback.shared.invalid/social"]
     assert "ignored-env" not in url
     with pytest.raises(ValueError, match="callback must match"):
         await vk_oauth.build_authorize_url(1, user_id=1, redirect_uri="https://override.invalid")
@@ -168,3 +171,26 @@ async def test_oauth_uses_shared_authorize_token_and_callback_urls(monkeypatch):
     monkeypatch.setattr(vk_oauth.httpx, "AsyncClient", lambda **kwargs: Client())
     assert await vk_oauth._post_form({"grant_type": "synthetic"}) == {"ok": True}
     assert post.await_args.args[0] == "https://auth.shared.invalid/token"
+
+
+async def test_oauth_authorize_query_encodes_untrusted_parameter_delimiters(monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+
+    from app.services.social import vk_oauth
+
+    config = initial_platform_params(
+        "vk",
+        {"redirect_uri": "https://callback.shared.invalid/social&next=value"},
+    )
+    monkeypatch.setattr(vk_oauth, "load_platform_config", AsyncMock(return_value=config))
+    pending = AsyncMock()
+    monkeypatch.setattr(vk_oauth, "_store_pending", pending)
+    url = await vk_oauth.build_authorize_url(
+        1, user_id=1, app_id="synthetic&scope=forged", scope="read write&redirect_uri=https://evil.invalid"
+    )
+    params = parse_qs(urlsplit(url).query, strict_parsing=True)
+    assert params["client_id"] == ["synthetic&scope=forged"]
+    assert params["scope"] == ["read write&redirect_uri=https://evil.invalid"]
+    assert params["redirect_uri"] == ["https://callback.shared.invalid/social&next=value"]
+    assert len(params["state"]) == 1
+    pending.assert_awaited_once()

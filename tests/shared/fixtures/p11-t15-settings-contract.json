@@ -470,18 +470,6 @@
     "factory": false,
     "required": false
   },
-  "VK_API_BASE_URL": {
-    "annotation": "<class 'str'>",
-    "default": "https://api.vk.com/method",
-    "factory": false,
-    "required": false
-  },
-  "VK_API_VERSION": {
-    "annotation": "<class 'str'>",
-    "default": "5.199",
-    "factory": false,
-    "required": false
-  },
   "VK_APP_ID": {
     "annotation": "str | None",
     "default": null,
@@ -491,6 +479,12 @@
   "VK_CLIENT_ACCESS_KEY": {
     "annotation": "str | None",
     "default": null,
+    "factory": false,
+    "required": false
+  },
+  "VK_OAUTH_ALLOWED_HOSTS": {
+    "annotation": "<class 'str'>",
+    "default": "id.vk.ru",
     "factory": false,
     "required": false
   },

@@ -37,6 +37,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 
@@ -46,6 +47,41 @@ from app.services.social.credentials import resolve_token
 from app.services.social.platform_config import load_platform_config, require_config_param
 
 logger = logging.getLogger(__name__)
+
+
+class OAuthPreflightError(RuntimeError):
+    """OAuth configuration was rejected before any provider request."""
+
+
+def _oauth_url(config: dict, key: str, *, callback: bool = False) -> str:
+    """Fail closed on untrusted token endpoints and unsafe callbacks.
+
+    The catalog owns the URL. Deployment controls the exact host allowlist for
+    outbound OAuth endpoints; HTTP callbacks are only permitted for local dev.
+    """
+    try:
+        raw = config.get(key) if isinstance(config, dict) else None
+        if not isinstance(raw, str) or not raw or any(ord(c) <= 32 or ord(c) == 127 or c == "\\" for c in raw):
+            raise ValueError
+        value = require_config_param(config, key)
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        if not hostname or not hostname.isascii() or parsed.username or parsed.password:
+            raise ValueError
+        if callback:
+            local = hostname in ("localhost", "127.0.0.1", "::1")
+            if parsed.scheme != "https" and not (
+                parsed.scheme == "http" and local and settings.ENVIRONMENT == "development"
+            ):
+                raise ValueError
+        else:
+            allowed = {part.strip().lower() for part in settings.VK_OAUTH_ALLOWED_HOSTS.split(",") if part.strip()}
+            if parsed.scheme != "https" or parsed.port not in (None, 443) or hostname.lower() not in allowed:
+                raise ValueError
+        return value
+    except (ValueError, TypeError, AttributeError):
+        # Neither the rejected URL nor its embedded values belong in diagnostics.
+        raise OAuthPreflightError("VK OAuth configuration is not allowed") from None
 
 
 _ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
@@ -150,7 +186,7 @@ async def build_authorize_url(
         raise RuntimeError("VK app_id is not configured (env VK_APP_ID or vault vk/app_id)")
 
     config = await load_platform_config("vk")
-    callback = require_config_param(config, "redirect_uri")
+    callback = _oauth_url(config, "redirect_uri", callback=True)
     if redirect_uri is not None and redirect_uri != callback:
         raise ValueError("OAuth callback must match shared Platform configuration")
     params: dict[str, str] = {
@@ -163,8 +199,8 @@ async def build_authorize_url(
     }
     if scope:
         params["scope"] = scope
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    url = f"{require_config_param(config, 'oauth_base_url')}/authorize?{query}"
+    query = urlencode(params)
+    url = f"{_oauth_url(config, 'oauth_base_url')}/authorize?{query}"
 
     await _store_pending(user_id=user_id, state=state, verifier=verifier, tenant_id=tenant_id)
     logger.info("Built VK ID authorize URL for workspace %s", tenant_id)
@@ -172,9 +208,13 @@ async def build_authorize_url(
 
 
 async def _post_form(payload: dict[str, str]) -> dict[str, Any]:
-    config = await load_platform_config("vk")
-    token_url = require_config_param(config, "oauth_token_url")
-    async with httpx.AsyncClient(timeout=settings.VK_REQUEST_TIMEOUT) as client:
+    try:
+        config = await load_platform_config("vk")
+    except ValueError:
+        # Catalog validation failed before any request was possible.
+        raise OAuthPreflightError("VK OAuth configuration is not allowed") from None
+    token_url = _oauth_url(config, "oauth_token_url")
+    async with httpx.AsyncClient(timeout=settings.VK_REQUEST_TIMEOUT, follow_redirects=False) as client:
         res = await client.post(token_url, data=payload)
         res.raise_for_status()
         return res.json()
@@ -198,7 +238,7 @@ async def complete_authorization(code: str, state: str, device_id: Optional[str]
     payload: dict[str, str] = {
         "grant_type": "authorization_code",
         "code_verifier": verifier,
-        "redirect_uri": require_config_param(await load_platform_config("vk"), "redirect_uri"),
+        "redirect_uri": _oauth_url(await load_platform_config("vk"), "redirect_uri", callback=True),
         "code": code,
         "client_id": app_id,
         "state": state,
@@ -246,105 +286,175 @@ async def _store_vault_token(
     elif refresh_token:
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=DEFAULT_EXPIRES_IN)
 
-    meta["refresh_token"] = refresh_token
-
-    row = await user_credentials.newest(user_id=user_id, platform="vk", kind="user_token")
-    if row is not None:
-        await user_credentials.update_by_id(
-            row.id,
-            secret_encrypted=encrypt_secret(access_token),
-            expires_at=expires_at,
-            meta=meta,
-        )
-        return
-    created = await user_credentials.store(
-        user_id=user_id,
-        platform="vk",
-        kind="user_token",
-        secret=access_token,
-        label="VK ID (PKCE)",
-    )
-    if expires_at or meta.get("refresh_token"):
-        await user_credentials.update_by_id(created.id, expires_at=expires_at, meta=meta)
+    async with user_credentials.locked_vk_token(user_id=user_id) as (session, row):
+        # A completed explicit OAuth login supersedes an older refresh claim.
+        # Preserve unrelated metadata; clear only renewal state invalidated by
+        # this newly authorized session.
+        stored_meta = dict(row.meta or {}) if row is not None else {}
+        stored_meta.update(meta)
+        # Never persist a secret or a caller-supplied status flag in metadata.
+        stored_meta.pop("refresh_token", None)
+        stored_meta["refresh_available"] = bool(refresh_token)
+        stored_meta.pop("refresh_attempt", None)
+        stored_meta.pop("refresh_failed_at", None)
+        values = {
+            "secret_encrypted": encrypt_secret(access_token),
+            "refresh_secret_encrypted": encrypt_secret(refresh_token) if refresh_token else None,
+            "expires_at": expires_at,
+            "meta": stored_meta,
+        }
+        if row is not None:
+            await user_credentials.update_by_id(row.id, session=session, **values)
+        else:
+            await user_credentials.create(
+                user_id=user_id,
+                platform="vk",
+                kind="user_token",
+                label="VK ID (PKCE)",
+                session=session,
+                **values,
+            )
 
 
 async def refresh_user_token(user_id: int) -> Optional[str]:
-    """Refresh a user's VK user token from its stored refresh token.
+    """Renew under a durable, DB-serialized single-use refresh claim.
 
-    Returns the new access token, or None when there is nothing to refresh.
+    A claim is committed before HTTP. Concurrent processes cannot replay the
+    token, even if the first process is cancelled or loses the response. An
+    unfinished/failed claim is deliberately NOT reclaimed by a timer: VK may
+    have consumed the token. Explicit OAuth login is the recovery path.
+    Success/failure is fenced by both row ID and claim ID; an old request cannot
+    overwrite a newer login, revoke or successful rotation.
 
-    Two VK ID rules shape this function (see id.vk.ru → Refresh token):
-
-    - the **refresh token rotates** on every use, and the response carries a new
-      one. Keeping the previous value "just in case" is what turns a transient
-      network error into a lost session: a replayed refresh token makes VK
-      invalidate *every* token in the session, so the user has to log in again.
-    - an expired refresh token (180 days) cannot be renewed at all. A failure is
-      therefore recorded on the row (`meta.refresh_failed_at`) and then left
-      alone, rather than being retried on every collection run — the person has
-      to re-authorize, and the UI says so instead of pretending all is well.
+    Refresh material is encrypted at rest. Both status surfaces use only the
+    transactionally maintained non-secret availability indicator.
     """
+    return await _renew_user_token(user_id, margin=_RENEW_MARGIN, explicit=True)
+
+
+async def _renew_user_token(user_id: int, *, margin: timedelta, explicit: bool = False) -> Optional[str]:
     from app.models.managers.user_credential_manager import user_credentials
-    from app.utils.crypto import encrypt_secret
+    from app.services.social.connections import REFRESH_FAILURE_COOLDOWN
+    from app.utils.crypto import decrypt_secret, encrypt_secret
 
-    app_id = settings.VK_APP_ID
-    if not app_id:
+    if type(user_id) is not int or user_id <= 0 or not settings.VK_APP_ID:
         return None
 
-    row = await user_credentials.newest(user_id=user_id, platform="vk", kind="user_token")
-    if row is None:
-        return None
-    meta = dict(row.meta or {})
-    refresh = meta.get("refresh_token")
-    if not refresh:
-        return None
-
+    attempt_id = secrets.token_urlsafe(24)
+    async with user_credentials.locked_vk_token(user_id=user_id) as (session, row):
+        if row is None:
+            return None
+        meta = dict(row.meta or {})
+        now = datetime.now(timezone.utc)
+        expiry = row.expires_at
+        if expiry is not None:
+            moment = expiry if expiry.tzinfo else expiry.replace(tzinfo=timezone.utc)
+            if moment > now + margin:
+                # Another caller may already have renewed while we waited.
+                return row.reveal()
+        elif not explicit:
+            return None
+        # A pending or failed attempt may already have consumed this token.
+        # Never clear/reclaim this marker automatically, even after a timeout.
+        if meta.get("refresh_attempt"):
+            return None
+        failed_at = meta.get("refresh_failed_at")
+        if failed_at:
+            try:
+                failed = datetime.fromisoformat(str(failed_at))
+                failed = failed if failed.tzinfo else failed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                return None
+            if now - failed < REFRESH_FAILURE_COOLDOWN:
+                return None
+        encrypted_refresh = row.refresh_secret_encrypted
+        if not encrypted_refresh or meta.get("refresh_available") is not True:
+            return None
+        try:
+            refresh = decrypt_secret(encrypted_refresh)
+            if not isinstance(refresh, str) or not refresh:
+                raise ValueError("Empty refresh secret")
+        except (ValueError, RuntimeError, TypeError):
+            # No provider request was sent. Do not reveal the secret or claim a
+            # renewable session when the configured key cannot read the vault.
+            meta["refresh_attempt"] = {"state": "unreadable"}
+            await user_credentials.update_by_id(row.id, session=session, meta=meta)
+            logger.warning("VK ID refresh unavailable user_id=%s code=unreadable_secret", user_id)
+            return None
+        row_id = row.id
+        meta["refresh_attempt"] = {"id": attempt_id, "state": "pending", "started_at": now.isoformat()}
+        await user_credentials.update_by_id(row_id, session=session, meta=meta)
+    # The manager context has COMMITTED the claim before any external request.
     payload: dict[str, str] = {
         "grant_type": "refresh_token",
         "refresh_token": refresh,
-        "client_id": app_id,
+        "client_id": settings.VK_APP_ID,
         "state": generate_state(),
     }
     if meta.get("device_id"):
         payload["device_id"] = str(meta["device_id"])
-    service_token = await resolve_token("vk", kinds=("service_token",))
-    if service_token:
-        payload["service_token"] = service_token
-
     try:
+        service_token = await resolve_token("vk", kinds=("service_token",))
+        if service_token:
+            payload["service_token"] = service_token
         data = await _post_form(payload)
+        access = data["access_token"]
+        if not isinstance(access, str) or not access:
+            raise ValueError("Missing access token")
+        expires_at = None
+        if data.get("expires_in"):
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(data["expires_in"]))
+        encrypted_access = encrypt_secret(access)
+        rotated_refresh = data.get("refresh_token")
+        if rotated_refresh is not None and not isinstance(rotated_refresh, str):
+            raise ValueError("Invalid refresh token response")
+        encrypted_refresh = encrypt_secret(rotated_refresh) if rotated_refresh else None
     except Exception as exc:
-        logger.warning(
-            "VK ID refresh failed user_id=%s code=%s",
-            user_id if type(user_id) is int and user_id > 0 else None,
-            credential_exception_status(exc),
-        )
-        await _mark_refresh_failed(user_credentials, row, meta)
+        logger.warning("VK ID refresh failed user_id=%s code=%s", user_id, credential_exception_status(exc))
+        async with user_credentials.locked_vk_token(user_id=user_id) as (session, current):
+            if _owns_refresh_attempt(current, row_id, attempt_id):
+                failed_meta = dict(current.meta or {})
+                if isinstance(exc, OAuthPreflightError):
+                    # The endpoint was rejected before HTTP, so the token has
+                    # not been sent. Release only this still-owned claim.
+                    failed_meta.pop("refresh_attempt", None)
+                    await user_credentials.update_by_id(row_id, session=session, meta=failed_meta)
+                else:
+                    failed_meta["refresh_attempt"] = {**failed_meta["refresh_attempt"], "state": "failed"}
+                    await _mark_refresh_failed(user_credentials, current, failed_meta, session=session)
         return None
 
-    access = data["access_token"]
-    expires_at = None
-    if data.get("expires_in"):
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(data["expires_in"]))
-    # The rotated refresh token replaces the old one outright. Falling back to
-    # the spent value here would be the single most expensive line in this file
-    # — see the docstring.
-    meta["refresh_token"] = data.get("refresh_token") or ""
-    if data.get("user_id"):
-        meta["user_id"] = data.get("user_id")
-    meta.pop("refresh_failed_at", None)
-
-    await user_credentials.update_by_id(
-        row.id,
-        secret_encrypted=encrypt_secret(access),
-        expires_at=expires_at,
-        meta=meta,
-    )
+    async with user_credentials.locked_vk_token(user_id=user_id) as (session, current):
+        if not _owns_refresh_attempt(current, row_id, attempt_id):
+            return None
+        current_meta = dict(current.meta or {})
+        # Never fall back to a spent refresh token, even if VK omits its replacement.
+        current_meta.pop("refresh_token", None)
+        current_meta["refresh_available"] = bool(encrypted_refresh)
+        if data.get("user_id"):
+            current_meta["user_id"] = data["user_id"]
+        current_meta.pop("refresh_failed_at", None)
+        current_meta.pop("refresh_attempt", None)
+        await user_credentials.update_by_id(
+            row_id,
+            session=session,
+            secret_encrypted=encrypted_access,
+            refresh_secret_encrypted=encrypted_refresh,
+            expires_at=expires_at,
+            meta=current_meta,
+        )
     logger.info("VK ID user token refreshed for user %s", user_id)
     return access
 
 
-async def _mark_refresh_failed(user_credentials, row, meta: dict[str, Any]) -> None:
+def _owns_refresh_attempt(row, row_id: int, attempt_id: str) -> bool:
+    if row is None or row.id != row_id:
+        return False
+    attempt = (row.meta or {}).get("refresh_attempt")
+    return isinstance(attempt, dict) and attempt.get("id") == attempt_id and attempt.get("state") == "pending"
+
+
+async def _mark_refresh_failed(user_credentials, row, meta: dict[str, Any], *, session=None) -> None:
     """Remember that renewal failed, so the UI can ask for a re-login.
 
     Best-effort: this is a bookkeeping write on an already-failing path, so a
@@ -352,7 +462,10 @@ async def _mark_refresh_failed(user_credentials, row, meta: dict[str, Any]) -> N
     """
     meta["refresh_failed_at"] = datetime.now(timezone.utc).isoformat()
     try:
-        await user_credentials.update_by_id(row.id, meta=meta)
+        values = {"meta": meta}
+        if session is not None:
+            values["session"] = session
+        await user_credentials.update_by_id(row.id, **values)
     except Exception as exc:  # noqa: BLE001 — bookkeeping must never raise
         logger.warning(
             "VK ID refresh failure bookkeeping failed user_id=%s code=%s",
@@ -369,15 +482,4 @@ async def renew_if_expiring(user_id: int, *, margin: timedelta = _RENEW_MARGIN) 
     landing at 11:00 would fail. Renewing a margin early costs nothing (the
     refresh token is valid for months) and removes the race.
     """
-    from app.models.managers.user_credential_manager import user_credentials
-
-    row = await user_credentials.newest(user_id=user_id, platform="vk", kind="user_token")
-    if row is None:
-        return None
-    expires_at = row.expires_at
-    if expires_at is None:
-        return None
-    moment = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
-    if moment > datetime.now(timezone.utc) + margin:
-        return None
-    return await refresh_user_token(user_id)
+    return await _renew_user_token(user_id, margin=margin)

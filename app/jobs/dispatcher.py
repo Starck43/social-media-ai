@@ -687,9 +687,43 @@ async def drain(max_jobs: int | None = None) -> int:
     return processed
 
 
+async def _telegram_login_maintenance_loop() -> None:
+    """Retry bounded expiry independently of potentially long-running jobs."""
+    while True:
+        delay = 60
+        try:
+            from app.services.social.telegram_login_maintenance import (
+                BATCH_SIZE,
+                expire_attempt_batch,
+                purge_attempt_batch,
+                wipe_terminal_attempt_batch,
+            )
+
+            with tenant_scope(bypass=True):
+                count = max(
+                    await expire_attempt_batch(), await wipe_terminal_attempt_batch(), await purge_attempt_batch()
+                )
+            if count == BATCH_SIZE:
+                delay = 1
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 — retry without logging data or exception text
+            logger.warning("telegram_login_maintenance_failed error_code=%s", _error_kind(error))
+        await asyncio.sleep(delay)
+
+
 async def worker_forever(poll_seconds: int = 5) -> None:
     """Worker loop: poll the jobs table and process due jobs."""
     logger.info("worker_started")
+    maintenance = asyncio.create_task(_telegram_login_maintenance_loop())
+    try:
+        await _worker_loop(poll_seconds)
+    finally:
+        maintenance.cancel()
+        await asyncio.gather(maintenance, return_exceptions=True)
+
+
+async def _worker_loop(poll_seconds: int) -> None:
     last_maintenance = 0.0
     while True:
         try:

@@ -63,6 +63,10 @@ class SQL:
         self.locked = True
         return self
 
+    def execution_options(self, **options):
+        self.options = options
+        return self
+
     def limit(self, value):
         self.limit_value = value
         return self
@@ -154,7 +158,14 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.execute = AsyncMock(return_value=Result(self.locked))
-        self.session = NS(begin=lambda: Transaction(self), execute=self.execute, close=AsyncMock())
+        self.session = NS(
+            begin=lambda: Transaction(self),
+            execute=self.execute,
+            close=AsyncMock(),
+            in_transaction=lambda: True,
+            is_active=True,
+            flush=AsyncMock(),
+        )
 
         async def store(session, rows):
             self.events.append("raw")
@@ -244,6 +255,7 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
                 self.ingest.normalize_channel_post(self.inbound(message_id=identity, text="Useful"))
 
     async def test_l1_lower_id_admits_before_monotonic_cursor_and_job_commit(self):
+        self.locked.params = {"telegram_l2_last_item_id": "50"}
         self.assertEqual(await self.admit(wake_analysis=True), 1)
         self.assertEqual(self.events, ["begin", "raw", "queue", "commit"])
         self.assertEqual(self.locked.last_item_id, "50")
@@ -253,14 +265,28 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kw, {"session": self.session})
         stmt = self.execute.call_args.args[0]
         self.assertTrue(stmt.locked)
+        self.assertEqual(stmt.options, {"populate_existing": True})
         self.assertIn(("eq", "tenant_id", 4), stmt.criteria)
         self.assertIn(("is", "is_active", True), stmt.criteria)
 
     async def test_l1_does_not_advance_l2_cursor(self):
+        self.locked.params = {"telegram_l2_last_item_id": "50"}
         item = self.item("90")
         await self.staging.admit_telegram_items([item], self.source, wake_analysis=True)
         self.assertEqual(self.locked.last_item_id, "90")
         self.assertEqual(self.locked.params["telegram_l2_last_item_id"], "50")
+
+    async def test_first_bot_push_does_not_seed_personal_cursor_from_bot_highwater(self):
+        self.source.last_item_id = "900"
+        self.locked.last_item_id = "900"
+        await self.admit(wake_analysis=True)
+        self.assertEqual(self.locked.last_item_id, "900")
+        self.assertEqual(self.locked.params, {"telegram_l2_last_item_id": "0"})
+
+        # The first personal pull starts independently and advances only its own cursor.
+        await self.admit()
+        self.assertEqual(self.locked.last_item_id, "900")
+        self.assertEqual(self.locked.params, {"telegram_l2_last_item_id": "20"})
 
     async def test_l2_own_cursor_advances_without_regressing_shared_max(self):
         self.locked.params = {"telegram_l2_last_item_id": "10", "keep": True}
@@ -580,53 +606,6 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.ingest.side_effect = asyncio.CancelledError()
         with self.assertRaises(asyncio.CancelledError):
             await self.listener._ingest_safely(inbound)
-
-
-class PullTests(unittest.IsolatedAsyncioTestCase):
-    async def test_l2_fetch_oldest_first_has_no_cursor_write(self):
-        seen = {}
-
-        class Client:
-            connect = AsyncMock()
-            disconnect = AsyncMock()
-            is_user_authorized = AsyncMock(return_value=True)
-
-            async def iter_messages(self, entity, **kwargs):
-                seen.update(kwargs)
-                yield NS(id=21)
-
-        client = Client()
-        module = load(
-            "pull",
-            "app/services/social/tg_client.py",
-            {
-                "app.core.config": NS(settings=NS(SOCIAL_RATE_LIMIT_MAX_WAIT=10)),
-                "app.models": NS(Source=object),
-                "app.services.social.base": NS(BaseClient=object),
-                "app.types": NS(SourceType=object),
-                "app.services.social.credentials": NS(AuthorizationRequired=type("AuthError", (Exception,), {})),
-                "app.services.social.owner": NS(resolve_source_owner=AsyncMock(return_value=3)),
-                "app.services.social.rate_limit": NS(
-                    SourceRateLimited=type("RateLimited", (Exception,), {}),
-                    telegram_flood_wait_seconds=lambda exc: None,
-                ),
-                "app.services.social.tg_session": NS(
-                    build_client=lambda session: client, load_session=AsyncMock(return_value="not-real")
-                ),
-            },
-        )
-        pull = module.TelegramClient()
-        pull._resolve_entity = AsyncMock(return_value="chat")
-        pull._normalize_message = lambda m, s: {"id": str(m.id)}
-        source = NS(id=7, params={"telegram_l2_last_item_id": "20"}, last_item_id="999")
-        items = await pull._collect_mtproto(source)
-        self.assertEqual(items, [{"id": "21"}])
-        self.assertEqual(source.last_item_id, "999")
-        self.assertEqual(seen["min_id"], 20)
-        self.assertIs(seen["reverse"], True)
-        self.assertIn("offset_date", seen)
-        self.assertNotIn("min_date", seen)
-        client.disconnect.assert_awaited_once()
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from .cases import router as cases_router
 from .chat import router as chat_router
 from .communications import router as communications_router
 from .connections import router as connections_router
+from .connector_accounts import router as connector_accounts_router
 from .dashboard import router as dashboard_router
 from .digests import router as digests_router
 from .documents import router as documents_router
@@ -28,6 +29,7 @@ from .settings import router as settings_router
 from .settings_llm import router as settings_llm_router
 from .sources import router as sources_router
 from .tasks import router as tasks_router
+from .telegram_login import router as telegram_login_router
 from .vk import router as vk_router
 
 web_router = APIRouter(prefix="/app", tags=["web"])
@@ -40,6 +42,7 @@ web_router.include_router(cases_router)
 web_router.include_router(chat_router)
 web_router.include_router(communications_router)
 web_router.include_router(connections_router)
+web_router.include_router(connector_accounts_router)
 web_router.include_router(digests_router)
 web_router.include_router(documents_router)
 web_router.include_router(followups_router)
@@ -52,6 +55,7 @@ web_router.include_router(settings_router)
 web_router.include_router(settings_llm_router)
 web_router.include_router(sources_router)
 web_router.include_router(tasks_router)
+web_router.include_router(telegram_login_router)
 web_router.include_router(vk_router)
 
 __all__ = ["web_router"]

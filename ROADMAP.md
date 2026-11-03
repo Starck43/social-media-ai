@@ -33,7 +33,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
-- [P12-T14](docs/tasks/p12-t14.md) Credential security and explicit connector configuration — **IN_PROGRESS** · codex-p12-pr-completion · [owner-authorized completion](https://github.com/Starck43/social-media-ai/pull/308#issuecomment-6609628923) · `P0` · `C5`
+- [P12-T14](docs/tasks/p12-t14.md) Credential security and explicit connector configuration — **READY** · codex-p12-pr-completion · [owner-authorized completion](https://github.com/Starck43/social-media-ai/pull/308#issuecomment-6609628923) · `P0` · `C5`
 
 
 

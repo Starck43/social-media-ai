@@ -357,21 +357,25 @@
                             {% endif %}
 
                             <div class="mt-4 flex flex-wrap items-center gap-2">
+                                {% if card.platform == 'telegram' %}
+                                <a href="/app/settings/telegram-accounts" class="rounded-lg border px-4 py-2 text-sm">Мои авторизации и восстановление</a>
+                                <a href="/app/settings/telegram-accounts/workspace" class="rounded-lg border px-4 py-2 text-sm">Разрешения пространства и источники</a>
+                                {% endif %}
                                 {# A healthy token needs no button at all: offering «войти заново»
                                    next to a token that renews itself is what trained people to
                                    log out for no reason. #}
-                                {% if card.is_oauth and card.status and card.status.state in ('missing', 'reauth') %}
+                                {% if card.is_oauth and card.status and card.status.state in ('missing', 'reauth') and card.status.can_connect %}
                                     <a href="/app/connections/{{ card.platform }}/authorize"
                                        class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500">
                                         {% if card.status.state == 'reauth' %}Войти заново{% else %}Подключить{% endif %}
                                     </a>
-                                {% elif card.is_oauth and card.status and card.status.state in ('connected', 'renewable') %}
+                                {% elif card.is_oauth and card.status and card.status.state in ('connected', 'renewable', 'renewal_unverified') %}
                                     <a href="/app/connections/{{ card.platform }}/authorize"
                                        class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                                         Обновить доступ
                                     </a>
                                 {% endif %}
-                                {% if card.platform in ('vk', 'telegram') and card.status and card.status.state in ('connected', 'renewable') %}
+                                {% if card.platform == 'vk' and card.status and card.status.state in ('connected', 'renewable', 'renewal_unverified') %}
                                     <form method="post" action="/app/connections/{{ card.platform }}/disconnect" class="inline">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                                         <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">

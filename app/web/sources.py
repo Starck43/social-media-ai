@@ -252,9 +252,7 @@ async def sources_list(request: Request):
     # either: the row says so, so nobody wonders why the view is narrower.
     from app.services.social.connections import is_service_only
 
-    service_only_source_ids = {
-        source.id for source in sources if is_service_only(source_connections.get(source.id))
-    }
+    service_only_source_ids = {source.id for source in sources if is_service_only(source_connections.get(source.id))}
     stale_sources = await _stale_sources_summary(request, sources)
 
     # A lane row (`owner_task_id`) names its owning task: the marker on the row
@@ -500,15 +498,23 @@ async def source_edit(
             else:
                 params["token_owner"] = owner_id
 
-        await Source.objects.update_by_id(
-            source.id,
-            name=name.strip()[:100] or source.name,
-            platform_id=platform_row.id,
-            external_id=new_external_id,
-            source_type=st,
-            is_active=is_active == "on",
-            params=params,
-        )
+        try:
+            await Source.objects.update_by_id(
+                source.id,
+                name=name.strip()[:100] or source.name,
+                platform_id=platform_row.id,
+                external_id=new_external_id,
+                source_type=st,
+                is_active=is_active == "on",
+                params=params,
+            )
+        except PermissionError:
+            add_flash(
+                request,
+                "error",
+                "Сначала уберите выбор Telegram-аккаунта в настройках источника, затем измените цель и выберите аккаунт заново.",
+            )
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=303)
 
     add_flash(request, "success", "Источник обновлён")
     return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
@@ -607,6 +613,10 @@ async def source_detail(request: Request, source_id: int):
     )
 
     mode_key = (source.params or {}).get("mode", "pull")
+    from app.services.social.telegram_modes import is_bot_push
+
+    if getattr(source.platform.platform_type, "db_value", None) == "telegram" and is_bot_push(source.params):
+        mode_key = "push"
     if mode_key not in dict(COLLECTION_MODES):
         mode_key = "pull"
     recent = [_analysis_row(analysis) for analysis in analytics]
@@ -1052,7 +1062,12 @@ async def _readiness(source, schedules, effective_schedules=None) -> tuple[bool,
         and not any(effective_schedules.get(task.id, False) for task in schedules)
     ):
         return False, "Задачи не выполняются: проверьте, что назначенный сценарий активен."
-    if (source.params or {}).get("mode", "pull") == "push":
+    from app.services.social.connections import _platform_key
+    from app.services.social.telegram_modes import is_bot_push
+
+    if (source.params or {}).get("mode", "pull") == "push" or (
+        _platform_key(source) == "telegram" and is_bot_push(source.params)
+    ):
         # Nothing to schedule: pushes arrive on the channel listener's own.
         return False, "Push-источник наполняет канал Telegram — проверьте, что бот подключён."
 

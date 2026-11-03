@@ -66,6 +66,7 @@ def _credential_api():
     imports = {
         "app.api.deps": SimpleNamespace(require_model_perm=dependency_factory),
         "app.models": SimpleNamespace(User=object, UserCredential=object),
+        "app.schemas.connector_account": SimpleNamespace(ConnectorAccountError=BaseModel),
         "app.schemas.credential": SimpleNamespace(
             CredentialLoginRequest=_CredentialLoginRequest,
             CredentialOauthRequest=_CredentialOauthRequest,

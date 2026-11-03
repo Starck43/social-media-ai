@@ -271,6 +271,25 @@ def unbind(token) -> None:
     _current.reset(token)
 
 
+def current_claim():
+    """Trusted acquisition identity copied into the handler's bound context.
+
+    Not payload-derived and NOT a current authorization/ownership guarantee.
+    Callers must recheck persisted claim predicates before I/O/admission. No
+    bound dispatcher means None, never reconstruct a claim from supplied IDs.
+    """
+    from app.jobs.claim_outcomes import JobClaim
+
+    session = _current.get()
+    if session is None:
+        return None
+    if session.lost:
+        raise ProgressStopped()
+    if type(session.claim) is not JobClaim:
+        raise ProgressStopped()
+    return session.claim
+
+
 async def step(sources: Sequence[Any], per_source: Sequence[dict]) -> None:
     """Handler hook: call once at the top of each per-source iteration."""
     session = _current.get()

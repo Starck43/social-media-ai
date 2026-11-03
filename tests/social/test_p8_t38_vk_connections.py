@@ -44,6 +44,7 @@ with patch.dict(
     },
 ):
     policy = _load("app.services.social.vk_access", ROOT / "app/services/social/vk_access.py")
+    refresh_status = _load("app.services.social.refresh_status", ROOT / "app/services/social/refresh_status.py")
     connections = _load("p8_t38_vk_connections", ROOT / "app/services/social/vk_connections.py")
 
 NOW = datetime(2026, 10, 27, tzinfo=timezone.utc)
@@ -349,6 +350,22 @@ class VKConnectionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(connections._safe_scopes("wall unrelated secret"), frozenset({"wall"}))
         self.assertIsNone(connections._method_grants(["wall.get", "untrusted.method"]))
         self.assertEqual(connections._method_grants(["wall.get"]), frozenset({"wall.get"}))
+
+    async def test_expired_vault_status_uses_nonsecret_availability_and_fails_closed(self):
+        row = FakeRow(expires_at=datetime.now(timezone.utc) - timedelta(minutes=1), meta={"refresh_available": True})
+        self.assertEqual(connections._vault_state(row), ("renewal_unverified", False))
+        for state in ("pending", "failed"):
+            row.meta["refresh_attempt"] = {"state": state}
+            self.assertEqual(connections._vault_state(row), ("reauthorization_required", True))
+        row.meta["refresh_attempt"] = {"state": "unreadable"}
+        self.assertEqual(connections._vault_state(row), ("credential_unavailable", False))
+        row.expires_at = datetime.now(timezone.utc) + timedelta(minutes=1)
+        self.assertEqual(connections._vault_state(row), ("credential_unavailable", False))
+        row.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        row.meta = {"refresh_available": True, "refresh_failed_at": "malformed"}
+        self.assertEqual(connections._vault_state(row), ("reauthorization_required", True))
+        row.meta = {"refresh_token": "legacy-secret"}
+        self.assertEqual(connections._vault_state(row), ("reauthorization_required", True))
 
     async def test_catalog_uses_projected_metadata_and_omits_secrets(self):
         result = await connections.connection_catalog(tenant_id=10, actor_id=3)

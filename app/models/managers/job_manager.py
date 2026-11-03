@@ -207,17 +207,22 @@ class JobManager(JobLifecycleMixin, BaseManager["Job"]):
         """
         from app.core.config import settings
 
-        session_kwargs = {} if session is None else {"session": session}
-        return await self.create(
-            **session_kwargs,
-            job_type=job_type,
-            payload=payload or {},
-            agent_task_id=agent_task_id,
-            initiated_by_user_id=initiated_by_user_id,
-            tenant_id=tenant_id,
-            run_at=run_at or datetime.now(timezone.utc),
-            max_attempts=max_attempts or settings.JOB_MAX_ATTEMPTS,
-        )
+        async with self._get_owned_session(session) as owned:
+            stamped = await self._apply_tenant(owned, {"tenant_id": tenant_id})
+            if job_type == "collect":
+                from app.services.social.telegram_queue_selection import _snapshot_queue_bindings
+
+                payload = await _snapshot_queue_bindings(owned, payload, stamped["tenant_id"])
+            return await self.create(
+                session=owned,
+                job_type=job_type,
+                payload=payload or {},
+                agent_task_id=agent_task_id,
+                initiated_by_user_id=initiated_by_user_id,
+                tenant_id=stamped["tenant_id"],
+                run_at=run_at or datetime.now(timezone.utc),
+                max_attempts=max_attempts or settings.JOB_MAX_ATTEMPTS,
+            )
 
     async def admit_source_job(
         self,

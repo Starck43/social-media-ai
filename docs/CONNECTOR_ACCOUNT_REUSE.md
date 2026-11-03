@@ -10,8 +10,9 @@ StringSession, access/refresh token or API key per workspace.
 
 This P12-T14 draft implements encrypted persistence, explicit consent/reuse and
 local disconnect/revoke operations for `telegram` / `mtproto`, plus a bounded
-phone/code/2FA **machine API**. It does **not** yet implement settings/account-picker
-web UI, source binding/runtime secret resolution or safe shared-session execution.
+phone/code/2FA **machine API**. It includes partial personal-account and workspace-grant web pages, but does **not**
+yet implement a source picker, source binding/runtime secret resolution or safe
+shared-session execution.
 No public endpoint accepts a StringSession. Legacy vault sessions are not
 imported. Do not deploy this slice or present it as completed Telegram onboarding.
 
@@ -110,8 +111,23 @@ account service; stale, missing and foreign records produce the same opaque erro
 Responses are no-store with no-referrer. An unconfirmed outcome is not presented
 as a success or rollback. Local revoke clears new-store ciphertext and invalidates
 its grants; it does not end a Telegram session or change the legacy vault. Status
-is local metadata, not evidence of provider health. Login, recovery, workspace
-grant controls and source selection are not provided here.
+is local metadata, not evidence of provider health. Login, recovery and source
+selection are not provided here. Workspace grant controls are separate below.
+
+### Workspace grant web controls (partial)
+
+`GET /app/settings/telegram-accounts/workspace` lists only the current actor's
+reusable Telegram accounts and local grants in the current workspace. Explicit
+POST forms attach a selected account/revision or detach a selected grant; each
+requires confirmation and a session/actor/workspace/surface-bound CSRF token.
+Workspace selection comes only from middleware, never from form fields. The
+service rechecks current membership and permissions transactionally; a viewer
+can withdraw their own grant but cannot attach. Stale or foreign selections are
+opaque; unknown mutation outcomes require a fresh list before any retry. The
+responses are no-store/no-referrer. No provider request, remote logout or secret
+copy is performed by these controls. The lists are separate reads, not an atomic
+snapshot or a provider-health guarantee. Source picker, collector enforcement,
+reauthorization and assembled DB/browser integration remain incomplete.
 
 Authorization-row locks serialize attach/revoke before grant-row locks; unique
 constraints protect concurrent inserts. Retrying attach with the same revision

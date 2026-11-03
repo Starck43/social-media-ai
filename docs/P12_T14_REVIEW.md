@@ -105,6 +105,15 @@ legacy vault modification or provider-health claim is made. Fake-service HTTP an
 offline DOM checks do not prove real database transactions, real CDN rendering,
 provider connectivity or the complete login/consent journey.
 
+## Workspace grant web continuation (partial)
+
+A workspace-scoped browser page now exposes explicit attach/detach of the
+current user's reusable Telegram authorization/grant via the existing service.
+CSRF binds session, actor and active workspace; confirmed local changes never
+contact Telegram. This does not deliver source selection, runtime enforcement,
+provider health or reauthorization. DB-exempt browser-session tests are not
+PostgreSQL transaction/race or full browser/provider acceptance evidence.
+
 ## Remaining completion gates
 
 - Telegram reauthorization/recovery, metadata retention and operational recovery;

@@ -151,3 +151,159 @@ async def revoke_personal_telegram_account(request: Request, authorization_id: s
         "Локальная авторизация отозвана, её разрешения пространств отключены. Telegram-сессия не завершалась.",
     )
     return _private(RedirectResponse(BACK, status_code=303))
+
+
+# Workspace consent deliberately uses a separate route and CSRF namespace from
+# account-wide revocation. The active workspace comes only from middleware.
+WORKSPACE_BACK = "/app/settings/telegram-accounts/workspace"
+
+
+def _workspace_identity(session_id: str, actor_id: int, tenant_id: int) -> str:
+    return f"{session_id}:workspace-connectors:{actor_id}:{tenant_id}"
+
+
+def _workspace_scope(request):
+    from app.core.tenant_context import current_tenant_id, is_bypass
+
+    actor_id = _actor_id(request)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if (
+        actor_id is None
+        or type(tenant_id) is not int
+        or tenant_id <= 0
+        or current_tenant_id() != tenant_id
+        or is_bypass()
+    ):
+        raise ConnectionDenied()
+    return tenant_id, actor_id
+
+
+def _workspace_page(request, *, accounts=(), grants=(), can_attach=False, error=None, status=200):
+    try:
+        tenant_id, actor_id = _workspace_scope(request)
+        token = (
+            get_csrf_manager(request).generate_token(
+                session_id=_workspace_identity(ensure_session_id(request), actor_id, tenant_id)
+            )
+            if error is None
+            else None
+        )
+    except ConnectionDenied:
+        token = None
+    return _private(
+        render(
+            request,
+            "web/telegram_workspace_grants.html",
+            status_code=status,
+            section="settings",
+            accounts=accounts,
+            grants=grants,
+            can_attach=can_attach,
+            grant_error=error,
+            grant_csrf=token,
+        )
+    )
+
+
+async def _workspace_form(request, *, attach):
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/x-www-form-urlencoded":
+        raise ValueError
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_FORM_BYTES:
+            raise ValueError
+        body.extend(chunk)
+    pairs = parse_qsl(
+        body.decode("utf-8"), keep_blank_values=True, strict_parsing=True, errors="strict", max_num_fields=3
+    )
+    form = dict(pairs)
+    expected = {"_csrf", "confirm"} | ({"expected_revision"} if attach else set())
+    if len(pairs) != len(expected) or len(form) != len(expected) or set(form) != expected:
+        raise ValueError
+    return form
+
+
+@router.get("/workspace")
+async def workspace_telegram_grants(request: Request):
+    from app.schemas.connector_account import WorkspaceGrantMetadata
+
+    try:
+        tenant_id, actor_id = _workspace_scope(request)
+        rows, can_attach = await connector_authorizations.list_reusable(tenant_id=tenant_id, actor_id=actor_id)
+        grant_rows = await connector_authorizations.list_grants(tenant_id=tenant_id, actor_id=actor_id)
+        accounts = [ConnectorAccountMetadata.model_validate(row).model_dump(mode="json") for row in rows]
+        grants = [WorkspaceGrantMetadata.model_validate(row).model_dump(mode="json") for row in grant_rows]
+        if type(can_attach) is not bool or any(
+            row["provider_id"] != "telegram" or row["auth_method"] != "mtproto" or row["state"] != "active"
+            for row in accounts
+        ):
+            raise ValueError
+    except ConnectionDenied:
+        return _workspace_page(request, status=404, error="Разрешения недоступны. Обновите страницу.")
+    except Exception:  # noqa: BLE001 - never expose internal projection or an apparently empty list
+        logger.warning("workspace_connector_list_unavailable")
+        return _workspace_page(request, status=503, error="Не удалось загрузить разрешения. Попробуйте позже.")
+    return _workspace_page(request, accounts=accounts, grants=grants, can_attach=can_attach)
+
+
+async def _change_workspace_grant(request: Request, selection_id: str, *, attach: bool):
+    from app.schemas.connector_account import WorkspaceGrantMetadata
+
+    try:
+        tenant_id, actor_id = _workspace_scope(request)
+    except ConnectionDenied:
+        return _workspace_page(request, status=404, error="Разрешения недоступны. Обновите страницу.")
+    try:
+        form = await _workspace_form(request, attach=attach)
+    except (ValueError, UnicodeError):
+        return _workspace_page(request, status=422, error="Некорректная форма. Обновите страницу.")
+    session_id = request.session.get(SESSION_ID_KEY)
+    if (
+        not isinstance(session_id, str)
+        or not session_id
+        or not get_csrf_manager(request).verify_token(
+            form["_csrf"], session_id=_workspace_identity(session_id, actor_id, tenant_id)
+        )
+    ):
+        return _workspace_page(request, status=403, error="Сессия подтверждения истекла или пространство изменилось.")
+    try:
+        selected_id = _positive_form_integer(selection_id)
+        if form["confirm"] != ("attach-workspace" if attach else "detach-workspace"):
+            raise ValueError
+        revision = _positive_form_integer(form["expected_revision"]) if attach else None
+    except ValueError:
+        return _workspace_page(request, status=422, error="Подтвердите действие и обновите страницу.")
+    try:
+        if attach:
+            row = await connector_authorizations.attach(
+                tenant_id=tenant_id, actor_id=actor_id, authorization_id=selected_id, expected_revision=revision
+            )
+        else:
+            row = await connector_authorizations.detach(tenant_id=tenant_id, actor_id=actor_id, grant_id=selected_id)
+        result = WorkspaceGrantMetadata.model_validate(row)
+        if (
+            attach
+            and (
+                result.authorization_id != selected_id
+                or result.authorization_revision != revision
+                or not result.is_active
+            )
+        ) or (not attach and (result.grant_id != selected_id or result.is_active)):
+            raise ValueError
+    except ConnectionDenied:
+        return _workspace_page(request, status=404, error="Выбор недоступен или изменился. Обновите страницу.")
+    except Exception:  # noqa: BLE001 - commit outcome can be unknown
+        logger.warning("workspace_connector_change_unconfirmed")
+        return _workspace_page(request, status=503, error="Результат не подтверждён. Обновите список перед повтором.")
+    add_flash(request, "success", "Локальное разрешение этого пространства изменено. Сессия Telegram не завершалась.")
+    return _private(RedirectResponse(WORKSPACE_BACK, status_code=303))
+
+
+@router.post("/workspace/accounts/{authorization_id}/attach")
+async def attach_workspace_telegram(request: Request, authorization_id: str):
+    return await _change_workspace_grant(request, authorization_id, attach=True)
+
+
+@router.post("/workspace/grants/{grant_id}/detach")
+async def detach_workspace_telegram(request: Request, grant_id: str):
+    return await _change_workspace_grant(request, grant_id, attach=False)

@@ -1,0 +1,44 @@
+{% extends "web/base.html" %}
+{% block title %}Telegram в пространстве — AI Monitor{% endblock %}
+{% block page_heading %}Telegram в пространстве{% endblock %}
+{% block page_context %}Только текущие разрешения{% endblock %}
+{% block extra_head %}{{ super() }}<link rel="stylesheet" href="{{ static_v('css/telegram-accounts.css') }}">{% endblock %}
+{% block content %}
+<div class="telegram-accounts">
+    <a class="telegram-accounts-back" href="/app/settings">← К настройкам</a>
+    <section class="ui-card telegram-accounts-intro">
+        <h2>Явное разрешение для текущего пространства</h2>
+        <p>Пространство: <strong>{{ tenant.name if tenant else 'недоступно' }}</strong>. Здесь показаны только ваши локальные записи. Подключение не проверяет доступность сессии Telegram.</p>
+        <p>Отключение здесь не удаляет личную авторизацию и не завершает сессию Telegram. Другие пространства не затрагиваются. Выбор источника и применение разрешений при сборе ещё не реализованы.</p>
+    </section>
+    {% if grant_error %}
+    <section class="ui-card" role="alert"><h2>Данные недоступны</h2><p>{{ grant_error }}</p><a href="/app/settings/telegram-accounts/workspace">Обновить</a></section>
+    {% else %}
+    <section class="ui-card"><h2>Мои разрешения в этом пространстве</h2>
+    {% for grant in grants if grant.is_active %}
+        <article class="telegram-account"><p>Локальная авторизация № {{ grant.authorization_id }} · разрешение № {{ grant.grant_id }} · ревизия {{ grant.authorization_revision }}</p>
+            <form class="telegram-account-revoke" method="post" action="/app/settings/telegram-accounts/workspace/grants/{{ grant.grant_id }}/detach">
+                <input type="hidden" name="_csrf" value="{{ grant_csrf }}">
+                <label class="telegram-account-confirm"><input type="checkbox" name="confirm" value="detach-workspace" required><span>Подтверждаю отключение только в этом пространстве.</span></label>
+                <button type="submit" class="telegram-account-revoke-button">Отключить здесь</button>
+            </form>
+        </article>
+    {% else %}<p>Нет активных локальных разрешений.</p>{% endfor %}
+    </section>
+    <section class="ui-card"><h2>Мои сохранённые авторизации</h2>
+    {% if not can_attach %}<p>Для подключения нужно право создания источников.</p>{% endif %}
+    {% for account in accounts %}
+        <article class="telegram-account"><h3>Telegram · ID {{ account.subject_key }}</h3><p>Локальная запись № {{ account.authorization_id }} · ревизия {{ account.revision }}</p>
+        {% if can_attach %}
+            <form class="telegram-account-revoke" method="post" action="/app/settings/telegram-accounts/workspace/accounts/{{ account.authorization_id }}/attach">
+                <input type="hidden" name="_csrf" value="{{ grant_csrf }}">
+                <input type="hidden" name="expected_revision" value="{{ account.revision }}">
+                <label class="telegram-account-confirm"><input type="checkbox" name="confirm" value="attach-workspace" required><span>Разрешаю использовать эту авторизацию в текущем пространстве.</span></label>
+                <button type="submit" class="telegram-account-allow-button">Разрешить в этом пространстве</button>
+            </form>
+        {% endif %}</article>
+    {% else %}<p>Нет доступных локальных авторизаций. Старое хранилище не импортируется.</p>{% endfor %}
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

@@ -11,6 +11,7 @@
                 <h2 id="workspace-tools-{{ menu_id }}" class="shell-menu-heading">В текущем пространстве</h2>
                 <div class="shell-workspace-actions">
                     <a href="/app/settings">{{ icon('settings') }}<span>Настройки</span></a>
+                    <a href="/app/settings/telegram-accounts/workspace">{{ icon('settings') }}<span>Telegram в пространстве</span></a>
                     {% if perms and perms.can_manage_workspace(tenant.id) %}<button type="button" data-invite-open aria-haspopup="dialog" aria-controls="invite-dialog">{{ icon('mentions') }}<span>Пригласить участника</span></button>{% endif %}
                 </div>
             </section>

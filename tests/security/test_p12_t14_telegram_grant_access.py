@@ -373,6 +373,7 @@ async def test_connection_loss_invalidates_guard_and_never_auto_replays(runtime_
                 pid = await session.scalar(
                     text(
                         "SELECT pid FROM pg_locks WHERE locktype='advisory' AND classid=721215 "
+                        "AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) "
                         "AND objid=:id AND objsubid=2 AND granted"
                     ),
                     {"id": data.account["authorization_id"]},

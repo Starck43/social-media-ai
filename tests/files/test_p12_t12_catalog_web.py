@@ -29,7 +29,7 @@ async def web(data, monkeypatch):
         )
     app = create_application()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=False) as client:
+    async with httpx.AsyncClient(transport=transport, base_url="https://testserver", follow_redirects=False) as client:
 
         async def login(index):
             client.cookies.clear()
@@ -44,6 +44,10 @@ async def web(data, monkeypatch):
                 },
             )
             assert response.status_code in (302, 303)
+            assert response.headers["location"] == "/app/"
+            assert any("secure" in value.lower() for value in response.headers.get_list("set-cookie"))
+            authenticated = await client.get("/app/")
+            assert authenticated.status_code == 200
 
         await login(0)
         yield client, login, transport
@@ -162,7 +166,7 @@ async def test_query_limits_paging_and_no_mutation_routes(data, web):
 
 async def test_unauthenticated_redirects_before_catalog(data, web):
     _, _, transport = web
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as guest:
+    async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as guest:
         response = await guest.get("/app/knowledge/files")
         assert response.status_code == 302 and response.headers["location"].startswith("/app/login")
 

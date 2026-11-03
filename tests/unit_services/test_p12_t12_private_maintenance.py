@@ -81,7 +81,7 @@ async def test_web_maintenance_runs_private_gc_under_bypass_without_lifespan(mon
 
     jobs.assert_awaited_once()
     cleanup.assert_awaited_once()
-    gc.assert_awaited_once_with()
+    gc.assert_awaited_once_with(limit=100)
     assert scopes == [True, True]
     assert not is_bypass()
 

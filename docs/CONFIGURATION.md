@@ -11,9 +11,10 @@ The application reads config from `app/core/config.py` (Pydantic `Settings`).
 
 | Scope | Storage | Purpose |
 |---|---|---|
-| VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`, `VK_CLIENT_ACCESS_KEY`, `VK_REDIRECT_URI` | Application identity, L1 service access and registered OAuth callback; a client secret is not a user's access token. |
+| VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`; shared `Platform.params` | App identity, L1 service access, OAuth endpoints and registered callback. Legacy inputs are described below. |
 | Shared Telegram bot | env: `TELEGRAM_BOT_TOKEN` | Bot API transport; one bot may serve multiple workspaces. |
-| Personal integrations | encrypted `user_credentials` | User VK access/refresh tokens and Telegram MTProto sessions; existing collection-owner resolution selects the user. |
+| Legacy personal integrations | encrypted `user_credentials` | VK access/refresh tokens after migration 0124 and legacy Telegram vault sessions; user-scoped, not workspace-consented. Telegram rollout requires the grant-based path below. |
+| Personal-account reuse foundation (draft) | encrypted `personal_connector_authorizations` + `workspace_authorization_grants` | Single personal authorization, explicit independent consent in each workspace; Telegram-only bounded phone/code/2FA API/web journey, explicit source picker and default-OFF queued runtime. Recovery requires same subject and per-workspace reconsent. Temporary attempts live in `telegram_login_attempts`; minimal replay keys survive metadata retention. Code-first, not yet final-tested or rollout-approved. |
 | Workspace digest recipients | `tenant_channels`, active and `is_digest_target=True` | Owned destination IDs for this workspace only; use existing binding workflow, then Settings → Channels to toggle digests. |
 | Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Fixed-template operator-alert destination; never a workspace notification fallback. |
 | Agent access bootstrap | `TELEGRAM_OWNER_IDS` | Telegram **user IDs**, not chat/channel IDs; distinct from the notification destination and workspace memberships. |
@@ -52,7 +53,11 @@ platform-level runtime configuration; email has two provider definitions.
 Reusable Jinja macros in `app/web/templates/web/components/provider.html` render
 icons, headings and fields; templates must never inline untrusted SVG or secrets.
 
-VK and Telegram keep their existing personal-credential flows. Yandex Mail and
+See [personal account reuse](CONNECTOR_ACCOUNT_REUSE.md) for the owner-approved
+per-workspace consent model and its explicit delivery gates. Telegram must not
+use a deployment-wide personal session. The legacy HTTP terminal login is now
+refused with a fixed 409 until supported web authorization is implemented.
+VK retains its existing personal-credential flow. Yandex Mail and
 Mail.ru Mail support workspace configuration and an explicit IMAP login check
 only: no mailbox synchronization or sending. Yandex Disk, Mail.ru Cloud,
 Bitrix24, 1C and local gateway are catalog descriptors only: their schemas and
@@ -101,8 +106,9 @@ grant access. The official contract and remaining work live in
 **Migration dependency:** P2-T15 first introduced `tenants.plan_expires_at` and
 `entitlement_usage` in revision `0117`; Q-14 later incorporated that schema into
 frozen `baseline_0118`. The checked-in chain continues with `0119` for workspace
-offboarding and `0120` for shared platform configuration; `0118` is not a free
-revision number. Do not recreate the entitlement fields or replay the removed numbered migrations. Fresh-schema
+offboarding, `0120` for shared platform configuration, `0121` for workspace
+connections, `0122` for knowledge/document evidence, and `0123` for source
+member ownership; `0118` is not a free revision number. Do not recreate the entitlement fields or replay the removed numbered migrations. Fresh-schema
 and legacy-schema transition rules are in [DEPLOYMENT](DEPLOYMENT.md). Before
 any separately approved subscription-schema work, inspect the actual integrated
 graph and reserve a distinct revision on its current head; never infer it from an
@@ -188,18 +194,18 @@ ADMIN_ENABLED=true
 # VK
 VK_APP_ID=
 VK_SERVICE_KEY=             # VK "Сервисный ключ доступа" (L1)
-VK_CLIENT_ACCESS_KEY=       # VK "Защищённый ключ" (OAuth client secret)
-VK_REDIRECT_URI=https://your-domain/api/v1/social/callback
+VK_CLIENT_ACCESS_KEY=       # compatibility credential; current VK ID exchange does not send it
+# OAuth callback is configured in shared Platform.params.redirect_uri, not an env overlay.
 
 # Telegram (Bot API)
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_API_ID=          # L2 MTProto
 TELEGRAM_API_HASH=        # L2 MTProto
-TELEGRAM_SESSION=         # L2 MTProto (StringSession, never printed)
+# TELEGRAM_SESSION is deprecated and ignored; do not place a user session in env
 TELEGRAM_ADMIN_CHAT_ID=   # fixed-template operator alerts only
 
 # Telegram (Channels)
-TELEGRAM_OWNER_IDS=       # comma-separated Telegram user ids for agent chat
+TELEGRAM_OWNER_IDS=       # Telegram user IDs eligible for owner bootstrap
 # Digest recipients: workspace channel bindings in DB, not env
 
 # MAX
@@ -334,14 +340,15 @@ or for provider-side rate limiting.
 |---|---|---|
 | `VK_APP_ID` | `None` | VK application ID |
 | `VK_SERVICE_KEY` | `None` | VK service token (L1) — console "Сервисный ключ доступа" |
-| `VK_CLIENT_ACCESS_KEY` | `None` | VK OAuth client secret — console "Защищённый ключ" |
-| `VK_REDIRECT_URI` | `http://localhost/api/v1/social/callback` | OAuth callback; set the registered public HTTPS URL in production |
+| `VK_CLIENT_ACCESS_KEY` | `None` | Legacy client-secret resolver setting; current VK ID exchange does not send it. Retained for compatibility, not required by this implementation. |
+| `VK_REDIRECT_URI` | `http://localhost/api/v1/social/callback` | Legacy one-time migration 0120 input only; runtime callback is `Platform.params.redirect_uri`. |
 | `TELEGRAM_BOT_TOKEN` | `None` | Telegram bot token |
 | `TELEGRAM_API_ID` | `None` | Telegram API ID (L2 MTProto) |
+| `TELEGRAM_ACCOUNT_RUNTIME_ENABLED` | `false` | Default-OFF queued personal collection; separate rollout approval required |
 | `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |
-| `TELEGRAM_SESSION` | `None` | Telegram StringSession (L2 MTProto) |
+| `TELEGRAM_SESSION` | `None` | Deprecated and ignored for MTProto session resolution |
 | `TELEGRAM_ADMIN_CHAT_ID` | `None` | Fixed operator-alert catalog only; no workspace/digest fallback |
-| `TELEGRAM_OWNER_IDS` | `""` | Comma-separated Telegram user IDs allowed to chat with the agent |
+| `TELEGRAM_OWNER_IDS` | `""` | Telegram user IDs eligible for owner bootstrap; existing membership and runtime authorization are separate |
 | `TELEGRAM_DIGEST_CHANNEL_ID` | `""` | Deprecated; ignored by digest delivery (use workspace bindings) |
 | `MAX_BOT_TOKEN` | `None` | MAX bot access token |
 | `MAX_API_URL` | `https://platform-api2.max.ru` | MAX API base URL |
@@ -475,15 +482,18 @@ from dumps. Do not persist or expose unwrapped secret values.
 
 Two kinds of secret, resolved by `app/services/social/credentials.py`:
 
-- **Personal L2 secrets** (VK `user_token`, Telegram MTProto `api_id` /
-  `api_hash` / `session`) live in the `user_credentials` table, keyed by
+- **VK personal L2 secrets** (`user_token`) live in the `user_credentials` table, keyed by
   `users.id`, encrypted with Fernet under `CREDENTIALS_KEY`. Manage via CLI:
   ```bash
-  python -m cli.main credentials login telegram --user <id>
   python -m cli.main credentials oauth vk --user <id> --tenant owner
   python -m cli.main credentials list --user <id>
   python -m cli.main credentials test --user <id>
   ```
+- **Telegram personal sessions** use the bounded connector-account login/recovery
+  UI/API, one encrypted personal authorization and explicit independent workspace
+  grants/source selections; no old-vault or environment session import/fallback.
+  `TELEGRAM_ACCOUNT_RUNTIME_ENABLED=false` is the default and rollout hold.
+  See [account reuse and recovery](CONNECTOR_ACCOUNT_REUSE.md).
 - **Application / infrastructure config** (VK `app_id`, `client_secret`,
   service token; Telegram/MAX bot tokens) is one-per-deployment and read from
   the **environment** (`.env`), not from the DB.
@@ -504,6 +514,25 @@ and emits a generic operator event. No new env variable or schema migration is
 needed. These rules apply to the notification service, not to the independently
 reviewed digest transport. See [notification contract and setup impact](NOTIFICATIONS.md).
 
+
+## VK OAuth endpoint trust boundary
+
+`Platform.params` supplies the URLs; deployment policy `VK_OAUTH_ALLOWED_HOSTS`
+(default `id.vk.ru`) is a comma-separated list of **exact hostnames** trusted
+to receive OAuth material. Authorize and token endpoints must use HTTPS on port
+443 and match the allowlist; redirects are not followed. A reviewed custom
+proxy must be explicitly allowlisted before use, so existing custom endpoints
+may be refused after this security change until an operator configures them.
+Only allow hosts under the operator's control and review DNS/egress policy; this
+is not a DNS-pinning or compromised-host defense.
+
+The callback is still the shared catalog value, not an env overlay; it must be
+HTTPS except exact localhost/loopback HTTP in `ENVIRONMENT=development`. The
+operator must verify that the configured callback exactly matches the provider's
+registered callback; local validation cannot query or prove that registration.
+Rejected configuration produces no OAuth HTTP request. During refresh a rejected
+preflight releases its own unsent claim; network/ambiguous failures remain
+fenced and need reauthorization. Never enter tokens or secrets into hostnames.
 
 ## Shared platform configuration
 
@@ -554,3 +583,51 @@ runtime fallbacks after migration; change the shared JSON to reconfigure an
 existing platform. A platform type with no catalog row is created from the
 application's bootstrap defaults, and downgrade removes the rows the migration
 created. No provider calls occur in migration.
+
+## Credential-key rotation (reviewed maintenance only)
+
+`CREDENTIALS_KEY` protects personal vault entries (including VK access and
+refresh), workspace connection secrets, personal connector authorizations and
+personal LLM-provider API keys.
+Changing the environment key alone makes existing ciphertext unreadable. After
+migration 0124 is integrated and reviewed, the rotation utility covers all of
+these stores in a single PostgreSQL transaction; it is not an automatic deploy
+step. At unified head `p12t14_accounts` it also rotates the single encrypted
+personal authorization bundle, not a copy in each workspace grant. Head
+`p12t14_tg_login` additionally rotates encrypted temporary login material. Empty
+disconnected/revoked placeholders are preserved. Only reviewed single heads
+`0124`, `p12t14_accounts` and `p12t14_tg_login` are supported;
+unknown/future/multiple heads or a store layout that does not match the head are refused rather than silently
+omitting an encrypted store.
+
+A live dry run or apply needs separate owner approval. Prepare and verify a
+restorable encrypted database backup and retain the old key securely; decide
+backup retention separately because old database pages/backups can contain
+legacy plaintext refresh tokens. Stop **all** application writers and keep them
+stopped through the configuration switch. Supply the current `CREDENTIALS_KEY`
+and the replacement `P12T14_NEW_CREDENTIALS_KEY` through protected environment
+configuration, not command-line arguments, chat, logs or version control.
+
+With the correct, explicitly authorized database and schema selected, the
+following dry run locks the relevant tables and verifies that every stored
+ciphertext can be read using the old key; it makes no changes:
+
+```bash
+python -m scripts.ops.rotate_credentials_key --target-approved --writers-stopped
+```
+
+Only after the owner approves apply and the backup and stopped-writer checks:
+
+```bash
+python -m scripts.ops.rotate_credentials_key --target-approved --writers-stopped --backup-confirmed --apply
+```
+
+The program fails closed on a missing database guard, old revision, malformed or
+wrong key, empty required secret or unreadable ciphertext. It never prints key,
+plaintext or ciphertext values. It locks with a bounded wait and updates all
+known stores together; a failed transaction rolls back. After a successful
+commit, keep writers stopped while securely installing and verifying the new key
+on every application instance before restart. If commit outcome is unknown, do
+not retry blindly or restart: have the authorized operator determine which key
+can read the vault and use the reviewed backup/forward-recovery plan. Rotating a
+key does not remove plaintext from previous database pages or backups.

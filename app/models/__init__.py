@@ -42,7 +42,14 @@ from .file_workspace.private_insights import (
     FilePrivateInsight,
 )
 from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
-from .integrations import WorkspaceConnection, WorkspaceConnectionSecret
+from .integrations import (
+    PersonalConnectorAuthorization,
+    TelegramLoginAttempt,
+    TelegramLoginRequestKey,
+    WorkspaceAuthorizationGrant,
+    WorkspaceConnection,
+    WorkspaceConnectionSecret,
+)
 from .knowledge import DocumentRevision, KnowledgeDocument, KnowledgeSnippet
 from .llm import (
     LLMAttempt,
@@ -89,6 +96,10 @@ __all__ = [
     "UserCredential",
     "WorkspaceConnection",
     "WorkspaceConnectionSecret",
+    "PersonalConnectorAuthorization",
+    "TelegramLoginAttempt",
+    "TelegramLoginRequestKey",
+    "WorkspaceAuthorizationGrant",
     "PersonalBillingAccount",
     "TaskBillingPayer",
     "PersonalLLMDispatch",

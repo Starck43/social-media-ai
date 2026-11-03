@@ -82,6 +82,17 @@ class ReadOnlyFolderPolicy:
             compiled.append((folder, restriction.denied))
         self._restrictions = tuple(compiled)
 
+    def binding(self) -> str:
+        """Canonical text of the root and every restriction.
+
+        Callers that issue a token under a policy bind this text so a changed root
+        or restriction set invalidates previously issued tokens.
+        """
+        parts = ["disk:/" + "/".join(self._root)]
+        for folder, denied in self._restrictions:
+            parts.append("disk:/" + "/".join(folder) + ":" + ",".join(sorted(op.value for op in denied)))
+        return "|".join(parts)
+
     def permits(self, path: str, operation: FileOperation) -> bool:
         """Deny invalid paths, out-of-root resources, unknown or write operations."""
         if not isinstance(operation, FileOperation) or operation not in _READ_OPERATIONS:

@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from app.services.social.refresh_status import refresh_failure_blocks
 from app.services.social.vk_access import (
     METHOD_MODES,
     VKAccessDecision,
@@ -305,15 +306,20 @@ def _catalog_method_scopes(raw: object) -> dict[str, list[str]] | None:
 def _vault_state(row: Any) -> tuple[str, bool]:
     if row.is_active is not True:
         return "revoked", True
+    meta = row.meta if isinstance(row.meta, Mapping) else {}
+    attempt = meta.get("refresh_attempt")
+    if isinstance(attempt, Mapping) and attempt.get("state") == "unreadable":
+        return "credential_unavailable", False
+    if refresh_failure_blocks(meta.get("refresh_failed_at"), now=datetime.now(timezone.utc)):
+        return "reauthorization_required", True
     expiry = row.expires_at
     if expiry is None:
         return "connected", False
     moment = expiry if expiry.tzinfo else expiry.replace(tzinfo=timezone.utc)
     if moment > datetime.now(timezone.utc):
         return "connected", False
-    meta = row.meta if isinstance(row.meta, Mapping) else {}
-    if isinstance(meta.get("refresh_token"), str) and meta["refresh_token"]:
-        return "renewal_available", False
+    if not attempt and meta.get("refresh_available") is True:
+        return "renewal_unverified", False
     return "reauthorization_required", True
 
 
@@ -321,7 +327,9 @@ def _state_label(state: str) -> str:
     return {
         "connected": "Подключено",
         "revoked": "Отключено",
-        "renewal_available": "Требуется продление",
+        "renewal_available": "Требуется продление",  # compatibility with older clients
+        "renewal_unverified": "Продление не проверено",
+        "credential_unavailable": "Секрет недоступен — обратитесь к администратору",
         "reauthorization_required": "Требуется повторная авторизация",
     }.get(state, "Статус недоступен")
 

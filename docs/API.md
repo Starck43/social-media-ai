@@ -10,6 +10,49 @@ panel under `/admin`. Workspace data endpoints require an access Bearer JWT
 and an active web membership. Token acquisition, registration and the signed-state
 OAuth callback have the explicit exceptions listed below.
 
+## Personal connector account reuse (P12-T14 draft)
+
+See [personal account reuse](CONNECTOR_ACCOUNT_REUSE.md#draft-machine-api) for
+Bearer-authenticated `/api/v1/connector-accounts` list/attach/local-detach/global-local-revoke
+operations, revision/ownership rules and delivery limits. These routes reuse only
+an already recorded same-user Telegram authorization. New `/telegram/login` routes
+add bounded phone/code/2FA login with encrypted attempts; they never accept a raw
+StringSession or caller-supplied owner/tenant/application key. The legacy
+`/api/v1/credentials/login` now returns a fixed `409 workspace_telegram_authorization_not_available` rather than invoking
+terminal input from HTTP. Clients must handle this unsupported state; the new
+login/account-picker web UI, recovery and collector grant resolution remain
+outstanding. A separate personal metadata/local-revoke web page is available. A 200 login response is metadata: check `state`, not just HTTP status.
+The new API does not automatically attach accounts on workspace creation/join.
+
+Account self-service exceptions: `GET /api/v1/connector-accounts/personal` lists
+only the caller's Telegram authorization metadata (including unusable/revoked
+identities); `POST /api/v1/connector-accounts/{authorization_id}/revoke` withdraws
+only their own authorization everywhere, with strict `expected_revision`. Both
+require an active access Bearer JWT but no workspace/membership; tenant headers
+are ignored, not elevated. The existing revoke path/body/response remain, but it
+now survives lost memberships/suspended workspaces. It atomically clears local
+ciphertext and invalidates own grants, not provider sessions, and needs no key or
+provider call. All other connector-account routes remain workspace-scoped.
+There is no anonymous/cookie-auth exception for these API routes or broad prefix bypass.
+Reauthorization and the complete web journey remain open.
+
+The separate browser-session `GET /app/settings/telegram-accounts` and confirmed
+CSRF `POST /app/settings/telegram-accounts/{id}/revoke` require no workspace.
+The POST accepts only `_csrf`, `expected_revision`, and `confirm=revoke-local`;
+its token is bound to the session, actor and page. The exact-path exception does
+not cover login or workspace operations. These no-store responses expose metadata
+only; local revoke is not remote Telegram logout and does not touch the legacy
+vault. See [web scope and limitations](CONNECTOR_ACCOUNT_REUSE.md#personal-web-metadata-and-local-revoke-partial).
+
+The connector-account OpenAPI now publishes explicit metadata-only response
+shapes and fixed error envelopes. Unlisted internal fields are filtered; an
+invalid service projection produces fixed `500 account_response_unavailable`.
+Existing success keys, nullable IDs and ISO datetime offsets are preserved.
+Legacy login is declared deprecated with its actual 409 response, not a phantom
+200 credential result. See the [response/client contract](CONNECTOR_ACCOUNT_REUSE.md#response-contract-and-client-migration).
+These fake-service contract checks are only a partial compatibility gate, not
+proof that real clients, migrations or database transactions have been validated.
+
 ## Base URL
 
 ```
@@ -981,6 +1024,21 @@ after the turn, cancellation or stop; no public file URL is exposed. Supported
 formats and exact byte/page/token limits are recorded in the
 [P8-T44 acceptance](audit/p8-t44.md).
 
+## Web-chat evidence context (P12-T11)
+
+`GET /app/chat` may receive `context_type`, `context_id` and `boundary`
+(`cloud`, `company` or `local_only`) from a stored evidence handoff. These values
+are selectors, not authorization: the server resolves the record under the
+current workspace and ACL, and uses stored title, reference and boundary rather
+than trusting client labels. The selected identity is pinned to the chat
+session; a later POST re-resolves access and rejects a forged replacement.
+
+Only `cloud` evidence is currently passed to `handle_web_message`. A
+`company` or `local_only` selection may be displayed, but sending it returns
+403 before the shared runtime because no end-to-end company/local model route is
+implemented. A non-AJAX `GET /app/chat` without a context clears the selection.
+See [P12-T11 acceptance](audit/p12-t11.md).
+
 ---
 
 ## LLM Providers
@@ -1215,6 +1273,16 @@ Content-Type: application/json
 **Response** `201 Created`.
 
 **Permissions:** `source.create`
+
+`Source.owner_user_id` is server-derived from the authenticated creator and is
+not accepted or returned by this API schema. During collection, a present
+`params.token_owner` is authoritative: it must be an active member of the source
+workspace, and an invalid or stale value does not fall through to
+`owner_user_id`. Without an override, the recorded owner is revalidated. With
+no usable personal owner, collection uses only the deployment credential; there
+is no workspace-owner token fallback. See the
+[source ownership contract](TENANCY.md#tables) and
+[P12-T16 audit](audit/p12-t16.md).
 
 ### Update Source
 

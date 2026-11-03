@@ -63,3 +63,4 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task result | Read bounded task status and permitted analysis summaries. |
 | python -m cli.main task update | Update an existing task. Only provided fields are changed. |
 | python -m cli.main task vk-connections | Read connection metadata and capabilities without resolving tokens. |
+| python -m cli.main task vk-search-categories | List declared VK search-result categories and their evidence status. |

@@ -88,6 +88,9 @@ The fields were introduced in migration 0117 and are included in the Q-14
 public/test-schema transition, but that does not prove another target's revision. Follow [deployment guidance](DEPLOYMENT.md)
 before using the fields on a target. P2-T15 behavioral/application tests remain
 deferred by the owner.
+The checked-in chain continues through `0121` (workspace connections), `0122`
+(knowledge/document evidence) and `0123` (source member ownership and an auth
+notice kind); these later revisions do not change the entitlement contract.
 
 ## Tables
 
@@ -99,6 +102,15 @@ deferred by the owner.
 | `tenant_channels` | global | Chat→tenant binding; unique per `(channel, chat_id)`. |
 | `user_credentials` | personal user (not tenant-marked) | Personal secrets (L2 user tokens / sessions), keyed by `users.id`, encrypted at rest with Fernet. |
 | `sources`, `agent_tasks`, `jobs`, `digest_runs`, `ai_analytics`, `agent_scenarios`, `bot_actions`, `notifications`, `agent_sessions`, `agent_messages`, `agent_feedback`, `agent_memory` | tenant | Every `TenantScopedMixin` model. |
+
+For social source collection, nullable `Source.owner_user_id` identifies the
+member who added the source. An explicit `params.token_owner`, when present, is
+authoritative and revalidated against active web membership on each run; an
+invalid or stale override does not fall through to `owner_user_id`. Without an
+override, the recorded owner is revalidated. There is no fallback to the
+workspace owner's personal token: no valid member owner means
+deployment-credential-only collection. Removing a member sets the source owner
+to NULL while preserving the source and its history.
 
 **No TenantScopedMixin does not mean globally shared authority.** `Platform`,
 `ModelType`, `Permission`, `Role`, `User` and tenancy lookup tables have no tenant
@@ -214,6 +226,29 @@ user plus workspace. Only the current workspace's owners may read the NULL-user
 legacy memory bucket. Jobs learn from the user's own web or explicitly bound
 private messenger sessions; group transcripts are excluded. Existing cost and
 plan limits remain workspace-wide.
+
+## Messenger owner bootstrap and revocation
+
+`TELEGRAM_OWNER_IDS` and `MAX_OWNER_ID` are deployment-controlled **user ID**
+allowlists for bootstrap into `DEFAULT_TENANT_SLUG`; they are not a continuing
+workspace grant, a platform admin role, a chat ID or a digest destination. Keep
+them minimal. An existing active owner can bind another eligible chat, but
+bootstrap does not reactivate an inactive member or binding, promote an existing
+non-owner, or move a chat belonging to another workspace. A newly bootstrapped
+membership alone does not establish an active linked application user: runtime
+independently checks the active user, workspace, binding, membership and grants.
+
+To revoke an allowlisted person's future bootstrap, an authorized operator first
+removes the ID from the deployment configuration and ensures every running
+instance has picked up the new configuration. Removing it does **not** revoke
+already persisted membership or sessions. Separately use the authorized
+membership/binding administration procedure to review and revoke the intended
+access, and verify access is denied. In particular, deleting rather than
+deactivating an old membership while leaving the ID allowlisted allows it to be
+created again. Do not change membership or deployment configuration implicitly.
+`TELEGRAM_ADMIN_CHAT_ID` is an operator-alert destination, never a workspace
+digest fallback; actual digest targets are workspace bindings. Do not put IDs,
+credentials or database values into public incident notes.
 
 ## Config
 

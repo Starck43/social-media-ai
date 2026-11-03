@@ -128,51 +128,13 @@ def login_credential(
     user: str = typer.Option("", "--user", help="Web user id that owns the session"),
     tenant: str = typer.Option("owner", "--tenant", help="Workspace slug or id (to resolve the user)"),
 ):
-    """Authorize an MTProto user session (code + optional 2FA) and store it.
-
-    Re-running performs a fresh login and replaces the stored session parts.
-    api_id/api_hash are taken from env when present, otherwise prompted. The
-    session string is never echoed.
-    """
-    if platform.strip().lower() != "telegram":
-        rprint("[red]Only 'telegram' supports interactive login (MTProto L2)[/red]")
-        raise typer.Exit(1)
-
-    async def _login():
-        from app.services.social.credentials import resolve_token
-        from app.services.social.tg_session import check_session, interactive_login, load_session, save_session
-
-        tenant_id = await _resolve_tenant_id(tenant)
-        user_id = await _resolve_user_id(user, tenant_id) if user else await _workspace_owner_id(tenant_id)
-        api_id_raw = await resolve_token("telegram", kinds=("api_id",))
-        api_hash = await resolve_token("telegram", kinds=("api_hash",))
-        if api_id_raw and api_hash:
-            rprint("Using api_id/api_hash from the environment.")
-        else:
-            api_id_raw = api_id_raw or typer.prompt("API id (from my.telegram.org)")
-            api_hash = api_hash or typer.prompt("API hash", hide_input=True)
-        try:
-            api_id = int(api_id_raw)
-        except ValueError:
-            rprint("[red]API id must be an integer[/red]")
-            raise typer.Exit(1)
-
-        try:
-            session = await interactive_login(api_id, api_hash)
-        except ImportError:
-            rprint("[red]telethon is not installed: pip install telethon[/red]")
-            raise typer.Exit(1)
-        except Exception as e:  # noqa: BLE001 - codes/2FA/network all end here
-            rprint(f"[red]Login failed: {e}[/red]")
-            raise typer.Exit(1)
-
-        await save_session(user_id, api_id=api_id, api_hash=api_hash, session=session)
-        stored = await load_session(user_id=user_id)
-        verdict = await check_session(stored) if stored else "error: session did not resolve after save"
-        colour = "green" if verdict.startswith("ok") else "red"
-        rprint(f"[{colour}]telegram L2 session saved: {verdict}[/{colour}]")
-
-    _run(_login())
+    """Deprecated: old-vault sessions are no longer accepted for collection."""
+    rprint(
+        "[yellow]Legacy Telegram login is disabled. Use /app/settings/telegram-accounts/workspace/login "
+        "or the Bearer-authenticated /api/v1/connector-accounts/telegram/login journey. "
+        "Choose the account, workspace grant and source explicitly. No session was created.[/yellow]"
+    )
+    raise typer.Exit(1)
 
 
 @app.command("oauth")
@@ -291,7 +253,6 @@ def test_credentials(
 
     async def _test():
         from app.services.social.credentials import credential_status, resolve_token
-        from app.services.social.tg_session import check_session, load_session
 
         tenant_id = await _resolve_tenant_id(tenant)
         user_id = await _resolve_user_id(user, tenant_id) if user else await _workspace_owner_id(tenant_id)
@@ -304,14 +265,8 @@ def test_credentials(
             colour = "green" if verdict.startswith("ok") else "red"
             rprint(f"[{colour}]{platform}: {source} -> {verdict}[/{colour}]")
 
-        # L2 is separate from the bot token: an MTProto session, if configured.
-        mtproto = await load_session(user_id=user_id)
-        if mtproto is None:
-            rprint("[dim]telegram L2 (MTProto): not configured (credentials login telegram --user <id>)[/dim]")
-        else:
-            verdict = await check_session(mtproto)
-            colour = "green" if verdict.startswith("ok") else "red"
-            hint = "" if colour == "green" else " - re-run: credentials login telegram --user <id>"
-            rprint(f"[{colour}]telegram L2 (MTProto): {verdict}{hint}[/{colour}]")
+        rprint(
+            "[dim]Telegram personal sessions: use connector-accounts metadata; the legacy vault is not checked.[/dim]"
+        )
 
     _run(_test())

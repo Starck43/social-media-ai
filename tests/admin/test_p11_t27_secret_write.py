@@ -191,3 +191,12 @@ def test_neither_view_encrypts_after_the_commit(view_cls):
     """`after_model_change` must not carry a second, post-commit encryption."""
     source = inspect.getsource(view_cls.after_model_change) if "after_model_change" in view_cls.__dict__ else ""
     assert "encrypt_secret" not in source
+
+
+def test_credential_view_never_includes_refresh_ciphertext_in_form_detail_or_export():
+    assert "refresh_secret_encrypted" in UserCredentialAdmin.form_excluded_columns
+    assert "refresh_secret_encrypted" in UserCredentialAdmin.column_details_exclude_list
+    assert "refresh_secret_encrypted" not in UserCredentialAdmin.column_list
+    assert "refresh_secret_encrypted" not in UserCredentialAdmin.column_export_list
+    assert "secret_encrypted" not in UserCredentialAdmin.column_export_list
+    assert "meta" not in UserCredentialAdmin.column_export_list

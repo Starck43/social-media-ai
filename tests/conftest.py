@@ -132,6 +132,13 @@ async def _test_database():
     from app.types import ActionType
     from scripts.setup_test_db import check_existing_schema
 
+    # Schema validation is a full catalog read plus the resource catalogue diff;
+    # say so, because the silence looked like a hang on a cold database.
+    print(
+        f"[test-db] validating {settings.DB_SCHEMA!r} tables and reference rows "
+        "(first run can take tens of seconds)",
+        flush=True,
+    )
     async with async_engine.connect() as conn:
         await conn.execute(text("set transaction isolation level repeatable read, read only"))
         await check_existing_schema(conn, Base.metadata, settings.DB_SCHEMA, require_all_tables=True)
@@ -182,6 +189,7 @@ async def _test_database():
                 + ", ".join(f"{resource}.{action}" for resource, action in sorted(missing_permissions))
             )
         raise RuntimeError("The test schema is missing required reference rows: " + "; ".join(missing))
+    print(f"[test-db] {settings.DB_SCHEMA!r} ready", flush=True)
     yield
 
 

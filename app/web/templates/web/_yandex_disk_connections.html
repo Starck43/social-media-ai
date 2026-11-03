@@ -1,9 +1,15 @@
-<p class="mt-3 text-sm ui-muted">Пилот: настройка одной папки только для чтения. Просмотр и открытие файлов ещё в разработке. Сохранение не проверяет доступ и не обращается к Яндекс.Диску.</p>
+<p class="mt-3 text-sm ui-muted">Пилот: настройка одной папки только для чтения. Просмотр названий работает только по запросу. Открытие и анализ файлов ещё в разработке. Сохранение не проверяет доступ и не обращается к Яндекс.Диску.</p>
 <p class="mt-2 text-sm ui-muted">Разрешение Яндекса на чтение может охватывать весь диск. Выбранная папка ограничивает только работу этого приложения, не других приложений. Запись и удаление в пилоте выключены.</p>
 {% for row in workspace_connection_rows|default([]) if row.provider_id|default('') == 'yandex_disk' %}
 <article class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3" data-yandex-connection="{{ row.id }}">
     <h3 class="font-medium">{{ row.label }}</h3>
     <p class="mt-2 text-sm" role="status">{% if row.is_active %}Сохранено · доступ не проверен{% else %}Отключено{% endif %}</p>
+    {% if row.is_active %}
+    <form method="post" action="/app/settings/yandex-connections/{{ row.id }}/browse" class="mt-3">
+        <input type="hidden" name="_csrf" value="{{ yandex_browse_csrf|default('') }}">
+        <button class="ui-control">Просмотреть папку</button>
+    </form>
+    {% endif %}
     {% if row.is_active and workspace_connection_write|default(false) %}
     <form method="post" action="/app/settings/yandex-connections/{{ row.id }}/disable" class="mt-3">
         <input type="hidden" name="_csrf" value="{{ csrf }}">

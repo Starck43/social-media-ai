@@ -153,6 +153,8 @@ class Settings(BaseSettings):
     VK_CLIENT_ACCESS_KEY: str | None = Field(
         default=None, repr=False
     )  # VK console "Защищённый ключ" — OAuth client secret
+    # Deployment egress trust boundary; exact OAuth hostnames, comma-separated.
+    VK_OAUTH_ALLOWED_HOSTS: str = "id.vk.ru"
     # Legacy migration inputs only (0120). Runtime uses Platform.params.
     VK_OAUTH_BASE_URL: str = "https://id.vk.ru"  # Legacy 0120 migration input only
     VK_REDIRECT_URI: str = "http://localhost/api/v1/social/callback"  # Legacy 0120 migration input only
@@ -163,8 +165,11 @@ class Settings(BaseSettings):
     # Legacy migration input only (0120); ignored by runtime.
     TELEGRAM_API_BASE_URL: str = "https://api.telegram.org"
     TELEGRAM_REQUEST_TIMEOUT: float = 30.0
-    # Env fallback for the MTProto session (L2 Telegram). Prefer the personal vault
-    # of the source's owner: python -m cli.main credentials login telegram --user <id>
+    # Dark launch only. Enable separately after migrations, final tests/audit
+    # and deployment approval; never fall back to a vault for selected grants.
+    TELEGRAM_ACCOUNT_RUNTIME_ENABLED: bool = False
+    # Deprecated compatibility inputs only, NOT personal runtime fallbacks.
+    # New MTProto reads require an explicit personal authorization/workspace grant.
     TELEGRAM_API_ID: str | None = None
     TELEGRAM_API_HASH: str | None = Field(default=None, repr=False)
     TELEGRAM_SESSION: str | None = Field(default=None, repr=False)

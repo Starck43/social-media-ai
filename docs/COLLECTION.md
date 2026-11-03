@@ -9,7 +9,7 @@ we read** (one of three collection layers).
 | Layer | Mechanism | Status | Reaches |
 | --- | --- | --- | --- |
 | **L1 official API** | VK `wall.get`/`wall.getComments` with a service token; `newsfeed.search` for a query source; Telegram Bot API where the bot is a member/admin | VK done, Telegram push-only (below) | public communities; chats and channels the bot joined; VK-wide posts when search is enabled on the app |
-| **L2 user session** | VK user token (sees what the owner's account sees); Telegram MTProto user session (Telethon) | done | closed communities, walls, historical depth |
+| **L2 user session** | VK user token (sees what the owner's account sees); Telegram MTProto user session (Telethon) | VK available; Telegram queued path default OFF / code-first | closed communities, walls, historical depth |
 | **L3 browser** | headless browser scraping | planned, last resort | everything without an API |
 
 The layer is picked per source (`Source.params["mode"]`), because most sources
@@ -27,14 +27,16 @@ Two sources, one reader (`app/services/social/credentials.py`):
 
 - **personal vault** — `user_credentials`, encrypted with Fernet under
   `CREDENTIALS_KEY`, keyed by `users.id` and shared across the workspaces that
-  user belongs to. Holds the L2 (user) secrets: VK `user_token` and the Telegram
-  MTProto parts (`api_id`, `api_hash`, `session`). Read only when the caller
+  user belongs to. Holds VK `user_token`. Legacy Telegram parts may remain for owner-managed
+  disposition but are not read by collection. New Telegram sessions use personal
+  authorizations with explicit workspace grants and source selections. Read only when the caller
   passes an `owner_user_id`.
 - **environment** — application/infrastructure config, one-per-deployment:
   `vk/app_id`, `vk/client_secret`, `vk/service_token` (service/L1 token),
-  `telegram/bot_token`, `max/bot_token` (the shared bots) and the Telegram
-  MTProto env fallback. Always the last resort, so an unconfigured install
-  still boots.
+  `telegram/bot_token`, `max/bot_token` (the shared bots) and application login
+  configuration. There is no MTProto session fallback from environment;
+  `TELEGRAM_SESSION` is deprecated and ignored. An unconfigured install boots
+  without borrowing a personal Telegram account.
 
 ```
 resolve_token("vk", owner_user_id=uid)   # personal vault first, then env
@@ -46,15 +48,16 @@ Resolution order per platform (first hit wins):
 
 | Platform | Kinds, in order | Env fallback |
 | --- | --- | --- |
-| `vk` | `user_token`, `service_token` | `VK_APP_ID` + `VK_CLIENT_ACCESS_KEY` (OAuth app), `VK_SERVICE_KEY` (service/L1) |
-| `telegram` | `bot_token` | `TELEGRAM_BOT_TOKEN`; L2 parts `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` / `TELEGRAM_SESSION` |
+| `vk` | `user_token`, `service_token` | `VK_APP_ID` (OAuth app), `VK_SERVICE_KEY` (service/L1); `VK_CLIENT_ACCESS_KEY` is a legacy resolver setting, not sent in the current VK ID exchange |
+| `telegram` | `bot_token` | `TELEGRAM_BOT_TOKEN`; app login configuration `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`; no env session fallback |
 | `max` | `bot_token` | `MAX_BOT_TOKEN` |
 
 `vk/user_token` is a **personal** secret: it is consulted only when the caller
 supplies an owner user. Collection takes that owner from
 `app.services.social.owner.resolve_source_owner(source)` — an explicit
-`Source.params["token_owner"]` (accepted only when the user is an active member
-of the source's workspace) or, by default, the workspace owner. The refresh
+`Source.params["token_owner"]` or `Source.owner_user_id`, revalidated against
+active workspace membership. No workspace owner is silently substituted; an
+unresolved personal owner means service-only access where that mode is allowed. The refresh
 token is stored in the `meta` JSON of the `vk/user_token` row (see
 [VK L2 via OAuth](#vk-l2-via-oauth-pkce)).
 
@@ -76,17 +79,22 @@ button*:
 | State | Condition | `needs_action` |
 | --- | --- | --- |
 | `connected` | row present, not expired | no |
-| `renewable` | expired, but a `refresh_token` renews it silently | **no** |
+| `renewal_unverified` | expired, refresh metadata exists; key and provider are not yet checked | **no** |
 | `reauth` | no refresh token, or the last renewal failed | yes |
 | `missing` | never connected | yes |
 | `unconfigured` | the deployment has no app credentials | no |
 
-The distinction that matters is `renewable` vs `reauth`. VK access tokens live
-**1 hour** and are renewed automatically; showing «войдите заново» for that
+The distinction that matters is `renewal_unverified` vs `reauth`. VK access tokens
+can be renewed automatically, but stored metadata alone does not prove the key
+is readable or the provider will accept renewal; showing «войдите заново» for that
 every hour is what pushed people to log out and re-authorize for no reason. A
 renewal failure is recorded as `meta.refresh_failed_at` and treated as `reauth`
 for `REFRESH_FAILURE_COOLDOWN` (6 h) — the UI then asks for a re-login instead of
-retrying a refresh token that is known to be spent.
+retrying a refresh token that is known to be spent. A known unreadable refresh
+secret instead directs the user to an administrator, not an ineffective re-login.
+These state values change the former `renewable`/`renewal_available` response
+to `renewal_unverified`; external API consumers must handle the new value. The
+metadata-only status does not proactively detect a wrong key or provider refusal.
 
 Consumers: the navbar (`TenantUIMiddleware` → `connection_alerts`, rendered only
 when non-empty), `/app/settings?tab=connections` (one card per platform),
@@ -101,7 +109,7 @@ list of sources sharing one token costs two queries rather than two per row.
 
 Two properties templates get for free instead of re-deriving them:
 `ConnectionStatus.fix_href` is empty unless the state needs action *and* the
-platform can be fixed, so a healthy or self-renewing badge is inert, and it points
+platform can be fixed, so a healthy or unverified-renewal badge is inert, and it points
 at the settings tab for a `manual` platform that has no authorize endpoint at all.
 
 Adding a platform is one `ConnectionSpec` row plus, for OAuth, a branch in
@@ -120,14 +128,13 @@ re-saving without editing does not double-encrypt). Application secrets
 python -m cli.main credentials list --user <id> [--tenant owner]     # personal vault rows
 python -m cli.main credentials test --user <id>                      # resolve + ping the platform
 python -m cli.main credentials disable vk user_token --user <id>
-python -m cli.main credentials login telegram --user <id>            # MTProto L2: code + optional 2FA
 python -m cli.main credentials oauth vk --user <id> [--tenant owner] # VK L2 via PKCE OAuth (below)
 ```
 
 `test` performs a real-but-cheap call (`account.getProfileInfo` for VK, `getMe`
-for Telegram, `/me` for MAX) and reports `user-vault|env -> ok|error`. It also prints
-an L2 line (`telegram L2 (MTProto): ok|error|not configured`), which pings the
-authorized user session.
+for Telegram, `/me` for MAX) and reports `user-vault|env -> ok|error`. Legacy MTProto is not loaded or pinged; new personal sessions use the
+connector-account login/status UI/API. These commands must not be used to infer
+new-store runtime readiness.
 
 ### VK OAuth refresh log privacy
 
@@ -354,36 +361,32 @@ channels/listener.py  ->  services/monitoring/ingest.py  ->  AIAnalyzer.base_ana
 
 ### L2: MTProto user session (Telethon)
 
-For historical depth and channels the bot cannot join, set the source's
-`Source.params["mode"] = "user"`. The collect job then pulls messages over
-MTProto with an authorized user session instead of waiting for push:
+**P12-T14 rollout hold:** the guarded queued path is implemented behind
+`TELEGRAM_ACCOUNT_RUNTIME_ENABLED=false`. Final shared tests, independent audit
+and separate rollout approval are still required. No direct/raw-client personal
+pull, old-vault session or environment fallback is supported.
 
-- Three personal-vault kinds make an L2 login: `api_id`, `api_hash` (from
-  my.telegram.org) and `session` (a Telethon `StringSession`). Set them with
-  `credentials login telegram --user <id>` — the CLI walks the code/2FA flow and
-  stores all three for that web user; the session string is never shown. At
-  collection the owner is resolved per source (see [Credential vault](#credential-vault)).
-- Collection is incremental by message id: `iter_messages` starts at
-  `Source.last_item_id` (the same watermark the push path advances), so a
-  repeat run costs nothing until new posts arrive. A direct CLI `collect
-  --force-refresh` can re-fetch a date window, but it does not bypass analysis
-  receipts. Set `cli_dates` +
-  `cli_dates.start_date` for a one-off backfill into the past.
-- `external_id` of a pulled item is built from the source's own Bot API chat id,
-  so a post that first arrived by push and is later pulled by L2 hashes to the
-  same `content_hash` — `app/services/ai/dedup.py` makes sure overlap is never
-  paid for twice.
-- A missing, expired or revoked session is an error to log, not to raise: the
-  job reports the source as failed and the rest of the run continues. Telethon
-  is imported lazily, so the app boots even when it is not installed.
+Use the bounded browser/API phone/code/2FA journey, then explicitly consent each
+workspace and select the owned grant/account/revision for a source. Same-subject
+recovery replaces only that personal account and invalidates all old grants;
+reconsent, source reselection and new enqueue are required. No automatic legacy
+migration or provider logout occurs. See [the exact contracts](CONNECTOR_ACCOUNT_REUSE.md).
 
-Layer selection per `Source.params["mode"]`:
+Trusted collect enqueue pins source/grant/account/revision. Old/unpinned or
+changed-source jobs require new admission, never silent repinning. Personal reads
+use a shared account guard, monotonic execution epoch, fresh job/initiator/payer
+checks, per-RPC authorization and a same-transaction consent/output gate. The
+history adapter is bounded and oldest-unread-first, with a dedicated
+`telegram_l2_last_item_id` cursor; Bot API push does not advance that cursor.
+Raw rows, selection evidence and the L2 cursor are admitted together before the
+account guard is released. Provider transport is not exactly once. Unknown commits
+and provider outcomes do not authorize replay. Rehearsals return metadata only.
 
 | Mode | Behaviour |
 | --- | --- |
-| `api` (L1) | push-based only; pull returns no items. |
-| `user` (L2) | MTProto pull. |
-| `auto` (default) | L2 pull whenever an MTProto session is configured, otherwise fall back to L1 (push). |
+| `push` / `api` | Compatible Telegram Bot API push spellings; pull returns no items and does not need a personal grant. |
+| `user` / `auto` | Personal queued pull requires explicit new-store selection and the rollout gate; no bot/legacy fallback. |
+| anything else | Unsupported for personal execution; never silently interpreted as authorized. |
 
 ## VK L2 via OAuth (PKCE)
 
@@ -397,28 +400,26 @@ Setup (one-time, deployment-wide app; per-user authorize):
 
 ```bash
 # App credentials are env config (one VK app per deployment):
-#   VK_APP_ID, VK_CLIENT_ACCESS_KEY in .env
+#   VK_APP_ID in deployment config; callback and OAuth URLs in shared Platform.params
+#   VK_CLIENT_ACCESS_KEY is retained for compatibility, not sent by this exchange
 python -m cli.main credentials oauth vk --user <id> [--tenant owner]   # runs the flow
 ```
 
 `credentials oauth vk` builds the authorize URL, opens it in the browser, and
 waits (up to `--wait` seconds, default 180) for the callback to write the token
-to the **personal vault of `--user`** (default: the workspace owner). On VK's
-side the user consents and VK redirects to the **public**
-callback `VK_REDIRECT_URI` (default `http://localhost/api/v1/social/callback`,
-`GET /api/v1/social/callback`).
+to the **personal vault of `--user`**. The registered callback must match
+`Platform.params.redirect_uri`; `VK_REDIRECT_URI` is only a legacy migration
+input, not a runtime override. The bootstrap default is localhost for local
+development and must not be mistaken for a production callback.
 
-Why the callback is public: VK redirects the user's browser there, so it cannot
-require our bearer token. Security comes from a **signed `state`** — the state is
-`"{tenant_id}.{user_id}.{verifier}.{hmac}"` over `SECRET_KEY`, so the callback recovers the
-workspace and the PKCE verifier without any server-side session, and a forged or
-tampered state is rejected before any code is exchanged.
-
-Auto-refresh: VK access tokens age out in **1 hour** and cannot be extended, but
-each authorization also yields a **refresh token valid for 180 days** that is
-renewed silently. `resolve_token("vk", ...)` calls `renew_if_expiring()`, which
-renews ~5 minutes *before* the expiry rather than after it — a run that starts at
-10:59 would otherwise carry a token that dies mid-request.
+The callback is reached through the browser without a bearer token. The app
+uses a random, single-use state and an encrypted server-side pending PKCE
+verifier with a short expiry; it does not encode a signed user or verifier in
+the state. Provider-side application profile, permissions and token lifetimes
+must be verified separately; no success or fixed lifetime follows merely from
+configured values. This branch encrypts access/refresh secrets separately; migration 0124 converts
+legacy refresh metadata. Migration/rollout authorization remains separate from
+provider-side application profile, grants and lifetime verification.
 
 Two VK ID rules shape `refresh_user_token()`:
 
@@ -434,9 +435,7 @@ Two VK ID rules shape `refresh_user_token()`:
 A missing `app_id` leaves the flow unchanged — the row is skipped with a warning,
 as before.
 
-Consequence for the product: **re-authorization is a ~6-monthly event, not a
-routine chore.** Anything in the UI that asks for a login more often than that is
-reporting a bug, not a fact.
+Re-authorization timing depends on the provider and failures; do not promise a fixed interval.
 
 ## Source parameters
 
@@ -444,7 +443,7 @@ reporting a bug, not a fact.
 
 | Key | Meaning |
 | --- | --- |
-| `mode` | `api` (L1, default) \| `user` (L2, MTProto) \| `auto` (L1 with automatic L2 fallback) \| `browser` (L3, planned) |
+| `mode` | `api`/`push` (Bot API push) \| `user` (L2, MTProto) \| `auto` (explicit new-store personal selection, no fallback) \| `browser` (L3, planned) |
 | `query` | SEARCH sources: the phrase passed to `newsfeed.search` |
 | `owner_ids` | SEARCH sources: keep only posts from these walls (community ids negative) |
 | `incremental_mode` | `true` → only fetch what is newer than `last_checked` |
@@ -832,3 +831,12 @@ geographic filter.
 
 The [original removal/validation plan](audit/task-selection-migration-history.md)
 is retained as historical rationale. Current migrations follow the database policy.
+
+Known unreadable VK refresh data is an operator issue, not proof that a personal
+login will repair it. Source preflight and after-run personal notices distinguish
+that condition from an ordinary missing authorization; mixed groups name both.
+Personal source-access notices open the fixed connection-settings destination
+only after receipt ownership and current workspace membership are rechecked.
+The unreadable marker is not cleared automatically when a key is restored; an
+operator must review the recovery procedure. Metadata without such a marker
+still does not prove the secret can be read or the provider will renew it.

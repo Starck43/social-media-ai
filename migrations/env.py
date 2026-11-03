@@ -75,12 +75,22 @@ def on_version_apply(
     """Handle model type registration after migrations."""
     if step.is_stamp and config.attributes.get("skip_model_type_registration_on_stamp"):
         return
-    # 0119 owns its catalog rows; 0120/0121/0122/0124/0125/0126/0127 deliberately add no resources.
+    # 0119 owns its catalog rows; the configuration/secret-only revisions
+    # below deliberately add no generic resources or secret CRUD grants.
     # Do not run the generic
     # post-migration reconciler after either upgrade or downgrade: it could
     # recreate permission rows or normalize unrelated catalog state while the
     # migration is restoring the exact pre-revision registry snapshot.
-    if step.is_migration and step.up_revision_id in {"0119", "0120", "0121", "0122", "0124", "0125", "0126", "0127"}:
+    if step.is_migration and step.up_revision_id in {
+        "0119",
+        "0120",
+        "0121",
+        "0122",
+        "0124",
+        "p12t14_accounts",
+        "p12t14_tg_login",
+        "p12t14_tg_runtime",
+    }:
         return
     from scripts.migrations.register_model_types import register_model_types
 

@@ -1,14 +1,11 @@
 # Data Model Reference
 
-This repository model reference was reviewed against `dev` at
-`bdbeafb3148316d0800bfb8d6880c10d560e039d`; subsequent Q-15 changes are
-documentation-only. At that review the migration graph was
-`baseline_0118` → `0119` (workspace offboarding); the later Q-16 migration
-`0120` follows `0119` (shared platform configuration). This is a repository model
-reference, not a target-database record: it describes ORM and migration
-definitions, not the revision or integrity of any running database. No
-application import, database inspection or migration was run for this docs
-review. The table inventory was counted from checked-in model declarations.
+This repository model reference describes the current checked-in ORM and
+migration definitions. The source migration chain now extends from
+`baseline_0118` through `0119`–`0123`; the milestone table below records the
+relevant additions. This is not a target-database record: it does not establish
+the revision or integrity of any running database. The table inventory is
+derived from checked-in model declarations.
 Schema comes from `settings.DB_SCHEMA`; never hardcode it in application code.
 
 
@@ -241,9 +238,9 @@ evidence/budget tables have the separate timestamp and deletion rules below.
 
 ### `sources`
 
-[Source](../app/models/collection/source.py). Fields: `id`; non-null `platform_id` FK CASCADE; `name` String(255); native `source_type` enum; `external_id` String(100); `params` JSON; `is_active`; nullable `last_checked` timezone-aware DateTime, `last_item_id` String(100), and `owner_task_id` Integer FK → `agent_tasks` CASCADE.
+[Source](../app/models/collection/source.py). Fields: `id`; non-null `platform_id` FK CASCADE; `name` String(255); native `source_type` enum; `external_id` String(100); `params` JSON; `is_active`; nullable `last_checked` timezone-aware DateTime, `last_item_id` String(100), `owner_task_id` Integer FK → `agent_tasks` CASCADE, and `owner_user_id` Integer FK → `users` with `ON DELETE SET NULL` (0123).
 
-Unique **(`tenant_id`, `platform_id`, `external_id`)**. There is **no `user_id` or scenario FK**. Token owner selection uses params/personal-vault resolution, not a nonexistent owner column. Relationships: platform, tenant, analytics; tasks through association table. Task selects scenario, with workspace default for taskless runs.
+Unique **(`tenant_id`, `platform_id`, `external_id`)**. There is no column named `user_id` and no scenario FK. `owner_user_id` records the member who added the source. An explicit `params.token_owner`, when present, is authoritative and is revalidated against active workspace membership; an invalid or stale override does not fall through to `owner_user_id`. If no override is present, the recorded owner is revalidated. There is no workspace-owner fallback; without a valid personal owner, collection uses the deployment credential only. The public Source API does not expose `owner_user_id`. Relationships: platform, tenant, analytics; tasks through association table. Task selects scenario, with workspace default for taskless runs.
 
 `owner_task_id` was added by 0108 for task-scoped query lanes. A lane is hidden
 from the global source list and excluded from the task's empty-set/"all active"
@@ -711,6 +708,9 @@ Selected milestones, not a complete replay audit:
 | `baseline_0118` (Q-14) | Frozen schema baseline replacing the prior numbered migration history |
 | 0119 (P11-T29) | Permanent workspace-offboarding journal and guarded deletion workflow; follows `baseline_0118` |
 | 0120 (Q-16) | Shared platform configuration; follows `0119` |
+| 0121 (P12-T08) | Workspace connection and encrypted connection-secret tables; follows `0120` |
+| 0122 (P12-T11) | Persisted knowledge/document evidence and revision tables; follows `0121` |
+| 0123 (P12-T16) | Nullable source member owner and source-auth-required notification kind; follows `0122` |
 | 0031 / 0060 | Analytics cost tracking / sub-cent Numeric precision |
 | 0041 / 0042 / 0043 | Task queue / digest runs / agent tables |
 | 0044 | Tenancy foundation |
@@ -750,15 +750,16 @@ Selected milestones, not a complete replay audit:
 | **0106** | Add VK search source type and remove retired task action lists |
 | **0107** | Add model price units, nullable cache tariffs and usage evidence; preserve legacy pricing snapshots |
 
-At the Q-15 review revision the graph had one root, `baseline_0118`, and one
-follow-up, `0119` (`down_revision = "baseline_0118"`). Revision `0120` was
-subsequently added after `0119`; inspect the source graph before any migration.
-Q-14 replaced the earlier numbered history with the frozen baseline; the table above retains selected
-historical milestones. This is static source structure, not `alembic current`, an
-`alembic check`, a replay rehearsal or acceptance of any arbitrary target
-schema. Q-14 verified the baseline transition for the local public and test
-schemas; P11-T29 validated `0119` on the local test schema. Neither record
-certifies a production deployment.
+At the original Q-15 review revision the graph had one root, `baseline_0118`,
+and one follow-up, `0119`; later source revisions added `0120` through `0123`.
+The current checked-in chain is `baseline_0118` → `0119` → `0120` → `0121` →
+`0122` → `0123`. Q-14 replaced the earlier numbered history with the frozen
+baseline; the table above retains selected historical milestones. This is
+static source structure, not `alembic current`, an `alembic check`, a replay
+rehearsal or acceptance of any arbitrary target schema. Q-14 verified the
+baseline transition for the local public and test schemas; P11-T29 validated
+`0119` on the local test schema. Those records do not certify every target or a
+production deployment.
 
 Before running this ORM against any target, verify its actual revision and
 catalog compatibility under the project's approval rules. Existing owner-local

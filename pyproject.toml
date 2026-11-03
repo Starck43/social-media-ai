@@ -23,7 +23,7 @@ dependencies = [
     "uvicorn==0.54.0",
     "python-multipart==0.0.32",
     "httpx==0.28.1",
-    # Direct use by pinned file transport; same pins already in merged P8-T34.
+    # Used explicitly by the pinned Yandex TLS transport; independent of CA env overrides.
     "certifi==2026.10.23",
     "h11==0.16.0",
     "fastapi-pagination==0.16.1",
@@ -106,7 +106,10 @@ asyncio_mode = "auto"
 # per-test loop makes the next test fail with "Event loop is closed".
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
-addopts = "-v --cov=app --cov-report=term-missing"
+addopts = "-v"
+# Coverage stays opt-in: `pytest --cov=app --cov-report=term-missing`. Measuring the
+# whole app on every focused run cost about a second per file and nobody read it,
+# so CI and release checks ask for it explicitly.
 markers = [
     "tenancy: test runs without the platform-owner bypass and asserts tenant isolation",
 ]

@@ -1,13 +1,8 @@
-"""
-Telegram collection client: L1 push contract + L2 MTProto pull (Telethon).
+"""Telegram Bot API operations and pure normalization helpers.
 
-The Bot API (L1) cannot read history, so pull collection is only meaningful in
-`user` mode through an authorized MTProto session (Telethon). Sessions are
-resolved from the personal vault (`app.services.social.tg_session`, keyed by the
-source's owner user) and telethon is imported lazily — the app boots without it
-installed.
-
-Official documentation: https://docs.telethon.dev/
+Personal MTProto pull belongs to the bounded queued runtime and its guarded
+staging transaction, not this raw-client interface. No user-vault or environment
+session is read here. Bot API push/sending retains its independent contract.
 """
 
 import logging
@@ -17,6 +12,7 @@ from typing import Any, Optional
 from app.core.config import settings
 from app.models import Source
 from app.services.social.base import BaseClient
+from app.services.social.telegram_modes import is_bot_push
 from app.types import SourceType
 
 logger = logging.getLogger(__name__)
@@ -24,134 +20,23 @@ logger = logging.getLogger(__name__)
 # Source.params["mode"] values (see docs/COLLECTION.md).
 MODE_API = "api"  # L1: Bot API push via listener -> ingest; pull is a no-op
 MODE_USER = "user"  # L2: MTProto user session pull (Telethon)
-MODE_AUTO = "auto"  # default: L2 pull when an MTProto session exists, else L1 push
+MODE_AUTO = "auto"  # Personal pull requires explicit new-store grant; no fallback.
 
 
 class TelegramClient(BaseClient):
-    """
-    Client for Telegram: content collection and bot-side sending.
-
-    Collection is hybrid, decided per source by `Source.params["mode"]`:
-    - `api` (L1): no pull — the Bot API delivers only new updates to
-      the listener, which feeds `services/monitoring/ingest.py`; pulling here
-      would re-analyze pushes and burn LLM tokens, so it returns no items.
-    - `user` (L2): MTProto pull of everything newer than `Source.last_item_id`
-      (watermark shared with the push path); `force_refresh` + `cli_dates`
-      widen the window for a one-off backfill.
-    - `auto` (default): L2 pull whenever an MTProto session is configured,
-      otherwise fall back to L1 (push-based, returns no items).
-
-    `send_message` writes through the Bot API and is unrelated to the layer.
-    """
+    """Bot API push/sending plus normalization, never a personal pull permit."""
 
     async def collect_data(self, source: Source, content_type: str = "posts") -> list[Any] | list[dict | None]:
-        """Route the source to its collection layer (L1 no-op, L2 MTProto pull)."""
-        mode = (source.params or {}).get("mode", MODE_AUTO)
-        if mode == MODE_USER:
-            return await self._collect_mtproto(source)
-
-        if mode == MODE_AUTO:
-            from app.services.social.tg_session import load_session
-
-            if await load_session() is not None:
-                logger.info(f"Telegram source {source.id} in auto mode - L2 session available, pulling via MTProto")
-                return await self._collect_mtproto(source)
-            logger.info(f"Telegram source {source.id} in auto mode - no L2 session, falling back to L1 (push)")
-
-        if mode not in (MODE_API, MODE_AUTO):
-            logger.warning(f"Unknown Telegram mode {mode!r} for source {source.id} - treating as api")
-        logger.info(f"Telegram source {source.id} is push-based (L1) - pull collection skipped")
-        return []
-
-    async def _collect_mtproto(self, source: Source) -> list[Any] | list[dict | None]:
-        """L2 pull: fetch messages newer than the last durably admitted watermark.
-
-        A missing session raises `AuthorizationRequired`: the job reports the
-        source as failed, the rest of the run continues, and the operator gets
-        told why — as opposed to an empty list, which reads as "nothing new".
-        """
+        """L1 no-op only; personal history requires the guarded collector path."""
+        if is_bot_push(source.params):
+            return []  # Independent Bot API push path, never a personal pull.
         from app.services.social.credentials import AuthorizationRequired
-        from app.services.social.owner import resolve_source_owner
-        from app.services.social.tg_session import build_client, load_session
 
-        owner_user_id = await resolve_source_owner(source)
-        session = await load_session(user_id=owner_user_id)
-        if session is None:
-            raise AuthorizationRequired(
-                f"Нужна Telegram-сессия для источника {source.name}",
-                platform="telegram",
-                hint="Подключите Telegram в настройках, чтобы читать закрытые чаты и историю.",
-            )
-
-        params = source.params or {}
-        collection = params.get("collection") or {}
-        limit = int(collection.get("limit", params.get("limit", 100)))
-        force = bool(params.get("force_refresh"))
-
-        # The watermark is the primary cursor; dates only matter for backfills
-        # (first run or force_refresh), so a normal run costs nothing new.
-        min_id = 0 if force else self._watermark_id(source)
-        min_date = None if min_id else self._pull_start_date(source)
-
-        try:
-            client = build_client(session)
-        except ImportError:
-            logger.error("Telethon is not installed - L2 Telegram collection unavailable")
-            return []
-
-        # Telethon waits out a flood limit itself up to this threshold; a longer
-        # one raises FloodWaitError, which defers the source below.
-        from app.services.social.rate_limit import SourceRateLimited, telegram_flood_wait_seconds
-
-        client.flood_sleep_threshold = int(settings.SOCIAL_RATE_LIMIT_MAX_WAIT)
-
-        messages: list[Any] = []
-        try:
-            await client.connect()
-            if not await client.is_user_authorized():
-                raise AuthorizationRequired(
-                    f"Telegram-сессия источника {source.name} истекла или отозвана",
-                    platform="telegram",
-                    hint="Подключите Telegram заново в настройках.",
-                )
-            entity = await self._resolve_entity(client, source)
-            if entity is None:
-                return []
-            async for message in client.iter_messages(
-                entity, limit=limit, min_id=min_id, offset_date=min_date, reverse=True
-            ):
-                messages.append(message)
-        except AuthorizationRequired:
-            # Raised above for an unauthorized session. It must survive the broad
-            # catch below: it is a fact the operator has to act on, not a glitch
-            # to log and turn into an empty pull.
-            raise
-        except Exception as e:  # noqa: BLE001 - one source must not sink the job
-            flood_wait = telegram_flood_wait_seconds(e)
-            if flood_wait is not None:
-                # Not empty and not broken: Telegram asked us to wait longer than
-                # one run should. Messages read so far are dropped unadmitted, so
-                # the watermark stays and the next run reads the same window.
-                logger.warning(
-                    "social_rate_limit_deferred platform=telegram source_id=%s wait=%ss", source.id, int(flood_wait)
-                )
-                raise SourceRateLimited("telegram", flood_wait) from None
-            logger.error(f"Telegram L2 collection failed for source {source.id}: {e}", exc_info=True)
-            return []
-        finally:
-            try:
-                await client.disconnect()
-            except Exception:  # noqa: BLE001
-                pass
-
-        items = [item for item in (self._normalize_message(m, source) for m in messages) if item]
-        if not items:
-            logger.info(f"Telegram L2 source {source.id}: no new messages")
-            return []
-
-        # The collector advances the cursor only in its staging transaction.
-        logger.info(f"Telegram L2 source {source.id}: pulled {len(items)} messages")
-        return items
+        raise AuthorizationRequired(
+            "Личный сбор Telegram требует защищённого задания",
+            platform="telegram",
+            hint="Выберите личный аккаунт источника и создайте новое задание. Перехода к старой сессии нет.",
+        )
 
     @staticmethod
     def _watermark_id(source: Source) -> int:

@@ -87,13 +87,16 @@ def test_push_never_asks_for_a_personal_secret():
 
 
 def _status(state: str) -> ConnectionStatus:
-    return ConnectionStatus(platform="vk", state=state, label=state, detail="", needs_action=state in ("missing", "reauth"))
+    return ConnectionStatus(
+        platform="vk", state=state, label=state, detail="", needs_action=state in ("missing", "reauth")
+    )
 
 
 def test_only_missing_and_reauth_block_collection():
     assert blocks_collection(_status("missing"))
     assert blocks_collection(_status("reauth"))
     assert not blocks_collection(_status("renewable"))
+    assert not blocks_collection(_status("renewal_unverified"))
     assert not blocks_collection(_status("connected"))
     assert not blocks_collection(_status("unconfigured"))
 
@@ -153,13 +156,14 @@ async def test_preflight_reports_blocking_and_service_only_platforms(workspace, 
     assert 3 not in report.owners_by_source
 
 
-async def test_renewable_is_not_a_preflight_problem(workspace, make_user, monkeypatch):
+@pytest.mark.parametrize("state", ["renewable", "renewal_unverified"])
+async def test_renewable_is_not_a_preflight_problem(workspace, make_user, monkeypatch, state):
     owner = await make_user()
     await TenantUserManager().add_web_member(tenant_id=workspace.id, user_id=owner.id, role="member")
     source = _source(workspace.id, source_id=1, owner_user_id=owner.id)
 
     async def fake_statuses(sources, *, owner_overrides=None):
-        return {getattr(row, "id", None): _status("renewable") for row in sources}
+        return {getattr(row, "id", None): _status(state) for row in sources}
 
     monkeypatch.setattr(access_module, "source_connection_statuses", fake_statuses)
     monkeypatch.setattr(access_module, "blocks_collection", blocks_collection)
@@ -207,7 +211,9 @@ async def test_authorisation_notice_is_personal_and_deduplicated(workspace, make
 
     async def record(*args, **kwargs):
         created.append(kwargs)
-        return SimpleNamespace(id=len(created), tenant_id=workspace.id, title=kwargs.get("title") or (args[0] if args else ""))
+        return SimpleNamespace(
+            id=len(created), tenant_id=workspace.id, title=kwargs.get("title") or (args[0] if args else "")
+        )
 
     from app.services.notifications import service as service_module
 

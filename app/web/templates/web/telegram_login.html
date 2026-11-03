@@ -1,0 +1,64 @@
+{% extends "web/base.html" %}
+{% block title %}Вход в Telegram — AI Monitor{% endblock %}
+{% block page_heading %}Личный аккаунт Telegram{% endblock %}
+{% block page_context %}Вход и восстановление · текущее пространство{% endblock %}
+{% block extra_head %}{{ super() }}<link rel="stylesheet" href="{{ static_v('css/telegram-accounts.css') }}">{% endblock %}
+{% block content %}
+<div class="telegram-accounts">
+    <a class="telegram-accounts-back" href="/app/settings/telegram-accounts/workspace">← Разрешения пространства</a>
+    <section class="ui-card telegram-accounts-intro">
+        <h2>{% if recovery_target %}Восстановление записи № {{ recovery_target }}{% else %}Безопасный вход{% endif %}</h2>
+        <p>Код и пароль не сохраняются. Временная сессия зашифрована и истекает через 10 минут. Наличие сохранённой авторизации не гарантирует доступность Telegram.</p>
+        <p>Личный сбор остаётся выключен. Вход не запускает задания, не отправляет сообщения и не импортирует старое хранилище.</p>
+        {% if recovery_target %}<p><strong>Нужен тот же Telegram-профиль.</strong> Другой ID не заменит эту запись. Успешный вход отключит все старые разрешения: в каждом нужном пространстве подтвердите новую ревизию, выберите её для источников и создайте задания заново.</p>{% endif %}
+    </section>
+    {% if login_error %}
+    <section class="ui-card" role="alert"><h2>Действие не подтверждено</h2><p>{{ login_error }}</p>{% if lookup_key %}<a class="telegram-accounts-back" href="/app/settings/telegram-accounts/workspace/login/request/{{ lookup_key }}">Проверить статус по ключу запроса</a>{% endif %}<p>Вернитесь к статусу текущей попытки или к списку. Автоматического повторения нет.</p></section>
+    {% elif not attempt %}
+    <section class="ui-card"><h2>Запросить код</h2>
+        <form class="telegram-account-revoke" method="post" action="/app/settings/telegram-accounts/workspace/login">
+            <input type="hidden" name="_csrf" value="{{ login_tokens.start }}">
+            <input type="hidden" name="request_id" value="{{ request_key }}">
+            <input type="hidden" name="authorization_id" value="{{ recovery_target or '' }}">
+            <input type="hidden" name="expected_revision" value="{{ recovery_revision or '' }}">
+            <label for="telegram-phone">Номер телефона в международном формате</label>
+            <input class="telegram-account-select" id="telegram-phone" name="phone" type="tel" autocomplete="tel" pattern="\+[1-9][0-9]{6,14}" maxlength="16" placeholder="+79990000000" required>
+            <label class="telegram-account-confirm"><input type="checkbox" name="confirm" value="begin-login" required><span>{% if recovery_target %}Подтверждаю новый вход в тот же профиль, замену локальной сессии и отключение всех старых разрешений.{% else %}Разрешаю вход и создание авторизации для текущего пространства. Другие пространства не подключаются.{% endif %}</span></label>
+            <button class="telegram-account-allow-button" type="submit">Запросить код один раз</button>
+        </form>
+    </section>
+    {% else %}
+    <section class="ui-card" aria-live="polite"><h2>Статус попытки</h2>
+        <p>{{ {'processing':'Шаг выполняется или его исход неизвестен. Не повторяйте отправку.', 'code':'Ожидается код Telegram.', 'password':'Нужен пароль двухэтапной проверки.', 'completed':'Вход завершён локально.', 'failed':'Попытка завершилась без подключения.', 'expired':'Попытка истекла.', 'cancelled':'Попытка отменена локально.'}[attempt.state] }}</p>
+        <p class="ui-muted">Ревизия {{ attempt.revision }} · истекает {{ attempt.expires_at }}</p>
+        {% if attempt.failure_code %}<p>Шаг не подтверждён или данные не приняты. Учитывайте оставшиеся попытки; повторяйте только после обновления статуса.</p>{% endif %}
+        <a class="telegram-accounts-back" href="/app/settings/telegram-accounts/workspace/login/{{ attempt.attempt_id }}">Обновить только статус</a>
+        {% if attempt.state == 'completed' %}
+        {% if attempt.recovery_authorization_id %}<p><strong>Новая ревизия сохранена, все старые grants отключены.</strong> Подтвердите разрешение отдельно в каждом пространстве и выберите новую ревизию для источников. Старые задания не переиспользуются.</p>{% else %}<p>Подключено только текущее пространство. Теперь явно выберите аккаунт для источника.</p>{% endif %}
+        <a class="telegram-accounts-back" href="/app/settings/telegram-accounts/workspace">К разрешениям и источникам</a>
+        {% endif %}
+    </section>
+    {% if attempt.state in ['code', 'password'] %}
+    <section class="ui-card"><h2>{% if attempt.state == 'code' %}Код Telegram{% else %}Пароль двухэтапной проверки{% endif %}</h2>
+        <p>Осталось попыток: {{ attempt.code_attempts_remaining if attempt.state == 'code' else attempt.password_attempts_remaining }}.</p>
+        <form class="telegram-account-revoke" method="post" action="/app/settings/telegram-accounts/workspace/login/{{ attempt.attempt_id }}/{{ attempt.state }}">
+            <input type="hidden" name="_csrf" value="{{ login_tokens[attempt.state] }}">
+            <input type="hidden" name="expected_revision" value="{{ attempt.revision }}">
+            <label for="telegram-login-secret">{% if attempt.state == 'code' %}Код из Telegram{% else %}Пароль Telegram{% endif %}</label>
+            <input class="telegram-account-select" id="telegram-login-secret" type="password" name="secret" autocomplete="{{ 'one-time-code' if attempt.state == 'code' else 'current-password' }}" maxlength="256" required {% if attempt.state == 'code' %}inputmode="numeric" pattern="[0-9]{5,8}"{% endif %}>
+            <button class="telegram-account-allow-button" type="submit" name="confirm" value="{{ attempt.state }}">Передать один раз</button>
+        </form>
+    </section>
+    {% endif %}
+    {% if attempt.state in ['processing','code','password'] %}
+    <section class="ui-card"><h2>Остановить попытку</h2><p>Уже отправленный запрос отозвать нельзя. Его поздний результат не создаст авторизацию после отмены.</p>
+        <form class="telegram-account-revoke" method="post" action="/app/settings/telegram-accounts/workspace/login/{{ attempt.attempt_id }}/cancel">
+            <input type="hidden" name="_csrf" value="{{ login_tokens.cancel }}">
+            <input type="hidden" name="expected_revision" value="{{ attempt.revision }}">
+            <button class="telegram-account-revoke-button" type="submit" name="confirm" value="cancel">Отменить локально</button>
+        </form>
+    </section>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

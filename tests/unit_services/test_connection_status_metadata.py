@@ -56,16 +56,16 @@ async def test_missing_credential_is_actionable_for_its_person(monkeypatch):
 async def test_expired_credential_with_refresh_token_is_renewable_not_reauth(monkeypatch):
     row = SimpleNamespace(
         expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
-        meta={"refresh_token": "present"},
+        meta={"refresh_available": True},
     )
     stub_vault_row(monkeypatch, row)
 
     status = await connections.connection_status("vk", 303)
 
-    assert status.state == "renewable"
+    assert status.state == "renewal_unverified"
     assert status.needs_action is False
-    assert status.tone == "ok"
-    assert "продление без повторного входа" in status.detail
+    assert status.tone == "warn"
+    assert "проверятся при попытке" in status.detail
 
 
 @pytest.mark.asyncio
@@ -81,3 +81,50 @@ async def test_expired_credential_without_refresh_token_requests_reauthenticatio
     assert status.state == "reauth"
     assert status.needs_action is True
     assert status.tone == "bad"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["pending", "failed"])
+async def test_expired_credential_with_unresolved_refresh_is_not_renewable(monkeypatch, state):
+    row = SimpleNamespace(
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        meta={"refresh_available": True, "refresh_attempt": {"state": state}},
+    )
+    stub_vault_row(monkeypatch, row)
+    status = await connections.connection_status("vk", 505)
+    assert status.state == "reauth"
+    assert status.needs_action is True
+
+
+@pytest.mark.asyncio
+async def test_unreadable_secret_requests_operator_not_relogin(monkeypatch):
+    row = SimpleNamespace(
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        meta={"refresh_available": True, "refresh_attempt": {"state": "unreadable"}},
+    )
+    stub_vault_row(monkeypatch, row)
+    status = await connections.connection_status("vk", 505)
+    assert status.state == "reauth" and status.needs_action and not status.can_connect
+    assert "администратору" in status.detail
+
+
+@pytest.mark.asyncio
+async def test_malformed_failure_marker_fails_closed(monkeypatch):
+    row = SimpleNamespace(
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        meta={"refresh_available": True, "refresh_failed_at": "invalid"},
+    )
+    stub_vault_row(monkeypatch, row)
+    status = await connections.connection_status("vk", 505)
+    assert status.state == "reauth" and status.needs_action
+
+
+@pytest.mark.asyncio
+async def test_known_unreadable_not_hidden_by_unexpired_metadata(monkeypatch):
+    row = SimpleNamespace(
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+        meta={"refresh_available": True, "refresh_attempt": {"state": "unreadable"}},
+    )
+    stub_vault_row(monkeypatch, row)
+    status = await connections.connection_status("vk", 505)
+    assert status.state == "reauth" and status.needs_action and not status.can_connect

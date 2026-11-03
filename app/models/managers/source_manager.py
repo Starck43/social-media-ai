@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional, cast
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import with_db_session
 from app.core.permissions import require_permission
 from app.types import ActionType
 from app.utils.enum_helpers import get_enum_value
@@ -15,6 +18,31 @@ if TYPE_CHECKING:
     from app.types import SourceType
 
     from ..collection.source import Source
+
+
+def _protect_telegram_binding(source, changes):
+    """Generic CRUD may preserve a binding, never add/retarget/remove one.
+
+    This protects explicit consent through API/web/agent/CLI manager consumers.
+    Clearing and reselection must use the picker, including before target edits.
+    The reserved key is rejected regardless of platform to prevent retargeting.
+    """
+    previous = source.params if type(source.params) is dict else {}
+    incoming = changes.get("params", previous)
+    if type(incoming) is not dict:
+        raise PermissionError("telegram_source_picker_required")
+    has_binding = "telegram_authorization" in previous
+    if not has_binding and "telegram_authorization" in incoming:
+        raise PermissionError("telegram_source_picker_required")
+    if not has_binding:
+        return
+    for key in ("platform_id", "external_id", "owner_user_id"):
+        if key in changes and changes[key] != getattr(source, key):
+            raise PermissionError("telegram_source_picker_required")
+    for key in ("telegram_authorization", "token_owner", "mode"):
+        # JSON type fidelity: true and 1 are not the same consent pin.
+        if json.dumps(previous.get(key), sort_keys=True) != json.dumps(incoming.get(key), sort_keys=True):
+            raise PermissionError("telegram_source_picker_required")
 
 
 class SourceManager(BaseManager["Source"]):
@@ -42,17 +70,31 @@ class SourceManager(BaseManager["Source"]):
 
     @require_permission("source", ActionType.CREATE)
     async def create(self, *args: Any, session: AsyncSession | None = None, **kwargs: Any) -> "Source":
+        if type(kwargs.get("params")) is dict and "telegram_authorization" in kwargs["params"]:
+            raise PermissionError("telegram_source_picker_required")
         if session is not None:
             return await super().create(*args, session=session, **kwargs)
         return await super().create(*args, **kwargs)
 
     @require_permission("source", ActionType.UPDATE)
+    @with_db_session
     async def update_by_id(
         self, instance_id: int, *args: Any, session: AsyncSession | None = None, **kwargs: Any
     ) -> Optional["Source"]:
-        if session is not None:
-            return await super().update_by_id(instance_id, *args, session=session, **kwargs)
-        return await super().update_by_id(instance_id, *args, **kwargs)
+        # Lock the fresh scoped row, not a form's stale JSON copy. The dedicated
+        # picker writes in its own stronger account/grant/source transaction.
+        row = (
+            await session.execute(
+                select(self.model)
+                .where(self.model.id == instance_id, *self._tenant_criterion())
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        _protect_telegram_binding(row, kwargs)
+        return await super().update_by_id(instance_id, *args, session=session, **kwargs)
 
     @require_permission("source", ActionType.DELETE)
     async def delete_by_id(self, instance_id: int, *args: Any, session: AsyncSession | None = None) -> bool:

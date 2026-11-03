@@ -12,7 +12,8 @@ import importlib.util
 import logging
 import sys
 import unittest
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -63,10 +64,27 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.row = SimpleNamespace(
             id=19,
             user_id=7,
-            meta={"refresh_token": SECRETS[1], "device_id": SECRETS[2], "refresh_failed_at": "old"},
+            meta={"refresh_available": True, "device_id": SECRETS[2]},
+            refresh_secret_encrypted="cipher:" + SECRETS[1],
+            expires_at=None,
         )
         self.manager = SimpleNamespace(newest=AsyncMock(return_value=self.row), update_by_id=AsyncMock())
+        self.session = object()
+
+        @asynccontextmanager
+        async def locked_vk_token(*, user_id):
+            row = await self.manager.newest(user_id=user_id, platform="vk", kind="user_token")
+            yield self.session, row
+
+        async def write(row_id, **values):
+            for key, value in values.items():
+                if key != "session":
+                    setattr(self.row, key, value)
+
+        self.manager.locked_vk_token = locked_vk_token
+        self.manager.update_by_id.side_effect = write
         self.encrypt = Mock(side_effect=lambda value: "cipher:" + value)
+        self.decrypt = Mock(side_effect=lambda value: value.removeprefix("cipher:"))
         self.resolve = AsyncMock(return_value="SERVICE_SECRET_SENTINEL")
         self.settings = SimpleNamespace(VK_APP_ID="12345")
         diagnostics = load_source("_p6_t02_actual_diagnostics", "app/services/social/credential_diagnostics.py")
@@ -90,6 +108,9 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                     load_platform_config=AsyncMock(return_value={"redirect_uri": "https://example.invalid/callback"}),
                     require_config_param=lambda params, key: params[key],
                 ),
+                "app.services.social.connections": module(
+                    "app.services.social.connections", REFRESH_FAILURE_COOLDOWN=timedelta(hours=6)
+                ),
                 "app.services.social.credentials": module(
                     "app.services.social.credentials", resolve_token=self.resolve
                 ),
@@ -98,7 +119,9 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                     "app.models.managers.user_credential_manager",
                     user_credentials=self.manager,
                 ),
-                "app.utils.crypto": module("app.utils.crypto", encrypt_secret=self.encrypt),
+                "app.utils.crypto": module(
+                    "app.utils.crypto", encrypt_secret=self.encrypt, decrypt_secret=self.decrypt
+                ),
             }
         )
         self.import_patch = patch.dict(sys.modules, doubles)
@@ -152,9 +175,11 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                 self.capture.messages.clear()
                 self.post.side_effect = error
                 self.manager.update_by_id.reset_mock()
+                self.row.meta.pop("refresh_attempt", None)
+                self.row.meta.pop("refresh_failed_at", None)
                 self.assertIsNone(await self.oauth.refresh_user_token(7))
                 self.assertEqual(self.capture.messages, [f"VK ID refresh failed user_id=7 code=error: {category}"])
-                self.manager.update_by_id.assert_awaited_once()
+                self.assertEqual(self.manager.update_by_id.await_count, 2)
                 args = self.manager.update_by_id.await_args
                 self.assertEqual(args.args, (19,))
                 self.assertIn("refresh_failed_at", args.kwargs["meta"])
@@ -184,7 +209,14 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_double_failure_remains_best_effort(self):
         self.post.side_effect = httpx.ConnectError(PRIVATE_URL)
-        self.manager.update_by_id.side_effect = HostileError()
+        original_write = self.manager.update_by_id.side_effect
+
+        async def fail_only_bookkeeping(row_id, **values):
+            if "refresh_failed_at" in values.get("meta", {}):
+                raise HostileError()
+            await original_write(row_id, **values)
+
+        self.manager.update_by_id.side_effect = fail_only_bookkeeping
         self.assertIsNone(await self.oauth.refresh_user_token(7))
         self.assertEqual(len(self.capture.records), 2)
         self.assert_private_logs()
@@ -198,11 +230,14 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["refresh_token"], SECRETS[1])
         self.assertEqual(request["device_id"], SECRETS[2])
         self.assertEqual(request["service_token"], "SERVICE_SECRET_SENTINEL")
-        self.manager.newest.assert_awaited_once_with(user_id=7, platform="vk", kind="user_token")
-        self.manager.update_by_id.assert_awaited_once()
+        self.assertEqual(self.manager.newest.await_count, 2)
+        self.manager.newest.assert_awaited_with(user_id=7, platform="vk", kind="user_token")
+        self.assertEqual(self.manager.update_by_id.await_count, 2)
         stored = self.manager.update_by_id.await_args.kwargs
         self.assertEqual(stored["secret_encrypted"], "cipher:" + SECRETS[0])
-        self.assertEqual(stored["meta"]["refresh_token"], "ROTATED_SECRET_SENTINEL")
+        self.assertEqual(stored["refresh_secret_encrypted"], "cipher:ROTATED_SECRET_SENTINEL")
+        self.assertIs(stored["meta"]["refresh_available"], True)
+        self.assertNotIn("refresh_token", stored["meta"])
         self.assertEqual(stored["meta"]["device_id"], SECRETS[2])
         self.assertNotIn("refresh_failed_at", stored["meta"])
         self.assertGreaterEqual((stored["expires_at"] - before).total_seconds(), 3600)
@@ -211,7 +246,10 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_absent_rotated_refresh_never_reuses_spent_value(self):
         self.post.return_value = {"access_token": SECRETS[0]}
         await self.oauth.refresh_user_token(7)
-        self.assertEqual(self.manager.update_by_id.await_args.kwargs["meta"]["refresh_token"], "")
+        values = self.manager.update_by_id.await_args.kwargs
+        self.assertIsNone(values["refresh_secret_encrypted"])
+        self.assertIs(values["meta"]["refresh_available"], False)
+        self.assertNotIn("refresh_token", values["meta"])
         self.assert_private_logs()
 
     async def test_missing_application_does_not_read_vault(self):
@@ -236,7 +274,8 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.post.side_effect = asyncio.CancelledError()
         with self.assertRaises(asyncio.CancelledError):
             await self.oauth.refresh_user_token(7)
-        self.manager.update_by_id.assert_not_awaited()
+        self.manager.update_by_id.assert_awaited_once()
+        self.assertEqual(self.row.meta["refresh_attempt"]["state"], "pending")
         self.assertEqual(self.capture.records, [])
 
     async def test_bookkeeping_cancellation_propagates(self):
@@ -251,7 +290,8 @@ class VKOAuthLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             self.capture.records.clear()
             self.capture.messages.clear()
             self.assertIsNone(await self.oauth.refresh_user_token(value))
-            self.assertIn("user_id=None", self.capture.messages[0])
+            self.assertEqual(self.capture.records, [])
+            self.post.assert_not_awaited()
             self.assert_private_logs()
 
     async def test_invalid_bookkeeping_identifier_is_not_formatted(self):

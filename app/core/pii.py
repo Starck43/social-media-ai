@@ -41,7 +41,7 @@ _INDEX_HEX_LENGTH = 64
 
 # Normalization kinds the blind index can vouch for. Anything else is a
 # programming error, not a silently different normalization.
-INDEX_KINDS = frozenset({"email", "phone", "username"})
+INDEX_KINDS = frozenset({"email", "phone", "username", "opaque_id"})
 
 _PHONE_ALLOWED = re.compile(r"^\+?[0-9 ()\-]+$")
 DEFAULT_PHONE_REGION = "RU"
@@ -189,10 +189,19 @@ def normalize_username(value: str) -> str:
     return text
 
 
+def normalize_opaque_id(value: str) -> str:
+    """Exact native identifier, without username case folding."""
+    text = unicodedata.normalize("NFKC", value).strip()
+    if not text or len(text) > 512 or any(unicodedata.category(c).startswith("C") for c in text):
+        raise PIIError("invalid opaque identifier")
+    return text
+
+
 _NORMALIZERS = {
     "email": normalize_email,
     "phone": normalize_phone,
     "username": normalize_username,
+    "opaque_id": normalize_opaque_id,
 }
 
 

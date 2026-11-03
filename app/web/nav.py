@@ -105,7 +105,16 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         group="knowledge",
         group_label="База знаний и документы",
     ),
-    # 4. Communications & Follow-ups (P12-T04)
+    # 4. Contacts, Communications & Follow-ups
+    NavItem(
+        "contacts",
+        "/app/contacts",
+        "Контакты",
+        required_permission="contacts.contact.view",
+        icon="mentions",
+        group="communications",
+        group_label="Коммуникации и поручения",
+    ),
     NavItem(
         "communications",
         "/app/communications",

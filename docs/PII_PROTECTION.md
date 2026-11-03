@@ -71,8 +71,12 @@ Rules:
   `pii_updated_at`) and **every writer bumps it** on insert and update. Rotation
   refuses a table without it: a ciphertext comparison alone cannot tell a row
   whose value was rewritten during the run from one that was merely skipped.
-- Kinds are closed (`email`, `phone`, `username`). Adding one means adding a
+- Kinds are closed (`email`, `phone`, `username`, `opaque_id`). Adding one means adding a
   normalizer and its tests, not a free-form string.
+- The registry's third element is the **value kind** of a column that also has a
+  blind index, or `None` for an encrypted column with no index (display names,
+  notes, evidence text). It is not a column type: rotation never reads it, and a
+  free-form string would make the closed vocabulary unenforceable.
 
 # --- Rotation ---
 
@@ -122,3 +126,22 @@ never log those values. Redaction is defense in depth, not an authorization or
 complete data-loss-prevention boundary. Filtering one handler does not protect
 other handlers; configure every output sink. No business adapters are enabled by
 this task.
+
+# --- Contact core (P13-T07) ---
+
+The contact aggregate uses `EncryptedText` for display names, notes, personal
+calendar values, identifier values/native IDs, consent basis/evidence and merge
+reasons. All nine columns are explicitly registered in `cli/commands/pii.py`.
+Migration `0130` installs a marker trigger on each contact table: every insert
+starts at 1 and every update increments the old marker, including identical SQL
+rewrites and rotation itself. These triggers are part of the migration contract;
+`metadata.create_all()` alone is not a supported contact-schema setup.
+
+The additional closed normalizer `opaque_id` preserves case, strips outer
+whitespace, applies NFKC and rejects control characters/empty/oversized input.
+Contact native numeric IDs also require positive ASCII digits and canonicalize
+leading zeros before pairing. `telegram_username` reuses `username`; email and
+phone reuse their existing normalizers. Identity lookup filters tenant, kind,
+blind index and the selected connection (NULL means an unbound identity).
+
+See [CONTACTS](CONTACTS.md) for authorization, privacy and consent boundaries.

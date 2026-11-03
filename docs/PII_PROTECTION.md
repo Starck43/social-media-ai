@@ -8,7 +8,7 @@ owner decision D8: [Q-18](tasks/q-18.md).
 Personal values (email, phone, username) are stored as `pii:v1:` Fernet
 ciphertext under `PII_ENCRYPTION_KEYS`; a separate HMAC blind index under
 `PII_INDEX_KEY` makes exact lookup and deduplication possible without storing
-plaintext or a reversible index. `redact_pii` keeps these values out of logs.
+plaintext or a reversible index. `PIIRedactionFilter` can redact recognizable email and phone patterns from log messages and tracebacks; do not log personal data or secrets in the first place.
 
 Not protected today:
 
@@ -33,9 +33,9 @@ Not protected today:
 | `PII_INDEX_KEY` | urlsafe-base64, ≥ 32 bytes | HMAC-SHA256 key for blind indexes; **kept stable** |
 
 Both are marked sensitive in the settings views and never appear in `repr` or
-configuration dumps. Reusing `CREDENTIALS_KEY` for either is refused at runtime
-(`PII_ENCRYPTION_KEYS must not reuse CREDENTIALS_KEY`): one leaked key must not
-open the credential vault and every personal record at once.
+configuration dumps. The index key, each encryption key (including retired keys), and
+`CREDENTIALS_KEY` must contain distinct key material; reuse is refused at runtime.
+This prevents one leaked key from opening both the credential vault and personal records.
 
 Missing, invalid or non-matching keys fail closed with `PIIError` — there is no
 plaintext fallback, and error messages never echo a value or a key.
@@ -67,6 +67,10 @@ Rules:
 - Never put ciphertext or the index in API responses, admin lists or `repr`.
 - A module owning encrypted columns adds its table/column to
   `REGISTRY` in `cli/commands/pii.py`; nothing is auto-discovered.
+- The table carries an integer marker column (`ROTATION_MARKER_COLUMN`, default
+  `pii_updated_at`) and **every writer bumps it** on insert and update. Rotation
+  refuses a table without it: a ciphertext comparison alone cannot tell a row
+  whose value was rewritten during the run from one that was merely skipped.
 - Kinds are closed (`email`, `phone`, `username`). Adding one means adding a
   normalizer and its tests, not a free-form string.
 
@@ -80,7 +84,25 @@ Encryption keys rotate; the index does not.
    `python -m cli.main pii rotate --yes [--table T] [--limit N]`. Rows already on
    the active key are skipped, so a rerun is idempotent and `--limit` is resumed
    by simply running again.
-3. Remove `<old>` from `PII_ENCRYPTION_KEYS` and restart.
+3. Only after every writer uses the new active key, rerun the command and verify
+   zero rewrites and zero conflicts across every registered column. After a backup
+   and independent verification, remove `<old>` and restart. The dry run only
+   lists targets; it does not prove all rows have been rotated.
+
+Rotation uses a conditional update against the ciphertext **and** the marker it
+read. A concurrent write either changes both or is counted as a conflict, so the
+command is never fooled by a rewrite that stored byte-identical ciphertext; a
+conflict makes it exit non-zero, and operators must rerun and verify before
+retiring any key. The guarantee is: no write is overwritten, and every write that
+landed during the run is reported. It is not a row lock - a writer that neither
+changes the value nor bumps the marker is out of contract, which is why the marker
+is mandatory. Earlier committed
+batches remain committed. This does not protect against a stale writer later
+using the old active key; update or stop all old-key writers before rotation.
+Empty-string sentinels are skipped. The guard is verified on PostgreSQL by
+`python scripts/ci/pii_rotation_pg.py` (disposable schema, two connections: clean
+run, rerun after retirement, different-value and identical-ciphertext races, and
+a table without the marker refused). Run it after changing the command.
 
 `PII_INDEX_KEY` stays unchanged. Rotating it would change every index value and
 requires an approved rebuild of every indexed column; the command refuses index
@@ -92,6 +114,11 @@ means the data is unrecoverable — store keys in the same secret store as
 
 # --- Logs ---
 
-`redact_pii(text)` replaces emails and phone-shaped digit runs with `[redacted]`.
-Business adapters redact both the message and its arguments before logging.
-Counts, ids, provider codes and timestamps are preserved; only personal values go.
+Attach `PIIRedactionFilter()` to each output handler used by business adapters.
+It formats the message before replacing recognizable emails and phone-shaped
+runs, and sanitizes formatted exception/stack text. It does not sanitize arbitrary
+structured fields, usernames, secrets, or all possible personal-data formats;
+never log those values. Redaction is defense in depth, not an authorization or
+complete data-loss-prevention boundary. Filtering one handler does not protect
+other handlers; configure every output sink. No business adapters are enabled by
+this task.

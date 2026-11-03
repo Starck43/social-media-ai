@@ -25,7 +25,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import re
+import traceback
 import unicodedata
 from typing import Iterable
 
@@ -50,7 +52,7 @@ _PHONE_REGIONS = {"RU": "7"}
 _REDACTION = "[redacted]"
 _REDACTION_PATTERNS = (
     # Email: keep the shape of the text, drop the identity.
-    (re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"), _REDACTION),
+    (re.compile(r"(?<![\w.+%\-])[\w.+%\-]+@[\w\-]+(?:\.[\w\-]+)+", re.UNICODE), _REDACTION),
     # Phone: international or local with enough digits to be a phone, not a date
     # or an internal id. Grouping characters are optional.
     (re.compile(r"(?<![\w.])\+?\d[\d\s()\-]{8,}\d(?![\w.])"), _REDACTION),
@@ -79,24 +81,42 @@ def _index_key() -> bytes:
     if not raw:
         raise PIIError("PII_INDEX_KEY is not set — cannot build a blind index")
     try:
-        key = base64.urlsafe_b64decode(raw.encode())
+        key = base64.b64decode(raw.encode("ascii"), altchars=b"-_", validate=True)
     except (ValueError, TypeError) as e:
         raise PIIError("PII_INDEX_KEY is not a urlsafe-base64 value") from e
     if len(key) < 32:
         raise PIIError("PII_INDEX_KEY must decode to at least 32 bytes")
+    credentials = (settings.CREDENTIALS_KEY or "").strip()
+    if credentials and _same_key_bytes(key, credentials):
+        raise PIIError("PII_INDEX_KEY must not reuse CREDENTIALS_KEY")
+    encryption = settings.PII_ENCRYPTION_KEYS or ""
+    if encryption.strip():
+        for encryption_key in _sorted_key_list(encryption, "PII_ENCRYPTION_KEYS"):
+            if _same_key_bytes(key, encryption_key):
+                raise PIIError("PII_INDEX_KEY must not reuse PII_ENCRYPTION_KEYS")
     return key
+
+
+def _same_key_bytes(decoded: bytes, candidate: str) -> bool:
+    try:
+        return hmac.compare_digest(decoded, base64.urlsafe_b64decode(candidate.encode("ascii")))
+    except (ValueError, TypeError):
+        return False
 
 
 def _guard_key_reuse(keys: Iterable[str]) -> None:
     credentials = (settings.CREDENTIALS_KEY or "").strip()
-    if credentials and credentials in set(keys):
-        raise PIIError("PII_ENCRYPTION_KEYS must not reuse CREDENTIALS_KEY")
+    for key in keys:
+        if credentials and _same_key_bytes(base64.urlsafe_b64decode(key.encode("ascii")), credentials):
+            raise PIIError("PII_ENCRYPTION_KEYS must not reuse CREDENTIALS_KEY")
 
 
 def encryption_keys() -> list[Fernet]:
     """Return `[active, ...older]`; the first entry encrypts."""
     keys = _sorted_key_list(settings.PII_ENCRYPTION_KEYS, "PII_ENCRYPTION_KEYS")
     _guard_key_reuse(keys)
+    if (settings.PII_INDEX_KEY or "").strip():
+        _index_key()
     return [Fernet(key.encode()) for key in keys]
 
 
@@ -227,3 +247,31 @@ def redact_pii(text: str) -> str:
     for pattern, replacement in _REDACTION_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
+
+
+class PIIRedactionFilter(logging.Filter):
+    """Redact recognizable emails/phones from formatted messages and tracebacks.
+
+    Attach to each output handler that may receive business-adapter logs. This
+    is defense in depth, not permission to log personal data or secrets: arbitrary
+    structured record attributes and unrecognized values are not sanitized.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            record.msg = redact_pii(record.getMessage())
+            record.args = ()
+            if record.exc_info:
+                record.exc_text = redact_pii("".join(traceback.format_exception(*record.exc_info)))
+                record.exc_info = None
+            elif record.exc_text:
+                record.exc_text = redact_pii(record.exc_text)
+            if record.stack_info:
+                record.stack_info = redact_pii(record.stack_info)
+        except Exception:  # fail closed if interpolation or traceback formatting fails
+            record.msg = "[log message unavailable]"
+            record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
+        return True

@@ -138,15 +138,8 @@ def test_redaction_removes_personal_values():
 
 
 def test_redaction_filter_keeps_logs_clean(caplog):
-    class _Filter(logging.Filter):
-        def filter(self, record: logging.LogRecord) -> bool:
-            record.msg = pii.redact_pii(str(record.msg))
-            if isinstance(record.args, tuple):
-                record.args = tuple(pii.redact_pii(str(a)) for a in record.args)
-            return True
-
     logger = logging.getLogger("p13_t02_probe")
-    logger.addFilter(_Filter())
+    logger.addFilter(pii.PIIRedactionFilter())
     caplog.set_level(logging.INFO, logger="p13_t02_probe")
     try:
         logger.info("sending to %s", "anna@example.com")
@@ -175,3 +168,68 @@ def test_keys_are_sensitive_in_settings_views(monkeypatch):
         monkeypatch.setattr(settings, flag, True, raising=False)
     view = SecuritySettingsView.from_settings(settings)
     assert keys[0] not in repr(view)
+
+
+def test_index_key_cannot_reuse_credentials_or_any_encryption_key(monkeypatch):
+    active, old, credential = _keys(count=3)
+    for shared, message in (
+        (credential, "CREDENTIALS_KEY"),
+        (active, "PII_ENCRYPTION_KEYS"),
+        (old, "PII_ENCRYPTION_KEYS"),
+    ):
+        _configure(monkeypatch, [active, old], index_key=shared, credentials=credential)
+        with pytest.raises(pii.PIIError, match=message) as error:
+            pii.blind_index("email", "alice@example.invalid")
+        assert shared not in str(error.value)
+        if shared != credential:
+            with pytest.raises(pii.PIIError, match="PII_ENCRYPTION_KEYS"):
+                pii.encrypt_pii("alice@example.invalid")
+
+
+def test_index_key_rejects_invalid_base64_and_key_reuse_alias(monkeypatch):
+    key = _keys()[0]
+    _configure(monkeypatch, [key], index_key=key, credentials=None)
+    with pytest.raises(pii.PIIError, match="PII_ENCRYPTION_KEYS"):
+        pii.blind_index("username", "alice")
+    _configure(monkeypatch, index_key="@@@" + base64.urlsafe_b64encode(b"x" * 32).decode())
+    with pytest.raises(pii.PIIError, match="base64"):
+        pii.blind_index("username", "alice")
+
+
+def test_real_handler_filter_redacts_message_args_and_traceback():
+    import io
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(pii.PIIRedactionFilter())
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger = logging.getLogger("p13_t02_handler_probe")
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    try:
+        logger.info("customer=%(email)s tel=%(phone)s", {"email": "alice@example.invalid", "phone": "+7 999 123 45 67"})
+        try:
+            raise ValueError("письмо тест@пример.рф, телефон +7 999 555 12 34")
+        except ValueError:
+            logger.exception("delivery failed for %s", "other@example.invalid")
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = True
+    result = stream.getvalue()
+    for secret in (
+        "alice@example.invalid",
+        "+7 999 123 45 67",
+        "тест@пример.рф",
+        "+7 999 555 12 34",
+        "other@example.invalid",
+    ):
+        assert secret not in result
+    assert "[redacted]" in result and "ValueError" in result
+
+
+def test_filter_fails_closed_for_invalid_interpolation():
+    record = logging.LogRecord("x", logging.INFO, __file__, 1, "%s %s", ("private@example.invalid",), None)
+    assert pii.PIIRedactionFilter().filter(record)
+    assert record.getMessage() == "[log message unavailable]"
+    assert record.args == ()

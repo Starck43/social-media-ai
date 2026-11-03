@@ -22,9 +22,7 @@ from app.services.social.connector_authorizations import (
     VerifiedTelegramResult,
 )
 from app.services.social.connector_authorizations import connector_authorizations as manager
-from app.services.social.connector_authorizations import (
-    record_telegram_result,
-)
+from app.services.social.connector_authorizations import record_telegram_result
 from app.utils.crypto import decrypt_secret, encrypt_secret
 from tests.shared.connector_accounts import connector_actor as actor
 from tests.shared.connector_accounts import connector_data  # noqa: F401

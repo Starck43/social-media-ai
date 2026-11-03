@@ -107,15 +107,14 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 
 ## File-workspace continuation
 
-- [P12-T12](../tasks/p12-t12.md): originals-first file workspace, compact
-  version-aware agent knowledge, safe original-file opening and approved actions.
-  See the active card for implementation, dependencies and remaining work.
+- [P12-T12 increment audit](../audit/p12-t12-increment.md): **accepted 2026-11-03** at source `6433ae6a7615f63f2b204636b8538196986d18a9`, merged as `48caea61d10c5d586d0d97880dc413b215432665`. The broader task remains IN_PROGRESS; see [active card](../tasks/p12-t12.md) for remaining roadmap.
 
-- [P12-T13](../tasks/p12-t13.md): prepare file-workspace slice 1 contracts and
-  candidate-provider review.
+- [P12-T13 audit](../audit/p12-t13.md): **DONE 2026-11-03**, accepted contract-review scope at PR #327 source `6433ae6a7615f63f2b204636b8538196986d18a9`; provider activation and implementation remain in P12-T12/P8-T34.
 - [P8-T34](../tasks/p8-t34.md): owner-selected Yandex Disk pilot, transferred from
-  P8; one folder, read-only. Folder-level restrictions and mutation safety are
-  required; no provider writes or delete operation in this pilot.
+  P8; one folder, read-only. P12-T12's accepted increment supplies part of its
+  catalog/admission foundation; live provider behavior remains unverified.
+  Folder-level restrictions and mutation safety are required; no provider writes
+  or delete operation in this pilot.
 
 - [P12-T15](../tasks/p12-t15.md): user-managed per-folder restrictions and
   separately gated, explicitly approved file mutations after the read-only pilot.

@@ -4,6 +4,7 @@
 Run from the repository root with ``python3 scripts/check_markdown_links.py``.
 External URLs are intentionally not fetched.
 """
+
 from __future__ import annotations
 
 import html
@@ -37,9 +38,7 @@ class HTMLLinks(HTMLParser):
 
 
 def tracked_markdown() -> list[Path]:
-    result = subprocess.run(
-        ["git", "ls-files", "-z", "*.md"], check=True, capture_output=True
-    )
+    result = subprocess.run(["git", "ls-files", "-z", "*.md"], check=True, capture_output=True)
     return [Path(item.decode()) for item in result.stdout.split(b"\0") if item]
 
 
@@ -62,9 +61,7 @@ def strip_fenced_code(text: str) -> str:
 
 def heading_slug(heading: str) -> str:
     heading = re.sub(r"<[^>]*>", "", heading)
-    heading = re.sub(
-        r"!?\[([^]]*)\](?:\([^)]*\))?", lambda match: match.group(1), heading
-    )
+    heading = re.sub(r"!?\[([^]]*)\](?:\([^)]*\))?", lambda match: match.group(1), heading)
     heading = re.sub(r"(?<!\w)_([^_]+)_(?!\w)", r"\1", heading)
     heading = re.sub(r"[`*~]", "", heading).strip().lower()
     heading = re.sub(r"\s", "-", heading)
@@ -77,9 +74,7 @@ def parse_links(text: str) -> tuple[list[str], set[str], str]:
 
     references = {
         match.group(1).casefold(): match.group(2) or match.group(3)
-        for match in re.finditer(
-            r"^ {0,3}\[([^\]]+)\]:\s*(?:<([^>]+)>|(\S+))", link_text, re.M
-        )
+        for match in re.finditer(r"^ {0,3}\[([^\]]+)\]:\s*(?:<([^>]+)>|(\S+))", link_text, re.M)
     }
     link_text = re.sub(
         r"^ {0,3}\[[^\]]+\]:\s*(?:<[^>]+>|\S+).*$",
@@ -115,11 +110,7 @@ def markdown_anchors(text: str, html_anchors: set[str]) -> set[str]:
         match = re.match(r"^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$", line)
         if match:
             headings.append(match.group(1))
-        elif (
-            index > 0
-            and re.match(r"^ {0,3}(=+|-+)\s*$", line)
-            and lines[index - 1].strip()
-        ):
+        elif index > 0 and re.match(r"^ {0,3}(=+|-+)\s*$", line) and lines[index - 1].strip():
             headings.append(lines[index - 1].strip())
 
     anchors = set(html_anchors)
@@ -137,11 +128,7 @@ def main() -> int:
         print("run this checker from the repository root", file=sys.stderr)
         return 2
 
-    contents = {
-        path: path.read_text(errors="replace")
-        for path in tracked_markdown()
-        if path.exists()
-    }
+    contents = {path: path.read_text(errors="replace") for path in tracked_markdown() if path.exists()}
     anchors: dict[Path, set[str]] = {}
     links: list[tuple[Path, str]] = []
     for path, text in contents.items():

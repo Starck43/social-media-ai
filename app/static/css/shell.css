@@ -620,6 +620,9 @@ body[data-shell-section="chat"] .chat-window {
 	min-height: 0;
 	overflow: auto;
 	overscroll-behavior: contain;
+	/* Keep the fixed bell outside the scrollport, including intermediate rows.
+	 * Bottom padding alone only protects the end of a long document. */
+	margin-bottom: var(--shell-dock-space, 0px);
 	padding-bottom: 24px;
 }
 

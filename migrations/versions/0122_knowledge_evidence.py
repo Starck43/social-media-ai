@@ -86,8 +86,7 @@ def upgrade():
         ),
         schema=schema,
     )
-    op.execute(
-        f"""
+    op.execute(f"""
         CREATE FUNCTION "{schema}".guard_document_revision_content() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
@@ -104,8 +103,7 @@ def upgrade():
         CREATE TRIGGER document_revision_content_immutable
             BEFORE UPDATE ON "{schema}".document_revisions
             FOR EACH ROW EXECUTE FUNCTION "{schema}".guard_document_revision_content();
-    """
-    )
+    """)
     for table in ("knowledge_snippets", "knowledge_documents", "document_revisions"):
         op.create_index(f"ix_{table}_tenant_id", table, ["tenant_id"], schema=schema)
 

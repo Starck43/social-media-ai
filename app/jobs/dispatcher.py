@@ -709,6 +709,16 @@ async def _telegram_login_maintenance_loop() -> None:
             raise
         except Exception as error:  # noqa: BLE001 — retry without logging data or exception text
             logger.warning("telegram_login_maintenance_failed error_code=%s", _error_kind(error))
+        try:
+            from app.services.file_workspace.private_maintenance import purge_expired_private_insights
+
+            with tenant_scope(bypass=True):
+                if await purge_expired_private_insights(limit=100) == 100:
+                    delay = 1
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 — bounded retry; never log private data
+            logger.warning("private_insight_maintenance_failed error_code=%s", _error_kind(error))
         await asyncio.sleep(delay)
 
 

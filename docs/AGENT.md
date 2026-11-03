@@ -226,6 +226,16 @@ Workspace разрешается `TenantUIMiddleware` из `tenant_users` web me
 Сессия агента — одна на (tenant, channel, chat_id): один и тот же web-пользователь
 в двух workspaces ведёт два разных диалога, а не общий транскрипт.
 
+Контекст из evidence drawer приходит как `context_type`, `context_id` и
+`boundary`, но эти параметры служат только селекторами. Сервер разрешает
+сохранённую запись заново в текущем workspace с актуальным ACL; заголовок,
+ссылка и граница берутся из сохранённой записи, а подмена выбора в POST
+отклоняется. Сейчас в `handle_web_message` передаётся только `cloud`-контекст.
+`company`/`local_only` можно просмотреть, но отправка блокируется до runtime
+(403): сквозного локального/корпоративного маршрута пока нет. Обычный полный
+GET `/app/chat` без контекста сбрасывает закреплённый выбор. См. [P12-T11
+acceptance](audit/p12-t11.md).
+
 ### Photo and document attachments (P8-T44)
 
 The web chat accepts private photo and supported document attachments; this does

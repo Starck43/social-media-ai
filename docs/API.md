@@ -981,6 +981,21 @@ after the turn, cancellation or stop; no public file URL is exposed. Supported
 formats and exact byte/page/token limits are recorded in the
 [P8-T44 acceptance](audit/p8-t44.md).
 
+## Web-chat evidence context (P12-T11)
+
+`GET /app/chat` may receive `context_type`, `context_id` and `boundary`
+(`cloud`, `company` or `local_only`) from a stored evidence handoff. These values
+are selectors, not authorization: the server resolves the record under the
+current workspace and ACL, and uses stored title, reference and boundary rather
+than trusting client labels. The selected identity is pinned to the chat
+session; a later POST re-resolves access and rejects a forged replacement.
+
+Only `cloud` evidence is currently passed to `handle_web_message`. A
+`company` or `local_only` selection may be displayed, but sending it returns
+403 before the shared runtime because no end-to-end company/local model route is
+implemented. A non-AJAX `GET /app/chat` without a context clears the selection.
+See [P12-T11 acceptance](audit/p12-t11.md).
+
 ---
 
 ## LLM Providers
@@ -1215,6 +1230,16 @@ Content-Type: application/json
 **Response** `201 Created`.
 
 **Permissions:** `source.create`
+
+`Source.owner_user_id` is server-derived from the authenticated creator and is
+not accepted or returned by this API schema. During collection, a present
+`params.token_owner` is authoritative: it must be an active member of the source
+workspace, and an invalid or stale value does not fall through to
+`owner_user_id`. Without an override, the recorded owner is revalidated. With
+no usable personal owner, collection uses only the deployment credential; there
+is no workspace-owner token fallback. See the
+[source ownership contract](TENANCY.md#tables) and
+[P12-T16 audit](audit/p12-t16.md).
 
 ### Update Source
 

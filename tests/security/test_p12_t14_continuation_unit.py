@@ -69,6 +69,44 @@ async def test_bot_modes_never_enter_personal_pull_or_preflight(mode):
     assert await TelegramClient(NS(params={})).collect_data(row) == []
 
 
+async def test_current_fenced_history_fetches_oldest_first_without_writing_cursor(monkeypatch):
+    seen = {}
+    selection = NS(external_id="@synthetic")
+
+    class Client:
+        async def get_me(self):
+            return NS(id=7, bot=False)
+
+        async def get_entity(self, reference):
+            return "synthetic-target"
+
+        async def iter_messages(self, target, **kwargs):
+            assert target == "synthetic-target"
+            seen.update(kwargs)
+            yield NS(id=21, date=datetime.now(timezone.utc))
+
+    fence = NS(
+        _pin=NS(selection=selection),
+        _subject_key="7",
+        _inspect=AsyncMock(),
+    )
+    row = source(telegram_l2_last_item_id="20")
+    row.last_item_id = "999"
+    monkeypatch.setattr(runtime, "source_grant_selection", lambda source: selection)
+    monkeypatch.setattr(TelegramClient, "_normalize_message", lambda self, message, source: {"id": str(message.id)})
+
+    items = await runtime._history(Client(), fence, row, 25)
+
+    assert items == [{"id": "21"}]
+    assert row.last_item_id == "999"
+    assert seen["min_id"] == 20
+    assert seen["reverse"] is True
+    assert seen["wait_time"] == 0
+    assert "offset_date" in seen
+    assert "min_date" not in seen
+    assert fence._inspect.await_count >= 2
+
+
 @pytest.mark.parametrize("params", [None, [], {}, {"mode": "auto"}, {"mode": "user"}, {"mode": "API"}, {"mode": True}])
 def test_bot_allowlist_is_exact(params):
     assert not is_bot_push(params)

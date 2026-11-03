@@ -17,6 +17,7 @@ Entry: [task card](p12-t12.md) · [PR #327](https://github.com/Starck43/social-m
 python -m pytest tests/integrations/test_p12_t12_private_storage.py -q -o addopts=''
 ```
 
+- **Cross-PR integration with P12-T14 / #308:** resolve the duplicate Alembic `0124` revision without rewriting already-applied history; reconcile key rotation, 0128 secret-update purge and purpose-separated private ciphertext, then validate the combined migration/rotation/restore paths. Concrete sources and cautions: [coordination comment](https://github.com/Starck43/social-media-ai/pull/308#issuecomment-6608592831). Do not merge or run migrations solely to resolve this note.
 - Inspect coverage and author/run focused additional local tests where absent: current owner/tenant/source.view and root isolation; independent consent and regrant purge; connection/secret/policy/member/role revoke-and-restore; object forget vs in-flight save and no resurrection; concurrent last-slot and last-byte quota across object/connection/owner/tenant; retries and interrupted commits; expiry/GC idempotency, abandoned ledgers, backward clocks; corruption, encryption/key rotation and backup/restore; legacy catalog behavior and trigger paths. Verify no synthetic residue. Existing mocks are not evidence of PostgreSQL locking, migrations or concurrency.
 - Record commands, exact code SHA, interpreter/dependencies, DB target (without secrets), inventories/cleanup, counts, failures and unrun scenarios. Do not run the full suite without owner request.
 

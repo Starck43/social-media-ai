@@ -86,7 +86,14 @@ class SourceGrantSnapshot:
     authorization_id: int
 
 
-async def inspect_source_grant(selection: SourceGrantSelection) -> SourceGrantSnapshot:
+def _validate_selection_context(selection):
+    if type(selection) is not SourceGrantSelection:
+        raise AuthorizationUnavailable()
+    if is_bypass() or type(current_tenant_id()) is not int or current_tenant_id() != selection.tenant_id:
+        raise AuthorizationUnavailable()
+
+
+async def _inspect_source_grant(session, selection: SourceGrantSelection) -> SourceGrantSnapshot:
     """Reload source, owner rights, grant and account in one SQL snapshot.
 
     Job initiator/payer authorization is a separate responsibility. An active
@@ -94,10 +101,7 @@ async def inspect_source_grant(selection: SourceGrantSelection) -> SourceGrantSn
     CREATE, as with local detach; no platform-admin or missing-tenant bypass.
     Provider validity and envelope integrity are not established by metadata.
     """
-    if type(selection) is not SourceGrantSelection:
-        raise AuthorizationUnavailable()
-    if is_bypass() or type(current_tenant_id()) is not int or current_tenant_id() != selection.tenant_id:
-        raise AuthorizationUnavailable()
+    _validate_selection_context(selection)
     statement = (
         select(Source, Authorization.id.label("authorization_id"), WorkspaceRole.codename.label("owner_role"))
         .join(Platform, Platform.id == Source.platform_id)
@@ -120,7 +124,6 @@ async def inspect_source_grant(selection: SourceGrantSelection) -> SourceGrantSn
             Source.id == selection.source_id,
             Source.tenant_id == selection.tenant_id,
             Source.is_active.is_(True),
-            Platform.name == "telegram",
             Platform.platform_type == PlatformType.TELEGRAM,
             Platform.is_active.is_(True),
             Tenant.is_active.is_(True),
@@ -136,13 +139,19 @@ async def inspect_source_grant(selection: SourceGrantSelection) -> SourceGrantSn
             Authorization.secret_encrypted != "",
         )
     )
+    # A lock holder may inspect repeatedly in one READ COMMITTED transaction.
+    # Refresh ORM identities too; a new SQL row must not reuse stale Source.params.
+    row = (await session.execute(statement.execution_options(populate_existing=True))).one_or_none()
+    if row is None:
+        raise AuthorizationUnavailable()
+    source, authorization_id, owner_role = row
+    if source_grant_selection(source) != selection or ("source", ActionType.VIEW) not in workspace_grants(owner_role):
+        raise AuthorizationUnavailable()
+    return SourceGrantSnapshot(selection, authorization_id)
+
+
+async def inspect_source_grant(selection: SourceGrantSelection) -> SourceGrantSnapshot:
+    """Standalone metadata snapshot, never an execution permit or account lock."""
+    _validate_selection_context(selection)
     async with async_session_maker() as session, session.begin():
-        row = (await session.execute(statement)).one_or_none()
-        if row is None:
-            raise AuthorizationUnavailable()
-        source, authorization_id, owner_role = row
-        if source_grant_selection(source) != selection or ("source", ActionType.VIEW) not in workspace_grants(
-            owner_role
-        ):
-            raise AuthorizationUnavailable()
-        return SourceGrantSnapshot(selection, authorization_id)
+        return await _inspect_source_grant(session, selection)

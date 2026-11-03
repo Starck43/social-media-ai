@@ -180,7 +180,6 @@ async def test_one_fresh_joined_query_produces_only_non_secret_snapshot(monkeypa
     assert sql.count("is_active IS true") == 6
     for predicate in (
         "tenant_users.channel =",
-        "platforms.name =",
         "platforms.platform_type =",
         "personal_connector_authorizations.auth_method =",
         "personal_connector_authorizations.provider_id =",
@@ -189,6 +188,7 @@ async def test_one_fresh_joined_query_produces_only_non_secret_snapshot(monkeypa
         "personal_connector_authorizations.revision =",
     ):
         assert predicate in sql
+    assert "platforms.name" not in sql  # display label is not provider identity
     assert "FOR UPDATE" not in sql  # snapshot only, not an I/O lease
 
 

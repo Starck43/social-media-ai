@@ -178,9 +178,44 @@ change after the read. It is not yet called by the collector or a public source
 picker. The existing collector remains legacy-vault based. Complete the binding
 write/CSRF UI, durable shared-session lease, in-lease decryption, request-boundary
 fresh checks and output/admission fencing together before switching runtime or
-claiming workspace-consented collection. The new PostgreSQL integration tests
-are authored for the local test-runner; remote unit/SQL-compilation tests do not
-prove their behavior. No migration or existing source binding is changed here.
+claiming workspace-consented collection. PostgreSQL checks on an exclusively owned synthetic schema and separate
+DB-exempt unit/SQL-compilation checks are recorded with exact revision/scopes in
+the task card and #308; neither is provider/runtime acceptance. No migration or existing source binding is changed here.
+
+## Shared-account lock foundation (not collector execution)
+
+`telegram_account_lock.locked_source_grant(selection)` owns a PostgreSQL
+transaction advisory lock in namespace `721215`, keyed by the selected personal
+**authorization ID**, not the workspace, source or grant. Two cooperating workers
+using different grants of that same account cannot hold it concurrently; distinct
+personal authorization rows are independent. Contention fails immediately with
+`TelegramAccountBusy`, before any provider operation. Initial metadata discovery
+and the post-lock check must agree on the complete source pin/account.
+
+The owned transaction is explicitly READ COMMITTED and READ ONLY. The inspector
+can reuse that session, refreshing ORM identities as well as issuing fresh SQL;
+repeated checks cannot reuse an old `Source.params` identity-map value. Platform
+identity is the unique typed `platform_type`, not the editable/localized name.
+`guard.inspect()` rechecks source, owner, membership, consent and account revision
+on that same connection. The handle cannot be used by a child task, after exit,
+after transaction replacement/closure, or after a failed recheck. Connection loss
+fails closed; it never transparently reconnects/reacquires/replays through a handle.
+Normal exit, errors and cancellation unwind the transaction and release the lock.
+
+This is internal exclusion for cooperating callers, **not** a renewable/durable
+execution lease or an authorization to send requests. No automatic TTL, renewal,
+heartbeat or stale-worker reclaim is invented. PostgreSQL releases transaction
+locks at transaction/connection end; a lost DB connection is not proof that an
+already-sent remote operation did not happen. Future execution adapters must bound
+the lifetime and handle uncertainty without automatic replay.
+
+Detach and local revoke do not wait for this advisory lock; their changes are
+visible at the next fresh metadata check. They may still happen after that check.
+There is no provider-request/response-output fence, secret resolution/decryption,
+initiator/payer authorization, collector integration or public API in this slice.
+In particular it does not yet prevent revoked work from admitting output; those
+boundaries must be completed before using new-store grants in runtime. Legacy
+collection remains unchanged. No schema migration is required for this lock.
 
 ## Draft machine API
 

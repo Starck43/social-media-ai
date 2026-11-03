@@ -65,11 +65,28 @@ or mismatched schema generations, avoiding an unreadable-store key switch.
 
 `telegram_grant_access` now provides strict non-secret source/owner/grant/revision
 pins and a fresh joined metadata inspector. Unit tests use fake sessions and SQL
-compilation; a separate PostgreSQL integration file is authored but unrun in the
-remote no-database lane. This is a preparatory slice only: no collector call site,
+compilation; scoped PostgreSQL integration evidence is separately pinned in the
+task card and #308, using an exclusively owned synthetic schema. This is a preparatory slice only: no collector call site,
 secret resolution, source-picker binding write or session lease is delivered.
 Snapshots cannot authorize I/O or establish provider/envelope health. See the
 account-reuse contract for fields and freshness limits.
+
+## Shared-account lock continuation (partial item 1)
+
+`telegram_account_lock` adds fail-fast PostgreSQL transaction advisory exclusion
+per personal authorization across workspace grants. Pre/post-acquisition and
+explicit handle checks use fresh metadata on the same READ COMMITTED, READ ONLY
+connection; the source inspector refreshes ORM identities and uses the unique
+platform type instead of a display label. Handles are task/lifetime-bound and
+fail closed on failed recheck or connection loss. Normal exit/error/cancellation
+releases the lock. Revoke/detach remain independently available.
+
+This foundation does not decrypt, call providers, wire the collector, authorize
+initiator/payer, reclaim stale workers or fence remote requests/output. It is not
+a complete renewable/durable execution lease. Targeted fake-session and synthetic
+PostgreSQL tests (including an independent process and lost-connection case) are
+separate from unrun runtime/provider and full migration-history gates. See the
+account-reuse contract and latest card/#308 evidence for exact scopes/revision.
 
 ## Account-only local revocation continuation
 

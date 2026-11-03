@@ -34,6 +34,7 @@ from .collection import (
     Platform,
     Source,
 )
+from .contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
 from .file_workspace import FileCatalogObject, FileCatalogObservation, FileCatalogScan
 from .file_workspace.private_insights import (
     FileInsightAttempt,
@@ -65,6 +66,10 @@ from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
 __all__ = [
+    "Contact",
+    "ContactIdentity",
+    "ContactConsent",
+    "ContactMergeJournal",
     "FileCatalogObject",
     "FileCatalogObservation",
     "FileCatalogScan",

@@ -21,7 +21,7 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main credentials | Manage platform credentials (tenant vault) |
 | python -m cli.main credentials disable | Deactivate the newest matching personal credential without deleting it. |
 | python -m cli.main credentials list | List a user's personal vault credentials. Secrets are never printed. |
-| python -m cli.main credentials login | Authorize an MTProto user session (code + optional 2FA) and store it. Re-running performs a fresh login and replaces the stored session parts. api_id/api_hash are taken from env when present, otherwise prompted. The session string is never echoed. |
+| python -m cli.main credentials login | Deprecated: old-vault sessions are no longer accepted for collection. |
 | python -m cli.main credentials oauth | Run the full PKCE OAuth flow and store the L2 token in the personal vault. Opens the VK authorize URL; after the user consents, VK redirects to the public callback (`/api/v1/social/callback`), which exchanges the code and saves `vk/user_token` (with a refresh token) to the personal vault of the given web user (`--user`, or the workspace owner when omitted). This command waits for that write and reports the result. |
 | python -m cli.main credentials test | Show where each platform's secret comes from and whether it works. |
 | python -m cli.main digest | Digest operations |
@@ -35,6 +35,8 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main llm model-test | Run a local mock; paid probes require the authenticated admin surface. |
 | python -m cli.main llm model-update | Update an LLM model. Only provided fields are changed. |
 | python -m cli.main llm provider-list | List providers in the authenticated personal catalog. |
+| python -m cli.main pii | Rotate the personal-data encryption key (PII_ENCRYPTION_KEYS) |
+| python -m cli.main pii rotate | Re-encrypt registered personal-data columns with the active key. |
 | python -m cli.main prune | Trim old finished jobs directly. |
 | python -m cli.main reflect | Weekly memory hygiene + prompt-evolution proposals directly. |
 | python -m cli.main roles | Manage roles and permissions |

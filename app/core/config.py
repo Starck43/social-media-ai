@@ -212,6 +212,7 @@ class Settings(BaseSettings):
     # the rest keep older ciphertext readable during rotation.
     PII_ENCRYPTION_KEYS: str | None = Field(default=None, repr=False)  # ordered Fernet keys, comma-separated
     PII_INDEX_KEY: str | None = Field(default=None, repr=False)  # HMAC-SHA256 key for blind indexes; kept stable
+    RATE_LIMIT_KEY: SecretStr | None = Field(default=None, repr=False, exclude=True)  # stable, separate HMAC key
     DEFAULT_TENANT_SLUG: str = "owner"  # slug of the bootstrap tenant
 
     # --- Task runner ---

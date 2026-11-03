@@ -10,7 +10,7 @@ import base64
 
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, insert, select
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, event, insert, select
 from sqlalchemy.orm import Session
 
 from app.core import pii
@@ -61,16 +61,20 @@ def test_rotation_rewrites_only_stale_rows_and_is_idempotent(old_and_new, probe,
     with Session(engine) as session:
         # The stand-in is not in the project schema; patch the resolver only.
         monkeypatch.setattr(pii_cli, "_table", lambda session, name, column: table)
-        examined, rewritten = pii_cli._rotate_table(session, "pii_probe", "email_encrypted", batch=2, limit=None)
-    assert (examined, rewritten) == (3, 3)
+        examined, rewritten, conflicts = pii_cli._rotate_table(
+            session, "pii_probe", "email_encrypted", batch=2, limit=None
+        )
+    assert (examined, rewritten, conflicts) == (3, 3, 0)
     rows = _rows(engine, table)
     assert all(pii.is_active_ciphertext(value) for _id, value in rows)
     assert [pii.decrypt_pii(value) for _id, value in rows] == values
 
     with Session(engine) as session:
         monkeypatch.setattr(pii_cli, "_table", lambda session, name, column: table)
-        examined, rewritten = pii_cli._rotate_table(session, "pii_probe", "email_encrypted", batch=2, limit=None)
-    assert (examined, rewritten) == (3, 0)
+        examined, rewritten, conflicts = pii_cli._rotate_table(
+            session, "pii_probe", "email_encrypted", batch=2, limit=None
+        )
+    assert (examined, rewritten, conflicts) == (3, 0, 0)
 
 
 def test_rotation_limit_stops_and_resumes(old_and_new, probe, monkeypatch):
@@ -86,13 +90,17 @@ def test_rotation_limit_stops_and_resumes(old_and_new, probe, monkeypatch):
 
     monkeypatch.setattr(pii_cli, "_table", lambda session, name, column: table)
     with Session(engine) as session:
-        _examined, rewritten = pii_cli._rotate_table(session, "pii_probe", "email_encrypted", batch=2, limit=2)
+        _examined, rewritten, conflicts = pii_cli._rotate_table(
+            session, "pii_probe", "email_encrypted", batch=2, limit=2
+        )
     assert rewritten == 2
     assert [pii.is_active_ciphertext(value) for _id, value in _rows(engine, table)] == [True, True, False]
 
     with Session(engine) as session:
-        examined, rewritten = pii_cli._rotate_table(session, "pii_probe", "email_encrypted", batch=2, limit=None)
-    assert (examined, rewritten) == (3, 1)
+        examined, rewritten, conflicts = pii_cli._rotate_table(
+            session, "pii_probe", "email_encrypted", batch=2, limit=None
+        )
+    assert (examined, rewritten, conflicts) == (3, 1, 0)
     assert [pii.decrypt_pii(value) for _id, value in _rows(engine, table)] == values
 
 
@@ -125,3 +133,42 @@ def test_registry_entries_are_explicit_and_index_free(monkeypatch):
         assert kind in pii.INDEX_KINDS
         # The index key is stable (D8), so rotation must never target an index column.
         assert not column.endswith("_index")
+
+
+def test_stale_ciphertext_is_not_overwritten(old_and_new, probe, monkeypatch):
+    old, new = old_and_new
+    engine, table = probe
+    with engine.begin() as connection:
+        connection.execute(insert(table).values(id=1, email_encrypted=pii.encrypt_pii("old@example.invalid")))
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", f"{new},{old}")
+    replacement = pii.encrypt_pii("new@example.invalid")
+    monkeypatch.setattr(pii_cli, "_table", lambda session, name, column: table)
+    injected = []
+
+    def change_after_read(connection, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("UPDATE") and not injected:
+            injected.append(True)
+            connection.exec_driver_sql("UPDATE pii_probe SET email_encrypted = ? WHERE id = 1", (replacement,))
+
+    event.listen(engine, "before_cursor_execute", change_after_read)
+    try:
+        with Session(engine) as session:
+            assert pii_cli._rotate_table(session, "pii_probe", "email_encrypted", batch=10, limit=None) == (1, 0, 1)
+    finally:
+        event.remove(engine, "before_cursor_execute", change_after_read)
+    assert injected and pii.decrypt_pii(_rows(engine, table)[0][1]) == "new@example.invalid"
+
+
+def test_index_column_rejected_without_opening_table(old_and_new, probe):
+    engine, _ = probe
+    with Session(engine) as session, pytest.raises(pii.PIIError, match="blind-index"):
+        pii_cli._rotate_table(session, "pii_probe", "email_index", batch=10, limit=None)
+
+
+def test_empty_sentinel_not_rewritten(old_and_new, probe, monkeypatch):
+    engine, table = probe
+    with engine.begin() as connection:
+        connection.execute(insert(table).values(id=1, email_encrypted=""))
+    monkeypatch.setattr(pii_cli, "_table", lambda session, name, column: table)
+    with Session(engine) as session:
+        assert pii_cli._rotate_table(session, "pii_probe", "email_encrypted", batch=10, limit=None) == (0, 0, 0)

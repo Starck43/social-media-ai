@@ -8,7 +8,8 @@ step:
    decrypt;
 2. run `cli.main pii rotate --yes` to re-encrypt existing rows with the active
    key;
-3. drop the retired key from `PII_ENCRYPTION_KEYS`.
+3. only after every writer uses the new key and an independent full rerun
+   reports zero rewrites and zero conflicts, back up and retire the old key.
 
 Only `PII_ENCRYPTION_KEYS` is rotated. Blind indexes are keyed by `PII_INDEX_KEY`,
 which D8 keeps stable; rebuilding an index is a separate approved operation, so
@@ -40,17 +41,19 @@ def _run(coro):
         return asyncio.run(coro)
 
 
-def _rotate_table(session, table_name: str, column: str, *, batch: int, limit: int | None) -> tuple[int, int]:
-    """Re-encrypt one column in bounded batches. Returns (examined, rewritten)."""
+def _rotate_table(session, table_name: str, column: str, *, batch: int, limit: int | None) -> tuple[int, int, int]:
+    """Re-encrypt using compare-and-set. Returns (examined, rewritten, conflicts)."""
     from app.core.pii import decrypt_pii, encrypt_pii, is_active_ciphertext
 
+    if column.endswith("_index"):
+        raise PIIError("blind-index columns must not be rotated")
     table = _table(session, table_name, column)
-    examined = rewritten = 0
+    examined = rewritten = conflicts = 0
     last_id = 0
     while True:
         rows = session.execute(
             select(table.c.id, table.c[column])
-            .where(table.c[column].is_not(None), table.c.id > last_id)
+            .where(table.c[column].is_not(None), table.c[column] != "", table.c.id > last_id)
             .order_by(table.c.id)
             .limit(batch)
         ).all()
@@ -61,14 +64,23 @@ def _rotate_table(session, table_name: str, column: str, *, batch: int, limit: i
             if is_active_ciphertext(value):
                 continue
             plaintext = decrypt_pii(value) or ""
-            session.execute(table.update().where(table.c.id == row_id).values(**{column: encrypt_pii(plaintext)}))
-            rewritten += 1
+            result = session.execute(
+                table.update()
+                .where(table.c.id == row_id, table.c[column] == value)
+                .values(**{column: encrypt_pii(plaintext)})
+            )
+            if result.rowcount == 0:
+                conflicts += 1
+            elif result.rowcount == 1:
+                rewritten += 1
+            else:
+                raise PIIError("rotation could not verify its conditional update")
             if limit is not None and rewritten >= limit:
                 session.commit()
-                return examined, rewritten
+                return examined, rewritten, conflicts
         session.commit()
         last_id = rows[-1][0]
-    return examined, rewritten
+    return examined, rewritten, conflicts
 
 
 def _table(session, table_name: str, column: str):
@@ -106,9 +118,17 @@ def rotate(
 
         session = SessionLocal()
         try:
+            conflicts = 0
             for table_name, column, _kind in targets:
-                examined, rewritten = _rotate_table(session, table_name, column, batch=batch, limit=limit)
-                rprint(f"{table_name}.{column}: examined {examined}, rewritten {rewritten}")
+                examined, rewritten, table_conflicts = _rotate_table(
+                    session, table_name, column, batch=batch, limit=limit
+                )
+                conflicts += table_conflicts
+                rprint(
+                    f"{table_name}.{column}: examined {examined}, rewritten {rewritten}, conflicts {table_conflicts}"
+                )
+            if conflicts:
+                raise PIIError("rotation encountered concurrent changes; rerun and verify before removing old keys")
         finally:
             session.close()
     except PIIError as e:

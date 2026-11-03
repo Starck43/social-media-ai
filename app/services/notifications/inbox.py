@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from app.core.tenant_context import tenant_scope
 from app.models import NotificationReceipt
 from app.models.managers.tenant_manager import TenantUserManager
-from app.types import ActionType
+from app.types import ActionType, NotificationType
 
 from .attention import ENTITY_MODELS as WORKSPACE_ENTITY_MODELS
 from .attention import positive_id, timestamp
@@ -39,6 +39,14 @@ class PersonalInbox:
             self._grants[event.tenant_id] = await manager.member_grants(membership)
         if event.related_entity_type is None:
             return "/app/"
+        # A receipt is personal and workspace membership was freshly checked.
+        # Only this exact event kind gets a fixed, server-owned settings route.
+        if (
+            event.related_entity_type == "connection"
+            and event.related_entity_id is None
+            and event.notification_type == NotificationType.SOURCE_AUTH_REQUIRED
+        ):
+            return "/app/settings?tab=connections"
         model = ENTITY_MODELS.get(event.related_entity_type)
         if (
             not model

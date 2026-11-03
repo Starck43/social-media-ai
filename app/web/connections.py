@@ -56,12 +56,14 @@ async def connection_authorize(request: Request, platform: str, next: str = ""):
 
         try:
             url = await build_authorize_url(tenant_id, user_id=user_id)
-        except PlatformConfigurationError as e:
-            # A missing/invalid shared catalog entry is an operator fix, not a 500.
-            add_flash(request, "error", f"Общая конфигурация платформы недоступна: {e}")
-            return RedirectResponse(BACK, status_code=302)
-        except RuntimeError as e:
-            add_flash(request, "error", f"{e}. Задайте VK_APP_ID / VK_CLIENT_ACCESS_KEY в конфигурации")
+        except (PlatformConfigurationError, RuntimeError):
+            # Exception text may contain sensitive values; never echo it to the browser.
+            add_flash(
+                request,
+                "error",
+                "Не удалось начать авторизацию VK. Обратитесь к оператору для проверки "
+                "VK_APP_ID и общей конфигурации платформы.",
+            )
             return RedirectResponse(BACK, status_code=302)
         return RedirectResponse(url, status_code=302)
 

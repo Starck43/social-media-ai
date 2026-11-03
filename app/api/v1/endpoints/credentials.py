@@ -63,51 +63,12 @@ async def login_credential(
     request: CredentialLoginRequest,
     current_user: User = Depends(require_model_perm("credential", ActionType.CONFIGURE)),
 ):
-    """Initiate interactive login for a platform (e.g. telegram MTProto)."""
-    if request.platform.strip().lower() != "telegram":
-        raise HTTPException(status_code=400, detail="Only 'telegram' supports interactive login via API")
+    """Reject legacy terminal login: HTTP must never call input() or echo errors.
 
-    from app.services.social.credentials import resolve_token
-    from app.services.social.tg_session import check_session, interactive_login, load_session, save_session
-
-    api_id_raw = await resolve_token("telegram", kinds=("api_id",))
-    api_hash = await resolve_token("telegram", kinds=("api_hash",))
-
-    if api_id_raw and api_hash:
-        api_id = int(api_id_raw)
-    else:
-        raise HTTPException(status_code=400, detail="Set TELEGRAM_API_ID and TELEGRAM_API_HASH in .env first")
-
-    try:
-        session = await interactive_login(api_id, api_hash)
-    except ImportError:
-        raise HTTPException(status_code=500, detail="telethon is not installed: pip install telethon")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Login failed: {e}")
-
-    await save_session(current_user.id, api_id=api_id, api_hash=api_hash, session=session)
-    stored = await load_session(user_id=current_user.id)
-    verdict = await check_session(stored) if stored else "error: session did not resolve after save"
-
-    # Return the stored credential
-    from app.models.managers.user_credential_manager import user_credentials
-
-    rows = await user_credentials.filter(user_id=current_user.id, platform="telegram")
-    if rows:
-        row = rows[-1]
-        return CredentialResponse(
-            id=row.id,
-            user_id=row.user_id,
-            platform=row.platform,
-            kind=row.kind,
-            label=row.label,
-            expires_at=row.expires_at,
-            is_active=row.is_active,
-            created_at=row.created_at,
-            updated_at=row.updated_at,
-        )
-
-    raise HTTPException(status_code=500, detail="Session saved but credential not found")
+    A persisted workspace-consent foundation is not a completed login journey.
+    The future phone/code/2FA endpoint must own its bounded encrypted attempts.
+    """
+    raise HTTPException(status_code=409, detail="workspace_telegram_authorization_not_available")
 
 
 @router.post("/oauth", response_model=dict)

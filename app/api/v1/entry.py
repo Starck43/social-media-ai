@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.v1.endpoints import (
     action_audit,
     auth,
+    connector_accounts,
     credentials,
     dashboard,
     llm_models,
@@ -44,6 +45,9 @@ router.include_router(social.router, prefix="/social", tags=["social"])
 router.include_router(sources.router, prefix="/sources", tags=["sources"], dependencies=API_AUTH)
 router.include_router(tasks.router, prefix="/tasks", tags=["tasks"], dependencies=API_AUTH)
 router.include_router(credentials.router, prefix="/credentials", tags=["credentials"], dependencies=API_AUTH)
+router.include_router(
+    connector_accounts.router, prefix="/connector-accounts", tags=["connector-accounts"], dependencies=API_AUTH
+)
 router.include_router(action_audit.router, prefix="/audit", tags=["action-audit"], dependencies=API_AUTH)
 
 

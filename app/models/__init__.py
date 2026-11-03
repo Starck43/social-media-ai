@@ -35,7 +35,12 @@ from .collection import (
     Source,
 )
 from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
-from .integrations import WorkspaceConnection, WorkspaceConnectionSecret
+from .integrations import (
+    PersonalConnectorAuthorization,
+    WorkspaceAuthorizationGrant,
+    WorkspaceConnection,
+    WorkspaceConnectionSecret,
+)
 from .knowledge import DocumentRevision, KnowledgeDocument, KnowledgeSnippet
 from .llm import (
     LLMAttempt,
@@ -75,6 +80,8 @@ __all__ = [
     "UserCredential",
     "WorkspaceConnection",
     "WorkspaceConnectionSecret",
+    "PersonalConnectorAuthorization",
+    "WorkspaceAuthorizationGrant",
     "PersonalBillingAccount",
     "TaskBillingPayer",
     "PersonalLLMDispatch",

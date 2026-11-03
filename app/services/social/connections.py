@@ -21,7 +21,7 @@ clock run out":
 | State | Meaning | Button |
 | --- | --- | --- |
 | `connected` | secret present and not expired | «Выйти» only |
-| `renewable` | access expired, but a `refresh_token` renews it silently | none |
+| `renewal_unverified` | access expired; refresh metadata exists, but key and provider are unverified | none |
 | `reauth` | renewal is impossible — refresh token dead/absent, or revoked | «Войти заново» |
 | `missing` | never connected | «Подключить» |
 | `unconfigured` | the deployment has no app credentials for this platform | none |
@@ -41,14 +41,9 @@ from typing import Any, Iterable, Optional
 from app.core.config import settings
 from app.integrations.catalog import PROVIDERS
 from app.services.social.platform_config import _BOOTSTRAP
+from app.services.social.refresh_status import REFRESH_FAILURE_COOLDOWN, refresh_failure_blocks
 
 logger = logging.getLogger(__name__)
-
-# A refresh token whose renewal failed this recently is treated as dead until a
-# human looks at it. Without this, every collection run would re-post the same
-# broken refresh token — and VK ID invalidates the whole session when a spent
-# refresh token is replayed, so retrying silently costs the user their login.
-REFRESH_FAILURE_COOLDOWN = timedelta(hours=6)
 
 _SECRET_META_KEYS = frozenset(
     {
@@ -146,13 +141,16 @@ class ConnectionStatus:
     # Whether a "connect" affordance can work at all (the deployment may lack
     # `VK_APP_ID`, in which case a button would only produce an error).
     can_connect: bool = True
+    # Action is administrative, not a personal reauthorization.
+    operator_attention: bool = False
 
     @property
     def tone(self) -> str:
         """Badge tone for the templates: ok | warn | bad | idle."""
         return {
             "connected": "ok",
-            "renewable": "ok",
+            "renewable": "warn",  # compatibility with older callers
+            "renewal_unverified": "warn",
             "reauth": "bad",
             "missing": "warn",
             "unconfigured": "idle",
@@ -259,23 +257,29 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
     expires_at = _utc(row.expires_at)
     now = datetime.now(timezone.utc)
 
+    attempt = meta.get("refresh_attempt")
+    if isinstance(attempt, dict) and attempt.get("state") == "unreadable":
+        return ConnectionStatus(
+            platform,
+            "reauth",
+            "Доступ к секрету недоступен",
+            "Не удалось прочитать сохранённые данные. Обратитесь к администратору; повторный вход может не помочь",
+            True,
+            False,
+            operator_attention=True,
+        )
+
     # A failed renewal is remembered rather than retried silently — see the note
     # on REFRESH_FAILURE_COOLDOWN about VK invalidating a session on replay.
-    failed_at = meta.get("refresh_failed_at")
-    if failed_at:
-        try:
-            moment = _utc(datetime.fromisoformat(str(failed_at)))
-        except ValueError:
-            moment = None
-        if moment is not None and now - moment < REFRESH_FAILURE_COOLDOWN:
-            return ConnectionStatus(
-                platform,
-                "reauth",
-                "Нужно войти заново",
-                "Автоматическое продление не удалось — войдите ещё раз",
-                True,
-                True,
-            )
+    if refresh_failure_blocks(meta.get("refresh_failed_at"), now=now):
+        return ConnectionStatus(
+            platform,
+            "reauth",
+            "Нужно войти заново",
+            "Автоматическое продление не удалось или статус повреждён — обратитесь к администратору",
+            True,
+            True,
+        )
 
     if expires_at is None or expires_at > now:
         account = meta.get("user_id")
@@ -294,14 +298,22 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
             True,
         )
 
-    # Expired. Whether that is the user's problem depends entirely on whether a
-    # refresh token can renew it — the single distinction this module exists for.
-    if meta.get("refresh_token"):
+    # Expired: stored metadata is only an unverified renewal possibility.
+    if attempt:
         return ConnectionStatus(
             platform,
-            "renewable",
-            "Авторизован",
-            f"{spec.title} · {_human_expiry(expires_at)}, продление без повторного входа",
+            "reauth",
+            "Нужно войти заново",
+            "Предыдущее продление не завершено — войдите ещё раз",
+            True,
+            True,
+        )
+    if meta.get("refresh_available") is True:
+        return ConnectionStatus(
+            platform,
+            "renewal_unverified",
+            "Продление не проверено",
+            f"{spec.title} · {_human_expiry(expires_at)}. Ключ и продление проверятся при попытке",
             False,
             True,
         )
@@ -393,8 +405,8 @@ def is_service_only(status: Optional[ConnectionStatus]) -> bool:
 def blocks_collection(status: Optional[ConnectionStatus]) -> bool:
     """True when the owner's personal credential is missing or must be re-made.
 
-    `renewable` is deliberately not blocking: an expiring token renews itself on
-    the next run, so asking the user to fix it would be a false alarm.
+    `renewal_unverified` is not blocked before a renewal attempt; metadata alone
+    does not establish that the key or provider will permit renewal.
     """
     return status is not None and status.state in ("missing", "reauth")
 
@@ -567,7 +579,7 @@ def build_workspace_connectors(
         active_rows = [row for row in matching_rows if getattr(row, "is_active", False)]
         status = status_map.get(spec.platform)
         raw_state = getattr(status, "state", None)
-        if active_rows or raw_state in ("connected", "renewable"):
+        if active_rows or raw_state in ("connected", "renewable", "renewal_unverified"):
             health_status = "connected"
             health_diagnostic = (
                 f"Сохранено активных записей: {len(active_rows)} · подключение не проверено"

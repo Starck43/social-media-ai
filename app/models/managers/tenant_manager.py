@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.core.access_catalog import workspace_grants
@@ -141,6 +142,69 @@ class TenantUserManager(BaseManager["TenantUser"]):
         )
         return row
 
+    async def bootstrap_owner_binding(
+        self, *, tenant_id: int, channel: str, external_user_id: str, chat_id: str, role_id: int, kind: str
+    ) -> bool:
+        """Create first-contact rows without undoing revocations or role changes.
+
+        Serialize this bootstrap per workspace and lock existing rows. A uniqueness
+        conflict with a concurrent non-bootstrap writer rolls back both inserts.
+        Existing inactive bindings/members and non-owner roles are never changed.
+        """
+        from ..tenancy import Tenant, TenantChannel
+
+        try:
+            async with self._get_owned_session() as session:
+                tenant = (
+                    await session.execute(
+                        select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if tenant is None:
+                    return False
+                member = (
+                    await session.execute(
+                        select(self.model)
+                        .where(
+                            self.model.tenant_id == tenant_id,
+                            self.model.channel == channel,
+                            self.model.external_user_id == str(external_user_id),
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if member is not None and (not member.is_active or member.role_id != role_id):
+                    return False
+                binding = (
+                    await session.execute(
+                        select(TenantChannel)
+                        .where(TenantChannel.channel == channel, TenantChannel.chat_id == str(chat_id))
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if binding is not None and (not binding.is_active or binding.tenant_id != tenant_id):
+                    return False
+                if binding is None:
+                    blocked = await _channel_limit_reason(tenant_id)
+                    if blocked:
+                        raise PlanLimitError(blocked)
+                    session.add(TenantChannel(tenant_id=tenant_id, channel=channel, chat_id=str(chat_id), kind=kind))
+                if member is None:
+                    session.add(
+                        self.model(
+                            tenant_id=tenant_id,
+                            channel=channel,
+                            external_user_id=str(external_user_id),
+                            role_id=role_id,
+                        )
+                    )
+                await session.flush()
+            return True
+        except IntegrityError:
+            # Another path inserted the same member/chat after our absent-row
+            # check. Never convert that race into a role change or rebinding.
+            return False
+
     async def add_member(
         self,
         *,
@@ -180,8 +244,8 @@ class TenantUserManager(BaseManager["TenantUser"]):
 
     async def add_web_member(self, *, tenant_id, user_id, role_id=None, role=None):
         """Serialize seat admission; an active membership never changes role here."""
-        from ..tenancy.workspace_role import WorkspaceRole
         from ..tenancy import Tenant
+        from ..tenancy.workspace_role import WorkspaceRole
 
         if role_id is None and role is not None:
             resolved = await WorkspaceRole.objects.get(codename=_resolve_role_codename(role))
@@ -245,9 +309,9 @@ class TenantUserManager(BaseManager["TenantUser"]):
 
     async def _change_team(self, *, tenant_id, membership_id, role_id=None, disable=False, ai_chat_enabled=None):
         """Serialize every privilege change on the workspace row, then recheck authority."""
-        from ..tenancy.workspace_role import WorkspaceRole
-        from ..tenancy import Tenant
         from ..identity.user import User
+        from ..tenancy import Tenant
+        from ..tenancy.workspace_role import WorkspaceRole
 
         actor = get_current_user()
         if actor is None or current_tenant_id() != tenant_id or is_bypass():
@@ -465,9 +529,9 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
 
     async def redeem_web(self, *, code: str, user_id: int) -> dict[str, Any]:
         """Atomically consume a live invitation and admit one workspace seat."""
-        from ..tenancy.workspace_role import WorkspaceRole
-        from ..tenancy import Tenant, TenantUser
         from ..identity.user import User
+        from ..tenancy import Tenant, TenantUser
+        from ..tenancy.workspace_role import WorkspaceRole
 
         candidate = await self.get(code_hash=hash_invite_code(code))
         invalid = {"status": "invalid", "reason": "unknown, expired or exhausted code"}

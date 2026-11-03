@@ -7,6 +7,7 @@ explicitly. Nothing here should ever be called with a tenant id.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Optional
 
 from .base_manager import BaseManager
@@ -43,6 +44,49 @@ class UserCredentialManager(BaseManager["UserCredential"]):
         candidates = [row for row in rows if row.kind == kind]
         candidates.sort(key=lambda row: row.updated_at or row.created_at, reverse=True)
         return candidates[0] if candidates else None
+
+    @asynccontextmanager
+    async def locked_vk_token(self, *, user_id: int):
+        """Own a short transaction on a person's VK credential, across processes.
+
+        Lock the stable user first, including when no credential exists, then
+        re-select the newest active token under a row lock. OAuth replacement
+        and refresh claim/finalization must all use this order. Never hold this
+        context across HTTP: commit a durable refresh claim before sending it.
+        The caller must pass the yielded session to every manager write.
+        """
+        from sqlalchemy import func, select, text
+
+        from ..identity.user import User
+        from ..identity.user_credential import UserCredential
+
+        if type(user_id) is not int or user_id <= 0:
+            raise ValueError("A positive user ID is required")
+        async with self._get_owned_session() as session:
+            # Bounded lock waits; this changes only the owned transaction.
+            await session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            owner = await session.scalar(
+                select(User.id).where(User.id == user_id, User.is_active.is_(True)).with_for_update()
+            )
+            if owner is None:
+                raise PermissionError("An active credential owner is required")
+            row = await session.scalar(
+                select(UserCredential)
+                .where(
+                    UserCredential.user_id == user_id,
+                    UserCredential.platform == "vk",
+                    UserCredential.kind == "user_token",
+                    UserCredential.is_active.is_(True),
+                )
+                .order_by(
+                    func.coalesce(UserCredential.updated_at, UserCredential.created_at).desc(),
+                    UserCredential.id.desc(),
+                )
+                .limit(1)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            yield session, row
 
     async def web_metadata_for_user(self, *, user_id: int) -> list[Any]:
         """Caller-owned UI metadata only; bounded history, never encrypted secret columns."""

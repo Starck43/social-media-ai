@@ -27,8 +27,8 @@
             {% endif %}
             {# Connection state belongs in the row, not only in Settings: this is the table
    someone scans when a source went quiet, and the question there is always
-   "which one?". A healthy owner shows an inert badge, `renewable` shows that it
-   renews itself, and only a state needing action becomes the link. #}
+   "which one?". A healthy owner shows an inert badge; unverified renewal
+   does not guarantee that the key or provider is available. #}
             {% if connection_banners %}
             <div class="space-y-2">
                 {% for banner in connection_banners %}

@@ -285,14 +285,14 @@ async def test_runtime_gc_skips_rows_locked_by_owner_transactions(data, store):
 @pytest.mark.asyncio
 async def test_private_manager_preserves_clock_highwater_on_rollback_denial(data, store):
     with actor(data) as args:
-        await setup(store, args)
+        object_id = await setup(store, args)
         future = datetime.now(timezone.utc) + timedelta(hours=1)
         async with async_session_maker() as session, session.begin():
             mount = await session.get(FileInsightMount, args["connection_id"])
             mount.clock_highwater = future
 
         with pytest.raises(PrivateInsightUnavailable):
-            await store.consent_state(**args)
+            await store.begin_read(**args, object_id=object_id)
 
         async with async_session_maker() as session:
             mount = await session.get(FileInsightMount, args["connection_id"])
@@ -323,7 +323,7 @@ async def test_forget_object_racing_external_read_prevents_late_save(data, store
             await save
 
         async with async_session_maker() as session:
-            assert await session.get(FileInsightAttempt, receipt.nonce) is None
+            assert await session.get(FileInsightAttempt, source.context.request.nonce) is None
             assert (
                 await session.scalar(
                     select(func.count())
@@ -390,7 +390,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
             original_plaintext = decrypt_secret(original_ciphertext)
             provider = LLMProvider(
                 owner_user_id=args["actor_id"],
-                uid="p12t12-rotation-" + receipt.nonce,
+                uid="p12t12-rotation-" + source.context.request.nonce,
                 name="Synthetic provider",
                 api_format="openai",
                 base_url="https://synthetic.invalid/v1",
@@ -428,7 +428,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
         async with async_session_maker() as session:
             mount = await session.get(FileInsightMount, args["connection_id"])
             assert mount.processing_allowed and mount.retention_allowed
-            assert await session.get(FileInsightAttempt, receipt.nonce) is not None
+            assert await session.get(FileInsightAttempt, source.context.request.nonce) is not None
             assert await session.get(FilePrivateInsight, saved.id) is not None
             assert (
                 await session.get(WorkspaceConnectionSecret, args["connection_id"])
@@ -452,7 +452,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
         async with async_session_maker() as session:
             mount = await session.get(FileInsightMount, args["connection_id"])
             assert mount.processing_allowed and mount.retention_allowed
-            assert await session.get(FileInsightAttempt, receipt.nonce) is not None
+            assert await session.get(FileInsightAttempt, source.context.request.nonce) is not None
             assert await session.get(FilePrivateInsight, saved.id) is not None
             assert (
                 await session.get(WorkspaceConnectionSecret, args["connection_id"])
@@ -478,7 +478,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
         async with async_session_maker() as session:
             mount = await session.get(FileInsightMount, args["connection_id"])
             assert not mount.processing_allowed and not mount.retention_allowed
-            assert await session.get(FileInsightAttempt, receipt.nonce) is None
+            assert await session.get(FileInsightAttempt, source.context.request.nonce) is None
             assert await session.get(FilePrivateInsight, saved.id) is None
             rotated_secret = (await session.get(WorkspaceConnectionSecret, args["connection_id"])).secret_encrypted
             assert rotated_secret != original_ciphertext

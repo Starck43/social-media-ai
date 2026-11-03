@@ -6,9 +6,10 @@ Owner continuation: https://app.notion.com/chat?t=40dd5248ae668030a7a000a9e8d511
 
 ## Delivery boundary
 
-This checkpoint specifies the smallest next parser slice; **no extractor is
-implemented or activated by this document**. Defaults below are conservative
-proposals for synthetic implementation/tests, pending P12-T13 capability review.
+The isolated helper is implemented in `app/integrations/file_workspace/plain_text.py`
+with synthetic tests in `tests/unit_services/test_p12_t12_plain_text.py`; it has no
+production caller or activation. Defaults below remain conservative proposals
+for synthetic implementation/tests, pending P12-T13 capability review.
 They are not provider guarantees, accepted production budgets or new chat limits.
 P8-T34 still owns real authorized reads/network/credentials. This document does
 not resolve the real original-open gate or complete the wider analysis milestone.
@@ -86,7 +87,7 @@ plain-text prompt/HTML/URL strings staying inert; immutable/repr-safe output and
 sanitized errors. No provider/model/DB fixture is needed for this pure helper.
 Add no public route, provider adapter or implicit parser reuse with that slice.
 
-## Evidence and next action
+## Historical contract-only evidence and next action
 
 Documentation only, authored against PR source `2f4ac00b` after the owner-requested
 registry refresh. Sandbox command execution failed twice with infrastructure
@@ -102,3 +103,11 @@ approval is inferred. Review the proposed limits with P12-T13, then reconcile th
 retained checkout from current dev/PR heads after infrastructure recovery and
 implement the pure helper plus focused tests as separate commits. Parent task
 stays in progress and PR draft. No merge/deploy/public migration or live access.
+
+## Implemented isolated checkpoint
+
+Helper `d74bdc4e`, tests `b8ff6104`: exact published source
+`b8ff61044f77b63e91721686f5906b8f21317930` passed 92 synthetic no-DB tests.
+See the [task checkpoint](tasks/p12-t12.md#pure-utf-8-helper-checkpoint--2026-11-03)
+for exact command, warnings, initial test correction and deferred checks.
+No provider/model/DB/UI/cache/route integration; no P12-T13 approval implied.

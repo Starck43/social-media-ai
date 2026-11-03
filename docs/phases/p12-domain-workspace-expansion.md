@@ -101,8 +101,9 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 
 ## Credential and connector security follow-up
 
-- [P12-T14](../tasks/p12-t14.md): plan and implement protected personal credentials,
-  explicit source selection, deployment configuration and owner-bootstrap safeguards.
+- [P12-T14](../audit/p12-t14.md): **DONE 2026-11-03**. Protected credentials,
+  explicit personal account/grant/source authorization and reviewed runtime fences;
+  accepted source `9885a1f94148c5a0db8532a6c31f5b47ff4797b8`. Live checks are owner-run.
 
 ## File-workspace continuation
 

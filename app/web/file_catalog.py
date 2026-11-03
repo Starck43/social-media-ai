@@ -8,10 +8,38 @@ from sqlalchemy.exc import DBAPIError
 from app.core.config import settings
 from app.models.managers.file_catalog_manager import CatalogInputError, FileCatalogManager
 from app.models.managers.workspace_connection_manager import ConnectionDenied
+from app.services.file_workspace.catalog_scan import catalog_scan_status
 from app.web.deps import render
 
 router = APIRouter(prefix="/knowledge/files")
 catalog = FileCatalogManager()
+
+_SCAN_MESSAGES = {
+    "partial": "Обход выбранной папки не завершён. Показаны только ранее сохранённые сведения.",
+    "running": "Обрабатывается страница выбранной папки. Показаны только сохранённые сведения.",
+    "exhausted": "Достигнут конец списка одной папки. Изменения на диске во время обхода могут быть не учтены.",
+    "limited": "Обход остановлен из-за ограничения страниц. Полный список файлов не подтверждён.",
+    "policy_changed": "Настройки доступа изменились; требуется начать обход заново.",
+}
+_ERROR_MESSAGES = {
+    "reauthorization_required": "Источник запросил повторную авторизацию.",
+    "rate_limited": "Источник временно ограничил частоту запросов.",
+    "provider_unavailable": "Источник временно недоступен.",
+    "response_too_large": "Ответ источника превысил допустимый размер.",
+    "invalid_provider_response": "Ответ источника не удалось безопасно обработать.",
+    "catalog_quota": "Достигнут лимит записей каталога.",
+    "observation_quota": "Достигнут лимит истории метаданных.",
+}
+
+
+def _scan_message(status):
+    if not status:
+        return None
+    if status["state"] == "error":
+        return _ERROR_MESSAGES.get(status["error_code"], "Обход приостановлен из-за ошибки.") + (
+            " Обход не завершён; сохранённые сведения могут быть неполными."
+        )
+    return _SCAN_MESSAGES.get(status["state"])
 
 
 def _actor(request):
@@ -60,6 +88,7 @@ async def file_catalog_page(
             if selected
             else {"items": [], "next_after": None}
         )
+        status = await catalog_scan_status(**args, connection_id=selected["id"]) if selected else None
     except ConnectionDenied:
         raise _unavailable() from None
     except CatalogInputError:
@@ -85,6 +114,7 @@ async def file_catalog_page(
         q=q,
         next_url=next_url,
         after=after,
+        scan_message=_scan_message(status),
     )
 
 

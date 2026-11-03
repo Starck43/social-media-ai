@@ -34,6 +34,7 @@
             <button type="submit" class="ui-control">Найти</button>
         </form>
         <p class="file-catalog-note">Поиск только по сохранённым названиям. Обновление с диска, открытие оригинала и анализ пока недоступны.</p>
+        {% if scan_message %}<p class="file-catalog-note" role="status" data-file-catalog-scan-status>{{ scan_message }}</p>{% endif %}
     </section>
     <section class="ui-card" aria-labelledby="file-results-heading">
         <div class="file-catalog-results-heading">

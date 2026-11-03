@@ -34,7 +34,7 @@ def fixture(case):
             start=101,
         )
     ]
-    ctx.update(mounts=[mount], selected=mount, files=files, q="", next_url=None, after=0)
+    ctx.update(mounts=[mount], selected=mount, files=files, q="", next_url=None, after=0, scan_message=None)
     if case == "no-mounts":
         ctx.update(mounts=[], selected=None, files=[])
     elif case in {"empty", "search"}:

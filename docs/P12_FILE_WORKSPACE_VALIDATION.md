@@ -89,7 +89,9 @@ candidates after its earlier stdlib-boundary blocker was fixed. The 21 formattin
 paths were corrected with normalized AST equivalence review; 50 exact synthetic/
 placeholder/identifier/runtime-reference findings were individually reviewed and
 added as hash-only exceptions, without disabling detectors or allowing patterns.
-The final general-CI result is recorded in PR #327 and its acceptance audit.
+Two further keyword matches in the concurrently merged planning prose were
+reviewed separately as non-secret data-model descriptions and given exact hash
+exceptions. The final general-CI result is recorded in PR #327 and its audit.
 
 ## Corrected failures and cleanup
 

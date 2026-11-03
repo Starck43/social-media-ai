@@ -9,8 +9,9 @@ Entry: [task card](p12-t12.md), [validation](../P12_FILE_WORKSPACE_VALIDATION.md
 The local completion fixes the shared migration history, exact migration-test
 restoration, automatic bounded expiry and explicit private-result purge approval
 during key rotation. Real PostgreSQL checks cover consent/revoke/regrant,
-forget versus in-flight work, quotas, corruption/clock behavior, cleanup and
-transaction rollback. Synthetic authenticated HTTP and browser checks are
+forget versus in-flight work, quotas, clock behavior, cleanup and
+transaction rollback. Corruption/serialization rejection is also covered by
+synthetic unit tests. Synthetic authenticated HTTP and browser checks are
 recorded in validation; mocks are not live-provider proof.
 
 The owner authorizes integration and test/public migrations. Live connections

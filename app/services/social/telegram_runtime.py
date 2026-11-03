@@ -1,4 +1,4 @@
-"""Private bounded history-only adapter; not yet a collector entry point.
+"""Private bounded history-only adapter for the default-OFF queued collector.
 
 No login, send, file sessions, exported senders, application RPC retries,
 reconnect, flood sleep or raw-client escape. Telethon transport acknowledgements
@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import date, datetime, time, timezone
 
 from app.services.social.connector_authorizations import AuthorizationUnavailable
 from app.services.social.telegram_grant_access import source_grant_selection
@@ -143,8 +144,31 @@ async def _disconnect(client):
         raise AuthorizationUnavailable() from None
 
 
+def _date_bound(value):
+    """Bounded date parser without logging invalid values or widening a window."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        parsed = datetime.combine(value, time())
+    elif type(value) is str and len(value) <= 64:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            raise AuthorizationUnavailable() from None
+    else:
+        raise AuthorizationUnavailable()
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+
+
 async def _history(client, fence, source, limit):
-    """Only this source target and newest-first history; no search/extra lanes."""
+    """Only the pinned target, oldest-unread first; no search or extra lanes.
+
+    A max-ID cursor MUST NOT acknowledge a newest-first capped slice: that
+    would permanently skip unread messages between the old cursor and the cap.
+    """
+    from app.services.monitoring.staging import cursor_value
     from app.services.social.tg_client import TelegramClient as Normalizer
 
     if source_grant_selection(source) != fence._pin.selection:
@@ -164,14 +188,31 @@ async def _history(client, fence, source, limit):
     if target is None:
         raise AuthorizationUnavailable()
     normalizer = Normalizer(None)
-    watermark = max(0, Normalizer._watermark_id(source))
-    if (source.params or {}).get("force_refresh"):
+    params = source.params or {}
+    watermark = cursor_value(params.get("telegram_l2_last_item_id", getattr(source, "last_item_id", None)))
+    if params.get("force_refresh") is True:
         watermark = 0
+    dates = params.get("cli_dates") or {}
+    if type(dates) is not dict:
+        raise AuthorizationUnavailable()
+    start = _date_bound(dates.get("start_date") or getattr(source, "date_from", None)) if not watermark else None
+    end = _date_bound(dates.get("end_date"))
+    if start is not None and end is not None and start > end:
+        raise AuthorizationUnavailable()
     items = []
-    async for message in client.iter_messages(target, limit=limit, min_id=watermark, wait_time=0):
+    async for message in client.iter_messages(
+        target, limit=limit, min_id=watermark, offset_date=start, reverse=True, wait_time=0
+    ):
         # Cached pages also get a fresh check before retaining each item; actual
         # paginated RPCs are independently gated at sender.send.
         await fence._inspect()
+        published = _date_bound(getattr(message, "date", None))
+        if published is None:
+            raise AuthorizationUnavailable()
+        if end is not None and published > end:
+            break
+        if start is not None and published < start:
+            continue
         item = normalizer._normalize_message(message, source)
         if item is not None:
             items.append(item)
@@ -216,7 +257,7 @@ class _TelegramReadBatch:
 
 @asynccontextmanager
 async def _telegram_history_batch(selection, claim, source, *, limit):
-    """Code-only entry point, intentionally not registered/routed to collection."""
+    """Private entry point; the collector requires its default-OFF rollout gate."""
     batch = None
     items = []
     try:

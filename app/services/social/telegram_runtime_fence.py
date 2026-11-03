@@ -3,7 +3,7 @@
 An epoch is not a reusable permit. Before/after every application RPC, recheck
 the original lock connection, consent, epoch, job generation and execution actor.
 A request already sent cannot be recalled; withdrawn/late responses are dropped.
-Not wired to the collector until its staging transaction uses this gate.
+Used only by the default-OFF collector path with same-transaction staging.
 """
 
 from __future__ import annotations
@@ -143,6 +143,8 @@ async def _locked_runtime(selection, claim):
             deadline = asyncio.get_running_loop().time() + _MAX_RUNTIME_SECONDS
             async with locked_source_grant(selection) as guard:
                 pin = await _capture_execution(guard._session, selection, claim)
+                if pin.authorization_id != guard._snapshot.authorization_id:
+                    raise AuthorizationUnavailable()
                 # Allocate on a separate WRITE connection while the account
                 # advisory transaction is owned. Do not decrypt before commit.
                 async with guard._admission_transaction() as session:

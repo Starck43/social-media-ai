@@ -523,3 +523,42 @@ The dispatcher's progress context exposes its captured JobClaim read-only, never
 reconstructing one from a payload; it is an identity, not fresh permission.
 No collector routing is activated. Formatting/AST/diff checks only; tests are
 deferred to the owner's final shared phase, including legacy/push regressions.
+
+
+## Default-OFF queued collection integration (code-first, untested)
+
+The collector now prepares a personal Telegram route behind
+`TELEGRAM_ACCOUNT_RUNTIME_ENABLED=false`. Do NOT enable it until the final
+synthetic/fake-provider/migration tests, independent audit and separate rollout
+approval. With the switch off, personal pull fails explicitly: no new-store
+selection can silently use the legacy vault. The raw Telegram client's personal
+pull entry point also fails explicitly, and its unused legacy session/pull
+implementations are removed. Bot API push and bot sending are separate contracts.
+
+Trusted collect enqueue overwrites caller-supplied `_telegram_source_grants`
+with metadata-only pins for explicitly admitted source IDs, including exact
+source/owner/grant/account/revision. Runtime compares the stored account pin
+with the held lock before decrypting. Editing/rebinding after enqueue rejects
+the old run, as do missing snapshots in old or implicit-all jobs. Re-admit
+explicitly; there is no automatic account substitution or session import.
+Generated discovery sources not present in the acquired snapshot are not
+authorized for personal Telegram reads by this route.
+
+The prepared route collects oldest-unread-first, not newest-first: otherwise a
+capped max-ID acknowledgement would skip the unread middle. Bounds are parsed
+without echoing invalid values; source `last_checked` is NOT a pull watermark,
+because push also changes it. Explicit dates and the L2 cursor govern reads.
+Raw rows, monotonic cursors, rejected-identity selection ledger and lane metadata
+share the generation/job/consent transaction. All rejected text stays unstored;
+its read progress/metadata can be acknowledged in that transaction. Account and
+secret scopes close before the existing separate AI/payer admission. No blanket
+`update_last_checked` runs later outside the fence. Unsupported Telegram search,
+comments, engagement and profile lanes are not invented or silently executed.
+
+Rehearsals fetch under the same rights and linearize metadata-only counters
+through the gate, but store no raw rows/cursors/selection ledger or model calls.
+Runtime epoch/job metadata still changes as part of owning the run. Fetched text
+and hashes are deliberately omitted from the deferred Job.result preview, with
+`preview_omitted=telegram_rehearsal_metadata_only`. Consumer messaging/assembled
+regressions are still final-phase gates. No tests or providers were executed in
+this continuation; only formatting, AST parsing and diff hygiene.

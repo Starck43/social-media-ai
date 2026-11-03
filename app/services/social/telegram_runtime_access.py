@@ -22,6 +22,7 @@ from app.models.managers.personal_billing_manager import POLICY_VERSION
 from app.services.billing.payer import resolve_scheduled_task_payer
 from app.services.social.connector_authorizations import AuthorizationUnavailable
 from app.services.social.telegram_grant_access import SourceGrantSelection, _positive, _validate_selection_context
+from app.services.social.telegram_queue_selection import _queued_authorization_id
 from app.types import ActionType
 
 _EXECUTION_RIGHTS = frozenset({("source", ActionType.ANALYZE), ("agenttask", ActionType.UPDATE)})
@@ -31,6 +32,7 @@ _EXECUTION_RIGHTS = frozenset({("source", ActionType.ANALYZE), ("agenttask", Act
 class _ExecutionPin:
     selection: SourceGrantSelection
     claim: JobClaim
+    authorization_id: int
     actor_id: int
     payload_digest: str
     payer_consent_id: int | None = None
@@ -72,7 +74,8 @@ async def _job(session, selection, claim, *, lock=False):
     if lock:
         statement = statement.with_for_update(read=True, of=Job)
     payload = (await session.execute(statement)).scalar_one_or_none()
-    return _payload_digest(payload, selection.source_id)
+    digest = _payload_digest(payload, selection.source_id)
+    return digest, _queued_authorization_id(payload, selection)
 
 
 async def _latest_payer(session, claim, *, lock=False):
@@ -160,7 +163,7 @@ async def _tenant(session, tenant_id, *, lock=False):
 async def _capture_execution(session, selection, claim):
     """Capture only from a trusted acquired claim; fresh checks follow capture."""
     _check_context(selection, claim)
-    digest = await _job(session, selection, claim)
+    digest, authorization_id = await _job(session, selection, claim)
     await _tenant(session, claim.tenant_id)
     actor_id = claim.initiated_by_user_id
     payer = None
@@ -175,6 +178,7 @@ async def _capture_execution(session, selection, claim):
     pin = _ExecutionPin(
         selection,
         claim,
+        authorization_id,
         _positive(actor_id),
         digest,
         payer.id if payer else None,
@@ -191,7 +195,7 @@ async def _check_execution(session, pin, *, lock=False):
         raise AuthorizationUnavailable()
     _check_context(pin.selection, pin.claim, pin.actor_id)
     await _tenant(session, pin.claim.tenant_id, lock=lock)
-    if await _job(session, pin.selection, pin.claim, lock=lock) != pin.payload_digest:
+    if await _job(session, pin.selection, pin.claim, lock=lock) != (pin.payload_digest, pin.authorization_id):
         raise AuthorizationUnavailable()
     if pin.claim.initiated_by_user_id is None:
         payer = await _latest_payer(session, pin.claim, lock=lock)

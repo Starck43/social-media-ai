@@ -443,6 +443,23 @@ class ContentCollector:
 			if not platform_obj or not hasattr(platform_obj, 'params'):
 				platform_obj = await Platform.objects.get(id=platform_id)
 
+			# Telegram personal pull never reaches the legacy vault client. The
+			# new route is default-OFF and fails explicitly rather than falling
+			# back; Bot API push remains on its independent admission contract.
+			from app.types import PlatformType
+			if (
+				platform_obj.platform_type == PlatformType.TELEGRAM
+				and (source.params or {}).get("mode", "auto") != "api"
+			):
+				from app.services.monitoring.telegram_collection import collect_personal_telegram
+				return await collect_personal_telegram(
+					self, source, content_type=content_type, analyze=analyze,
+					force_reanalyze=force_reanalyze, run_id=run_id, dry_run=dry_run,
+					selection_scope=selection_scope, task_id=task_id,
+					collection_context=collection_context, seen_items=seen_items,
+					report_empty=report_empty,
+				)
+
 			client = get_social_client(platform_obj)
 			from app.services.monitoring.selection_store import limit_reached as selection_limit_reached
 			from app.services.monitoring.selection_store import source_limit

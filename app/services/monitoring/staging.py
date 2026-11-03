@@ -142,6 +142,9 @@ async def _admit_runtime_telegram_batch(
     source,
     *,
     selection: dict[str, tuple[str, str | None]] | None = None,
+    collection_selection=None,
+    limit_count=None,
+    limit_reached=False,
 ) -> int:
     """One batch/one attempt; acknowledge ONLY after its fenced commit.
 
@@ -164,4 +167,17 @@ async def _admit_runtime_telegram_batch(
             # Empty responses still pass the consent/job/epoch gate, without
             # falsely advancing cursors or waking another job.
             written = 0
+        if collection_selection is not None:
+            from app.services.monitoring.selection_store import _write_collection_selection
+
+            await _write_collection_selection(
+                session,
+                source,
+                list(items),
+                collection_selection,
+                run_id=batch._fence._pin.claim.job_id,
+                task_id=batch._fence._pin.claim.agent_task_id,
+                limit_count=limit_count,
+                limit_reached=limit_reached,
+            )
     return written

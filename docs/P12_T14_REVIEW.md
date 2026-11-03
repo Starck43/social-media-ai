@@ -166,8 +166,8 @@ PostgreSQL transaction/race or full browser/provider acceptance evidence.
 - Complete login, reauthorization/reconsent and workspace account/source picker UI;
   assembled CSRF/DOM journeys with a fake provider; fresh execution-time grant,
   owner, membership and revision checks; shared-session execution lease/locking.
-- Eliminate legacy Telegram vault fallback from the runtime, not merely from
-  environment. The collector is still user-vault based at this checkpoint.
+- Validate the default-OFF Telegram runtime route and removal of personal-pull
+  vault fallback; old/unpinned jobs need explicit re-admission. No activation yet.
 - API consumer compatibility for changed status/unsupported legacy login;
   current combined-tree tests and full migration-history validation; independent
   audit. Q-5/music live-provider gates and rollout approvals remain separate.
@@ -202,3 +202,22 @@ the legacy owning wrapper and a one-attempt runtime-batch helper. Only the latte
 uses the runtime epoch/job/consent commit; it takes no alternate content/session
 or run ID. The trusted dispatcher claim accessor supplies identity only. This
 code is not collector-routed and is untested until the final shared phase.
+
+
+## Default-OFF collection integration checkpoint (unvalidated)
+
+Collect enqueue overwrites untrusted Telegram metadata snapshots; the new
+runtime checks the exact queued source/grant/account/revision pin against its
+held account lock. Missing or changed pins fail closed, never discover another
+account. The collector route is code-wired behind a default-false switch, with
+raw/cursor/selection-ledger writes in the same fenced commit and guard release
+before AI. Raw personal pull/vault fallback is removed from the legacy Telegram
+client entry point. Bot push/sending are independent. Do not enable the switch
+without final tests/audit and separate rollout approval.
+
+Static review corrected capped history ordering to oldest-unread-first to avoid
+skipping the unread middle with a max-ID cursor; source.last_checked is not used
+as an L2 watermark. Rehearsals omit fetched text/hashes in deferred previews and
+write no raw rows/cursors, although runtime epoch/job metadata still changes.
+Old jobs, discovery-created targets and consumer diagnostics need explicit
+compatibility coverage. No new tests or DB/provider/migration execution occurred.

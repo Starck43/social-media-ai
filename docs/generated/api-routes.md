@@ -31,10 +31,16 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/connector-accounts/grants/{grant_id}/detach | detach_workspace_grant_api_v1_connector_accounts_grants__grant_id__detach_post |
 | GET | /api/v1/connector-accounts/personal | list_personal_accounts_api_v1_connector_accounts_personal_get |
 | POST | /api/v1/connector-accounts/telegram/login | begin_telegram_login_api_v1_connector_accounts_telegram_login_post |
+| GET | /api/v1/connector-accounts/telegram/login-request/{request_id} | telegram_login_request_status_api_v1_connector_accounts_telegram_login_request__request_id__get |
 | GET | /api/v1/connector-accounts/telegram/login/{attempt_id} | telegram_login_status_api_v1_connector_accounts_telegram_login__attempt_id__get |
 | POST | /api/v1/connector-accounts/telegram/login/{attempt_id}/cancel | cancel_telegram_login_api_v1_connector_accounts_telegram_login__attempt_id__cancel_post |
 | POST | /api/v1/connector-accounts/telegram/login/{attempt_id}/code | submit_telegram_code_api_v1_connector_accounts_telegram_login__attempt_id__code_post |
 | POST | /api/v1/connector-accounts/telegram/login/{attempt_id}/password | submit_telegram_password_api_v1_connector_accounts_telegram_login__attempt_id__password_post |
+| POST | /api/v1/connector-accounts/telegram/reauthorize | begin_telegram_reauthorization_api_v1_connector_accounts_telegram_reauthorize_post |
+| GET | /api/v1/connector-accounts/telegram/sources | list_telegram_sources_api_v1_connector_accounts_telegram_sources_get |
+| GET | /api/v1/connector-accounts/telegram/sources/{source_id} | telegram_source_picker_api_v1_connector_accounts_telegram_sources__source_id__get |
+| PUT | /api/v1/connector-accounts/telegram/sources/{source_id} | select_telegram_source_account_api_v1_connector_accounts_telegram_sources__source_id__put |
+| POST | /api/v1/connector-accounts/telegram/sources/{source_id}/clear | clear_telegram_source_account_api_v1_connector_accounts_telegram_sources__source_id__clear_post |
 | POST | /api/v1/connector-accounts/{authorization_id}/attach | attach_account_api_v1_connector_accounts__authorization_id__attach_post |
 | POST | /api/v1/connector-accounts/{authorization_id}/revoke | revoke_personal_authorization_api_v1_connector_accounts__authorization_id__revoke_post |
 | GET | /api/v1/credentials | list_credentials_api_v1_credentials_get |

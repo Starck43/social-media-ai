@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     action_audit,
     auth,
     connector_accounts,
+    contacts,
     credentials,
     dashboard,
     llm_models,
@@ -31,6 +32,7 @@ DB_PROBE_TIMEOUT_SECONDS = 2.0
 # `/auth` stays public — it is how you get a token in the first place.
 API_AUTH = [Depends(get_authenticated_user)]
 
+router.include_router(contacts.router, prefix="/contacts", tags=["contacts"], dependencies=API_AUTH)
 router.include_router(user.router, prefix="/users", tags=["user"], dependencies=API_AUTH)
 router.include_router(roles.router, prefix="/users/roles", tags=["user"], dependencies=API_AUTH)
 router.include_router(auth.router, prefix="/auth", tags=["auth"])

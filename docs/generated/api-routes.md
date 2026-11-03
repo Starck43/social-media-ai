@@ -43,6 +43,9 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/connector-accounts/telegram/sources/{source_id}/clear | clear_telegram_source_account_api_v1_connector_accounts_telegram_sources__source_id__clear_post |
 | POST | /api/v1/connector-accounts/{authorization_id}/attach | attach_account_api_v1_connector_accounts__authorization_id__attach_post |
 | POST | /api/v1/connector-accounts/{authorization_id}/revoke | revoke_personal_authorization_api_v1_connector_accounts__authorization_id__revoke_post |
+| GET | /api/v1/contacts | contacts_list_api_v1_contacts_get |
+| GET | /api/v1/contacts/{contact_id} | contacts_detail_api_v1_contacts__contact_id__get |
+| GET | /api/v1/contacts/{contact_id}/export | contacts_export_api_v1_contacts__contact_id__export_get |
 | GET | /api/v1/credentials | list_credentials_api_v1_credentials_get |
 | PATCH | /api/v1/credentials/credentials/{credential_id}/disable | disable_credential_api_v1_credentials_credentials__credential_id__disable_patch |
 | POST | /api/v1/credentials/login | login_credential_api_v1_credentials_login_post |

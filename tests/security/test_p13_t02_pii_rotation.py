@@ -211,7 +211,9 @@ def test_registry_entries_are_explicit_and_index_free(monkeypatch):
     assert pii_cli.ROTATION_MARKER_COLUMN.endswith("updated_at")
     for table_name, column, kind in pii_cli.REGISTRY:
         assert isinstance(table_name, str) and isinstance(column, str)
-        assert kind in pii.INDEX_KINDS
+        # None marks an encrypted column without a blind index; otherwise the kind
+        # must be one the closed vocabulary vouches for.
+        assert kind is None or kind in pii.INDEX_KINDS
         # The index key is stable (D8), so rotation must never target an index column.
         assert not column.endswith("_index")
 

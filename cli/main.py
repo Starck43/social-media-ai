@@ -3,7 +3,7 @@ import typer
 # Configure logging (console + file -> logs/app.log) for CLI runs.
 import app.core.logger  # noqa: F401  (configures the "app" logger handlers)
 
-from .commands import chains, collect, collection, credentials, direct, llm, roles, scenarios, tasks
+from .commands import chains, collect, collection, credentials, direct, llm, pii, roles, scenarios, tasks
 from .commands.tasks import (
     _add_task,
     _check_task_sources,
@@ -25,6 +25,7 @@ app = typer.Typer(
 
 app.add_typer(roles.app, name="roles", help="Manage roles and permissions")
 app.add_typer(credentials.app, name="credentials", help="Manage platform credentials (tenant vault)")
+app.add_typer(pii.app, name="pii", help="Rotate the personal-data encryption key (PII_ENCRYPTION_KEYS)")
 app.add_typer(llm.app, name="llm", help="Manage LLM providers and models")
 app.add_typer(chains.app, name="chains", help="Manage topic chains")
 app.add_typer(scenarios.app, name="scenarios", help="Manage agent scenarios")

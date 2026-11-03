@@ -219,6 +219,11 @@ CREDENTIALS_KEY=          # Fernet key — generate with:
                           # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 DEFAULT_TENANT_SLUG=owner
 
+# ─── Personal data (P13-T02) ──────────────────────────────────
+# Separate from CREDENTIALS_KEY by decision D8. First encryption key is active.
+PII_ENCRYPTION_KEYS=      # comma-separated Fernet keys; see docs/PII_PROTECTION.md
+PII_INDEX_KEY=            # urlsafe-base64 >= 32 bytes; kept stable, never rotated with the above
+
 # ─── Scheduler ────────────────────────────────────────────────
 SCHEDULER_ENABLED=true
 SCHEDULER_POLL_SECONDS=30
@@ -362,6 +367,13 @@ or for provider-side rate limiting.
 | `CREDENTIALS_KEY` | `None` | Fernet master key for encrypting personal (`user_credentials`) secrets. **Never commit.** |
 | `DEFAULT_TENANT_SLUG` | `owner` | Slug of the bootstrap (owner) workspace |
 
+### Personal data (P13-T02)
+
+| Variable | Default | Description |
+|---|---|---|
+| `PII_ENCRYPTION_KEYS` | `None` | Ordered Fernet keys for personal-data columns; **first = active**. Never `CREDENTIALS_KEY`. Rotation: [PII_PROTECTION](PII_PROTECTION.md). |
+| `PII_INDEX_KEY` | `None` | urlsafe-base64 HMAC-SHA256 key for blind indexes; **kept stable** (rotating it needs an approved index rebuild). |
+
 ### Scheduler
 
 | Variable | Default | Description |
@@ -448,6 +460,18 @@ python -c "from secrets import token_urlsafe; print(token_urlsafe(64))"
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+### PII keys (P13-T02)
+
+`PII_ENCRYPTION_KEYS` uses the same Fernet generator per key, comma-separated with
+the active key first; `PII_INDEX_KEY` is an independent 32-byte secret:
+
+```bash
+python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+```
+
+Neither value may equal `CREDENTIALS_KEY`. Contract, rotation and what stays
+searchable: [PII_PROTECTION](PII_PROTECTION.md).
 
 ---
 

@@ -204,6 +204,12 @@ class Settings(BaseSettings):
     # Shared bot model: clients bind their chats via invite codes
     # (/start <code>); chats are resolved to tenants from the DB.
     CREDENTIALS_KEY: str | None = Field(default=None, repr=False)  # Fernet key for tenant secrets
+    # --- Personal data (P13-T02, D8) ---
+    # Separate from CREDENTIALS_KEY on purpose: credential and personal-data keys
+    # must never share one compromise. First encryption key is the active one;
+    # the rest keep older ciphertext readable during rotation.
+    PII_ENCRYPTION_KEYS: str | None = Field(default=None, repr=False)  # ordered Fernet keys, comma-separated
+    PII_INDEX_KEY: str | None = Field(default=None, repr=False)  # HMAC-SHA256 key for blind indexes; kept stable
     DEFAULT_TENANT_SLUG: str = "owner"  # slug of the bootstrap tenant
 
     # --- Task runner ---

@@ -24,6 +24,18 @@ settings/account-picker web UI, recovery and collector grant resolution remain
 outstanding. A 200 login response is metadata: check `state`, not just HTTP status.
 The new API does not automatically attach accounts on workspace creation/join.
 
+Account self-service exceptions: `GET /api/v1/connector-accounts/personal` lists
+only the caller's Telegram authorization metadata (including unusable/revoked
+identities); `POST /api/v1/connector-accounts/{authorization_id}/revoke` withdraws
+only their own authorization everywhere, with strict `expected_revision`. Both
+require an active access Bearer JWT but no workspace/membership; tenant headers
+are ignored, not elevated. The existing revoke path/body/response remain, but it
+now survives lost memberships/suspended workspaces. It atomically clears local
+ciphertext and invalidates own grants, not provider sessions, and needs no key or
+provider call. All other connector-account routes remain workspace-scoped.
+There is no anonymous/cookie-auth exception or broad prefix bypass. Reauthorization
+and the account-level CSRF web journey remain open.
+
 ## Base URL
 
 ```

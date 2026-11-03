@@ -25,6 +25,14 @@ exceptions to workspace membership. Endpoint model/action checks remain in
 place. `GET /api/v1/test-db` is hidden from OpenAPI but authenticated;
 `GET /api/v1/test-auth` is also hidden and authenticates through its dependency.
 
+P12-T14 adds `/connector-accounts`: reuse/grants/login remain workspace-scoped.
+Only `GET /api/v1/connector-accounts/personal` and
+`POST /api/v1/connector-accounts/{positive_authorization_id}/revoke` are exact
+Bearer-authenticated account-self-service exceptions, not middleware-public.
+They list only own identity metadata or locally invalidate an owned authorization
+and its consents without a workspace/key/provider call. No prefix-wide exception
+or provider revocation is introduced. See [account reuse](CONNECTOR_ACCOUNT_REUSE.md).
+
 The current route/auth groups are:
 
 | Group | Contract |

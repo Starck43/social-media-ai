@@ -57,6 +57,12 @@ async def list_reusable_accounts(user: User = Depends(get_authenticated_user)):
     return {"accounts": rows, "can_attach": can_attach}
 
 
+@router.get("/personal")
+async def list_personal_accounts(user: User = Depends(get_authenticated_user)):
+    """Account-level self-service metadata; no workspace is read or selected."""
+    return await _call(connector_authorizations.list_personal, actor_id=user.id)
+
+
 @router.get("/grants")
 async def list_workspace_grants(user: User = Depends(get_authenticated_user)):
     return await _call(connector_authorizations.list_grants, **_scope(user))
@@ -84,8 +90,8 @@ async def revoke_personal_authorization(
     authorization_id: int, selection: AuthorizationSelection, user: User = Depends(get_authenticated_user)
 ):
     return await _call(
-        connector_authorizations.revoke,
-        **_scope(user),
+        connector_authorizations.revoke_personal,
+        actor_id=user.id,
         authorization_id=authorization_id,
         expected_revision=selection.expected_revision,
     )

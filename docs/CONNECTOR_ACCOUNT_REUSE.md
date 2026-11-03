@@ -72,12 +72,29 @@ revision/reconsent behavior, is still a required integration gate.
 
 ## Permission and transaction contract
 
-Every operation checks the current actor and tenant context against fresh active
-user, workspace, web membership and assigned workspace role. No platform-admin
-bypass is used. Lists are owner-only; reusable account metadata deliberately does
-not enumerate source workspaces. Attach/initial persistence require workspace
-`source.create` plus `source.view`. A viewing member can detach/revoke their own
-previous consent without needing CREATE. No client-supplied owner/tenant is used.
+Workspace operations check the current actor and tenant context against fresh
+active user, workspace, web membership and assigned workspace role. No
+platform-admin bypass is used. Lists are owner-only; reusable account metadata
+deliberately does not enumerate source workspaces. Attach/initial persistence
+require workspace `source.create` plus `source.view`. A viewing member can detach
+their own previous consent without needing CREATE. No client-supplied owner/tenant
+is used.
+
+Account self-service `GET /personal` and `POST /{authorization_id}/revoke` instead
+require an active Bearer-JWT user, fresh locked active-user check and owner-only
+account lookup, with **no tenant context or bypass**. They remain reachable after
+all memberships disappear or workspaces are suspended. Tenant headers do not
+select/expand a workspace on these two routes. The personal list includes own
+Telegram/MTProto identities in active/reauth/revoked states for recovery/revocation,
+but no credential ciphertext, grants, source workspaces or provider-health claim.
+Local revoke needs no encryption key or decryption: lock the owned authorization,
+check the exact revision, clear ciphertext and invalidate all its own grants in
+one transaction. Transitioning to revoked advances revision; repeating with the
+current revoked revision repairs ciphertext/active-grant inconsistencies without
+advancing again. An old revision remains unavailable. No Telegram API/logout is
+called. The existing workspace-scoped service method remains for internal callers;
+the HTTP revoke now uses the independent account scope. Account-level web UI and
+same-subject reauthorization/reconsent are not delivered by this API slice.
 
 Authorization-row locks serialize attach/revoke before grant-row locks; unique
 constraints protect concurrent inserts. Retrying attach with the same revision
@@ -134,18 +151,23 @@ prove their behavior. No migration or existing source binding is changed here.
 
 ## Draft machine API
 
-All paths below are authenticated Bearer-JWT workspace routes under
-`/api/v1/connector-accounts`. `X-Tenant-Id` selects an active membership; it never
-expands access. They do not use cookie authentication; a future web form must
-also use the existing CSRF protection and reject duplicate/forged scope fields.
+All paths below require an active Bearer JWT under `/api/v1/connector-accounts`.
+Except `GET /personal` and `POST /{authorization_id}/revoke`, they are workspace
+routes: `X-Tenant-Id` selects an active membership and never expands access. The
+two account-self-service routes do not resolve any workspace. The middleware
+exemption matches only those exact method/path shapes, never a whole prefix;
+attach, grant listing/detach and login still require active workspace membership.
+These routes do not use cookie authentication; a future web form must also use
+the existing CSRF protection and reject duplicate/forged scope fields.
 
 | Method and suffix | Operation |
 | --- | --- |
 | `GET` root | Own reusable account metadata and `can_attach`; no decryption/health promise |
+| `GET /personal` | Own account-level identity metadata, including unusable/revoked accounts; no workspace required |
 | `GET /grants` | Own consent records in the current workspace |
 | `POST /{authorization_id}/attach` | Explicit reuse, body `{"expected_revision": 1}` |
 | `POST /grants/{grant_id}/detach` | Local disconnect; no credential material |
-| `POST /{authorization_id}/revoke` | Personal-wide local revoke, body `{"expected_revision": 1}` |
+| `POST /{authorization_id}/revoke` | Account-level personal-wide local revoke; no workspace required, body `{"expected_revision": 1}` |
 | `POST /telegram/login` | Begin: UUID `request_id` plus E.164 `phone` |
 | `GET /telegram/login/{attempt_id}` | Own workspace-bound attempt metadata; no phone or secrets |
 | `POST /telegram/login/{attempt_id}/code` | Strict positive `expected_revision` plus `code` |
@@ -268,9 +290,9 @@ Still required for P12-T14 completion:
 
 - PostgreSQL concurrency/rollback validation, metadata retention policy and operational recovery for expired attempts;
   the bounded machine API alone is not a complete web onboarding journey.
-- Explicit account/grant settings UI with CSRF and a source-grant picker. Account
-  self-revocation when no active workspace memberships remain also needs a scoped
-  account-level journey; this draft API is workspace-scoped.
+- Explicit account/grant settings UI with CSRF and a source-grant picker, including
+  account-level self-revocation UI with no remaining memberships. The independent
+  JWT list/local-revoke API is delivered, not the assembled web journey.
 - Runtime grant resolution with fresh owner/membership/revision checks, shared
   session execution locking, cancellation and revoke/disconnect semantics; exercise
   queued jobs and membership changes. No fallback to legacy/global accounts.

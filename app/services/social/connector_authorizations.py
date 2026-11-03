@@ -11,9 +11,13 @@ import json
 from dataclasses import dataclass, field
 
 from sqlalchemy import select, update
+from sqlalchemy.orm import defer
 
 from app.core.database import async_session_maker
+from app.core.permissions import get_current_user
+from app.core.tenant_context import current_tenant_id, is_bypass
 from app.models import PersonalConnectorAuthorization as Authorization
+from app.models import User
 from app.models import WorkspaceAuthorizationGrant as Grant
 from app.models.managers.workspace_connection_manager import ConnectionDenied, _authorize
 from app.utils.crypto import decrypt_secret, encrypt_secret
@@ -110,14 +114,15 @@ def _grant_projection(row):
     }
 
 
-async def _account(session, actor_id, authorization_id):
-    row = (
-        await session.execute(
-            select(Authorization)
-            .where(Authorization.id == _positive(authorization_id), Authorization.owner_user_id == actor_id)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
+async def _account(session, actor_id, authorization_id, *, include_secret=True):
+    statement = (
+        select(Authorization)
+        .where(Authorization.id == _positive(authorization_id), Authorization.owner_user_id == actor_id)
+        .with_for_update()
+    )
+    if not include_secret:
+        statement = statement.options(defer(Authorization.secret_encrypted, raiseload=True))
+    row = (await session.execute(statement)).scalar_one_or_none()
     if row is None:
         raise AuthorizationUnavailable()
     return row
@@ -144,7 +149,84 @@ async def _attach(session, *, tenant_id, actor_id, account):
     return _grant_projection(row)
 
 
+async def _authorize_personal(session, actor_id):
+    """Account self-service only; no workspace, operator or ambient-actor bypass."""
+    _positive(actor_id)
+    actor = get_current_user()
+    if actor is None or actor.id != actor_id or not actor.is_active or current_tenant_id() is not None or is_bypass():
+        raise AuthorizationUnavailable()
+    active = (
+        await session.execute(
+            select(User.id).where(User.id == actor_id, User.is_active.is_(True)).with_for_update(read=True)
+        )
+    ).scalar_one_or_none()
+    if active is None:
+        raise AuthorizationUnavailable()
+
+
+async def _revoke_owned(session, *, actor_id, authorization_id, expected_revision):
+    account = await _account(session, actor_id, authorization_id, include_secret=False)
+    if account.revision != expected_revision:
+        raise AuthorizationUnavailable()
+    if account.state != "revoked":
+        account.revision += 1
+    account.state, account.secret_encrypted = "revoked", ""
+    # Repeating with the current revision also repairs inconsistent local rows;
+    # never leave active grants or ciphertext merely because state says revoked.
+    await session.execute(
+        update(Grant)
+        .where(Grant.authorization_id == account.id, Grant.owner_user_id == actor_id)
+        .values(is_active=False)
+    )
+    return _account_projection(account)
+
+
 class ConnectorAuthorizationManager:
+    async def list_personal(self, *, actor_id):
+        """Own Telegram identities, including unusable ones, without any membership.
+
+        No source/workspace/grant metadata or credential ciphertext is selected.
+        This is recovery/revocation metadata, not a provider-health catalog.
+        """
+        async with async_session_maker() as session, session.begin():
+            await _authorize_personal(session, actor_id)
+            rows = (
+                (
+                    await session.execute(
+                        select(
+                            Authorization.id.label("authorization_id"),
+                            Authorization.provider_id,
+                            Authorization.auth_method,
+                            Authorization.subject_key,
+                            Authorization.revision,
+                            Authorization.state,
+                        )
+                        .where(
+                            Authorization.owner_user_id == actor_id,
+                            Authorization.provider_id == PROVIDER,
+                            Authorization.auth_method == METHOD,
+                        )
+                        .order_by(Authorization.id)
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            return [dict(row) for row in rows]
+
+    async def revoke_personal(self, *, actor_id, authorization_id, expected_revision):
+        """Withdraw own authorization everywhere, even with no workspace access.
+
+        This is local ciphertext/grant invalidation, not a Telegram logout.
+        Rights are checked from the current active account, never a tenant header.
+        """
+        _positive(expected_revision)
+        async with async_session_maker() as session, session.begin():
+            await _authorize_personal(session, actor_id)
+            return await _revoke_owned(
+                session, actor_id=actor_id, authorization_id=authorization_id, expected_revision=expected_revision
+            )
+
     async def list_reusable(self, *, tenant_id, actor_id):
         """Only the actor's own identities, no source-workspace names or secrets.
 
@@ -231,18 +313,9 @@ class ConnectorAuthorizationManager:
         _positive(expected_revision)
         async with async_session_maker() as session, session.begin():
             await _authorize(session, tenant_id, actor_id, require_source_view=True)
-            account = await _account(session, actor_id, authorization_id)
-            if account.revision != expected_revision:
-                raise AuthorizationUnavailable()
-            if account.state != "revoked":
-                account.revision += 1
-                account.state, account.secret_encrypted = "revoked", ""
-                await session.execute(
-                    update(Grant)
-                    .where(Grant.authorization_id == account.id, Grant.owner_user_id == actor_id)
-                    .values(is_active=False)
-                )
-            return _account_projection(account)
+            return await _revoke_owned(
+                session, actor_id=actor_id, authorization_id=authorization_id, expected_revision=expected_revision
+            )
 
 
 async def _record_telegram_result(session, *, tenant_id, actor_id, result: VerifiedTelegramResult):

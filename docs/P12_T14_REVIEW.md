@@ -71,6 +71,16 @@ secret resolution, source-picker binding write or session lease is delivered.
 Snapshots cannot authorize I/O or establish provider/envelope health. See the
 account-reuse contract for fields and freshness limits.
 
+## Account-only local revocation continuation
+
+The JWT-only personal metadata list and existing personal-wide local-revoke route
+now work without workspace membership or a live encryption key. Only the owned
+authorization and own consents can be invalidated; no provider logout is claimed.
+The middleware exception is exact-method/path only. Workspace attach/detach/login
+remain membership-bound. Fake-transaction/JWT-ASGI tests are distinct from the
+authored-but-unrun PostgreSQL/assembled-app rollback and no-membership checks.
+No account settings UI or reauthorization/reconsent is delivered by this slice.
+
 ## Remaining completion gates
 
 - Telegram reauthorization/recovery, metadata retention and operational recovery;

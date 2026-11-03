@@ -1,7 +1,7 @@
 # P13-T02: personal data encrypted at rest, searchable by blind index, safe in logs.
 
 Registry: [ROADMAP](../ROADMAP.md); card: [P13-T02 accepted](audit/p13-t02.md);
-owner decision D8: [Q-18](tasks/q-18.md).
+owner decision D8: [Q-18](audit/q-18-owner-decisions.md).
 
 # --- What this protects and what it does not ---
 

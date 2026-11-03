@@ -65,9 +65,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **IN_PROGRESS** · codex-p12-pr-completion ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)) · [owner-authorized completion](https://github.com/Starck43/social-media-ai/pull/327#issuecomment-6609629474) · [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 
-Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands are proposed, owner decision D1 in Q-18:
+Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q-18-owner-decisions.md)):
 
-- [Q-18](docs/tasks/q-18.md) Owner decisions for business modules P13–P19 — **OPEN** · product-owner · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C2`
 - [P13-T01](docs/tasks/p13-t01.md) Business-module plan registration and TZ review — **IN_PROGRESS** · notion-ai-p13-t01 ([PR #341](https://github.com/Starck43/social-media-ai/pull/341)) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C2`
 - [P13-T03](docs/tasks/p13-t03.md) Shared external-API rate limiter and retry policy — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
 - [P13-T04](docs/tasks/p13-t04.md) Business write-approval workflow and command ledger — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
@@ -78,11 +77,11 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P14-T02](docs/tasks/p14-t02.md) Bitrix24 read-only incremental sync of contacts, companies, leads and deals — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 - [P14-T03](docs/tasks/p14-t03.md) CRM contact cards and duplicate candidates — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
 - [P14-T04](docs/tasks/p14-t04.md) Upcoming events and AI greeting drafts — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 
 ### Priority P3
 
-- [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
-- [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T01](docs/tasks/p15-t01.md) Email connector: IMAP incremental read sync — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T02](docs/tasks/p15-t02.md) Unified message store and channel ingestion (Telegram, MAX, email) — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T03](docs/tasks/p15-t03.md) Identity reconciliation: suggestions, manual merge and unmerge — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
@@ -196,7 +195,8 @@ Document management (TZ module 6); use the P19 cards in the execution queue.
 
 ## Questions
 
-Q-2/Q-5/Q-18 are ordered in the execution queue; Q-12 remains owner-deferred.
+Q-2/Q-5 are ordered in the execution queue; Q-12 remains owner-deferred. Q-18 is closed
+(owner decisions D1–D9, [record](docs/audit/q-18-owner-decisions.md)).
 - [Q-19](docs/tasks/q-19.md) Local connector protocol: second-party security review and real-device evidence — **TODO** · open
   The P18-T01 protocol is accepted as a design; no line of it has been exercised by a running system. Tracked so acceptance is
   never read as verification.

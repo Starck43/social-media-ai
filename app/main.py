@@ -62,6 +62,9 @@ async def _job_maintenance_loop() -> None:
                 logger.warning("job_stale_quarantined count=%s", quarantined)
             with tenant_scope(bypass=True):
                 await cleanup_terminal_job_history()
+                from app.services.file_workspace.private_maintenance import purge_expired_private_insights
+
+                await purge_expired_private_insights()
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 — maintenance failure must not prevent web startup

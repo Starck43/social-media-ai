@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 
 from app.core.database import async_session_maker
 from app.integrations.file_workspace.content_read import ContentReadContext, ContentReadRequest, ReadPlainText
@@ -763,6 +763,8 @@ class FileInsightManager:
         if not is_bypass() or type(limit) is not int or not 1 <= limit <= 100:
             _deny()
         async with async_session_maker() as session, session.begin():
+            await session.execute(text("SET LOCAL statement_timeout = '5s'"))
+            await session.execute(text("SET LOCAL lock_timeout = '1s'"))
             expired_ids = (
                 await session.scalars(
                     select(FileInsightAttempt.id)

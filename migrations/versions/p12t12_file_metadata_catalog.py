@@ -77,8 +77,7 @@ def upgrade():
         sa.CheckConstraint("number > 0", name="ck_file_observation_number"),
         schema=schema,
     )
-    op.execute(
-        f"""
+    op.execute(f"""
         CREATE FUNCTION "{schema}".guard_file_observation() RETURNS trigger
         LANGUAGE plpgsql AS $$ BEGIN
             RAISE EXCEPTION 'File metadata observations are immutable'
@@ -87,8 +86,7 @@ def upgrade():
         CREATE TRIGGER file_observation_immutable
             BEFORE UPDATE ON "{schema}".file_catalog_observations
             FOR EACH ROW EXECUTE FUNCTION "{schema}".guard_file_observation();
-    """
-    )
+    """)
 
 
 def downgrade():

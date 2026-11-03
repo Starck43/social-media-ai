@@ -79,7 +79,12 @@ def rotate_in_transaction(
     has_keys = inspector.has_table("telegram_login_request_keys", schema=schema)
     if (has_authorizations, has_logins, has_keys) != generations[revisions[0]]:
         raise RotationError("Credential store layout does not match the reviewed migration head")
-    private_tables = ("file_insight_mounts", "file_insight_object_states", "file_insight_attempts", "file_private_insights")
+    private_tables = (
+        "file_insight_mounts",
+        "file_insight_object_states",
+        "file_insight_attempts",
+        "file_private_insights",
+    )
     private_layout = tuple(inspector.has_table(name, schema=schema) for name in private_tables)
     has_private_results = revisions[0] == "0128"
     if private_layout != (has_private_results,) * len(private_tables):

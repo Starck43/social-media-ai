@@ -18,8 +18,8 @@ exact bytes, bounded before decode, and returns a boolean. It validates both
 schema and byte-for-byte canonical representation, not provenance or integrity.
 It never releases a parsed mapping or invents a fresh read from retained data.
 
-No dataclass/asdict/context serialization: caller must explicitly construct the
-allowlist after existing same-read quote/candidate verification. Schema validation
+No dataclass/asdict/context serialization: construct the allowlist explicitly or
+use the inactive same-read projection below. Schema validation
 CANNOT establish that these values came from that verification. Synthetic callers
 can invent IDs, hashes, versions, times and epochs that satisfy this format.
 A future writer needs independent trusted source/version/consent/epoch binding,
@@ -93,3 +93,42 @@ logging/chained exceptions. As elsewhere, traceback-local capture/memory erasure
 is not a guarantee; callers must not log inputs/locals/results. No public
 DTO-to-storage route is introduced. Review, ORM reservations/idempotency/fences/
 GC, real exact-version support and owner-local audit remain separate gates.
+
+
+## Inactive same-read projection
+
+`serialize_same_read_payload(source, batch, *, metadata)` in
+`app/integrations/file_workspace/private_projection.py` returns canonical DTO v1
+bytes or the same sanitized `PrivatePayloadUnavailable`. It is pure and unregistered:
+no authority/model/provider call, clock, persistence, route or storage activation.
+
+The helper verifies `batch.evidence` against `source` with the existing full-context
+same-read verifier (request nonce, IDs, context, hashes, parser, version, exact line
+ranges/text). It requires an exact unverified candidate batch, a bounded generation
+nonce and exact bounded candidate/reference tuples. The existing DTO validator
+checks all projected field types, budgets, references and lifecycle syntax.
+Missing provider version fails closed, even when evidence also lacks a version.
+
+Projection derives scope IDs/root from the read context, hashes/parser/version/
+line count from extraction, read nonce from the request, and generation nonce,
+excerpts and candidate references from the batch. `owner_id` is the read actor in
+this personal-source convention; that mapping does not prove personal ownership.
+It never dumps a context or accepts replacement scope/source/binding/candidate data.
+
+`metadata` is an exact dict with only `path_key`, `version_semantics`,
+`provider_object_id`, `owner_epoch`, `connection_epoch`, `object_epoch`,
+`consent_revision`, `policy_revision`, and `lifecycle` (the existing DTO lifecycle
+shape). These values are supplied assertions, NOT independently bound to a path,
+provider, current authority/consent, epochs or trusted time. No policy fingerprint
+is substituted for a policy revision. No hash or observation replaces a version.
+Inputs must be exclusively owned trusted application objects, without concurrent
+mutation; no source text, display path, credential key or arbitrary metadata is
+included in the output except explicitly selected untrusted quote/candidate text.
+
+This narrows accidental cross-read substitutions; it cannot authenticate an entire
+forged graph, prove that a generator emitted the batch/generation ID, establish
+entailment, verify exact-byte provider semantics or grant processing/storage rights.
+A consistent forged raw hash still passes: the original bytes are absent. Changing
+all linked objects consistently is outside this consistency guarantee. The helper
+is not a writer, redactor, current-access check or trusted durable admission path.
+Real source/version/identity/consent/epoch binding and P12-T13 remain prerequisites.

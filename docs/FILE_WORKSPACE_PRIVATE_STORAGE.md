@@ -26,6 +26,23 @@ Missing policy, consent, version semantics, storage guarantees or authority mean
 no save/release, not a permissive fallback. Retention consent is distinct from
 READ, cloud processing, external-model egress/spend and sharing permissions.
 
+## Implemented pure timing subset
+
+[retention_time.py](../app/integrations/file_workspace/retention_time.py) implements
+`make_retention_deadline` and `retention_time_eligible` for the proposed 5-minute
+capture age / fixed 24-hour TTL. Exact stdlib `timezone.utc` datetimes only,
+including microseconds; naive/non-UTC/subclass inputs fail closed. Expiry is
+capture-relative, not sliding; exact expiry and supplied clock rollback deny use.
+The fixed format rejects changed deadlines; policy shortening needs a separately
+reviewed policy-revision input, not caller edits. These defaults remain proposals.
+
+The caller must supply and atomically preserve a trusted clock high-water mark,
+including on expiry denial. The pure helper does NOT persist/prove that mark,
+authenticate provenance, check owner/version/consent, reserve quota, run GC or
+activate storage. Frozen repr-hidden data is not an access grant. Focused tests
+are [here](../tests/unit_services/test_p12_t12_retention_time.py); DB atomicity,
+durable anti-rollback and the rest of this lifecycle remain unimplemented.
+
 ## Personal ownership and immutable source binding
 
 Use the [connection's personal owner](../app/models/integrations/connection.py)

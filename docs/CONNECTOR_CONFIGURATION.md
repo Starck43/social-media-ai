@@ -111,3 +111,30 @@ personal credential or existing source is changed. Roll back the application
 and schema together: new application routes require 0121. Tests cover real
 upgrade/downgrade/re-upgrade, legacy preservation, failure atomicity, ownership,
 revocation, concurrent duplicate/check/disable behavior and provider mocks.
+
+### VK: recovery after an unreadable refresh secret
+
+A `refresh_attempt` exactly equal to `{"state": "unreadable"}` records a local
+failure **before** sending a refresh request. It does not establish that the VK
+session is renewable. The operator may, after separate owner authorization and
+with a reviewed restorable backup, stop **all** credential writers and make sure
+that the correct credential key is consistently installed on every instance.
+Never inspect a real target merely to discover whether recovery is needed.
+
+For the explicitly approved user and current credential row, run the default
+probe first (IDs are identifiers, not secrets):
+
+```bash
+python -m scripts.ops.recover_vk_unreadable --user-id USER_ID --credential-id CREDENTIAL_ID --target-approved --writers-stopped
+```
+
+If the probe succeeds, the separately authorized mutation adds `--apply
+--backup-confirmed`. It locks the user and newest active VK credential, checks
+the expected row ID and decrypts both encrypted secrets without displaying them.
+Only the exact known-unsent marker is removed; pending, failed, extended or
+unknown markers are never cleared. Other metadata and failure cooldowns remain.
+No VK request is made. A successful probe does not verify provider state; the
+status is still subject to expiry and any other failure. Coordinate the key on
+all instances before restarting writers. If the target changed, key is wrong or
+outcome is uncertain, stop and investigate; do not blindly retry or clear a
+claim manually. This is not a substitute for reauthorization or key rotation.

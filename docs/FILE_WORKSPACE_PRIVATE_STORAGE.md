@@ -43,6 +43,23 @@ activate storage. Frozen repr-hidden data is not an access grant. Focused tests
 are [here](../tests/unit_services/test_p12_t12_retention_time.py); DB atomicity,
 durable anti-rollback and the rest of this lifecycle remain unimplemented.
 
+## Implemented pure quota subset
+
+[retention_quota.py](../app/integrations/file_workspace/retention_quota.py) adds
+`retention_quota_allows(payload, snapshot)` for ONE new unreserved record. It
+checks nonempty exact bytes/strict UTF-8/64KiB, object count and all connection/
+owner-within-tenant/tenant count+byte ceilings, including outstanding reserves.
+Exact nonnegative counters, count/byte consistency and child <= parent usage
+are required. Expired/invalidated rows still count until purge. Limits above
+remain proposals, not approved entitlements or deployed storage controls.
+
+The caller supplies the COMPLETE canonical serialized envelope and a trusted,
+coherent current snapshot; the helper cannot prove either. This is not DTO/schema
+validation, a scope/owner proof, atomic reservation, eviction, idempotent retry
+settlement or DB concurrency safety. It never mutates usage. Future persistence
+must recheck/reserve all dimensions atomically. [Synthetic tests](../tests/unit_services/test_p12_t12_retention_quota.py)
+include the stale-snapshot/non-reservation trust boundary. Storage stays OFF.
+
 ## Personal ownership and immutable source binding
 
 Use the [connection's personal owner](../app/models/integrations/connection.py)

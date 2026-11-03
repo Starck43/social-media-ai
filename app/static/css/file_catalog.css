@@ -1,0 +1,40 @@
+/* Existing application theme tokens; catalog controls remain usable without JS. */
+.file-catalog { display: grid; gap: 24px; max-width: 1120px; }
+.file-catalog h2 { font-size: 1.125rem; font-weight: 650; line-height: 1.5; margin: 0 0 8px; }
+.file-catalog h3 { font-size: 1rem; font-weight: 600; }
+.file-catalog p { margin: 8px 0 0; font-size: 1rem; line-height: 1.5; }
+.file-catalog .ui-card { min-width: 0; }
+.file-catalog-intro, .file-catalog-results-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.file-catalog-intro > div { flex: 1 1 340px; min-width: 0; }
+.file-catalog-tag { font-size: .875rem; line-height: 1.5; padding: 4px 8px; border: 1px solid var(--color-border-strong, #64748b); border-radius: 6px; white-space: normal; }
+.file-catalog-search { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; gap: 16px; align-items: end; }
+.file-catalog-search label { display: block; font-size: .875rem; margin-bottom: 8px; }
+.file-catalog-search input, .file-catalog-search select, .file-catalog .ui-control { min-height: 44px; font-size: 1rem; }
+.file-catalog .file-catalog-search input, .file-catalog .file-catalog-search select, .file-catalog .ui-control { border-color: var(--color-text-secondary, #475569); }
+.file-catalog-search input::placeholder { color: var(--color-text-secondary, #475569); opacity: 1; }
+.file-catalog .ui-control { white-space: normal; text-align: center; }
+.file-catalog .file-catalog-note, .file-catalog-path { font-size: .875rem; line-height: 1.5; }
+.file-catalog-path, .file-catalog-name, .file-catalog-detail-name { overflow-wrap: anywhere; word-break: normal; }
+.file-catalog-note { color: var(--color-text-secondary, #475569); }
+.file-catalog-list { list-style: none; padding: 0; margin: 16px 0 0; }
+.file-catalog-list > li { display: flex; align-items: flex-start; gap: 16px; padding: 20px 0; border-top: 1px solid var(--color-border-strong, #64748b); }
+.file-catalog-icon { flex: 0 0 24px; margin-top: 10px; }
+.file-catalog-icon svg { width: 24px; height: 24px; }
+.file-catalog-item { flex: 1 1 0; min-width: 0; }
+.file-catalog-name { display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; text-underline-offset: 4px; font-weight: 600; }
+.file-catalog a:focus-visible, .file-catalog input:focus-visible, .file-catalog select:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.file-catalog-paging { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.file-catalog-paging:empty { display: none; }
+.file-catalog-empty { padding: 24px 0; max-width: 680px; }
+.file-catalog-empty.ui-card { padding: 24px; }
+.file-catalog-empty .ui-control { display: inline-flex; align-items: center; margin-top: 20px; }
+.file-catalog-history { margin: 16px 0 0; padding-left: 24px; }
+.file-catalog-history li { padding: 12px 0; overflow-wrap: anywhere; }
+.file-catalog-history li span { display: block; }
+html.dark .file-catalog-note { color: #cbd5e1; }
+@media (max-width: 640px) {
+    .file-catalog-search { grid-template-columns: minmax(0,1fr); }
+    .file-catalog-list > li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 12px; }
+    .file-catalog-list > li > .file-catalog-tag { grid-column: 2; justify-self: start; }
+    .file-catalog { gap: 16px; }
+}

@@ -17,6 +17,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from app.core.config import settings
 from app.models import Tenant
 from app.types import ActionType
 
@@ -267,6 +268,7 @@ def render(request: Request, name: str, status_code: int = 200, **extra: Any):
         tenant_tz = tenant_tz.timezone or "Europe/Moscow"
 
     context: dict[str, Any] = {
+        "file_catalog_enabled": settings.FILE_CATALOG_UI_ENABLED,
         "user": getattr(request.state, "web_user", None),
         "memberships": getattr(request.state, "memberships", []) or [],
         "workspaces": getattr(request.state, "workspaces", []) or [],

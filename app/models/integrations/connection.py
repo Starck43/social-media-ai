@@ -21,6 +21,7 @@ from app.models.base import Base, TenantScopedMixin, TimestampMixin
 class WorkspaceConnection(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "workspace_connections"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_workspace_connection_tenant"),
         UniqueConstraint(
             "tenant_id",
             "owner_user_id",

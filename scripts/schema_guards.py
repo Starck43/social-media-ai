@@ -401,6 +401,45 @@ GUARD_FUNCTIONS: dict[str, str] = {
     ),
 }
 
+# Migration 0128's revocation path is installed only once all private ledger
+# tables exist. The void helper is a dependency of the two trigger functions.
+GUARD_FUNCTION_RETURNS = {"invalidate_file_insights": "void"}
+GUARD_FUNCTION_ARGUMENTS = {"invalidate_file_insights": "t integer, o integer, c integer"}
+GUARD_FUNCTIONS.update(
+    {
+        "invalidate_file_insights": (
+            ' DECLARE r record; BEGIN FOR r IN SELECT connection_id FROM "{s}"."file_insight_mounts" '
+            "WHERE (t IS NULL OR tenant_id=t) AND (o IS NULL OR owner_id=o) AND (c IS NULL OR connection_id=c) "
+            'ORDER BY connection_id FOR UPDATE LOOP UPDATE "{s}"."file_insight_mounts" '
+            "SET processing_allowed=false, retention_allowed=false, "
+            "owner_epoch=replace(gen_random_uuid()::text,'-',''), "
+            "connection_epoch=replace(gen_random_uuid()::text,'-',''), "
+            "consent_revision=replace(gen_random_uuid()::text,'-','') WHERE connection_id=r.connection_id; "
+            'DELETE FROM "{s}"."file_insight_attempts" WHERE connection_id=r.connection_id; '
+            "END LOOP; END "
+        ),
+        "file_insight_revoke_hook": (
+            " BEGIN IF TG_TABLE_NAME='workspace_connections' THEN PERFORM \"{s}\".invalidate_file_insights(OLD.tenant_id,NULL,OLD.id); "
+            "ELSIF TG_TABLE_NAME='workspace_connection_secrets' THEN IF TG_OP='INSERT' THEN "
+            'PERFORM "{s}".invalidate_file_insights(NULL,NULL,NEW.connection_id); ELSE '
+            'PERFORM "{s}".invalidate_file_insights(NULL,NULL,OLD.connection_id); END IF; '
+            "ELSIF TG_TABLE_NAME='tenant_users' THEN PERFORM \"{s}\".invalidate_file_insights(OLD.tenant_id,OLD.user_id,NULL); "
+            "ELSIF TG_TABLE_NAME='users' THEN PERFORM \"{s}\".invalidate_file_insights(NULL,OLD.id,NULL); "
+            "ELSIF TG_TABLE_NAME='tenants' THEN PERFORM \"{s}\".invalidate_file_insights(OLD.id,NULL,NULL); "
+            "ELSIF TG_TABLE_NAME='workspace_roles' THEN PERFORM \"{s}\".invalidate_file_insights(m.tenant_id,m.user_id,NULL) "
+            'FROM "{s}".tenant_users m WHERE m.role_id=OLD.id; '
+            "ELSIF TG_TABLE_NAME='workspace_role_permission' THEN IF TG_OP='INSERT' THEN "
+            'PERFORM "{s}".invalidate_file_insights(m.tenant_id,m.user_id,NULL) FROM "{s}".tenant_users m WHERE m.role_id=NEW.role_id; '
+            'ELSE PERFORM "{s}".invalidate_file_insights(m.tenant_id,m.user_id,NULL) FROM "{s}".tenant_users m WHERE m.role_id=OLD.role_id; '
+            "END IF; END IF; RETURN NULL; END "
+        ),
+        "file_insight_object_hook": (
+            " BEGIN UPDATE \"{s}\".file_insight_object_states SET epoch=replace(gen_random_uuid()::text,'-','') "
+            'WHERE object_id=OLD.id; DELETE FROM "{s}".file_insight_attempts WHERE object_id=OLD.id; RETURN NULL; END '
+        ),
+    }
+)
+
 
 @dataclass(frozen=True)
 class GuardTrigger:
@@ -417,6 +456,8 @@ class GuardTrigger:
     events: tuple[str, ...]
     columns: tuple[str, ...] = ()
     for_each_row: bool = True
+    required_tables: tuple[str, ...] = ()
+    timing: str = "BEFORE"
 
     def definition(self, schema: str) -> str:
         """Schema-qualified ``CREATE TRIGGER`` executing a function in ``schema``."""
@@ -425,7 +466,7 @@ class GuardTrigger:
         level = "FOR EACH ROW" if self.for_each_row else "FOR EACH STATEMENT"
         qualified = f'"{schema}"'
         return (
-            f'CREATE TRIGGER "{self.name}" BEFORE {events}{of} ON {qualified}."{self.table}" '
+            f'CREATE TRIGGER "{self.name}" {self.timing} {events}{of} ON {qualified}."{self.table}" '
             f'{level} EXECUTE FUNCTION {qualified}."{self.function}"()'
         )
 
@@ -475,6 +516,86 @@ def _immutable_guards() -> list[GuardTrigger]:
 
 
 GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
+    GuardTrigger(
+        "workspace_connections",
+        "file_insight_revoke",
+        "file_insight_revoke_hook",
+        ("UPDATE",),
+        (
+            "tenant_id",
+            "owner_user_id",
+            "config",
+            "account_key",
+            "is_active",
+            "state",
+            "provider_id",
+            "platform",
+            "auth_method",
+            "schema_version",
+        ),
+        required_tables=("file_insight_mounts", "file_insight_attempts"),
+        timing="AFTER",
+    ),
+    GuardTrigger(
+        "workspace_connection_secrets",
+        "file_insight_revoke",
+        "file_insight_revoke_hook",
+        ("INSERT", "UPDATE", "DELETE"),
+        required_tables=("file_insight_mounts", "file_insight_attempts"),
+        timing="AFTER",
+    ),
+    GuardTrigger(
+        "tenant_users",
+        "file_insight_revoke",
+        "file_insight_revoke_hook",
+        ("DELETE", "UPDATE"),
+        ("is_active", "role_id", "user_id", "tenant_id", "channel"),
+        required_tables=("file_insight_mounts", "file_insight_attempts"),
+        timing="AFTER",
+    ),
+    GuardTrigger(
+        "users",
+        "file_insight_revoke",
+        "file_insight_revoke_hook",
+        ("UPDATE",),
+        ("is_active", "role_id"),
+        required_tables=("file_insight_mounts", "file_insight_attempts"),
+        timing="AFTER",
+    ),
+    GuardTrigger(
+        "tenants",
+        "file_insight_revoke",
+        "file_insight_revoke_hook",
+        ("UPDATE",),
+        ("is_active",),
+        required_tables=("file_insight_mounts", "file_insight_attempts"),
+        timing="AFTER",
+    ),
+    GuardTrigger(
+        "workspace_roles",
+        "file_insight_revoke",
+        "file_insight_revoke_hook",
+        ("UPDATE", "DELETE"),
+        required_tables=("file_insight_mounts", "file_insight_attempts"),
+        timing="AFTER",
+    ),
+    GuardTrigger(
+        "workspace_role_permission",
+        "file_insight_revoke",
+        "file_insight_revoke_hook",
+        ("INSERT", "UPDATE", "DELETE"),
+        required_tables=("file_insight_mounts", "file_insight_attempts"),
+        timing="AFTER",
+    ),
+    GuardTrigger(
+        "file_catalog_objects",
+        "file_insight_object_changed",
+        "file_insight_object_hook",
+        ("UPDATE",),
+        ("path", "name", "kind", "root_key", "path_key", "observation_number"),
+        required_tables=("file_insight_object_states", "file_insight_attempts"),
+        timing="AFTER",
+    ),
     GuardTrigger(
         table="document_revisions",
         name="document_revision_content_immutable",
@@ -638,8 +759,9 @@ def function_ddl(name: str, schema: str) -> str:
     """``CREATE OR REPLACE FUNCTION`` for one guard, executable in ``schema``."""
     body = GUARD_FUNCTIONS[name].replace("{s}", _schema(schema))
     return (
-        f'CREATE OR REPLACE FUNCTION {_schema(schema)}."{name}"() '
-        f"RETURNS trigger LANGUAGE plpgsql AS $guard$\n{body}\n$guard$"
+        f'CREATE OR REPLACE FUNCTION {_schema(schema)}."{name}"('
+        f'{GUARD_FUNCTION_ARGUMENTS.get(name, "")}) '
+        f"RETURNS {GUARD_FUNCTION_RETURNS.get(name, 'trigger')} LANGUAGE plpgsql AS $guard$\n{body}\n$guard$"
     )
 
 
@@ -675,8 +797,14 @@ def apply_schema_guards(conn, schema: str, text: Callable[[str], object]) -> Non
     # The supplied SQLAlchemy connection already owns its dialect. Asking that
     # dialect for table names keeps this file-loaded leaf stdlib-only.
     present_tables = set(conn.dialect.get_table_names(conn, schema=schema))
-    applicable = [trigger for trigger in GUARD_TRIGGERS if trigger.table in present_tables]
+    applicable = [
+        trigger
+        for trigger in GUARD_TRIGGERS
+        if trigger.table in present_tables and set(trigger.required_tables) <= present_tables
+    ]
     functions = {trigger.function for trigger in applicable}
+    if functions & {"file_insight_revoke_hook", "file_insight_object_hook"}:
+        functions.add("invalidate_file_insights")
     for name in GUARD_FUNCTIONS:
         if name in functions:
             conn.execute(text(function_ddl(name, schema)))

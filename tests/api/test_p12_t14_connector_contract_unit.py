@@ -45,6 +45,7 @@ LOGIN = {
     "password_attempts_remaining": 3,
     "authorization_id": None,
     "grant_id": None,
+    "recovery_authorization_id": None,
 }
 SECRET = "SYNTHETIC-PRIVATE-CONTRACT-SENTINEL"
 EXTRA = dict.fromkeys(("session", "secret_encrypted", "phone", "api_hash", "owner_user_id", "tenant_id"), SECRET)
@@ -68,6 +69,43 @@ CASES = [
     ),
     ("POST", f"/telegram/login/{ATTEMPT}/cancel", "cancel", None, "login"),
 ]
+CASES.extend(
+    [
+        (
+            "POST",
+            "/telegram/reauthorize",
+            "start",
+            {"request_id": ATTEMPT, "phone": "+12345678901", "authorization_id": 12, "expected_revision": 2},
+            "login",
+        ),
+        ("GET", f"/telegram/login-request/{ATTEMPT}", "status_by_request", None, "login"),
+    ]
+)
+
+SOURCE = {
+    "source_id": 3,
+    "name": "synthetic",
+    "external_id": "@synthetic",
+    "binding_token": "a" * 64,
+    "selection_state": "selected",
+    "grant_id": 23,
+    "authorization_revision": 2,
+}
+CHOICE = {"grant_id": 23, "authorization_id": 12, "authorization_revision": 2, "subject_key": "90001"}
+CASES.extend(
+    [
+        ("GET", "/telegram/sources", "source_list", None, "catalog"),
+        ("GET", "/telegram/sources/3", "source_get", None, "picker"),
+        (
+            "PUT",
+            "/telegram/sources/3",
+            "source_set",
+            {"expected_binding": "a" * 64, "grant_id": 23, "authorization_id": 12, "authorization_revision": 2},
+            "source",
+        ),
+        ("POST", "/telegram/sources/3/clear", "source_set", {"expected_binding": "a" * 64}, "source"),
+    ]
+)
 
 
 def forbidden(*args, **kwargs):
@@ -103,11 +141,14 @@ def api(monkeypatch):
             endpoints.connector_authorizations,
             ("list_reusable", "list_personal", "list_grants", "attach", "detach", "revoke_personal"),
         ),
-        (endpoints.telegram_logins, ("start", "status", "submit", "cancel")),
+        (endpoints.telegram_logins, ("start", "status", "status_by_request", "submit", "cancel")),
     ):
         for name in names:
             mocks[name] = AsyncMock()
             monkeypatch.setattr(target, name, mocks[name])
+    for public_name, method in (("source_list", "list_sources"), ("source_get", "get"), ("source_set", "set")):
+        mocks[public_name] = AsyncMock()
+        monkeypatch.setattr(endpoints.telegram_source_bindings, method, mocks[public_name])
     app = FastAPI()
     app.include_router(entry.router, prefix="/api/v1")
     app.add_middleware(ApiScopeMiddleware)
@@ -128,6 +169,9 @@ def expected(kind):
             "account": ACCOUNT,
             "grant": GRANT,
             "login": LOGIN,
+            "source": SOURCE,
+            "picker": {"source": SOURCE, "choices": [CHOICE], "can_edit": True},
+            "catalog": {"sources": [SOURCE], "can_edit": True, "next_after": None},
         }[kind]
     )
 
@@ -297,12 +341,16 @@ def test_full_application_openapi_has_explicit_metadata_and_legacy_contracts():
         "grants": "WorkspaceGrantMetadata",
         "grant": "WorkspaceGrantMetadata",
         "login": "TelegramLoginMetadata",
+        "source": "TelegramSourceMetadata",
+        "picker": "TelegramSourcePicker",
+        "catalog": "TelegramSourceCatalog",
     }
     for method, suffix, _, _, kind in CASES:
         suffix = (
-            suffix.replace(ATTEMPT, "{attempt_id}")
+            suffix.replace(ATTEMPT, "{request_id}" if "login-request" in suffix else "{attempt_id}")
             .replace("/12/", "/{authorization_id}/")
             .replace("/23/", "/{grant_id}/")
+            .replace("/sources/3", "/sources/{source_id}")
         )
         operation = paths[ROOT + suffix][method.lower()]
         assert operation["security"] == [{"OAuth2PasswordBearer": []}]
@@ -323,7 +371,8 @@ def test_full_application_openapi_has_explicit_metadata_and_legacy_contracts():
         ("ConnectorAccountError", {"detail": None}),
     ):
         assert set(models[name]["properties"]) == set(keys)
-        assert set(models[name]["required"]) == set(keys)
+        optional = {"recovery_authorization_id"} if name == "TelegramLoginMetadata" else set()
+        assert set(models[name]["required"]) == set(keys) - optional
     assert models["TelegramLoginMetadata"]["properties"]["expires_at"]["format"] == "date-time"
     assert models["TelegramLoginMetadata"]["properties"]["state"]["enum"] == [
         "processing",

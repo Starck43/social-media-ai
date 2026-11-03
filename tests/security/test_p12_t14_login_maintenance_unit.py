@@ -111,6 +111,8 @@ async def test_background_loop_retries_drains_full_batch_and_redacts_errors(monk
             raise asyncio.CancelledError()
 
     monkeypatch.setattr(maintenance, "expire_attempt_batch", fake_expire)
+    monkeypatch.setattr(maintenance, "wipe_terminal_attempt_batch", AsyncMock(return_value=0))
+    monkeypatch.setattr(maintenance, "purge_attempt_batch", AsyncMock(return_value=0))
     monkeypatch.setattr(dispatcher.asyncio, "sleep", fake_sleep)
     with pytest.raises(asyncio.CancelledError):
         await dispatcher._telegram_login_maintenance_loop()

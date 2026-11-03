@@ -16,6 +16,7 @@ from sqlalchemy import select, update
 from app.models import PersonalConnectorAuthorization as Authorization
 from app.services.social.connector_authorizations import AuthorizationUnavailable
 from app.services.social.telegram_account_lock import locked_source_grant
+from app.services.social.telegram_queue_selection import TelegramJobRequeueRequired
 from app.services.social.telegram_runtime_access import _capture_execution, _check_execution
 
 _MAX_GENERATION = 2**63 - 1
@@ -77,6 +78,9 @@ class _RuntimeFence:
         except asyncio.CancelledError:
             self._close()
             raise
+        except TelegramJobRequeueRequired:
+            self._close()
+            raise
         except Exception:
             self._close()
             raise AuthorizationUnavailable() from None
@@ -95,6 +99,9 @@ class _RuntimeFence:
                 yield
                 await self._inspect()
         except asyncio.CancelledError:
+            self._close()
+            raise
+        except TelegramJobRequeueRequired:
             self._close()
             raise
         except Exception:
@@ -125,6 +132,9 @@ class _RuntimeFence:
                 await _check_execution(session, self._pin, lock=True)
                 await self._inspect()
         except asyncio.CancelledError:
+            self._close()
+            raise
+        except TelegramJobRequeueRequired:
             self._close()
             raise
         except Exception:
@@ -172,6 +182,8 @@ async def _locked_runtime(selection, claim):
                 await fence._inspect()
                 yield fence
     except asyncio.CancelledError:
+        raise
+    except TelegramJobRequeueRequired:
         raise
     except Exception:
         raise AuthorizationUnavailable() from None

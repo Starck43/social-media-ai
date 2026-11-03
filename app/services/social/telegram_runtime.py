@@ -16,6 +16,7 @@ from datetime import date, datetime, time, timezone
 
 from app.services.social.connector_authorizations import AuthorizationUnavailable
 from app.services.social.telegram_grant_access import source_grant_selection
+from app.services.social.telegram_queue_selection import TelegramJobRequeueRequired
 from app.services.social.telegram_runtime_fence import _locked_runtime
 
 _HARD_ITEM_LIMIT = 1000
@@ -189,7 +190,8 @@ async def _history(client, fence, source, limit):
         raise AuthorizationUnavailable()
     normalizer = Normalizer(None)
     params = source.params or {}
-    watermark = cursor_value(params.get("telegram_l2_last_item_id", getattr(source, "last_item_id", None)))
+    # Bot API push and personal history have different admission cursors.
+    watermark = cursor_value(params.get("telegram_l2_last_item_id"))
     if params.get("force_refresh") is True:
         watermark = 0
     dates = params.get("cli_dates") or {}
@@ -284,6 +286,8 @@ async def _telegram_history_batch(selection, claim, source, *, limit):
             finally:
                 batch._close()
     except asyncio.CancelledError:
+        raise
+    except TelegramJobRequeueRequired:
         raise
     except Exception:
         raise AuthorizationUnavailable() from None

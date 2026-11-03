@@ -99,6 +99,13 @@ def env(monkeypatch):
     )
     for name in vars(mocks):
         monkeypatch.setattr(page.connector_authorizations, name, getattr(mocks, name))
+    from app.services.social.telegram_source_bindings import telegram_source_bindings
+
+    monkeypatch.setattr(
+        telegram_source_bindings,
+        "list_sources",
+        AsyncMock(return_value={"sources": [], "can_edit": True, "next_after": None}),
+    )
     app = FastAPI()
     app.include_router(web_router)
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -142,7 +149,7 @@ async def test_list_and_explicit_attach_detach_are_scoped_and_private(env):
         attach = await client.post(ROOT + "/accounts/12/attach", data=parser.forms[ROOT + "/accounts/12/attach"])
         detach = await client.post(ROOT + "/grants/31/detach", data=parser.forms[ROOT + "/grants/31/detach"])
     assert response.status_code == 200 and "workspace-1" in response.text
-    assert "ещё не реализованы" in response.text
+    assert "выбор" in response.text.lower() and "не проверяет доступность сессии" in response.text.lower()
     assert attach.status_code == detach.status_code == 303
     env.mocks.attach.assert_awaited_once_with(tenant_id=1, actor_id=7, authorization_id=12, expected_revision=2)
     env.mocks.detach.assert_awaited_once_with(tenant_id=1, actor_id=7, grant_id=31)

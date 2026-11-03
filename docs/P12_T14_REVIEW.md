@@ -242,3 +242,11 @@ Bot API/push/VK/other-job regressions, metadata purge/replay protection and migr
 model/schema/history agreement. Database/migration checks are NOT authorized by
 this code handoff; the owner's current no-apply hold remains in force. Independent
 audit follows the common tests, with no self-acceptance or merge authorization.
+
+## Continuation common-test checkpoint
+
+See [continuation validation](P12_T14_CONTINUATION_VALIDATION.md) for the exact
+15-file isolated command, local tested SHA, first-run failures/corrections,
+511-case result and explicit unrun DB/migration/runtime gates. Earlier per-slice
+results do not certify the new runtime/recovery/retention tree. Keep Draft;
+independent read-only audit follows, no activation/merge/deploy authorization.

@@ -8,6 +8,7 @@ for the operation, not all parents/related/history links.
 | Need | Canonical document |
 | --- | --- |
 | Product directions / phase plans | [PRODUCT_PLAN](PRODUCT_PLAN.md) → [phases](phases/README.md) |
+| Business modules P13–P19 (owner TZ, review, decisions) | [BUSINESS_MODULES](BUSINESS_MODULES.md) |
 | Role / short task prompts | [PROMPT_EXAMPLES](PROMPT_EXAMPLES.md) → selected shared skill |
 | Claim, READY, audit, synchronization, cleanup | [COLLABORATION](COLLABORATION.md), selected section |
 | Chat tools / sessions / memory | [AGENT](AGENT.md) |

@@ -304,10 +304,34 @@ async def test_database_observation_immutable_and_tenant_fk(data):
 
 @pytest.mark.parametrize(
     "name,query,expected",
-    [("Договор.pdf", "Договор", True), ("REPORT.txt", "report", True), ("100file.txt", "%", False)],
+    [
+        ("Договор.pdf", "дОГОВОР", True),
+        ("REPORT.txt", "report", True),
+        ("Straße.txt", "STRASSE", True),
+        ("CAFÉ.txt", "cafe\u0301", True),
+        ("ＦＩＬＥ.txt", "file", True),
+        ("100file.txt", "%", False),
+    ],
 )
-async def test_literal_names_and_ascii_case_search(data, name, query, expected):
+async def test_literal_names_and_unicode_case_search(data, name, query, expected):
     with actor(data) as args:
         await admit(args, name, "unrelated.txt")
         found = await manager.list_page(**args, query=query)
         assert [item["name"] for item in found["items"]] == ([name] if expected else [])
+
+
+async def test_unicode_search_filters_policy_before_paging(data):
+    with actor(data) as args:
+        await admit(args, "hidden", kind="dir")
+        await admit(args, "ДОГОВОР-secret.txt", folder="disk:/work/hidden")
+        await admit(args, "Договор-1.txt", "ДОГОВОР-2.txt", "unrelated.txt")
+        await configure(data, restrictions=[{"path": "disk:/work/hidden", "deny": ["list"]}])
+        first = await manager.list_page(**args, query="договор", limit=1)
+        second = await manager.list_page(**args, query="договор", limit=1, after=first["next_after"])
+        assert [first["items"][0]["name"], second["items"][0]["name"]] == [
+            "Договор-1.txt", "ДОГОВОР-2.txt"
+        ]
+        assert (await manager.list_page(**args, query="secret"))["items"] == []
+    with actor(data, user=1) as foreign:
+        with pytest.raises(ConnectionDenied):
+            await manager.list_page(**foreign, query="договор")

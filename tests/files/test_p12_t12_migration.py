@@ -1,15 +1,17 @@
-"""Reviewed 0124 round trip in test_schema only; preserve legacy 0122 evidence."""
+"""Catalog migrations in test_schema only; preserve legacy 0122 evidence."""
 
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import delete, func, inspect, select
+from sqlalchemy import delete, func, inspect, select, text
 
 from app.core.config import settings
 from app.core.database import async_session_maker, engine
 from app.models import DocumentRevision, FileCatalogObject, KnowledgeDocument, KnowledgeSnippet, Tenant
+from tests.shared.file_catalog_fixtures import actor, admit, data  # noqa: F401
+from app.models.managers.file_catalog_manager import FileCatalogManager
 
 pytestmark = pytest.mark.tenancy
 
@@ -68,7 +70,7 @@ async def test_round_trip_preserves_0122_evidence():
             config.attributes["connection"] = connection
             command.downgrade(config, "0123")
             assert "file_catalog_objects" not in inspect(connection).get_table_names(schema="test_schema")
-            command.upgrade(config, "0124")
+            command.upgrade(config, "0125")
             assert "file_catalog_objects" in inspect(connection).get_table_names(schema="test_schema")
         async with async_session_maker() as session:
             assert (await session.get(KnowledgeSnippet, ids[1])).excerpt == "Synthetic legacy evidence"
@@ -78,3 +80,36 @@ async def test_round_trip_preserves_0122_evidence():
     finally:
         async with async_session_maker() as session, session.begin():
             await session.execute(delete(Tenant).where(Tenant.id == ids[0]))
+
+
+async def test_0125_backfills_existing_rows_in_batches(data):
+    assert settings.DB_SCHEMA == "test_schema"
+    manager = FileCatalogManager()
+    with actor(data) as args:
+        names = [f"Документ-{i:03}.txt" for i in range(501)] + ["Straße.txt", "CAFÉ.txt"]
+        for start in range(0, len(names), 100):
+            await admit(args, *names[start : start + 100])
+        original = await manager.list_page(**args, query="strasse")
+        original_id = original["items"][0]["id"]
+        config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+        config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
+        try:
+            with engine.begin() as connection:
+                config.attributes["connection"] = connection
+                command.downgrade(config, "0124")
+                assert "name_search" not in {c["name"] for c in inspect(connection).get_columns(
+                    "file_catalog_objects", schema="test_schema"
+                )}
+                command.upgrade(config, "0125")
+                rows = connection.execute(text(
+                    'SELECT name, name_search FROM test_schema.file_catalog_objects WHERE connection_id = :id'
+                ), {"id": args["connection_id"]}).all()
+                assert len(rows) == len(names)
+                assert dict(rows)["Straße.txt"] == "strasse.txt"
+        finally:
+            with engine.begin() as connection:
+                config.attributes["connection"] = connection
+                command.upgrade(config, "0125")
+        result = await manager.list_page(**args, query="STRASSE")
+        assert result["items"][0]["id"] == original_id
+        assert [x["name"] for x in (await manager.list_page(**args, query="cafe\u0301"))["items"]] == ["CAFÉ.txt"]

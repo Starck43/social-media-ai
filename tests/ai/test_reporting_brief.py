@@ -14,7 +14,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.models import AIAnalytics, AgentScenario, Platform, Source
+from app.models import AgentScenario, AIAnalytics, Platform, Source
 from app.services.ai.reporting import ReportAggregator
 from app.types import PeriodType, PlatformType, SourceType
 from tests.shared.platform_catalog import shared_platform
@@ -154,8 +154,16 @@ async def test_viral_content_sorted(source):
     await _seed(
         source,
         [
-            {"summary_data": _summary(multi_llm_analysis={"text_analysis": _text({"viral_potential": "Высокий", "growth_rate": 2.5})})},
-            {"summary_data": _summary(multi_llm_analysis={"text_analysis": _text({"viral_potential": "Низкий", "growth_rate": 0.5})})},
+            {
+                "summary_data": _summary(
+                    multi_llm_analysis={"text_analysis": _text({"viral_potential": "Высокий", "growth_rate": 2.5})}
+                )
+            },
+            {
+                "summary_data": _summary(
+                    multi_llm_analysis={"text_analysis": _text({"viral_potential": "Низкий", "growth_rate": 0.5})}
+                )
+            },
         ],
     )
     result = await ReportAggregator().get_viral_content(days=7)
@@ -238,7 +246,11 @@ async def test_toxicity_level_maps_to_score(source):
         source,
         [
             {"summary_data": _summary(multi_llm_analysis={"text_analysis": _new_contract_text()})},
-            {"summary_data": _summary(multi_llm_analysis={"text_analysis": _new_contract_text({"toxicity_level": "low"})})},
+            {
+                "summary_data": _summary(
+                    multi_llm_analysis={"text_analysis": _new_contract_text({"toxicity_level": "low"})}
+                )
+            },
         ],
     )
     result = await ReportAggregator().get_toxicity_summary(days=7)
@@ -315,15 +327,15 @@ async def test_brief_groups_by_themes(source):
 
 
 async def test_brief_groups_by_days(source):
-        await _seed(
-            source,
-            [
-                {"summary_data": _summary(), "analysis_date": date.today()},
-                {"summary_data": _summary(), "analysis_date": date.today() - timedelta(days=1)},
-            ],
-        )
-        brief = await ReportAggregator().generate_digest_brief(period="week", group_by="themes", time_breakdown=True)
-        assert "## По темам" in brief
+    await _seed(
+        source,
+        [
+            {"summary_data": _summary(), "analysis_date": date.today()},
+            {"summary_data": _summary(), "analysis_date": date.today() - timedelta(days=1)},
+        ],
+    )
+    brief = await ReportAggregator().generate_digest_brief(period="week", group_by="themes", time_breakdown=True)
+    assert "## По темам" in brief
 
 
 async def test_brief_groups_by_sources(source):
@@ -334,15 +346,25 @@ async def test_brief_groups_by_sources(source):
 
 
 async def test_brief_groups_by_per_person_chains(source):
-        await _seed(
-            source,
-            [
-                {"summary_data": _summary(multi_llm_analysis={"text_analysis": _text({"entities": [{"name": "person1", "type": "person"}]})}), "topic_chain_id": f"src_{source.id}_user_person1"},
-                {"summary_data": _summary(multi_llm_analysis={"text_analysis": _text({"entities": [{"name": "person2", "type": "person"}]})}), "topic_chain_id": f"src_{source.id}_user_person2"},
-            ],
-        )
-        brief = await ReportAggregator().generate_digest_brief(period="day", group_by="entities", entity_type="person")
-        assert "## По упоминаниям" in brief
+    await _seed(
+        source,
+        [
+            {
+                "summary_data": _summary(
+                    multi_llm_analysis={"text_analysis": _text({"entities": [{"name": "person1", "type": "person"}]})}
+                ),
+                "topic_chain_id": f"src_{source.id}_user_person1",
+            },
+            {
+                "summary_data": _summary(
+                    multi_llm_analysis={"text_analysis": _text({"entities": [{"name": "person2", "type": "person"}]})}
+                ),
+                "topic_chain_id": f"src_{source.id}_user_person2",
+            },
+        ],
+    )
+    brief = await ReportAggregator().generate_digest_brief(period="day", group_by="entities", entity_type="person")
+    assert "## По упоминаниям" in brief
 
 
 async def test_brief_returns_empty_when_no_analytics():

@@ -409,8 +409,7 @@ class EnvironmentBoundary(NoNetworkTests):
         import sys
         import textwrap
 
-        script = textwrap.dedent(
-            f"""
+        script = textwrap.dedent(f"""
             import json, os, sys
             sys.path.insert(0, {str(ROOT)!r})
             import importlib.util
@@ -434,8 +433,7 @@ class EnvironmentBoundary(NoNetworkTests):
                     assert dotenv.load_dotenv() is False
                 assert os.environ["UNRELATED_PRIVATE_KEY"] == "never-forward"
             print("ok")
-            """
-        )
+            """)
         completed = subprocess.run([sys.executable, "-c", script], cwd=str(ROOT), capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stderr[-2000:])
         self.assertIn("ok", completed.stdout)

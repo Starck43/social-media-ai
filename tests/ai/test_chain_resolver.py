@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.models import AIAnalytics, AgentScenario, Platform, Source
+from app.models import AgentScenario, AIAnalytics, Platform, Source
 from app.services.ai.analyzer import AIAnalyzer
 from app.types import PeriodType, PlatformType, SourceType
 from tests.shared.platform_catalog import shared_platform

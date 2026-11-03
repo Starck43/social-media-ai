@@ -142,18 +142,18 @@ async def test_sources_group_names_each_source(source, platform):
 
 
 async def test_days_group_lists_each_day(source):
-        await _row(source, day_offset=0, text={"content_statistics": {"total_posts": 3}})
-        brief = await ReportAggregator().generate_digest_brief(period="week", group_by="themes", time_breakdown=True)
-        assert "## По темам" in brief
+    await _row(source, day_offset=0, text={"content_statistics": {"total_posts": 3}})
+    brief = await ReportAggregator().generate_digest_brief(period="week", group_by="themes", time_breakdown=True)
+    assert "## По темам" in brief
 
 
 async def test_per_person_group_lists_the_author(source):
-        """The per-person grouping keys off the chain id, not the task's
-        selection: who is analysed and who is reported are different."""
-        text_data = {"entities": [{"name": "ivan", "type": "person"}]}
-        await _row(source, day_offset=0, text=text_data, topic_chain_id=f"src_{source.id}_user_ivan")
-        brief = await ReportAggregator().generate_digest_brief(period="week", group_by="entities", entity_type="person")
-        assert "## По упоминаниям" in brief
+    """The per-person grouping keys off the chain id, not the task's
+    selection: who is analysed and who is reported are different."""
+    text_data = {"entities": [{"name": "ivan", "type": "person"}]}
+    await _row(source, day_offset=0, text=text_data, topic_chain_id=f"src_{source.id}_user_ivan")
+    brief = await ReportAggregator().generate_digest_brief(period="week", group_by="entities", entity_type="person")
+    assert "## По упоминаниям" in brief
 
 
 async def test_specialized_sections_are_filtered_by_the_scenario(source):

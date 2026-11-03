@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 
-from app.models import AIAnalytics, AgentScenario, Platform, Source
+from app.models import AgentScenario, AIAnalytics, Platform, Source
 from app.services.ai.analyzer import AIAnalyzer
 from app.types import PlatformType, SourceType
 from tests.shared.platform_catalog import shared_platform
@@ -92,8 +92,10 @@ async def test_confident_meaningful_row_passes_the_filter(source, monkeypatch):
 
     monkeypatch.setattr(AIAnalytics.objects, "filter", lambda *a, **k: _EmptyQS())
     monkeypatch.setattr(AIAnalytics.objects, "create", fake_create)
+
     async def _price_usage(*a, **k):
         return 0
+
     monkeypatch.setattr(analyzer, "_price_usage", _price_usage)
     monkeypatch.setattr(analyzer, "_build_trace_payload", lambda *a, **k: {})
     monkeypatch.setattr(analyzer, "_make_json_serializable", lambda *a, **k: {})
@@ -129,8 +131,10 @@ async def test_filter_off_by_default_saves(source, monkeypatch):
 
     monkeypatch.setattr(AIAnalytics.objects, "filter", lambda *a, **k: _EmptyQS())
     monkeypatch.setattr(AIAnalytics.objects, "create", fake_create)
+
     async def _price_usage(*a, **k):
         return 0
+
     monkeypatch.setattr(analyzer, "_price_usage", _price_usage)
     monkeypatch.setattr(analyzer, "_build_trace_payload", lambda *a, **k: {})
     monkeypatch.setattr(analyzer, "_make_json_serializable", lambda *a, **k: {})
@@ -165,8 +169,10 @@ async def test_missing_model_fields_do_not_drop_the_row(source, monkeypatch):
 
     monkeypatch.setattr(AIAnalytics.objects, "filter", lambda *a, **k: _EmptyQS())
     monkeypatch.setattr(AIAnalytics.objects, "create", fake_create)
+
     async def _price_usage(*a, **k):
         return 0
+
     monkeypatch.setattr(analyzer, "_price_usage", _price_usage)
     monkeypatch.setattr(analyzer, "_build_trace_payload", lambda *a, **k: {})
     monkeypatch.setattr(analyzer, "_make_json_serializable", lambda *a, **k: {})

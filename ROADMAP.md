@@ -90,7 +90,7 @@ Use the P2 cards in the execution queue or the linked parent plan.
 
 Use the P4 cards in the execution queue or the linked parent plan.
 
-## [P5](docs/phasesp5-ai-boundaries.md)
+## [P5](docs/phases/p5-ai-boundaries.md)
 
 Use the P5 cards in the execution queue or the linked parent plan.
 

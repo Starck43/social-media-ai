@@ -62,13 +62,19 @@ async def _job_maintenance_loop() -> None:
                 logger.warning("job_stale_quarantined count=%s", quarantined)
             with tenant_scope(bypass=True):
                 await cleanup_terminal_job_history()
-                from app.services.file_workspace.private_maintenance import purge_expired_private_insights
-
-                await purge_expired_private_insights()
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 — maintenance failure must not prevent web startup
             logger.warning("job_maintenance_failed error_code=%s", type(error).__name__)
+        try:
+            from app.services.file_workspace.private_maintenance import purge_expired_private_insights
+
+            with tenant_scope(bypass=True):
+                await purge_expired_private_insights()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 — independent bounded retry without private data
+            logger.warning("private_insight_maintenance_failed error_code=%s", type(error).__name__)
         await asyncio.sleep(300)
 
 

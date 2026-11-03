@@ -1,7 +1,7 @@
 """Private metadata catalog; no body storage, backfill or provider activation.
 
-Revision ID: 0124
-Revises: 0123
+Revision ID: p12t12_catalog
+Revises: p12t14_tg_retention
 """
 
 import sqlalchemy as sa
@@ -9,8 +9,8 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "0124"
-down_revision = "0123"
+revision = "p12t12_catalog"
+down_revision = "p12t14_tg_retention"
 branch_labels = None
 depends_on = None
 

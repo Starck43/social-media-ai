@@ -31,7 +31,9 @@ def _fernet(key: str | None) -> Fernet:
         raise RotationError("A credential key is invalid") from None
 
 
-def rotate_in_transaction(conn, *, schema: str, old_key: str, new_key: str, apply: bool) -> dict[str, int]:
+def rotate_in_transaction(
+    conn, *, schema: str, old_key: str, new_key: str, apply: bool, allow_private_results_purge: bool = False
+) -> dict[str, int]:
     """Validate/re-encrypt all known stores within a caller-owned transaction.
 
     This administrative operation assumes a maintenance window: database locks
@@ -63,6 +65,11 @@ def rotate_in_transaction(conn, *, schema: str, old_key: str, new_key: str, appl
         "p12t14_tg_runtime": (True, True, False),
         "p12t14_tg_recovery": (True, True, False),
         "p12t14_tg_retention": (True, True, True),
+        "p12t12_catalog": (True, True, True),
+        "0125": (True, True, True),
+        "0126": (True, True, True),
+        "0127": (True, True, True),
+        "0128": (True, True, True),
     }
     if len(revisions) != 1 or revisions[0] not in generations:
         raise RotationError("Apply the reviewed encrypted-refresh migration first and use a supported single head")
@@ -72,13 +79,32 @@ def rotate_in_transaction(conn, *, schema: str, old_key: str, new_key: str, appl
     has_keys = inspector.has_table("telegram_login_request_keys", schema=schema)
     if (has_authorizations, has_logins, has_keys) != generations[revisions[0]]:
         raise RotationError("Credential store layout does not match the reviewed migration head")
+    private_tables = ("file_insight_mounts", "file_insight_object_states", "file_insight_attempts", "file_private_insights")
+    private_layout = tuple(inspector.has_table(name, schema=schema) for name in private_tables)
+    has_private_results = revisions[0] == "0128"
+    if private_layout != (has_private_results,) * len(private_tables):
+        raise RotationError("Private result store layout does not match the reviewed migration head")
     names = ["llm_providers", "user_credentials", "workspace_connection_secrets"]
     if has_authorizations:
         names.append("personal_connector_authorizations")
     if has_logins:
         names.append("telegram_login_attempts")
+    if has_private_results:
+        names.extend(private_tables)
     for name in names:
         conn.exec_driver_sql(f"LOCK TABLE {qualified(name)} IN ACCESS EXCLUSIVE MODE")
+    private_counts = {}
+    if has_private_results:
+        for label, name in (
+            ("private_consent_mounts", "file_insight_mounts"),
+            ("private_attempts", "file_insight_attempts"),
+            ("private_results", "file_private_insights"),
+        ):
+            private_counts[label] = conn.exec_driver_sql(f"SELECT count(*) FROM {qualified(name)}").scalar_one()
+        # Connection-secret re-encryption intentionally uses the normal revoke
+        # trigger. Never disable that fence or silently lose retained results.
+        if apply and private_counts["private_consent_mounts"] and allow_private_results_purge is not True:
+            raise RotationError("Private consent and result purge requires explicit approval before rotation")
     guard = conn.execute(
         sa.text(
             "SELECT EXISTS (SELECT 1 FROM pg_constraint "
@@ -189,6 +215,14 @@ def rotate_in_transaction(conn, *, schema: str, old_key: str, new_key: str, appl
         counts[label] = count
     if not any(counts.values()):
         raise RotationError("No encrypted credentials are available to verify the old key")
+    if apply and has_private_results and private_counts["private_consent_mounts"]:
+        # Include inactive mounts or mounts whose secret was already removed:
+        # every old-key envelope must be gone before the key switch. This is
+        # the same normal invalidation fence, never a disabled trigger.
+        conn.exec_driver_sql(
+            f"SELECT {qualified('invalidate_file_insights')}(NULL::integer, NULL::integer, NULL::integer)"
+        )
+    counts.update(private_counts)
     return counts
 
 
@@ -200,6 +234,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--apply", action="store_true", help="Apply rotation instead of the default dry run")
     parser.add_argument("--backup-confirmed", action="store_true", help="Confirm a reviewed restorable backup exists")
     parser.add_argument("--writers-stopped", action="store_true", help="Confirm all application writers are stopped")
+    parser.add_argument(
+        "--private-results-purge-approved",
+        action="store_true",
+        help="Approve clearing private file consent and retained results during credential rotation",
+    )
     args = parser.parse_args(argv)
     if not args.target_approved:
         parser.error("--target-approved is required, including for a dry run")
@@ -218,6 +257,7 @@ def main(argv: list[str] | None = None) -> int:
                 old_key=settings.CREDENTIALS_KEY,
                 new_key=os.environ.get("P12T14_NEW_CREDENTIALS_KEY"),
                 apply=args.apply,
+                allow_private_results_purge=args.private_results_purge_approved,
             )
     except Exception:  # Do not format exception text or parameters containing secrets.
         print(

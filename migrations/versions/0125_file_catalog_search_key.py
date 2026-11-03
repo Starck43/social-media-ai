@@ -1,7 +1,7 @@
 """Add a locale-independent search key to the private metadata catalog.
 
 Revision ID: 0125
-Revises: 0124
+Revises: p12t12_catalog
 
 Run with catalog writers stopped; old application versions cannot insert after
 this migration. Backfill is bounded in memory, not a provider or content read.
@@ -15,7 +15,7 @@ from alembic import context, op
 from app.core.config import settings
 
 revision = "0125"
-down_revision = "0124"
+down_revision = "p12t12_catalog"
 branch_labels = None
 depends_on = None
 

@@ -66,27 +66,31 @@ assignments are exceptions to the complexity guideline. Owner items are decision
 
 ### Wave 0 — while PR #327 remains open
 
+Wave 0 rows are claimable now except where the row or the card's dependency line
+requires P12-T12. P18-T01 is preparation-only until #327 is integrated; P13-T02
+belongs to Wave 1 and is not claimable in Wave 0.
+
 | Lane | Task | Why now |
 | --- | --- | --- |
 | Auditor / integrator | Independently audit and merge planning PR #341 to `dev` before task claims | Planning only; P13-T01 remains IN_PROGRESS pending independent audit; D1–D9 remain open |
 | Remote | P13-T06 coverage gate and provider mocks | New files only (`scripts/ci/`, `tests/shared/`) |
 | Remote | P18-T01 local connector protocol (preparation only) | Read #327 draft contracts; final work and acceptance wait for P12-T12 integration and D6 as required by the card |
-| Remote | P13-T05 audit codes and API conventions | No migration; start from current `dev` after #308 (both touch `app/api/v1`) |
+| Local + local DB check | P13-T05 audit codes and API conventions | First business migration: the `ck_action_audit_events_action` CHECK constraint must be widened (audit F-1). Start from current `dev` after #308 (both touch `app/api/v1`) |
 | Owner | D1, D5, D8 | D8 gates P13-T02, D5 gates P17-T01, D1 confirms bands |
 
 ### Wave 1 — trigger: #308 and #327 merged, migration head stable
 
 | Lane | Task | Note |
 | --- | --- | --- |
-| Local | P13-T03 rate limiter (`C3`) | First migration in the business queue |
-| Remote | P13-T02 PII protection (`C4`) | No migration; needs #308 and D8 |
+| Local | P13-T03 rate limiter (`C3`) | Second migration, after P13-T05 |
+| Remote | P13-T02 PII protection (`C4`) | Needs #308 and D8; owns the PII columns in its own tables, so P13-T07 adds contacts without re-owning them |
 
 ### Wave 2 — foundation core
 
 | Lane | Task | Depends on |
 | --- | --- | --- |
-| Remote + local DB check | P13-T04 command ledger (`C4`) | P13-T05; second migration |
-| Remote + local DB check | P13-T07 contact core (`C4`) | P13-T02; third migration |
+| Remote + local DB check | P13-T04 command ledger (`C4`) | P13-T05; third migration |
+| Remote + local DB check | P13-T07 contact core (`C4`) | P13-T02; fourth migration |
 | Remote | P13-T08 OAuth framework (`C4`) | #308, P13-T03; no migration |
 | Remote | P18-T03 desktop connector core (`C5`) | accepted P18-T01; separate `local_connector/` package |
 | Local | P17-T01 1C connection (`C3`) | P13-T03, D5 |
@@ -107,7 +111,7 @@ assignments are exceptions to the complexity guideline. Owner items are decision
 | Lane | Tasks |
 | --- | --- |
 | Remote | P15-T01…T06, P16-T01, P16-T03, P16-T04, P17-T04, P19-T02, P19-T04, P14-T06 |
-| Local | P15-T07, P15-T08, P16-T02, P16-T05, P19-T01 (changes existing 0122 data), P19-T03, P19-T05, P19-T06, P14-T05, P18-T06 |
+| Local | P15-T07, P15-T08, P16-T02, P16-T05, P19-T01 (extends the 0122 document model; the append-only `guard_document_revision_content()` trigger forbids in-place content updates, audit F-5), P19-T03, P19-T05, P19-T06, P14-T05, P18-T06 |
 | Local / owner | P18-T07 packaging and signing (certificates, three OS) |
 
 Within a wave follow each card's dependencies; P15-T05/T06 must precede
@@ -116,7 +120,7 @@ P14-T05/T06 and P19-T05.
 ### Merge and conflict rules
 
 1. **One migration-bearing PR in the merge queue at a time**, in the order
-   P13-T03 → P13-T04 → P13-T07 → P14-T02 → later ones. Take the revision number at
+   P13-T05 → P13-T03 → P13-T04 → P13-T07 → P14-T02 → later ones. Take the revision number at
    the pre-merge rebase (R-20); the local lane validates upgrade → downgrade →
    re-upgrade on `test_schema` before READY.
 2. **Shared files have one active writer at a time:** `app/core/config.py`

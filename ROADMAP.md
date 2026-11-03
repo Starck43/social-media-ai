@@ -64,7 +64,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **IN_PROGRESS** · notion-ai-p12-t12 (implementation in [PR #327](https://github.com/Starck43/social-media-ai/pull/327)) · [dialogue](https://app.notion.com/chat?t=40dc1b436029807fa62200a976b5dc4d) · `P2` · `C5`
 - [P12-T13](docs/tasks/p12-t13.md) File workspace pilot contracts and capability review — **IN_PROGRESS** · notion-ai-p12-t13 · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C3`
-- [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **IN_PROGRESS** · notion-ai-p8-t34 · [owner selection and dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
+- [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **IN_PROGRESS** · notion-ai-p8-t34 · [owner selection and dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 
 ### Priority P3

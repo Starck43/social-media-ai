@@ -167,9 +167,20 @@ for these private endpoints. Never put phone, code, password or session in logs.
   expiry, revoked membership or stale claims cannot install a late result.
 - Terminal, cancelled and observed-expired attempts have ciphertext cleared.
   Expiry is enforced on access/settlement and old pending attempts are cleared on
-  the owner's next start. There is **no scheduled purge/retention job** in this
-  slice: unobserved expired ciphertext/terminal metadata and backups can remain
-  stored. Retention/maintenance wiring is a rollout gate, not a claimed TTL wipe.
+  the owner's next start. A running worker also starts independent maintenance:
+  it locks at most 200 expired pending rows with `SKIP LOCKED`, changes them to
+  `expired`, advances their revision and clears ciphertext in one transaction.
+  It repeats immediately for full batches (one-second pause) and otherwise every
+  minute; failure logs a fixed category and retries. This does not require the
+  scheduler, decrypt attempts or contact Telegram. Multiple workers may overlap.
+  Timing is best-effort, not a hard deletion deadline: worker downtime, locks,
+  overload or database errors delay cleanup. Monitor
+  `telegram_login_maintenance_failed`, restore database/worker health and verify
+  pending expired-row counts without selecting ciphertext; do not replay provider
+  operations. Attempt metadata and request keys remain to prevent start replay.
+  Database pages, WAL and backups may retain old ciphertext; no physical erasure
+  or backup deletion is claimed. PostgreSQL race/rollback and operational recovery
+  validation remain rollout gates.
 - Unknown outcome means local failure, not proof Telegram did nothing. Cancelling
   or timing out during a remote successful sign-in can leave an unretained provider
   authorization; review Telegram active sessions separately. No automatic logout
@@ -222,7 +233,7 @@ of this foundation does not change legacy session selection.
 
 Still required for P12-T14 completion:
 
-- Scheduled expired-attempt purge/retention and operational recovery wiring;
+- PostgreSQL concurrency/rollback validation, metadata retention policy and operational recovery for expired attempts;
   the bounded machine API alone is not a complete web onboarding journey.
 - Explicit account/grant settings UI with CSRF and a source-grant picker. Account
   self-revocation when no active workspace memberships remain also needs a scoped

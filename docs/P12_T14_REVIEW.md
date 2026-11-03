@@ -63,9 +63,10 @@ or mismatched schema generations, avoiding an unreadable-store key switch.
 
 ## Remaining completion gates
 
-- Telegram reauthorization/recovery and operational expired-attempt purge/retention;
-  bounded machine login is delivered but is not a web onboarding UI. No live
-  provider validation is claimed.
+- Telegram reauthorization/recovery, metadata retention and operational recovery;
+  bounded machine login is delivered but is not a web onboarding UI. Scheduled
+  expired-ciphertext cleanup is implemented but PostgreSQL concurrency/rollback
+  validation is still required. No live provider validation is claimed.
 - Account/source picker web UI and CSRF/DOM coverage; fresh execution-time grant,
   owner, membership and revision checks; shared-session execution lease/locking.
 - Eliminate legacy Telegram vault fallback from the runtime, not merely from

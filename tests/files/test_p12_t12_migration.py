@@ -58,9 +58,8 @@ def _require_empty_private_storage(connection):
 
 
 @contextmanager
-def _downgraded(target):
+def _downgraded(config, target):
     """Exercise a historical schema while restoring the exact starting head."""
-    config = _alembic_config()
     script = ScriptDirectory.from_config(config)
     starting_head = script.get_current_head()
     with engine.connect() as connection:
@@ -133,7 +132,7 @@ async def test_round_trip_preserves_0122_evidence():
         catalog_revision = _file_revision(config, "file_metadata_catalog.py")
         traversal_revision = _file_revision(config, "0127_file_catalog_traversal.py")
         # Stop before this feature's first revision, preserving migrations from dependencies.
-        with _downgraded(catalog_revision.down_revision) as connection:
+        with _downgraded(config, catalog_revision.down_revision) as connection:
             assert "file_catalog_objects" not in inspect(connection).get_table_names(schema="test_schema")
             command.upgrade(config, traversal_revision.revision)
             assert "file_catalog_objects" in inspect(connection).get_table_names(schema="test_schema")
@@ -159,7 +158,7 @@ async def test_0125_backfills_existing_rows_in_batches(data):
         config = _alembic_config()
         catalog_revision = _file_revision(config, "file_metadata_catalog.py")
         search_revision = _file_revision(config, "0125_file_catalog_search_key.py")
-        with _downgraded(catalog_revision.revision) as connection:
+        with _downgraded(config, catalog_revision.revision) as connection:
             assert "name_search" not in {
                 c["name"] for c in inspect(connection).get_columns("file_catalog_objects", schema=SCHEMA)
             }
@@ -187,7 +186,7 @@ async def test_0126_round_trip_keeps_catalog_objects(data):
         config = _alembic_config()
         traversal_revision = _file_revision(config, "0127_file_catalog_traversal.py")
         scans_revision = _file_revision(config, "0126_file_catalog_scans.py")
-        with _downgraded(scans_revision.down_revision) as connection:
+        with _downgraded(config, scans_revision.down_revision) as connection:
             assert "file_catalog_scans" not in inspect(connection).get_table_names(schema=SCHEMA)
             command.upgrade(config, traversal_revision.revision)
             assert "file_catalog_scans" in inspect(connection).get_table_names(schema=SCHEMA)
@@ -209,7 +208,7 @@ async def test_0127_downgrade_discards_recursive_only_and_keeps_metadata(data):
     config = _alembic_config()
     scans_revision = _file_revision(config, "0126_file_catalog_scans.py")
     traversal_revision = _file_revision(config, "0127_file_catalog_traversal.py")
-    with _downgraded(traversal_revision.down_revision) as connection:
+    with _downgraded(config, traversal_revision.down_revision) as connection:
         assert "traversal" not in {
             c["name"] for c in inspect(connection).get_columns("file_catalog_scans", schema=SCHEMA)
         }

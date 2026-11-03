@@ -70,7 +70,7 @@ async def test_round_trip_preserves_0122_evidence():
             config.attributes["connection"] = connection
             command.downgrade(config, "0123")
             assert "file_catalog_objects" not in inspect(connection).get_table_names(schema="test_schema")
-            command.upgrade(config, "0126")
+            command.upgrade(config, "0127")
             assert "file_catalog_objects" in inspect(connection).get_table_names(schema="test_schema")
         async with async_session_maker() as session:
             assert (await session.get(KnowledgeSnippet, ids[1])).excerpt == "Synthetic legacy evidence"
@@ -110,7 +110,7 @@ async def test_0125_backfills_existing_rows_in_batches(data):
         finally:
             with engine.begin() as connection:
                 config.attributes["connection"] = connection
-                command.upgrade(config, "0126")
+                command.upgrade(config, "0127")
         result = await manager.list_page(**args, query="STRASSE")
         assert result["items"][0]["id"] == original_id
         assert [x["name"] for x in (await manager.list_page(**args, query="cafe\u0301"))["items"]] == ["CAFÉ.txt"]
@@ -132,10 +132,46 @@ async def test_0126_round_trip_keeps_catalog_objects(data):
                 config.attributes["connection"] = connection
                 command.downgrade(config, "0125")
                 assert "file_catalog_scans" not in inspect(connection).get_table_names(schema="test_schema")
-                command.upgrade(config, "0126")
+                command.upgrade(config, "0127")
                 assert "file_catalog_scans" in inspect(connection).get_table_names(schema="test_schema")
         finally:
             with engine.begin() as connection:
                 config.attributes["connection"] = connection
-                command.upgrade(config, "0126")
+                command.upgrade(config, "0127")
+        assert (await manager.list_page(**args))["items"][0]["id"] == before
+
+
+async def test_0127_downgrade_discards_recursive_only_and_keeps_metadata(data):
+    assert settings.DB_SCHEMA == "test_schema"
+    from app.models import FileCatalogScan
+    from app.services.file_workspace.catalog_scan import start_catalog_scan
+
+    manager = FileCatalogManager()
+    with actor(data) as args:
+        await admit(args, "retained-recursive.txt")
+        await start_catalog_scan(**args, folder="/work", recursive=True)
+        before = (await manager.list_page(**args))["items"][0]["id"]
+    with actor(data, user=1, connection=1) as other:
+        await start_catalog_scan(**other, folder="/work")
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
+    try:
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "0126")
+            assert "traversal" not in {
+                c["name"] for c in inspect(connection).get_columns("file_catalog_scans", schema="test_schema")
+            }
+            assert connection.execute(
+                text("SELECT connection_id FROM test_schema.file_catalog_scans ORDER BY connection_id")
+            ).scalars().all() == [data.connections[1]]
+            command.upgrade(config, "0127")
+    finally:
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "0127")
+    async with async_session_maker() as session:
+        kept = (await session.scalars(select(FileCatalogScan))).all()
+        assert len(kept) == 1 and kept[0].connection_id == data.connections[1] and kept[0].traversal is None
+    with actor(data) as args:
         assert (await manager.list_page(**args))["items"][0]["id"] == before

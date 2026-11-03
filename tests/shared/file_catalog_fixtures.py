@@ -19,6 +19,7 @@ from app.integrations.file_workspace.yandex_disk import DiskItem, DiskPage
 from app.models import (
     FileCatalogObject,
     FileCatalogObservation,
+    FileCatalogScan,
     PlatformRole,
     Tenant,
     TenantUser,
@@ -107,6 +108,14 @@ async def data():
                 select(func.count())
                 .select_from(FileCatalogObject)
                 .where(FileCatalogObject.connection_id.in_(connections))
+            )
+            assert not await session.scalar(
+                select(func.count()).select_from(FileCatalogScan).where(FileCatalogScan.connection_id.in_(connections))
+            )
+            assert not await session.scalar(
+                select(func.count())
+                .select_from(FileCatalogObservation)
+                .where(FileCatalogObservation.tenant_id.in_([t.id for t in tenants]))
             )
 
 

@@ -40,13 +40,13 @@ in-flight attempts must not resurrect old content.
 
 Reviewed official Yandex documentation:
 
-- [API access/OAuth](https://yandex.com/dev/disk-api/doc/en/concepts/quickstart.html):
+- [API access/OAuth](https://yandex.com/dev/disk-api/doc/en/concepts/quickstart.md):
   `cloud_api:disk.read` reads the whole Disk, distinct from app-folder scope. A
   user-selected root is an application restriction, not one-folder provider scope.
-- [Resource response](https://yandex.com/dev/disk-api/doc/en/reference/response-objects.html):
+- [Resource response](https://yandex.com/dev/disk-api/doc/en/reference/response-objects.md):
   path, modified time, MD5 and size are metadata. The reviewed contract does not
   establish an immutable revision bound to a conditionally fetched representation.
-- [Download](https://yandex.com/dev/disk-api/doc/en/reference/content.html): request
+- [Download](https://yandex.com/dev/disk-api/doc/en/reference/content.md): request
   a temporary URL by path, then GET it with the same OAuth token. A sample download
   host is not a complete allowlist or a redirect/revision guarantee.
 
@@ -120,8 +120,8 @@ redaction, semantic entailment, secure memory erasure or storage admission.
 
 A later [default-off implementation](FILE_WORKSPACE_PRIVATE_IMPLEMENTATION.md)
 adds the manager/receipt/control-plane/writer code under this interface. It has
-no registered real provider, public activation or completed local PostgreSQL
-validation. The requirements below remain acceptance gates, not test results.
+no registered immutable-version provider or public activation. Local PostgreSQL
+validation is recorded in the PR integration evidence. The requirements below remain acceptance gates, not test results.
 
 ## Durable writer transaction requirements
 

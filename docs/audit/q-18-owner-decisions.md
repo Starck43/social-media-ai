@@ -1,0 +1,65 @@
+# Q-18 — Owner decisions for business modules P13–P19
+
+Closed 2026-11-04. Raised by [P13-T01](../tasks/p13-t01.md) while adapting the
+owner's TZ; request: https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f
+
+All nine decisions are answered, so the ROADMAP row is removed and this note is
+the history. The short reference stays in
+[BUSINESS_MODULES → Owner decisions](../BUSINESS_MODULES.md#owner-decisions).
+
+Each task card names its decision by ID and date where the answer constrains the
+build; a card is not blocked on a decision any more.
+
+## Answers
+
+- D1 — **answered (owner, 2026-11-04)**: P13 + P14 in `P2`; P15–P19 in `P3`.
+  ROADMAP row order follows TZ order within each band. This changes queue order
+  only, not scope: P14 tasks that used to sit in `P3` (T05, T06) move up to `P2`.
+- D2 — **answered (owner, 2026-11-04)**: OAuth 2.0 local application per portal
+  (user-delegated access, scopes `crm`); an incoming webhook stays an admin-only
+  alternative for a single portal, never a second equal path.
+- D3 — **answered (owner, 2026-11-04)**: metadata only for the start. Search
+  covers subject, sender, dates, channels and document metadata; message bodies
+  and document content are not stored for search, so no content cache and no
+  PostgreSQL full-text index are built. The `tsvector`/language-configuration
+  question (audit F-4 of [P13-T01](p13-t01.md)) therefore stays undecided and
+  unbuilt — enabling content search later is a new decision backed by a
+  measurement, not an already-approved option.
+- D4 — **answered (owner, 2026-11-04)**: explicit consent per calendar
+  connection plus a per-event audit record; creating and moving under that
+  consent, while conflicting or deleting changes need per-item approval.
+- D5 — **answered (owner, 2026-11-04)**: published HTTPS endpoint with an
+  allowlisted host first; the P18 connector is the documented fallback, not a
+  prerequisite.
+- D6 — **answered (owner, 2026-11-04)**: Python + PyInstaller, and the pilot and
+  early builds ship **unsigned**; Windows code signing and macOS notarization are
+  deferred to a separate follow-up once the pilot has real users, not part of
+  P18-T03/T07 acceptance. Consequences accepted with this choice: SmartScreen
+  warns on first run and Gatekeeper requires an explicit "Open anyway" on macOS,
+  so install instructions must say so, and auto-update keeps a signed manifest
+  even while the binaries themselves are unsigned (the manifest protects the
+  update channel, not the publisher identity).
+- D7 — **answered (owner, 2026-11-04)**: email and bot channels only, explicit
+  opt-in record with channel and purpose, unsubscribe link/command in every
+  message; no MTProto bulk sending. Legal review of the consent wording is still
+  recommended before the first live campaign, but does not block the build.
+- D8 — **answered (owner, 2026-11-03)**: separate `PII_ENCRYPTION_KEYS` as an
+  ordered `MultiFernet` list (first key active, older keys decrypt only) and a
+  separate `PII_INDEX_KEY`; neither reuses `CREDENTIALS_KEY`. `PII_INDEX_KEY` is
+  kept stable — the blind index is not rotated in P13-T02; rotating it is a
+  separate, separately approved task with its own index rebuild. Accepted default
+  of [BUSINESS_MODULES](../BUSINESS_MODULES.md) D8.
+- D9 — **answered (owner, 2026-11-04)**: PostgreSQL plus the existing private
+  storage from P12-T12; S3-compatible storage only after a measured need.
+
+## Consequences worth remembering
+
+- D1 moved P14-T05 and P14-T06 from `P3` to `P2` in ROADMAP (queue order only).
+- D3 cancels the content cache and the full-text index that earlier drafts of
+  P15-T02/T04 assumed. The `tsvector`/language question from P13-T01 audit F-4
+  stays open and unbuilt; enabling content search needs a new, measured decision.
+- D6 leaves the connector unsigned for the pilot. Windows SmartScreen and macOS
+  Gatekeeper warnings are expected and must be documented in the install guide;
+  signing and notarization are a follow-up task, not part of P18-T07 acceptance.
+- D7's consent wording still needs a legal review before the first live campaign;
+  the reviewer is not blocked by it.

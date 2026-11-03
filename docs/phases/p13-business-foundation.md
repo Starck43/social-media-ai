@@ -62,7 +62,8 @@ checks for its PR come from the local helper as a PR comment
 ([remote → local DB help](../PROMPT_EXAMPLES.md#remote-work--local-db-help--audit)).
 *Local* = normally tasks up to `C3`, tasks with migrations or live provider/sandbox
 evidence, and DB validation of remote PRs. The explicitly listed remote Wave 0
-assignments are exceptions to the complexity guideline. Owner items are decisions in [Q-18](../tasks/q-18.md).
+assignments are exceptions to the complexity guideline. All owner decisions (D1–D9) are answered and recorded in
+[Q-18](../audit/q-18-owner-decisions.md).
 
 ### Wave 0 — while PR #327 remains open
 

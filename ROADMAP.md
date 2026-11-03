@@ -62,7 +62,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-17](docs/tasks/q-17.md) Web test-suite debt in `tests/unit_web/` — **OPEN** · unassigned · raised while closing [P12-T16](docs/audit/p12-t16.md) · `P2` · `C3`
 
-- [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **IN_PROGRESS** · notion-ai-p12-t12 (implementation in [PR #327](https://github.com/Starck43/social-media-ai/pull/327)) · [dialogue](https://app.notion.com/chat?t=40dc1b436029807fa62200a976b5dc4d) · `P2` · `C5`
+- [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **IN_PROGRESS** · notion-ai-p12-t12 (implementation in [PR #327](https://github.com/Starck43/social-media-ai/pull/327)) · [dialogue](https://app.notion.com/chat?t=40d7810652ab807f8d8700a9607045ac) · `P2` · `C5`
 - [P12-T13](docs/tasks/p12-t13.md) File workspace pilot contracts and capability review — **IN_PROGRESS** · notion-ai-p12-t13 · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C3`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **READY** · notion-ai-p8-t34 · [owner selection and dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`

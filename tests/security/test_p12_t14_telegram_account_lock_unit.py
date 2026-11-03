@@ -368,3 +368,106 @@ async def test_no_material_resolution_before_lock_or_after_exit(material_resolve
             async with guard._setup_material():
                 pytest.fail("exited guard")
         resolver.assert_not_awaited()
+
+
+@pytest.fixture
+def admission(fake, monkeypatch):
+    lock_session, inspect = fake
+    write_session = Session()
+    sessions = iter((lock_session, write_session))
+    monkeypatch.setattr(module, "async_session_maker", lambda: next(sessions))
+    gate = AsyncMock(return_value=SNAPSHOT)
+    monkeypatch.setattr(module, "_lock_source_grant_for_admission", gate)
+    return lock_session, write_session, inspect, gate
+
+
+async def test_admission_owns_separate_write_transaction_and_checks_before_commit(admission):
+    lock, write, inspect, gate = admission
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard:
+            async with guard._admission_transaction() as session:
+                assert session is write and write.outcome is None
+                gate.assert_awaited_once_with(write, SNAPSHOT)
+                assert inspect.await_count == 3
+                assert write.commands == [
+                    "SET TRANSACTION ISOLATION LEVEL READ COMMITTED, READ WRITE",
+                    "SET LOCAL statement_timeout = '5s'",
+                    "SET LOCAL lock_timeout = '5s'",
+                ]
+            assert write.outcome == "committed"
+            assert inspect.await_args_list[3].args == (write, PIN)
+            assert inspect.await_args_list[4].args == (lock, PIN)
+    assert inspect.await_count == 5 and lock.outcome == "committed"
+
+
+@pytest.mark.parametrize("stage", ["gate", "owner_precheck", "write_postcheck", "owner_postcheck"])
+@pytest.mark.parametrize(
+    "failure", [AuthorizationUnavailable(), SQLAlchemyError("SYNTHETIC-PRIVATE"), asyncio.CancelledError()]
+)
+async def test_admission_failed_checks_cancel_and_invalidate_without_retry(admission, stage, failure):
+    lock, write, inspect, gate = admission
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard:
+            if stage == "gate":
+                gate.side_effect = failure
+            else:
+                inspect.side_effect = {
+                    "owner_precheck": [failure],
+                    "write_postcheck": [SNAPSHOT, failure],
+                    "owner_postcheck": [SNAPSHOT, SNAPSHOT, failure],
+                }[stage]
+            expected = (
+                asyncio.CancelledError if isinstance(failure, asyncio.CancelledError) else AuthorizationUnavailable
+            )
+            with pytest.raises(expected) as error:
+                async with guard._admission_transaction():
+                    assert stage in {"write_postcheck", "owner_postcheck"}
+            assert "SYNTHETIC" not in str(error.value)
+            assert write.outcome == "rolled_back"
+            with pytest.raises(AuthorizationUnavailable):
+                async with guard._admission_transaction():
+                    pytest.fail("invalid handle cannot retry")
+            assert gate.await_count == 1
+
+
+async def test_nested_and_cross_task_admission_do_not_open_another_session(admission):
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard, guard._admission_transaction():
+
+            async def child():
+                with pytest.raises(AuthorizationUnavailable):
+                    async with guard._admission_transaction():
+                        pytest.fail("child admission")
+
+            await asyncio.create_task(child())
+            with pytest.raises(AuthorizationUnavailable):
+                async with guard._admission_transaction():
+                    pytest.fail("nested admission")
+    assert admission[1].outcome == "committed"
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("SYNTHETIC-CALLER"), asyncio.CancelledError()])
+async def test_admission_body_failure_rolls_back_and_preserves_caller_error(admission, failure):
+    with tenant_scope(12), pytest.raises(type(failure)) as error:
+        async with module.locked_source_grant(PIN) as guard, guard._admission_transaction():
+            raise failure
+    assert error.value is failure and admission[1].outcome == "rolled_back"
+    with pytest.raises(AuthorizationUnavailable):
+        await guard.inspect()
+
+
+async def test_admission_commit_failure_is_opaque_uncertain_and_not_retried(admission, monkeypatch):
+    @asynccontextmanager
+    async def uncertain_commit():
+        yield
+        raise SQLAlchemyError("SYNTHETIC-PRIVATE-COMMIT-OUTCOME")
+
+    monkeypatch.setattr(admission[1], "begin", uncertain_commit)
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard:
+            with pytest.raises(AuthorizationUnavailable, match="^connection_unavailable$"):
+                async with guard._admission_transaction():
+                    pass
+            with pytest.raises(AuthorizationUnavailable):
+                await guard.inspect()
+            assert admission[3].await_count == 1

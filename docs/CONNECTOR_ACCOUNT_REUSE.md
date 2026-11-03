@@ -247,6 +247,33 @@ Targeted fake-session/real-synthetic-crypto and owned PostgreSQL evidence is
 recorded in the task card and #308; it does not replace the final full suite or
 independent audit. No migration, real account/session or provider call is needed.
 
+## Transactional consent admission gate (private, not collector-wired)
+
+`guard._admission_transaction()` owns a separate READ COMMITTED, READ WRITE
+transaction while the original account guard remains task/transaction-bound.
+It locks the exact account and grant FOR SHARE, then source FOR UPDATE, in that
+order; the joined fresh metadata query locks platform, tenant, owner, membership
+and workspace-role rows FOR SHARE. It reads no authorization ciphertext and
+never decrypts. Complete source/owner-rights/consent/account pins must still match
+AFTER lock waits. Statement/lock timeouts are bounded at five seconds per SQL
+statement, not a total execution TTL.
+
+Only writes in the yielded transaction are protected. A successful check followed
+by a different transaction is not fenced. Consent withdrawal either commits
+first and makes admission fail, or waits until the receipt commit; it cannot
+commit between the final consent check and that same-transaction receipt. The
+write connection is rechecked before commit too, rejecting transaction-local
+source retargeting. The original guard is freshly inspected before yield and
+before commit. Failure/cancellation rolls back and invalidates the guard; an
+uncertain commit is opaque and must not be automatically retried.
+
+This is a private database consent boundary, **not a complete runtime/output
+fence**. No provider/model/sender I/O belongs in this short write scope. It does
+not authorize an initiator/payer/job, enforce a durable lease generation or stop
+a previously sent provider request. Lost-lock/stale-worker fencing, request
+boundaries and actual collector/staging integration remain required together.
+The legacy collector/staging path is not changed or certified by this helper.
+
 ## Draft machine API
 
 All paths below require an active Bearer JWT under `/api/v1/connector-accounts`.

@@ -241,3 +241,50 @@ async def test_rebound_account_is_rejected_before_decryption_even_for_forged_sql
     monkeypatch.setattr(accounts, "decrypt_secret", forbidden)
     with tenant_scope(12), pytest.raises(AuthorizationUnavailable):
         await access._resolve_source_grant_material(session, access.SourceGrantSnapshot(PIN, 99))
+
+
+class AdmissionSession(Session):
+    def __init__(self, missing=None):
+        super().__init__((source(), 99, "viewer"))
+        self.missing = missing
+
+    def scalar_one_or_none(self):
+        return None if len(self.statements) == self.missing else 99
+
+
+@pytest.mark.asyncio
+async def test_admission_locks_account_grant_source_then_owner_rights_without_ciphertext(monkeypatch):
+    def forbidden(*args):
+        pytest.fail("admission never decrypts")
+
+    monkeypatch.setattr(accounts, "decrypt_secret", forbidden)
+    session = AdmissionSession()
+    expected = access.SourceGrantSnapshot(PIN, 99)
+    with tenant_scope(12):
+        assert await access._lock_source_grant_for_admission(session, expected) == expected
+    compiled = [str(s.compile(dialect=postgresql.dialect())) for s in session.statements]
+    assert len(compiled) == 4
+    assert "personal_connector_authorizations" in compiled[0] and compiled[0].endswith("FOR SHARE")
+    assert "workspace_authorization_grants" in compiled[1] and compiled[1].endswith("FOR SHARE")
+    assert "sources" in compiled[2] and compiled[2].endswith("FOR UPDATE")
+    assert compiled[3].endswith("FOR SHARE OF platforms, tenants, users, tenant_users, workspace_roles")
+    for sql in compiled:
+        assert "secret_encrypted" not in sql.split("\nFROM", 1)[0]
+    assert "workspace_authorization_grants.authorization_id =" in compiled[1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing", [1, 2, 3])
+async def test_missing_admission_row_never_yields_or_continues_to_later_locks(missing):
+    session = AdmissionSession(missing=missing)
+    with tenant_scope(12), pytest.raises(AuthorizationUnavailable):
+        await access._lock_source_grant_for_admission(session, access.SourceGrantSnapshot(PIN, 99))
+    assert len(session.statements) == missing
+
+
+@pytest.mark.asyncio
+async def test_admission_lock_ids_are_not_a_replacement_for_full_pin_validation():
+    session = AdmissionSession()
+    session.row = (source(), 100, "viewer")
+    with tenant_scope(12), pytest.raises(AuthorizationUnavailable):
+        await access._lock_source_grant_for_admission(session, access.SourceGrantSnapshot(PIN, 99))

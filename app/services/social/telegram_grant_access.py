@@ -95,7 +95,12 @@ def _validate_selection_context(selection):
 
 
 async def _read_source_grant(
-    session, selection: SourceGrantSelection, *, include_authorization=False, expected_authorization_id=None
+    session,
+    selection: SourceGrantSelection,
+    *,
+    include_authorization=False,
+    expected_authorization_id=None,
+    lock_owner_rights=False,
 ):
     """One SQL snapshot for source/owner/grant/account; secret opt-in is internal.
 
@@ -149,6 +154,10 @@ async def _read_source_grant(
         # Never even select another account's envelope under the old account lock
         # if a grant was rebound after lock acquisition.
         statement = statement.where(Authorization.id == _positive(expected_authorization_id))
+    if lock_owner_rights:
+        # Account, grant and source must already be locked in that order by the
+        # admission helper. Keep the mutable owner-rights rows stable to commit.
+        statement = statement.with_for_update(read=True, of=(Platform, Tenant, User, TenantUser, WorkspaceRole))
     # A lock holder may inspect repeatedly in one READ COMMITTED transaction.
     # Refresh ORM identities too; a new SQL row must not reuse stale Source.params.
     row = (await session.execute(statement.execution_options(populate_existing=True))).one_or_none()
@@ -179,6 +188,46 @@ async def _resolve_source_grant_material(session, expected: SourceGrantSnapshot)
     if snapshot != expected:
         raise AuthorizationUnavailable()
     return snapshot, _decode_telegram_material(authorization)
+
+
+async def _lock_source_grant_for_admission(session, expected: SourceGrantSnapshot):
+    """Private consent gate in the caller's WRITE transaction, not an I/O lease.
+
+    Compatible with attach/detach/revoke: account -> grant -> source, then the
+    owner-rights rows. Select IDs only, never ciphertext. Keep these locks until
+    the admission transaction commits; a separate later commit is not fenced.
+    Initiator/payer/job authorization remains a separate required boundary.
+    """
+    selection = expected.selection
+    _validate_selection_context(selection)
+    statements = (
+        select(Authorization.id)
+        .where(
+            Authorization.id == _positive(expected.authorization_id),
+            Authorization.owner_user_id == selection.owner_user_id,
+        )
+        .with_for_update(read=True),
+        select(Grant.id)
+        .where(
+            Grant.id == selection.grant_id,
+            Grant.tenant_id == selection.tenant_id,
+            Grant.owner_user_id == selection.owner_user_id,
+            Grant.authorization_id == expected.authorization_id,
+        )
+        .with_for_update(read=True),
+        select(Source.id)
+        .where(Source.id == selection.source_id, Source.tenant_id == selection.tenant_id)
+        .with_for_update(),
+    )
+    for statement in statements:
+        if (await session.execute(statement)).scalar_one_or_none() is None:
+            raise AuthorizationUnavailable()
+    # READ COMMITTED gives this statement a fresh snapshot after lock waits. The
+    # complete predicate/pin check must still pass; acquiring IDs is not consent.
+    snapshot, _ = await _read_source_grant(session, selection, lock_owner_rights=True)
+    if snapshot != expected:
+        raise AuthorizationUnavailable()
+    return snapshot
 
 
 async def inspect_source_grant(selection: SourceGrantSelection) -> SourceGrantSnapshot:

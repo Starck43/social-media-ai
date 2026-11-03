@@ -273,3 +273,251 @@ async def test_rebound_grant_never_loads_or_decrypts_new_account_under_old_lock(
             with pytest.raises(AuthorizationUnavailable):
                 async with guard._setup_material():
                     pytest.fail("rebound account")
+
+
+@pytest.mark.parametrize("kind", ["detach", "member", "source", "revoke", "revision"])
+async def test_admission_rejects_changes_before_gate_without_write(envelope_data, monkeypatch, kind):
+    data = envelope_data
+
+    def forbidden(*args):
+        pytest.fail("admission must not decrypt")
+
+    monkeypatch.setattr(accounts, "decrypt_secret", forbidden)
+    with tenant_scope(data.pin.tenant_id):
+        async with locking.locked_source_grant(data.pin) as guard:
+            await change(data, kind)
+            with pytest.raises(AuthorizationUnavailable):
+                async with guard._admission_transaction():
+                    pytest.fail("changed consent")
+
+
+@pytest.mark.parametrize("target", ["account", "grant", "source", "platform", "tenant", "user", "member", "role"])
+async def test_admission_holds_every_mutable_consent_row_until_commit(envelope_data, target):
+    from sqlalchemy.exc import DBAPIError
+
+    from app.models import Tenant, User, WorkspaceRole
+
+    data = envelope_data
+    statements = {
+        "account": select(Authorization.id).where(Authorization.id == data.account["authorization_id"]),
+        "grant": select(Grant.id).where(Grant.id == data.grant["grant_id"]),
+        "source": select(Source.id).where(Source.id == data.pin.source_id),
+        "platform": select(Platform.id).where(Platform.id == data.pin.platform_id),
+        "tenant": select(Tenant.id).where(Tenant.id == data.pin.tenant_id),
+        "user": select(User.id).where(User.id == data.pin.owner_user_id),
+        "member": select(TenantUser.user_id).where(
+            TenantUser.tenant_id == data.pin.tenant_id,
+            TenantUser.user_id == data.pin.owner_user_id,
+        ),
+        "role": select(WorkspaceRole.id).where(WorkspaceRole.id == data.fixture.roles["manager"]),
+    }
+    statement = statements[target].with_for_update(nowait=True)
+    with tenant_scope(data.pin.tenant_id):
+        async with locking.locked_source_grant(data.pin) as guard:
+            async with guard._admission_transaction() as receipt:
+                with pytest.raises(DBAPIError) as error:
+                    async with async_session_maker() as observer, observer.begin():
+                        await observer.execute(statement)
+                assert error.value.orig.sqlstate == "55P03"
+                await receipt.execute(update(Source).where(Source.id == data.pin.source_id).values(last_item_id="998"))
+            # Same-transaction receipt committed, not just a successful check.
+            async with async_session_maker() as observer, observer.begin():
+                assert (await observer.execute(statement)).scalar_one_or_none() is not None
+                assert (
+                    await observer.scalar(select(Source.last_item_id).where(Source.id == data.pin.source_id)) == "998"
+                )
+
+
+@pytest.mark.parametrize("operation", ["detach", "revoke"])
+async def test_service_withdrawal_waits_for_receipt_commit_then_denies_future_admission(envelope_data, operation):
+    data = envelope_data
+    pending = None
+
+    async def withdraw():
+        with actor(data.fixture) as args:
+            if operation == "detach":
+                return await accounts.connector_authorizations.detach(**args, grant_id=data.grant["grant_id"])
+            return await accounts.connector_authorizations.revoke(
+                **args,
+                authorization_id=data.account["authorization_id"],
+                expected_revision=1,
+            )
+
+    try:
+        with tenant_scope(data.pin.tenant_id):
+            async with locking.locked_source_grant(data.pin) as guard:
+                async with guard._admission_transaction() as receipt:
+                    pid = await receipt.scalar(text("SELECT pg_backend_pid()"))
+                    pending = asyncio.create_task(withdraw())
+                    async with asyncio.timeout(3):
+                        while True:
+                            async with async_session_maker() as observer:
+                                blocked = await observer.scalar(
+                                    text(
+                                        "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                                        "WHERE datname=current_database() AND :pid=ANY(pg_blocking_pids(pid)))"
+                                    ),
+                                    {"pid": pid},
+                                )
+                            if blocked:
+                                break
+                            await asyncio.sleep(0.01)
+                    assert not pending.done()
+                    await receipt.execute(
+                        update(Source).where(Source.id == data.pin.source_id).values(last_item_id="999")
+                    )
+                result = await asyncio.wait_for(pending, timeout=3)
+                assert result["is_active"] is False if operation == "detach" else result["state"] == "revoked"
+                with pytest.raises(AuthorizationUnavailable):
+                    async with guard._admission_transaction():
+                        pytest.fail("withdrawn consent")
+        async with async_session_maker() as observer:
+            assert await observer.scalar(select(Source.last_item_id).where(Source.id == data.pin.source_id)) == "999"
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("synthetic receipt failure"), asyncio.CancelledError()])
+async def test_admission_body_failure_rolls_back_synthetic_receipt(envelope_data, failure):
+    data = envelope_data
+    with tenant_scope(data.pin.tenant_id):
+        async with locking.locked_source_grant(data.pin) as guard:
+            with pytest.raises(type(failure)):
+                async with guard._admission_transaction() as receipt:
+                    await receipt.execute(
+                        update(Source).where(Source.id == data.pin.source_id).values(last_item_id="997")
+                    )
+                    raise failure
+            with pytest.raises(AuthorizationUnavailable):
+                await guard.inspect()
+    async with async_session_maker() as observer:
+        assert await observer.scalar(select(Source.last_item_id).where(Source.id == data.pin.source_id)) != "997"
+
+
+async def test_admission_cannot_commit_transaction_local_source_retarget(envelope_data):
+    data = envelope_data
+    with tenant_scope(data.pin.tenant_id):
+        async with locking.locked_source_grant(data.pin) as guard:
+            with pytest.raises(AuthorizationUnavailable):
+                async with guard._admission_transaction() as receipt:
+                    await receipt.execute(
+                        update(Source).where(Source.id == data.pin.source_id).values(params={}, last_item_id="996")
+                    )
+    async with async_session_maker() as observer:
+        row = await observer.get(Source, data.pin.source_id)
+        assert access.source_grant_selection(row) == data.pin and row.last_item_id != "996"
+
+
+@pytest.mark.parametrize("kind", ["revoke", "detach", "member", "source"])
+async def test_admission_wait_observes_committed_withdrawal_instead_of_old_snapshot(envelope_data, kind):
+    data = envelope_data
+    ready, proceed = asyncio.Event(), asyncio.Event()
+    pending = None
+
+    async def admission_attempt():
+        with tenant_scope(data.pin.tenant_id):
+            async with locking.locked_source_grant(data.pin) as guard:
+                ready.set()
+                await proceed.wait()
+                with pytest.raises(AuthorizationUnavailable):
+                    async with guard._admission_transaction():
+                        pytest.fail("withdrawal committed while gate was waiting")
+
+    try:
+        pending = asyncio.create_task(admission_attempt())
+        await asyncio.wait_for(ready.wait(), timeout=3)
+        async with async_session_maker() as blocker, blocker.begin():
+            if kind == "revoke":
+                stmt = (
+                    update(Authorization)
+                    .where(Authorization.id == data.account["authorization_id"])
+                    .values(state="revoked")
+                )
+            elif kind == "detach":
+                stmt = update(Grant).where(Grant.id == data.grant["grant_id"]).values(is_active=False)
+            elif kind == "member":
+                stmt = (
+                    update(TenantUser)
+                    .where(
+                        TenantUser.tenant_id == data.pin.tenant_id,
+                        TenantUser.user_id == data.pin.owner_user_id,
+                    )
+                    .values(is_active=False)
+                )
+            else:
+                stmt = update(Source).where(Source.id == data.pin.source_id).values(params={})
+            await blocker.execute(stmt)
+            pid = await blocker.scalar(text("SELECT pg_backend_pid()"))
+            proceed.set()
+            async with asyncio.timeout(3):
+                while True:
+                    async with async_session_maker() as observer:
+                        blocked = await observer.scalar(
+                            text(
+                                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                                "WHERE datname=current_database() AND :pid=ANY(pg_blocking_pids(pid)))"
+                            ),
+                            {"pid": pid},
+                        )
+                    if blocked:
+                        break
+                    await asyncio.sleep(0.01)
+            assert not pending.done()
+        await asyncio.wait_for(pending, timeout=3)
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+
+
+async def test_admission_lock_timeout_invalidates_without_replay(envelope_data, monkeypatch):
+    data = envelope_data
+    gate = access._lock_source_grant_for_admission
+    calls = []
+
+    async def short_timeout(session, snapshot):
+        calls.append(snapshot)
+        await session.execute(text("SET LOCAL lock_timeout = '50ms'"))
+        return await gate(session, snapshot)
+
+    monkeypatch.setattr(locking, "_lock_source_grant_for_admission", short_timeout)
+    with tenant_scope(data.pin.tenant_id):
+        async with locking.locked_source_grant(data.pin) as guard:
+            async with async_session_maker() as blocker, blocker.begin():
+                await blocker.execute(
+                    select(Authorization.id)
+                    .where(Authorization.id == data.account["authorization_id"])
+                    .with_for_update()
+                )
+                with pytest.raises(AuthorizationUnavailable):
+                    async with guard._admission_transaction():
+                        pytest.fail("lock timeout cannot admit")
+            with pytest.raises(AuthorizationUnavailable):
+                async with guard._admission_transaction():
+                    pytest.fail("timed out guard cannot retry")
+            assert len(calls) == 1
+
+
+async def test_lost_account_lock_before_commit_rolls_back_synthetic_receipt(envelope_data):
+    data = envelope_data
+    with tenant_scope(data.pin.tenant_id), pytest.raises(AuthorizationUnavailable):
+        async with locking.locked_source_grant(data.pin) as guard, guard._admission_transaction() as receipt:
+            await receipt.execute(update(Source).where(Source.id == data.pin.source_id).values(last_item_id="995"))
+            pid = await guard._session.scalar(text("SELECT pg_backend_pid()"))
+            async with async_session_maker() as observer:
+                # Never terminate a backend outside this fixture's database.
+                terminated = await observer.scalar(
+                    text(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE pid=:pid AND datname=current_database()"
+                    ),
+                    {"pid": pid},
+                )
+                assert terminated is True
+    async with async_session_maker() as observer:
+        assert await observer.scalar(select(Source.last_item_id).where(Source.id == data.pin.source_id)) != "995"
+    with tenant_scope(data.pin.tenant_id):
+        async with locking.locked_source_grant(data.pin) as later:
+            assert (await later.inspect()).authorization_id == data.account["authorization_id"]

@@ -102,6 +102,18 @@ This remains preparatory: no runtime TTL, initiator/payer checks, request/output
 fence, collector integration or real-provider validation. See latest card/#308
 for scoped synthetic tests; the full suite and independent audit remain end gates.
 
+## Transactional consent admission continuation (partial item 1)
+
+The private guard admission transaction locks account -> grant -> source, then
+all mutable owner-rights rows, using fresh READ COMMITTED predicates and no secret
+selection/decryption. Only same-transaction writes are protected through commit.
+Withdrawals linearize before rejection or after the receipt, not between check
+and commit. Both write-local pins and the original guard are rechecked before
+commit; errors/cancellation invalidate without replay. This is not a complete
+output fence: initiator/payer/job checks, durable stale-worker generation,
+request boundaries and actual collector/staging wiring remain gated. See latest
+task/#308 evidence for lock contention, cancellation and synthetic receipt tests.
+
 ## Account-only local revocation continuation
 
 The JWT-only personal metadata list and existing personal-wide local-revoke route

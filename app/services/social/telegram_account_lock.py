@@ -20,6 +20,7 @@ from app.services.social.connector_authorizations import AuthorizationUnavailabl
 from app.services.social.telegram_grant_access import (
     SourceGrantSelection,
     _inspect_source_grant,
+    _lock_source_grant_for_admission,
     _resolve_source_grant_material,
     _validate_selection_context,
 )
@@ -86,6 +87,7 @@ class TelegramAccountGuard:
         self._owner = asyncio.current_task()
         self._active = True
         self._material = None
+        self._admitting = False
 
     def __repr__(self):
         return "<TelegramAccountGuard>"
@@ -160,6 +162,51 @@ class TelegramAccountGuard:
             material._close()
             if self._material is material:
                 self._material = None
+
+    @asynccontextmanager
+    async def _admission_transaction(self):
+        """Private short WRITE transaction with consent held stable until commit.
+
+        Only same-transaction writes are protected. Never perform provider/model/
+        sender I/O here. This is not job/payer authorization, a stale-worker epoch
+        fence or a complete output-admission path; the collector is not wired.
+        A commit error is opaque/uncertain, never permission to auto-replay.
+        """
+        self._require_owner()
+        if self._admitting:
+            raise AuthorizationUnavailable()
+        self._admitting = True
+        try:
+            async with async_session_maker() as session, session.begin():
+                try:
+                    await session.execute(text("SET TRANSACTION ISOLATION LEVEL READ COMMITTED, READ WRITE"))
+                    await session.execute(text("SET LOCAL statement_timeout = '5s'"))
+                    await session.execute(text("SET LOCAL lock_timeout = '5s'"))
+                    snapshot = await _lock_source_grant_for_admission(session, self._snapshot)
+                    if snapshot != self._snapshot:
+                        raise AuthorizationUnavailable()
+                    await self.inspect()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    raise AuthorizationUnavailable() from None
+                yield session
+                # Also inspect the WRITE connection: it must not commit a local
+                # retarget/rebind along with the receipt under the original pin.
+                if await _inspect_source_grant(session, self._snapshot.selection) != self._snapshot:
+                    raise AuthorizationUnavailable()
+                await self.inspect()
+        except asyncio.CancelledError:
+            self._invalidate()
+            raise
+        except SQLAlchemyError:
+            self._invalidate()
+            raise AuthorizationUnavailable() from None
+        except Exception:
+            self._invalidate()
+            raise
+        finally:
+            self._admitting = False
 
 
 async def _acquire(session, selection):

@@ -17,6 +17,7 @@ for the operation, not all parents/related/history links.
 | Structured analysis / LLM contracts | [AI pipeline](AI_PIPELINE_AND_PROMPTS.md) |
 | Analytics / reports / delivery | [Analytics](ANALYTICS_AGGREGATION_SYSTEM.md), [DIGEST](DIGEST.md), [CHANNELS](CHANNELS.md), [NOTIFICATIONS](NOTIFICATIONS.md) |
 | Identity / ownership / permissions / cutover | [TENANCY](TENANCY.md), [ACCESS_MIGRATION](ACCESS_MIGRATION.md) |
+| Contacts, identities, consent and contact privacy | [CONTACTS](CONTACTS.md) |
 | ORM / deletion | [MODELS](MODELS.md), [MODEL_DELETION](MODEL_DELETION.md) |
 | Interfaces | [API](API.md), [CLI](CLI.md), [ADMIN](ADMIN.md) |
 | Environment / deployment | [CONFIGURATION](CONFIGURATION.md), [DEPLOYMENT](DEPLOYMENT.md) |

@@ -90,7 +90,9 @@ External cancellation propagates; no partial batch or successful empty fallback.
 
 P12-T13 owns model/processing/capability/budget/private-retention review. Private
 storage, quotas, owner/version lineage, TTL/GC, pin/backup and reauthorization on
-future access remain unimplemented, not implied by an in-memory result. P8-T34
+future access remain unimplemented, not implied by an in-memory result. The
+[draft private storage lifecycle](FILE_WORKSPACE_PRIVATE_STORAGE.md) proposes the
+review/acceptance boundary only; it does not enable retention. P8-T34
 owns real authorized exact-file reads/network/version/native-original. Its draft
 transport is not copied/activated. P12-T15 owns sharing/approved mutations.
 

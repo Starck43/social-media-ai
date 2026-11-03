@@ -16,6 +16,16 @@
 | P10 | [Source-audit hardening](p10-audit-hardening.md) |
 | P11 | [Structure, interfaces and scale readiness](p11-structure.md) |
 | P12 | [Domain workspace and navigation expansion](p12-domain-workspace-expansion.md) |
+| P13 | [Business-module foundation](p13-business-foundation.md) |
+| P14 | [Bitrix24 CRM integration](p14-bitrix24-crm.md) |
+| P15 | [Unified communication hub](p15-communication-hub.md) |
+| P16 | [Planner tasks and calendar sync](p16-planner-calendar.md) |
+| P17 | [1C:Enterprise integration](p17-onec-erp.md) |
+| P18 | [Local file connector](p18-local-file-connector.md) |
+| P19 | [Document management](p19-document-management.md) |
+
+P13–P19 implement the owner's business-module TZ; the adapted specification,
+review findings and owner decisions are in [BUSINESS_MODULES](../BUSINESS_MODULES.md).
 
 A phase has a goal, action plan, product backlink and task/audit links. Close it
 when all plan items are accepted; retain a dry outcome summary, completion date,

@@ -67,8 +67,57 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **IN_PROGRESS** · codex-p12-pr-completion ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)) · [owner-authorized completion](https://github.com/Starck43/social-media-ai/pull/327#issuecomment-6609629474) · [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 
+Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands are proposed, owner decision D1 in Q-18:
+
+- [Q-18](docs/tasks/q-18.md) Owner decisions for business modules P13–P19 — **OPEN** · product-owner · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C2`
+- [P13-T01](docs/tasks/p13-t01.md) Business-module plan registration and TZ review — **IN_PROGRESS** · notion-ai-p13-t01 ([PR #341](https://github.com/Starck43/social-media-ai/pull/341)) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C2`
+- [P13-T02](docs/tasks/p13-t02.md) Protected personal-data fields: Fernet encryption, blind index and log redaction — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
+- [P13-T03](docs/tasks/p13-t03.md) Shared external-API rate limiter and retry policy — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P13-T04](docs/tasks/p13-t04.md) Business write-approval workflow and command ledger — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
+- [P13-T05](docs/tasks/p13-t05.md) Audit codes, business API conventions and OpenAPI contract — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P13-T06](docs/tasks/p13-t06.md) Per-package coverage gate and mock-provider test kit — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C2`
+- [P13-T07](docs/tasks/p13-t07.md) Contact core: contacts, identities and consent — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
+- [P13-T08](docs/tasks/p13-t08.md) OAuth 2.0 workspace-connection framework (authorization code + refresh) — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
+- [P14-T01](docs/tasks/p14-t01.md) Bitrix24 connection: OAuth 2.0 portal authorization and health — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P14-T02](docs/tasks/p14-t02.md) Bitrix24 read-only incremental sync of contacts, companies, leads and deals — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
+- [P14-T03](docs/tasks/p14-t03.md) CRM contact cards and duplicate candidates — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P14-T04](docs/tasks/p14-t04.md) Upcoming events and AI greeting drafts — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+
 ### Priority P3
 
+- [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T01](docs/tasks/p15-t01.md) Email connector: IMAP incremental read sync — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T02](docs/tasks/p15-t02.md) Unified message store and channel ingestion (Telegram, MAX, email) — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T03](docs/tasks/p15-t03.md) Identity reconciliation: suggestions, manual merge and unmerge — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T04](docs/tasks/p15-t04.md) Unified inbox: threads, filters, search and read state — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T05](docs/tasks/p15-t05.md) Persistent outbox, scheduling and delivery tracking — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T06](docs/tasks/p15-t06.md) Channel senders: SMTP, Telegram bot and MAX bot capabilities — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T07](docs/tasks/p15-t07.md) Channel recommendation with confidence score — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P16-T01](docs/tasks/p16-t01.md) Planner tasks: model, CRUD, subtasks and recurrence — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P16-T02](docs/tasks/p16-t02.md) Reminders, snooze and multi-channel notifications — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P16-T03](docs/tasks/p16-t03.md) Calendar connections and Google Calendar two-way sync — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
+- [P16-T04](docs/tasks/p16-t04.md) Yandex Calendar two-way sync over CalDAV — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P16-T05](docs/tasks/p16-t05.md) Event planning: birthday tasks and templates — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P17-T01](docs/tasks/p17-t01.md) 1C connection: OData/HTTP-service endpoints, credentials and health — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P17-T02](docs/tasks/p17-t02.md) 1C read-only data extraction from catalogs, documents and registers — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P17-T03](docs/tasks/p17-t03.md) Natural-language queries, result formatting, export and history — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P17-T04](docs/tasks/p17-t04.md) 1C write commands with preview, approval and audit — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
+- [P17-T05](docs/tasks/p17-t05.md) 1C role-based access policy and audit views — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P18-T01](docs/tasks/p18-t01.md) Local connector protocol, pairing and revocation contract — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P18-T02](docs/tasks/p18-t02.md) Cloud connector gateway: registration, device management and search proxy — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P18-T03](docs/tasks/p18-t03.md) Desktop connector core: folder selection, safe paths and incremental index — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
+- [P18-T04](docs/tasks/p18-t04.md) Text extraction and OCR with resource limits — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P18-T07](docs/tasks/p18-t07.md) Packaging, signing and auto-update for Windows, macOS and Linux — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P19-T01](docs/tasks/p19-t01.md) Document model extension: types, links, templates and status machine — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P19-T03](docs/tasks/p19-t03.md) Version history, diff and restore — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P19-T04](docs/tasks/p19-t04.md) Document approval workflow bound to an immutable revision hash — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P19-T06](docs/tasks/p19-t06.md) Document search — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C2`
 
 
 ## Deferred by explicit owner decision
@@ -122,7 +171,35 @@ Accepted P11 outcomes are in the linked parent phase; register new follow-ups in
 
 Use the P12 cards in the execution queue or the linked parent plan.
 
+## [P13](docs/phases/p13-business-foundation.md)
+
+Shared foundation for business modules; use the P13 cards in the execution queue.
+
+## [P14](docs/phases/p14-bitrix24-crm.md)
+
+Bitrix24 CRM (TZ module 1); use the P14 cards in the execution queue.
+
+## [P15](docs/phases/p15-communication-hub.md)
+
+Unified communication hub (TZ module 2); use the P15 cards in the execution queue.
+
+## [P16](docs/phases/p16-planner-calendar.md)
+
+Planner tasks and calendars (TZ module 3); use the P16 cards in the execution queue.
+
+## [P17](docs/phases/p17-onec-erp.md)
+
+1C:Enterprise (TZ module 4); use the P17 cards in the execution queue.
+
+## [P18](docs/phases/p18-local-file-connector.md)
+
+Local file connector (TZ module 5); use the P18 cards in the execution queue.
+
+## [P19](docs/phases/p19-document-management.md)
+
+Document management (TZ module 6); use the P19 cards in the execution queue.
+
 ## Questions
 
-Q-2/Q-5 are ordered in the execution queue; Q-12 remains owner-deferred.
+Q-2/Q-5/Q-18 are ordered in the execution queue; Q-12 remains owner-deferred.
 The P6-T05 audit's two test follow-ups were accepted under [P6-T06](docs/audit/p6-t06.md); the original audit remains historical evidence.

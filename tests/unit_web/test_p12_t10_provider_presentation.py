@@ -45,12 +45,10 @@ def test_registry_covers_all_providers_and_keeps_mail_version():
 
 
 def test_shared_macros_escape_values_and_never_fill_secrets():
-    template = environment().from_string(
-        """
+    template = environment().from_string("""
     {% from "web/components/provider.html" import provider_icon, provider_fields %}
     {{ provider_icon(provider) }}
-    {{ provider_fields(provider.methods[0], "test", login) }}"""
-    )
+    {{ provider_fields(provider.methods[0], "test", login) }}""")
     html = template.render(provider=PROVIDERS["mailru_mail"], login='x"><script>bad</script>')
     assert 'src="http://fixture.test/static/icons/providers/mailru-mail.svg"' in html
     assert 'aria-hidden="true"' in html and 'alt=""' in html

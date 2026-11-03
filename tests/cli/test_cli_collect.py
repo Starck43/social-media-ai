@@ -109,7 +109,7 @@ def test_collect_cmd_has_dry_on_and_writes_dry_run_payload():
         (Path(__file__).resolve().parents[2] / "cli" / "commands" / "collect.py").read_text(encoding="utf-8")
     )
     source = ast.unparse(tree)
-    assert 'if dry_on:' in source
+    assert "if dry_on:" in source
     assert "payload['dry_run'] = True" in source
     assert "--dry-on" in source
 
@@ -118,9 +118,7 @@ def test_collect_has_no_trace_of_excluded():
     import ast
     from pathlib import Path
 
-    source = (
-        Path(__file__).resolve().parents[2] / "cli" / "commands" / "collect.py"
-    ).read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[2] / "cli" / "commands" / "collect.py").read_text(encoding="utf-8")
     locations = [
         f"{number}: {line.strip()[:80]}"
         for number, line in enumerate(source.splitlines(), start=1)

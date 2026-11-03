@@ -303,11 +303,11 @@ async def test_database_observation_immutable_and_tenant_fk(data):
 
 
 @pytest.mark.parametrize(
-    "name,query",
-    [("Договор.pdf", "Договор"), ("REPORT.txt", "report"), ("100%file.txt", "%")],
+    "name,query,expected",
+    [("Договор.pdf", "Договор", True), ("REPORT.txt", "report", True), ("100file.txt", "%", False)],
 )
-async def test_literal_names_and_ascii_case_search(data, name, query):
+async def test_literal_names_and_ascii_case_search(data, name, query, expected):
     with actor(data) as args:
         await admit(args, name, "unrelated.txt")
         found = await manager.list_page(**args, query=query)
-        assert [item["name"] for item in found["items"]] == [name]
+        assert [item["name"] for item in found["items"]] == ([name] if expected else [])

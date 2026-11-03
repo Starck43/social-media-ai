@@ -73,6 +73,10 @@ Rules:
   whose value was rewritten during the run from one that was merely skipped.
 - Kinds are closed (`email`, `phone`, `username`, `opaque_id`). Adding one means adding a
   normalizer and its tests, not a free-form string.
+- The registry's third element is the **value kind** of a column that also has a
+  blind index, or `None` for an encrypted column with no index (display names,
+  notes, evidence text). It is not a column type: rotation never reads it, and a
+  free-form string would make the closed vocabulary unenforceable.
 
 # --- Rotation ---
 

@@ -154,7 +154,7 @@ def test_encrypted_columns_and_offboarding_contract():
         assert {c.name for c in table.c if isinstance(c.type, EncryptedText)} == columns
         assert "pii_updated_at" in table.c
         assert any(fk.column.table.name == "tenants" and fk.ondelete == "CASCADE" for fk in table.foreign_keys)
-        assert all((table.name, c, "text") in REGISTRY for c in columns)
+        assert all((table.name, c, None) in REGISTRY for c in columns)
         for fk in table.foreign_key_constraints:
             if len(fk.elements) > 1:
                 assert "tenant_id" in fk.column_keys

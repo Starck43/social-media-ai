@@ -31,16 +31,16 @@ app = typer.Typer(name="pii", help="Rotate the personal-data encryption key")
 # Tables registered for rotation. A business module adds its own entry when it
 # owns encrypted columns (P13-T07 is the first); nothing is discovered by name
 # guessing, because a wrong guess would re-encrypt the wrong column.
-REGISTRY: tuple[tuple[str, str, str], ...] = (
-    ("contacts", "display_name_encrypted", "text"),
-    ("contacts", "notes_encrypted", "text"),
-    ("contacts", "birthday_encrypted", "text"),
-    ("contacts", "anniversary_encrypted", "text"),
-    ("contact_identities", "value_encrypted", "text"),
-    ("contact_identities", "source_native_id_encrypted", "text"),
-    ("contact_consents", "basis_encrypted", "text"),
-    ("contact_consents", "source_evidence_encrypted", "text"),
-    ("contact_merge_journal", "reason_encrypted", "text"),
+REGISTRY: tuple[tuple[str, str, str | None], ...] = (
+    ("contacts", "display_name_encrypted", None),
+    ("contacts", "notes_encrypted", None),
+    ("contacts", "birthday_encrypted", None),
+    ("contacts", "anniversary_encrypted", None),
+    ("contact_identities", "value_encrypted", None),
+    ("contact_identities", "source_native_id_encrypted", None),
+    ("contact_consents", "basis_encrypted", None),
+    ("contact_consents", "source_evidence_encrypted", None),
+    ("contact_merge_journal", "reason_encrypted", None),
 )
 
 # Every registered table carries this integer column and every writer bumps it on

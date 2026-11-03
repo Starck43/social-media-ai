@@ -122,4 +122,9 @@ class ContactPrivacy:
 
     @staticmethod
     async def delete_contact(contact_id, *, session=None):
+        # ``delete_by_id`` is itself ``with_db_session``-wrapped: passing an
+        # explicit ``session=None`` would be forwarded twice and raise TypeError,
+        # so only a real caller-owned session is forwarded.
+        if session is None:
+            return await Contact.objects.delete_by_id(contact_id)
         return await Contact.objects.delete_by_id(contact_id, session=session)

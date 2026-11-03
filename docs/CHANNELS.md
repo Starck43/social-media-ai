@@ -132,7 +132,7 @@ POST https://api.telegram.org/bot{token}/sendMessage
 | Env Var | Purpose |
 |---|---|
 | `MAX_BOT_TOKEN` | Bot access token |
-| `MAX_API_BASE` | API base URL (default: `https://platform-api2.max.ru`) |
+| `MAX_API_URL` | API base URL (default: `https://platform-api2.max.ru`) |
 | `MAX_OWNER_ID` | MAX user IDs eligible for initial owner bootstrap; persisted membership and runtime authorization remain separate |
 | `MAX_CHANNEL_ID` | Deprecated; ignored by digest delivery (use workspace bindings) |
 

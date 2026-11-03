@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
 from app.core.decorators import app_label
+from app.services.audit_codes import audit_check_sql
 
 from ..base import Base, TenantScopedMixin
 
@@ -38,7 +39,7 @@ class ActionAuditEvent(Base, TenantScopedMixin):
             name="ck_action_audit_events_outcome",
         ),
         CheckConstraint(
-            "action = 'scheduling.task_admit'",
+            audit_check_sql()["action"],
             name="ck_action_audit_events_action",
         ),
         CheckConstraint(
@@ -48,7 +49,7 @@ class ActionAuditEvent(Base, TenantScopedMixin):
             name="ck_action_audit_events_actor_id",
         ),
         CheckConstraint(
-            "resource_kind IS NULL OR resource_kind = 'agent_task'",
+            audit_check_sql()["resource_kind"],
             name="ck_action_audit_events_resource_kind",
         ),
         CheckConstraint(
@@ -56,8 +57,7 @@ class ActionAuditEvent(Base, TenantScopedMixin):
             name="ck_action_audit_events_resource_id",
         ),
         CheckConstraint(
-            "(outcome = 'succeeded' AND reason_code IS NULL) OR "
-            "(outcome = 'unknown' AND reason_code = 'launch_unconfirmed')",
+            audit_check_sql()["reason_code"],
             name="ck_action_audit_events_reason_code",
         ),
         CheckConstraint("request_id IS NULL", name="ck_action_audit_events_request_id"),

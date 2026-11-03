@@ -10,8 +10,8 @@ from sqlalchemy import delete, func, inspect, select, text
 from app.core.config import settings
 from app.core.database import async_session_maker, engine
 from app.models import DocumentRevision, FileCatalogObject, KnowledgeDocument, KnowledgeSnippet, Tenant
-from tests.shared.file_catalog_fixtures import actor, admit, data  # noqa: F401
 from app.models.managers.file_catalog_manager import FileCatalogManager
+from tests.shared.file_catalog_fixtures import actor, admit, data  # noqa: F401
 
 pytestmark = pytest.mark.tenancy
 
@@ -97,13 +97,14 @@ async def test_0125_backfills_existing_rows_in_batches(data):
             with engine.begin() as connection:
                 config.attributes["connection"] = connection
                 command.downgrade(config, "0124")
-                assert "name_search" not in {c["name"] for c in inspect(connection).get_columns(
-                    "file_catalog_objects", schema="test_schema"
-                )}
+                assert "name_search" not in {
+                    c["name"] for c in inspect(connection).get_columns("file_catalog_objects", schema="test_schema")
+                }
                 command.upgrade(config, "0125")
-                rows = connection.execute(text(
-                    'SELECT name, name_search FROM test_schema.file_catalog_objects WHERE connection_id = :id'
-                ), {"id": args["connection_id"]}).all()
+                rows = connection.execute(
+                    text("SELECT name, name_search FROM test_schema.file_catalog_objects WHERE connection_id = :id"),
+                    {"id": args["connection_id"]},
+                ).all()
                 assert len(rows) == len(names)
                 assert dict(rows)["Straße.txt"] == "strasse.txt"
         finally:

@@ -328,9 +328,7 @@ async def test_unicode_search_filters_policy_before_paging(data):
         await configure(data, restrictions=[{"path": "disk:/work/hidden", "deny": ["list"]}])
         first = await manager.list_page(**args, query="договор", limit=1)
         second = await manager.list_page(**args, query="договор", limit=1, after=first["next_after"])
-        assert [first["items"][0]["name"], second["items"][0]["name"]] == [
-            "Договор-1.txt", "ДОГОВОР-2.txt"
-        ]
+        assert [first["items"][0]["name"], second["items"][0]["name"]] == ["Договор-1.txt", "ДОГОВОР-2.txt"]
         assert (await manager.list_page(**args, query="secret"))["items"] == []
     with actor(data, user=1) as foreign:
         with pytest.raises(ConnectionDenied):

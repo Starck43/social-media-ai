@@ -307,7 +307,10 @@ class FileCatalogManager:
                         row.observation_number += 1
                         changed += 1
                     row.name, row.name_search, row.kind, row.observed_at = (
-                        item.name, _search_key(item.name), item.kind, ticket.issued_at
+                        item.name,
+                        _search_key(item.name),
+                        item.kind,
+                        ticket.issued_at,
                     )
                 if different:
                     session.add(

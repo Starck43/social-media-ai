@@ -671,10 +671,10 @@ def apply_schema_guards(conn, schema: str, text: Callable[[str], object]) -> Non
     ``text`` is the caller's SQL wrapper (``sqlalchemy.text``): this module stays
     free of driver imports so the offline CI lane can load it.
     """
-    from sqlalchemy import inspect as sa_inspect
-
     _schema(schema)
-    present_tables = set(sa_inspect(conn).get_table_names(schema=schema))
+    # The supplied SQLAlchemy connection already owns its dialect. Asking that
+    # dialect for table names keeps this file-loaded leaf stdlib-only.
+    present_tables = set(conn.dialect.get_table_names(conn, schema=schema))
     applicable = [trigger for trigger in GUARD_TRIGGERS if trigger.table in present_tables]
     functions = {trigger.function for trigger in applicable}
     for name in GUARD_FUNCTIONS:

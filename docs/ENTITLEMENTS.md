@@ -41,6 +41,9 @@ verified the repository baseline transition for the local public and test schema
 not establish any other target's state. Follow [DEPLOYMENT](DEPLOYMENT.md) for
 approved target inspection and transition. Downgrading the historical entitlement
 schema drops usage evidence; preserve/export it before any authorized rollback.
+Subsequent source revisions `0121`–`0123` add workspace connections, knowledge
+evidence and source-owner/auth-notice fields; they do not change this entitlement
+contract. This sequence describes repository migrations, not a target database.
 
 Preview and task admission read rights without consuming them. Admission checks
 the effective source snapshot and collection intent in the existing task-run

@@ -88,6 +88,9 @@ The fields were introduced in migration 0117 and are included in the Q-14
 public/test-schema transition, but that does not prove another target's revision. Follow [deployment guidance](DEPLOYMENT.md)
 before using the fields on a target. P2-T15 behavioral/application tests remain
 deferred by the owner.
+The checked-in chain continues through `0121` (workspace connections), `0122`
+(knowledge/document evidence) and `0123` (source member ownership and an auth
+notice kind); these later revisions do not change the entitlement contract.
 
 ## Tables
 
@@ -99,6 +102,15 @@ deferred by the owner.
 | `tenant_channels` | global | Chat→tenant binding; unique per `(channel, chat_id)`. |
 | `user_credentials` | personal user (not tenant-marked) | Personal secrets (L2 user tokens / sessions), keyed by `users.id`, encrypted at rest with Fernet. |
 | `sources`, `agent_tasks`, `jobs`, `digest_runs`, `ai_analytics`, `agent_scenarios`, `bot_actions`, `notifications`, `agent_sessions`, `agent_messages`, `agent_feedback`, `agent_memory` | tenant | Every `TenantScopedMixin` model. |
+
+For social source collection, nullable `Source.owner_user_id` identifies the
+member who added the source. An explicit `params.token_owner`, when present, is
+authoritative and revalidated against active web membership on each run; an
+invalid or stale override does not fall through to `owner_user_id`. Without an
+override, the recorded owner is revalidated. There is no fallback to the
+workspace owner's personal token: no valid member owner means
+deployment-credential-only collection. Removing a member sets the source owner
+to NULL while preserving the source and its history.
 
 **No TenantScopedMixin does not mean globally shared authority.** `Platform`,
 `ModelType`, `Permission`, `Role`, `User` and tenancy lookup tables have no tenant

@@ -23,7 +23,7 @@
 5. **Zero-Conflict Parallelism Rule (`app/web/nav.py` & `app/web/__init__.py`):**
    - Wave 1/2 domain tasks (`P12-T03`, `P12-T04`, `P12-T05`) create **only** their own service package (`app/services/<domain>/`), route module (`app/web/<section>.py`), template (`app/web/templates/web/<section>.html`), and isolated unit test (`tests/unit_web/test_p12_t0X_*.py`).
    - They **must NOT edit `app/web/nav.py`, `app/web/__init__.py`, or `tests/unit_web/test_p12_t01_nav_groups.py`**.
-   - Central router registration in `app/web/__init__.py` and flipping `ready=True` in `app/web/nav.py` happen once in **Wave 3 (`P12-T06`)**.
+   - Router registration and `ready=True` activation were implemented as the separate P12-T09 reachability follow-up (`e577951b`), not by P12-T06. P12-T06 delivered the evidence drawer/chat handoff; its task card is historical and must not assign the router files to new T06 work.
 
 ---
 
@@ -51,10 +51,9 @@
          │                              │                          │
          └───────────────┬──────────────┴──────────────────────────┘
                          ▼
-[Wave 3: Cross-Domain Finalizer (C3 — Local Agent)]
-  └── P12-T06 (P3 · C3)
-      Register P12 routers in app/web/__init__.py, flip ready=True in app/web/nav.py,
-      wire #context-panel in base.html & /app/chat?context_type=...&boundary=local_only
+[Wave 3: Cross-Domain Integration (after Wave 2)]
+  ├── P12-T06: Evidence drawer and /app/chat handoff (PR #303; context UI/runtime boundary)
+  └── P12-T09: Route reachability and nav activation follow-up (DONE; e577951b)
 ```
 
 | Wave | Task ID | Priority / Complexity | Recommended Agent Role | Depends On | Parallelizable With | Strictly Isolated `Owned paths` |
@@ -64,7 +63,8 @@
 | **Wave 1B / 2C** | [P12-T05](../tasks/p12-t05.md) | `P3` · **`C3`** | **Local Agent (`<= C3`)** *(can start immediately!)* | `P12-T01` | `P12-T02`, `P12-T03`, `P12-T04` | `app/services/cases/`, `app/web/cases.py`, `app/web/templates/web/cases.html`, `tests/unit_web/test_p12_t05_cases_comparison.py` |
 | **Wave 2A** | [P12-T03](../tasks/p12-t03.md) | `P3` · `C4` | **AI Studio Coordinator** | `P12-T01`, `P12-T02` | `P12-T04`, `P12-T05` | `app/services/knowledge/`, `app/web/knowledge.py`, `app/web/documents.py`, `app/web/templates/web/knowledge.html`, `app/web/templates/web/documents.html`, `tests/unit_web/test_p12_t03_knowledge_documents.py` |
 | **Wave 2B** | [P12-T04](../tasks/p12-t04.md) | `P3` · `C4` | **Remote Agent** | `P12-T01`, `P12-T02` | `P12-T03`, `P12-T05` | `app/services/communications/`, `app/web/communications.py`, `app/web/followups.py`, `app/web/templates/web/communications.html`, `app/web/templates/web/followups.html`, `tests/unit_web/test_p12_t04_communications_followups.py` |
-| **Wave 3** | [P12-T06](../tasks/p12-t06.md) | `P3` · **`C3`** | **Local Agent (`<= C3`)** *(after Wave 2 merges)* | `P12-T03`, `P12-T04`, `P12-T05` | None | `app/web/__init__.py`, `app/web/nav.py`, `app/web/templates/web/base.html`, `app/web/chat.py`, `app/static/js/context_panel.js`, `tests/unit_web/test_p12_t01_nav_groups.py`, `tests/unit_web/test_p12_t06_context_handoff.py` |
+| **Wave 3** | [P12-T06](../tasks/p12-t06.md) | `P3` · `C3` | **Evidence drawer / chat handoff** | `P12-T03`, `P12-T04`, `P12-T05` | P12-T09 (disjoint implementation paths) | `app/web/templates/web/base.html`, `app/web/chat.py`, `app/web/templates/web/chat.html`, `app/static/js/context_panel.js`, `tests/unit_web/test_p12_t06_context_handoff.py` |
+| **Wave 3 follow-up** | [P12-T09](../tasks/p12-t09.md) | historical | **Route reachability / nav activation** | `P12-T03`, `P12-T04`, `P12-T05` | P12-T06 (disjoint implementation paths) | `app/web/__init__.py`, `app/web/nav.py`, `tests/unit_web/test_p12_t01_nav_groups.py`, `tests/unit_web/test_p12_t03_knowledge_documents.py`, `tests/unit_web/test_p12_t04_communications_followups.py`, `tests/unit_web/test_p12_t05_cases_comparison.py`, `tests/web/test_p12_routes.py` |
 
 ---
 
@@ -91,6 +91,13 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
   accepted source `f5cabb09e536515000532e6767f108ec79775a17`, merge `5651d37c`
   ([PR #306](https://github.com/Starck43/social-media-ai/pull/306)). Migration 0122
   validated only in test_schema; public apply/deployment remain separately gated.
+  Only cloud-bound context reaches the shared web-chat runtime; company/local-only
+  sends are refused until a corresponding end-to-end route exists.
+
+- [P12-T16](../audit/p12-t16.md): **ACCEPTED 2026-11-02**. Migration 0123 adds
+  nullable personal source ownership and `SOURCE_AUTH_REQUIRED`. Source ownership
+  is actor-derived, revalidated against active workspace membership, and never
+  falls back to the workspace owner's personal credential.
 
 ## Credential and connector security follow-up
 

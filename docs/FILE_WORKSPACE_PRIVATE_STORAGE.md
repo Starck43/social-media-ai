@@ -60,6 +60,20 @@ settlement or DB concurrency safety. It never mutates usage. Future persistence
 must recheck/reserve all dimensions atomically. [Synthetic tests](../tests/unit_services/test_p12_t12_retention_quota.py)
 include the stale-snapshot/non-reservation trust boundary. Storage stays OFF.
 
+## Implemented pure payload-format subset
+
+[Format v1](FILE_WORKSPACE_PRIVATE_PAYLOAD.md) and
+[private_payload.py](../app/integrations/file_workspace/private_payload.py) add
+closed-schema validation/canonical UTF-8 serialization and canonical-byte checks.
+Bounds precede encoding; exact JSON types, fixed revisions, UTC microseconds,
+quote/candidate caps and existing 1-based reference semantics are preserved.
+No context/dataclass dump, unknown fields or invented missing provider version.
+Charge the complete returned bytes outside the envelope. These are syntactic
+checks ONLY: supplied versions/IDs/epochs/times can be forged and old data can
+be format-valid. No authentication, source consistency, current authorization,
+clock high-water proof, storage integrity, reservation or persistence is delivered.
+Reviewable format/limits, not approval. Storage stays OFF.
+
 ## Personal ownership and immutable source binding
 
 Use the [connection's personal owner](../app/models/integrations/connection.py)

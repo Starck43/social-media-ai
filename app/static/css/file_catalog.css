@@ -10,6 +10,8 @@
 .file-catalog-search { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; gap: 16px; align-items: end; }
 .file-catalog-search label { display: block; font-size: .875rem; margin-bottom: 8px; }
 .file-catalog-search input, .file-catalog-search select, .file-catalog .ui-control { min-height: 44px; font-size: 1rem; }
+.file-catalog-search input, .file-catalog-search select, .file-catalog .ui-control { border-color: var(--color-text-secondary, #475569); }
+.file-catalog-search input::placeholder { color: var(--color-text-secondary, #475569); opacity: 1; }
 .file-catalog .ui-control { white-space: normal; text-align: center; }
 .file-catalog .file-catalog-note, .file-catalog-path { font-size: .875rem; line-height: 1.5; }
 .file-catalog-path, .file-catalog-name, .file-catalog-detail-name { overflow-wrap: anywhere; word-break: normal; }
@@ -25,7 +27,7 @@
 .file-catalog-paging:empty { display: none; }
 .file-catalog-empty { padding: 24px 0; max-width: 680px; }
 .file-catalog-empty.ui-card { padding: 24px; }
-.file-catalog-empty .ui-control { margin-top: 20px; }
+.file-catalog-empty .ui-control { display: inline-flex; align-items: center; margin-top: 20px; }
 .file-catalog-history { margin: 16px 0 0; padding-left: 24px; }
 .file-catalog-history li { padding: 12px 0; overflow-wrap: anywhere; }
 .file-catalog-history li span { display: block; }

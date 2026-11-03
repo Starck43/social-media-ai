@@ -9,11 +9,17 @@
     <section class="ui-card telegram-accounts-intro">
         <h2>Явное разрешение для текущего пространства</h2>
         <p>Пространство: <strong>{{ tenant.name if tenant else 'недоступно' }}</strong>. Здесь показаны только ваши локальные записи. Подключение не проверяет доступность сессии Telegram.</p>
-        <p>Отключение здесь не удаляет личную авторизацию и не завершает сессию Telegram. Другие пространства не затрагиваются. Выбор источника и применение разрешений при сборе ещё не реализованы.</p>
+        <p>Отключение здесь не удаляет личную авторизацию и не завершает сессию Telegram. Другие пространства не затрагиваются. Для источника нужен отдельный явный выбор; личный сбор включается отдельно после проверок.</p>
     </section>
     {% if grant_error %}
     <section class="ui-card" role="alert"><h2>Данные недоступны</h2><p>{{ grant_error }}</p><a href="/app/settings/telegram-accounts/workspace">Обновить</a></section>
     {% else %}
+    <section class="ui-card"><h2>Аккаунт для источника</h2><p>Выбор не переносится автоматически в уже ожидающие задания.</p>
+    {% for source in telegram_sources %}
+        <a class="telegram-accounts-back" href="/app/settings/telegram-accounts/workspace/sources/{{ source.source_id }}">{{ source.name }} · источник № {{ source.source_id }}</a>
+    {% else %}<p>В этой части списка нет активных Telegram-источников.</p>{% endfor %}
+    {% if sources_next_after %}<a class="telegram-accounts-back" href="/app/settings/telegram-accounts/workspace?after_id={{ sources_next_after }}">Следующие источники</a>{% endif %}
+    </section>
     <section class="ui-card"><h2>Мои разрешения в этом пространстве</h2>
     {% for grant in grants if grant.is_active %}
         <article class="telegram-account"><p>Локальная авторизация № {{ grant.authorization_id }} · разрешение № {{ grant.grant_id }} · ревизия {{ grant.authorization_revision }}</p>

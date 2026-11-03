@@ -143,6 +143,30 @@ html.dark .telegram-accounts-error {
 .telegram-account-allow-button:hover {
   background: #d1e9fc;
 }
+.telegram-account-select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  font: inherit;
+  color: inherit;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #767676);
+  border-radius: 8px;
+}
+.telegram-accounts :is(a, button, select, input):focus-visible {
+  outline: 3px solid #07569e;
+  outline-offset: 3px;
+}
+html.dark .telegram-account-select {
+  background: #202020;
+  border-color: #8b8b8b;
+  color: #fff;
+}
+html.dark .telegram-accounts :is(a, button, select, input):focus-visible {
+  outline-color: #b2dcff;
+}
 html.dark .telegram-account-allow-button {
   border-color: #b2dcff;
   color: #b2dcff;

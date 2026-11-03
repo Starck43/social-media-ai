@@ -15,10 +15,14 @@ from app.schemas.connector_account import (
     ConnectorAccountMetadata,
     ReusableConnectorAccounts,
     TelegramLoginMetadata,
+    TelegramSourceCatalog,
+    TelegramSourceMetadata,
+    TelegramSourcePicker,
     WorkspaceGrantMetadata,
 )
 from app.services.social.connector_authorizations import connector_authorizations
 from app.services.social.telegram_login import LoginRejected, telegram_logins
+from app.services.social.telegram_source_bindings import SourceBindingUnconfirmed, telegram_source_bindings
 from app.services.user.auth import get_authenticated_user
 
 
@@ -74,6 +78,8 @@ async def _call(target, **arguments):
         raise HTTPException(status_code=exc.status, detail=exc.code) from None
     except ConnectionDenied:
         raise HTTPException(status_code=404, detail="connection_unavailable") from None
+    except SourceBindingUnconfirmed:
+        raise HTTPException(status_code=503, detail="source_binding_unconfirmed") from None
 
 
 @router.get("", response_model=ReusableConnectorAccounts)
@@ -91,6 +97,43 @@ async def list_personal_accounts(user: User = Depends(get_authenticated_user)):
 @router.get("/grants", response_model=list[WorkspaceGrantMetadata])
 async def list_workspace_grants(user: User = Depends(get_authenticated_user)):
     return await _call(connector_authorizations.list_grants, **_scope(user))
+
+
+class TelegramSourceSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_binding: str = Field(pattern=r"^[0-9a-f]{64}$")
+    grant_id: StrictInt = Field(gt=0)
+    authorization_id: StrictInt = Field(gt=0)
+    authorization_revision: StrictInt = Field(gt=0)
+
+
+class TelegramSourceClear(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_binding: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+@router.get("/telegram/sources", response_model=TelegramSourceCatalog)
+async def list_telegram_sources(after_id: int = 0, user: User = Depends(get_authenticated_user)):
+    return await _call(telegram_source_bindings.list_sources, **_scope(user), after_id=after_id)
+
+
+@router.get("/telegram/sources/{source_id}", response_model=TelegramSourcePicker)
+async def telegram_source_picker(source_id: int, user: User = Depends(get_authenticated_user)):
+    return await _call(telegram_source_bindings.get, **_scope(user), source_id=source_id)
+
+
+@router.put("/telegram/sources/{source_id}", response_model=TelegramSourceMetadata)
+async def select_telegram_source_account(
+    source_id: int, selection: TelegramSourceSelection, user: User = Depends(get_authenticated_user)
+):
+    return await _call(telegram_source_bindings.set, **_scope(user), source_id=source_id, **selection.model_dump())
+
+
+@router.post("/telegram/sources/{source_id}/clear", response_model=TelegramSourceMetadata)
+async def clear_telegram_source_account(
+    source_id: int, selection: TelegramSourceClear, user: User = Depends(get_authenticated_user)
+):
+    return await _call(telegram_source_bindings.set, **_scope(user), source_id=source_id, **selection.model_dump())
 
 
 @router.post("/{authorization_id}/attach", response_model=WorkspaceGrantMetadata)

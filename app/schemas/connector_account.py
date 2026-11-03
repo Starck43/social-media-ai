@@ -39,6 +39,35 @@ class ReusableConnectorAccounts(_MetadataResponse):
     can_attach: bool
 
 
+class TelegramSourceMetadata(_MetadataResponse):
+    source_id: PositiveId
+    name: str
+    external_id: str
+    binding_token: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    selection_state: Literal["unselected", "selected", "other_owner", "invalid"]
+    grant_id: PositiveId | None
+    authorization_revision: PositiveId | None
+
+
+class TelegramSourceGrantChoice(_MetadataResponse):
+    grant_id: PositiveId
+    authorization_id: PositiveId
+    authorization_revision: PositiveId
+    subject_key: str
+
+
+class TelegramSourcePicker(_MetadataResponse):
+    source: TelegramSourceMetadata
+    choices: list[TelegramSourceGrantChoice]
+    can_edit: bool
+
+
+class TelegramSourceCatalog(_MetadataResponse):
+    sources: list[TelegramSourceMetadata]
+    can_edit: bool
+    next_after: PositiveId | None
+
+
 class TelegramLoginMetadata(_MetadataResponse):
     attempt_id: UUID
     state: Literal["processing", "code", "password", "completed", "failed", "expired", "cancelled"]

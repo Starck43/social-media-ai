@@ -562,3 +562,19 @@ and hashes are deliberately omitted from the deferred Job.result preview, with
 `preview_omitted=telegram_rehearsal_metadata_only`. Consumer messaging/assembled
 regressions are still final-phase gates. No tests or providers were executed in
 this continuation; only formatting, AST parsing and diff hygiene.
+
+## Explicit source account picker (code-first checkpoint)
+
+The workspace Telegram settings catalog links to a source-specific metadata picker,
+now also linked from source detail. Only the signed-in user's active explicit
+workspace grants are offered. Selection pins grant, account and consent revision;
+the write locks account -> grant -> source before fresh actor UPDATE rights,
+compares an optimistic binding fingerprint, preserves unrelated source params and
+rechecks owner/grant/member rights through commit. Clearing removes only the
+binding; it never chooses another account or revives legacy credentials. Browser
+writes require bounded exact forms, explicit confirmation and session/actor/
+workspace/source-bound CSRF. Unknown commit outcomes require reload, not replay.
+
+This checkpoint completes the supplied untested source-picker patch, not tested
+acceptance. Runtime remains default OFF. API, CSRF/DOM, PostgreSQL races and
+accessibility checks are deferred to the final shared validation phase.

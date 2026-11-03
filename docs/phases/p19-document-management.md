@@ -38,7 +38,7 @@ TZ criteria: AI letters from context (T02); templates (T02); every version saved
 
 ## Plan
 
-1. [P19-T01](../tasks/p19-t01.md) — Document model extension: types, links, templates and status machine · `P3` · `C3` · depends: [P13-T07](../tasks/p13-t07.md)
+1. [P19-T01](../tasks/p19-t01.md) — Document model extension: types, links, templates and status machine · `P3` · `C3` · depends: [P13-T07 accepted](../audit/p13-t07.md)
 2. [P19-T02](../tasks/p19-t02.md) — Templates and AI drafting with evidence and unsupported-claim marking · `P3` · `C4` · depends: [P19-T01](../tasks/p19-t01.md), [P14-T02](../tasks/p14-t02.md) or [P15-T02](../tasks/p15-t02.md) (context sources)
 3. [P19-T03](../tasks/p19-t03.md) — Version history, diff and restore · `P3` · `C3` · depends: [P19-T01](../tasks/p19-t01.md)
 4. [P19-T04](../tasks/p19-t04.md) — Document approval workflow bound to an immutable revision hash · `P3` · `C4` · depends: [P19-T01](../tasks/p19-t01.md), [P13-T04](../tasks/p13-t04.md)
@@ -47,4 +47,4 @@ TZ criteria: AI letters from context (T02); templates (T02); every version saved
 
 ## Dependencies and gates
 
-Delivery (T05) after [P15-T05](../tasks/p15-t05.md)/T06. Contacts/case links after [P13-T07](../tasks/p13-t07.md).
+Delivery (T05) after [P15-T05](../tasks/p15-t05.md)/T06. Contacts/case links after [P13-T07 accepted](../audit/p13-t07.md).

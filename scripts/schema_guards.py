@@ -408,34 +408,34 @@ GUARD_FUNCTION_ARGUMENTS = {"invalidate_file_insights": "t integer, o integer, c
 GUARD_FUNCTIONS.update(
     {
         "invalidate_file_insights": (
-            ' DECLARE r record; BEGIN FOR r IN SELECT connection_id FROM "{s}"."file_insight_mounts" '
+            " DECLARE r record; BEGIN FOR r IN SELECT connection_id FROM {s}.file_insight_mounts "
             "WHERE (t IS NULL OR tenant_id=t) AND (o IS NULL OR owner_id=o) AND (c IS NULL OR connection_id=c) "
-            'ORDER BY connection_id FOR UPDATE LOOP UPDATE "{s}"."file_insight_mounts" '
+            "ORDER BY connection_id FOR UPDATE LOOP UPDATE {s}.file_insight_mounts "
             "SET processing_allowed=false, retention_allowed=false, "
             "owner_epoch=replace(gen_random_uuid()::text,'-',''), "
             "connection_epoch=replace(gen_random_uuid()::text,'-',''), "
             "consent_revision=replace(gen_random_uuid()::text,'-','') WHERE connection_id=r.connection_id; "
-            'DELETE FROM "{s}"."file_insight_attempts" WHERE connection_id=r.connection_id; '
-            "END LOOP; END "
+            "DELETE FROM {s}.file_insight_attempts WHERE connection_id=r.connection_id; "
+            "END LOOP; END; "
         ),
         "file_insight_revoke_hook": (
-            " BEGIN IF TG_TABLE_NAME='workspace_connections' THEN PERFORM \"{s}\".invalidate_file_insights(OLD.tenant_id,NULL,OLD.id); "
+            " BEGIN IF TG_TABLE_NAME='workspace_connections' THEN PERFORM {s}.invalidate_file_insights(OLD.tenant_id,NULL,OLD.id); "
             "ELSIF TG_TABLE_NAME='workspace_connection_secrets' THEN IF TG_OP='INSERT' THEN "
-            'PERFORM "{s}".invalidate_file_insights(NULL,NULL,NEW.connection_id); ELSE '
-            'PERFORM "{s}".invalidate_file_insights(NULL,NULL,OLD.connection_id); END IF; '
-            "ELSIF TG_TABLE_NAME='tenant_users' THEN PERFORM \"{s}\".invalidate_file_insights(OLD.tenant_id,OLD.user_id,NULL); "
-            "ELSIF TG_TABLE_NAME='users' THEN PERFORM \"{s}\".invalidate_file_insights(NULL,OLD.id,NULL); "
-            "ELSIF TG_TABLE_NAME='tenants' THEN PERFORM \"{s}\".invalidate_file_insights(OLD.id,NULL,NULL); "
-            "ELSIF TG_TABLE_NAME='workspace_roles' THEN PERFORM \"{s}\".invalidate_file_insights(m.tenant_id,m.user_id,NULL) "
-            'FROM "{s}".tenant_users m WHERE m.role_id=OLD.id; '
+            "PERFORM {s}.invalidate_file_insights(NULL,NULL,NEW.connection_id); ELSE "
+            "PERFORM {s}.invalidate_file_insights(NULL,NULL,OLD.connection_id); END IF; "
+            "ELSIF TG_TABLE_NAME='tenant_users' THEN PERFORM {s}.invalidate_file_insights(OLD.tenant_id,OLD.user_id,NULL); "
+            "ELSIF TG_TABLE_NAME='users' THEN PERFORM {s}.invalidate_file_insights(NULL,OLD.id,NULL); "
+            "ELSIF TG_TABLE_NAME='tenants' THEN PERFORM {s}.invalidate_file_insights(OLD.id,NULL,NULL); "
+            "ELSIF TG_TABLE_NAME='workspace_roles' THEN PERFORM {s}.invalidate_file_insights(m.tenant_id,m.user_id,NULL) "
+            "FROM {s}.tenant_users m WHERE m.role_id=OLD.id; "
             "ELSIF TG_TABLE_NAME='workspace_role_permission' THEN IF TG_OP='INSERT' THEN "
-            'PERFORM "{s}".invalidate_file_insights(m.tenant_id,m.user_id,NULL) FROM "{s}".tenant_users m WHERE m.role_id=NEW.role_id; '
-            'ELSE PERFORM "{s}".invalidate_file_insights(m.tenant_id,m.user_id,NULL) FROM "{s}".tenant_users m WHERE m.role_id=OLD.role_id; '
-            "END IF; END IF; RETURN NULL; END "
+            "PERFORM {s}.invalidate_file_insights(m.tenant_id,m.user_id,NULL) FROM {s}.tenant_users m WHERE m.role_id=NEW.role_id; "
+            "ELSE PERFORM {s}.invalidate_file_insights(m.tenant_id,m.user_id,NULL) FROM {s}.tenant_users m WHERE m.role_id=OLD.role_id; "
+            "END IF; END IF; RETURN NULL; END; "
         ),
         "file_insight_object_hook": (
-            " BEGIN UPDATE \"{s}\".file_insight_object_states SET epoch=replace(gen_random_uuid()::text,'-','') "
-            'WHERE object_id=OLD.id; DELETE FROM "{s}".file_insight_attempts WHERE object_id=OLD.id; RETURN NULL; END '
+            " BEGIN UPDATE {s}.file_insight_object_states SET epoch=replace(gen_random_uuid()::text,'-','') "
+            "WHERE object_id=OLD.id; DELETE FROM {s}.file_insight_attempts WHERE object_id=OLD.id; RETURN NULL; END; "
         ),
     }
 )

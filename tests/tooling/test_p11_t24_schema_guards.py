@@ -789,7 +789,10 @@ def test_private_insight_bootstrap_guards_require_complete_private_tables():
     )
     assert sum('CREATE TRIGGER "file_insight_revoke"' in s for s in statements) == 7
     assert any('CREATE TRIGGER "file_insight_object_changed" AFTER UPDATE OF' in s for s in statements)
-    assert all(' ON "test_schema".' in s for s in statements if s.startswith(("CREATE", "DROP")))
+    trigger_statements = [s for s in statements if s.startswith(("CREATE TRIGGER", "DROP TRIGGER"))]
+    function_statements = [s for s in statements if s.startswith("CREATE OR REPLACE FUNCTION")]
+    assert all(' ON "test_schema".' in s for s in trigger_statements)
+    assert all(s.startswith('CREATE OR REPLACE FUNCTION "test_schema".') for s in function_statements)
 
 
 def test_direct_schema_setting_is_resolved_but_unknown_attributes_are_not():

@@ -227,6 +227,29 @@ legacy memory bucket. Jobs learn from the user's own web or explicitly bound
 private messenger sessions; group transcripts are excluded. Existing cost and
 plan limits remain workspace-wide.
 
+## Messenger owner bootstrap and revocation
+
+`TELEGRAM_OWNER_IDS` and `MAX_OWNER_ID` are deployment-controlled **user ID**
+allowlists for bootstrap into `DEFAULT_TENANT_SLUG`; they are not a continuing
+workspace grant, a platform admin role, a chat ID or a digest destination. Keep
+them minimal. An existing active owner can bind another eligible chat, but
+bootstrap does not reactivate an inactive member or binding, promote an existing
+non-owner, or move a chat belonging to another workspace. A newly bootstrapped
+membership alone does not establish an active linked application user: runtime
+independently checks the active user, workspace, binding, membership and grants.
+
+To revoke an allowlisted person's future bootstrap, an authorized operator first
+removes the ID from the deployment configuration and ensures every running
+instance has picked up the new configuration. Removing it does **not** revoke
+already persisted membership or sessions. Separately use the authorized
+membership/binding administration procedure to review and revoke the intended
+access, and verify access is denied. In particular, deleting rather than
+deactivating an old membership while leaving the ID allowlisted allows it to be
+created again. Do not change membership or deployment configuration implicitly.
+`TELEGRAM_ADMIN_CHAT_ID` is an operator-alert destination, never a workspace
+digest fallback; actual digest targets are workspace bindings. Do not put IDs,
+credentials or database values into public incident notes.
+
 ## Config
 
 | Variable | Default | Purpose |

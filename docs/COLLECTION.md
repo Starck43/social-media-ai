@@ -32,9 +32,10 @@ Two sources, one reader (`app/services/social/credentials.py`):
   passes an `owner_user_id`.
 - **environment** — application/infrastructure config, one-per-deployment:
   `vk/app_id`, `vk/client_secret`, `vk/service_token` (service/L1 token),
-  `telegram/bot_token`, `max/bot_token` (the shared bots) and the Telegram
-  MTProto env fallback. Always the last resort, so an unconfigured install
-  still boots.
+  `telegram/bot_token`, `max/bot_token` (the shared bots) and application login
+  configuration. There is no MTProto session fallback from environment;
+  `TELEGRAM_SESSION` is deprecated and ignored. An unconfigured install boots
+  without borrowing a personal Telegram account.
 
 ```
 resolve_token("vk", owner_user_id=uid)   # personal vault first, then env
@@ -46,15 +47,16 @@ Resolution order per platform (first hit wins):
 
 | Platform | Kinds, in order | Env fallback |
 | --- | --- | --- |
-| `vk` | `user_token`, `service_token` | `VK_APP_ID` + `VK_CLIENT_ACCESS_KEY` (OAuth app), `VK_SERVICE_KEY` (service/L1) |
-| `telegram` | `bot_token` | `TELEGRAM_BOT_TOKEN`; L2 parts `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` / `TELEGRAM_SESSION` |
+| `vk` | `user_token`, `service_token` | `VK_APP_ID` (OAuth app), `VK_SERVICE_KEY` (service/L1); `VK_CLIENT_ACCESS_KEY` is a legacy resolver setting, not sent in the current VK ID exchange |
+| `telegram` | `bot_token` | `TELEGRAM_BOT_TOKEN`; app login configuration `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`; no env session fallback |
 | `max` | `bot_token` | `MAX_BOT_TOKEN` |
 
 `vk/user_token` is a **personal** secret: it is consulted only when the caller
 supplies an owner user. Collection takes that owner from
 `app.services.social.owner.resolve_source_owner(source)` — an explicit
-`Source.params["token_owner"]` (accepted only when the user is an active member
-of the source's workspace) or, by default, the workspace owner. The refresh
+`Source.params["token_owner"]` or `Source.owner_user_id`, revalidated against
+active workspace membership. No workspace owner is silently substituted; an
+unresolved personal owner means service-only access where that mode is allowed. The refresh
 token is stored in the `meta` JSON of the `vk/user_token` row (see
 [VK L2 via OAuth](#vk-l2-via-oauth-pkce)).
 
@@ -76,17 +78,22 @@ button*:
 | State | Condition | `needs_action` |
 | --- | --- | --- |
 | `connected` | row present, not expired | no |
-| `renewable` | expired, but a `refresh_token` renews it silently | **no** |
+| `renewal_unverified` | expired, refresh metadata exists; key and provider are not yet checked | **no** |
 | `reauth` | no refresh token, or the last renewal failed | yes |
 | `missing` | never connected | yes |
 | `unconfigured` | the deployment has no app credentials | no |
 
-The distinction that matters is `renewable` vs `reauth`. VK access tokens live
-**1 hour** and are renewed automatically; showing «войдите заново» for that
+The distinction that matters is `renewal_unverified` vs `reauth`. VK access tokens
+can be renewed automatically, but stored metadata alone does not prove the key
+is readable or the provider will accept renewal; showing «войдите заново» for that
 every hour is what pushed people to log out and re-authorize for no reason. A
 renewal failure is recorded as `meta.refresh_failed_at` and treated as `reauth`
 for `REFRESH_FAILURE_COOLDOWN` (6 h) — the UI then asks for a re-login instead of
-retrying a refresh token that is known to be spent.
+retrying a refresh token that is known to be spent. A known unreadable refresh
+secret instead directs the user to an administrator, not an ineffective re-login.
+These state values change the former `renewable`/`renewal_available` response
+to `renewal_unverified`; external API consumers must handle the new value. The
+metadata-only status does not proactively detect a wrong key or provider refusal.
 
 Consumers: the navbar (`TenantUIMiddleware` → `connection_alerts`, rendered only
 when non-empty), `/app/settings?tab=connections` (one card per platform),
@@ -101,7 +108,7 @@ list of sources sharing one token costs two queries rather than two per row.
 
 Two properties templates get for free instead of re-deriving them:
 `ConnectionStatus.fix_href` is empty unless the state needs action *and* the
-platform can be fixed, so a healthy or self-renewing badge is inert, and it points
+platform can be fixed, so a healthy or unverified-renewal badge is inert, and it points
 at the settings tab for a `manual` platform that has no authorize endpoint at all.
 
 Adding a platform is one `ConnectionSpec` row plus, for OAuth, a branch in
@@ -354,6 +361,15 @@ channels/listener.py  ->  services/monitoring/ingest.py  ->  AIAnalyzer.base_ana
 
 ### L2: MTProto user session (Telethon)
 
+**P12-T14 rollout gate:** the legacy collector described here still uses a
+user-scoped vault, not explicit workspace grants. The intended model is one
+personal authorization plus independently consented workspace bindings; see
+[personal account reuse](CONNECTOR_ACCOUNT_REUSE.md). The new draft persistence/API
+is not yet wired to this collector or to an initial phone/code/2FA web login. Do
+not present legacy CLI storage or a grant record as a completed workspace-isolated
+connection. `POST /api/v1/credentials/login` refuses terminal login with a fixed
+409 instead of running `input()` in a request worker.
+
 For historical depth and channels the bot cannot join, set the source's
 `Source.params["mode"] = "user"`. The collect job then pulls messages over
 MTProto with an authorized user session instead of waiting for push:
@@ -397,28 +413,26 @@ Setup (one-time, deployment-wide app; per-user authorize):
 
 ```bash
 # App credentials are env config (one VK app per deployment):
-#   VK_APP_ID, VK_CLIENT_ACCESS_KEY in .env
+#   VK_APP_ID in deployment config; callback and OAuth URLs in shared Platform.params
+#   VK_CLIENT_ACCESS_KEY is retained for compatibility, not sent by this exchange
 python -m cli.main credentials oauth vk --user <id> [--tenant owner]   # runs the flow
 ```
 
 `credentials oauth vk` builds the authorize URL, opens it in the browser, and
 waits (up to `--wait` seconds, default 180) for the callback to write the token
-to the **personal vault of `--user`** (default: the workspace owner). On VK's
-side the user consents and VK redirects to the **public**
-callback `VK_REDIRECT_URI` (default `http://localhost/api/v1/social/callback`,
-`GET /api/v1/social/callback`).
+to the **personal vault of `--user`**. The registered callback must match
+`Platform.params.redirect_uri`; `VK_REDIRECT_URI` is only a legacy migration
+input, not a runtime override. The bootstrap default is localhost for local
+development and must not be mistaken for a production callback.
 
-Why the callback is public: VK redirects the user's browser there, so it cannot
-require our bearer token. Security comes from a **signed `state`** — the state is
-`"{tenant_id}.{user_id}.{verifier}.{hmac}"` over `SECRET_KEY`, so the callback recovers the
-workspace and the PKCE verifier without any server-side session, and a forged or
-tampered state is rejected before any code is exchanged.
-
-Auto-refresh: VK access tokens age out in **1 hour** and cannot be extended, but
-each authorization also yields a **refresh token valid for 180 days** that is
-renewed silently. `resolve_token("vk", ...)` calls `renew_if_expiring()`, which
-renews ~5 minutes *before* the expiry rather than after it — a run that starts at
-10:59 would otherwise carry a token that dies mid-request.
+The callback is reached through the browser without a bearer token. The app
+uses a random, single-use state and an encrypted server-side pending PKCE
+verifier with a short expiry; it does not encode a signed user or verifier in
+the state. Provider-side application profile, permissions and token lifetimes
+must be verified separately; no success or fixed lifetime follows merely from
+configured values. This branch encrypts access/refresh secrets separately; migration 0124 converts
+legacy refresh metadata. Migration/rollout authorization remains separate from
+provider-side application profile, grants and lifetime verification.
 
 Two VK ID rules shape `refresh_user_token()`:
 
@@ -434,9 +448,7 @@ Two VK ID rules shape `refresh_user_token()`:
 A missing `app_id` leaves the flow unchanged — the row is skipped with a warning,
 as before.
 
-Consequence for the product: **re-authorization is a ~6-monthly event, not a
-routine chore.** Anything in the UI that asks for a login more often than that is
-reporting a bug, not a fact.
+Re-authorization timing depends on the provider and failures; do not promise a fixed interval.
 
 ## Source parameters
 
@@ -832,3 +844,12 @@ geographic filter.
 
 The [original removal/validation plan](audit/task-selection-migration-history.md)
 is retained as historical rationale. Current migrations follow the database policy.
+
+Known unreadable VK refresh data is an operator issue, not proof that a personal
+login will repair it. Source preflight and after-run personal notices distinguish
+that condition from an ordinary missing authorization; mixed groups name both.
+Personal source-access notices open the fixed connection-settings destination
+only after receipt ownership and current workspace membership are rechecked.
+The unreadable marker is not cleared automatically when a key is restored; an
+operator must review the recovery procedure. Metadata without such a marker
+still does not prove the secret can be read or the provider will renew it.

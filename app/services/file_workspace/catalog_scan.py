@@ -18,13 +18,16 @@ from app.models import FileCatalogScan
 from app.models.managers.file_catalog_manager import (
     CatalogCapacityError,
     CatalogInputError,
+    CatalogScanChanged,
+    CatalogScanClaim,
+    FileCatalogManager,
     _bounded_int,
     _owned,
     _path,
     _policy_key,
 )
 from app.models.managers.workspace_connection_manager import ConnectionDenied
-from app.services.file_workspace.catalog_refresh import refresh_catalog_page
+from app.services.file_workspace.yandex_reader import list_owned_folder
 
 _LEASE = timedelta(seconds=90)
 _PROVIDER_ERRORS = frozenset(
@@ -134,7 +137,7 @@ async def _claim(*, tenant_id, actor_id, connection_id):
         return row.scan_token, row.lease_token, row.folder, row.next_offset, row.page_size
 
 
-async def _finish(*, tenant_id, actor_id, connection_id, scan_token, lease_token, result=None, error=None):
+async def _finish_error(*, tenant_id, actor_id, connection_id, scan_token, lease_token, error):
     async with _owned(tenant_id, actor_id, connection_id) as (session, connection, policy, _):
         row = await _row(session, tenant_id, connection_id)
         if (
@@ -142,24 +145,17 @@ async def _finish(*, tenant_id, actor_id, connection_id, scan_token, lease_token
             or not _valid(row, actor_id, connection, policy)
             or row.scan_token != scan_token
             or row.lease_token != lease_token
+            or row.lease_until is None
+            or row.lease_until <= _now()
         ):
             raise ScanChanged()
-        if error:
-            row.state, row.error_code = "error", error
-        elif result["truncated"]:
-            row.state, row.error_code = "limited", None
-        elif result["next_offset"] is None:
-            row.state, row.error_code = "exhausted", None
-        elif not row.next_offset < result["next_offset"] <= 1_000_000:
-            row.state, row.error_code = "error", "invalid_provider_response"
-        else:
-            row.next_offset, row.state, row.error_code = result["next_offset"], "partial", None
+        row.state, row.error_code = "error", error
         row.lease_token = row.lease_until = None
         return _projection(row)
 
 
 async def resume_catalog_scan(*, tenant_id, actor_id, connection_id, client: httpx.AsyncClient):
-    """Process at most one page and checkpoint only after successful admission.
+    """Process at most one page and atomically admit the page and advance its checkpoint.
 
     An interrupted worker's claim expires; a replay is safe and does not infer
     deletion. Expected provider/capacity errors retain the offset for retry.
@@ -170,13 +166,22 @@ async def resume_catalog_scan(*, tenant_id, actor_id, connection_id, client: htt
     args = {"tenant_id": tenant_id, "actor_id": actor_id, "connection_id": connection_id}
     scan_token, lease_token, folder, offset, limit = await _claim(**args)
     try:
-        result = await refresh_catalog_page(**args, folder=folder, client=client, offset=offset, limit=limit)
+        manager = FileCatalogManager()
+        ticket = await manager.begin_page(**args, folder=folder)
+        page = await list_owned_folder(**args, folder=folder, client=client, offset=offset, limit=limit)
+        result = await manager.admit_page(
+            **args, ticket=ticket, page=page, _scan_claim=CatalogScanClaim(scan_token, lease_token, offset, limit)
+        )
     except MetadataError as exc:
         code = str(exc) if str(exc) in _PROVIDER_ERRORS else "provider_unavailable"
-        return await _finish(**args, scan_token=scan_token, lease_token=lease_token, error=code)
+        return await _finish_error(**args, scan_token=scan_token, lease_token=lease_token, error=code)
     except CatalogCapacityError as exc:
         code = str(exc) if str(exc) in _CAPACITY_ERRORS else "catalog_quota"
-        return await _finish(**args, scan_token=scan_token, lease_token=lease_token, error=code)
+        return await _finish_error(**args, scan_token=scan_token, lease_token=lease_token, error=code)
     except CatalogInputError:
-        return await _finish(**args, scan_token=scan_token, lease_token=lease_token, error="invalid_provider_response")
-    return await _finish(**args, scan_token=scan_token, lease_token=lease_token, result=result)
+        return await _finish_error(
+            **args, scan_token=scan_token, lease_token=lease_token, error="invalid_provider_response"
+        )
+    except CatalogScanChanged:
+        raise ScanChanged() from None
+    return result["scan"]

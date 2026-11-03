@@ -38,6 +38,10 @@ class CatalogCapacityError(ValueError):
     """Explicit bounded storage stop; never evict observations silently."""
 
 
+class CatalogScanChanged(Exception):
+    """A folder scan claim expired or was replaced before admission."""
+
+
 def _path(value):
     path = "disk:/" + "/".join(_components(value))
     if len(path.encode("utf-8")) > 2048:
@@ -65,6 +69,16 @@ def _bounded_int(value, low, high):
     if type(value) is not int or not low <= value <= high:
         raise CatalogInputError("invalid_page")
     return value
+
+
+@dataclass(frozen=True)
+class CatalogScanClaim:
+    """Trusted internal scan lease, never accepted as browser input."""
+
+    scan_token: str
+    lease_token: str
+    offset: int
+    page_size: int
 
 
 @dataclass(frozen=True)
@@ -207,7 +221,7 @@ class FileCatalogManager:
                 tenant_id, actor_id, connection_id, folder, _policy_key(connection.config), datetime.now(timezone.utc)
             )
 
-    async def admit_page(self, *, tenant_id, actor_id, connection_id, ticket, page):
+    async def admit_page(self, *, tenant_id, actor_id, connection_id, ticket, page, _scan_claim=None):
         """Atomically admit one trusted metadata page, never infer missing/deleted.
 
         DiskPage carries no stable ID/version/size. An unchanged replay updates
@@ -254,6 +268,34 @@ class FileCatalogManager:
                 ticket.folder, FileOperation.LIST
             ):
                 raise ConnectionDenied()
+            scan = None
+            if _scan_claim is not None:
+                if type(_scan_claim) is not CatalogScanClaim:
+                    raise CatalogScanChanged()
+                scan = await session.scalar(
+                    select(FileCatalogScan).where(
+                        FileCatalogScan.tenant_id == tenant_id, FileCatalogScan.connection_id == connection_id
+                    )
+                )
+                if (
+                    scan is None
+                    or scan.actor_id != actor_id
+                    or scan.policy_key != ticket.policy_key
+                    or scan.folder != ticket.folder
+                    or scan.scan_token != _scan_claim.scan_token
+                    or scan.lease_token != _scan_claim.lease_token
+                    or scan.lease_until is None
+                    or scan.lease_until <= datetime.now(timezone.utc)
+                    or scan.next_offset != _scan_claim.offset
+                    or scan.page_size != _scan_claim.page_size
+                ):
+                    raise CatalogScanChanged()
+                if (
+                    len(page.items) > scan.page_size
+                    or (page.truncated and page.next_offset is not None)
+                    or (page.next_offset is not None and page.next_offset != scan.next_offset + scan.page_size)
+                ):
+                    raise CatalogInputError("invalid_page")
             # Filter before loading/storing data; a hidden child's existence is not returned.
             prepared = {p: i for p, i in prepared.items() if policy.permits(p, FileOperation.LIST)}
             keys = [_key(path) for path in prepared]
@@ -323,7 +365,17 @@ class FileCatalogManager:
                             observed_at=ticket.issued_at,
                         )
                     )
-            return {"created": created, "metadata_changed": changed}
+            result = {"created": created, "metadata_changed": changed}
+            if scan is not None:
+                if page.truncated:
+                    scan.state = "limited"
+                elif page.next_offset is None:
+                    scan.state = "exhausted"
+                else:
+                    scan.next_offset, scan.state = page.next_offset, "partial"
+                scan.error_code = scan.lease_token = scan.lease_until = None
+                result["scan"] = {"state": scan.state, "error_code": None, "next_offset": scan.next_offset}
+            return result
 
     async def list_page(self, *, tenant_id, actor_id, connection_id, query="", after=0, limit=50):
         _bounded_int(after, 0, 2_147_483_647)

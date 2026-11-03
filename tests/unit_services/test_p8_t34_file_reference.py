@@ -124,7 +124,12 @@ def test_invalid_token_does_not_expose_information(token):
 
 def test_tamper_and_other_cipher_purpose_do_not_validate():
     token = issue()
-    altered = token[:-3] + ("a" if token[-3] != "a" else "b") + token[-2:]
+    # Flip an authenticated ciphertext byte. The final base64 character of a
+    # Fernet token only carries padding bits for ~1 key in 64, so mutating it
+    # made this test order-dependent rather than a tamper check.
+    raw = bytearray(base64.urlsafe_b64decode(token.encode()))
+    raw[25] ^= 0x01
+    altered = base64.urlsafe_b64encode(bytes(raw)).decode()
     with pytest.raises(refs.FileReferenceError):
         refs.resolve_file_reference(**context(), token=altered, policy=policy())
     other = (
@@ -149,6 +154,15 @@ def test_reference_denied_when_root_changes():
         refs.resolve_file_reference(**context(), token=token, policy=ReadOnlyFolderPolicy("/other"))
 
 
+def test_reference_denied_when_restrictions_change():
+    """A restriction-only change must not leave older selectors usable."""
+    token = issue()
+    tightened = ReadOnlyFolderPolicy("/work", (FolderRestriction("/work/sub", frozenset({FileOperation.READ})),))
+    with pytest.raises(refs.FileReferenceError, match="^file_unavailable$"):
+        refs.resolve_file_reference(**context(), token=token, policy=tightened)
+    assert tightened.binding() != policy().binding()
+
+
 @pytest.mark.parametrize(
     "change",
     [
@@ -169,7 +183,7 @@ def test_authenticated_but_malformed_payloads_are_rejected(change):
         "path": file().path,
     }
     data.update(change)
-    token = refs._fernet().encrypt_at_time(json.dumps(data).encode(), refs._clock()).decode()
+    token = refs._fernet(policy()).encrypt_at_time(json.dumps(data).encode(), refs._clock()).decode()
     with pytest.raises(refs.FileReferenceError, match="^file_unavailable$"):
         refs.resolve_file_reference(**context(), token=token, policy=policy())
 

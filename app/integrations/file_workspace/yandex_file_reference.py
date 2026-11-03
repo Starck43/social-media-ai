@@ -43,15 +43,18 @@ def _clock() -> int:
     return int(time.time())
 
 
-def _fernet() -> Fernet:
-    """Derive a purpose-separated key; key rotation invalidates old selectors."""
+def _fernet(policy: ReadOnlyFolderPolicy) -> Fernet:
+    """Derive a purpose- and policy-separated key; rotation invalidates selectors."""
+    if not isinstance(policy, ReadOnlyFolderPolicy):
+        raise ValueError
     key = settings.CREDENTIALS_KEY
     if not isinstance(key, str):
         raise ValueError
     # Fernet validates encoding and length before key derivation.
     Fernet(key.encode("ascii"))
     raw = base64.urlsafe_b64decode(key.encode("ascii"))
-    derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=_PURPOSE.encode()).derive(raw)
+    info = (_PURPOSE + ":" + policy.binding()).encode()
+    derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info).derive(raw)
     return Fernet(base64.urlsafe_b64encode(derived))
 
 
@@ -94,7 +97,7 @@ def issue_file_reference(
             "path": path,
         }
         payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        token = _fernet().encrypt_at_time(payload, _clock()).decode("ascii")
+        token = _fernet(policy).encrypt_at_time(payload, _clock()).decode("ascii")
         if len(token) > _MAX_TOKEN:
             raise ValueError
         return token
@@ -110,7 +113,7 @@ def resolve_file_reference(
         _context(tenant_id, actor_id, connection_id, session_id)
         if not isinstance(token, str) or not token.isascii() or not 1 <= len(token) <= _MAX_TOKEN:
             raise ValueError
-        plaintext = _fernet().decrypt_at_time(token.encode("ascii"), ttl=_TTL_SECONDS, current_time=_clock())
+        plaintext = _fernet(policy).decrypt_at_time(token.encode("ascii"), ttl=_TTL_SECONDS, current_time=_clock())
         data = json.loads(plaintext)
         if not isinstance(data, dict) or set(data) != {"purpose", "tenant", "actor", "connection", "session", "path"}:
             raise ValueError

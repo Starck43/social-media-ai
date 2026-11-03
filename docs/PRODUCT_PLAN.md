@@ -51,6 +51,7 @@ criteria live once in [BUSINESS_PRODUCTION_READINESS](BUSINESS_PRODUCTION_READIN
 | Verified security/correctness findings | [P10](phases/p10-audit-hardening.md) | Task-selected gate |
 | Structure, interfaces and scale readiness | [P11](phases/p11-structure.md) | Task-selected gate |
 | Domain workspace and navigation expansion | [P12](phases/p12-domain-workspace-expansion.md) | Expansion sequence pilot gates |
+| Business modules (owner TZ) | [P13–P19](BUSINESS_MODULES.md) | Per-module acceptance + [Activation](BUSINESS_PRODUCTION_READINESS.md#prd-09--safe-action-activation-and-honest-release-claims) for writes |
 
 ## Expansion sequence
 
@@ -72,6 +73,22 @@ one demand-backed pilot, not all integrations. Track usefulness, evidence/citati
 coverage, retrieval quality, successful completion, delivery duplication, cost per
 outcome and time saved against representative fixtures. Preserve inspect/correct,
 pause/revoke/cancel and eligible export/delete controls.
+
+## Business modules
+
+The owner's TZ (2026-11-03) selects six business modules after the P12 domain
+workspaces: Bitrix24 CRM, a unified communication hub, planner tasks with
+Google/Yandex calendar sync, 1C:Enterprise, a local file connector and document
+management, preceded by a shared foundation. They refine the Communication,
+Follow-up, Knowledge, Cases and Documents/approval directions above; each module
+still needs its own pilot evidence and activation. Sequence, repository-adapted
+contracts, review corrections and owner decisions:
+[BUSINESS_MODULES](BUSINESS_MODULES.md); phases
+[P13](phases/p13-business-foundation.md) → [P14](phases/p14-bitrix24-crm.md) →
+[P15](phases/p15-communication-hub.md) → [P16](phases/p16-planner-calendar.md),
+with [P17](phases/p17-onec-erp.md) and [P18](phases/p18-local-file-connector.md)
+in parallel and [P19](phases/p19-document-management.md) after P15.
+The extension contracts below apply to all of them.
 
 ## Extension contracts
 

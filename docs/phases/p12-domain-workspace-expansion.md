@@ -120,3 +120,12 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
   separately gated, explicitly approved file mutations after the read-only pilot.
 
 - [P12-T17](../audit/p12-t17.md): improve navigation, spacing and clarity across the existing evidence workspaces. **DONE 2026-11-02**, accepted PR head `ed49ad8c` (PR #316, recovers #310). Template-level evidence only; DB/ASGI and authenticated-browser checks remain a follow-up handoff.
+
+## Business-module continuation (P13–P19)
+
+The owner's business-module TZ continues the P12 connectors and domain workspaces
+in [P13–P19](../BUSINESS_MODULES.md): Bitrix24 and 1C adapters behind the existing
+catalog descriptors, a persistent outbox and inbox on top of P12-T04, document
+management extending the P12-T03/T11 document store, and a local file connector
+reusing the P12-T12 file-workspace contracts once [PR #327](https://github.com/Starck43/social-media-ai/pull/327)
+is integrated. P12 tasks keep their own scope and status.

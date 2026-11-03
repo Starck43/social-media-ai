@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
@@ -82,7 +83,7 @@ class FileCatalogObservation(TenantScopedMixin, TimestampMixin, Base):
 
 @app_label("knowledge")
 class FileCatalogScan(TenantScopedMixin, TimestampMixin, Base):
-    """One bounded, private, resumable folder scan per connection; not a snapshot."""
+    """One private resumable scan per connection; optionally bounded recursive traversal."""
 
     __tablename__ = "file_catalog_scans"
     __table_args__ = (
@@ -92,6 +93,10 @@ class FileCatalogScan(TenantScopedMixin, TimestampMixin, Base):
         CheckConstraint("next_offset >= 0 AND next_offset <= 1000000", name="ck_file_scan_offset"),
         CheckConstraint("page_size >= 1 AND page_size <= 100", name="ck_file_scan_page_size"),
         CheckConstraint("octet_length(folder) <= 2048", name="ck_file_scan_folder_size"),
+        CheckConstraint(
+            "traversal IS NULL OR (jsonb_typeof(traversal) = 'object' AND octet_length(traversal::text) <= 2200000)",
+            name="ck_file_scan_traversal",
+        ),
         CheckConstraint(
             "(lease_token IS NULL AND lease_until IS NULL) OR (lease_token IS NOT NULL AND lease_until IS NOT NULL)",
             name="ck_file_scan_lease",
@@ -109,3 +114,6 @@ class FileCatalogScan(TenantScopedMixin, TimestampMixin, Base):
     error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     lease_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
     lease_until = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # NULL preserves the existing one-folder checkpoint contract.
+    traversal: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)

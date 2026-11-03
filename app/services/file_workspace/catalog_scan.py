@@ -1,4 +1,4 @@
-"""Resumable, one-folder metadata pagination; no production scheduler or route.
+"""Resumable, bounded metadata traversal; no production scheduler or route.
 
 Provider offsets are hints, not snapshot guarantees. No deletion is inferred.
 The required injected client must satisfy P8-T34's reviewed network contract.
@@ -12,6 +12,7 @@ from uuid import uuid4
 import httpx
 from sqlalchemy import select
 
+from app.integrations.file_workspace.catalog_traversal import active_folder, initial_traversal
 from app.integrations.file_workspace.policy import FileOperation
 from app.integrations.file_workspace.yandex_disk import MetadataError
 from app.models import FileCatalogScan
@@ -69,10 +70,15 @@ async def _row(session, tenant_id, connection_id):
 
 
 def _valid(row, actor_id, connection, policy):
+    try:
+        folder = active_folder(row.folder, row.traversal) if row.state in {"partial", "error"} else row.folder
+    except (ValueError, TypeError):
+        return False
     return (
         row.actor_id == actor_id
         and row.policy_key == _policy_key(connection.config)
         and policy.permits(row.folder, FileOperation.LIST)
+        and policy.permits(folder, FileOperation.LIST)
     )
 
 
@@ -88,8 +94,10 @@ def _projection(row):
     }
 
 
-async def start_catalog_scan(*, tenant_id, actor_id, connection_id, folder, page_size=100):
-    """Replace the checkpoint for one explicitly selected folder, never recurse."""
+async def start_catalog_scan(*, tenant_id, actor_id, connection_id, folder, page_size=100, recursive=False):
+    """Replace a private checkpoint; recursion is explicit and bounded, never scheduled."""
+    if type(recursive) is not bool:
+        raise CatalogInputError("invalid_scan")
     _bounded_int(page_size, 1, 100)
     try:
         folder = _path(folder)
@@ -110,6 +118,7 @@ async def start_catalog_scan(*, tenant_id, actor_id, connection_id, folder, page
         row.policy_key = _policy_key(connection.config)
         row.next_offset = 0
         row.page_size = page_size
+        row.traversal = initial_traversal(folder) if recursive else None
         row.state = "partial"
         row.error_code = row.lease_token = row.lease_until = None
         return _projection(row)
@@ -138,7 +147,7 @@ async def _claim(*, tenant_id, actor_id, connection_id):
         if row.state not in {"partial", "error"}:
             raise ScanNotResumable()
         row.lease_token, row.lease_until = uuid4().hex, _now() + _LEASE
-        return row.scan_token, row.lease_token, row.folder, row.next_offset, row.page_size
+        return row.scan_token, row.lease_token, active_folder(row.folder, row.traversal), row.next_offset, row.page_size
 
 
 async def _finish_error(*, tenant_id, actor_id, connection_id, scan_token, lease_token, error):

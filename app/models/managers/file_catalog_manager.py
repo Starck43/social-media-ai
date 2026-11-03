@@ -18,6 +18,7 @@ from sqlalchemy import and_, func, or_, select
 
 from app.core.database import async_session_maker
 from app.integrations.catalog import CATALOG_VERSION
+from app.integrations.file_workspace.catalog_traversal import active_folder, advance_traversal
 from app.integrations.file_workspace.policy import FileOperation, _components
 from app.integrations.file_workspace.yandex_disk import DiskItem, DiskPage
 from app.models import (
@@ -283,11 +284,16 @@ class FileCatalogManager:
                         FileCatalogScan.tenant_id == tenant_id, FileCatalogScan.connection_id == connection_id
                     )
                 )
+                try:
+                    scan_folder = active_folder(scan.folder, scan.traversal) if scan is not None else None
+                except (ValueError, TypeError):
+                    raise CatalogScanChanged() from None
                 if (
                     scan is None
                     or scan.actor_id != actor_id
                     or scan.policy_key != ticket.policy_key
-                    or scan.folder != ticket.folder
+                    or scan_folder != ticket.folder
+                    or scan.state not in {"partial", "error"}
                     or scan.scan_token != _scan_claim.scan_token
                     or scan.lease_token != _scan_claim.lease_token
                     or scan.lease_until is None
@@ -373,7 +379,15 @@ class FileCatalogManager:
                     )
             result = {"created": created, "metadata_changed": changed}
             if scan is not None:
-                if page.truncated:
+                if scan.traversal is not None:
+                    scan.traversal, scan.next_offset, scan.state = advance_traversal(
+                        scan.folder,
+                        scan.traversal,
+                        [path for path, item in prepared.items() if item.kind == "dir"],
+                        page.next_offset,
+                        page.truncated,
+                    )
+                elif page.truncated:
                     scan.state = "limited"
                 elif page.next_offset is None:
                     scan.state = "exhausted"

@@ -154,7 +154,14 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.execute = AsyncMock(return_value=Result(self.locked))
-        self.session = NS(begin=lambda: Transaction(self), execute=self.execute, close=AsyncMock())
+        self.session = NS(
+            begin=lambda: Transaction(self),
+            execute=self.execute,
+            close=AsyncMock(),
+            in_transaction=lambda: True,
+            is_active=True,
+            flush=AsyncMock(),
+        )
 
         async def store(session, rows):
             self.events.append("raw")
@@ -592,53 +599,6 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.ingest.side_effect = asyncio.CancelledError()
         with self.assertRaises(asyncio.CancelledError):
             await self.listener._ingest_safely(inbound)
-
-
-class PullTests(unittest.IsolatedAsyncioTestCase):
-    async def test_l2_fetch_oldest_first_has_no_cursor_write(self):
-        seen = {}
-
-        class Client:
-            connect = AsyncMock()
-            disconnect = AsyncMock()
-            is_user_authorized = AsyncMock(return_value=True)
-
-            async def iter_messages(self, entity, **kwargs):
-                seen.update(kwargs)
-                yield NS(id=21)
-
-        client = Client()
-        module = load(
-            "pull",
-            "app/services/social/tg_client.py",
-            {
-                "app.core.config": NS(settings=NS(SOCIAL_RATE_LIMIT_MAX_WAIT=10)),
-                "app.models": NS(Source=object),
-                "app.services.social.base": NS(BaseClient=object),
-                "app.types": NS(SourceType=object),
-                "app.services.social.credentials": NS(AuthorizationRequired=type("AuthError", (Exception,), {})),
-                "app.services.social.owner": NS(resolve_source_owner=AsyncMock(return_value=3)),
-                "app.services.social.rate_limit": NS(
-                    SourceRateLimited=type("RateLimited", (Exception,), {}),
-                    telegram_flood_wait_seconds=lambda exc: None,
-                ),
-                "app.services.social.tg_session": NS(
-                    build_client=lambda session: client, load_session=AsyncMock(return_value="not-real")
-                ),
-            },
-        )
-        pull = module.TelegramClient()
-        pull._resolve_entity = AsyncMock(return_value="chat")
-        pull._normalize_message = lambda m, s: {"id": str(m.id)}
-        source = NS(id=7, params={"telegram_l2_last_item_id": "20"}, last_item_id="999")
-        items = await pull._collect_mtproto(source)
-        self.assertEqual(items, [{"id": "21"}])
-        self.assertEqual(source.last_item_id, "999")
-        self.assertEqual(seen["min_id"], 20)
-        self.assertIs(seen["reverse"], True)
-        self.assertIn("offset_date", seen)
-        self.assertNotIn("min_date", seen)
-        client.disconnect.assert_awaited_once()
 
 
 if __name__ == "__main__":

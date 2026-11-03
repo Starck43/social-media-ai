@@ -175,14 +175,14 @@ not approvals.
 | ID | Decision | Recommended default | Needed by |
 | --- | --- | --- | --- |
 | D1 | Priority band of the new phases | P13 + P14 in `P2`, P15–P19 in `P3` (row order = TZ order) | ROADMAP |
-| D2 | Bitrix24 authorization | OAuth 2.0 local application per portal (TZ); incoming webhook kept as an admin-only alternative for a single portal | P14-T01 |
+| D2 | Bitrix24 authorization — **answered 2026-11-04**: OAuth 2.0 local application per portal; webhook is an admin-only single-portal alternative (not a second equal path) | OAuth 2.0 local application per portal (TZ); incoming webhook kept as an admin-only alternative for a single portal | P14-T01 |
 | D3 | Searchable message/document content vs. Fernet | Encrypt identifiers; keep an optional per-workspace content cache with retention TTL and PostgreSQL full-text index, disabled by default; otherwise search metadata only. Answer this together with the FTS dependency: no `tsvector`/`pg_trgm`/`unaccent` usage or Russian configuration exists in the current code or migrations, so the index type and language configuration must be decided and measured first (audit F-4 of [P13-T01](audit/p13-t01.md)) | P15-T04, P19-T06 |
-| D4 | Calendar write approval mode | Explicit per-connection write consent + per-event audit; conflicting or deleting changes require per-item approval | P16-T03/T04 |
-| D5 | 1C network path | Published HTTPS endpoint with allowlisted host first; tunnel via P18 connector later | P17-T01 |
+| D4 | Calendar write approval mode — **answered 2026-11-04**: per-connection consent + per-event audit; conflicting or deleting changes need per-item approval | Explicit per-connection write consent + per-event audit; conflicting or deleting changes require per-item approval | P16-T03/T04 |
+| D5 | 1C network path — **answered 2026-11-04**: published HTTPS with allowlisted host first; P18 connector as documented fallback | Published HTTPS endpoint with allowlisted host first; tunnel via P18 connector later | P17-T01 |
 | D6 | Desktop connector stack and signing | Python + PyInstaller, signed builds for Windows/macOS, AppImage/deb for Linux | P18-T03/T07 |
-| D7 | Batch messaging channels and consent basis | Email + bot channels only, explicit opt-in record, unsubscribe link/command; no MTProto bulk | P14-T06 |
+| D7 | Batch messaging channels and consent basis — **answered 2026-11-04**: email + bot channels, explicit opt-in, unsubscribe; no MTProto bulk | Email + bot channels only, explicit opt-in record, unsubscribe link/command; no MTProto bulk | P14-T06 |
 | D8 | PII key management — **answered 2026-11-03**: separate `PII_ENCRYPTION_KEYS` (`MultiFernet`, first key active) and `PII_INDEX_KEY`, kept stable; never reuse `CREDENTIALS_KEY`. Rotating the index is a separate approved task | P13-T02 |
-| D9 | Binary document storage | PostgreSQL + P12-T12 private storage; S3-compatible storage only with a measured need | P19-T01 |
+| D9 | Binary document storage — **answered 2026-11-04**: PostgreSQL + P12-T12 private storage; S3 only after a measured need | PostgreSQL + P12-T12 private storage; S3-compatible storage only with a measured need | P19-T01 |
 
 ## Original TZ acceptance criteria
 

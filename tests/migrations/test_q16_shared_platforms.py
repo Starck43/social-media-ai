@@ -186,6 +186,30 @@ def test_mutable_json_edits_are_persisted_by_the_orm(migration):
         assert select_rows(connection, table)[0]["params"]["api_version"] == "persisted-change"
 
 
+def test_archive_removal_keeps_configuration_and_refuses_downgrade(migration):
+    module, connection, table = migration
+    seed(connection, table)
+    module.upgrade()
+    assert all(module.ARCHIVE in row["params"] for row in select_rows(connection, table))
+    before = [
+        {**row, "params": {k: v for k, v in row["params"].items() if k != module.ARCHIVE}}
+        for row in select_rows(connection, table)
+    ]
+
+    removal = importlib.util.spec_from_file_location(
+        "platform_archive_removal", Path("migrations/versions/0129_drop_platform_rollback_archive.py")
+    )
+    archive = importlib.util.module_from_spec(removal)
+    removal.loader.exec_module(archive)
+    archive.op = module.op
+    archive.upgrade()
+
+    assert select_rows(connection, table) == before
+    assert all(module.ARCHIVE not in row["params"] for row in select_rows(connection, table))
+    with pytest.raises(ValueError, match="platform_rollback_snapshot_removed"):
+        archive.downgrade()
+
+
 def test_construct_then_assign_creation_materializes_json_defaults(migration):
     from app.models import Platform
     from app.types import PlatformType

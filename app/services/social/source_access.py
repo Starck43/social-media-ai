@@ -68,10 +68,11 @@ class PlatformPreflight:
     # Sources that will collect through the deployment credential only.
     service_only_source_ids: tuple[Any, ...] = ()
     owners_by_source: dict[Any, Optional[int]] = field(default_factory=dict)
+    operator_source_ids: tuple[Any, ...] = ()
 
     @property
     def destination(self) -> str:
-        return authorisation_target(self.platform)
+        return "/app/settings?tab=connections" if self.operator_source_ids else authorisation_target(self.platform)
 
     @property
     def blocked_count(self) -> int:
@@ -84,10 +85,14 @@ class PlatformPreflight:
     def summary(self) -> str:
         """A sentence a person can act on, or an empty string when silent."""
         parts: list[str] = []
-        if self.blocked_count:
+        operator_count = len(self.operator_source_ids)
+        personal_count = self.blocked_count - operator_count
+        if personal_count:
             parts.append(
-                f"{self.title}: {self.blocked_count} источник(ов) не соберутся без личного доступа — авторизуйтесь"
+                f"{self.title}: {personal_count} источник(ов) не соберутся без личного доступа — авторизуйтесь"
             )
+        if operator_count:
+            parts.append(f"{self.title}: {operator_count} источник(ов) недоступны — обратитесь к администратору")
         if self.service_only_count:
             parts.append(
                 f"{self.title}: {self.service_only_count} источник(ов) соберутся через общий доступ, "
@@ -127,12 +132,15 @@ async def preflight(sources: Iterable[Any]) -> list[PlatformPreflight]:
     """
     blocked: dict[str, list[Any]] = {}
     service: dict[str, list[Any]] = {}
+    operator: dict[str, list[Any]] = {}
     owners: dict[Any, Optional[int]] = {}
     for source_id, access in (await resolve_access(sources)).items():
         if access.platform not in CONNECTIONS_BY_PLATFORM or access.status is None:
             continue
         if access.blocked:
             blocked.setdefault(access.platform, []).append(source_id)
+            if access.status.operator_attention:
+                operator.setdefault(access.platform, []).append(source_id)
         elif access.service_only:
             service.setdefault(access.platform, []).append(source_id)
         else:
@@ -148,6 +156,7 @@ async def preflight(sources: Iterable[Any]) -> list[PlatformPreflight]:
                 blocked_source_ids=tuple(blocked.get(platform) or ()),
                 service_only_source_ids=tuple(service.get(platform) or ()),
                 owners_by_source={source_id: owners.get(source_id) for source_id in ids},
+                operator_source_ids=tuple(operator.get(platform) or ()),
             )
         )
     return result
@@ -160,12 +169,15 @@ class AuthRequiredReport:
     platform: str
     owner_user_id: int
     source_count: int
+    operator_count: int = 0
 
     @property
     def title(self) -> str:
         name = (
             CONNECTIONS_BY_PLATFORM[self.platform].title if self.platform in CONNECTIONS_BY_PLATFORM else self.platform
         )
+        if self.operator_count:
+            return f"{name}: проверьте подключение"
         return f"{name}: нужен ваш личный доступ"
 
     @property
@@ -173,6 +185,11 @@ class AuthRequiredReport:
         name = (
             CONNECTIONS_BY_PLATFORM[self.platform].title if self.platform in CONNECTIONS_BY_PLATFORM else self.platform
         )
+        if self.operator_count:
+            text = f"{self.operator_count} источник(ов) {name} недоступны: обратитесь к администратору."
+            if self.source_count > self.operator_count:
+                text += f" Для остальных {self.source_count - self.operator_count} источник(ов) требуется личная авторизация."
+            return text
         noun = "источнику" if self.source_count % 10 == 1 and self.source_count % 100 != 11 else "источникам"
         return (
             f"{self.source_count} {noun} {name} не собрались: нет вашей личной авторизации. "
@@ -181,11 +198,13 @@ class AuthRequiredReport:
 
     @property
     def destination(self) -> str:
-        return authorisation_target(self.platform)
+        return "/app/settings?tab=connections" if self.operator_count else authorisation_target(self.platform)
 
     @property
     def dedup_key(self) -> str:
         """One row per workspace, platform and owner; a repeated run keeps it."""
+        if self.operator_count:
+            return f"source-credential-unavailable:{self.platform}:{self.owner_user_id}:{self.source_count}:{self.operator_count}"
         return f"source-auth-required:{self.platform}:{self.owner_user_id}"
 
 
@@ -198,17 +217,18 @@ async def authorisation_reports(
     `auth_required`; without it every blocked source counts.
     """
     wanted = {value for value in required_source_ids}
-    counts: dict[tuple[str, int], int] = {}
+    counts: dict[tuple[str, int], tuple[int, int]] = {}
     for source_id, access in (await resolve_access(sources)).items():
         if wanted and source_id not in wanted:
             continue
         if not access.blocked or access.owner_user_id is None:
             continue
         key = (access.platform, int(access.owner_user_id))
-        counts[key] = counts.get(key, 0) + 1
+        total, operator_count = counts.get(key, (0, 0))
+        counts[key] = (total + 1, operator_count + int(access.status.operator_attention))
     return [
-        AuthRequiredReport(platform=platform, owner_user_id=owner, source_count=count)
-        for (platform, owner), count in sorted(counts.items())
+        AuthRequiredReport(platform=platform, owner_user_id=owner, source_count=count, operator_count=operator_count)
+        for (platform, owner), (count, operator_count) in sorted(counts.items())
     ]
 
 

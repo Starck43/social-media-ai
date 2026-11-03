@@ -837,3 +837,12 @@ geographic filter.
 
 The [original removal/validation plan](audit/task-selection-migration-history.md)
 is retained as historical rationale. Current migrations follow the database policy.
+
+Known unreadable VK refresh data is an operator issue, not proof that a personal
+login will repair it. Source preflight and after-run personal notices distinguish
+that condition from an ordinary missing authorization; mixed groups name both.
+Personal source-access notices open the fixed connection-settings destination
+only after receipt ownership and current workspace membership are rechecked.
+The unreadable marker is not cleared automatically when a key is restored; an
+operator must review the recovery procedure. Metadata without such a marker
+still does not prove the secret can be read or the provider will renew it.

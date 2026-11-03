@@ -141,6 +141,8 @@ class ConnectionStatus:
     # Whether a "connect" affordance can work at all (the deployment may lack
     # `VK_APP_ID`, in which case a button would only produce an error).
     can_connect: bool = True
+    # Action is administrative, not a personal reauthorization.
+    operator_attention: bool = False
 
     @property
     def tone(self) -> str:
@@ -264,6 +266,7 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
             "Не удалось прочитать сохранённые данные. Обратитесь к администратору; повторный вход может не помочь",
             True,
             False,
+            operator_attention=True,
         )
 
     # A failed renewal is remembered rather than retried silently — see the note

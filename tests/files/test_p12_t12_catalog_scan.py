@@ -194,3 +194,33 @@ async def test_provider_offset_limit_is_not_reported_complete(data):
                     .values(next_offset=1_000_000)
                 )
             assert (await scan.resume_catalog_scan(**args, client=client))["state"] == "limited"
+
+
+async def test_interrupted_worker_lease_expires_and_page_can_resume(data, monkeypatch):
+    original = scan.list_owned_folder
+
+    async def interrupted(**kwargs):
+        raise RuntimeError("worker interrupted")
+
+    monkeypatch.setattr(scan, "list_owned_folder", interrupted)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=provider_page(0, ["x.txt"])))
+    ) as client:
+        with actor(data) as args:
+            await scan.start_catalog_scan(**args, folder="/work", page_size=2)
+            with pytest.raises(RuntimeError, match="worker interrupted"):
+                await scan.resume_catalog_scan(**args, client=client)
+            assert (await scan.catalog_scan_status(**args))["state"] == "running"
+            assert (await manager.list_page(**args))["items"] == []
+            async with async_session_maker() as session, session.begin():
+                await session.execute(
+                    update(FileCatalogScan)
+                    .where(FileCatalogScan.connection_id == args["connection_id"])
+                    .values(lease_until=datetime.now(timezone.utc) - timedelta(seconds=1))
+                )
+            assert (await scan.catalog_scan_status(**args))["state"] == "partial"
+            monkeypatch.setattr(scan, "list_owned_folder", original)
+            resumed = await scan.resume_catalog_scan(**args, client=client)
+            assert resumed == {"state": "exhausted", "error_code": None, "next_offset": None}
+            assert await scan.catalog_scan_status(**args) == resumed
+            assert [item["name"] for item in (await manager.list_page(**args))["items"]] == ["x.txt"]

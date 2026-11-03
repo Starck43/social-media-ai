@@ -39,6 +39,10 @@ def fixture(case):
         ctx.update(mounts=[], selected=None, files=[])
     elif case in {"empty", "search"}:
         ctx.update(files=[], q="Договор 2027" if case == "search" else "")
+    elif case == "scan-error":
+        ctx.update(
+            scan_message="Источник временно недоступен. Обход не завершён; сохранённые сведения могут быть неполными."
+        )
     elif case == "long-name":
         files[0]["name"] = "Очень-длинное-название-документа-без-пробелов-" * 8 + ".pdf"
         files[0]["path"] = mount["root"] + "/" + files[0]["name"]
@@ -63,5 +67,5 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    for case in ("list", "no-mounts", "empty", "search", "detail", "long-name"):
+    for case in ("list", "no-mounts", "empty", "search", "detail", "long-name", "scan-error"):
         (args.output / (case + ".html")).write_text(render(case), encoding="utf-8")

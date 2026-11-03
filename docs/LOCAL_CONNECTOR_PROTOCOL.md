@@ -6,10 +6,12 @@
 ## Status and non-goals
 
 This is a proposed security contract, not implemented behavior, a wire-standard
-or permission to enable a connector. P12-T12 is not integrated: this draft was
-checked against [PR #327](https://github.com/Starck43/social-media-ai/pull/327)
-head `8cd8bb72c5af6d0906ef9ef3e51353299a8d2a34`, not an accepted contract.
-Reconcile with its integrated catalog/admission revision before review/READY.
+or permission to enable a connector. P12-T12's delivered increment is integrated:
+[PR #327](https://github.com/Starck43/social-media-ai/pull/327) merged as
+`48caea61`, accepted source `6433ae6a` per [its audit](audit/p12-t12-increment.md),
+with the plans of PR #307/#308/#311 in `dev`. This draft is reconciled against
+that accepted catalog/admission revision; the broader P12-T12 roadmap is still
+IN_PROGRESS, so anything outside the delivered increment stays unproven here.
 D6 (desktop stack/signing) is open; nothing here selects an implementation stack.
 P18-T02/T03/T05/T06 must implement and validate their respective portions; this
 paper is not authorization to expose routes, migrate data or deploy.
@@ -152,9 +154,13 @@ with handle-relative/no-follow operations and revalidation as supported by the
 platform; where safe enforcement cannot be established, deny. No arbitrary
 path supplied by the server is authority. A source may change during transfer:
 report stale/unknown rather than asserting an immutable exact version from mtime,
-a path or a hash. Reuse the eventually integrated P12-T12 admission, owner,
-consent and exact-version contracts before any durable retention; no unknown
-version fallback or implicit knowledge projection.
+a path or a hash. Reuse the integrated P12-T12 admission, owner, consent and
+exact-version contracts before any durable retention; no unknown version fallback
+or implicit knowledge projection. The accepted P12-T12 increment delivers the
+catalog and bounded text admission, not an `ExactVersionAssertion` for every
+adapter ([admission contract](FILE_WORKSPACE_ADMISSION.md)). `file.fetch` therefore
+requires a reviewed exact-version issuer for the target; where none exists the
+object is ineligible, never served under a weaker version claim.
 
 ## Revocation, deletion and failure
 
@@ -199,8 +205,9 @@ query text. Telemetry retention and physical backup deletion need separate polic
 | Replay, interrupted delete/fetch or lost acknowledgement | Persistent digest-bound idempotency, fencing and explicit unknown outcomes; no blind replay or false completion. |
 | Cloud or offline device after revoke | Current server rejection and release recheck; no promise to recall already released bytes or erase an unreachable device. |
 
-Before READY: independent protocol/security review; reconcile the accepted
-P12-T12 integration and current owner/consent/catalog/version semantics; resolve
+Before READY: independent protocol/security review; confirm current
+owner/consent/catalog/version semantics still match the accepted P12-T12 revision
+as its roadmap items land; resolve
 wire encoding/algorithms, trust anchors, key lifecycle, ledger bounds, failure and
 OS-path mechanics. P18 implementations must test pairing races, code expiry and
 key substitution; cross-tenant/owner denial; all allowlist and size boundaries;

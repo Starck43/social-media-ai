@@ -8,12 +8,11 @@ reuse. Do not require another Telegram code/2FA challenge just to create a secon
 workspace grant for an already locally usable authorization. Do not clone a
 StringSession, access/refresh token or API key per workspace.
 
-This P12-T14 draft implements the encrypted persistence, consent/reuse API and
-local disconnect/revoke operations for `telegram` / `mtproto` only. **It does not
-yet implement the initial phone/code/2FA login, settings account-picker UI, source
-binding/runtime secret resolution or safe shared-session execution.** The trusted
-completion seam is not an executable authorization journey: no public endpoint
-accepts a session or creates an authorization. Legacy vault sessions are not
+This P12-T14 draft implements encrypted persistence, explicit consent/reuse and
+local disconnect/revoke operations for `telegram` / `mtproto`, plus a bounded
+phone/code/2FA **machine API**. It does **not** yet implement settings/account-picker
+web UI, source binding/runtime secret resolution or safe shared-session execution.
+No public endpoint accepts a StringSession. Legacy vault sessions are not
 imported. Do not deploy this slice or present it as completed Telegram onboarding.
 
 The current collector still reads the legacy user-scoped vault; it has not been
@@ -64,10 +63,10 @@ usernames, email addresses or provider subject IDs match.
   mail/disk configuration contract. They are **not** silently converted to
   reusable personal authorizations. This avoids changing unrelated integrations.
 
-`record_telegram_result` is an internal persistence seam for a future trusted
-adapter. It does not authenticate a caller-supplied session. Its input must be
-constructed only after bounded provider authentication and verified identity;
-it is not wired to HTTP or CLI. A duplicate subject cannot silently replace an
+The bounded login adapter constructs the internal `VerifiedTelegramResult` only
+after completed authentication and Telegram `get_me()` verification. Login settlement
+persists the authorization, first grant and terminal attempt state atomically;
+the internal completion helper is not a caller-supplied session import. A duplicate subject cannot silently replace an
 existing session or reactivate revoked grants. Explicit reauthorization, including
 revision/reconsent behavior, is still a required integration gate.
 
@@ -114,8 +113,13 @@ also use the existing CSRF protection and reject duplicate/forged scope fields.
 | `POST /{authorization_id}/attach` | Explicit reuse, body `{"expected_revision": 1}` |
 | `POST /grants/{grant_id}/detach` | Local disconnect; no credential material |
 | `POST /{authorization_id}/revoke` | Personal-wide local revoke, body `{"expected_revision": 1}` |
+| `POST /telegram/login` | Begin: UUID `request_id` plus E.164 `phone` |
+| `GET /telegram/login/{attempt_id}` | Own workspace-bound attempt metadata; no phone or secrets |
+| `POST /telegram/login/{attempt_id}/code` | Strict positive `expected_revision` plus `code` |
+| `POST /telegram/login/{attempt_id}/password` | Strict positive `expected_revision` plus 2FA `password` (spaces preserved) |
+| `POST /telegram/login/{attempt_id}/cancel` | Cancel locally and wipe encrypted attempt state; no remote logout |
 
-Mutation selections require a strict positive integer revision and reject extra
+Account mutation selections and code/password submissions require a strict positive integer revision and reject extra
 fields, including owner, tenant and secrets. Errors never echo rejected input or
 provider exception text. An inaccessible/foreign/stale/locally unreadable selection
 has the same `404 connection_unavailable` answer. Middleware authentication and
@@ -124,8 +128,64 @@ membership failures retain their existing 401/403 policy.
 Legacy `POST /api/v1/credentials/login` now returns
 `409 workspace_telegram_authorization_not_available`: it must never run terminal
 `input()` in an HTTP worker. API consumers need to handle this explicit unsupported
-state until a real bounded authorization journey is delivered. Do not substitute
-the legacy CLI session writer for a workspace-consented web login.
+state and deliberately switch to the new bounded API; this is not a compatible
+replacement request body. Do not substitute the legacy CLI session writer for a
+workspace-consented web login.
+
+## Bounded login state and failure policy
+
+The phone is accepted only by the initial API request, never a URL or identity
+lookup. The app's `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` are server configuration,
+not user-supplied credentials or a fallback personal account. `CREDENTIALS_KEY`
+must be available before any provider request. DEBUG/SQL result logging is refused
+for login start/submission; infrastructure/APM/body capture must also be disabled
+for these private endpoints. Never put phone, code, password or session in logs.
+
+- A DB attempt lasts **10 minutes total**; code/2FA steps do not extend expiry.
+  Phone, application credentials, temporary StringSession and phone-code hash are
+  one Fernet envelope bound to purpose, attempt ID, owner, tenant, revision and
+  state. Codes and passwords are never persisted; responses omit all material.
+- At most one pending attempt per application user across workspaces; the DB
+  partial unique index and actor advisory lock work across HTTP workers. At most
+  three starts in ten minutes, five code submissions and three password submissions
+  per attempt. A same-user/same-workspace `request_id` replay returns the existing
+  metadata, regardless of new input, without sending another code. Use a new UUID
+  for an intentionally new login after termination; it does not bypass limits.
+- State is `processing -> code -> processing -> password -> processing -> completed`
+  (2FA is optional). Each network step is durably claimed **before** I/O. The
+  revision and phase must match. Invalid code/password returns the same challenge
+  phase with a new revision, within its limit. A concurrent or repeated submission
+  is `409 login_conflict`; a replay never silently repeats a provider operation.
+- Network work holds no DB locks. Provider work has a 20-second async deadline,
+  disconnect has a separate five-second bound; the application does not retry an
+  ambiguous step. Telethon client request/connection retries and flood sleeping
+  are disabled. Fixed provider failure codes contain no exception/request text.
+- A crash, DB failure after provider I/O or hard worker termination can leave
+  `processing`. Another worker can read/cancel it but cannot resume/replay that
+  step. Wait/cancel/restart explicitly. A fresh DB transaction rechecks membership,
+  rights, expiry and revision before installing a verified session. Cancellation,
+  expiry, revoked membership or stale claims cannot install a late result.
+- Terminal, cancelled and observed-expired attempts have ciphertext cleared.
+  Expiry is enforced on access/settlement and old pending attempts are cleared on
+  the owner's next start. There is **no scheduled purge/retention job** in this
+  slice: unobserved expired ciphertext/terminal metadata and backups can remain
+  stored. Retention/maintenance wiring is a rollout gate, not a claimed TTL wipe.
+- Unknown outcome means local failure, not proof Telegram did nothing. Cancelling
+  or timing out during a remote successful sign-in can leave an unretained provider
+  authorization; review Telegram active sessions separately. No automatic logout
+  is attempted, especially not against another retained/shared authorization.
+- A provider-verified subject already owned by this app user returns terminal
+  `account_already_exists`; it never replaces an existing bundle or revives grants.
+  Choose the existing account explicitly. Invalid/unreadable existing accounts
+  still require the separate revision/reconsent recovery journey (not yet built).
+
+Successful terminal states and provider/local failures are returned as metadata
+with `state`/`failure_code`; HTTP 200 does not itself mean authentication succeeded.
+Clients must branch on `state`, retain `attempt_id` and latest `revision`, and never
+submit another challenge while `processing`. Local request errors use fixed
+422/409/429/503 details; foreign attempt IDs return 404. No secret appears in a
+redirect URL or validation response. This API has authenticated ASGI coverage,
+not a delivered browser form or live-provider validation.
 
 ## Provider policy: reuse is not universal
 
@@ -149,7 +209,8 @@ Draft revision `p12t14_accounts` follows encrypted-refresh revision `0124`, crea
 two new empty tables, constraints and sequences. It deliberately imports no
 legacy sessions/keys, creates no generic secret CRUD grants and skips unrelated
 catalog reconciliation. The unified P12-T14 branch has one migration head: `0123` -> `0124` ->
-`p12t14_accounts`. Earlier slice-only sibling graphs are historical and must not be
+`p12t14_accounts` -> `p12t14_tg_login`. The latter adds only the empty encrypted
+login-attempt table and indexes. Earlier slice-only sibling graphs are historical and must not be
 applied as a separate combined release. This does not authorize deployment.
 
 Validate upgrade/downgrade on a dedicated synthetic schema first. Downgrade drops
@@ -161,9 +222,8 @@ of this foundation does not change legacy session selection.
 
 Still required for P12-T14 completion:
 
-- Encrypted, expiring, single-use phone/code/2FA attempts with no server `input()`,
-  replay/parallel-submit/timeout/cancel/restart/multi-worker handling and no secrets
-  in logs, errors, URLs or redisplayed forms.
+- Scheduled expired-attempt purge/retention and operational recovery wiring;
+  the bounded machine API alone is not a complete web onboarding journey.
 - Explicit account/grant settings UI with CSRF and a source-grant picker. Account
   self-revocation when no active workspace memberships remain also needs a scoped
   account-level journey; this draft API is workspace-scoped.

@@ -1,9 +1,8 @@
 """Explicit reuse of the same person's authorization, never ambient cross-tenant access.
 
-Foundation only: the trusted Telegram login completion calls record_telegram_result
-AFTER provider identity verification. No HTTP/CLI endpoint accepts a StringSession
-or calls that completion yet. Do not confuse this persistence contract with a
-shipped phone/code/2FA journey or a collector secret resolver.
+The bounded Telegram login adapter calls the internal completion only AFTER
+provider identity verification. No HTTP/CLI endpoint accepts a StringSession.
+Persistence and login do not yet supply a collector grant resolver.
 """
 
 from __future__ import annotations
@@ -37,7 +36,7 @@ class VerifiedTelegramResult:
     """Internal trusted adapter result; never construct from HTTP request values.
 
     subject_id must come from Telegram get_me AFTER completed authentication,
-    not a typed phone/username. The login adapter still needs to be implemented.
+    not a typed phone/username.
     """
 
     subject_id: int
@@ -246,51 +245,49 @@ class ConnectorAuthorizationManager:
             return _account_projection(account)
 
 
-async def record_telegram_result(*, tenant_id, actor_id, result: VerifiedTelegramResult):
-    """Internal login-completion seam, NOT a proof of provider authentication.
-
-    The future login adapter must verify the session/identity before calling this.
-    It cannot silently overwrite an existing account or revive revoked grants.
-    There is deliberately no public session-import endpoint or legacy migration.
-    """
-    from sqlalchemy.exc import IntegrityError
-
+async def _record_telegram_result(session, *, tenant_id, actor_id, result: VerifiedTelegramResult):
+    """Trusted completion in the caller's authorized transaction, including its attempt."""
     if not isinstance(result, VerifiedTelegramResult):
         raise AuthorizationUnavailable()
     _positive(result.subject_id)
     material = {"api_id": result.api_id, "api_hash": result.api_hash, "session": result.session}
     _validate_material(material)
+    existing = (
+        await session.execute(
+            select(Authorization.id).where(
+                Authorization.owner_user_id == actor_id,
+                Authorization.provider_id == PROVIDER,
+                Authorization.auth_method == METHOD,
+                Authorization.subject_key == str(result.subject_id),
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise AuthorizationAlreadyExists()
+    account = Authorization(
+        owner_user_id=actor_id,
+        provider_id=PROVIDER,
+        auth_method=METHOD,
+        subject_key=str(result.subject_id),
+        state="active",
+        revision=1,
+        secret_encrypted="",
+    )
+    session.add(account)
+    await session.flush()
+    account.secret_encrypted = encrypt_secret(json.dumps({"identity": _identity(account), "material": material}))
+    grant = await _attach(session, tenant_id=tenant_id, actor_id=actor_id, account=account)
+    return _account_projection(account), grant
+
+
+async def record_telegram_result(*, tenant_id, actor_id, result: VerifiedTelegramResult):
+    """Internal trusted completion; no public session-import or legacy migration."""
+    from sqlalchemy.exc import IntegrityError
+
     try:
         async with async_session_maker() as session, session.begin():
             await _authorize(session, tenant_id, actor_id, write=True, require_source_view=True)
-            existing = (
-                await session.execute(
-                    select(Authorization.id).where(
-                        Authorization.owner_user_id == actor_id,
-                        Authorization.provider_id == PROVIDER,
-                        Authorization.auth_method == METHOD,
-                        Authorization.subject_key == str(result.subject_id),
-                    )
-                )
-            ).scalar_one_or_none()
-            if existing is not None:
-                raise AuthorizationAlreadyExists()
-            account = Authorization(
-                owner_user_id=actor_id,
-                provider_id=PROVIDER,
-                auth_method=METHOD,
-                subject_key=str(result.subject_id),
-                state="active",
-                revision=1,
-                secret_encrypted="",
-            )
-            session.add(account)
-            await session.flush()
-            account.secret_encrypted = encrypt_secret(
-                json.dumps({"identity": _identity(account), "material": material})
-            )
-            grant = await _attach(session, tenant_id=tenant_id, actor_id=actor_id, account=account)
-            return _account_projection(account), grant
+            return await _record_telegram_result(session, tenant_id=tenant_id, actor_id=actor_id, result=result)
     except IntegrityError:
         raise AuthorizationAlreadyExists() from None
 

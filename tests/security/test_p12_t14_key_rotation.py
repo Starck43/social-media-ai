@@ -242,3 +242,42 @@ def test_future_or_incomplete_store_generation_is_refused(rotation_schema, revis
     with pytest.raises(RotationError):
         rotate_in_transaction(conn, schema=schema, old_key=old_key, new_key=new_key, apply=True)
     assert _ciphertexts(conn, schema) == before
+
+
+def test_login_store_rotation_and_schema_generation_guard(rotation_schema):
+    conn, schema, old_key, new_key = rotation_schema
+    conn.exec_driver_sql(f'UPDATE "{schema}".alembic_version SET version_num=%s', ("p12t14_tg_login",))
+    conn.exec_driver_sql(
+        f'CREATE TABLE "{schema}".personal_connector_authorizations (id INTEGER PRIMARY KEY, secret_encrypted TEXT NOT NULL)'
+    )
+    with pytest.raises(RotationError, match="layout"):
+        rotate_in_transaction(conn, schema=schema, old_key=old_key, new_key=new_key, apply=False)
+    conn.exec_driver_sql(
+        f'CREATE TABLE "{schema}".telegram_login_attempts (id VARCHAR(36) PRIMARY KEY, secret_encrypted TEXT NOT NULL)'
+    )
+    ciphertext = Fernet(old_key.encode()).encrypt(b"SYNTH_LOGIN_MATERIAL").decode()
+    conn.exec_driver_sql(
+        f'INSERT INTO "{schema}".telegram_login_attempts VALUES (%s,%s),(%s,%s)',
+        ("attempt", ciphertext, "terminal", ""),
+    )
+    before = _ciphertexts(conn, schema)
+    counts = rotate_in_transaction(conn, schema=schema, old_key=old_key, new_key=new_key, apply=False)
+    assert counts["telegram_login_attempts"] == 1 and counts["personal_authorizations"] == 0
+    assert (
+        conn.exec_driver_sql(
+            f'SELECT secret_encrypted FROM "{schema}".telegram_login_attempts WHERE id=%s', ("attempt",)
+        ).scalar_one()
+        == ciphertext
+    )
+    rotate_in_transaction(conn, schema=schema, old_key=old_key, new_key=new_key, apply=True)
+    after = conn.exec_driver_sql(
+        f'SELECT secret_encrypted FROM "{schema}".telegram_login_attempts WHERE id=%s', ("attempt",)
+    ).scalar_one()
+    assert Fernet(new_key.encode()).decrypt(after.encode()) == b"SYNTH_LOGIN_MATERIAL"
+    assert (
+        conn.exec_driver_sql(
+            f'SELECT secret_encrypted FROM "{schema}".telegram_login_attempts WHERE id=%s', ("terminal",)
+        ).scalar_one()
+        == ""
+    )
+    assert _ciphertexts(conn, schema) != before

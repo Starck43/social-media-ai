@@ -19,9 +19,10 @@ scope and checks are ready for independent review. No merge is authorized.
    explicit owner authorization, backup and the documented stopped-writer window.
 4. **Telegram boundaries and reuse:** no deployment-wide personal session,
    selected owner checks, one encrypted personal authorization and explicit
-   per-workspace grants, reuse/detach/local-revoke API. See
+   per-workspace grants, reuse/detach/local-revoke API and durable bounded Telegram
+   phone/code/2FA machine API. See
    [account reuse](CONNECTOR_ACCOUNT_REUSE.md) for the delivery limits.
-5. **Migration graph:** linear `0123` -> `0124` -> `p12t14_accounts`, not the former
+5. **Migration graph:** linear `0123` -> `0124` -> `p12t14_accounts` -> `p12t14_tg_login`, not the former
    slice-only sibling arrangement. No legacy Telegram session import.
 
 ## Preserved slice provenance
@@ -62,8 +63,9 @@ or mismatched schema generations, avoiding an unreadable-store key switch.
 
 ## Remaining completion gates
 
-- Real supported Telegram phone/code/2FA flow with bounded encrypted attempts,
-  reauthorization/recovery, replay/concurrency/cancel/restart/multi-worker safety.
+- Telegram reauthorization/recovery and operational expired-attempt purge/retention;
+  bounded machine login is delivered but is not a web onboarding UI. No live
+  provider validation is claimed.
 - Account/source picker web UI and CSRF/DOM coverage; fresh execution-time grant,
   owner, membership and revision checks; shared-session execution lease/locking.
 - Eliminate legacy Telegram vault fallback from the runtime, not merely from

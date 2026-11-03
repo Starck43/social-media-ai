@@ -2,3 +2,4 @@
 
 from .authorization import PersonalConnectorAuthorization, WorkspaceAuthorizationGrant
 from .connection import WorkspaceConnection, WorkspaceConnectionSecret
+from .telegram_login import TelegramLoginAttempt

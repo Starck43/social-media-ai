@@ -14,7 +14,7 @@ The application reads config from `app/core/config.py` (Pydantic `Settings`).
 | VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`; shared `Platform.params` | App identity, L1 service access, OAuth endpoints and registered callback. Legacy inputs are described below. |
 | Shared Telegram bot | env: `TELEGRAM_BOT_TOKEN` | Bot API transport; one bot may serve multiple workspaces. |
 | Legacy personal integrations | encrypted `user_credentials` | VK access/refresh tokens after migration 0124 and legacy Telegram vault sessions; user-scoped, not workspace-consented. Telegram rollout requires the grant-based path below. |
-| Personal-account reuse foundation (draft) | encrypted `personal_connector_authorizations` + `workspace_authorization_grants` | Single personal authorization, explicit independent consent in each workspace; Telegram-only persistence/API, not yet initial login or runtime integration. |
+| Personal-account reuse foundation (draft) | encrypted `personal_connector_authorizations` + `workspace_authorization_grants` | Single personal authorization, explicit independent consent in each workspace; Telegram-only persistence/reuse and bounded phone/code/2FA machine API, not yet web UI or runtime integration. Encrypted temporary login state lives in `telegram_login_attempts`. |
 | Workspace digest recipients | `tenant_channels`, active and `is_digest_target=True` | Owned destination IDs for this workspace only; use existing binding workflow, then Settings → Channels to toggle digests. |
 | Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Fixed-template operator-alert destination; never a workspace notification fallback. |
 | Agent access bootstrap | `TELEGRAM_OWNER_IDS` | Telegram **user IDs**, not chat/channel IDs; distinct from the notification destination and workspace memberships. |
@@ -588,10 +588,11 @@ Changing the environment key alone makes existing ciphertext unreadable. After
 migration 0124 is integrated and reviewed, the rotation utility covers all of
 these stores in a single PostgreSQL transaction; it is not an automatic deploy
 step. At unified head `p12t14_accounts` it also rotates the single encrypted
-personal authorization bundle, not a copy in each workspace grant. Empty
+personal authorization bundle, not a copy in each workspace grant. Head
+`p12t14_tg_login` additionally rotates encrypted temporary login material. Empty
 disconnected/revoked placeholders are preserved. Only reviewed single heads
-`0124` and `p12t14_accounts` are supported; unknown/future/multiple heads or a
-store layout that does not match the head are refused rather than silently
+`0124`, `p12t14_accounts` and `p12t14_tg_login` are supported;
+unknown/future/multiple heads or a store layout that does not match the head are refused rather than silently
 omitting an encrypted store.
 
 A live dry run or apply needs separate owner approval. Prepare and verify a

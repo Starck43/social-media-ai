@@ -15,11 +15,14 @@ OAuth callback have the explicit exceptions listed below.
 See [personal account reuse](CONNECTOR_ACCOUNT_REUSE.md#draft-machine-api) for
 Bearer-authenticated `/api/v1/connector-accounts` list/attach/local-detach/global-local-revoke
 operations, revision/ownership rules and delivery limits. These routes reuse only
-an already recorded same-user Telegram authorization; they do not accept secrets
-or implement first login. The legacy `/api/v1/credentials/login` now returns a
-fixed `409 workspace_telegram_authorization_not_available` rather than invoking
+an already recorded same-user Telegram authorization. New `/telegram/login` routes
+add bounded phone/code/2FA login with encrypted attempts; they never accept a raw
+StringSession or caller-supplied owner/tenant/application key. The legacy
+`/api/v1/credentials/login` now returns a fixed `409 workspace_telegram_authorization_not_available` rather than invoking
 terminal input from HTTP. Clients must handle this unsupported state; the new
-phone/code/2FA journey and collector grant resolution remain outstanding.
+settings/account-picker web UI, recovery and collector grant resolution remain
+outstanding. A 200 login response is metadata: check `state`, not just HTTP status.
+The new API does not automatically attach accounts on workspace creation/join.
 
 ## Base URL
 

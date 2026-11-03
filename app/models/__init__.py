@@ -37,6 +37,7 @@ from .collection import (
 from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
 from .integrations import (
     PersonalConnectorAuthorization,
+    TelegramLoginAttempt,
     WorkspaceAuthorizationGrant,
     WorkspaceConnection,
     WorkspaceConnectionSecret,
@@ -81,6 +82,7 @@ __all__ = [
     "WorkspaceConnection",
     "WorkspaceConnectionSecret",
     "PersonalConnectorAuthorization",
+    "TelegramLoginAttempt",
     "WorkspaceAuthorizationGrant",
     "PersonalBillingAccount",
     "TaskBillingPayer",

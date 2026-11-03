@@ -56,14 +56,19 @@ def rotate_in_transaction(conn, *, schema: str, old_key: str, new_key: str, appl
     revisions = conn.exec_driver_sql(f"SELECT version_num FROM {qualified('alembic_version')}").scalars().all()
     # Explicit schema generations: a future migration may add another encrypted
     # store. Never silently rotate only the stores known to an older utility.
-    if len(revisions) != 1 or revisions[0] not in {"0124", "p12t14_accounts"}:
+    if len(revisions) != 1 or revisions[0] not in {"0124", "p12t14_accounts", "p12t14_tg_login"}:
         raise RotationError("Apply the reviewed encrypted-refresh migration first and use a supported single head")
     has_authorizations = sa.inspect(conn).has_table("personal_connector_authorizations", schema=schema)
-    if has_authorizations != (revisions[0] == "p12t14_accounts"):
+    has_logins = sa.inspect(conn).has_table("telegram_login_attempts", schema=schema)
+    if has_authorizations != (revisions[0] in {"p12t14_accounts", "p12t14_tg_login"}) or has_logins != (
+        revisions[0] == "p12t14_tg_login"
+    ):
         raise RotationError("Credential store layout does not match the reviewed migration head")
     names = ["llm_providers", "user_credentials", "workspace_connection_secrets"]
     if has_authorizations:
         names.append("personal_connector_authorizations")
+    if has_logins:
+        names.append("telegram_login_attempts")
     for name in names:
         conn.exec_driver_sql(f"LOCK TABLE {qualified(name)} IN ACCESS EXCLUSIVE MODE")
     guard = conn.execute(
@@ -138,6 +143,15 @@ def rotate_in_transaction(conn, *, schema: str, old_key: str, new_key: str, appl
                 True,
             ),
         )
+    if has_logins:
+        logins = sa.Table(
+            "telegram_login_attempts",
+            metadata,
+            sa.Column("id", sa.String(36), primary_key=True),
+            sa.Column("secret_encrypted", sa.Text),
+            schema=schema,
+        )
+        stores += (("telegram_login_attempts", logins, logins.c.id, logins.c.secret_encrypted, False, True),)
     counts = {}
     for label, table, identity, column, allow_none, allow_empty in stores:
         count = 0

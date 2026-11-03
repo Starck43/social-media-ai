@@ -1,8 +1,9 @@
 """Platform credentials, resolved from the personal vault first, env second.
 
-Personal secrets (VK L2 `user_token`, Telegram MTProto parts) live encrypted
+Legacy personal secrets (VK L2 `user_token`, Telegram MTProto parts) live encrypted
 (Fernet, key `CREDENTIALS_KEY`) in `user_credentials`, keyed by `users.id` and
-shared across the workspaces that user belongs to — never duplicated per tenant.
+shared across workspaces. Telegram still needs workspace-scoped storage and
+an authorization flow before it meets the intended isolation boundary.
 
 Everything else that used to live in `tenant_credentials` (app_id, client_secret,
 service_token, bot_token) is application/infrastructure config, now read from the
@@ -72,8 +73,8 @@ KIND_PREFERENCE: dict[str, tuple[str, ...]] = {
     "max": ("bot_token",),
 }
 
-# (platform, kind) -> settings attribute. Personal kinds are resolved from the
-# user vault and only fall back to env when no personal row exists.
+# (platform, kind) -> settings attribute. Telegram MTProto session strings are
+# deliberately excluded; they must never fall back to deployment configuration.
 ENV_FALLBACK: dict[tuple[str, str], str] = {
     ("vk", "service_token"): "VK_SERVICE_KEY",
     ("vk", "client_secret"): "VK_CLIENT_ACCESS_KEY",
@@ -81,7 +82,6 @@ ENV_FALLBACK: dict[tuple[str, str], str] = {
     ("telegram", "bot_token"): "TELEGRAM_BOT_TOKEN",
     ("telegram", "api_id"): "TELEGRAM_API_ID",
     ("telegram", "api_hash"): "TELEGRAM_API_HASH",
-    ("telegram", "session"): "TELEGRAM_SESSION",
     ("max", "bot_token"): "MAX_BOT_TOKEN",
 }
 

@@ -47,7 +47,7 @@ Resolution order per platform (first hit wins):
 | Platform | Kinds, in order | Env fallback |
 | --- | --- | --- |
 | `vk` | `user_token`, `service_token` | `VK_APP_ID` + `VK_CLIENT_ACCESS_KEY` (OAuth app), `VK_SERVICE_KEY` (service/L1) |
-| `telegram` | `bot_token` | `TELEGRAM_BOT_TOKEN`; L2 parts `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` / `TELEGRAM_SESSION` |
+| `telegram` | `bot_token` | `TELEGRAM_BOT_TOKEN`; app login configuration `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`; no env session fallback |
 | `max` | `bot_token` | `MAX_BOT_TOKEN` |
 
 `vk/user_token` is a **personal** secret: it is consulted only when the caller

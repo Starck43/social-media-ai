@@ -13,15 +13,15 @@ invalid selection is not replaced by another owner. `user` mode reports that
 personal authorization is required. In `auto` mode a missing personal session
 falls back to the existing push-only path, not another user's MTProto account.
 
-**Compatibility warning:** deployments which previously relied on the global
-`TELEGRAM_SESSION` to serve an explicitly owned source must explicitly configure
-that owner's personal session before deploying this change. Merely setting global
-`TELEGRAM_API_ID`/`TELEGRAM_API_HASH` does not fill a partial personal vault.
-No credentials are copied or ownership changed automatically.
+**Fail-closed change:** the deployment-wide `TELEGRAM_SESSION` is ignored for
+all MTProto session resolution, including ownerless sources and direct credential
+resolution. Ownerless `user` mode requires authorization; ownerless `auto` remains
+push-only. The shared Bot API transport is separate. No credentials are copied or
+ownership assigned automatically.
 
-The historical deployment-wide fallback remains for truly ownerless sources as
-a transitional behavior and is logged without credential contents. It remains a
-cross-workspace risk, not a recommended default. Inventory ownerless sources and
-legacy-session usage with authorized non-secret diagnostics, agree per-source
-ownership and explicit migration/revocation, and only then remove the fallback.
-No live inspection, migration or session revocation is authorized by this note.
+**Important remaining work:** this intermediate slice still stores personal
+sessions by user, not by `(workspace, user)`. It does not implement the requested
+per-workspace authorization journey. Do not present it as complete or deploy it
+as workspace isolation; implement and test those boundaries before acceptance.
+The existing interactive terminal login is not a supported web authorization flow.
+No live inspection, migration or session revocation was performed.

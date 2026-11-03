@@ -76,10 +76,9 @@ class TelegramClient(BaseClient):
                 platform="telegram",
                 hint="Проверьте членство владельца и подключите его личную сессию.",
             )
-        session = await load_session(user_id=owner_user_id)
-        if owner_user_id is None and session is not None:
-            logger.warning("Telegram source %s uses a legacy deployment-wide session", source.id)
-        return session
+        if owner_user_id is None:
+            return None
+        return await load_session(user_id=owner_user_id)
 
     async def _collect_mtproto(self, source: Source) -> list[Any] | list[dict | None]:
         """L2 pull: fetch messages newer than the last durably admitted watermark.

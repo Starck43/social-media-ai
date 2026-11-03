@@ -195,7 +195,7 @@ VK_REDIRECT_URI=https://your-domain/api/v1/social/callback
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_API_ID=          # L2 MTProto
 TELEGRAM_API_HASH=        # L2 MTProto
-TELEGRAM_SESSION=         # L2 MTProto (StringSession, never printed)
+# TELEGRAM_SESSION is deprecated and ignored; do not place a user session in env
 TELEGRAM_ADMIN_CHAT_ID=   # fixed-template operator alerts only
 
 # Telegram (Channels)
@@ -339,7 +339,7 @@ or for provider-side rate limiting.
 | `TELEGRAM_BOT_TOKEN` | `None` | Telegram bot token |
 | `TELEGRAM_API_ID` | `None` | Telegram API ID (L2 MTProto) |
 | `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |
-| `TELEGRAM_SESSION` | `None` | Telegram StringSession (L2 MTProto) |
+| `TELEGRAM_SESSION` | `None` | Deprecated and ignored for MTProto session resolution |
 | `TELEGRAM_ADMIN_CHAT_ID` | `None` | Fixed operator-alert catalog only; no workspace/digest fallback |
 | `TELEGRAM_OWNER_IDS` | `""` | Comma-separated Telegram user IDs allowed to chat with the agent |
 | `TELEGRAM_DIGEST_CHANNEL_ID` | `""` | Deprecated; ignored by digest delivery (use workspace bindings) |

@@ -40,8 +40,11 @@ async def test_partial_vault_cannot_borrow_env_or_another_user(workspace, make_u
     assert await load_session(user_id=first.id) is None
     other = await load_session(user_id=second.id)
     assert other.api_id == 102 and other.api_hash == "FAKE_SECOND_HASH" and other.session == "FAKE_SECOND_SESSION"
-    legacy = await load_session()
-    assert legacy.api_id == 100 and legacy.session == "FAKE_DEPLOYMENT_SESSION"
+    assert await load_session() is None
+    from app.services.social.credentials import resolve_token
+
+    assert await resolve_token("telegram", kinds=("session",)) is None
+    assert await resolve_token("telegram", kinds=("session",), owner_user_id=first.id) is None
 
 
 async def test_owned_auto_checks_owner_session_not_global(workspace, make_user, deployment_session, monkeypatch):
@@ -78,12 +81,17 @@ async def test_revoked_or_forged_owner_cannot_use_global_session(
     loader.assert_not_awaited()
 
 
-async def test_ownerless_legacy_session_remains_visible_and_logged(workspace, deployment_session, caplog):
+async def test_ownerless_never_uses_global_session(workspace, deployment_session, caplog, monkeypatch):
+    import app.services.social.tg_session as sessions
+
+    loader = AsyncMock(side_effect=AssertionError("ownerless source must not load any session"))
+    monkeypatch.setattr(sessions, "load_session", loader)
     client = TelegramClient(SimpleNamespace(params={}))
-    with caplog.at_level("WARNING"):
-        resolved = await client._source_session(source(workspace))
-    assert resolved.session == "FAKE_DEPLOYMENT_SESSION"
-    assert "legacy deployment-wide session" in caplog.text
+    assert await client._source_session(source(workspace)) is None
+    assert await client.collect_data(source(workspace, params={"mode": "auto"})) == []
+    with pytest.raises(AuthorizationRequired):
+        await client.collect_data(source(workspace, params={"mode": "user"}))
+    loader.assert_not_awaited()
     assert "FAKE_DEPLOYMENT_SESSION" not in caplog.text
     assert "FAKE_DEPLOYMENT_HASH" not in caplog.text
 

@@ -7,8 +7,8 @@ Postgres, like the rest of the suite).
 
 Covered: per-source L1/L2 mode switching, missing/expired sessions, entity
 resolution, message normalization (cross-layer `external_id` for dedup), the
-watermark advancing after a pull, and that collection is fail-closed under a
-tenant scope.
+watermark selection without premature mutation, and that collection uses the
+owning tenant scope.
 """
 
 from datetime import datetime, timezone
@@ -101,8 +101,8 @@ class _FakeClient:
     async def disconnect(self):
         self.disconnected = True
 
-    def iter_messages(self, entity, limit=None, min_id=0, min_date=None):
-        self.kwargs = {"limit": limit, "min_id": min_id, "min_date": min_date}
+    def iter_messages(self, entity, limit=None, min_id=0, offset_date=None, reverse=False):
+        self.kwargs = {"limit": limit, "min_id": min_id, "offset_date": offset_date, "reverse": reverse}
         messages = [m for m in self.messages if m.id > min_id]
 
         async def gen():
@@ -159,16 +159,10 @@ async def test_auto_mode_pulls_via_l2_when_session_exists(fake_client_factory, m
 
     fake_client_factory()
     source = _source(params={"mode": "auto"}, tenant_id=31)
-    monkeypatch.setattr("app.services.social.owner.resolve_source_owner", AsyncMock(return_value=None))
+    monkeypatch.setattr("app.services.social.owner.resolve_source_owner", AsyncMock(return_value=123))
 
-    async def record_watermark(source_id, **values):
-        assert current_tenant_id() == source.tenant_id
-        assert source_id == source.id and values == {"last_item_id": "12"}
-        assert get_current_user() is None
-        assert has_permission(None, "source", "update")
-        assert not has_permission(None, "source", "create")
-
-    update = AsyncMock(side_effect=record_watermark)
+    # Durable admission, not this fetch, advances the watermark.
+    update = AsyncMock()
     monkeypatch.setattr(Source.objects, "update_by_id", update)
     client = TelegramClient(_Platform())
     with tenant_scope(source.tenant_id), permission_scope(None):
@@ -176,7 +170,7 @@ async def test_auto_mode_pulls_via_l2_when_session_exists(fake_client_factory, m
         items = await client.collect_data(source)
         assert not has_permission(None, "source", "update")
     assert [int(i["id"]) for i in items] == [12, 11]
-    update.assert_awaited_once_with(source.id, last_item_id="12")
+    update.assert_not_awaited()
 
 
 async def test_unknown_mode_falls_back_to_push():
@@ -204,14 +198,16 @@ async def test_user_mode_without_session_raises_authorization_required(fake_clie
 # --------------------------------------------------------------------------- #
 
 
-async def test_expired_or_revoked_session_raises_authorization_required(fake_client_factory):
+async def test_expired_or_revoked_session_raises_authorization_required(fake_client_factory, monkeypatch):
+    monkeypatch.setattr("app.services.social.owner.resolve_source_owner", AsyncMock(return_value=123))
     fake_client_factory(authorized=False)
     client = TelegramClient(_Platform())
     with pytest.raises(AuthorizationRequired):
         await client._collect_mtproto(_source(params={"mode": "user"}))
 
 
-async def test_unresolvable_entity_returns_empty(fake_client_factory):
+async def test_unresolvable_entity_returns_empty(fake_client_factory, monkeypatch):
+    monkeypatch.setattr("app.services.social.owner.resolve_source_owner", AsyncMock(return_value=123))
     fake_client_factory(entity_error=ValueError("bad peer"))
     client = TelegramClient(_Platform())
     assert await client._collect_mtproto(_source(params={"mode": "user"})) == []
@@ -326,8 +322,12 @@ async def telegram_user_source():
             with service_permission_scope("source", "delete"):
                 await Source.objects.delete_by_id(source.id)
 
+
 @pytest.mark.tenancy
-async def test_l2_pull_fetches_new_messages_and_advances_watermark(telegram_user_source, fake_client_factory):
+async def test_l2_pull_fetches_new_messages_without_advancing_watermark(
+    telegram_user_source, fake_client_factory, monkeypatch
+):
+    monkeypatch.setattr("app.services.social.owner.resolve_source_owner", AsyncMock(return_value=123))
     holder = fake_client_factory()
     client = TelegramClient(_Platform())
 
@@ -340,7 +340,7 @@ async def test_l2_pull_fetches_new_messages_and_advances_watermark(telegram_user
     assert [int(i["id"]) for i in items] == [12, 11]
     assert holder["client"].kwargs["min_id"] == 10  # watermark passed as cursor
     assert refreshed is not None
-    assert refreshed.last_item_id == "12"  # watermark advanced past the newest
+    assert refreshed.last_item_id == "10"  # durable admission advances it later
 
 
 @pytest.mark.tenancy
@@ -381,8 +381,9 @@ async def test_l2_pull_is_tenant_fail_closed(monkeypatch):
     async def fake_load(user_id=None):
         from app.core.tenant_context import current_tenant_id
 
-        # The caller passes no explicit owner; resolution must use the ambient
-        # workspace scope, exactly like the job dispatcher.
+        # This test doubles the authorized owner lookup; real membership and
+        # owner isolation are covered in the security integration tests.
+        assert user_id == 123
         assert current_tenant_id() == tenant.id, "L2 session must resolve in the owning workspace"
         return tg_session_module.TelegramSession(api_id=12345, api_hash="h" * 32, session="s" * 20)
 
@@ -391,6 +392,7 @@ async def test_l2_pull_is_tenant_fail_closed(monkeypatch):
 
     monkeypatch.setattr(tg_session_module, "load_session", fake_load)
     monkeypatch.setattr(tg_session_module, "build_client", fake_build)
+    monkeypatch.setattr("app.services.social.owner.resolve_source_owner", AsyncMock(return_value=123))
 
     try:
         with tenant_scope(tenant.id):
@@ -399,7 +401,7 @@ async def test_l2_pull_is_tenant_fail_closed(monkeypatch):
             assert [int(i["id"]) for i in items] == [7]
             refreshed = await Source.objects.get(id=source.id)
             assert refreshed is not None
-            assert refreshed.last_item_id == "7"
+            assert refreshed.last_item_id == "5"  # fetch alone never advances the watermark
     finally:
         with tenant_scope(tenant.id):
             with service_permission_scope("source", "delete"):

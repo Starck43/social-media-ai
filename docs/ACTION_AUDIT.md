@@ -173,7 +173,7 @@ never authorizes arbitrary suffixes. Adding an operation requires updating that
 registry **and a new Alembic migration**, model/manager parity tests and the
 module's transaction/authorization tests. Never mutate the registry at runtime.
 
-Migration `0131_business_audit_codes` freezes action/resource/reason checks in the
+Migration `0132_business_audit_codes` freezes action/resource/reason checks in the
 DB and preserves the existing `scheduling.task_admit` action, actor identities,
 immutable retention controls and separate persisted/diagnostic outcomes.
 Business unknown events use `operation_unconfirmed`; legacy task admission uses

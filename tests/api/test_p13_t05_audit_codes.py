@@ -63,13 +63,13 @@ def test_untrusted_fields_are_rejected(updates):
 
 
 def test_model_matches_frozen_migration_and_never_widens_to_wildcards():
-    migration = runpy.run_path(str(ROOT / "migrations/versions/0131_business_audit_codes.py"))
+    migration = runpy.run_path(str(ROOT / "migrations/versions/0132_business_audit_codes.py"))
     assert migration["NEW_CHECKS"] == audit_check_sql()
     constraints = {c.name: str(c.sqltext) for c in ActionAuditEvent.__table__.constraints if hasattr(c, "sqltext")}
     for suffix, expression in audit_check_sql().items():
         assert constraints[f"ck_action_audit_events_{suffix}"] == expression
     assert "LIKE" not in migration["NEW_CHECKS"]["action"]
-    assert migration["down_revision"] == "0130"
+    assert migration["down_revision"] == "0131"
 
 
 def test_registry_is_immutable():
@@ -78,7 +78,7 @@ def test_registry_is_immutable():
 
 
 def test_migration_preserves_existing_rows_and_refuses_lossy_downgrade(monkeypatch):
-    migration = runpy.run_path(str(ROOT / "migrations/versions/0131_business_audit_codes.py"))
+    migration = runpy.run_path(str(ROOT / "migrations/versions/0132_business_audit_codes.py"))
     calls = []
     op = migration["op"]
     monkeypatch.setattr(op, "drop_constraint", lambda *a, **kw: calls.append(("drop", a, kw)))

@@ -78,7 +78,7 @@ in the checked-in harness (all requests intercepted):
 node tests/shared/file_catalog_browser.cjs "$ASSETS_DIR" "$OUTPUT_DIR"
 ```
 
-Exit 0: **18 catalog layout/browser checks passed**, no page errors, unexpected
+Exit 0: **17 catalog layout/browser checks passed**, with 18 snapshots and no page errors, unexpected
 requests, overlap or horizontal overflow. Eight representative list/detail/
 long-name/notification/light/dark/mobile/desktop captures were visually inspected.
 These are synthetic templates with local assets, not live-provider acceptance.

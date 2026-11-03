@@ -16,6 +16,7 @@ SENSITIVE_FIELDS = frozenset(
         "CREDENTIALS_KEY",
         "PII_ENCRYPTION_KEYS",
         "PII_INDEX_KEY",
+        "RATE_LIMIT_KEY",
         "VK_SERVICE_KEY",
         "VK_CLIENT_ACCESS_KEY",
         "TELEGRAM_BOT_TOKEN",

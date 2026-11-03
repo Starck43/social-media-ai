@@ -97,7 +97,7 @@ def on_version_apply(
         "0126",
         "0127",
         "0128",
-        "p13t03_rate_budget",
+        "0131",
     }:
         return
     from scripts.migrations.register_model_types import register_model_types

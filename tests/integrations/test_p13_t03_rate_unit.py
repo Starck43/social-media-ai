@@ -27,10 +27,16 @@ from app.integrations.ratelimit.signals import retry_after_seconds
 __source_only__ = True
 
 
+@pytest.fixture(autouse=True)
+def tenant_context(monkeypatch):
+    monkeypatch.setattr(catalog, "current_tenant_id", lambda: 101)
+    monkeypatch.setattr(catalog, "is_bypass", lambda: False)
+
+
 @pytest.fixture
 def budget(monkeypatch):
-    monkeypatch.setattr(catalog, "_index_key", lambda: b"x" * 32)
-    return budget_for("bitrix24", "synthetic-portal")
+    monkeypatch.setattr(catalog, "_key", lambda: b"x" * 32)
+    return budget_for("bitrix24", "synthetic-portal", connection_id=7)
 
 
 class Clock:
@@ -65,9 +71,9 @@ def limiter(fake, clock):
 
 
 def test_budget_catalog_identity_is_stable_private_and_provider_scoped(monkeypatch, budget):
-    monkeypatch.setattr(catalog, "_index_key", lambda: b"x" * 32)
-    same = budget_for("bitrix24", "synthetic-portal")
-    other = budget_for("caldav", "synthetic-portal")
+    monkeypatch.setattr(catalog, "_key", lambda: b"x" * 32)
+    same = budget_for("bitrix24", "synthetic-portal", connection_id=7)
+    other = budget_for("caldav", "synthetic-portal", connection_id=7)
     assert budget == same and budget.account_key != other.account_key
     assert "synthetic-portal" not in repr(budget) and len(budget.account_key) == 64
     assert (budget.rate, budget.burst, budget.window) == (2, 50, 1)
@@ -78,9 +84,9 @@ def test_budget_catalog_identity_is_stable_private_and_provider_scoped(monkeypat
 
 @pytest.mark.parametrize("provider,account", [("missing", "a"), ("onec", ""), ("onec", "x\n"), ("onec", "x" * 1025)])
 def test_invalid_identity_rejected(monkeypatch, provider, account):
-    monkeypatch.setattr(catalog, "_index_key", lambda: b"x" * 32)
+    monkeypatch.setattr(catalog, "_key", lambda: b"x" * 32)
     with pytest.raises(ValueError):
-        budget_for(provider, account)
+        budget_for(provider, account, connection_id=7)
 
 
 @pytest.mark.parametrize(
@@ -243,13 +249,13 @@ class FakeSession:
     async def scalar(self, stmt):
         self.statements.append(str(stmt.compile(dialect=postgresql.dialect())))
         self.n += 1
-        return self.row if self.n % 2 else self.now
+        return 7 if self.n % 3 == 1 else (self.row if self.n % 3 == 2 else self.now)
 
 
 @pytest.mark.asyncio
 async def test_postgres_store_uses_atomic_insert_lock_and_database_clock(monkeypatch, budget):
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    row = SimpleNamespace(tokens=3.0, updated_at=now, blocked_until=None)
+    row = SimpleNamespace(connection_id=7, tokens=3.0, updated_at=now, blocked_until=None)
     session = FakeSession(row, now)
     monkeypatch.setattr(store, "async_session_maker", lambda: session)
     db = store.PostgresBudgetStore()
@@ -257,9 +263,10 @@ async def test_postgres_store_uses_atomic_insert_lock_and_database_clock(monkeyp
     assert row.tokens == 1
     assert "lock_timeout" in session.statements[0]
     assert "statement_timeout" in session.statements[1]
-    assert "ON CONFLICT" in session.statements[2]
-    assert "FOR UPDATE" in session.statements[3]
-    assert "clock_timestamp()" in session.statements[4]
+    assert "FOR SHARE" in session.statements[2]
+    assert "ON CONFLICT" in session.statements[3]
+    assert "FOR UPDATE" in session.statements[4]
+    assert "clock_timestamp()" in session.statements[5]
     assert await db.try_acquire(budget, 2) == 0.5
     await db.block(budget, 7)
     assert row.tokens == 0 and row.blocked_until == now + timedelta(seconds=7)
@@ -298,7 +305,7 @@ def test_migration_model_schema_parity_without_applying(monkeypatch):
     from app.models import Base
     from app.models.integrations.rate_budget import ProviderRateBudget
 
-    migration = importlib.import_module("migrations.versions.0130_provider_rate_budgets")
+    migration = importlib.import_module("migrations.versions.0131_provider_rate_budgets")
     created = []
     dropped = []
     monkeypatch.setattr(
@@ -311,7 +318,9 @@ def test_migration_model_schema_parity_without_applying(monkeypatch):
         ProviderRateBudget.__table__.columns.keys()
     )
     assert Base.metadata.tables[f"{settings.DB_SCHEMA}.provider_rate_budgets"] is ProviderRateBudget.__table__
-    assert migration.down_revision == "0129"
+    assert migration.down_revision == "0130"
+    assert ProviderRateBudget.__tenant_scoped__
+    assert set(ProviderRateBudget.__table__.primary_key.columns.keys()) == {"tenant_id", "provider", "account_key"}
     migration.downgrade()
     assert dropped == [("provider_rate_budgets", {"schema": settings.DB_SCHEMA})]
 
@@ -331,3 +340,76 @@ async def test_cancellation_after_admission_propagates_without_refunding(budget)
     with pytest.raises(asyncio.CancelledError):
         await execute_write(limiter(fake, clock), budget, operation)
     assert operation.await_count == 1 and len(fake.calls) == 1
+
+
+def test_key_is_separate_and_redacted(monkeypatch):
+    import base64
+
+    from pydantic import SecretStr
+
+    good = base64.urlsafe_b64encode(b"r" * 32).decode()
+    monkeypatch.setattr(catalog.settings, "RATE_LIMIT_KEY", SecretStr(good))
+    monkeypatch.setattr(catalog.settings, "PII_INDEX_KEY", None)
+    monkeypatch.setattr(catalog.settings, "PII_ENCRYPTION_KEYS", None)
+    monkeypatch.setattr(catalog.settings, "CREDENTIALS_KEY", None)
+    assert catalog._key() == b"r" * 32
+    assert good not in str(catalog.settings.safe_dict())
+    monkeypatch.setattr(catalog.settings, "PII_INDEX_KEY", good)
+    with pytest.raises(ValueError, match="separate"):
+        catalog._key()
+    monkeypatch.setattr(catalog.settings, "PII_INDEX_KEY", None)
+    for value in (None, SecretStr("bad"), SecretStr(base64.urlsafe_b64encode(b"short").decode())):
+        monkeypatch.setattr(catalog.settings, "RATE_LIMIT_KEY", value)
+        with pytest.raises(ValueError):
+            catalog._key()
+
+
+def test_tenant_scope_and_connection_are_required(monkeypatch, budget):
+    monkeypatch.setattr(catalog, "current_tenant_id", lambda: 202)
+    with pytest.raises(ValueError, match="scope"):
+        catalog.validate_budget(budget)
+    monkeypatch.setattr(catalog, "is_bypass", lambda: True)
+    with pytest.raises(ValueError, match="tenant"):
+        budget_for("onec", "same", connection_id=7)
+    monkeypatch.setattr(catalog, "is_bypass", lambda: False)
+    with pytest.raises(ValueError, match="connection"):
+        budget_for("onec", "same", connection_id=True)
+
+
+@pytest.mark.asyncio
+async def test_foreign_or_disabled_connection_cannot_reach_bucket(monkeypatch, budget):
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    row = SimpleNamespace(connection_id=7, tokens=3.0, updated_at=now, blocked_until=None)
+    session = FakeSession(row, now)
+    session.scalar = AsyncMock(return_value=None)
+    monkeypatch.setattr(store, "async_session_maker", lambda: session)
+    with pytest.raises(store.BudgetConnectionUnavailable):
+        await store.PostgresBudgetStore().try_acquire(budget, 1)
+    assert not any("ON CONFLICT" in sql for sql in session.statements)
+
+
+@pytest.mark.asyncio
+async def test_wrong_connection_for_same_account_fails_closed(monkeypatch, budget):
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    row = SimpleNamespace(connection_id=8, tokens=3.0, updated_at=now, blocked_until=None)
+    monkeypatch.setattr(store, "async_session_maker", lambda: FakeSession(row, now))
+    with pytest.raises(store.BudgetConnectionUnavailable):
+        await store.PostgresBudgetStore().try_acquire(budget, 1)
+
+
+@pytest.mark.asyncio
+async def test_disabling_supported_connection_removes_only_its_tenant_bucket(monkeypatch):
+    from app.models.managers import workspace_connection_manager as connections
+
+    row = SimpleNamespace(id=7, provider_id="onec", is_active=True, state="verified", checked_at=None, check_code=None)
+    secret = SimpleNamespace(secret_encrypted="synthetic")
+    session = FakeSession(None, None)
+    session.get = AsyncMock(return_value=secret)
+    monkeypatch.setattr(connections, "async_session_maker", lambda: session)
+    monkeypatch.setattr(connections, "_authorize", AsyncMock())
+    monkeypatch.setattr(connections, "_connection", AsyncMock(return_value=row))
+    await connections.WorkspaceConnectionManager().disable(tenant_id=101, actor_id=3, connection_id=7)
+    sql = session.statements[0]
+    assert "DELETE FROM" in sql and "provider_rate_budgets" in sql
+    assert "tenant_id" in sql and "connection_id" in sql
+    assert not row.is_active and secret.secret_encrypted == ""

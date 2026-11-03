@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.access_catalog import workspace_grants
@@ -211,6 +211,17 @@ class WorkspaceConnectionManager:
                 raise ConnectionDenied()
             if allowed_provider_ids is not None and row.provider_id not in allowed_provider_ids:
                 raise ConnectionDenied()
+            # Remove only this tenant's connection-bound quota in the same
+            # transaction and lock order used by the rate budget manager.
+            from app.integrations.ratelimit.catalog import POLICIES
+            from app.models.integrations.rate_budget import ProviderRateBudget
+
+            if row.provider_id in POLICIES:
+                await session.execute(
+                    delete(ProviderRateBudget).where(
+                        ProviderRateBudget.tenant_id == tenant_id, ProviderRateBudget.connection_id == row.id
+                    )
+                )
             row.is_active, row.state, row.checked_at, row.check_code = False, "disabled", None, None
             # Remove the local secret on disable; reactivation needs a new password.
             secret_row = await session.get(WorkspaceConnectionSecret, row.id)

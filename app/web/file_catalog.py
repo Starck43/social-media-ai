@@ -132,4 +132,10 @@ async def file_catalog_detail(
         raise _unavailable() from None
     except DBAPIError:
         raise HTTPException(503, "Каталог временно недоступен") from None
-    return _render_catalog(request, "web/file_catalog_detail.html", file=item, connection_id=connection_id)
+    return _render_catalog(
+        request,
+        "web/file_catalog_detail.html",
+        file=item,
+        connection_id=connection_id,
+        workspace_actions=settings.FILE_WORKSPACE_ACTIONS_ENABLED and item["kind"] == "file",
+    )

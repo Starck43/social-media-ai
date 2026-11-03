@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # P12-T12 catalog read UI only. Requires 0124; does not enable provider refresh,
     # open-original, extraction, writes or local-only execution.
     FILE_CATALOG_UI_ENABLED: bool = False
+    # Explicit private actions; requires 0128, reviewed deployment and user consent.
+    FILE_WORKSPACE_ACTIONS_ENABLED: bool = False
+    # Historical result view/delete only; does not register a save/version provider.
+    FILE_PRIVATE_RESULTS_UI_ENABLED: bool = False
 
     # Rate limiting settings
     CHANGE_PASSWORD_RATE_LIMIT: str = "5/minute"

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Чтение файла — {{ file.name }}</title>
+  <link rel="stylesheet" href="{{ static_v('css/file_workspace.css') }}">
+</head>
+<body>
+<main class="workspace">
+  <a class="back" href="/app/knowledge/files/{{ file.id }}?connection_id={{ connection_id }}">← К карточке файла</a>
+  <header class="hero">
+    <p class="eyebrow">Личное подключение · текстовый файл</p>
+    <h1>{{ file.name }}</h1>
+    <p>Оригинал загружается только по вашему запросу. Для чтения выбранных строк нужно отдельное согласие на облачную обработку.</p>
+  </header>
+  <section class="card" aria-labelledby="original-title">
+    <div><p class="eyebrow">01 / Оригинал</p><h2 id="original-title">Скачать копию</h2>
+    <p>Только текстовые файлы .txt, до 256 КиБ. Копия отправляется как вложение; постоянная ссылка не создаётся.</p></div>
+    <form action="{{ action_url.replace('/workspace?', '/workspace/original?') }}" method="post"><input type="hidden" name="_csrf" value="{{ file_csrf }}"><button type="submit">Скачать оригинал</button></form>
+  </section>
+  <section class="card" aria-labelledby="consent-title">
+    <p class="eyebrow">02 / Доступ и хранение</p><h2 id="consent-title">Ваш выбор для подключения</h2>
+    <p>Согласие относится ко всем файлам выбранной папки этого личного подключения. Провайдер может выдать приложению доступ шире выбранной папки; её границы соблюдаются приложением. Скачивание оригинала не требует согласия на обработку.</p>
+    <p class="status">Сейчас: обработка <strong>{{ 'разрешена' if consent.processing else 'не разрешена' }}</strong> · хранение <strong>{{ 'разрешено' if consent.retention else 'не разрешено' }}</strong></p>
+    <p>Любое сохранение выбора, даже повторное согласие, удаляет прежние приватные результаты. Отзыв также удаляет их.</p>
+    <form action="{{ action_url.replace('/workspace?', '/workspace/consent?') }}" method="post" class="consent-form">
+      <input type="hidden" name="_csrf" value="{{ file_csrf }}">
+      <label>Облачная обработка
+        <select name="processing" required><option value="" selected>Выберите действие</option><option value="1">Разрешить</option><option value="0">Запретить</option></select>
+      </label>
+      <label>Хранение приватных результатов
+        <select name="retention" required><option value="" selected>Выберите действие</option>{% if results_enabled %}<option value="1">Разрешить</option>{% endif %}<option value="0">Запретить</option></select>
+      </label>
+      <button type="submit">Сохранить выбор</button>
+    </form>
+  </section>
+  <section class="card" aria-labelledby="preview-title">
+    <p class="eyebrow">03 / Выбранные строки</p><h2 id="preview-title">Прочитать фрагмент</h2>
+    <p>Не анализ и не выводы ИИ. За один запрос — до 32 строк и 8 192 символов. Обработка выполняется в облаке и требует действующего согласия.</p>
+    <form action="{{ action_url.replace('/workspace?', '/workspace/preview?') }}" method="post" class="range-form">
+      <input type="hidden" name="_csrf" value="{{ file_csrf }}">
+      <label>С строки <input type="number" name="start" min="1" max="1000" value="1" required></label>
+      <label>По строку <input type="number" name="end" min="1" max="1000" value="32" required></label>
+      <button type="submit">Прочитать выбранные строки</button>
+    </form>
+    {% if preview %}<div class="output"><h3>Фрагмент · {{ preview.line_count }} строк в файле</h3>{% for excerpt in preview.excerpts %}<p class="eyebrow">Строки {{ excerpt.start }}–{{ excerpt.end }}</p><pre>{{ excerpt.text }}</pre>{% endfor %}</div>{% endif %}
+  </section>
+  <section class="card" aria-labelledby="results-title">
+    <p class="eyebrow">04 / Приватные результаты</p><h2 id="results-title">История и удаление</h2>
+    <p>Создание и сохранение новых результатов недоступно: провайдер пока не подтверждает точную версию прочитанных байтов. Проверочная сумма и время изменения не заменяют версию.</p>
+    {% if results_enabled %}
+      {% if records %}<p>Исторические результаты не подтверждают актуальное содержимое файла и не прошли проверку.</p><ul class="records">{% for record in records %}<li><span>Получен: {{ record.captured_at }} · срок до: {{ record.expires_at }} (UTC)</span><form action="{{ action_url.replace('/workspace?', '/workspace/result?') }}" method="post"><input type="hidden" name="_csrf" value="{{ file_csrf }}"><input type="hidden" name="result_id" value="{{ record.id }}"><button class="secondary" type="submit">Открыть</button></form></li>{% endfor %}</ul>{% else %}<p>Доступных результатов нет или для их просмотра не выдано оба согласия.</p>{% endif %}
+      {% if result %}<div class="output"><h3>Исторический результат · не проверен</h3>{% for excerpt in result.excerpts %}<p class="eyebrow">Строки {{ excerpt.start }}–{{ excerpt.end }}</p><pre>{{ excerpt.text }}</pre>{% endfor %}{% if result.candidates %}<h3>Кандидаты выводов</h3><ol>{% for candidate in result.candidates %}<li>{{ candidate.text }} <span class="muted">(фрагменты: {{ candidate.evidence_indices|join(', ') }})</span></li>{% endfor %}</ol>{% endif %}</div>{% endif %}
+      <form action="{{ action_url.replace('/workspace?', '/workspace/forget?') }}" method="post" class="forget"><input type="hidden" name="_csrf" value="{{ file_csrf }}"><label><input type="checkbox" name="confirm" value="forget" required> Подтверждаю удаление всех приватных результатов этого файла</label><button class="secondary" type="submit">Удалить результаты файла</button></form>
+    {% else %}<p>Просмотр и удаление через этот интерфейс отключены.</p>{% endif %}
+  </section>
+</main>
+</body>
+</html>

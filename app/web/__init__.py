@@ -19,6 +19,7 @@ from .dashboard import router as dashboard_router
 from .digests import router as digests_router
 from .documents import router as documents_router
 from .file_catalog import router as file_catalog_router
+from .file_workspace import router as file_workspace_router
 from .followups import router as followups_router
 from .jobs import router as jobs_router
 from .knowledge import router as knowledge_router
@@ -44,6 +45,7 @@ web_router.include_router(connections_router)
 web_router.include_router(digests_router)
 web_router.include_router(documents_router)
 web_router.include_router(file_catalog_router)
+web_router.include_router(file_workspace_router)
 web_router.include_router(followups_router)
 web_router.include_router(jobs_router)
 web_router.include_router(knowledge_router)

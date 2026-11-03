@@ -135,3 +135,32 @@ fixtures remove their synthetic tenants/users. Extend local validation to:
 
 No migration, DB integration, concurrency, live provider, actual credentials,
 public-schema mutation, deployment or real-condition approval is claimed remotely.
+
+## Default-off file actions (remote completion package)
+
+The standalone owner UI is gated by `FILE_CATALOG_UI_ENABLED` and
+`FILE_WORKSPACE_ACTIONS_ENABLED` (both off by default). The latter requires 0128
+and operational review. A separate `FILE_PRIVATE_RESULTS_UI_ENABLED` flag gates
+historical result view/delete and requires the configured credentials key. This
+is not a production-enable recommendation. Consent is explicit, scoped to the
+personal connection/selected root, and changes purge previous results. Original
+attachment does not require processing consent; selected-line preview does.
+
+A POST requests an isolated attachment, not a native provider-open link. The
+Yandex client accepts only bounded .txt bytes and fixed reviewed HTTPS hosts,
+validates DNS answers and TLS, rejects redirects/compression and limits response
+sizes and time; it reauthorizes before and after I/O. It compares metadata and
+MD5 as error checks, **not** exact version, snapshot, identity or ABA proof.
+Only the documented example download host is allowed; other legitimate hosts
+fail closed until reviewed. Preview displays selected inert quotes, not model
+output. No automatic request, model call, source persistence, or save action is
+introduced. With no provider-backed exact-byte revision assertion, saving new
+Yandex results remains unavailable. Historical results remain unverified.
+Revocation cannot retract bytes already delivered.
+
+Before enabling, validate the above flows with actual scoped test credentials and
+provider behavior, real owner/membership/consent races and revocation, 0128 on
+PostgreSQL, security review of DNS/TLS/HTTP and log redaction, operational key,
+capacity/retention/GC and P12-T13/P12-T15 approvals. Validate browser UI,
+accessibility and error paths on supported clients. Do not treat mocked HTTP or
+synthetic test results as provider, deployment or local DB evidence.

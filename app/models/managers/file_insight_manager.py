@@ -366,6 +366,72 @@ class FileInsightManager:
 
         return await self._call(args, action, create_mount=True, live=processing, write=True, consent=False)
 
+    async def consent_state(self, *, tenant_id, actor_id, connection_id):
+        """Read current stored choices without granting consent or creating rows."""
+        if not self.enabled:
+            _deny()
+        try:
+            async with async_session_maker() as session, session.begin():
+                await _authorize(session, _id(tenant_id), _id(actor_id), require_source_view=True)
+                await _connection(session, tenant_id, actor_id, _id(connection_id))
+                mount = await session.scalar(
+                    select(FileInsightMount)
+                    .where(
+                        FileInsightMount.tenant_id == tenant_id,
+                        FileInsightMount.connection_id == connection_id,
+                        FileInsightMount.owner_id == actor_id,
+                    )
+                    .with_for_update(read=True)
+                )
+                current = mount is not None and mount.policy_revision == POLICY_REVISION
+                return {
+                    "processing": mount.processing_allowed is True if current else False,
+                    "retention": mount.retention_allowed is True if current else False,
+                    "revision": mount.consent_revision if current else None,
+                    "policy_revision": POLICY_REVISION,
+                }
+        except Exception:
+            pass
+        _deny()
+
+    async def list_results(self, *, tenant_id, actor_id, connection_id, object_id):
+        """At most three historical records in one freshly authorized personal object."""
+        args = dict(tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id)
+
+        async def action(a):
+            rows = (
+                await a.session.scalars(
+                    select(FilePrivateInsight)
+                    .where(
+                        FilePrivateInsight.tenant_id == tenant_id,
+                        FilePrivateInsight.owner_id == actor_id,
+                        FilePrivateInsight.connection_id == connection_id,
+                        FilePrivateInsight.object_id == object_id,
+                    )
+                    .order_by(FilePrivateInsight.created_at.desc(), FilePrivateInsight.id)
+                    .limit(3)
+                )
+            ).all()
+            result = []
+            for row in rows:
+                request = ContentReadRequest(tenant_id, actor_id, connection_id, object_id, row.attempt_id)
+                try:
+                    attempt = await self._attempt(a, request, allow_consumed=True, capture_age=False)
+                except PrivateInsightUnavailable:
+                    continue
+                if attempt.consumed and row.expires_at == attempt.expires_at and row.captured_at == attempt.captured_at:
+                    result.append(
+                        {
+                            "id": row.id,
+                            "captured_at": row.captured_at,
+                            "expires_at": row.expires_at,
+                            "review_status": "unverified",
+                        }
+                    )
+            return result
+
+        return await self._call(args, action, object_id=object_id)
+
     async def begin_read(self, *, tenant_id, actor_id, connection_id, object_id):
         args = dict(tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id)
 

@@ -9,6 +9,11 @@ Review owner: [P12-T13](tasks/p12-t13.md); real read/version adapter: [P8-T34](h
 
 ## Status and deliberately small scope
 
+The later [default-off implementation](FILE_WORKSPACE_PRIVATE_IMPLEMENTATION.md)
+now delivers manager-owned control/attempt state and encrypted retention code in
+PR #327. Sections below remain lifecycle requirements/proposal history, not a
+claim that earlier pure-helper tests verify the new PostgreSQL implementation.
+
 **Proposal for review, NOT an approved policy or an implementation.** Storage
 stays OFF. This document adds no ORM model/manager, DDL, migration, job, route,
 cache, model/provider call or permission. Existing 0124–0127 catalog migrations

@@ -116,7 +116,14 @@ receipt/authority/version graph can be consistently fabricated by trusted code.
 Tests prove composition and rejection behavior, not real authority, version truth,
 redaction, semantic entailment, secure memory erasure or storage admission.
 
-## Durable writer remains a separate implementation
+## Durable writer implementation checkpoint
+
+A later [default-off implementation](FILE_WORKSPACE_PRIVATE_IMPLEMENTATION.md)
+adds the manager/receipt/control-plane/writer code under this interface. It has
+no registered real provider, public activation or completed local PostgreSQL
+validation. The requirements below remain acceptance gates, not test results.
+
+## Durable writer transaction requirements
 
 The returned bytes are NOT a reservation, save command, bearer grant or durable
 access decision. Another request can consume quota or revoke access immediately.

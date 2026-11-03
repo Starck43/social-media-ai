@@ -35,6 +35,12 @@ from .collection import (
     Source,
 )
 from .file_workspace import FileCatalogObject, FileCatalogObservation, FileCatalogScan
+from .file_workspace.private_insights import (
+    FileInsightAttempt,
+    FileInsightMount,
+    FileInsightObjectState,
+    FilePrivateInsight,
+)
 from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
 from .integrations import WorkspaceConnection, WorkspaceConnectionSecret
 from .knowledge import DocumentRevision, KnowledgeDocument, KnowledgeSnippet
@@ -55,6 +61,10 @@ __all__ = [
     "FileCatalogObject",
     "FileCatalogObservation",
     "FileCatalogScan",
+    "FileInsightMount",
+    "FileInsightObjectState",
+    "FileInsightAttempt",
+    "FilePrivateInsight",
     "KnowledgeSnippet",
     "KnowledgeDocument",
     "DocumentRevision",

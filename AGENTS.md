@@ -24,8 +24,14 @@ carry only task-specific additions, not copies of these common rules.
 ## Working principles
 
 - Simplicity over cleverness; concise reporting without restating what the commit,
-  card or PR already carries. Ask only when ambiguity materially changes the
-  outcome; otherwise choose a reasonable default and proceed.
+  card or PR already carries.
+- **Ask the owner when a decision hits one of four triggers** (procedure and
+  question format in [owner questions](docs/COLLABORATION.md#owner-questions)):
+  it changes money, certificates or infrastructure; it alters an already accepted
+  contract; it is irreversible once merged (migrations, deletions, public API);
+  or it changes what a subscriber sees. Everything else is the executor's call -
+  choose the reasonable default, record the doubt, the choice and its rollback in
+  the task card, and continue. Never stall a task for an owner answer.
 - Derive, don't store: a stale fact is worse than an absent one. Keep conventions,
   workflow order, gotchas and security constraints; never record values one
   command reveals (versions, listings, counts, current metrics) — store the pointer

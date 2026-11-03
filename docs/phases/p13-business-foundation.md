@@ -54,6 +54,8 @@ Conventions: integer keys, `TenantScopedMixin`, `settings.DB_SCHEMA`, Alembic re
 ## Execution waves and agent assignment (P13–P19)
 
 Owner-requested dispatch plan (2026-11-03, [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f)).
+Unresolved doubts that hit an owner trigger go to the card's "Open doubts" section and
+are named in the PR body ([owner questions](../COLLABORATION.md#owner-questions)).
 It sets order and lane only; ROADMAP keeps status/owner and a claim is still
 required. A wave starts when its trigger holds, not on a date.
 

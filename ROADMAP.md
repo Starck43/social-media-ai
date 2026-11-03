@@ -73,7 +73,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P13-T03](docs/tasks/p13-t03.md) Shared external-API rate limiter and retry policy — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
 - [P13-T04](docs/tasks/p13-t04.md) Business write-approval workflow and command ledger — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 - [P13-T05](docs/tasks/p13-t05.md) Audit codes, business API conventions and OpenAPI contract — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
-- [P13-T06](docs/tasks/p13-t06.md) Per-package coverage gate and mock-provider test kit — **IN_PROGRESS** · notion-ai-p13-t06 · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C2`
 - [P13-T07](docs/tasks/p13-t07.md) Contact core: contacts, identities and consent — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 - [P13-T08](docs/tasks/p13-t08.md) OAuth 2.0 workspace-connection framework (authorization code + refresh) — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 - [P14-T01](docs/tasks/p14-t01.md) Bitrix24 connection: OAuth 2.0 portal authorization and health — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
@@ -103,7 +102,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P17-T03](docs/tasks/p17-t03.md) Natural-language queries, result formatting, export and history — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P17-T04](docs/tasks/p17-t04.md) 1C write commands with preview, approval and audit — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P17-T05](docs/tasks/p17-t05.md) 1C role-based access policy and audit views — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
-- [P18-T01](docs/tasks/p18-t01.md) Local connector protocol, pairing and revocation contract — **IN_PROGRESS** · notion-ai-p18-t01 · [dialogue](https://app.notion.com/chat?t=40d7810652ab805e901700a9f5940232) · `P3` · `C3`
 - [P18-T02](docs/tasks/p18-t02.md) Cloud connector gateway: registration, device management and search proxy — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T03](docs/tasks/p18-t03.md) Desktop connector core: folder selection, safe paths and incremental index — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P18-T04](docs/tasks/p18-t04.md) Text extraction and OCR with resource limits — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`

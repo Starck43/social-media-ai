@@ -121,6 +121,8 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 
 - [P12-T17](../audit/p12-t17.md): improve navigation, spacing and clarity across the existing evidence workspaces. **DONE 2026-11-02**, accepted PR head `ed49ad8c` (PR #316, recovers #310). Template-level evidence only; DB/ASGI and authenticated-browser checks remain a follow-up handoff.
 
+- [P12-T18](../tasks/p12-t18.md): compact Russian admin coverage for newly migrated tables, preserving access and privacy boundaries.
+
 ## Business-module continuation (P13–P19)
 
 The owner's business-module TZ continues the P12 connectors and domain workspaces

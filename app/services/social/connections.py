@@ -377,6 +377,10 @@ def source_uses_personal_token(source: Any) -> bool:
     token; this decides whether the question is asked at all.
     """
     mode = (getattr(source, "params", None) or {}).get("mode", "pull")
+    if _platform_key(source) == "telegram":
+        from app.services.social.telegram_modes import is_bot_push
+
+        return not is_bot_push(getattr(source, "params", None))
     return mode != "push"
 
 

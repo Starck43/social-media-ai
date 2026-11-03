@@ -447,9 +447,10 @@ class ContentCollector:
 			# new route is default-OFF and fails explicitly rather than falling
 			# back; Bot API push remains on its independent admission contract.
 			from app.types import PlatformType
+			from app.services.social.telegram_modes import is_bot_push
 			if (
 				platform_obj.platform_type == PlatformType.TELEGRAM
-				and (source.params or {}).get("mode", "auto") != "api"
+				and not is_bot_push(source.params)
 			):
 				from app.services.monitoring.telegram_collection import collect_personal_telegram
 				return await collect_personal_telegram(

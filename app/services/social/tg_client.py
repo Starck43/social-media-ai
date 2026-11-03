@@ -12,6 +12,7 @@ from typing import Any, Optional
 from app.core.config import settings
 from app.models import Source
 from app.services.social.base import BaseClient
+from app.services.social.telegram_modes import is_bot_push
 from app.types import SourceType
 
 logger = logging.getLogger(__name__)
@@ -27,8 +28,7 @@ class TelegramClient(BaseClient):
 
     async def collect_data(self, source: Source, content_type: str = "posts") -> list[Any] | list[dict | None]:
         """L1 no-op only; personal history requires the guarded collector path."""
-        mode = (source.params or {}).get("mode", MODE_AUTO)
-        if mode == MODE_API:
+        if is_bot_push(source.params):
             return []  # Independent Bot API push path, never a personal pull.
         from app.services.social.credentials import AuthorizationRequired
 

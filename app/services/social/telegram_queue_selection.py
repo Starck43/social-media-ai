@@ -13,6 +13,7 @@ from app.models import Platform, Source
 from app.models import WorkspaceAuthorizationGrant as Grant
 from app.services.social.connector_authorizations import AuthorizationUnavailable
 from app.services.social.telegram_grant_access import SourceGrantSelection, _positive, source_grant_selection
+from app.services.social.telegram_modes import is_bot_push
 from app.types import PlatformType
 
 _QUEUE_BINDINGS = "_telegram_source_grants"
@@ -55,7 +56,7 @@ async def _snapshot_queue_bindings(session, payload, tenant_id):
     pins = {}
     for source in sources:
         params = source.params or {}
-        if params.get("mode", "auto") == "api" or "telegram_authorization" not in params:
+        if is_bot_push(params) or "telegram_authorization" not in params:
             continue
         selected = source_grant_selection(source)
         authorization_id = await session.scalar(

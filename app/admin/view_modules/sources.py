@@ -101,9 +101,18 @@ class PlatformAdmin(BaseAdmin, model=Platform):
         "params": {
             "label": "Настройки API запросов",
             "description": (
-                "JSON — единственный источник общих настроек. api_base_url — обязательный URL API; "
-                "api_version — версия API (VK); auth_type — тип авторизации. "
-                'Пример: {"api_base_url": "https://api.vk.com/method", "api_version": "5.199", "auth_type": "oauth"}'
+                "JSON — единственный источник общих настроек платформы (переменные окружения его не перекрывают). "
+                "Обязательные ключи: api_base_url — URL API без завершающего слеша; для VK ещё api_version. "
+                "Ключи VK OAuth: auth_type=oauth, oauth_base_url — адрес авторизации VK ID, "
+                "oauth_token_url — адрес обмена кода (обычно <oauth_base_url>/oauth2/auth, "
+                "для VK ID с PKCE это именно /oauth2/auth, не /oauth2/access_token), "
+                "redirect_uri — адрес возврата, дословно совпадающий с зарегистрированным в кабинете VK ID; "
+                "после смены redirect_uri повторное подключение ВК обязательна — старая авторизация его не знает. "
+                "Прочие ключи: auth_type, category, data_boundary (local_only|company|cloud), capabilities — "
+                "список доступных методов, write_capabilities — методы, меняющие данные (для VK — []), "
+                "rate_limit_per_hour — потолок запросов. Правка применяется без перезапуска. "
+                'Пример: {"api_base_url": "https://api.vk.com/method", "api_version": "5.199", '
+                '"auth_type": "oauth", "redirect_uri": "http://localhost/api/v1/social/callback"}'
             ),
         },
         **BaseAdmin.form_args,

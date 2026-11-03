@@ -63,6 +63,10 @@ class SQL:
         self.locked = True
         return self
 
+    def execution_options(self, **options):
+        self.options = options
+        return self
+
     def limit(self, value):
         self.limit_value = value
         return self
@@ -260,6 +264,7 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kw, {"session": self.session})
         stmt = self.execute.call_args.args[0]
         self.assertTrue(stmt.locked)
+        self.assertEqual(stmt.options, {"populate_existing": True})
         self.assertIn(("eq", "tenant_id", 4), stmt.criteria)
         self.assertIn(("is", "is_active", True), stmt.criteria)
 

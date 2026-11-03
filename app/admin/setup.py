@@ -13,7 +13,9 @@ from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
 from .connector_registry import ConnectorRegistryAdmin
+from .file_catalog import FileCatalogAdmin
 from .inlines import related_inlines
+from .knowledge_registry import KnowledgeRegistryAdmin
 from .registry import TableRegistryAdmin
 from .related import RelatedAdmin, related_controls, related_token
 from .views import (
@@ -140,6 +142,8 @@ def setup_admin(app):
     # surface is not buried under the model pages it summarises.
     admin.add_view(TableRegistryAdmin)
     admin.add_view(ConnectorRegistryAdmin)
+    admin.add_view(FileCatalogAdmin)
+    admin.add_view(KnowledgeRegistryAdmin)
     for view_class in view_configs:
         admin.add_view(view_class)
 

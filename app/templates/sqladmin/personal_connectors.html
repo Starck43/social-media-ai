@@ -7,7 +7,7 @@
         <div class="card-header"><h2 class="card-title">Личные авторизации</h2></div>
         <div class="table-responsive">
             <table class="table table-vcenter card-table">
-                <thead><tr><th>ID</th><th>Сервис</th><th>Статус</th></tr></thead>
+                <thead><tr><th>Идентификатор</th><th>Сервис</th><th>Статус</th></tr></thead>
                 <tbody>
                 {% for row in accounts %}
                 <tr><td>{{ row.id }}</td><td>{{ row.service }}</td><td>{{ row.status }}</td></tr>
@@ -23,7 +23,7 @@
         {% if workspace_available %}
         <div class="table-responsive">
             <table class="table table-vcenter card-table">
-                <thead><tr><th>ID</th><th>Название</th><th>Сервис</th><th>Статус</th></tr></thead>
+                <thead><tr><th>Идентификатор</th><th>Название</th><th>Сервис</th><th>Статус</th></tr></thead>
                 <tbody>
                 {% for row in connections %}
                 <tr><td>{{ row.id }}</td><td>{{ row.label }}</td><td>{{ row.service }}</td><td>{{ row.status }}</td></tr>
@@ -41,7 +41,7 @@
     <div class="card mt-3">
         <div class="card-header"><h2 class="card-title">Разрешения для пространства</h2></div>
         <div class="table-responsive"><table class="table table-vcenter card-table">
-            <thead><tr><th>ID</th><th>ID авторизации</th><th>Действует</th></tr></thead>
+            <thead><tr><th>Идентификатор</th><th>Идентификатор авторизации</th><th>Действует</th></tr></thead>
             <tbody>
             {% for row in grants %}
             <tr><td>{{ row.id }}</td><td>{{ row.authorization_id }}</td><td>{{ 'Да' if row.active else 'Нет' }}</td></tr>

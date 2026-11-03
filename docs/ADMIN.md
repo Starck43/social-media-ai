@@ -367,7 +367,7 @@ ahead of that verification and will report any findings. No migration is introdu
 
 ## Registered model pages
 
-`setup_admin()` registers **18 menu entries** — two base views and **16 model views** — grouped into 5 SQLAdmin domain categories
+`setup_admin()` registers **20 menu entries** — four base views and **16 model views** — grouped into 5 SQLAdmin domain categories
 (`Система`, `Пользователи и доступ`, `Источники и сбор`, `ИИ и аналитика`,
 `Задачи и операции`). `RelatedAdmin._build_menu` wraps each category in
 `_ScopedCategoryMenu`, hiding any category whose child views are all invisible or
@@ -384,6 +384,8 @@ business-workflow execution.
 | --- | --- | --- | --- | --- |
 | `TableRegistryAdmin` | `Система` | *(BaseView)* | `/admin/registry` | Owner-only read-only schema registry cached by metadata signature |
 | `ConnectorRegistryAdmin` | `Пользователи и доступ` | *(BaseView)* | `/admin/personal-connectors` | Read-only own personal authorizations, connections and grants through their existing actor-scoped managers; no secrets or config |
+| `KnowledgeRegistryAdmin` | `Источники и сбор` | *(BaseView)* | `/admin/knowledge-registry` | Read-only, ACL- and boundary-filtered material, document and revision lists |
+| `FileCatalogAdmin` | `Источники и сбор` | *(BaseView)* | `/admin/file-catalog` | Feature-gated read-only own file metadata and observation history through the catalog authority |
 | `UserAdmin` | `Пользователи и доступ` | `User` | `/admin/user/list` | Account forms use rank-limited role picker on edit; password action is separate |
 | `RoleAdmin` | `Пользователи и доступ` | `PlatformRole` | `/admin/platform-role/list` | Owner-only permission grant editor; catalog identities remain fixed |
 | `PermissionAdmin` | `Пользователи и доступ` | `Permission` | `/admin/permission/list` | Fixed catalog; owner may edit display name only |
@@ -868,3 +870,11 @@ There is no user/tenant copy or runtime environment overlay. Existing platform
 create/update grants continue to apply; deletion remains disabled. Preserve the
 reserved `_migration_0120` archival key when editing migrated JSON. See
 [configuration and safe migration/rollback](CONFIGURATION.md#shared-platform-configuration).
+
+### Personal file catalog
+
+`/admin/file-catalog` is a read-only view of the signed-in actor’s own saved file metadata and observation history. It is available only when `FILE_CATALOG_UI_ENABLED` is enabled. The existing file-catalog authority rechecks active membership, ownership, source-view permission and folder restrictions on every read, even for the platform owner. The list is bounded to 50 records per page; it does not fetch a provider or imply a complete or current disk snapshot. Internal scan leases, file contents and secrets remain unavailable.
+
+### Evidence and document indexes
+
+`/admin/knowledge-registry` is a read-only, paginated index of snippets, documents and revisions. It uses the existing evidence managers and source-view permission, including their workspace ACL and data-boundary filters. Even a platform owner must select an active membership and is capped by that membership’s grants; contents and editing are not exposed.

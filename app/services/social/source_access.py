@@ -104,7 +104,21 @@ class PlatformPreflight:
 async def resolve_access(sources: Iterable[Any]) -> dict[Any, SourceAccess]:
     """Per-source access facts for `sources`, in one pass with cached owners."""
     rows = list(sources)
-    owners: dict[Any, Optional[int]] = {getattr(row, "id", None): await resolve_source_owner(row) for row in rows}
+    from app.services.social.connections import _platform_key
+    from app.services.social.connector_authorizations import AuthorizationUnavailable
+    from app.services.social.telegram_grant_access import source_grant_selection
+    from app.services.social.telegram_modes import is_bot_push
+
+    owners: dict[Any, Optional[int]] = {}
+    for row in rows:
+        if _platform_key(row) == "telegram":
+            try:
+                owner = None if is_bot_push(getattr(row, "params", None)) else source_grant_selection(row).owner_user_id
+            except AuthorizationUnavailable:
+                owner = None  # Never substitute a workspace owner for Telegram.
+        else:
+            owner = await resolve_source_owner(row)
+        owners[getattr(row, "id", None)] = owner
     statuses = await source_connection_statuses(rows, owner_overrides=owners)
     result: dict[Any, SourceAccess] = {}
     for row in rows:

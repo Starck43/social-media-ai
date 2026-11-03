@@ -116,7 +116,6 @@ async def test_credentials(
         credential_provider_error,
     )
     from app.services.social.credentials import credential_status, resolve_token
-    from app.services.social.tg_session import check_session, load_session
 
     results = []
     for platform, source in (await credential_status(owner_user_id=current_user.id)).items():
@@ -171,12 +170,8 @@ async def test_credentials(
 
         results.append({"platform": platform, "source": source, "status": status})
 
-    # L2 is separate from the bot token
-    mtproto = await load_session(user_id=current_user.id)
-    if mtproto is None:
-        results.append({"platform": "telegram", "source": "mtproto", "status": "not_configured"})
-    else:
-        verdict = await check_session(mtproto)
-        results.append({"platform": "telegram", "source": "mtproto", "status": verdict})
+    # Legacy MTProto is never loaded or checked. New-store metadata and
+    # provider login live under connector-accounts with explicit consent.
+    results.append({"platform": "telegram", "source": "mtproto", "status": "use_connector_accounts"})
 
     return results

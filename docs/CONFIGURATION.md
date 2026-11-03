@@ -14,7 +14,7 @@ The application reads config from `app/core/config.py` (Pydantic `Settings`).
 | VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`; shared `Platform.params` | App identity, L1 service access, OAuth endpoints and registered callback. Legacy inputs are described below. |
 | Shared Telegram bot | env: `TELEGRAM_BOT_TOKEN` | Bot API transport; one bot may serve multiple workspaces. |
 | Legacy personal integrations | encrypted `user_credentials` | VK access/refresh tokens after migration 0124 and legacy Telegram vault sessions; user-scoped, not workspace-consented. Telegram rollout requires the grant-based path below. |
-| Personal-account reuse foundation (draft) | encrypted `personal_connector_authorizations` + `workspace_authorization_grants` | Single personal authorization, explicit independent consent in each workspace; Telegram-only persistence/reuse and bounded phone/code/2FA machine API, not yet web UI or runtime integration. Encrypted temporary login state lives in `telegram_login_attempts`. |
+| Personal-account reuse foundation (draft) | encrypted `personal_connector_authorizations` + `workspace_authorization_grants` | Single personal authorization, explicit independent consent in each workspace; Telegram-only bounded phone/code/2FA API/web journey, explicit source picker and default-OFF queued runtime. Recovery requires same subject and per-workspace reconsent. Temporary attempts live in `telegram_login_attempts`; minimal replay keys survive metadata retention. Code-first, not yet final-tested or rollout-approved. |
 | Workspace digest recipients | `tenant_channels`, active and `is_digest_target=True` | Owned destination IDs for this workspace only; use existing binding workflow, then Settings → Channels to toggle digests. |
 | Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Fixed-template operator-alert destination; never a workspace notification fallback. |
 | Agent access bootstrap | `TELEGRAM_OWNER_IDS` | Telegram **user IDs**, not chat/channel IDs; distinct from the notification destination and workspace memberships. |
@@ -343,6 +343,7 @@ or for provider-side rate limiting.
 | `VK_REDIRECT_URI` | `http://localhost/api/v1/social/callback` | Legacy one-time migration 0120 input only; runtime callback is `Platform.params.redirect_uri`. |
 | `TELEGRAM_BOT_TOKEN` | `None` | Telegram bot token |
 | `TELEGRAM_API_ID` | `None` | Telegram API ID (L2 MTProto) |
+| `TELEGRAM_ACCOUNT_RUNTIME_ENABLED` | `false` | Default-OFF queued personal collection; separate rollout approval required |
 | `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |
 | `TELEGRAM_SESSION` | `None` | Deprecated and ignored for MTProto session resolution |
 | `TELEGRAM_ADMIN_CHAT_ID` | `None` | Fixed operator-alert catalog only; no workspace/digest fallback |
@@ -480,15 +481,18 @@ from dumps. Do not persist or expose unwrapped secret values.
 
 Two kinds of secret, resolved by `app/services/social/credentials.py`:
 
-- **Personal L2 secrets** (VK `user_token`, Telegram MTProto `api_id` /
-  `api_hash` / `session`) live in the `user_credentials` table, keyed by
+- **VK personal L2 secrets** (`user_token`) live in the `user_credentials` table, keyed by
   `users.id`, encrypted with Fernet under `CREDENTIALS_KEY`. Manage via CLI:
   ```bash
-  python -m cli.main credentials login telegram --user <id>
   python -m cli.main credentials oauth vk --user <id> --tenant owner
   python -m cli.main credentials list --user <id>
   python -m cli.main credentials test --user <id>
   ```
+- **Telegram personal sessions** use the bounded connector-account login/recovery
+  UI/API, one encrypted personal authorization and explicit independent workspace
+  grants/source selections; no old-vault or environment session import/fallback.
+  `TELEGRAM_ACCOUNT_RUNTIME_ENABLED=false` is the default and rollout hold.
+  See [account reuse and recovery](CONNECTOR_ACCOUNT_REUSE.md).
 - **Application / infrastructure config** (VK `app_id`, `client_secret`,
   service token; Telegram/MAX bot tokens) is one-per-deployment and read from
   the **environment** (`.env`), not from the DB.

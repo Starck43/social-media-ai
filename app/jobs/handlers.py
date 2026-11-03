@@ -62,6 +62,10 @@ def _provider_error(error: BaseException) -> tuple[str, str | None]:
     """`(code, hint)` for a collection failure, safe for the admin panel."""
     import re
 
+    from app.services.social.telegram_queue_selection import TelegramJobRequeueRequired
+
+    if isinstance(error, TelegramJobRequeueRequired):
+        return "telegram_job_requeue_required", "Заново выберите аккаунт источника и создайте новое задание"
     if isinstance(error, AuthorizationRequired):
         return "auth_required", "нужна авторизация"
     match = re.search(r"Ошибка API \((\d+)\)", str(error))

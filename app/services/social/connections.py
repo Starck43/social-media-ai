@@ -154,6 +154,8 @@ class ConnectionStatus:
             "reauth": "bad",
             "missing": "warn",
             "unconfigured": "idle",
+            "runtime_disabled": "warn",
+            "unavailable": "bad",
         }.get(self.state, "idle")
 
     @property
@@ -180,6 +182,8 @@ class ConnectionStatus:
         """
         if not self.needs_action or not self.can_connect:
             return ""
+        if self.platform == "telegram":
+            return "/app/settings/telegram-accounts/workspace"
         return (
             f"/app/connections/{self.platform}/authorize?next=/app/sources"
             if self.is_oauth
@@ -222,6 +226,17 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
     Reads vault metadata only — never `reveal()` — so callers may use this on
     any page, including the shared navbar.
     """
+    if platform == "telegram":
+        # Old vault metadata can no longer claim that new-store collection is ready.
+        return ConnectionStatus(
+            "telegram",
+            "runtime_disabled" if not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED else "missing",
+            "Личный сбор выключен" if not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED else "Нужен явный выбор источника",
+            "Используйте личные авторизации и разрешения пространства. Старая сессия не используется; здоровье провайдера не проверено.",
+            settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED,
+            True,
+            operator_attention=not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED,
+        )
     spec = CONNECTIONS_BY_PLATFORM.get(platform)
     if spec is None:
         return ConnectionStatus(platform, "unconfigured", "Неизвестная платформа", "", False, False)
@@ -412,11 +427,13 @@ def blocks_collection(status: Optional[ConnectionStatus]) -> bool:
     `renewal_unverified` is not blocked before a renewal attempt; metadata alone
     does not establish that the key or provider will permit renewal.
     """
-    return status is not None and status.state in ("missing", "reauth")
+    return status is not None and status.state in ("missing", "reauth", "runtime_disabled", "unavailable")
 
 
 def authorisation_target(platform: str) -> str:
     """Where a person goes to grant personal access for `platform`."""
+    if platform == "telegram":
+        return "/app/settings/telegram-accounts/workspace"
     spec = CONNECTIONS_BY_PLATFORM.get(platform)
     if spec is not None and spec.is_oauth:
         return f"/app/connections/{platform}/authorize?next=/app/sources"
@@ -450,6 +467,9 @@ async def source_connection_statuses(
     for source in sources:
         spec = source_connection_spec(source)
         if spec is None:
+            continue
+        if spec.platform == "telegram":
+            result[getattr(source, "id", None)] = await _telegram_source_status(source)
             continue
         owner_key = (
             getattr(source, "tenant_id", None),
@@ -623,3 +643,42 @@ def build_workspace_connectors(
             }
         )
     return cards
+
+
+async def _telegram_source_status(source):
+    """New-store metadata only; never decrypt or consult an old personal vault."""
+    if not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED:
+        return await connection_status("telegram", None)
+    from app.core.database import async_session_maker
+    from app.services.social.connector_authorizations import AuthorizationUnavailable
+    from app.services.social.telegram_grant_access import _inspect_source_grant, source_grant_selection
+
+    try:
+        selected = source_grant_selection(source)
+        async with async_session_maker() as session, session.begin():
+            await _inspect_source_grant(session, selected)
+    except AuthorizationUnavailable:
+        return ConnectionStatus(
+            "telegram",
+            "missing",
+            "Нужен явный выбор",
+            "Проверьте личную авторизацию, разрешение пространства и ревизию выбора источника.",
+            True,
+        )
+    except Exception:
+        return ConnectionStatus(
+            "telegram",
+            "unavailable",
+            "Статус недоступен",
+            "Локальные права не удалось подтвердить. Доступ провайдера не проверялся.",
+            True,
+            False,
+            operator_attention=True,
+        )
+    return ConnectionStatus(
+        "telegram",
+        "connected",
+        "Выбор сохранён локально",
+        "Проверены только метаданные разрешения. Ключ, сессия и права выполнения проверяются заново при запуске.",
+        False,
+    )

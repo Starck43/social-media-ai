@@ -498,15 +498,23 @@ async def source_edit(
             else:
                 params["token_owner"] = owner_id
 
-        await Source.objects.update_by_id(
-            source.id,
-            name=name.strip()[:100] or source.name,
-            platform_id=platform_row.id,
-            external_id=new_external_id,
-            source_type=st,
-            is_active=is_active == "on",
-            params=params,
-        )
+        try:
+            await Source.objects.update_by_id(
+                source.id,
+                name=name.strip()[:100] or source.name,
+                platform_id=platform_row.id,
+                external_id=new_external_id,
+                source_type=st,
+                is_active=is_active == "on",
+                params=params,
+            )
+        except PermissionError:
+            add_flash(
+                request,
+                "error",
+                "Сначала уберите выбор Telegram-аккаунта в настройках источника, затем измените цель и выберите аккаунт заново.",
+            )
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=303)
 
     add_flash(request, "success", "Источник обновлён")
     return RedirectResponse(f"/app/sources/{source_id}", status_code=302)

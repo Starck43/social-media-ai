@@ -580,29 +580,20 @@ Deactivates the newest matching credential without deleting it.
 python -m cli.main credentials test [--tenant <slug_or_id>]
 ```
 
-Shows where each platform's secret comes from (`vault` | `env` | `missing`)
-and whether it works by pinging the platform. Also tests L2 MTProto session
-for Telegram.
+Shows where service/bot secrets come from (`vault` | `env` | `missing`) and
+pings those platforms only when explicitly invoked. It does not load or check
+legacy MTProto sessions. New personal Telegram authorization metadata is exposed
+by the permission-scoped connector-account API/UI, not this legacy diagnostic.
 
-**Example output:**
-```
-vk: vault -> ok
-telegram: vault -> ok (bot @my_bot)
-max: missing
-telegram L2 (MTProto): ok
-```
+### Telegram login compatibility
 
-### Login (MTProto L2)
-
-```bash
-python -m cli.main credentials login telegram [--tenant <slug_or_id>]
-```
-
-Interactive login for Telegram MTProto user session (L2 collection layer).
-Walks the code + optional 2FA flow and stores `api_id`/`api_hash`/`session`
-in the vault. The session string is **never echoed**.
-
-Re-running performs a fresh login and replaces the stored session parts.
+`credentials login telegram` now exits with a migration hint BEFORE database,
+provider, prompt or secret writes. Use `/app/settings/telegram-accounts/workspace/login`
+or `POST /api/v1/connector-accounts/telegram/login` with an active Bearer JWT and
+workspace selection. Code/2FA submissions and explicit same-subject recovery are
+bounded steps; uncertain outcomes require status lookup, never automatic replay.
+Then explicitly grant each workspace, select the account/revision for sources and
+enqueue new jobs. Runtime stays OFF pending validation and rollout approval.
 
 ---
 

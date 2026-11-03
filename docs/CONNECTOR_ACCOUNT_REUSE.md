@@ -632,3 +632,24 @@ a reviewed retained-data backup/restore plan, stopped/drained writers and separa
 authorization; do not edit migration history or stamp past this revision. No
 migration or deletion has been run here. Database races, exact model/schema
 agreement and retention behavior still require final synthetic validation.
+
+## Consumer and migration compatibility checkpoint (code-first)
+
+Telegram `push` and `api` share a strict Bot API mode helper across routing,
+queue pins and diagnostics; VK api behavior is unchanged. Source diagnostics and
+preflight no longer consult old Telegram vault sessions or substitute a workspace
+owner. The default-OFF rollout hold blocks personal preflight honestly. Old
+unpinned or changed queued selections report `telegram_job_requeue_required`.
+Generic source manager create/update cannot introduce, retarget or clear a picker
+binding; clear it explicitly before changing target/owner/mode, then reselect.
+
+The old CLI login and settings raw-session form no longer create unused old-vault
+sessions. Legacy credential diagnostics do not load/ping personal MTProto. Bot
+credentials and VK keep their separate contracts. Key rotation recognizes only
+explicitly reviewed schema heads including runtime/recovery/retention and refuses
+unknown/mismatched table generations. No key rotation has been performed.
+
+The complete draft chain now ends in `p12t14_tg_retention`; it must not be merged
+with another independently added Alembic head without a separately reviewed graph
+reconciliation. Final validation is shared and still pending; no code checkpoint
+is a migration apply, rollout approval or live-provider verification.

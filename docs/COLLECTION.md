@@ -9,7 +9,7 @@ we read** (one of three collection layers).
 | Layer | Mechanism | Status | Reaches |
 | --- | --- | --- | --- |
 | **L1 official API** | VK `wall.get`/`wall.getComments` with a service token; `newsfeed.search` for a query source; Telegram Bot API where the bot is a member/admin | VK done, Telegram push-only (below) | public communities; chats and channels the bot joined; VK-wide posts when search is enabled on the app |
-| **L2 user session** | VK user token (sees what the owner's account sees); Telegram MTProto user session (Telethon) | done | closed communities, walls, historical depth |
+| **L2 user session** | VK user token (sees what the owner's account sees); Telegram MTProto user session (Telethon) | VK available; Telegram queued path default OFF / code-first | closed communities, walls, historical depth |
 | **L3 browser** | headless browser scraping | planned, last resort | everything without an API |
 
 The layer is picked per source (`Source.params["mode"]`), because most sources
@@ -27,8 +27,9 @@ Two sources, one reader (`app/services/social/credentials.py`):
 
 - **personal vault** — `user_credentials`, encrypted with Fernet under
   `CREDENTIALS_KEY`, keyed by `users.id` and shared across the workspaces that
-  user belongs to. Holds the L2 (user) secrets: VK `user_token` and the Telegram
-  MTProto parts (`api_id`, `api_hash`, `session`). Read only when the caller
+  user belongs to. Holds VK `user_token`. Legacy Telegram parts may remain for owner-managed
+  disposition but are not read by collection. New Telegram sessions use personal
+  authorizations with explicit workspace grants and source selections. Read only when the caller
   passes an `owner_user_id`.
 - **environment** — application/infrastructure config, one-per-deployment:
   `vk/app_id`, `vk/client_secret`, `vk/service_token` (service/L1 token),
@@ -127,14 +128,13 @@ re-saving without editing does not double-encrypt). Application secrets
 python -m cli.main credentials list --user <id> [--tenant owner]     # personal vault rows
 python -m cli.main credentials test --user <id>                      # resolve + ping the platform
 python -m cli.main credentials disable vk user_token --user <id>
-python -m cli.main credentials login telegram --user <id>            # MTProto L2: code + optional 2FA
 python -m cli.main credentials oauth vk --user <id> [--tenant owner] # VK L2 via PKCE OAuth (below)
 ```
 
 `test` performs a real-but-cheap call (`account.getProfileInfo` for VK, `getMe`
-for Telegram, `/me` for MAX) and reports `user-vault|env -> ok|error`. It also prints
-an L2 line (`telegram L2 (MTProto): ok|error|not configured`), which pings the
-authorized user session.
+for Telegram, `/me` for MAX) and reports `user-vault|env -> ok|error`. Legacy MTProto is not loaded or pinged; new personal sessions use the
+connector-account login/status UI/API. These commands must not be used to infer
+new-store runtime readiness.
 
 ### VK OAuth refresh log privacy
 
@@ -361,45 +361,32 @@ channels/listener.py  ->  services/monitoring/ingest.py  ->  AIAnalyzer.base_ana
 
 ### L2: MTProto user session (Telethon)
 
-**P12-T14 rollout gate:** the legacy collector described here still uses a
-user-scoped vault, not explicit workspace grants. The intended model is one
-personal authorization plus independently consented workspace bindings; see
-[personal account reuse](CONNECTOR_ACCOUNT_REUSE.md). The new draft persistence/API
-is not yet wired to this collector or to an initial phone/code/2FA web login. Do
-not present legacy CLI storage or a grant record as a completed workspace-isolated
-connection. `POST /api/v1/credentials/login` refuses terminal login with a fixed
-409 instead of running `input()` in a request worker.
+**P12-T14 rollout hold:** the guarded queued path is implemented behind
+`TELEGRAM_ACCOUNT_RUNTIME_ENABLED=false`. Final shared tests, independent audit
+and separate rollout approval are still required. No direct/raw-client personal
+pull, old-vault session or environment fallback is supported.
 
-For historical depth and channels the bot cannot join, set the source's
-`Source.params["mode"] = "user"`. The collect job then pulls messages over
-MTProto with an authorized user session instead of waiting for push:
+Use the bounded browser/API phone/code/2FA journey, then explicitly consent each
+workspace and select the owned grant/account/revision for a source. Same-subject
+recovery replaces only that personal account and invalidates all old grants;
+reconsent, source reselection and new enqueue are required. No automatic legacy
+migration or provider logout occurs. See [the exact contracts](CONNECTOR_ACCOUNT_REUSE.md).
 
-- Three personal-vault kinds make an L2 login: `api_id`, `api_hash` (from
-  my.telegram.org) and `session` (a Telethon `StringSession`). Set them with
-  `credentials login telegram --user <id>` — the CLI walks the code/2FA flow and
-  stores all three for that web user; the session string is never shown. At
-  collection the owner is resolved per source (see [Credential vault](#credential-vault)).
-- Collection is incremental by message id: `iter_messages` starts at
-  `Source.last_item_id` (the same watermark the push path advances), so a
-  repeat run costs nothing until new posts arrive. A direct CLI `collect
-  --force-refresh` can re-fetch a date window, but it does not bypass analysis
-  receipts. Set `cli_dates` +
-  `cli_dates.start_date` for a one-off backfill into the past.
-- `external_id` of a pulled item is built from the source's own Bot API chat id,
-  so a post that first arrived by push and is later pulled by L2 hashes to the
-  same `content_hash` — `app/services/ai/dedup.py` makes sure overlap is never
-  paid for twice.
-- A missing, expired or revoked session is an error to log, not to raise: the
-  job reports the source as failed and the rest of the run continues. Telethon
-  is imported lazily, so the app boots even when it is not installed.
-
-Layer selection per `Source.params["mode"]`:
+Trusted collect enqueue pins source/grant/account/revision. Old/unpinned or
+changed-source jobs require new admission, never silent repinning. Personal reads
+use a shared account guard, monotonic execution epoch, fresh job/initiator/payer
+checks, per-RPC authorization and a same-transaction consent/output gate. The
+history adapter is bounded and oldest-unread-first, with a dedicated
+`telegram_l2_last_item_id` cursor; Bot API push does not advance that cursor.
+Raw rows, selection evidence and the L2 cursor are admitted together before the
+account guard is released. Provider transport is not exactly once. Unknown commits
+and provider outcomes do not authorize replay. Rehearsals return metadata only.
 
 | Mode | Behaviour |
 | --- | --- |
-| `api` (L1) | push-based only; pull returns no items. |
-| `user` (L2) | MTProto pull. |
-| `auto` (default) | L2 pull whenever an MTProto session is configured, otherwise fall back to L1 (push). |
+| `push` / `api` | Compatible Telegram Bot API push spellings; pull returns no items and does not need a personal grant. |
+| `user` / `auto` | Personal queued pull requires explicit new-store selection and the rollout gate; no bot/legacy fallback. |
+| anything else | Unsupported for personal execution; never silently interpreted as authorized. |
 
 ## VK L2 via OAuth (PKCE)
 
@@ -456,7 +443,7 @@ Re-authorization timing depends on the provider and failures; do not promise a f
 
 | Key | Meaning |
 | --- | --- |
-| `mode` | `api` (L1, default) \| `user` (L2, MTProto) \| `auto` (L1 with automatic L2 fallback) \| `browser` (L3, planned) |
+| `mode` | `api`/`push` (Bot API push) \| `user` (L2, MTProto) \| `auto` (explicit new-store personal selection, no fallback) \| `browser` (L3, planned) |
 | `query` | SEARCH sources: the phrase passed to `newsfeed.search` |
 | `owner_ids` | SEARCH sources: keep only posts from these walls (community ids negative) |
 | `incremental_mode` | `true` → only fetch what is newer than `last_checked` |

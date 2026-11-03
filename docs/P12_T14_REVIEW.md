@@ -22,7 +22,8 @@ scope and checks are ready for independent review. No merge is authorized.
    per-workspace grants, reuse/detach/local-revoke API and durable bounded Telegram
    phone/code/2FA machine API. See
    [account reuse](CONNECTOR_ACCOUNT_REUSE.md) for the delivery limits.
-5. **Migration graph:** linear `0123` -> `0124` -> `p12t14_accounts` -> `p12t14_tg_login`, not the former
+5. **Migration graph:** linear `0123` -> `0124` -> `p12t14_accounts` -> `p12t14_tg_login` -> `p12t14_tg_runtime` ->
+   `p12t14_tg_recovery` -> `p12t14_tg_retention`, not the former
    slice-only sibling arrangement. No legacy Telegram session import.
 
 ## Preserved slice provenance
@@ -221,3 +222,23 @@ as an L2 watermark. Rehearsals omit fetched text/hashes in deferred previews and
 write no raw rows/cursors, although runtime epoch/job metadata still changes.
 Old jobs, discovery-created targets and consumer diagnostics need explicit
 compatibility coverage. No new tests or DB/provider/migration execution occurred.
+
+
+## Code-first assembled continuation: review before rollout
+
+The latest checkpoints supersede earlier "not delivered" statements above only
+for code availability, NOT validation. The supplied picker patch was applied to
+`7b6331d2`; source picker API/web, Telegram push/api compatibility, same-subject
+recovery/reconsent, bounded browser onboarding, retention replay tombstones and
+legacy-consumer diagnostics are in this PR. Review generic source-manager guards
+alongside the dedicated picker: old CRUD may preserve but not introduce/retarget
+its binding. Review queued legacy diagnostics and rotation's explicit supported
+schema-generation allowlist. Runtime remains default OFF, Draft/IN_PROGRESS.
+No merge, deployment, migration apply, key rotation or real provider operation.
+
+Final validation must cover strict form/CSRF/privacy boundaries, state and grant
+races, runtime job/payer/epoch/request/output fences, fake-provider pagination,
+Bot API/push/VK/other-job regressions, metadata purge/replay protection and migration
+model/schema/history agreement. Database/migration checks are NOT authorized by
+this code handoff; the owner's current no-apply hold remains in force. Independent
+audit follows the common tests, with no self-acceptance or merge authorization.

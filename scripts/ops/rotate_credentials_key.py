@@ -56,13 +56,21 @@ def rotate_in_transaction(conn, *, schema: str, old_key: str, new_key: str, appl
     revisions = conn.exec_driver_sql(f"SELECT version_num FROM {qualified('alembic_version')}").scalars().all()
     # Explicit schema generations: a future migration may add another encrypted
     # store. Never silently rotate only the stores known to an older utility.
-    if len(revisions) != 1 or revisions[0] not in {"0124", "p12t14_accounts", "p12t14_tg_login"}:
+    generations = {
+        "0124": (False, False, False),
+        "p12t14_accounts": (True, False, False),
+        "p12t14_tg_login": (True, True, False),
+        "p12t14_tg_runtime": (True, True, False),
+        "p12t14_tg_recovery": (True, True, False),
+        "p12t14_tg_retention": (True, True, True),
+    }
+    if len(revisions) != 1 or revisions[0] not in generations:
         raise RotationError("Apply the reviewed encrypted-refresh migration first and use a supported single head")
-    has_authorizations = sa.inspect(conn).has_table("personal_connector_authorizations", schema=schema)
-    has_logins = sa.inspect(conn).has_table("telegram_login_attempts", schema=schema)
-    if has_authorizations != (revisions[0] in {"p12t14_accounts", "p12t14_tg_login"}) or has_logins != (
-        revisions[0] == "p12t14_tg_login"
-    ):
+    inspector = sa.inspect(conn)
+    has_authorizations = inspector.has_table("personal_connector_authorizations", schema=schema)
+    has_logins = inspector.has_table("telegram_login_attempts", schema=schema)
+    has_keys = inspector.has_table("telegram_login_request_keys", schema=schema)
+    if (has_authorizations, has_logins, has_keys) != generations[revisions[0]]:
         raise RotationError("Credential store layout does not match the reviewed migration head")
     names = ["llm_providers", "user_credentials", "workspace_connection_secrets"]
     if has_authorizations:

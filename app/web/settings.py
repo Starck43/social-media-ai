@@ -60,7 +60,6 @@ MANAGER_TABS: frozenset[str] = frozenset({"agent", "channels"})
 # this is the manual fallback *inside* that card for anyone who cannot use OAuth.
 SELF_SERVICE_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
     "vk": (("user_token", "VK: личный токен вручную"),),
-    "telegram": (("session", "Telegram: файл сессии MTProto"),),
 }
 
 #: Access levels an owner gives a member (see `app/services/tenancy/member_roles.py`).
@@ -582,7 +581,7 @@ async def credential_store(
 ):
     """Store one of the caller's own personal secrets.
 
-    Only VK/Telegram personal fallback flows are accepted. A row here is keyed
+    Only the VK manual fallback is accepted; Telegram uses bounded connector-account login. A row here is keyed
     by `users.id`, so a user
     writes only their own vault and needs no right to do it. What *does* need a
     right is using someone else's — that is `owner.py::resolve_source_owner`.

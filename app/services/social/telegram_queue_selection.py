@@ -19,6 +19,10 @@ from app.types import PlatformType
 _QUEUE_BINDINGS = "_telegram_source_grants"
 
 
+class TelegramJobRequeueRequired(AuthorizationUnavailable):
+    """Fixed diagnostic for legacy/changed queued pins; never silently repin."""
+
+
 async def _snapshot_queue_bindings(session, payload, tenant_id):
     payload = dict(payload or {})
     # Caller payloads/replayed snapshots never supply their own authority.
@@ -85,8 +89,8 @@ def _queued_authorization_id(payload, selection):
     raw = pins.get(str(selection.source_id)) if type(pins) is dict else None
     fields = set(SourceGrantSelection.__dataclass_fields__)
     if type(raw) is not dict or set(raw) != fields | {"authorization_id"}:
-        raise AuthorizationUnavailable()
+        raise TelegramJobRequeueRequired()
     expected = SourceGrantSelection(**{key: raw[key] for key in fields})
     if expected != selection:
-        raise AuthorizationUnavailable()
+        raise TelegramJobRequeueRequired()
     return _positive(raw["authorization_id"])

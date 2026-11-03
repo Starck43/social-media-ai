@@ -195,3 +195,10 @@ These additions are deliberately untested under the owner's revised code-first
 workflow: no new tests or test execution until the final shared phase. Formatting
 and AST/diff checks are not acceptance. Previous test fingerprints apply only to
 their earlier trees; no READY, merge, provider-health or deployment claim.
+
+
+Guarded staging continuation: a private transaction-owned writer is reused by
+the legacy owning wrapper and a one-attempt runtime-batch helper. Only the latter
+uses the runtime epoch/job/consent commit; it takes no alternate content/session
+or run ID. The trusted dispatcher claim accessor supplies identity only. This
+code is not collector-routed and is untested until the final shared phase.

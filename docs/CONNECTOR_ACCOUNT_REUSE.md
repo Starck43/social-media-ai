@@ -508,3 +508,18 @@ are recorded, not runtime evidence. The final shared test phase must cover the
 pinned Telethon private API, provider fakes, every RPC/batch/timeout/cancellation
 path, lost-backend/epoch/job/payer races, migration history and independent audit
 before rollout consideration. Earlier slice test counts do not cover this code.
+
+
+### Guarded staging code continuation (still not routed)
+
+The existing Telegram staging implementation now has a private transaction-owned
+writer; its push/legacy wrapper preserves the owning-commit API. The private
+runtime-batch helper takes no caller-supplied content/session/run ID: it writes
+the retained batch inside the epoch/job/consent transaction, derives its job ID
+from acquisition and returns its measured receipt only after that commit. Empty
+batches still pass the gate without moving cursors or waking analysis. The
+writer flushes same-transaction cursor/raw changes before final gate checks.
+The dispatcher's progress context exposes its captured JobClaim read-only, never
+reconstructing one from a payload; it is an identity, not fresh permission.
+No collector routing is activated. Formatting/AST/diff checks only; tests are
+deferred to the owner's final shared phase, including legacy/push regressions.

@@ -3,7 +3,13 @@
 from contextlib import asynccontextmanager
 from dataclasses import replace
 
-from app.integrations.file_workspace.content_read import ContentReadContext, ContentReadStream
+from app.integrations.file_workspace.content_read import (
+    ContentReadContext,
+    ContentReadRequest,
+    ContentReadStream,
+    ReadPlainText,
+)
+from app.integrations.file_workspace.plain_text import extract_plain_text
 
 
 class SyntheticContentAuthority:
@@ -76,3 +82,19 @@ class SyntheticContentReader:
             self.events.append("close")
             if self.on_close:
                 await self.on_close()
+
+
+def synthetic_plain_text_read(payload=b"first\nsecond\nthird\n", *, provider_version=None):
+    """Completed synthetic read matching SyntheticContentAuthority assertions."""
+    context = ContentReadContext(
+        ContentReadRequest(1, 2, 3, 4, "a" * 32),
+        "disk:/private/file.txt",
+        "file.txt",
+        "root-key",
+        "policy-key",
+        "credential-key",
+        1,
+        "cloud",
+        "processing-policy-key",
+    )
+    return ReadPlainText(context, extract_plain_text(payload, name=context.name), provider_version)

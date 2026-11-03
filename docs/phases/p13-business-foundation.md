@@ -60,8 +60,9 @@ required. A wave starts when its trigger holds, not on a date.
 **Lanes.** *Remote* = Git/PR execution without real PostgreSQL; `test_schema`
 checks for its PR come from the local helper as a PR comment
 ([remote → local DB help](../PROMPT_EXAMPLES.md#remote-work--local-db-help--audit)).
-*Local* = tasks up to `C3`, tasks with migrations or live provider/sandbox
-evidence, and DB validation of remote PRs. Owner items are decisions in [Q-18](../tasks/q-18.md).
+*Local* = normally tasks up to `C3`, tasks with migrations or live provider/sandbox
+evidence, and DB validation of remote PRs. The explicitly listed remote Wave 0
+assignments are exceptions to the complexity guideline. Owner items are decisions in [Q-18](../tasks/q-18.md).
 
 ### Wave 0 — while PRs #307/#308/#311/#327 remain open
 
@@ -69,7 +70,7 @@ evidence, and DB validation of remote PRs. Owner items are decisions in [Q-18](.
 | --- | --- | --- |
 | Owner / integrator | Merge planning PR #341 to `dev` before task claims | Planning only; P13-T01 stays IN_PROGRESS until its required link check passes and it is independently accepted |
 | Remote | P13-T06 coverage gate and provider mocks | New files only (`scripts/ci/`, `tests/shared/`) |
-| Remote | P18-T01 local connector protocol (docs) | No code; reads P12-T12 contracts from the PR #327 branch until merged |
+| Remote | P18-T01 local connector protocol (preparation only) | Read #327 draft contracts; final work and acceptance wait for P12-T12 integration and D6 as required by the card |
 | Remote | P13-T05 audit codes and API conventions | No migration; rebase after #308 (both touch `app/api/v1`) |
 | Owner | D1, D5, D8 | D8 gates P13-T02, D5 gates P17-T01, D1 confirms bands |
 

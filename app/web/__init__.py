@@ -15,6 +15,7 @@ from .cases import router as cases_router
 from .chat import router as chat_router
 from .communications import router as communications_router
 from .connections import router as connections_router
+from .connector_accounts import router as connector_accounts_router
 from .dashboard import router as dashboard_router
 from .digests import router as digests_router
 from .documents import router as documents_router
@@ -40,6 +41,7 @@ web_router.include_router(cases_router)
 web_router.include_router(chat_router)
 web_router.include_router(communications_router)
 web_router.include_router(connections_router)
+web_router.include_router(connector_accounts_router)
 web_router.include_router(digests_router)
 web_router.include_router(documents_router)
 web_router.include_router(followups_router)

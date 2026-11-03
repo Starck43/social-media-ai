@@ -181,6 +181,7 @@ def context(mode):
                     label="Не подключено",
                     detail="Подключите аккаунт",
                     is_configured=False,
+                    can_connect=True,
                 ),
                 manual_kinds=[("user_token", "Личный токен")],
                 rows=[],

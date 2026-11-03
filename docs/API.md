@@ -20,8 +20,8 @@ add bounded phone/code/2FA login with encrypted attempts; they never accept a ra
 StringSession or caller-supplied owner/tenant/application key. The legacy
 `/api/v1/credentials/login` now returns a fixed `409 workspace_telegram_authorization_not_available` rather than invoking
 terminal input from HTTP. Clients must handle this unsupported state; the new
-settings/account-picker web UI, recovery and collector grant resolution remain
-outstanding. A 200 login response is metadata: check `state`, not just HTTP status.
+login/account-picker web UI, recovery and collector grant resolution remain
+outstanding. A separate personal metadata/local-revoke web page is available. A 200 login response is metadata: check `state`, not just HTTP status.
 The new API does not automatically attach accounts on workspace creation/join.
 
 Account self-service exceptions: `GET /api/v1/connector-accounts/personal` lists
@@ -33,8 +33,16 @@ are ignored, not elevated. The existing revoke path/body/response remain, but it
 now survives lost memberships/suspended workspaces. It atomically clears local
 ciphertext and invalidates own grants, not provider sessions, and needs no key or
 provider call. All other connector-account routes remain workspace-scoped.
-There is no anonymous/cookie-auth exception or broad prefix bypass. Reauthorization
-and the account-level CSRF web journey remain open.
+There is no anonymous/cookie-auth exception for these API routes or broad prefix bypass.
+Reauthorization and the complete web journey remain open.
+
+The separate browser-session `GET /app/settings/telegram-accounts` and confirmed
+CSRF `POST /app/settings/telegram-accounts/{id}/revoke` require no workspace.
+The POST accepts only `_csrf`, `expected_revision`, and `confirm=revoke-local`;
+its token is bound to the session, actor and page. The exact-path exception does
+not cover login or workspace operations. These no-store responses expose metadata
+only; local revoke is not remote Telegram logout and does not touch the legacy
+vault. See [web scope and limitations](CONNECTOR_ACCOUNT_REUSE.md#personal-web-metadata-and-local-revoke-partial).
 
 The connector-account OpenAPI now publishes explicit metadata-only response
 shapes and fixed error envelopes. Unlisted internal fields are filtered; an

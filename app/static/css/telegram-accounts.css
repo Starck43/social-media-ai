@@ -1,0 +1,128 @@
+/* Personal, account-only surface; reuse the shell's light/dark semantic tokens. */
+/* This page remains usable when optional CDN styling is unavailable. */
+body.ui-shell {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+.ui-shell *,
+.ui-shell *::before,
+.ui-shell *::after {
+  box-sizing: border-box;
+}
+.telegram-accounts {
+  max-width: 960px;
+  display: grid;
+  gap: 24px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.telegram-accounts :is(h2, p) {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.telegram-accounts h2 {
+  font-size: 1.25rem;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.telegram-accounts :is(section, article) {
+  display: grid;
+  gap: 12px;
+}
+.telegram-accounts a {
+  color: var(--ui-accent);
+  text-underline-offset: 3px;
+}
+.telegram-accounts-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  justify-self: start;
+}
+.telegram-accounts-intro p {
+  max-width: 75ch;
+}
+.telegram-accounts-list {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.telegram-account-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+}
+.telegram-account-heading h2 {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+.telegram-account-heading .ui-badge {
+  white-space: normal;
+  font-size: 14px;
+}
+.telegram-account-revoke {
+  display: grid;
+  gap: 16px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+}
+.telegram-account-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  min-height: 44px;
+  max-width: 75ch;
+}
+.telegram-account-confirm input {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin: 3px 0 0;
+  accent-color: var(--ui-accent);
+}
+.telegram-account-revoke-button {
+  justify-self: start;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #9f1239;
+  background: #fff1f2;
+  color: #9f1239;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.telegram-account-revoke-button:hover {
+  background: #ffe4e6;
+}
+.telegram-accounts-error {
+  border-color: #9f1239;
+}
+html.dark .telegram-account-revoke-button {
+  border-color: #fecdd3;
+  color: #fecdd3;
+  background: #4c0519;
+}
+html.dark .telegram-account-revoke-button:hover {
+  background: #660c26;
+}
+html.dark .telegram-accounts-error {
+  border-color: #fecdd3;
+}
+@media (max-width: 600px) {
+  .telegram-accounts {
+    gap: 16px;
+  }
+  .telegram-account-revoke-button {
+    width: 100%;
+  }
+}

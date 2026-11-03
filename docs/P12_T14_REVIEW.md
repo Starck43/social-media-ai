@@ -79,7 +79,8 @@ authorization and own consents can be invalidated; no provider logout is claimed
 The middleware exception is exact-method/path only. Workspace attach/detach/login
 remain membership-bound. Fake-transaction/JWT-ASGI tests are distinct from the
 authored-but-unrun PostgreSQL/assembled-app rollback and no-membership checks.
-No account settings UI or reauthorization/reconsent is delivered by this slice.
+This API slice alone did not deliver account settings UI or reauthorization/reconsent;
+the subsequent partial web slice is described below.
 
 ## Machine API contract continuation
 
@@ -92,13 +93,26 @@ generated route index includes personal listing. DB-exempt JWT/ASGI and mounted
 application OpenAPI checks are not database or real consumer evidence. API
 consumer migration and full migration-history checks remain open.
 
+## Personal metadata and local-revoke web continuation
+
+The browser-session page lists owned new-store Telegram metadata and provides an
+explicit confirmation for personal-wide local revoke, including without any
+workspace membership. The exact-path middleware exception does not extend to
+login, attach, detach or workspace settings. A bounded form and session/actor/page-
+bound CSRF token guard the action; the service rechecks owner and revision. Errors
+are opaque and an uncertain result is not reported as success. No remote logout,
+legacy vault modification or provider-health claim is made. Fake-service HTTP and
+offline DOM checks do not prove real database transactions, real CDN rendering,
+provider connectivity or the complete login/consent journey.
+
 ## Remaining completion gates
 
 - Telegram reauthorization/recovery, metadata retention and operational recovery;
   bounded machine login is delivered but is not a web onboarding UI. Scheduled
   expired-ciphertext cleanup is implemented but PostgreSQL concurrency/rollback
   validation is still required. No live provider validation is claimed.
-- Account/source picker web UI and CSRF/DOM coverage; fresh execution-time grant,
+- Complete login, reauthorization/reconsent and workspace account/source picker UI;
+  assembled CSRF/DOM journeys with a fake provider; fresh execution-time grant,
   owner, membership and revision checks; shared-session execution lease/locking.
 - Eliminate legacy Telegram vault fallback from the runtime, not merely from
   environment. The collector is still user-vault based at this checkpoint.

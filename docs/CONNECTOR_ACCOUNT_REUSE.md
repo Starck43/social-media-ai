@@ -93,8 +93,25 @@ one transaction. Transitioning to revoked advances revision; repeating with the
 current revoked revision repairs ciphertext/active-grant inconsistencies without
 advancing again. An old revision remains unavailable. No Telegram API/logout is
 called. The existing workspace-scoped service method remains for internal callers;
-the HTTP revoke now uses the independent account scope. Account-level web UI and
-same-subject reauthorization/reconsent are not delivered by this API slice.
+the HTTP revoke now uses the independent account scope. A separate session-authenticated
+personal web page now lists metadata and offers confirmed local revoke without a
+workspace; same-subject reauthorization/reconsent remains undelivered.
+
+### Personal web metadata and local revoke (partial)
+
+`GET /app/settings/telegram-accounts` uses the active browser session, not a
+Bearer-only request, and lists only owned Telegram/MTProto metadata from the new
+store. It skips workspace and membership lookup for this exact path. The separate
+`POST /app/settings/telegram-accounts/{id}/revoke` requires a bounded URL-encoded
+form containing exactly `_csrf`, `expected_revision`, and `confirm=revoke-local`;
+its CSRF token is bound to session, actor and this surface. Only exact GET/POST
+paths have the no-workspace exception. Ownership and revision are rechecked by the
+account service; stale, missing and foreign records produce the same opaque error.
+Responses are no-store with no-referrer. An unconfirmed outcome is not presented
+as a success or rollback. Local revoke clears new-store ciphertext and invalidates
+its grants; it does not end a Telegram session or change the legacy vault. Status
+is local metadata, not evidence of provider health. Login, recovery, workspace
+grant controls and source selection are not provided here.
 
 Authorization-row locks serialize attach/revoke before grant-row locks; unique
 constraints protect concurrent inserts. Retrying attach with the same revision
@@ -325,9 +342,9 @@ Still required for P12-T14 completion:
 
 - PostgreSQL concurrency/rollback validation, metadata retention policy and operational recovery for expired attempts;
   the bounded machine API alone is not a complete web onboarding journey.
-- Explicit account/grant settings UI with CSRF and a source-grant picker, including
-  account-level self-revocation UI with no remaining memberships. The independent
-  JWT list/local-revoke API is delivered, not the assembled web journey.
+- Complete login, reauthorization/reconsent, account/grant settings and source-grant
+  picker UI. The personal metadata/local-revoke page works without memberships, but
+  it is not the assembled onboarding or workspace consent journey.
 - Runtime grant resolution with fresh owner/membership/revision checks, shared
   session execution locking, cancellation and revoke/disconnect semantics; exercise
   queued jobs and membership changes. No fallback to legacy/global accounts.

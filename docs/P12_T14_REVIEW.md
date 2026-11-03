@@ -10,7 +10,7 @@ scope and checks are ready for independent review. The owner now
 Live-provider validation remains unrun and is waived as a pre-merge requirement;
 the owner performs it after integration. Runtime activation stays separate.
 
-**Current status and actions:** start with the [task card handoff](tasks/p12-t14.md#current-handoff--start-here); [validation](P12_T14_CONTINUATION_VALIDATION.md) owns test evidence and release gaps. The checkpoints below are historical.
+**Current status and actions:** start with the [task card handoff](audit/p12-t14.md); [validation](P12_T14_CONTINUATION_VALIDATION.md) owns test evidence and release gaps. The checkpoints below are historical.
 
 ## Review map
 

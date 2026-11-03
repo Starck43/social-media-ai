@@ -3,3 +3,11 @@
 # path = "app/services/example"
 # tests = ["tests/unit_services/test_example.py"]
 # Empty until a business package is delivered; no legacy package is opted in.
+
+[[package]]
+path = "app/api/v1/conventions.py"
+tests = ["tests/api/test_p13_t05_contracts.py"]
+
+[[package]]
+path = "app/schemas/business.py"
+tests = ["tests/api/test_p13_t05_contracts.py"]

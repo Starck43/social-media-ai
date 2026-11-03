@@ -1,0 +1,5 @@
+# Register each delivered business package with focused tests. Example:
+# [[package]]
+# path = "app/services/example"
+# tests = ["tests/unit_services/test_example.py"]
+# Empty until a business package is delivered; no legacy package is opted in.

@@ -52,6 +52,25 @@ build; a card is not blocked on a decision any more.
 - D9 — **answered (owner, 2026-11-04)**: PostgreSQL plus the existing private
   storage from P12-T12; S3-compatible storage only after a measured need.
 
+## Authorizations that outlive the register
+
+Closing the register does not mean every question is asked and answered again.
+These stand as authorizations for future tasks:
+
+- **Tenant isolation exception for platform-wide technical rows (2026-11-04).**
+  A model may omit `tenant_id` only when the row holds no customer data and is
+  global by nature (one provider account's remaining budget, one connector's
+  health, one cache's expiry); the row names the reason in its docstring and a
+  subscriber never sees it. Anything carrying customer data stays tenant-scoped.
+  Recorded in [BUSINESS_MODULES](../BUSINESS_MODULES.md); a task that needs the
+  exception says so at planning time, not at review.
+- **`test_schema` migrations (standing rule, not a decision).** Reviewed Alembic
+  migrations on the isolated schema need no repeated permission
+  ([database rules](../COLLABORATION.md#database)); separate authorization applies
+  to the **public** schema only.
+- **D6 signing deferral** and **D7 consent wording**: each is deferred to a named
+  later moment, not approved. Reaching that moment needs a new decision.
+
 ## Consequences worth remembering
 
 - D1 moved P14-T05 and P14-T06 from `P3` to `P2` in ROADMAP (queue order only).

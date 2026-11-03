@@ -196,6 +196,11 @@ of the four applies, decide.
   option.
 - **Batch related questions** in one message, one option list each, so the owner
   answers once. Do not split a decision across several messages.
+- **Read the register before asking.** An answered decision is an authorization,
+  not a pending question: check [Q-18](../docs/audit/q-18-owner-decisions.md) and
+  the adapted contracts in [BUSINESS_MODULES](../docs/BUSINESS_MODULES.md) first.
+  Re-asking what the owner already granted is the failure mode this section exists
+  to prevent - it costs a round trip and reads as not having read the task.
 - **Recommend one**, marked as such. "You decide" without a recommendation is not
   an answer the owner can act on.
 - Ask through the interface the owner reads this session (chat question tool,

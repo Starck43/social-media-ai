@@ -23,6 +23,19 @@ _HARD_ITEM_LIMIT = 1000
 _DISCONNECT_SECONDS = 5
 
 
+def _is_connect_config_request(request, *, functions, layer: int, connecting: bool) -> bool:
+    """Recognize only Telethon's pinned connect envelope for its read-only config RPC."""
+    if not connecting or type(request) is not functions.InvokeWithLayerRequest or request.layer != layer:
+        return False
+    request = request.query
+    if type(request) is not functions.InvokeWithoutUpdatesRequest:
+        return False
+    request = request.query
+    if type(request) is not functions.InitConnectionRequest:
+        return False
+    return type(request.query) is functions.help.GetConfigRequest
+
+
 def _build_client(material, fence):
     """All application submissions, including connect's config RPC, use send gate.
 
@@ -32,6 +45,7 @@ def _build_client(material, fence):
     from telethon import TelegramClient, utils
     from telethon.sessions import StringSession
     from telethon.tl import functions
+    from telethon.tl.alltlobjects import LAYER
 
     allowed = (
         functions.users.GetUsersRequest,
@@ -58,23 +72,16 @@ def _build_client(material, fence):
             return self._send(request, ordered)
 
         async def _send(self, request, ordered):
+            # Telethon 1.45.0 connect sends exactly
+            # InvokeWithLayer(InvokeWithoutUpdates(InitConnection(GetConfig))).
+            # Do not unwrap general nested containers or accept forged layers.
+            connect_config = _is_connect_config_request(
+                request, functions=functions, layer=LAYER, connecting=client._runtime_connecting
+            )
             base = request
-            # Connect emits layer/init wrappers; ordinary _call can emit only
-            # InvokeWithoutUpdates. Never accept batched or arbitrary wrappers.
-            if isinstance(base, functions.InvokeWithoutUpdatesRequest):
+            if not connect_config and type(base) is functions.InvokeWithoutUpdatesRequest:
                 base = base.query
-            if isinstance(base, functions.InvokeWithLayerRequest):
-                if not client._runtime_connecting:
-                    raise AuthorizationUnavailable()
-                base = base.query
-            if isinstance(base, functions.InitConnectionRequest):
-                if not client._runtime_connecting:
-                    raise AuthorizationUnavailable()
-                base = base.query
-            if isinstance(base, functions.help.GetConfigRequest):
-                if not client._runtime_connecting:
-                    raise AuthorizationUnavailable()
-            elif not isinstance(base, allowed):
+            if not connect_config and type(base) not in allowed:
                 raise AuthorizationUnavailable()
             async with fence._request():
                 return await self._delegate.send(request, ordered=ordered)

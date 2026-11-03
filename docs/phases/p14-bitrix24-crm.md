@@ -38,7 +38,7 @@ TZ criteria with adaptations: OAuth connection (T01); automatic 15-min sync (T02
 ## Plan
 
 1. [P14-T01](../tasks/p14-t01.md) — Bitrix24 connection: OAuth 2.0 portal authorization and health · `P2` · `C3` · depends: [P13-T08](../tasks/p13-t08.md), [P13-T03 accepted](../audit/p13-t03.md)
-2. [P14-T02](../tasks/p14-t02.md) — Bitrix24 read-only incremental sync of contacts, companies, leads and deals · `P2` · `C4` · depends: [P14-T01](../tasks/p14-t01.md), [P13-T07](../tasks/p13-t07.md)
+2. [P14-T02](../tasks/p14-t02.md) — Bitrix24 read-only incremental sync of contacts, companies, leads and deals · `P2` · `C4` · depends: [P14-T01](../tasks/p14-t01.md), [P13-T07 accepted](../audit/p13-t07.md)
 3. [P14-T03](../tasks/p14-t03.md) — CRM contact cards and duplicate candidates · `P2` · `C3` · depends: [P14-T02](../tasks/p14-t02.md)
 4. [P14-T04](../tasks/p14-t04.md) — Upcoming events and AI greeting drafts · `P2` · `C3` · depends: [P14-T02](../tasks/p14-t02.md)
 5. [P14-T05](../tasks/p14-t05.md) — Approved greeting delivery via email, Telegram and MAX · `P3` · `C3` · depends: [P14-T04](../tasks/p14-t04.md), [P15-T05](../tasks/p15-t05.md) persistent outbox, [P15-T06](../tasks/p15-t06.md) channel senders, [P13-T04](../tasks/p13-t04.md)

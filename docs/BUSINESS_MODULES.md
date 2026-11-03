@@ -65,7 +65,7 @@ providers) before integrating it with another module.
 | "approval workflow for write operations" | Preview → approve → separately admitted execute, bound to actor, tenant, exact payload hash and TTL, rechecked at execution, off by default per capability ([ACTION_ACTIVATION](ACTION_ACTIVATION.md#user-and-authorization-contract), [outbound lifecycle](PRODUCT_PLAN.md#extension-contracts)). Generalized in P13-T04. |
 | `tasks`, `/api/v1/tasks` | **Name collision**: `agent_tasks` and `/api/v1/tasks` already mean scheduled agent work ([AGENT_TASKS_QUEUE](AGENT_TASKS_QUEUE.md)). User to-dos use the `planner` namespace: `planner_tasks`, `/api/v1/planner/tasks`, `/app/planner` (P16). |
 | `documents`, `document_versions` | Extend existing `knowledge_documents` / `document_revisions` (migration 0122, P12-T03/T11) instead of a parallel table set (P19). |
-| `unified_contacts`, `bitrix_contacts` | Shared contact core: `contacts` + `contact_identities` (P13-T07). Bitrix24 entities are a source of identities, not a separate contact system. |
+| `unified_contacts`, `bitrix_contacts` | Shared contact core: `contacts` + `contact_identities` ([CONTACTS](CONTACTS.md); [P13-T07 audit](audit/p13-t07.md)). Bitrix24 entities are a source of identities, not a separate contact system. |
 | Outbox, follow-ups | P12-T04 delivered pure state-machine/quiet-hours services; P15 persists them and adds per-target delivery. |
 | Knowledge/evidence boundary | `data_boundary` = `local_only` / `company` / `cloud` (P12-T03/T11); local-only content never transits cloud chat or fallback models. |
 | REST API | Existing FastAPI app under `/api/v1` (`app/api/v1/`) with OpenAPI generation; web pages under `/app`. Route tables are generated in [docs/generated](generated/README.md). |

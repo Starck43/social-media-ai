@@ -41,6 +41,7 @@ class TelegramLoginAttempt(Base, TenantScopedMixin, TimestampMixin):
             postgresql_where=text("state IN ('processing','code','password')"),
         ),
         Index("ix_telegram_login_owner_created", "owner_user_id", "created_at"),
+        Index("ix_telegram_login_retention", "state", "created_at"),
         {"schema": settings.DB_SCHEMA},
     )
     id: Mapped[str] = Column(String(36), primary_key=True)
@@ -68,3 +69,12 @@ class TelegramLoginAttempt(Base, TenantScopedMixin, TimestampMixin):
         Integer, ForeignKey(f"{settings.DB_SCHEMA}.personal_connector_authorizations.id", ondelete="CASCADE")
     )
     recovery_revision = Column(Integer)
+
+
+class TelegramLoginRequestKey(Base):
+    """Minimal owner-lifetime replay tombstone; no tenant, attempt or session data."""
+
+    __tablename__ = "telegram_login_request_keys"
+    __table_args__ = {"schema": settings.DB_SCHEMA}
+    owner_user_id = Column(Integer, ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="CASCADE"), primary_key=True)
+    request_key = Column(String(36), primary_key=True)

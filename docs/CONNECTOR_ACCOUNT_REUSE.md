@@ -606,3 +606,29 @@ Migration `p12t14_tg_recovery` follows `p12t14_tg_runtime`, adding nullable targ
 pins to existing attempts without reading sessions. Stop/drain writers before
 rollback; no old provider result may survive dropping these pins. No migration
 has been executed and this code is not certified by earlier test fingerprints.
+
+## Bounded login metadata retention and outage recovery (code-first)
+
+Temporary login ciphertext expires after ten minutes. Each maintenance pass
+expires at most 200 pending rows, wipes at most 200 unexpected terminal envelopes,
+and removes at most 200 terminal metadata rows older than 30 days (also requiring
+expiry and an empty envelope). `SKIP LOCKED` avoids stealing another transition;
+retries after an outage perform only local cleanup, never provider I/O. The
+worker maintenance loop is prepared, not started by this change. Observed expiry
+and explicit cancellation fence late provider results by state/revision.
+
+Before metadata removal, a separate minimal owner/request-UUID tombstone is
+retained. Start consults it even when the original attempt is gone: a retired key
+returns `login_request_retired`, never a new send-code. Tombstones contain no
+phone, tenant, attempt ID, account/grant ID, ciphertext or status and live until
+owner deletion. This deliberately trades minimal owner-lifetime replay metadata
+for safety; indefinite detailed attempt history is not retained. Personal
+accounts/grants are NOT subject to this temporary-attempt retention job.
+
+Revision `p12t14_tg_retention` backfills only those non-secret pairs and adds the
+retention index after `p12t14_tg_recovery`. It is forward-only: routine downgrade
+would erase the only replay evidence for already-deleted attempts. Rollback needs
+a reviewed retained-data backup/restore plan, stopped/drained writers and separate
+authorization; do not edit migration history or stamp past this revision. No
+migration or deletion has been run here. Database races, exact model/schema
+agreement and retention behavior still require final synthetic validation.

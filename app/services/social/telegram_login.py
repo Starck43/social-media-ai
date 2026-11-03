@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
 from app.core.database import async_engine, async_session_maker
 from app.models import TelegramLoginAttempt as Attempt
+from app.models import TelegramLoginRequestKey as RequestKey
 from app.models.managers.workspace_connection_manager import ConnectionDenied, _authorize
 from app.services.social.connector_authorizations import (
     AuthorizationAlreadyExists,
@@ -197,6 +198,15 @@ class TelegramLoginManager:
                     ):
                         raise LoginRejected()
                     return _projection(row)  # Same request cannot cause another send-code.
+            if (
+                await session.scalar(
+                    select(RequestKey.request_key).where(
+                        RequestKey.owner_user_id == actor_id, RequestKey.request_key == request_key
+                    )
+                )
+                is not None
+            ):
+                raise LoginRejected("login_request_retired")
             if any(row.state in PENDING for row in rows):
                 raise LoginRejected("login_already_pending")
             if sum(row.created_at >= now - TTL for row in rows) >= 3:
@@ -237,6 +247,7 @@ class TelegramLoginManager:
                 _seal(row, material)
             except (ValueError, RuntimeError, TypeError, UnicodeError):
                 raise LoginRejected("login_configuration_unavailable", 503) from None
+            session.add(RequestKey(owner_user_id=actor_id, request_key=request_key))
             session.add(row)
             await session.flush()
             attempt_id, revision = row.id, row.revision

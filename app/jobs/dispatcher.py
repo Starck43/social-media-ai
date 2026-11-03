@@ -692,10 +692,17 @@ async def _telegram_login_maintenance_loop() -> None:
     while True:
         delay = 60
         try:
-            from app.services.social.telegram_login_maintenance import BATCH_SIZE, expire_attempt_batch
+            from app.services.social.telegram_login_maintenance import (
+                BATCH_SIZE,
+                expire_attempt_batch,
+                purge_attempt_batch,
+                wipe_terminal_attempt_batch,
+            )
 
             with tenant_scope(bypass=True):
-                count = await expire_attempt_batch()
+                count = max(
+                    await expire_attempt_batch(), await wipe_terminal_attempt_batch(), await purge_attempt_batch()
+                )
             if count == BATCH_SIZE:
                 delay = 1
         except asyncio.CancelledError:

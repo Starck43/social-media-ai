@@ -65,5 +65,11 @@ no automatic replay. Unit/fake-provider/ASGI tests are not PostgreSQL evidence.
 - PostgreSQL recovery/consent/retention races, schema upgrade/backfill/rollback,
   encrypted data preservation, normal DB conftest/full suite, actual app E2E and
   provider verification are UNRUN under owner hold. They remain release gates.
-- Synthetic local Jinja/Chromium render checks and independent audit are separate
-  evidence; final audit outcome must be recorded after it happens.
+- Synthetic Jinja/Chromium visual review: 17 states in two configurations
+  (1280px/light and 390px/dark), 34 renders, no observed horizontal overflow.
+  Focus/Tab sampling covered picker-selected and login start/code/password/error
+  in those configurations. Light input border against white measured ~1.23:1;
+  dark sample ~4.78:1. This is not live E2E or a complete accessibility audit.
+- Independent read-only audit of `d1a4b852` started but failed before its final
+  report; replacement session creation failed. Partial findings and the exact
+  next actions are in the task card. No independent audit PASS.

@@ -7,6 +7,8 @@ P12-T14 work is published to this PR; separate working branches are implementati
 checkpoints, not additional audit requests. #308 stays draft until the complete
 scope and checks are ready for independent review. No merge is authorized.
 
+**Current status and actions:** start with the [task card handoff](tasks/p12-t14.md#current-handoff--start-here); [validation](P12_T14_CONTINUATION_VALIDATION.md) owns test evidence and release gaps. The checkpoints below are historical.
+
 ## Review map
 
 1. **Credential storage and renewal:** user credential model/manager, VK OAuth

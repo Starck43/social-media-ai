@@ -12,7 +12,7 @@ import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import delete, func, select, update
 
-from app.core.database import async_session_maker
+from app.core.database import async_session_maker, engine
 from app.core.tenant_context import tenant_scope
 from app.integrations.file_workspace.content_read import ReadPlainText
 from app.integrations.file_workspace.insight_candidates import InsightCandidate, InsightCandidateBatch
@@ -381,66 +381,91 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
     new_key = Fernet.generate_key().decode()
     store.cipher = PrivateCipher(old_key)
 
-    with actor(data) as args:
-        object_id = await setup(store, args)
-        source, batch, receipt, saved = await _result_for(store, args, object_id)
-        async with async_session_maker() as session, session.begin():
-            connection_secret = await session.get(WorkspaceConnectionSecret, args["connection_id"])
-            original_ciphertext = connection_secret.secret_encrypted
-            original_plaintext = decrypt_secret(original_ciphertext)
-            provider = LLMProvider(
-                owner_user_id=args["actor_id"],
-                uid="p12t12-rotation-" + source.context.request.nonce,
-                name="Synthetic provider",
-                api_format="openai",
-                base_url="https://synthetic.invalid/v1",
-                encrypted_api_key=encrypt_secret("synthetic-provider-key"),
-                is_active=False,
-            )
-            session.add(provider)
-            await session.flush()
-            provider_id = provider.id
+    provider_id = None
+    try:
+        with actor(data) as args:
+            object_id = await setup(store, args)
+            source, batch, receipt, saved = await _result_for(store, args, object_id)
+            async with async_session_maker() as session, session.begin():
+                connection_secret = await session.get(WorkspaceConnectionSecret, args["connection_id"])
+                original_ciphertext = connection_secret.secret_encrypted
+                original_plaintext = decrypt_secret(original_ciphertext)
+                provider = LLMProvider(
+                    owner_user_id=args["actor_id"],
+                    uid="p12t12-rotation-" + source.context.request.nonce,
+                    name="Synthetic provider",
+                    api_format="openai",
+                    base_url="https://synthetic.invalid/v1",
+                    encrypted_api_key=encrypt_secret("synthetic-provider-key"),
+                    is_active=False,
+                )
+                session.add(provider)
+                await session.flush()
+                provider_id = provider.id
 
-        with engine.begin() as connection:
-            dry_run = rotate_in_transaction(
-                connection,
-                schema="test_schema",
-                old_key=old_key,
-                new_key=new_key,
-                apply=False,
-                allow_private_results_purge=False,
-            )
-        assert dry_run["private_consent_mounts"] == 1
-        assert dry_run["private_attempts"] == 1
-        assert dry_run["private_results"] == 1
-
-        with pytest.raises(RotationError):
             with engine.begin() as connection:
-                rotate_in_transaction(
+                dry_run = rotate_in_transaction(
                     connection,
                     schema="test_schema",
                     old_key=old_key,
                     new_key=new_key,
-                    apply=True,
+                    apply=False,
                     allow_private_results_purge=False,
                 )
+            assert dry_run["private_consent_mounts"] == 1
+            assert dry_run["private_attempts"] == 1
+            assert dry_run["private_results"] == 1
 
-        async with async_session_maker() as session:
-            mount = await session.get(FileInsightMount, args["connection_id"])
-            assert mount.processing_allowed and mount.retention_allowed
-            assert await session.get(FileInsightAttempt, source.context.request.nonce) is not None
-            assert await session.get(FilePrivateInsight, saved.id) is not None
-            assert (
-                await session.get(WorkspaceConnectionSecret, args["connection_id"])
-            ).secret_encrypted == original_ciphertext
+            with pytest.raises(RotationError):
+                with engine.begin() as connection:
+                    rotate_in_transaction(
+                        connection,
+                        schema="test_schema",
+                        old_key=old_key,
+                        new_key=new_key,
+                        apply=True,
+                        allow_private_results_purge=False,
+                    )
 
-        async with async_session_maker() as session, session.begin():
-            provider = await session.get(LLMProvider, provider_id)
-            provider.encrypted_api_key = "invalid-synthetic-ciphertext"
+            async with async_session_maker() as session:
+                mount = await session.get(FileInsightMount, args["connection_id"])
+                assert mount.processing_allowed and mount.retention_allowed
+                assert await session.get(FileInsightAttempt, source.context.request.nonce) is not None
+                assert await session.get(FilePrivateInsight, saved.id) is not None
+                assert (
+                    await session.get(WorkspaceConnectionSecret, args["connection_id"])
+                ).secret_encrypted == original_ciphertext
 
-        with pytest.raises(RotationError):
+            async with async_session_maker() as session, session.begin():
+                provider = await session.get(LLMProvider, provider_id)
+                provider.encrypted_api_key = "invalid-synthetic-ciphertext"
+
+            with pytest.raises(RotationError):
+                with engine.begin() as connection:
+                    rotate_in_transaction(
+                        connection,
+                        schema="test_schema",
+                        old_key=old_key,
+                        new_key=new_key,
+                        apply=True,
+                        allow_private_results_purge=True,
+                    )
+
+            async with async_session_maker() as session:
+                mount = await session.get(FileInsightMount, args["connection_id"])
+                assert mount.processing_allowed and mount.retention_allowed
+                assert await session.get(FileInsightAttempt, source.context.request.nonce) is not None
+                assert await session.get(FilePrivateInsight, saved.id) is not None
+                assert (
+                    await session.get(WorkspaceConnectionSecret, args["connection_id"])
+                ).secret_encrypted == original_ciphertext
+
+            async with async_session_maker() as session, session.begin():
+                provider = await session.get(LLMProvider, provider_id)
+                provider.encrypted_api_key = encrypt_secret("synthetic-provider-key")
+
             with engine.begin() as connection:
-                rotate_in_transaction(
+                applied = rotate_in_transaction(
                     connection,
                     schema="test_schema",
                     old_key=old_key,
@@ -448,38 +473,19 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
                     apply=True,
                     allow_private_results_purge=True,
                 )
+            assert applied["private_consent_mounts"] == 1
+            assert applied["private_attempts"] == 1
+            assert applied["private_results"] == 1
 
-        async with async_session_maker() as session:
-            mount = await session.get(FileInsightMount, args["connection_id"])
-            assert mount.processing_allowed and mount.retention_allowed
-            assert await session.get(FileInsightAttempt, source.context.request.nonce) is not None
-            assert await session.get(FilePrivateInsight, saved.id) is not None
-            assert (
-                await session.get(WorkspaceConnectionSecret, args["connection_id"])
-            ).secret_encrypted == original_ciphertext
-
-        async with async_session_maker() as session, session.begin():
-            provider = await session.get(LLMProvider, provider_id)
-            provider.encrypted_api_key = encrypt_secret("synthetic-provider-key")
-
-        with engine.begin() as connection:
-            applied = rotate_in_transaction(
-                connection,
-                schema="test_schema",
-                old_key=old_key,
-                new_key=new_key,
-                apply=True,
-                allow_private_results_purge=True,
-            )
-        assert applied["private_consent_mounts"] == 1
-        assert applied["private_attempts"] == 1
-        assert applied["private_results"] == 1
-
-        async with async_session_maker() as session:
-            mount = await session.get(FileInsightMount, args["connection_id"])
-            assert not mount.processing_allowed and not mount.retention_allowed
-            assert await session.get(FileInsightAttempt, source.context.request.nonce) is None
-            assert await session.get(FilePrivateInsight, saved.id) is None
-            rotated_secret = (await session.get(WorkspaceConnectionSecret, args["connection_id"])).secret_encrypted
-            assert rotated_secret != original_ciphertext
-            assert Fernet(new_key.encode()).decrypt(rotated_secret.encode()).decode() == original_plaintext
+            async with async_session_maker() as session:
+                mount = await session.get(FileInsightMount, args["connection_id"])
+                assert not mount.processing_allowed and not mount.retention_allowed
+                assert await session.get(FileInsightAttempt, source.context.request.nonce) is None
+                assert await session.get(FilePrivateInsight, saved.id) is None
+                rotated_secret = (await session.get(WorkspaceConnectionSecret, args["connection_id"])).secret_encrypted
+                assert rotated_secret != original_ciphertext
+                assert Fernet(new_key.encode()).decrypt(rotated_secret.encode()).decode() == original_plaintext
+    finally:
+        if provider_id is not None:
+            async with async_session_maker() as session, session.begin():
+                await session.execute(delete(LLMProvider).where(LLMProvider.id == provider_id))

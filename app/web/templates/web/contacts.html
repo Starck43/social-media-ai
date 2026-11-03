@@ -1,0 +1,26 @@
+{% extends "web/base.html" %}
+{% block title %}Контакты — AI Assistant{% endblock %}
+{% block page_heading %}Контакты{% endblock %}
+{% block content %}
+<section class="ui-card space-y-6" aria-labelledby="contacts-heading">
+    <div>
+        <h2 id="contacts-heading" class="text-lg font-semibold">Контакты пространства</h2>
+        <p class="mt-2 ui-muted">Адресная книга. Сохранённый контакт не означает согласия на рассылку.</p>
+    </div>
+    {% if items %}
+    <ul class="divide-y divide-slate-200 dark:divide-slate-700" aria-label="Список контактов">
+        {% for item in items %}
+        <li class="py-4 flex flex-wrap items-center justify-between gap-3">
+            <span class="font-medium break-words min-w-0" style="overflow-wrap:anywhere">{{ item.display_name }}</span>
+            <span class="ui-muted">{{ item.preferred_channel or 'Канал не выбран' }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="py-8 ui-muted" role="status">Контактов пока нет. Импорт и редактирование появятся отдельно.</p>
+    {% endif %}
+    {% if next_before_id %}
+    <a class="ui-control" href="/app/contacts?before_id={{ next_before_id }}">Следующие контакты</a>
+    {% endif %}
+</section>
+{% endblock %}

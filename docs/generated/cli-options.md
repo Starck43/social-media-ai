@@ -105,6 +105,10 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main llm model-update | --cost-out | option | float | no | null |
 | python -m cli.main llm model-update | --active, --inactive | option | boolean | no | null |
 | python -m cli.main llm model-update | --default, --no-default | option | boolean | no | null |
+| python -m cli.main pii rotate | --table | option | str | no | null |
+| python -m cli.main pii rotate | --batch | option | int range | no | 200 |
+| python -m cli.main pii rotate | --limit | option | int range | no | null |
+| python -m cli.main pii rotate | --dry-run, --yes | option | boolean | no | true |
 | python -m cli.main prune | --src, -s | option | str | no | null |
 | python -m cli.main prune | --tenant | option | str | no | null |
 | python -m cli.main prune | --days | option | int | no | 7 |

@@ -2,4 +2,5 @@
 
 from .authorization import PersonalConnectorAuthorization, WorkspaceAuthorizationGrant
 from .connection import WorkspaceConnection, WorkspaceConnectionSecret
+from .rate_budget import ProviderRateBudget
 from .telegram_login import TelegramLoginAttempt, TelegramLoginRequestKey

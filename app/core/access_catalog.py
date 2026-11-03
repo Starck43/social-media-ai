@@ -24,6 +24,7 @@ def _resource(key, model, table, actions, workspace=False, personal=False):
 
 
 RESOURCES = (
+    _resource("contacts.contact", "Contact", "contacts", "VIEW CREATE UPDATE DELETE EXPORT", True),
     _resource("identity.user", "User", "users", "VIEW CREATE UPDATE DELETE"),
     _resource("identity.platform_role", "PlatformRole", "roles", "VIEW CONFIGURE"),
     _resource("identity.permission", "Permission", "permissions", "VIEW"),
@@ -105,6 +106,7 @@ _OLD_DOMAINS = {
     "agent": ("social",),
     "notifications": ("social",),
     "audit": (),
+    "contacts": (),
 }
 _ALIASES = {
     f"{old}.{r.model_name}.{a.db_value}": (r, a)

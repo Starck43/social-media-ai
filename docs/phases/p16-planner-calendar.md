@@ -38,7 +38,7 @@ TZ criteria: tasks with deadlines/priorities (T01); reminders 1 day/week ahead (
 
 ## Plan
 
-1. [P16-T01](../tasks/p16-t01.md) — Planner tasks: model, CRUD, subtasks and recurrence · `P3` · `C4` · depends: [P13-T05](../tasks/p13-t05.md), [P13-T07](../tasks/p13-t07.md) (contact link)
+1. [P16-T01](../tasks/p16-t01.md) — Planner tasks: model, CRUD, subtasks and recurrence · `P3` · `C4` · depends: [P13-T05](../tasks/p13-t05.md), [P13-T07 accepted](../audit/p13-t07.md) (contact link)
 2. [P16-T02](../tasks/p16-t02.md) — Reminders, snooze and multi-channel notifications · `P3` · `C3` · depends: [P16-T01](../tasks/p16-t01.md)
 3. [P16-T03](../tasks/p16-t03.md) — Calendar connections and Google Calendar two-way sync · `P3` · `C5` · depends: [P13-T08](../tasks/p13-t08.md), [P13-T04](../tasks/p13-t04.md), [P16-T01](../tasks/p16-t01.md)
 4. [P16-T04](../tasks/p16-t04.md) — Yandex Calendar two-way sync over CalDAV · `P3` · `C4` · depends: [P16-T03](../tasks/p16-t03.md)

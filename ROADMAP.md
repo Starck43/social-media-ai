@@ -56,13 +56,13 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **IN_PROGRESS** · notion-ai-p8-t33 · [chat](https://app.notion.com/chat?t=40a3d3cc6f4080648d4000a9e3177cc4) · `P2` · `C4`
 - [P8-T46](docs/tasks/p8-t46.md) VK video search category — **IN_PROGRESS** · notion-ai-p8-t46 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
 - [P8-T47](docs/tasks/p8-t47.md) VK apps/games search category — **IN_PROGRESS** · notion-ai-p8-t47 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
-- [P8-T48](docs/tasks/p8-t48.md) VK owner-scoped market items category — **IN_PROGRESS** · notion-ai-p8-t48 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
+- [P8-T48](docs/tasks/p8-t48.md) VK owner-scoped market items category — **IN_PROGRESS** · notion-ai-p8-t48 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C4`
 - [P8-T49](docs/tasks/p8-t49.md) VK music search category — **IN_PROGRESS** · notion-ai-p8-t49 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-17](docs/tasks/q-17.md) Web test-suite debt in `tests/unit_web/` — **OPEN** · unassigned · raised while closing [P12-T16](docs/audit/p12-t16.md) · `P2` · `C3`
 
-- [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **TODO** · notion-ai-p12-t12 (plan in [PR #307](https://github.com/Starck43/social-media-ai/pull/307), implementation unassigned) · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C5`
+- [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **IN_PROGRESS** · notion-ai-p12-t12 (implementation in [PR #327](https://github.com/Starck43/social-media-ai/pull/327)) · [dialogue](https://app.notion.com/chat?t=40dd5248ae668030a7a000a9e8d5112b) · `P2` · `C5`
 - [P12-T13](docs/tasks/p12-t13.md) File workspace pilot contracts and capability review — **IN_PROGRESS** · notion-ai-p12-t13 · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C3`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **IN_PROGRESS** · notion-ai-p8-t34 · [owner selection and dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
@@ -90,7 +90,7 @@ Use the P2 cards in the execution queue or the linked parent plan.
 
 Use the P4 cards in the execution queue or the linked parent plan.
 
-## [P5](docs/phases/p5-ai-boundaries.md)
+## [P5](docs/phasesp5-ai-boundaries.md)
 
 Use the P5 cards in the execution queue or the linked parent plan.
 
@@ -108,11 +108,11 @@ Use the P8 cards in the execution queue or the linked parent plan.
 
 ## [P9](docs/phases/p9-safe-activation.md)
 
-P9's accepted outcomes and activation boundaries are summarized in the linked phase.
+Use the P9 cards in the execution queue or the linked parent plan.
 
 ## [P10](docs/phases/p10-audit-hardening.md)
 
-P10's accepted hardening outcomes and limitations are summarized in the linked phase.
+Use the P10 cards in the execution queue or the linked parent plan.
 
 ## [P11](docs/phases/p11-structure.md)
 

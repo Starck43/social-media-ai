@@ -5,6 +5,14 @@
 # Empty until a business package is delivered; no legacy package is opted in.
 
 [[package]]
+path = "app/services/contacts"
+tests = ["tests/contacts/test_p13_t07_unit.py"]
+
+[[package]]
+path = "app/models/contacts"
+tests = ["tests/contacts/test_p13_t07_unit.py"]
+
+[[package]]
 path = "app/api/v1/conventions.py"
 tests = ["tests/api/test_p13_t05_contracts.py"]
 

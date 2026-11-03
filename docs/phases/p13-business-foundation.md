@@ -10,7 +10,7 @@ Owner estimate (TZ): Spread across modules (no separate TZ estimate) — not a r
 ## Baseline: done and arriving
 
 - In `dev`: Fernet credential vault (`app/utils/crypto.py`), workspace connections with separately encrypted secrets (P12-T08, 0121), provider catalog (`app/integrations/catalog/`), action audit (P11-T12), P9 capability activation pattern, collection rate-limit policy, FastAPI OpenAPI + generated route tables, tenant enforcement in managers.
-- Arriving via open PRs: P12-T14 credential security and connector authorizations ([PR #308](https://github.com/Starck43/social-media-ai/pull/308)) — [P13-T02](../tasks/p13-t02.md) and [P13-T08](../tasks/p13-t08.md) start after it is integrated.
+- Integrated: P12-T14 credential security and connector authorizations ([PR #308](https://github.com/Starck43/social-media-ai/pull/308)); [P13-T02](../tasks/p13-t02.md) and [P13-T08](../tasks/p13-t08.md) build on those contracts.
 - Missing: field-level PII encryption with lookup, a business contact model, shared outbound budgets, a generic write-command ledger, business audit codes, per-package coverage gate, OAuth for business providers.
 
 ## Adapted requirements
@@ -64,14 +64,14 @@ checks for its PR come from the local helper as a PR comment
 evidence, and DB validation of remote PRs. The explicitly listed remote Wave 0
 assignments are exceptions to the complexity guideline. Owner items are decisions in [Q-18](../tasks/q-18.md).
 
-### Wave 0 — while PRs #307/#308/#311/#327 remain open
+### Wave 0 — while PR #327 remains open
 
 | Lane | Task | Why now |
 | --- | --- | --- |
 | Auditor / integrator | Independently audit and merge planning PR #341 to `dev` before task claims | Planning only; P13-T01 remains IN_PROGRESS pending independent audit; D1–D9 remain open |
 | Remote | P13-T06 coverage gate and provider mocks | New files only (`scripts/ci/`, `tests/shared/`) |
 | Remote | P18-T01 local connector protocol (preparation only) | Read #327 draft contracts; final work and acceptance wait for P12-T12 integration and D6 as required by the card |
-| Remote | P13-T05 audit codes and API conventions | No migration; rebase after #308 (both touch `app/api/v1`) |
+| Remote | P13-T05 audit codes and API conventions | No migration; start from current `dev` after #308 (both touch `app/api/v1`) |
 | Owner | D1, D5, D8 | D8 gates P13-T02, D5 gates P17-T01, D1 confirms bands |
 
 ### Wave 1 — trigger: #308 and #327 merged, migration head stable

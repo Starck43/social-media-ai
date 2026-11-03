@@ -152,20 +152,15 @@ Each item records what changes and why; phase plans already apply them.
 19. **R-19 Signatures.** A product approval click is not a legally recognized
     electronic signature; qualified signature providers need separate legal and
     security review (already a product boundary).
-20. **R-20 Migration numbering.** Open PRs [#308](https://github.com/Starck43/social-media-ai/pull/308)
-    and [#327](https://github.com/Starck43/social-media-ai/pull/327) both add an
-    Alembic revision `0124` with `down_revision = "0123"`; whichever merges second
-    must re-parent. New phases do **not** pre-reserve revision numbers: take the
-    next free revision after rebasing on current `dev`.
+20. **R-20 Migration numbering.** [#308](https://github.com/Starck43/social-media-ai/pull/308) is now merged; the last inspected [#327](https://github.com/Starck43/social-media-ai/pull/327) head still contained a competing `0124` from `0123`. Verify its current migration chain and re-parent as necessary before integration. New phases do **not** pre-reserve revision numbers: take the next free revision after rebasing on current `dev`.
 
-## Interaction with open pull requests
+## Interaction with related pull requests
 
-The plans assume these PRs will be accepted and merged later; tasks that touch
-the same seams wait for them instead of re-implementing or editing their paths.
+#308 has been integrated; #327 remains open. Dependent tasks use integrated contracts and must not assume unmerged functionality is available.
 
 | PR | Task | What it brings | Effect on P13–P19 |
 | --- | --- | --- | --- |
-| [#308](https://github.com/Starck43/social-media-ai/pull/308) (+ stacked docs [#311](https://github.com/Starck43/social-media-ai/pull/311)) | [P12-T14](tasks/p12-t14.md) | Protected personal credentials, connector account authorizations (`app/models/integrations/authorization.py`), VK encrypted refresh, Telegram login/runtime safeguards, revisions `0124` + `p12t14_*` | P13-T02 key handling and P13-T08 OAuth framework build on it; Bitrix24/Google/Yandex OAuth (P14-T01, P16-T03/T04) start after integration. Do not edit its owned paths (`app/services/social/`, `app/models/integrations/`, `app/api/v1/endpoints/connector_accounts.py`, credentials) while it is open. |
+| [#308](https://github.com/Starck43/social-media-ai/pull/308) (+ stacked docs [#311](https://github.com/Starck43/social-media-ai/pull/311)) | [P12-T14](tasks/p12-t14.md) | Protected personal credentials, connector account authorizations (`app/models/integrations/authorization.py`), VK encrypted refresh, Telegram login/runtime safeguards, revisions `0124` + `p12t14_*` | P13-T02 key handling and P13-T08 OAuth framework build on it; Bitrix24/Google/Yandex OAuth (P14-T01, P16-T03/T04) build on the integrated contracts; coordinate shared-path changes with their current owners. |
 | [#327](https://github.com/Starck43/social-media-ai/pull/327) (+ docs [#307](https://github.com/Starck43/social-media-ai/pull/307)) | [P12-T12](tasks/p12-t12.md), [P12-T13](tasks/p12-t13.md), [P8-T34](tasks/p8-t34.md) | Private file catalog, scans/traversal, bounded plain-text read, line evidence, private insights storage, admission contract, revisions `0124`–`0128` | P18 cloud side reuses its catalog, admission, evidence and retention contracts; P19 attachments/originals reuse private storage. Folder rights come from [P12-T15](tasks/p12-t15.md). |
 
 If a PR is closed without merge, the dependent task card records the gap and

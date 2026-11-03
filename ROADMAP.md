@@ -70,7 +70,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands are proposed, owner decision D1 in Q-18:
 
 - [Q-18](docs/tasks/q-18.md) Owner decisions for business modules P13–P19 — **OPEN** · product-owner · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C2`
-- [P13-T01](docs/tasks/p13-t01.md) Business-module plan registration and TZ review — **IN_PROGRESS** · notion-ai-p13-t01 ([PR #341](https://github.com/Starck43/social-media-ai/pull/341)) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C2`
+- [P13-T01](docs/tasks/p13-t01.md) Business-module plan registration and TZ review — **READY** · notion-ai-p13-t01 ([PR #341](https://github.com/Starck43/social-media-ai/pull/341)) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · [audit](docs/audit/p13-t01.md) · `P2` · `C2`
 - [P13-T02](docs/tasks/p13-t02.md) Protected personal-data fields: Fernet encryption, blind index and log redaction — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 - [P13-T03](docs/tasks/p13-t03.md) Shared external-API rate limiter and retry policy — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
 - [P13-T04](docs/tasks/p13-t04.md) Business write-approval workflow and command ledger — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`

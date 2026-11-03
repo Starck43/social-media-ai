@@ -19,6 +19,7 @@ from sqlalchemy import and_, func, or_, select
 from app.core.database import async_session_maker
 from app.integrations.catalog import CATALOG_VERSION
 from app.integrations.file_workspace.catalog_traversal import active_folder, advance_traversal
+from app.integrations.file_workspace.original_open import OriginalOpenContext, context_live
 from app.integrations.file_workspace.policy import FileOperation, _components
 from app.integrations.file_workspace.yandex_disk import DiskItem, DiskPage
 from app.models import (
@@ -455,3 +456,66 @@ class FileCatalogManager:
                 for item in history
             ]
             return result
+
+    async def _original_context(self, *, tenant_id, actor_id, connection_id, object_id, previous=None):
+        """Authorize an internal current-file resolver, not historical content.
+
+        Keep provider work outside this transaction; repeat every guard at handoff.
+        The context is never a substitute for current authority or a public token.
+        """
+        if type(object_id) is not int or not 1 <= object_id <= 2_147_483_647:
+            raise ConnectionDenied()
+        async with _owned(tenant_id, actor_id, connection_id) as (session, connection, policy, root_key):
+            row = await session.scalar(
+                select(FileCatalogObject).where(
+                    FileCatalogObject.tenant_id == tenant_id,
+                    FileCatalogObject.connection_id == connection_id,
+                    FileCatalogObject.root_key == root_key,
+                    FileCatalogObject.id == object_id,
+                    FileCatalogObject.kind == "file",
+                    _visible_paths(FileCatalogObject.path, connection.config),
+                )
+            )
+            if row is None or not policy.permits(row.path, FileOperation.READ):
+                raise ConnectionDenied()
+            current = OriginalOpenContext(
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                connection_id=connection_id,
+                object_id=object_id,
+                path=row.path,
+                root_key=root_key,
+                policy_key=_policy_key(connection.config),
+                credential_key=_key(
+                    json.dumps(
+                        [
+                            connection.account_key,
+                            await session.scalar(
+                                select(WorkspaceConnectionSecret.secret_encrypted).where(
+                                    WorkspaceConnectionSecret.connection_id == connection.id
+                                )
+                            ),
+                        ],
+                        ensure_ascii=True,
+                    )
+                ),
+                observation_number=row.observation_number,
+                issued_at=datetime.now(timezone.utc) if previous is None else previous.issued_at,
+            )
+            if previous is not None and (not context_live(previous) or previous != current):
+                raise ConnectionDenied()
+            return current
+
+    async def prepare_original(self, *, tenant_id, actor_id, connection_id, object_id):
+        """Prepare only from an opaque catalog ID; no URL/path accepted."""
+        return await self._original_context(
+            tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id, object_id=object_id
+        )
+
+    async def check_original(self, *, tenant_id, actor_id, connection_id, object_id, context):
+        """Reject expired, foreign, revoked or changed internal contexts."""
+        if not context_live(context):
+            raise ConnectionDenied()
+        await self._original_context(
+            tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id, object_id=object_id, previous=context
+        )

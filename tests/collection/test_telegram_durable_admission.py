@@ -255,6 +255,7 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
                 self.ingest.normalize_channel_post(self.inbound(message_id=identity, text="Useful"))
 
     async def test_l1_lower_id_admits_before_monotonic_cursor_and_job_commit(self):
+        self.locked.params = {"telegram_l2_last_item_id": "50"}
         self.assertEqual(await self.admit(wake_analysis=True), 1)
         self.assertEqual(self.events, ["begin", "raw", "queue", "commit"])
         self.assertEqual(self.locked.last_item_id, "50")
@@ -269,6 +270,7 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(("is", "is_active", True), stmt.criteria)
 
     async def test_l1_does_not_advance_l2_cursor(self):
+        self.locked.params = {"telegram_l2_last_item_id": "50"}
         item = self.item("90")
         await self.staging.admit_telegram_items([item], self.source, wake_analysis=True)
         self.assertEqual(self.locked.last_item_id, "90")

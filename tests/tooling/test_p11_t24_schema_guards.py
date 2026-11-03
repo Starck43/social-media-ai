@@ -327,7 +327,7 @@ def _call_sites(tree, name, reachable=None):
 
 
 def _loop_values(tree, function, name):
-    """Literal tuple a ``for name in (...)`` loop iterates in ``function``."""
+    """Literal tuple or mapping items a ``for`` loop iterates in ``function``."""
     definition = _definition(tree, function)
     if definition is None:
         return None
@@ -342,9 +342,25 @@ def _loop_values(tree, function, name):
                 continue
         else:
             continue
-        if isinstance(node.iter, (ast.Tuple, ast.List)):
+        iterable = node.iter
+        if (
+            isinstance(iterable, ast.Call)
+            and isinstance(iterable.func, ast.Attribute)
+            and iterable.func.attr == "items"
+            and isinstance(iterable.func.value, ast.Name)
+        ):
+            mapping = _Scope(tree).expressions.get(iterable.func.value.id)
+            if isinstance(mapping, ast.Dict) and len(target_names) == 2:
+                pairs = []
+                for key, value in zip(mapping.keys, mapping.values):
+                    if not isinstance(key, ast.Constant) or not isinstance(value, ast.Constant):
+                        break
+                    pairs.append((key.value, value.value))
+                if len(pairs) == len(mapping.keys):
+                    return [(target_names, pair) for pair in pairs]
+        if isinstance(iterable, (ast.Tuple, ast.List)):
             values = []
-            for element in node.iter.elts:
+            for element in iterable.elts:
                 if isinstance(element, ast.Constant):
                     values.append((element.value,))
                 elif isinstance(element, ast.Tuple) and all(isinstance(part, ast.Constant) for part in element.elts):
@@ -353,7 +369,7 @@ def _loop_values(tree, function, name):
                     break
             if len(target_names) == 1:
                 values = [(item[0],) for item in values if len(item) == 1]
-            if len(values) == len(node.iter.elts):
+            if len(values) == len(iterable.elts):
                 return [(target_names, value) for value in values]
     return None
 
@@ -681,6 +697,30 @@ def test_unresolved_guard_ddl_without_call_bindings_fails_closed():
         assert "guard DDL" in str(error)
     else:
         raise AssertionError("Unresolved guard function body was silently ignored")
+
+
+def test_guard_inventory_resolves_literal_mapping_items_loop():
+    tree = ast.parse("""
+hooks = {
+    "workspace_connections": "AFTER UPDATE OF tenant_id",
+    "workspace_roles": "AFTER UPDATE OR DELETE",
+}
+def upgrade():
+    s = settings.DB_SCHEMA
+    for table, events in hooks.items():
+        op.execute(
+            f'CREATE TRIGGER file_insight_revoke {events} ON "{s}"."{table}" '
+            'FOR EACH ROW EXECUTE FUNCTION "x".file_insight_revoke_hook()'
+        )
+""")
+    statements = set()
+    for function, sql, unresolved in _executes(tree):
+        statements.update(_statements(sql, unresolved, function, tree))
+    assert len([statement for statement in statements if statement.startswith("CREATE TRIGGER")]) == 2
+    assert any(
+        "workspace_connections" in statement and "AFTER UPDATE OF tenant_id" in statement for statement in statements
+    )
+    assert any("workspace_roles" in statement and "AFTER UPDATE OR DELETE" in statement for statement in statements)
 
 
 def test_rendered_ddl_is_schema_qualified_and_idempotent():

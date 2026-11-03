@@ -99,6 +99,39 @@ revoked/reauth state, unknown methods and stale revisions cannot be attached.
 Expired/invalid provider sessions must later fail closed in the execution adapter
 and request recovery; no local-only check can promise a new login is unnecessary.
 
+## Source-grant inspection foundation (not wired to collection)
+
+`telegram_grant_access` defines a strict internal pin for an existing source:
+`params["telegram_authorization"] = {"grant_id": <positive integer>,
+"authorization_revision": <positive integer>}`. The source ID, workspace,
+platform, external target and selected owner are also pinned. A queued pin must
+not silently follow source retargeting, owner changes, a different grant or a
+new account revision. There is no first-account discovery or legacy-vault fallback
+inside this checker. Numeric strings/booleans, unknown binding fields, missing
+selection and push-only mode are refused. Explicit `token_owner` is validated
+without falling back to the recorded creator when invalid.
+
+The metadata-only inspector requires the exact workspace context and refuses
+operator bypass. Each call issues a fresh joined SQL read for active source,
+Telegram platform, workspace, user, web membership and current workspace role;
+`source.view` is required for the owner, independent of the job initiator/payer's
+execution rights. It checks grant tenant/owner, active consent, matching grant
+and authorization revisions, active Telegram/MTProto account and nonempty stored
+ciphertext. It re-parses the current persisted source and compares the complete
+pin. All selection denials use `connection_unavailable`; no subject or secret is
+returned. The checker selects no authorization ciphertext and never decrypts or
+contacts a provider.
+
+**This is a snapshot, not an execution permit, secret resolver or lease.** It
+cannot establish envelope integrity or provider health and does not prevent a
+change after the read. It is not yet called by the collector or a public source
+picker. The existing collector remains legacy-vault based. Complete the binding
+write/CSRF UI, durable shared-session lease, in-lease decryption, request-boundary
+fresh checks and output/admission fencing together before switching runtime or
+claiming workspace-consented collection. The new PostgreSQL integration tests
+are authored for the local test-runner; remote unit/SQL-compilation tests do not
+prove their behavior. No migration or existing source binding is changed here.
+
 ## Draft machine API
 
 All paths below are authenticated Bearer-JWT workspace routes under

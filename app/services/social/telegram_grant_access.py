@@ -1,0 +1,148 @@
+"""Fresh, metadata-only checks for an explicitly pinned Telegram source grant.
+
+A snapshot is NOT an execution permit or a shared-session lease. No secret is
+selected/decrypted here. The collector is not switched to this model until its
+lease, request-boundary rechecks and settlement fencing are implemented together.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from sqlalchemy import and_, select
+
+from app.core.access_catalog import workspace_grants
+from app.core.database import async_session_maker
+from app.core.tenant_context import current_tenant_id, is_bypass
+from app.models import PersonalConnectorAuthorization as Authorization
+from app.models import Platform, Source, Tenant, TenantUser, User
+from app.models import WorkspaceAuthorizationGrant as Grant
+from app.models import WorkspaceRole
+from app.services.social.connector_authorizations import AuthorizationUnavailable
+from app.types import ActionType, PlatformType
+
+_BINDING = "telegram_authorization"
+
+
+def _positive(value):
+    if type(value) is not int or value <= 0:
+        raise AuthorizationUnavailable()
+    return value
+
+
+@dataclass(frozen=True, repr=False)
+class SourceGrantSelection:
+    """Non-secret pin; queued work must not silently follow an edited source."""
+
+    source_id: int
+    tenant_id: int
+    platform_id: int
+    external_id: str
+    owner_user_id: int
+    grant_id: int
+    authorization_revision: int
+
+    def __post_init__(self):
+        for value in (
+            self.source_id,
+            self.tenant_id,
+            self.platform_id,
+            self.owner_user_id,
+            self.grant_id,
+            self.authorization_revision,
+        ):
+            _positive(value)
+        if not isinstance(self.external_id, str) or not self.external_id or len(self.external_id) > 100:
+            raise AuthorizationUnavailable()
+
+
+def source_grant_selection(source) -> SourceGrantSelection:
+    """Parse an existing source's explicit selection; never discover a fallback."""
+    params = getattr(source, "params", None)
+    if not isinstance(params, dict) or params.get("mode", "auto") not in ("auto", "user"):
+        raise AuthorizationUnavailable()
+    binding = params.get(_BINDING)
+    if not isinstance(binding, dict) or set(binding) != {"grant_id", "authorization_revision"}:
+        raise AuthorizationUnavailable()
+    owner = params.get("token_owner")
+    if owner is None:
+        owner = getattr(source, "owner_user_id", None)
+    return SourceGrantSelection(
+        source_id=getattr(source, "id", None),
+        tenant_id=getattr(source, "tenant_id", None),
+        platform_id=getattr(source, "platform_id", None),
+        external_id=getattr(source, "external_id", None),
+        owner_user_id=owner,
+        grant_id=binding["grant_id"],
+        authorization_revision=binding["authorization_revision"],
+    )
+
+
+@dataclass(frozen=True)
+class SourceGrantSnapshot:
+    """A point-in-time fact, never a cached authorization to contact Telegram."""
+
+    selection: SourceGrantSelection
+    authorization_id: int
+
+
+async def inspect_source_grant(selection: SourceGrantSelection) -> SourceGrantSnapshot:
+    """Reload source, owner rights, grant and account in one SQL snapshot.
+
+    Job initiator/payer authorization is a separate responsibility. An active
+    source owner with source.view may retain their own consent after losing
+    CREATE, as with local detach; no platform-admin or missing-tenant bypass.
+    Provider validity and envelope integrity are not established by metadata.
+    """
+    if type(selection) is not SourceGrantSelection:
+        raise AuthorizationUnavailable()
+    if is_bypass() or type(current_tenant_id()) is not int or current_tenant_id() != selection.tenant_id:
+        raise AuthorizationUnavailable()
+    statement = (
+        select(Source, Authorization.id.label("authorization_id"), WorkspaceRole.codename.label("owner_role"))
+        .join(Platform, Platform.id == Source.platform_id)
+        .join(Tenant, Tenant.id == Source.tenant_id)
+        .join(User, User.id == selection.owner_user_id)
+        .join(
+            TenantUser,
+            and_(TenantUser.tenant_id == Source.tenant_id, TenantUser.user_id == User.id),
+        )
+        .join(WorkspaceRole, WorkspaceRole.id == TenantUser.role_id)
+        .join(
+            Grant,
+            and_(Grant.id == selection.grant_id, Grant.tenant_id == Source.tenant_id, Grant.owner_user_id == User.id),
+        )
+        .join(
+            Authorization,
+            and_(Authorization.id == Grant.authorization_id, Authorization.owner_user_id == Grant.owner_user_id),
+        )
+        .where(
+            Source.id == selection.source_id,
+            Source.tenant_id == selection.tenant_id,
+            Source.is_active.is_(True),
+            Platform.name == "telegram",
+            Platform.platform_type == PlatformType.TELEGRAM,
+            Platform.is_active.is_(True),
+            Tenant.is_active.is_(True),
+            User.is_active.is_(True),
+            TenantUser.channel == "web",
+            TenantUser.is_active.is_(True),
+            Grant.is_active.is_(True),
+            Grant.authorization_revision == selection.authorization_revision,
+            Authorization.provider_id == "telegram",
+            Authorization.auth_method == "mtproto",
+            Authorization.state == "active",
+            Authorization.revision == selection.authorization_revision,
+            Authorization.secret_encrypted != "",
+        )
+    )
+    async with async_session_maker() as session, session.begin():
+        row = (await session.execute(statement)).one_or_none()
+        if row is None:
+            raise AuthorizationUnavailable()
+        source, authorization_id, owner_role = row
+        if source_grant_selection(source) != selection or ("source", ActionType.VIEW) not in workspace_grants(
+            owner_role
+        ):
+            raise AuthorizationUnavailable()
+        return SourceGrantSnapshot(selection, authorization_id)

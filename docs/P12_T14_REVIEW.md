@@ -61,6 +61,16 @@ unrelated permission-catalog reconciliation. Consolidation also fixes key
 rotation to include personal authorization ciphertext and to refuse unsupported
 or mismatched schema generations, avoiding an unreadable-store key switch.
 
+## Source-grant inspection continuation
+
+`telegram_grant_access` now provides strict non-secret source/owner/grant/revision
+pins and a fresh joined metadata inspector. Unit tests use fake sessions and SQL
+compilation; a separate PostgreSQL integration file is authored but unrun in the
+remote no-database lane. This is a preparatory slice only: no collector call site,
+secret resolution, source-picker binding write or session lease is delivered.
+Snapshots cannot authorize I/O or establish provider/envelope health. See the
+account-reuse contract for fields and freshness limits.
+
 ## Remaining completion gates
 
 - Telegram reauthorization/recovery, metadata retention and operational recovery;

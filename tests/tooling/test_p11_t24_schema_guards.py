@@ -76,6 +76,12 @@ _CREATE_FUNCTION = re.compile(
     r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>[A-Za-z_][\w.]*)\s*\([^)]*\)\s*RETURNS\s+[A-Za-z_]+",
     re.IGNORECASE,
 )
+_FUNCTION_DEFINITION = re.compile(
+    r'CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>"?[A-Za-z_][\w$]*"?(?:\."?[A-Za-z_][\w$]*"?)?)\s*\([^)]*\)'
+    r"\s*RETURNS\s+[A-Za-z_][\w]*(?:\s*\([^)]*\))?\b.*?\bAS\s+"
+    r"(?P<tag>\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)(?P<body>.*?)(?P=tag)",
+    re.IGNORECASE | re.DOTALL,
+)
 _CREATE_TRIGGER = re.compile(r"CREATE\s+TRIGGER\s+(?P<name>[A-Za-z_]\w*)\s+(?P<rest>.*)", re.IGNORECASE | re.DOTALL)
 # Identifiers are ``[\w$]``: a bare word would stop at the first underscore.
 _TRIGGER_ON = re.compile(r"\bON\s+(?P<table>[A-Za-z_][\w$.]*)\s+FOR\s+EACH\b", re.IGNORECASE)
@@ -524,9 +530,10 @@ def migration_trigger_pairs():
 def migration_function_names():
     names = set()
     for _path, statement in migration_statements():
-        name = _function_name(statement)
-        if name:
-            names.add(name)
+        names.update(
+            match.group("name").replace('"', "").rsplit(".", 1)[-1]
+            for match in _FUNCTION_DEFINITION.finditer(statement)
+        )
     return names
 
 
@@ -537,15 +544,10 @@ def migration_function_bodies():
     schema qualification before comparing.
     """
     bodies = {}
-    delimiter = re.compile(
-        r"\bAS\s+(?P<tag>\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)(?P<body>.*?)(?P=tag)", re.IGNORECASE | re.DOTALL
-    )
     for path, statement in migration_statements():
-        name = _function_name(statement)
-        match = delimiter.search(statement)
-        if not name or match is None:
-            continue
-        bodies[name] = (path.name, match.group("body"))
+        for match in _FUNCTION_DEFINITION.finditer(statement):
+            name = match.group("name").replace('"', "").rsplit(".", 1)[-1]
+            bodies[name] = (path.name, match.group("body"))
     return bodies
 
 
@@ -721,6 +723,26 @@ def upgrade():
         "workspace_connections" in statement and "AFTER UPDATE OF tenant_id" in statement for statement in statements
     )
     assert any("workspace_roles" in statement and "AFTER UPDATE OR DELETE" in statement for statement in statements)
+
+
+def test_guard_inventory_collects_each_function_from_one_execute_block():
+    statement = """
+CREATE FUNCTION x.invalidate_file_insights(t integer, o integer, c integer)
+RETURNS void LANGUAGE plpgsql AS $$ BEGIN PERFORM 1; END; $$;
+CREATE FUNCTION x.file_insight_revoke_hook() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN PERFORM x.invalidate_file_insights(NULL,NULL,NULL); RETURN NULL; END; $$;
+CREATE FUNCTION x.file_insight_object_hook() RETURNS trigger LANGUAGE plpgsql AS $body$
+BEGIN UPDATE x.file_insight_object_states SET epoch='next'; RETURN NULL; END; $body$;
+"""
+    matches = list(_FUNCTION_DEFINITION.finditer(statement))
+    assert [match.group("name") for match in matches] == [
+        "x.invalidate_file_insights",
+        "x.file_insight_revoke_hook",
+        "x.file_insight_object_hook",
+    ]
+    assert ["PERFORM 1;" in match.group("body") for match in matches] == [True, False, False]
+    assert "PERFORM x.invalidate_file_insights(NULL,NULL,NULL);" in matches[1].group("body")
+    assert "UPDATE x.file_insight_object_states" in matches[2].group("body")
 
 
 def test_rendered_ddl_is_schema_qualified_and_idempotent():

@@ -70,7 +70,7 @@ async def test_round_trip_preserves_0122_evidence():
             config.attributes["connection"] = connection
             command.downgrade(config, "0123")
             assert "file_catalog_objects" not in inspect(connection).get_table_names(schema="test_schema")
-            command.upgrade(config, "0125")
+            command.upgrade(config, "0126")
             assert "file_catalog_objects" in inspect(connection).get_table_names(schema="test_schema")
         async with async_session_maker() as session:
             assert (await session.get(KnowledgeSnippet, ids[1])).excerpt == "Synthetic legacy evidence"
@@ -110,7 +110,32 @@ async def test_0125_backfills_existing_rows_in_batches(data):
         finally:
             with engine.begin() as connection:
                 config.attributes["connection"] = connection
-                command.upgrade(config, "0125")
+                command.upgrade(config, "0126")
         result = await manager.list_page(**args, query="STRASSE")
         assert result["items"][0]["id"] == original_id
         assert [x["name"] for x in (await manager.list_page(**args, query="cafe\u0301"))["items"]] == ["CAFÉ.txt"]
+
+
+async def test_0126_round_trip_keeps_catalog_objects(data):
+    assert settings.DB_SCHEMA == "test_schema"
+    from app.services.file_workspace.catalog_scan import start_catalog_scan
+
+    manager = FileCatalogManager()
+    with actor(data) as args:
+        await admit(args, "retained.txt")
+        await start_catalog_scan(**args, folder="/work")
+        before = (await manager.list_page(**args))["items"][0]["id"]
+        config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+        config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
+        try:
+            with engine.begin() as connection:
+                config.attributes["connection"] = connection
+                command.downgrade(config, "0125")
+                assert "file_catalog_scans" not in inspect(connection).get_table_names(schema="test_schema")
+                command.upgrade(config, "0126")
+                assert "file_catalog_scans" in inspect(connection).get_table_names(schema="test_schema")
+        finally:
+            with engine.begin() as connection:
+                config.attributes["connection"] = connection
+                command.upgrade(config, "0126")
+        assert (await manager.list_page(**args))["items"][0]["id"] == before

@@ -189,3 +189,24 @@ async def test_catalog_unavailable_is_503_not_fake_empty(data, web, monkeypatch)
     response = await web[0].get("/app/knowledge/files")
     assert response.status_code == 503 and "В каталоге пока нет записей" not in response.text
     assert "synthetic-db-failure" not in response.text
+
+
+async def test_scan_error_is_honest_and_hidden_from_other_users(data, web):
+    from app.services.file_workspace.catalog_scan import resume_catalog_scan, start_catalog_scan
+
+    client, login, _ = web
+    with actor(data) as args:
+        await start_catalog_scan(**args, folder="/work", page_size=1)
+    pending = await client.get("/app/knowledge/files")
+    assert "Обход выбранной папки не завершён" in pending.text
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(429, text="synthetic secret"))
+    ) as provider:
+        with actor(data) as args:
+            await resume_catalog_scan(**args, client=provider)
+    failed = await client.get("/app/knowledge/files")
+    assert "Источник временно ограничил частоту запросов" in failed.text
+    assert "Обход не завершён" in failed.text and "synthetic secret" not in failed.text
+    await login(1)
+    foreign = await client.get("/app/knowledge/files", params={"connection_id": data.connections[0]})
+    assert foreign.status_code == 404 and "ограничил частоту" not in foreign.text

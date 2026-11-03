@@ -50,3 +50,77 @@ Conventions: integer keys, `TenantScopedMixin`, `settings.DB_SCHEMA`, Alembic re
 ## Dependencies and gates
 
 [P13-T02](../tasks/p13-t02.md)/T08 wait for P12-T14 integration. [P13-T03](../tasks/p13-t03.md)/T05/T06 can start immediately; [P13-T04](../tasks/p13-t04.md) and [P13-T07](../tasks/p13-t07.md) after T05/T02 respectively.
+
+## Execution waves and agent assignment (P13–P19)
+
+Owner-requested dispatch plan (2026-11-03, [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f)).
+It sets order and lane only; ROADMAP keeps status/owner and a claim is still
+required. A wave starts when its trigger holds, not on a date.
+
+**Lanes.** *Remote* = Git/PR execution without real PostgreSQL; `test_schema`
+checks for its PR come from the local helper as a PR comment
+([remote → local DB help](../PROMPT_EXAMPLES.md#remote-work--local-db-help--audit)).
+*Local* = tasks up to `C3`, tasks with migrations or live provider/sandbox
+evidence, and DB validation of remote PRs. Owner items are decisions in [Q-18](../tasks/q-18.md).
+
+### Wave 0 — while PRs #307/#308/#311/#327 are in audit and merge
+
+| Lane | Task | Why now |
+| --- | --- | --- |
+| Custodian/auditor | Audit and merge PR #341 after the earlier PRs | Cards P13–P19 must be in `dev` before claims; expect a small `ROADMAP.md` rebase |
+| Remote | P13-T06 coverage gate and provider mocks | New files only (`scripts/ci/`, `tests/shared/`) |
+| Remote | P18-T01 local connector protocol (docs) | No code; reads P12-T12 contracts from the PR #327 branch until merged |
+| Remote | P13-T05 audit codes and API conventions | No migration; rebase after #308 (both touch `app/api/v1`) |
+| Owner | D1, D5, D8 | D8 gates P13-T02, D5 gates P17-T01, D1 confirms bands |
+
+### Wave 1 — trigger: #308 and #327 merged, migration head stable
+
+| Lane | Task | Note |
+| --- | --- | --- |
+| Local | P13-T03 rate limiter (`C3`) | First migration in the business queue |
+| Remote | P13-T02 PII protection (`C4`) | No migration; needs #308 and D8 |
+
+### Wave 2 — foundation core
+
+| Lane | Task | Depends on |
+| --- | --- | --- |
+| Remote + local DB check | P13-T04 command ledger (`C4`) | P13-T05; second migration |
+| Remote + local DB check | P13-T07 contact core (`C4`) | P13-T02; third migration |
+| Remote | P13-T08 OAuth framework (`C4`) | #308, P13-T03; no migration |
+| Remote | P18-T03 desktop connector core (`C5`) | accepted P18-T01; separate `local_connector/` package |
+| Local | P17-T01 1C connection (`C3`) | P13-T03, D5 |
+
+### Wave 3 — first modules
+
+| Lane | Task | Depends on |
+| --- | --- | --- |
+| Local | P14-T01 Bitrix24 connection (`C3`) | P13-T08, D2; live sandbox evidence is local |
+| Remote + local DB check | P14-T02 Bitrix24 sync (`C4`) | P14-T01, P13-T07 |
+| Local | P14-T03, P14-T04 (`C3`) | P14-T02; T04 has a migration |
+| Remote | P17-T02 → P17-T03 (`C4`) | chain; T03 has a migration |
+| Local | P17-T05 (`C3`) | P17-T03 |
+| Remote | P18-T02, P18-T04, P18-T05 (`C4`) | P18-T02 after P18-T01 + P13-T05 (+ #327); T04/T05 chain after P18-T03 |
+
+### Wave 4 — `P3` modules
+
+| Lane | Tasks |
+| --- | --- |
+| Remote | P15-T01…T06, P16-T01, P16-T03, P16-T04, P17-T04, P19-T02, P19-T04, P14-T06 |
+| Local | P15-T07, P15-T08, P16-T02, P16-T05, P19-T01 (changes existing 0122 data), P19-T03, P19-T05, P19-T06, P14-T05, P18-T06 |
+| Local / owner | P18-T07 packaging and signing (certificates, three OS) |
+
+Within a wave follow each card's dependencies; P15-T05/T06 must precede
+P14-T05/T06 and P19-T05.
+
+### Merge and conflict rules
+
+1. **One migration-bearing PR in the merge queue at a time**, in the order
+   P13-T03 → P13-T04 → P13-T07 → P14-T02 → later ones. Take the revision number at
+   the pre-merge rebase (R-20); the local lane validates upgrade → downgrade →
+   re-upgrade on `test_schema` before READY.
+2. **Shared files have one active writer at a time:** `app/core/config.py`
+   (P13-T02, P13-T03), `app/integrations/catalog/__init__.py` (P13-T08, P14-T01,
+   P17-T01), the audit-code allowlist (P13-T05 first), navigation/router
+   registration, and `docs/generated/api-routes.md` (regenerate only at rebase).
+3. **Concurrency:** about 3–4 remote tasks and 1 local task at once, plus the
+   local helper role for DB checks of remote PRs.

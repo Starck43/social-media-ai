@@ -49,6 +49,7 @@ P13 foundation ──► P14 Bitrix24 read/drafts ──► P15 hub (ingest, ide
 P13 ──► P17 1C (parallel)          P13 + P12-T12 ──► P18 local connector (parallel)
 ```
 
+Agent lanes, waves and merge rules: [P13 execution waves](phases/p13-business-foundation.md#execution-waves-and-agent-assignment-p13p19).
 Do not start all modules at once. Test each module in isolation (mocked
 providers) before integrating it with another module.
 

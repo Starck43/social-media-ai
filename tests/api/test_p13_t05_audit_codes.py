@@ -100,3 +100,13 @@ def test_migration_preserves_existing_rows_and_refuses_lossy_downgrade(monkeypat
     )
     migration["downgrade"]()
     assert len(calls) == 6
+
+
+def test_migration_keeps_legacy_check_valid_nullable_rows():
+    checks = audit_check_sql()
+    assert "(action = 'scheduling.task_admit' AND resource_kind IS NULL)" in checks["resource_kind"]
+    assert (
+        "action = 'scheduling.task_admit' AND ((outcome = 'succeeded' AND reason_code IS NULL) OR "
+        in checks["reason_code"]
+    )
+    assert "(outcome = 'unknown' AND reason_code = 'launch_unconfirmed')" in checks["reason_code"]

@@ -50,8 +50,11 @@ def _checks() -> dict[str, str]:
         "action": f"action IN ({actions})",
         "resource_kind": "(action = 'scheduling.task_admit' AND resource_kind IS NULL) OR "
         f"(resource_kind IS NOT NULL AND ({resources}))",
-        "reason_code": "(outcome = 'succeeded' AND reason_code IS NULL) OR "
-        f"(outcome = 'unknown' AND reason_code IS NOT NULL AND ({reasons}))",
+        # Preserve all legacy CHECK-valid rows; new actions reject SQL NULL reasons.
+        "reason_code": "(action = 'scheduling.task_admit' AND ((outcome = 'succeeded' AND reason_code IS NULL) OR "
+        "(outcome = 'unknown' AND reason_code = 'launch_unconfirmed'))) OR "
+        "(action <> 'scheduling.task_admit' AND ((outcome = 'succeeded' AND reason_code IS NULL) OR "
+        f"(outcome = 'unknown' AND reason_code IS NOT NULL AND ({reasons}))))",
     }
 
 

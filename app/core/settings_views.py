@@ -14,6 +14,8 @@ SENSITIVE_FIELDS = frozenset(
         "POSTGRES_URL",
         "REDIS_URL",
         "CREDENTIALS_KEY",
+        "PII_ENCRYPTION_KEYS",
+        "PII_INDEX_KEY",
         "VK_SERVICE_KEY",
         "VK_CLIENT_ACCESS_KEY",
         "TELEGRAM_BOT_TOKEN",
@@ -43,6 +45,8 @@ class DatabaseSettingsView(SettingsView):
 class SecuritySettingsView(SettingsView):
     SECRET_KEY: SecretStr
     CREDENTIALS_KEY: SecretStr | None
+    PII_ENCRYPTION_KEYS: SecretStr | None
+    PII_INDEX_KEY: SecretStr | None
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REFRESH_TOKEN_EXPIRE_DAYS: int

@@ -181,7 +181,7 @@ not approvals.
 | D5 | 1C network path | Published HTTPS endpoint with allowlisted host first; tunnel via P18 connector later | P17-T01 |
 | D6 | Desktop connector stack and signing | Python + PyInstaller, signed builds for Windows/macOS, AppImage/deb for Linux | P18-T03/T07 |
 | D7 | Batch messaging channels and consent basis | Email + bot channels only, explicit opt-in record, unsubscribe link/command; no MTProto bulk | P14-T06 |
-| D8 | PII key management | Separate `PII_ENCRYPTION_KEYS` (MultiFernet list) and `PII_INDEX_KEY`; never reuse `CREDENTIALS_KEY` | P13-T02 |
+| D8 | PII key management — **answered 2026-11-03**: separate `PII_ENCRYPTION_KEYS` (`MultiFernet`, first key active) and `PII_INDEX_KEY`, kept stable; never reuse `CREDENTIALS_KEY`. Rotating the index is a separate approved task | P13-T02 |
 | D9 | Binary document storage | PostgreSQL + P12-T12 private storage; S3-compatible storage only with a measured need | P19-T01 |
 
 ## Original TZ acceptance criteria

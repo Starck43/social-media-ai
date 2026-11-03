@@ -94,6 +94,13 @@ async def _store_user(user_id, platform, kind, secret, *, expires_at=None, meta=
     if expires_at is not None:
         values["expires_at"] = expires_at
     if meta is not None:
+        meta = dict(meta)
+        if platform == "vk" and kind == "user_token" and "refresh_token" in meta:
+            from app.utils.crypto import encrypt_secret
+
+            refresh = meta.pop("refresh_token")
+            values["refresh_secret_encrypted"] = encrypt_secret(refresh) if refresh else None
+            meta["refresh_available"] = bool(refresh)
         values["meta"] = meta
     if values:
         row = await user_credentials.update_by_id(row.id, **values)
@@ -198,7 +205,11 @@ async def test_complete_authorization_stores_user_token(
     row = await _user_token_row(owner_user.id)
     assert row is not None
     assert row.reveal() == "new-access"
-    assert (row.meta or {}).get("refresh_token") == "new-refresh"
+    from app.utils.crypto import decrypt_secret
+
+    assert decrypt_secret(row.refresh_secret_encrypted) == "new-refresh"
+    assert row.meta["refresh_available"] is True
+    assert "refresh_token" not in row.meta
     assert (row.meta or {}).get("device_id") == "dev-1"
     assert row.expires_at is not None
 
@@ -263,7 +274,11 @@ async def test_refresh_user_token_updates_vault(
 
     row = await _user_token_row(owner_user.id)
     assert row.reveal() == "fresh-access"
-    assert (row.meta or {}).get("refresh_token") == "rotated-refresh"
+    from app.utils.crypto import decrypt_secret
+
+    assert decrypt_secret(row.refresh_secret_encrypted) == "rotated-refresh"
+    assert row.meta["refresh_available"] is True
+    assert "refresh_token" not in row.meta
     assert (row.meta or {}).get("device_id") == "dev-1"
 
 

@@ -61,6 +61,9 @@
             <div class="grid gap-4 lg:grid-cols-3">
                 <section class="ui-card">
                     <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Сбор и доступ</h2>
+                    {% if source.platform.platform_type.db_value == 'telegram' %}
+                    <p class="mt-3 text-sm"><a class="text-cyan-700 dark:text-cyan-400 hover:underline" href="/app/settings/telegram-accounts/workspace/sources/{{ source.id }}">Выбрать мой аккаунт Telegram для источника</a></p>
+                    {% endif %}
                     <dl class="mt-3 space-y-3 text-sm">
                         <div>
                             <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Режим</dt>

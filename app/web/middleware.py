@@ -16,6 +16,7 @@ The middleware stores `web_user`, `memberships`, `tenant` and `tenant_id` on
 
 from __future__ import annotations
 
+import re
 from urllib.parse import quote
 
 import jwt
@@ -50,6 +51,13 @@ PERSONAL_ACCOUNT_PATHS = frozenset(
 )
 
 
+def _is_personal_connector_path(path: str, method: str) -> bool:
+    """Only personal listing/local revoke skip workspace reads, never a prefix."""
+    return (method == "GET" and path == "/app/settings/telegram-accounts") or (
+        method == "POST" and re.fullmatch(r"/app/settings/telegram-accounts/[1-9][0-9]*/revoke", path) is not None
+    )
+
+
 class TenantUIMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -62,7 +70,8 @@ class TenantUIMiddleware:
 
         request = Request(scope)
         user = await self._resolve_user(request)
-        memberships = await TenantUserManager().web_memberships(user.id) if user else []
+        personal_connector = _is_personal_connector_path(path, request.method)
+        memberships = await TenantUserManager().web_memberships(user.id) if user and not personal_connector else []
 
         request.state.web_user = user
         request.state.memberships = memberships
@@ -89,6 +98,7 @@ class TenantUIMiddleware:
             and not memberships
             and path not in NO_WORKSPACE_PATHS
             and path not in PERSONAL_ACCOUNT_PATHS
+            and not personal_connector
             and not path.startswith("/app/notifications")
             and not (request.method in ("GET", "HEAD") and path in ("/app/settings", "/app/settings/"))
         ):
@@ -157,7 +167,11 @@ class TenantUIMiddleware:
         """
         if request.method not in ("GET", "HEAD") or getattr(request.state, "web_user", None) is None:
             return None
-        if path in PERSONAL_ACCOUNT_PATHS or path.startswith("/app/notifications"):
+        if (
+            path in PERSONAL_ACCOUNT_PATHS
+            or _is_personal_connector_path(path, request.method)
+            or path.startswith("/app/notifications")
+        ):
             return None
         item = section_of(path)
         if item is None or allows(item, getattr(request.state, "web_perms", None)):

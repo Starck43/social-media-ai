@@ -12,6 +12,7 @@ checks enforce the corresponding resource boundaries.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 import jwt
@@ -49,6 +50,18 @@ TENANT_SLUG_HEADER = "x-tenant-slug"
 #: after a workspace is suspended. Anything that reads workspace data must go
 #: through `_resolve_tenant`.
 _ACCOUNT_PATHS = frozenset({"/api/v1/users/me", "/api/v1/auth/change-password"})
+
+
+def _is_personal_connector_path(path: str, method: str) -> bool:
+    """Only metadata self-list and personal-wide revoke escape workspace scope.
+
+    Never exempt a whole prefix: attach/grants/login remain membership-bound.
+    Authentication still runs before this predicate is used.
+    """
+    normalized = path.rstrip("/")
+    return (method == "GET" and normalized == "/api/v1/connector-accounts/personal") or (
+        method == "POST" and re.fullmatch(r"/api/v1/connector-accounts/[1-9][0-9]*/revoke", normalized) is not None
+    )
 
 
 def _is_public(path: str) -> bool:
@@ -95,12 +108,18 @@ class ApiScopeMiddleware:
             request.method == "POST"
             and path.rstrip("/") in {"/api/v1/notifications", "/api/v1/notifications/notifications"}
         )
-        if path.rstrip("/") in _ACCOUNT_PATHS or personal_notifications:
+        if (
+            path.rstrip("/") in _ACCOUNT_PATHS
+            or personal_notifications
+            or _is_personal_connector_path(path, request.method)
+        ):
             # Account-level, not workspace-level (`docs/API.md`, Authorization):
             # the caller's own profile and password follow the account, so an
             # API-only registration without a membership can still use them, and
             # a suspended workspace cannot take away self-service that never
-            # reads workspace data. Workspace denial is enforced where workspace
+            # reads workspace data. Personal connector revoke only withdraws the
+            # caller's own authorization/consents; no workspace data is returned.
+            # Workspace denial is enforced where workspace
             # data is read, not here — see `_resolve_tenant`.
             request.state.api_user = user
             with tenant_scope(), permission_scope(user):

@@ -60,6 +60,11 @@ def test_every_settings_state_has_one_navigation_and_safe_independent_forms(mode
             assert sum(a.get("name") == "_csrf" for _, a in fields) == 1
 
 
+def test_connection_fixture_exposes_connect_action_when_allowed():
+    doc = Document(render("connections"))
+    assert any(tag == "a" and a.get("href") == "/app/connections/vk/authorize" for tag, a in doc.tags)
+
+
 def test_team_compact_controls_preserve_actions_roles_and_owner_protection():
     doc = Document(render("owner-team"))
     assert not any(tag == "table" for tag, _ in doc.tags)

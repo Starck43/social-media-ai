@@ -141,7 +141,7 @@ def _role_codename(member: Any) -> str | None:
     return str(codename)
 
 
-async def _bootstrap_owner(inbound: Any) -> Resolution:
+async def _bootstrap_owner(inbound: Any) -> Optional[Resolution]:
     """Bind a platform owner's chat to the bootstrap workspace (first contact)."""
     from app.models import WorkspaceRole
 
@@ -154,19 +154,18 @@ async def _bootstrap_owner(inbound: Any) -> Resolution:
         raise RuntimeError("Workspace roles are not configured")
     role_id = super_role.id if super_role is not None else None
 
-    await tenant_users.add_member(
+    bound = await tenant_users.bootstrap_owner_binding(
         tenant_id=tenant.id,
         channel=channel,
         external_user_id=str(inbound.user_id),
-        role_id=role_id,
-    )
-    await tenant_channels.bind(
-        tenant_id=tenant.id,
-        channel=channel,
         chat_id=str(inbound.chat_id),
+        role_id=role_id,
         kind=_chat_kind(inbound),
     )
-    logger.info(f"Onboarded platform owner {channel}:{inbound.user_id} into tenant {tenant.id}")
+    if not bound:
+        logger.info("Owner bootstrap denied: existing binding or membership is not eligible")
+        return None
+    logger.info("Owner bootstrap bound to tenant %s", tenant.id)
     return Resolution(
         tenant_id=tenant.id,
         channel=channel,

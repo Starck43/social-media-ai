@@ -25,6 +25,14 @@ exceptions to workspace membership. Endpoint model/action checks remain in
 place. `GET /api/v1/test-db` is hidden from OpenAPI but authenticated;
 `GET /api/v1/test-auth` is also hidden and authenticates through its dependency.
 
+P12-T14 adds `/connector-accounts`: reuse/grants/login remain workspace-scoped.
+Only `GET /api/v1/connector-accounts/personal` and
+`POST /api/v1/connector-accounts/{positive_authorization_id}/revoke` are exact
+Bearer-authenticated account-self-service exceptions, not middleware-public.
+They list only own identity metadata or locally invalidate an owned authorization
+and its consents without a workspace/key/provider call. No prefix-wide exception
+or provider revocation is introduced. See [account reuse](CONNECTOR_ACCOUNT_REUSE.md).
+
 The current route/auth groups are:
 
 | Group | Contract |
@@ -60,12 +68,16 @@ public by prefix matching. Keep `/api/v1` as the existing compatibility prefix.
 If a new major API is needed, mount `/api/v2` alongside it and migrate clients
 before retiring v1.
 
-The credential disable handler is currently mounted at
-`PATCH /api/v1/credentials/credentials/{credential_id}/disable` because both the
-parent router and endpoint declare `credentials`. The apparently cleaner
-`/api/v1/credentials/{credential_id}/disable` is not currently registered.
-Preserve the registered path until a usage/owner decision is made; if correcting
-it, temporarily expose both paths and document a deprecation window.
+Credential disable exposes canonical
+`PATCH /api/v1/credentials/{credential_id}/disable` and deprecated compatibility
+`PATCH /api/v1/credentials/credentials/{credential_id}/disable`; both retain the
+same owner/auth checks and handler. Do not remove the alias without a separate
+consumer/deprecation decision. Legacy `POST /api/v1/credentials/login` retains
+its fixed unsupported 409 and is now declared deprecated with that response in
+OpenAPI, not a misleading 200 credential result. New connector-account responses
+have explicit metadata-only models and a non-echoing fixed 500 for invalid
+internal projections; see the [response/client contract](CONNECTOR_ACCOUNT_REUSE.md#response-contract-and-client-migration).
+This does not unify other endpoints' error formats or prove real clients migrated.
 
 Notification handlers retain hidden `/notifications/...` aliases in addition
 to the canonical shorter paths. Preserve both until client usage is checked;

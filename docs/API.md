@@ -10,6 +10,49 @@ panel under `/admin`. Workspace data endpoints require an access Bearer JWT
 and an active web membership. Token acquisition, registration and the signed-state
 OAuth callback have the explicit exceptions listed below.
 
+## Personal connector account reuse (P12-T14 draft)
+
+See [personal account reuse](CONNECTOR_ACCOUNT_REUSE.md#draft-machine-api) for
+Bearer-authenticated `/api/v1/connector-accounts` list/attach/local-detach/global-local-revoke
+operations, revision/ownership rules and delivery limits. These routes reuse only
+an already recorded same-user Telegram authorization. New `/telegram/login` routes
+add bounded phone/code/2FA login with encrypted attempts; they never accept a raw
+StringSession or caller-supplied owner/tenant/application key. The legacy
+`/api/v1/credentials/login` now returns a fixed `409 workspace_telegram_authorization_not_available` rather than invoking
+terminal input from HTTP. Clients must handle this unsupported state; the new
+login/account-picker web UI, recovery and collector grant resolution remain
+outstanding. A separate personal metadata/local-revoke web page is available. A 200 login response is metadata: check `state`, not just HTTP status.
+The new API does not automatically attach accounts on workspace creation/join.
+
+Account self-service exceptions: `GET /api/v1/connector-accounts/personal` lists
+only the caller's Telegram authorization metadata (including unusable/revoked
+identities); `POST /api/v1/connector-accounts/{authorization_id}/revoke` withdraws
+only their own authorization everywhere, with strict `expected_revision`. Both
+require an active access Bearer JWT but no workspace/membership; tenant headers
+are ignored, not elevated. The existing revoke path/body/response remain, but it
+now survives lost memberships/suspended workspaces. It atomically clears local
+ciphertext and invalidates own grants, not provider sessions, and needs no key or
+provider call. All other connector-account routes remain workspace-scoped.
+There is no anonymous/cookie-auth exception for these API routes or broad prefix bypass.
+Reauthorization and the complete web journey remain open.
+
+The separate browser-session `GET /app/settings/telegram-accounts` and confirmed
+CSRF `POST /app/settings/telegram-accounts/{id}/revoke` require no workspace.
+The POST accepts only `_csrf`, `expected_revision`, and `confirm=revoke-local`;
+its token is bound to the session, actor and page. The exact-path exception does
+not cover login or workspace operations. These no-store responses expose metadata
+only; local revoke is not remote Telegram logout and does not touch the legacy
+vault. See [web scope and limitations](CONNECTOR_ACCOUNT_REUSE.md#personal-web-metadata-and-local-revoke-partial).
+
+The connector-account OpenAPI now publishes explicit metadata-only response
+shapes and fixed error envelopes. Unlisted internal fields are filtered; an
+invalid service projection produces fixed `500 account_response_unavailable`.
+Existing success keys, nullable IDs and ISO datetime offsets are preserved.
+Legacy login is declared deprecated with its actual 409 response, not a phantom
+200 credential result. See the [response/client contract](CONNECTOR_ACCOUNT_REUSE.md#response-contract-and-client-migration).
+These fake-service contract checks are only a partial compatibility gate, not
+proof that real clients, migrations or database transactions have been validated.
+
 ## Base URL
 
 ```

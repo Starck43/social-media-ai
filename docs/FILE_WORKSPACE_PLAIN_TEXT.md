@@ -108,6 +108,6 @@ stays in progress and PR draft. No merge/deploy/public migration or live access.
 
 Helper `d74bdc4e`, tests `b8ff6104`: exact published source
 `b8ff61044f77b63e91721686f5906b8f21317930` passed 92 synthetic no-DB tests.
-See the [task checkpoint](tasks/p12-t12.md#pure-utf-8-helper-checkpoint--2026-11-03)
+See the [task checkpoint](archive/p12-t12-pr-evidence-history.md#pure-utf-8-helper-checkpoint--2026-11-03)
 for exact command, warnings, initial test correction and deferred checks.
 No provider/model/DB/UI/cache/route integration; no P12-T13 approval implied.

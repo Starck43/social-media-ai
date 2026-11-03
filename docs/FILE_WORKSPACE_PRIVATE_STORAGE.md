@@ -5,7 +5,7 @@ Inputs: [bounded read](FILE_WORKSPACE_CONTENT_READ.md),
 [line evidence](FILE_WORKSPACE_LINE_EVIDENCE.md),
 [unverified candidates](FILE_WORKSPACE_INSIGHT_CANDIDATES.md).
 Shared engineering interface: [admission contract](FILE_WORKSPACE_ADMISSION.md).
-Review owner: [P12-T13](tasks/p12-t13.md); real read/version adapter: [P8-T34](https://github.com/Starck43/social-media-ai/pull/313).
+Review owner: [P12-T13](audit/p12-t13.md); real read/version adapter: [P8-T34](https://github.com/Starck43/social-media-ai/pull/313).
 
 ## Status and deliberately small scope
 

@@ -33,7 +33,7 @@ Representative journeys:
 
 | Scope | Owner and contract | Acceptance boundary |
 | --- | --- | --- |
-| Pilot capability/security contract | [P12-T13](tasks/p12-t13.md) | Existing admission contract defines separate processing, retention, model-egress and action grants. Contract review does not grant user consent or turn on storage. |
+| Pilot capability/security contract | [P12-T13](audit/p12-t13.md) | Existing admission contract defines separate processing, retention, model-egress and action grants. Contract review does not grant user consent or turn on storage. |
 | Read-only Yandex Disk pilot | [P8-T34](tasks/p8-t34.md) | Metadata browsing and bounded mock-tested transport do not prove live account connectivity, exact immutable byte-version identity or safe native browser opening. The owner will test live connections after merge; that check remains explicitly unrun until then. |
 | Catalog, bounded text read/preview, private-result foundations | [P12-T12](tasks/p12-t12.md), [PR #327](https://github.com/Starck43/social-media-ai/pull/327) | Delivered portions are default-off. Current text attachment is not a provider-native open and does not certify an immutable provider version. Durable Yandex result creation remains unavailable until exact-version evidence is established. |
 | Folder policy editor, sharing and approved file actions | [P12-T15](tasks/p12-t15.md) | Separate future scope. Read permission, membership and a provider token do not imply sharing or write/delete permission. |

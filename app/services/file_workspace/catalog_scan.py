@@ -81,7 +81,11 @@ def _projection(row):
         state = "running"
     else:
         state = row.state
-    return {"state": state, "error_code": row.error_code, "next_offset": row.next_offset}
+    return {
+        "state": state,
+        "error_code": row.error_code,
+        "next_offset": row.next_offset if state in {"partial", "running", "error"} else None,
+    }
 
 
 async def start_catalog_scan(*, tenant_id, actor_id, connection_id, folder, page_size=100):

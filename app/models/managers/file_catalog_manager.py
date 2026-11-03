@@ -380,7 +380,11 @@ class FileCatalogManager:
                 else:
                     scan.next_offset, scan.state = page.next_offset, "partial"
                 scan.error_code = scan.lease_token = scan.lease_until = None
-                result["scan"] = {"state": scan.state, "error_code": None, "next_offset": scan.next_offset}
+                result["scan"] = {
+                    "state": scan.state,
+                    "error_code": None,
+                    "next_offset": scan.next_offset if scan.state == "partial" else None,
+                }
             return result
 
     async def list_page(self, *, tenant_id, actor_id, connection_id, query="", after=0, limit=50):

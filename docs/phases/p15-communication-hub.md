@@ -39,7 +39,7 @@ TZ criteria: contacts merged by email/phone (T03); chronological per-contact vie
 
 ## Plan
 
-1. [P15-T01](../tasks/p15-t01.md) — Email connector: IMAP incremental read sync · `P3` · `C4` · depends: [P13-T03](../tasks/p13-t03.md), [P13-T07](../tasks/p13-t07.md)
+1. [P15-T01](../tasks/p15-t01.md) — Email connector: IMAP incremental read sync · `P3` · `C4` · depends: [P13-T03 accepted](../audit/p13-t03.md), [P13-T07](../tasks/p13-t07.md)
 2. [P15-T02](../tasks/p15-t02.md) — Unified message store and channel ingestion (Telegram, MAX, email) · `P3` · `C4` · depends: [P13-T07](../tasks/p13-t07.md), P12-T14 integrated (Telegram personal runtime gates)
 3. [P15-T03](../tasks/p15-t03.md) — Identity reconciliation: suggestions, manual merge and unmerge · `P3` · `C4` · depends: [P15-T02](../tasks/p15-t02.md), [P14-T03](../tasks/p14-t03.md) (CRM duplicate candidates, optional)
 4. [P15-T04](../tasks/p15-t04.md) — Unified inbox: threads, filters, search and read state · `P3` · `C4` · depends: [P15-T02](../tasks/p15-t02.md), [P15-T03](../tasks/p15-t03.md)

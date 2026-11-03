@@ -1,5 +1,95 @@
 # P12-T14 continuation validation
 
+## Owner-authorized local completion — 2026-11-03
+
+The owner superseded the historical hold below and authorized publication,
+independent acceptance, `dev` integration and test/public migrations. Live
+connections remain owner-run after merge and are waived for repository acceptance.
+No live-provider success, runtime activation or deployment is claimed.
+
+Tested Python 3.14.0 code checkpoint: `8304f4b77c687b6cad7281790961405b63e343c6`.
+Application/migration/script code equals `6e8474635bd8761aa50cfb0e965c20151e83361b`;
+later commits corrected regression doubles and added non-vacuous form fixtures.
+OpenCode `build` delegated every test run to configured V2 River `tester`.
+
+The following 24-file command used the project interpreter, normal root conftest,
+`DEBUG=false`, `ENVIRONMENT=test`, synthetic keys, `DB_TEST_SCHEMA=test_schema`,
+test URL `postgresql://admin@127.0.0.1:55439/sma_complete_t14`, and a separate
+empty `sma_complete_working` pre-redirect working database:
+
+```sh
+python -m pytest -q --tb=short --no-header \
+  tests/security/test_p12_t14_continuation_unit.py \
+  tests/admin/test_p12_t14_source_binding_admin.py \
+  tests/collection/test_telegram_durable_admission.py \
+  tests/security/test_p12_t14_telegram_grant_access.py \
+  tests/security/test_p12_t14_telegram_login.py \
+  tests/security/test_p12_t14_refresh_claim.py \
+  tests/security/test_p12_t14_refresh_migration.py \
+  tests/security/test_p12_t14_key_rotation.py \
+  tests/migrations/test_p12_t14_login_attempts_schema.py \
+  tests/migrations/test_p12_t14_account_grants.py \
+  tests/security/test_p12_t14_telegram_account_lock_unit.py \
+  tests/security/test_p12_t14_telegram_grant_access_unit.py \
+  tests/security/test_p12_t14_telegram_envelope_unit.py \
+  tests/security/test_p12_t14_personal_revoke_unit.py \
+  tests/security/test_p12_t14_telegram_login_provider.py \
+  tests/security/test_p12_t14_oauth_policy.py \
+  tests/api/test_p12_t14_connector_contract_unit.py \
+  tests/api/test_p12_t14_personal_revoke_unit_http.py \
+  tests/unit_web/test_p12_t14_personal_accounts_http.py \
+  tests/unit_web/test_p12_t14_personal_accounts_template.py \
+  tests/unit_web/test_p12_t14_workspace_grants_http.py \
+  tests/unit_web/test_p12_t14_vk_oauth_guidance.py \
+  tests/security/test_p12_t14_login_maintenance_unit.py \
+  tests/unit_web/test_p12_t14_login_picker_http.py
+```
+
+Exit 0: **658 passed**, seven existing deprecation warnings (66.77s).
+The first run was 649 passed / 9 failed: stale transaction/select doubles and a
+removed raw MTProto test. Corrected the doubles without weakening assertions,
+replaced the raw-client case with the actual fenced oldest-first history path,
+and explicitly set an existing personal cursor in preservation tests while
+retaining the missing-cursor-first-push test. Intermediate failing runs remain
+recorded in PR review evidence; they are not counted as passing.
+
+Additional normal-conftest command:
+
+```sh
+python -m pytest -q -o addopts='' --tb=short --no-header \
+  tests/web/test_p12_t14_workspace_grants.py \
+  tests/api/test_p12_t14_account_reuse_http.py \
+  tests/api/test_p12_t14_telegram_login_http.py
+```
+
+Exit 0: **32 passed**, seven existing warnings (32.64s). Real synthetic
+PostgreSQL transactions cover cookie/JWT/CSRF, ownership, revoke/detach races,
+rollback/cancellation and explicit login/reuse; providers are mocked.
+
+Full real Alembic empty-schema `baseline_0118 -> p12t14_tg_retention` and canonical
+reference seed passed. Before/after complete schema inventory and every table
+row count matched; no temporary schemas or fixture rows remained.
+
+Synthetic browser commands (all requests intercepted, no live app/provider):
+
+```sh
+python tests/shared/connector_account_page_fixtures.py "$fixture_dir"
+node tests/browser/p12_t14_personal_accounts.cjs "$fixture_dir"
+python tests/shared/p12_t14_telegram_form_fixtures.py "$form_fixture_dir"
+node tests/browser/p12_t14_telegram_forms.cjs "$form_fixture_dir"
+```
+
+Exit 0: **24 personal-account cases + 28 actual form cases passed**. Form checks
+require the real select/input and exercise keyboard focus and 3:1 border/focus
+contrast in both themes and at 390/1440px. Eight source-picker/login screenshots
+were visually inspected without observed overflow or obscured controls. The
+first strict form render failed for missing `ui_label`; the fixture now registers
+the shared filters and the full 28-case run passes. No CDN/live-browser claim.
+
+The historical stdlib CI-boundary finding below is corrected by the combined
+file-workspace integration's schema-guard work; its own offline check result is
+recorded there. Repository acceptance does not certify live provider availability.
+
 ## Scope and hard hold
 
 Owner-supplied unfinished source-picker patch was applied with `git apply` to

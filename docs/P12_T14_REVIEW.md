@@ -5,7 +5,10 @@ The one implementation and audit PR is **#308**, targeting `dev`, using branch
 preserve the existing PR). Do not audit or merge old slices in sequence. All new
 P12-T14 work is published to this PR; separate working branches are implementation
 checkpoints, not additional audit requests. #308 stays draft until the complete
-scope and checks are ready for independent review. No merge is authorized.
+scope and checks are ready for independent review. The owner now
+[authorizes publication and merge after independent acceptance](https://github.com/Starck43/social-media-ai/pull/308#issuecomment-6609628923).
+Live-provider validation remains unrun and is waived as a pre-merge requirement;
+the owner performs it after integration. Runtime activation stays separate.
 
 **Current status and actions:** start with the [task card handoff](tasks/p12-t14.md#current-handoff--start-here); [validation](P12_T14_CONTINUATION_VALIDATION.md) owns test evidence and release gaps. The checkpoints below are historical.
 

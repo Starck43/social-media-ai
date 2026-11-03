@@ -4,6 +4,9 @@
 {% block page_heading %}Документы и версии{% endblock %}
 
 {% block page_actions %}
+{% if file_catalog_enabled|default(false) and boundary == 'cloud' %}
+<a href="/app/knowledge/files" class="ui-control">Файлы подключённых папок</a>
+{% endif %}
 <a href="/app/knowledge" class="ui-control">← К базе знаний</a>
 <a href="/app/cases" class="ui-control">Предложения</a>
 {% endblock %}

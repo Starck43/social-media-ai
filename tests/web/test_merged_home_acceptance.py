@@ -92,8 +92,8 @@ from app.models.scheduling.agent_task import agent_task_sources  # noqa: E402
 from app.types import ActionType, PlatformRoleType, SourceType, WorkspaceRoleType  # noqa: E402
 from app.web import dashboard  # noqa: E402
 from tests.p11_t12_audit_cleanup import purge_tenant_audit_events  # noqa: E402
-from tests.web.test_web_settings import PASSWORD, _client, _login, _name, _register  # noqa: E402
 from tests.shared.platform_catalog import shared_platform
+from tests.web.test_web_settings import PASSWORD, _client, _login, _name, _register  # noqa: E402
 
 pytestmark = pytest.mark.tenancy
 

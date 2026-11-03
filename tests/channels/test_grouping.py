@@ -298,27 +298,60 @@ async def test_topic_chains_prefers_chain_label_over_topics(source):
     assert result["groups"][0]["key"] == "Горячая тема"
 
 
-@pytest.mark.parametrize("score,expected", [(0, "negative"), (.399, "negative"), (.4, "neutral"), (.6, "neutral"), (.601, "positive"), (1, "positive"), (None, None), ("bad", None), (float("nan"), None), (True, None)])
+@pytest.mark.parametrize(
+    "score,expected",
+    [
+        (0, "negative"),
+        (0.399, "negative"),
+        (0.4, "neutral"),
+        (0.6, "neutral"),
+        (0.601, "positive"),
+        (1, "positive"),
+        (None, None),
+        ("bad", None),
+        (float("nan"), None),
+        (True, None),
+    ],
+)
 def test_sentiment_bucket_boundaries(score, expected):
     from app.services.ai.reporting import sentiment_bucket
+
     assert sentiment_bucket(score) == expected
 
 
 async def test_negative_entities_filter_applies_before_counts_and_averages(source):
-    negative = await _row(source, summary_data=_summary({"sentiment_score": .2}, entities=[{"name": "Risk brand", "type": "brand"}]), media_types=["text", "image"])
-    positive = await _row(source, day_offset=1, summary_data=_summary({"sentiment_score": .8}, entities=[{"name": "Safe brand", "type": "brand"}]), media_types=["text"])
-    result = await group_analytics([negative, positive], "entities", sentiment="negative", media="image", time_breakdown=True)
-    assert result["groups"] == [{"key": "Risk brand", "count": 1, "avg_sentiment": .2, "entries": [{"date": date.today().isoformat(), "count": 1, "avg_sentiment": .2}]}]
+    negative = await _row(
+        source,
+        summary_data=_summary({"sentiment_score": 0.2}, entities=[{"name": "Risk brand", "type": "brand"}]),
+        media_types=["text", "image"],
+    )
+    positive = await _row(
+        source,
+        day_offset=1,
+        summary_data=_summary({"sentiment_score": 0.8}, entities=[{"name": "Safe brand", "type": "brand"}]),
+        media_types=["text"],
+    )
+    result = await group_analytics(
+        [negative, positive], "entities", sentiment="negative", media="image", time_breakdown=True
+    )
+    assert result["groups"] == [
+        {
+            "key": "Risk brand",
+            "count": 1,
+            "avg_sentiment": 0.2,
+            "entries": [{"date": date.today().isoformat(), "count": 1, "avg_sentiment": 0.2}],
+        }
+    ]
     assert result["sentiment"] == "negative" and result["media"] == "image"
 
 
 async def test_filter_missing_sentiment_is_not_neutral_and_media_uses_containment(source):
     unknown = await _row(source, summary_data={}, media_types=["text"])
-    neutral = await _row(source, day_offset=1, summary_data={"sentiment_score": .4}, media_types=["text", "video"])
+    neutral = await _row(source, day_offset=1, summary_data={"sentiment_score": 0.4}, media_types=["text", "video"])
     result = await group_analytics([unknown, neutral], "sources", sentiment="neutral", media="video")
     assert len(result["groups"]) == 1
     assert result["groups"][0]["count"] == 1
-    assert result["groups"][0]["avg_sentiment"] == .4
+    assert result["groups"][0]["avg_sentiment"] == 0.4
 
 
 @pytest.mark.parametrize("filters", [{"sentiment": "unknown"}, {"media": "audio"}, {"entity_type": "bogus"}])

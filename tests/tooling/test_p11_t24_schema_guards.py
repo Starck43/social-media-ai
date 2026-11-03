@@ -73,12 +73,19 @@ _SCHEMA = "x"
 assert _SCHEMA.isidentifier()
 
 _CREATE_FUNCTION = re.compile(
-    r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>[A-Za-z_][\w.]*)\s*\([^)]*\)\s*RETURNS\s+trigger", re.IGNORECASE
+    r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>[A-Za-z_][\w.]*)\s*\([^)]*\)\s*RETURNS\s+[A-Za-z_]+",
+    re.IGNORECASE,
+)
+_FUNCTION_DEFINITION = re.compile(
+    r'CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>"?[A-Za-z_][\w$]*"?(?:\."?[A-Za-z_][\w$]*"?)?)\s*\([^)]*\)'
+    r"\s*RETURNS\s+[A-Za-z_][\w]*(?:\s*\([^)]*\))?\b.*?\bAS\s+"
+    r"(?P<tag>\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)(?P<body>.*?)(?P=tag)",
+    re.IGNORECASE | re.DOTALL,
 )
 _CREATE_TRIGGER = re.compile(r"CREATE\s+TRIGGER\s+(?P<name>[A-Za-z_]\w*)\s+(?P<rest>.*)", re.IGNORECASE | re.DOTALL)
 # Identifiers are ``[\w$]``: a bare word would stop at the first underscore.
 _TRIGGER_ON = re.compile(r"\bON\s+(?P<table>[A-Za-z_][\w$.]*)\s+FOR\s+EACH\b", re.IGNORECASE)
-_TRIGGER_EVENTS = re.compile(r"\bBEFORE\s+(.+?)\s+ON\s+(?:[A-Za-z_][\w$.]*)", re.IGNORECASE | re.DOTALL)
+_TRIGGER_EVENTS = re.compile(r"\b(?:BEFORE|AFTER)\s+(.+?)\s+ON\s+(?:[A-Za-z_][\w$.]*)", re.IGNORECASE | re.DOTALL)
 _TRIGGER_LEVEL = re.compile(r"FOR\s+EACH\s+(ROW|STATEMENT)", re.IGNORECASE)
 _TRIGGER_FUNCTION = re.compile(r"EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+([A-Za-z_][\w.]*)\(", re.IGNORECASE)
 # Marks an interpolation the parse cannot render yet; unlike ``{}`` it never
@@ -136,7 +143,15 @@ class _Scope:
                     self.flags.setdefault(target.id, value.value)
 
     def _is_schema(self, node):
-        return isinstance(node, ast.Name) and node.id in self.placeholders
+        # Post-baseline revisions also bind `schema = settings.DB_SCHEMA`
+        # directly. Recognize only this known setting, not arbitrary attributes.
+        direct_setting = (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "settings"
+            and node.attr == "DB_SCHEMA"
+        )
+        return direct_setting or (isinstance(node, ast.Name) and node.id in self.placeholders)
 
     def _names_schema(self, node):
         """Schema expressions, including the guarded migration ``_schema()`` helper."""
@@ -318,17 +333,50 @@ def _call_sites(tree, name, reachable=None):
 
 
 def _loop_values(tree, function, name):
-    """Literal tuple a ``for name in (...)`` loop iterates in ``function``."""
+    """Literal tuple or mapping items a ``for`` loop iterates in ``function``."""
     definition = _definition(tree, function)
     if definition is None:
         return None
     for node in ast.walk(definition):
-        if not (isinstance(node, ast.For) and isinstance(node.target, ast.Name) and node.target.id == name):
+        if not isinstance(node, ast.For):
             continue
-        if isinstance(node.iter, (ast.Tuple, ast.List)):
-            values = [element.value for element in node.iter.elts if isinstance(element, ast.Constant)]
-            if len(values) == len(node.iter.elts):
-                return values
+        if isinstance(node.target, ast.Name) and node.target.id == name:
+            target_names = (name,)
+        elif isinstance(node.target, ast.Tuple) and all(isinstance(item, ast.Name) for item in node.target.elts):
+            target_names = tuple(item.id for item in node.target.elts)
+            if name not in target_names:
+                continue
+        else:
+            continue
+        iterable = node.iter
+        if (
+            isinstance(iterable, ast.Call)
+            and isinstance(iterable.func, ast.Attribute)
+            and iterable.func.attr == "items"
+            and isinstance(iterable.func.value, ast.Name)
+        ):
+            mapping = _Scope(tree).expressions.get(iterable.func.value.id)
+            if isinstance(mapping, ast.Dict) and len(target_names) == 2:
+                pairs = []
+                for key, value in zip(mapping.keys, mapping.values):
+                    if not isinstance(key, ast.Constant) or not isinstance(value, ast.Constant):
+                        break
+                    pairs.append((key.value, value.value))
+                if len(pairs) == len(mapping.keys):
+                    return [(target_names, pair) for pair in pairs]
+        if isinstance(iterable, (ast.Tuple, ast.List)):
+            values = []
+            for element in iterable.elts:
+                if isinstance(element, ast.Constant):
+                    values.append((element.value,))
+                elif isinstance(element, ast.Tuple) and all(isinstance(part, ast.Constant) for part in element.elts):
+                    values.append(tuple(part.value for part in element.elts))
+                else:
+                    break
+            if len(target_names) == 1:
+                values = [(item[0],) for item in values if len(item) == 1]
+            if len(values) == len(iterable.elts):
+                return [(target_names, value) for value in values]
     return None
 
 
@@ -388,7 +436,7 @@ def _statements(sql, unresolved, function, tree):
     if direct and table_parameter is None:
         return {_expand(sql, unresolved, scope, _Binding())}
     loops = _loop_values(tree, function, table_parameter)
-    bindings = [_Binding({table_parameter: value}) for value in loops] if loops else []
+    bindings = [_Binding(dict(zip(targets, values))) for targets, values in loops] if loops else []
     if not bindings:
         bindings = _call_sites(tree, function, _reachable_functions(tree)) if function else []
     if not bindings:
@@ -482,9 +530,10 @@ def migration_trigger_pairs():
 def migration_function_names():
     names = set()
     for _path, statement in migration_statements():
-        name = _function_name(statement)
-        if name:
-            names.add(name)
+        names.update(
+            match.group("name").replace('"', "").rsplit(".", 1)[-1]
+            for match in _FUNCTION_DEFINITION.finditer(statement)
+        )
     return names
 
 
@@ -495,15 +544,10 @@ def migration_function_bodies():
     schema qualification before comparing.
     """
     bodies = {}
-    delimiter = re.compile(
-        r"\bAS\s+(?P<tag>\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)(?P<body>.*?)(?P=tag)", re.IGNORECASE | re.DOTALL
-    )
     for path, statement in migration_statements():
-        name = _function_name(statement)
-        match = delimiter.search(statement)
-        if not name or match is None:
-            continue
-        bodies[name] = (path.name, match.group("body"))
+        for match in _FUNCTION_DEFINITION.finditer(statement):
+            name = match.group("name").replace('"', "").rsplit(".", 1)[-1]
+            bodies[name] = (path.name, match.group("body"))
     return bodies
 
 
@@ -604,7 +648,7 @@ def test_frozen_baseline_and_post_baseline_migrations_match_guard_module():
         statement = statements[(trigger.name, trigger.table)]
         actual = _TRIGGER_EVENTS.search(statement.replace('"', ""))
         function = _TRIGGER_FUNCTION.search(statement.replace('"', ""))
-        expected_events = re.search(r"BEFORE (.+?) ON ", trigger.definition(_SCHEMA)).group(1)
+        expected_events = re.search(r"(?:BEFORE|AFTER) (.+?) ON ", trigger.definition(_SCHEMA)).group(1)
         assert actual and set(normalized(actual.group(1)).split(" or ")) == set(
             normalized(expected_events).split(" or ")
         ), trigger.name
@@ -657,6 +701,50 @@ def test_unresolved_guard_ddl_without_call_bindings_fails_closed():
         raise AssertionError("Unresolved guard function body was silently ignored")
 
 
+def test_guard_inventory_resolves_literal_mapping_items_loop():
+    tree = ast.parse("""
+hooks = {
+    "workspace_connections": "AFTER UPDATE OF tenant_id",
+    "workspace_roles": "AFTER UPDATE OR DELETE",
+}
+def upgrade():
+    s = settings.DB_SCHEMA
+    for table, events in hooks.items():
+        op.execute(
+            f'CREATE TRIGGER file_insight_revoke {events} ON "{s}"."{table}" '
+            'FOR EACH ROW EXECUTE FUNCTION "x".file_insight_revoke_hook()'
+        )
+""")
+    statements = set()
+    for function, sql, unresolved in _executes(tree):
+        statements.update(_statements(sql, unresolved, function, tree))
+    assert len([statement for statement in statements if statement.startswith("CREATE TRIGGER")]) == 2
+    assert any(
+        "workspace_connections" in statement and "AFTER UPDATE OF tenant_id" in statement for statement in statements
+    )
+    assert any("workspace_roles" in statement and "AFTER UPDATE OR DELETE" in statement for statement in statements)
+
+
+def test_guard_inventory_collects_each_function_from_one_execute_block():
+    statement = """
+CREATE FUNCTION x.invalidate_file_insights(t integer, o integer, c integer)
+RETURNS void LANGUAGE plpgsql AS $$ BEGIN PERFORM 1; END; $$;
+CREATE FUNCTION x.file_insight_revoke_hook() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN PERFORM x.invalidate_file_insights(NULL,NULL,NULL); RETURN NULL; END; $$;
+CREATE FUNCTION x.file_insight_object_hook() RETURNS trigger LANGUAGE plpgsql AS $body$
+BEGIN UPDATE x.file_insight_object_states SET epoch='next'; RETURN NULL; END; $body$;
+"""
+    matches = list(_FUNCTION_DEFINITION.finditer(statement))
+    assert [match.group("name") for match in matches] == [
+        "x.invalidate_file_insights",
+        "x.file_insight_revoke_hook",
+        "x.file_insight_object_hook",
+    ]
+    assert ["PERFORM 1;" in match.group("body") for match in matches] == [True, False, False]
+    assert "PERFORM x.invalidate_file_insights(NULL,NULL,NULL);" in matches[1].group("body")
+    assert "UPDATE x.file_insight_object_states" in matches[2].group("body")
+
+
 def test_rendered_ddl_is_schema_qualified_and_idempotent():
     statements = GUARDS.ddl("draft_schema")
     functions = [s for s in statements if s.startswith("CREATE OR REPLACE FUNCTION")]
@@ -698,18 +786,79 @@ def test_trigger_events_keep_migration_order():
 
 
 def test_apply_schema_guards_skips_later_revision_triggers_when_table_is_absent():
-    from sqlalchemy import create_engine, event, text
-
     statements = []
-    engine = create_engine("sqlite://")
-    event.listen(
-        engine, "before_cursor_execute", lambda _conn, _cursor, statement, *_args: statements.append(statement)
-    )
-    try:
-        with engine.connect() as connection:
-            GUARDS.apply_schema_guards(connection, "main", text)
-    finally:
-        engine.dispose()
+
+    class Dialect:
+        def get_table_names(self, _conn, schema):
+            assert schema == "main"
+            return []
+
+    class Connection:
+        dialect = Dialect()
+
+        def execute(self, statement):
+            statements.append(statement)
+
+    GUARDS.apply_schema_guards(Connection(), "main", lambda statement: statement)
 
     assert not any("CREATE TRIGGER" in statement or "DROP TRIGGER" in statement for statement in statements)
     assert not any("guard_workspace_offboarding_mutation" in statement for statement in statements)
+
+
+def test_private_insight_bootstrap_guards_require_complete_private_tables():
+    class Dialect:
+        def __init__(self, tables):
+            self.tables = tables
+
+        def get_table_names(self, _conn, schema):
+            assert schema == "test_schema"
+            return self.tables
+
+    class Connection:
+        def __init__(self, tables):
+            self.dialect = Dialect(tables)
+            self.statements = []
+
+        def execute(self, statement):
+            self.statements.append(statement)
+
+    partial = Connection(["workspace_connections", "file_insight_mounts"])
+    GUARDS.apply_schema_guards(partial, "test_schema", lambda statement: statement)
+    assert not any(
+        "file_insight_revoke" in statement or "file_insight_object" in statement for statement in partial.statements
+    )
+
+    complete = Connection(
+        [
+            "workspace_connections",
+            "workspace_connection_secrets",
+            "tenant_users",
+            "users",
+            "tenants",
+            "workspace_roles",
+            "workspace_role_permission",
+            "file_catalog_objects",
+            "file_insight_mounts",
+            "file_insight_attempts",
+            "file_insight_object_states",
+        ]
+    )
+    GUARDS.apply_schema_guards(complete, "test_schema", lambda statement: statement)
+    statements = complete.statements
+    assert any(
+        '"test_schema"."invalidate_file_insights"(t integer, o integer, c integer) RETURNS void' in s
+        for s in statements
+    )
+    assert sum('CREATE TRIGGER "file_insight_revoke"' in s for s in statements) == 7
+    assert any('CREATE TRIGGER "file_insight_object_changed" AFTER UPDATE OF' in s for s in statements)
+    trigger_statements = [s for s in statements if s.startswith(("CREATE TRIGGER", "DROP TRIGGER"))]
+    function_statements = [s for s in statements if s.startswith("CREATE OR REPLACE FUNCTION")]
+    assert all(' ON "test_schema".' in s for s in trigger_statements)
+    assert all(s.startswith('CREATE OR REPLACE FUNCTION "test_schema".') for s in function_statements)
+
+
+def test_direct_schema_setting_is_resolved_but_unknown_attributes_are_not():
+    scope = _Scope(ast.parse("schema = settings.DB_SCHEMA"))
+    assert scope.text["schema"] == _SCHEMA
+    other = _Scope(ast.parse("schema = provider.target"))
+    assert "schema" not in other.text

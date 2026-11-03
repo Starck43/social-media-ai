@@ -112,29 +112,10 @@ historical and unverified. It does NOT certify the provider's current content or
 authorize sharing/model context/actions. No generic CRUD/search/global knowledge
 projection, full original, retained prompt/response or public URL is introduced.
 
-## Required local verification (not run remotely)
+## Local verification and audit handoff
 
-Use the existing local OpenCode test-runner, exact PR HEAD and exclusive authorized
-test schema. Resolve DB target, take/compare complete schema inventories, apply
-0128 through Alembic only on the test schema, and run with root conftest:
-
-```sh
-python -m pytest tests/integrations/test_p12_t12_private_storage.py -q -o addopts=''
-```
-
-New local scenarios: actual save/retry/delete replay; consent/owner isolation;
-connection/secret/policy/membership revoke-and-restore; concurrent last object slot.
-Fixtures explicitly purge/verify all four new tables and the existing catalog
-fixtures remove their synthetic tenants/users. Extend local validation to:
-- clean 0127→0128→0127→0128 round trip with legacy-row/schema preservation;
-- same read vs concurrent consent/secret/member/role/object deletion, including
-  cross-connection owner/tenant quota last-byte races and cancelled commits;
-- GC idempotency, expired/future/rollback clocks and bounded abandoned ledgers;
-- encryption/key rotation/corrupt payload/restore and no content/credentials in logs;
-- unchanged catalog/connection flows and generic CRUD-trigger revocations.
-
-No migration, DB integration, concurrency, live provider, actual credentials,
-public-schema mutation, deployment or real-condition approval is claimed remotely.
+Use the focused [local handoff](tasks/p12-t12-local-handoff.md) for prerequisites,
+commands, unrun checks and review gates. The PR body records remote evidence.
 
 ## Default-off file actions (remote completion package)
 
@@ -158,9 +139,5 @@ introduced. With no provider-backed exact-byte revision assertion, saving new
 Yandex results remains unavailable. Historical results remain unverified.
 Revocation cannot retract bytes already delivered.
 
-Before enabling, validate the above flows with actual scoped test credentials and
-provider behavior, real owner/membership/consent races and revocation, 0128 on
-PostgreSQL, security review of DNS/TLS/HTTP and log redaction, operational key,
-capacity/retention/GC and P12-T13/P12-T15 approvals. Validate browser UI,
-accessibility and error paths on supported clients. Do not treat mocked HTTP or
-synthetic test results as provider, deployment or local DB evidence.
+Before enabling, follow the linked local handoff. Mocked HTTP and synthetic
+tests are not provider, deployment or local DB evidence.

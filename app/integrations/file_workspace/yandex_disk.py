@@ -33,6 +33,8 @@ class MetadataClient(Protocol):
 
 _METADATA_URL = "https://cloud-api.yandex.net/v1/disk/resources"
 _MAX_RESPONSE_BYTES = 256 * 1024
+# The single exchange deadline: TLS, request and the bounded body share it.
+_TOTAL_TIMEOUT = 10.0
 _MAX_PAGE_SIZE = 100
 _MAX_OFFSET = 1_000_000
 _FIELDS = "path,type,_embedded.items.path,_embedded.items.name,_embedded.items.type,_embedded.offset"
@@ -94,7 +96,7 @@ async def list_folder(
             _METADATA_URL,
             params={"path": _disk_path(requested), "limit": limit, "offset": offset, "sort": "name", "fields": _FIELDS},
             headers={"Authorization": f"OAuth {token}", "Accept": "application/json"},
-            timeout=httpx.Timeout(10.0),
+            timeout=httpx.Timeout(_TOTAL_TIMEOUT),
             follow_redirects=False,
         ) as response:
             if response.status_code in (401, 403):

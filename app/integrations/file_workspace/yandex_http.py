@@ -30,7 +30,6 @@ from app.integrations.file_workspace.yandex_tls import open_yandex_tls
 _MAX_HEADER_BYTES = 16 * 1024
 _MAX_REQUEST_BYTES = 16 * 1024
 _READ_SIZE = 8192
-_TOTAL_TIMEOUT = 15.0
 _CLOSE_TIMEOUT = 1.0
 
 
@@ -90,33 +89,45 @@ async def _exchange(protocol, reader, writer, request: bytes) -> _Response:
     status = None
     header_bytes = 0
     body = bytearray()
+    keep_body = True
     while True:
         event = protocol.next_event()
         if event is h11.NEED_DATA:
             chunk = await reader.read(_READ_SIZE)
+            if not isinstance(chunk, (bytes, bytearray)):
+                raise httpx.HTTPError("provider_unavailable")
             if status is None:
                 header_bytes += len(chunk)
                 if header_bytes > _MAX_HEADER_BYTES:
                     raise httpx.HTTPError("provider_unavailable")
             protocol.receive_data(chunk)
+            if not chunk and status is not None and protocol.our_state is h11.MUST_CLOSE:
+                # Unframed body: the peer closed, which is its terminator. Account
+                # for our side so h11 releases the buffered event instead of
+                # waiting for data that will never come (RFC 9112 §3.3.2).
+                protocol.send(h11.ConnectionClosed())
         elif isinstance(event, h11.Response):
             status = event.status_code
             encodings = [value.strip().lower() for name, value in event.headers if name.lower() == b"content-encoding"]
             if any(value != b"identity" for value in encodings) or len(encodings) > 1:
                 raise httpx.HTTPError("provider_unavailable")
-            if status != 200:
-                return _Response(status, b"")
-            for name, value in event.headers:
-                if name.lower() == b"content-length" and int(value) > _MAX_RESPONSE_BYTES:
-                    raise MetadataError("response_too_large")
+            # Non-200 bodies are drained, never returned: the reader reports the
+            # status alone, and leaving the message unconsumed would not be a
+            # bounded single-use exchange.
+            keep_body = status == 200
+            if keep_body:
+                for name, value in event.headers:
+                    if name.lower() == b"content-length" and int(value) > _MAX_RESPONSE_BYTES:
+                        raise MetadataError("response_too_large")
         elif isinstance(event, h11.Data):
             if len(body) + len(event.data) > _MAX_RESPONSE_BYTES:
                 raise MetadataError("response_too_large")
-            body.extend(event.data)
+            if keep_body:
+                body.extend(event.data)
         elif isinstance(event, h11.EndOfMessage):
             if status is None:
                 raise httpx.HTTPError("provider_unavailable")
-            return _Response(status, bytes(body))
+            return _Response(status, bytes(body) if keep_body else b"")
         else:
             # No informational responses, protocol upgrades or ambiguous states.
             raise httpx.HTTPError("provider_unavailable")
@@ -130,18 +141,19 @@ class YandexMetadataClient:
 
     @asynccontextmanager
     async def stream(self, method, url, *, params, headers, timeout, follow_redirects):
-        # timeout is accepted for compatibility; this client enforces its own
-        # absolute deadline regardless of the caller's requested timeout.
+        # The caller's absolute deadline governs the whole exchange (TLS, request,
+        # bounded body). A second timer here would only create two conflicting
+        # budgets, so the reader's timeout is what counts. The connection is
+        # always closed, which is also what terminates a `chunked` or unframed
+        # body (RFC 9112 §4.4/§3.3.2).
         del timeout
         protocol, request = _request_bytes(method, url, params, headers, follow_redirects)
         writer = None
         try:
-            try:
-                async with asyncio.timeout(_TOTAL_TIMEOUT):
-                    reader, writer = await self._opener()
-                    response = await _exchange(protocol, reader, writer, request)
-            except (TimeoutError, OSError, ValueError, h11.ProtocolError, NetworkUnavailable):
-                raise httpx.HTTPError("provider_unavailable") from None
+            reader, writer = await self._opener()
+            response = await _exchange(protocol, reader, writer, request)
+        except (TimeoutError, OSError, ValueError, h11.ProtocolError, NetworkUnavailable):
+            raise httpx.HTTPError("provider_unavailable") from None
         finally:
             if writer is not None:
                 try:

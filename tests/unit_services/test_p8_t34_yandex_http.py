@@ -7,7 +7,7 @@ import logging
 import httpx
 import pytest
 
-from app.integrations.file_workspace import yandex_http
+from app.integrations.file_workspace import yandex_disk, yandex_http
 from app.integrations.file_workspace.policy import ReadOnlyFolderPolicy
 from app.integrations.file_workspace.yandex_disk import _FIELDS, _METADATA_URL, MetadataError, list_folder
 
@@ -95,19 +95,37 @@ async def test_metadata_reader_uses_one_fixed_get_without_sensitive_logs(caplog,
 
 
 @pytest.mark.asyncio
+async def test_non_200_body_is_drained_not_returned():
+    """A refusal with a body must reach EndOfMessage, not be abandoned mid-message."""
+    data = b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 32\r\n\r\n" + b"x" * 32
+    client, _, writer, _ = make_client(data)
+    with pytest.raises(MetadataError, match="^rate_limited$"):
+        await list_folder(client, token="fake-secret", folder="/x", policy=ReadOnlyFolderPolicy("/x"))
+    assert writer.closed
+
+
+@pytest.mark.asyncio
+async def test_unframed_body_ends_at_connection_close():
+    """RFC 9112 §3.3.2: no Content-Length and no Transfer-Encoding ends at EOF."""
+    client, _, writer, _ = make_client(b"HTTP/1.1 200 OK\r\n\r\n" + folder_body())
+    page = await list_folder(
+        client, token="fake-secret", folder="/private folder", policy=ReadOnlyFolderPolicy("/private folder")
+    )
+    assert page.items[0].name == "report.txt" and writer.closed
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "status,code",
+    "body,code",
     [
-        (b"302 Found", "provider_unavailable"),
-        (b"401 Unauthorized", "reauthorization_required"),
-        (b"403 Forbidden", "reauthorization_required"),
-        (b"429 Too Many Requests", "rate_limited"),
+        (http_response(b"sensitive", b"302 Found", b"Location: https://attacker.invalid\r\n"), "provider_unavailable"),
+        (http_response(b"sensitive", b"401 Unauthorized"), "reauthorization_required"),
+        (http_response(b"sensitive", b"403 Forbidden"), "reauthorization_required"),
+        (http_response(b"sensitive", b"429 Too Many Requests"), "rate_limited"),
     ],
 )
-async def test_non_200_status_is_not_followed_or_read_as_data(status, code):
-    client, _, writer, calls = make_client(
-        http_response(b"sensitive", status, b"Location: https://attacker.invalid\r\n")
-    )
+async def test_non_200_status_is_not_followed_or_read_as_data(body, code):
+    client, _, writer, calls = make_client(body)
     with pytest.raises(MetadataError, match=f"^{code}$"):
         await list_folder(client, token="fake-secret", folder="/x", policy=ReadOnlyFolderPolicy("/x"))
     assert calls == [True] and writer.closed
@@ -206,7 +224,9 @@ async def test_timeout_and_cancellation_close_stream(monkeypatch):
         await asyncio.sleep(10)
 
     reader.read = slow_read
-    monkeypatch.setattr(yandex_http, "_TOTAL_TIMEOUT", 0.01)
+    # The caller's deadline is the single budget: the client no longer keeps a
+    # second timer that the reader could not control.
+    monkeypatch.setattr(yandex_disk, "_TOTAL_TIMEOUT", 0.01)
     with pytest.raises(MetadataError, match="^provider_unavailable$"):
         await list_folder(client, token="fake-secret", folder="/x", policy=ReadOnlyFolderPolicy("/x"))
     assert calls == [True] and writer.closed

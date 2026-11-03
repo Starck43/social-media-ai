@@ -22,6 +22,8 @@ from app.models.managers.workspace_connection_manager import ConnectionDenied, _
 from app.utils.crypto import decrypt_secret
 
 _MAX_RESTRICTIONS = 100
+# One absolute budget for authorization, the bounded read and the lock wait. The
+# transport has no timer of its own, so this value is the whole exchange deadline.
 _TOTAL_TIMEOUT = 15.0
 
 
@@ -67,7 +69,9 @@ async def list_owned_folder(
     By default this uses the fixed-endpoint, pinned transport. An injected
     `client` is trusted application/test code, never a request parameter. Shared
     locks on actor/membership and an exclusive lock on the connection remain held during
-    bounded network work, serializing revocation/connection changes. The caller
+    bounded network work, serializing revocation/connection changes; disabling the
+    connection therefore waits for at most one in-flight read (``_TOTAL_TIMEOUT``).
+    The caller
     must not expose a custom client to external input. Production browsing remains
     gated on combined transport and route review. This service does not create,
     update or validate provider credentials.

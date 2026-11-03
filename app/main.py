@@ -70,7 +70,7 @@ async def _job_maintenance_loop() -> None:
             from app.services.file_workspace.private_maintenance import purge_expired_private_insights
 
             with tenant_scope(bypass=True):
-                await purge_expired_private_insights()
+                await purge_expired_private_insights(limit=100)
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 — independent bounded retry without private data

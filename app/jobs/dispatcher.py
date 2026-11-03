@@ -713,7 +713,7 @@ async def _telegram_login_maintenance_loop() -> None:
             from app.services.file_workspace.private_maintenance import purge_expired_private_insights
 
             with tenant_scope(bypass=True):
-                if await purge_expired_private_insights() == 100:
+                if await purge_expired_private_insights(limit=100) == 100:
                     delay = 1
         except asyncio.CancelledError:
             raise

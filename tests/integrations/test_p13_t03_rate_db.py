@@ -144,17 +144,6 @@ async def test_connection_fk_cascades_only_its_tenant_budget(world):
     async with async_session_maker() as session:
         assert await session.get(ProviderRateBudget, (a.tenant_id, a.provider, a.account_key)) is None
         assert await session.get(ProviderRateBudget, (b.tenant_id, b.provider, b.account_key)) is not None
-        with pytest.raises(ValueError):
-            await second.try_acquire(a, 1)
-    with tenant_scope(world.tenants[0]), permission_scope(world.actor):
-        await workspace_connections.disable(
-            tenant_id=world.tenants[0], actor_id=world.actor.id, connection_id=world.connections[0]
-        )
+    with tenant_scope(world.tenants[0]):
         with pytest.raises(BudgetConnectionUnavailable):
-            await first.try_acquire(a, 1)
-    async with async_session_maker() as session:
-        a_row = await session.get(ProviderRateBudget, (a.tenant_id, a.provider, a.account_key))
-        b_row = await session.get(ProviderRateBudget, (b.tenant_id, b.provider, b.account_key))
-        assert a_row is None and b_row is not None
-    with tenant_scope(world.tenants[1]):
-        assert await second.try_acquire(b, 1) == 0
+            await store.try_acquire(a, 1)

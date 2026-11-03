@@ -16,7 +16,7 @@ Owner estimate (TZ): Spread across modules (no separate TZ estimate) — not a r
 ## Adapted requirements
 
 - Shared requirements table and review findings: [BUSINESS_MODULES](../BUSINESS_MODULES.md#shared-requirements).
-- Every later module consumes: `app/core/pii.py` ([P13-T02](../tasks/p13-t02.md)), `contacts` ([P13-T07](../tasks/p13-t07.md)), `app/integrations/ratelimit` ([P13-T03](../tasks/p13-t03.md)), `app/services/commands` ([P13-T04](../tasks/p13-t04.md)), audit codes and API conventions ([P13-T05](../tasks/p13-t05.md)), coverage script and mocks ([P13-T06](../tasks/p13-t06.md)), OAuth framework ([P13-T08](../tasks/p13-t08.md)).
+- Every later module consumes: `app/core/pii.py` ([P13-T02](../tasks/p13-t02.md)), `contacts` ([P13-T07](../tasks/p13-t07.md)), `app/integrations/ratelimit` ([P13-T03](../tasks/p13-t03.md)), `app/services/commands` ([P13-T04](../tasks/p13-t04.md)), audit codes and API conventions ([P13-T05](../tasks/p13-t05.md)), coverage script and mocks ([P13-T06 accepted](../audit/p13-t06.md)), OAuth framework ([P13-T08](../tasks/p13-t08.md)).
 
 ## Data model (adapted)
 
@@ -43,7 +43,7 @@ Conventions: integer keys, `TenantScopedMixin`, `settings.DB_SCHEMA`, Alembic re
 3. [P13-T03](../tasks/p13-t03.md) — Shared external-API rate limiter and retry policy · `P2` · `C3` · depends: —
 4. [P13-T04](../tasks/p13-t04.md) — Business write-approval workflow and command ledger · `P2` · `C4` · depends: [P13-T05](../tasks/p13-t05.md) audit codes (can proceed in parallel; integrate before READY)
 5. [P13-T05](../tasks/p13-t05.md) — Audit codes, business API conventions and OpenAPI contract · `P2` · `C3` · depends: —
-6. [P13-T06](../tasks/p13-t06.md) — Per-package coverage gate and mock-provider test kit · `P2` · `C2` · depends: —
+6. [P13-T06](../audit/p13-t06.md) — Per-package coverage gate and mock-provider test kit · `P2` · `C2` · depends: — · **ACCEPTED 2026-11-03** (`89ec26bb`, [audit](../audit/p13-t06.md))
 7. [P13-T07](../tasks/p13-t07.md) — Contact core: contacts, identities and consent · `P2` · `C4` · depends: [P13-T02](../tasks/p13-t02.md) (encrypted fields, blind index)
 8. [P13-T08](../tasks/p13-t08.md) — OAuth 2.0 workspace-connection framework (authorization code + refresh) · `P2` · `C4` · depends: P12-T14 integrated ([PR #308](https://github.com/Starck43/social-media-ai/pull/308): connector authorizations), [P13-T03](../tasks/p13-t03.md)
 
@@ -73,8 +73,8 @@ belongs to Wave 1 and is not claimable in Wave 0.
 | Lane | Task | Why now |
 | --- | --- | --- |
 | Auditor / integrator | Independently audit and merge planning PR #341 to `dev` before task claims | Planning only; P13-T01 remains IN_PROGRESS pending independent audit; D1–D9 remain open |
-| Remote | P13-T06 coverage gate and provider mocks | New files only (`scripts/ci/`, `tests/shared/`) |
-| Remote | P18-T01 local connector protocol (preparation only) | Read #327 draft contracts; final work and acceptance wait for P12-T12 integration and D6 as required by the card |
+| Remote | P13-T06 coverage gate and provider mocks — **done, accepted** (`89ec26bb`) | New files only (`scripts/ci/`, `tests/shared/`) |
+| Remote | P18-T01 local connector protocol — **done, accepted** (`8b805aaa`); independent security review still open before implementation | Protocol reconciled with integrated P12-T12 |
 | Local + local DB check | P13-T05 audit codes and API conventions | First business migration: the `ck_action_audit_events_action` CHECK constraint must be widened (audit F-1). Start from current `dev` after #308 (both touch `app/api/v1`) |
 | Owner | D1, D5, D8 | D8 gates P13-T02, D5 gates P17-T01, D1 confirms bands |
 

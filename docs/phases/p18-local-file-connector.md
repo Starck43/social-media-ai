@@ -38,9 +38,9 @@ TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text s
 
 ## Plan
 
-1. [P18-T01](../tasks/p18-t01.md) — Local connector protocol, pairing and revocation contract · `P3` · `C3` · depends: P12-T12 integrated ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)) for catalog/admission contracts
-2. [P18-T02](../tasks/p18-t02.md) — Cloud connector gateway: registration, device management and search proxy · `P3` · `C4` · depends: [P18-T01](../tasks/p18-t01.md), [P13-T05](../tasks/p13-t05.md)
-3. [P18-T03](../tasks/p18-t03.md) — Desktop connector core: folder selection, safe paths and incremental index · `P3` · `C5` · depends: [P18-T01](../tasks/p18-t01.md)
+1. [P18-T01](../audit/p18-t01.md) — Local connector protocol, pairing and revocation contract · `P3` · `C3` · **ACCEPTED 2026-11-03** (`8b805aaa`, [audit](../audit/p18-t01.md)); P12-T12 increment integrated. The protocol ships in `docs/LOCAL_CONNECTOR_PROTOCOL.md`
+2. [P18-T02](../tasks/p18-t02.md) — Cloud connector gateway: registration, device management and search proxy · `P3` · `C4` · depends: [P18-T01](../audit/p18-t01.md), [P13-T05](../tasks/p13-t05.md)
+3. [P18-T03](../tasks/p18-t03.md) — Desktop connector core: folder selection, safe paths and incremental index · `P3` · `C5` · depends: [P18-T01](../audit/p18-t01.md)
 4. [P18-T04](../tasks/p18-t04.md) — Text extraction and OCR with resource limits · `P3` · `C4` · depends: [P18-T03](../tasks/p18-t03.md)
 5. [P18-T05](../tasks/p18-t05.md) — Local search API: ranking, filters, snippets and ACL awareness · `P3` · `C4` · depends: [P18-T04](../tasks/p18-t04.md), P12-T15 (folder policy, optional)
 6. [P18-T06](../tasks/p18-t06.md) — Explicit file fetch, version tracking and index deletion · `P3` · `C3` · depends: [P18-T05](../tasks/p18-t05.md), [P18-T02](../tasks/p18-t02.md)
@@ -48,4 +48,4 @@ TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text s
 
 ## Dependencies and gates
 
-[P18-T01](../tasks/p18-t01.md) protocol review before any desktop code. Cloud side waits for P12-T12 integration. Platforms: Windows, macOS, Linux.
+[P18-T01](../audit/p18-t01.md) protocol is accepted; an independent security review remains required before any desktop code. P12-T12's delivered increment is integrated (merge `48caea61`). Platforms: Windows, macOS, Linux.

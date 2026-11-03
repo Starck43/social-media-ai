@@ -1,6 +1,6 @@
 # Local connector protocol — draft v1
 
-[Task](tasks/p18-t01.md) · [Phase](phases/p18-local-file-connector.md) ·
+[Task audit](audit/p18-t01.md) · [Phase](phases/p18-local-file-connector.md) ·
 [Product boundaries](PRODUCT_PLAN.md#extension-contracts) · [Business review](BUSINESS_MODULES.md#review-findings-corrections-to-the-tz)
 
 ## Status and non-goals

@@ -749,6 +749,33 @@ class FileInsightManager:
 
         return await self._call(args, action, live=False, consent=False)
 
+    @staticmethod
+    async def _purge_expired_batch(limit=100):
+        """Delete only TTL-expired private attempts under the runtime bypass.
+
+        The bounded caller is the existing trusted platform maintenance loop.
+        This path never reads or decrypts payloads and never selects unexpired
+        rows; deleting an attempt cascades its private result. SKIP LOCKED lets
+        in-flight owner transactions finish without making maintenance block.
+        """
+        from app.core.tenant_context import is_bypass
+
+        if not is_bypass() or type(limit) is not int or not 1 <= limit <= 100:
+            _deny()
+        async with async_session_maker() as session, session.begin():
+            expired_ids = (
+                await session.scalars(
+                    select(FileInsightAttempt.id)
+                    .where(FileInsightAttempt.expires_at <= func.clock_timestamp())
+                    .order_by(FileInsightAttempt.expires_at, FileInsightAttempt.id)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            ).all()
+            if expired_ids:
+                await session.execute(delete(FileInsightAttempt).where(FileInsightAttempt.id.in_(expired_ids)))
+            return len(expired_ids)
+
 
 # Importing this module cannot enable persistence.
 file_insights = FileInsightManager()

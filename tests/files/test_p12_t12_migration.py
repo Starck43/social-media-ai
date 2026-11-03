@@ -1,10 +1,12 @@
 """Catalog migrations in test_schema only; preserve legacy 0122 evidence."""
 
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import delete, func, inspect, select, text
 
 from app.core.config import settings
@@ -16,8 +18,72 @@ from tests.shared.file_catalog_fixtures import actor, admit, data  # noqa: F401
 pytestmark = pytest.mark.tenancy
 
 
+SCHEMA = "test_schema"
+PRIVATE_TABLES = (
+    "file_insight_mounts",
+    "file_insight_object_states",
+    "file_insight_attempts",
+    "file_private_insights",
+)
+
+
+def _alembic_config():
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
+    return config
+
+
+def _file_revision(config, filename):
+    revisions = [
+        revision
+        for revision in ScriptDirectory.from_config(config).walk_revisions()
+        if Path(revision.path).name.endswith(filename)
+    ]
+    assert len(revisions) == 1, f"expected one Alembic migration file named {filename}"
+    return revisions[0]
+
+
+def _current_revision(connection):
+    revisions = connection.execute(text(f"SELECT version_num FROM {SCHEMA}.alembic_version")).scalars().all()
+    assert len(revisions) == 1, "migration tests require one Alembic head"
+    return revisions[0]
+
+
+def _require_empty_private_storage(connection):
+    if "file_insight_mounts" not in inspect(connection).get_table_names(schema=SCHEMA):
+        return
+    for table in PRIVATE_TABLES:
+        count = connection.execute(text(f"SELECT count(*) FROM {SCHEMA}.{table}")).scalar_one()
+        assert count == 0, "refusing a destructive migration test while private insight state exists"
+
+
+@contextmanager
+def _downgraded(target):
+    """Exercise a historical schema while restoring the exact starting head."""
+    config = _alembic_config()
+    script = ScriptDirectory.from_config(config)
+    starting_head = script.get_current_head()
+    with engine.connect() as connection:
+        starting_revision = _current_revision(connection)
+        assert starting_revision == starting_head, "migration tests require the branch's current Alembic head"
+        if any(revision.revision == "0128" for revision in script.iterate_revisions(starting_revision, target)):
+            _require_empty_private_storage(connection)
+    try:
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, target)
+            yield connection
+    finally:
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, starting_revision)
+            assert (
+                _current_revision(connection) == starting_revision
+            ), "migration test failed to restore its starting head"
+
+
 async def test_round_trip_preserves_0122_evidence():
-    assert settings.DB_SCHEMA == "test_schema"
+    assert settings.DB_SCHEMA == SCHEMA
     async with async_session_maker() as session, session.begin():
         assert await session.scalar(select(func.count()).select_from(FileCatalogObject)) == 0
         tenant = Tenant(name="P12-T12 migration fixture", slug="p12t12-migration-fixture")
@@ -63,14 +129,13 @@ async def test_round_trip_preserves_0122_evidence():
         await session.flush()
         ids = tenant.id, snippet.id, doc.id, revision.id
     try:
-        config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
-        config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
-        # A synchronous injected connection avoids async-driver Alembic CLI drift.
-        with engine.begin() as connection:
-            config.attributes["connection"] = connection
-            command.downgrade(config, "0123")
+        config = _alembic_config()
+        catalog_revision = _file_revision(config, "file_metadata_catalog.py")
+        traversal_revision = _file_revision(config, "0127_file_catalog_traversal.py")
+        # Stop before this feature's first revision, preserving migrations from dependencies.
+        with _downgraded(catalog_revision.down_revision) as connection:
             assert "file_catalog_objects" not in inspect(connection).get_table_names(schema="test_schema")
-            command.upgrade(config, "0127")
+            command.upgrade(config, traversal_revision.revision)
             assert "file_catalog_objects" in inspect(connection).get_table_names(schema="test_schema")
         async with async_session_maker() as session:
             assert (await session.get(KnowledgeSnippet, ids[1])).excerpt == "Synthetic legacy evidence"
@@ -91,26 +156,20 @@ async def test_0125_backfills_existing_rows_in_batches(data):
             await admit(args, *names[start : start + 100])
         original = await manager.list_page(**args, query="strasse")
         original_id = original["items"][0]["id"]
-        config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
-        config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
-        try:
-            with engine.begin() as connection:
-                config.attributes["connection"] = connection
-                command.downgrade(config, "0124")
-                assert "name_search" not in {
-                    c["name"] for c in inspect(connection).get_columns("file_catalog_objects", schema="test_schema")
-                }
-                command.upgrade(config, "0125")
-                rows = connection.execute(
-                    text("SELECT name, name_search FROM test_schema.file_catalog_objects WHERE connection_id = :id"),
-                    {"id": args["connection_id"]},
-                ).all()
-                assert len(rows) == len(names)
-                assert dict(rows)["Straße.txt"] == "strasse.txt"
-        finally:
-            with engine.begin() as connection:
-                config.attributes["connection"] = connection
-                command.upgrade(config, "0127")
+        config = _alembic_config()
+        catalog_revision = _file_revision(config, "file_metadata_catalog.py")
+        search_revision = _file_revision(config, "0125_file_catalog_search_key.py")
+        with _downgraded(catalog_revision.revision) as connection:
+            assert "name_search" not in {
+                c["name"] for c in inspect(connection).get_columns("file_catalog_objects", schema=SCHEMA)
+            }
+            command.upgrade(config, search_revision.revision)
+            rows = connection.execute(
+                text(f"SELECT name, name_search FROM {SCHEMA}.file_catalog_objects WHERE connection_id = :id"),
+                {"id": args["connection_id"]},
+            ).all()
+            assert len(rows) == len(names)
+            assert dict(rows)["Straße.txt"] == "strasse.txt"
         result = await manager.list_page(**args, query="STRASSE")
         assert result["items"][0]["id"] == original_id
         assert [x["name"] for x in (await manager.list_page(**args, query="cafe\u0301"))["items"]] == ["CAFÉ.txt"]
@@ -125,19 +184,13 @@ async def test_0126_round_trip_keeps_catalog_objects(data):
         await admit(args, "retained.txt")
         await start_catalog_scan(**args, folder="/work")
         before = (await manager.list_page(**args))["items"][0]["id"]
-        config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
-        config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
-        try:
-            with engine.begin() as connection:
-                config.attributes["connection"] = connection
-                command.downgrade(config, "0125")
-                assert "file_catalog_scans" not in inspect(connection).get_table_names(schema="test_schema")
-                command.upgrade(config, "0127")
-                assert "file_catalog_scans" in inspect(connection).get_table_names(schema="test_schema")
-        finally:
-            with engine.begin() as connection:
-                config.attributes["connection"] = connection
-                command.upgrade(config, "0127")
+        config = _alembic_config()
+        traversal_revision = _file_revision(config, "0127_file_catalog_traversal.py")
+        scans_revision = _file_revision(config, "0126_file_catalog_scans.py")
+        with _downgraded(scans_revision.down_revision) as connection:
+            assert "file_catalog_scans" not in inspect(connection).get_table_names(schema=SCHEMA)
+            command.upgrade(config, traversal_revision.revision)
+            assert "file_catalog_scans" in inspect(connection).get_table_names(schema=SCHEMA)
         assert (await manager.list_page(**args))["items"][0]["id"] == before
 
 
@@ -153,23 +206,17 @@ async def test_0127_downgrade_discards_recursive_only_and_keeps_metadata(data):
         before = (await manager.list_page(**args))["items"][0]["id"]
     with actor(data, user=1, connection=1) as other:
         await start_catalog_scan(**other, folder="/work")
-    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
-    config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
-    try:
-        with engine.begin() as connection:
-            config.attributes["connection"] = connection
-            command.downgrade(config, "0126")
-            assert "traversal" not in {
-                c["name"] for c in inspect(connection).get_columns("file_catalog_scans", schema="test_schema")
-            }
-            assert connection.execute(
-                text("SELECT connection_id FROM test_schema.file_catalog_scans ORDER BY connection_id")
-            ).scalars().all() == [data.connections[1]]
-            command.upgrade(config, "0127")
-    finally:
-        with engine.begin() as connection:
-            config.attributes["connection"] = connection
-            command.upgrade(config, "0127")
+    config = _alembic_config()
+    scans_revision = _file_revision(config, "0126_file_catalog_scans.py")
+    traversal_revision = _file_revision(config, "0127_file_catalog_traversal.py")
+    with _downgraded(traversal_revision.down_revision) as connection:
+        assert "traversal" not in {
+            c["name"] for c in inspect(connection).get_columns("file_catalog_scans", schema=SCHEMA)
+        }
+        assert connection.execute(
+            text(f"SELECT connection_id FROM {SCHEMA}.file_catalog_scans ORDER BY connection_id")
+        ).scalars().all() == [data.connections[1]]
+        command.upgrade(config, traversal_revision.revision)
     async with async_session_maker() as session:
         kept = (await session.scalars(select(FileCatalogScan))).all()
         assert len(kept) == 1 and kept[0].connection_id == data.connections[1] and kept[0].traversal is None

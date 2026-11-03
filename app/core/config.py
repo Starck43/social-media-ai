@@ -60,6 +60,9 @@ class Settings(BaseSettings):
 
     # Admin settings
     ADMIN_ENABLED: bool = True
+    # P12-T12 catalog read UI only. Requires 0124; does not enable provider refresh,
+    # open-original, extraction, writes or local-only execution.
+    FILE_CATALOG_UI_ENABLED: bool = False
 
     # Rate limiting settings
     CHANGE_PASSWORD_RATE_LIMIT: str = "5/minute"

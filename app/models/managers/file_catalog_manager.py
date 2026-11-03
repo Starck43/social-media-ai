@@ -19,7 +19,7 @@ from app.core.database import async_session_maker
 from app.integrations.catalog import CATALOG_VERSION
 from app.integrations.file_workspace.policy import FileOperation, _components
 from app.integrations.file_workspace.yandex_disk import DiskItem, DiskPage
-from app.models import FileCatalogObject, FileCatalogObservation, WorkspaceConnectionSecret
+from app.models import FileCatalogObject, FileCatalogObservation, WorkspaceConnection, WorkspaceConnectionSecret
 from app.models.managers.workspace_connection_manager import ConnectionDenied, _authorize, _connection
 from app.services.file_workspace.yandex_reader import _stored_policy
 
@@ -89,30 +89,35 @@ def _visible_paths(column, config):
     return and_(*conditions)
 
 
+def _cloud_policy(connection):
+    if (
+        not connection.is_active
+        or connection.state not in {"unverified", "verified"}
+        or connection.provider_id != "yandex_disk"
+        or connection.platform != "yandex_disk"
+        or connection.auth_method != "oauth_token"
+        or connection.schema_version != CATALOG_VERSION
+        # Future local/company policy cannot silently enter this cloud catalog.
+        or not isinstance(connection.config, dict)
+        or set(connection.config) != {"file_policy"}
+    ):
+        raise ConnectionDenied()
+    policy = _stored_policy(connection.config)
+    try:
+        root = _path(connection.config["file_policy"]["root"])
+        for rule in connection.config["file_policy"]["restrictions"]:
+            _path(rule["path"])
+    except ValueError:
+        raise ConnectionDenied() from None
+    return policy, root
+
+
 @asynccontextmanager
 async def _owned(tenant_id, actor_id, connection_id):
     async with async_session_maker() as session, session.begin():
         await _authorize(session, tenant_id, actor_id, require_source_view=True)
         connection = await _connection(session, tenant_id, actor_id, connection_id)
-        if (
-            not connection.is_active
-            or connection.state not in {"unverified", "verified"}
-            or connection.provider_id != "yandex_disk"
-            or connection.platform != "yandex_disk"
-            or connection.auth_method != "oauth_token"
-            or connection.schema_version != CATALOG_VERSION
-            # Future local/company policy cannot silently enter this cloud catalog.
-            or not isinstance(connection.config, dict)
-            or set(connection.config) != {"file_policy"}
-        ):
-            raise ConnectionDenied()
-        policy = _stored_policy(connection.config)
-        try:
-            root = _path(connection.config["file_policy"]["root"])
-            for rule in connection.config["file_policy"]["restrictions"]:
-                _path(rule["path"])
-        except ValueError:
-            raise ConnectionDenied() from None
+        policy, root = _cloud_policy(connection)
         secret_present = await session.scalar(
             select(WorkspaceConnectionSecret.connection_id).where(
                 WorkspaceConnectionSecret.connection_id == connection.id,
@@ -141,6 +146,45 @@ def _object_dict(row):
 
 
 class FileCatalogManager:
+    async def connections(self, *, tenant_id, actor_id):
+        """At most 100 currently available personal cloud mounts, no secret/config.
+
+        This selector does not verify a live provider or certify synchronization.
+        Every later list/detail/admission independently rechecks current authority.
+        """
+        async with async_session_maker() as session, session.begin():
+            await _authorize(session, tenant_id, actor_id, require_source_view=True)
+            rows = (
+                await session.scalars(
+                    select(WorkspaceConnection)
+                    .join(WorkspaceConnectionSecret, WorkspaceConnectionSecret.connection_id == WorkspaceConnection.id)
+                    .where(
+                        WorkspaceConnection.tenant_id == tenant_id,
+                        WorkspaceConnection.owner_user_id == actor_id,
+                        WorkspaceConnection.provider_id == "yandex_disk",
+                        WorkspaceConnection.platform == "yandex_disk",
+                        WorkspaceConnection.auth_method == "oauth_token",
+                        WorkspaceConnection.schema_version == CATALOG_VERSION,
+                        WorkspaceConnection.is_active.is_(True),
+                        WorkspaceConnection.state.in_(("unverified", "verified")),
+                        WorkspaceConnectionSecret.secret_encrypted != "",
+                    )
+                    .order_by(WorkspaceConnection.id)
+                    .limit(100)
+                    .with_for_update(of=WorkspaceConnection)
+                )
+            ).all()
+            result = []
+            for row in rows:
+                try:
+                    policy, root = _cloud_policy(row)
+                    if not policy.permits(root, FileOperation.LIST):
+                        continue
+                except ConnectionDenied:
+                    continue
+                result.append({"id": row.id, "label": row.label, "root": root})
+            return result
+
     async def begin_page(self, *, tenant_id, actor_id, connection_id, folder):
         """Authorize an internal read's context; this does not contact a provider."""
         async with _owned(tenant_id, actor_id, connection_id) as (_, connection, policy, __):

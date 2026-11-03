@@ -35,6 +35,10 @@ def _environment():
         undefined=StrictUndefined,
         extensions=["jinja2.ext.do"],
     )
+    # Match the canonical strict page fixture environment; base imports all
+    # macros at compile time, including filters unused by these two forms.
+    env.filters["ui_label"] = str
+    env.filters["human_dt"] = lambda value, **kwargs: str(value or "")
     env.globals["static_v"] = lambda path: "http://fixture.test/static/" + path
     env.globals["url_for"] = lambda name, path: "http://fixture.test/static/" + path
     return env

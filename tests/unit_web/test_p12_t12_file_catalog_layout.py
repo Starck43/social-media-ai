@@ -49,3 +49,9 @@ def test_error_state_is_honest_and_accessible():
     status = html.select_one('[data-file-catalog-scan-status][role="status"]')
     assert status and "Обход не завершён" in status.get_text()
     assert not html.select('#page-content form[method="post"]')
+
+
+def test_catalog_search_label_has_no_replacement_characters():
+    html = BeautifulSoup(render("list"), "html.parser")
+    assert html.select_one(".file-catalog-search button").get_text(strip=True) == "Найти"
+    assert "\ufffd" not in html.get_text()

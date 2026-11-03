@@ -65,6 +65,7 @@ async def _read(request, authority, reader, deadline) -> ReadPlainText:
         raise PlainTextReadUnavailable()
     # Reject unsupported/unsafe display names BEFORE asking for any file bytes.
     extract_plain_text(b"", name=context.name)
+    _live(deadline)
     async with reader.open(context, max_bytes=MAX_INPUT_BYTES) as stream:
         _live(deadline)
         if (
@@ -98,6 +99,7 @@ async def _read(request, authority, reader, deadline) -> ReadPlainText:
     _live(deadline)
     if not _context_valid(fresh, request) or fresh != context:
         raise PlainTextReadUnavailable()
+    _live(deadline)
     return ReadPlainText(context, extraction, version)
 
 

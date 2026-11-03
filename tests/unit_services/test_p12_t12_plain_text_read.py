@@ -448,3 +448,35 @@ def test_fresh_authority_cannot_substitute_another_request():
     authority.authorize = wrong_request
     rejected(authority, reader)
     assert reader.closed
+
+
+def test_preflight_expiry_does_not_start_reader(monkeypatch):
+    monkeypatch.setattr(service, "READ_TIMEOUT", 0.005)
+    original = service.extract_plain_text
+
+    def slow_preflight(payload, **kwargs):
+        time.sleep(0.02)
+        return original(payload, **kwargs)
+
+    monkeypatch.setattr(service, "extract_plain_text", slow_preflight)
+    reader = SyntheticContentReader()
+    rejected(SyntheticContentAuthority(), reader)
+    assert not reader.contexts
+
+
+def test_final_validation_overrun_cannot_release_result(monkeypatch):
+    monkeypatch.setattr(service, "READ_TIMEOUT", 0.005)
+    original = service._context_valid
+    calls = 0
+
+    def slow_final(context, request):
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            time.sleep(0.02)
+        return original(context, request)
+
+    monkeypatch.setattr(service, "_context_valid", slow_final)
+    reader = SyntheticContentReader()
+    rejected(SyntheticContentAuthority(), reader)
+    assert calls == 3 and reader.closed

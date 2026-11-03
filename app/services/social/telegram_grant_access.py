@@ -1,8 +1,9 @@
 """Fresh, metadata-only checks for an explicitly pinned Telegram source grant.
 
 A snapshot is NOT an execution permit or a shared-session lease. No secret is
-selected/decrypted here. The collector is not switched to this model until its
-lease, request-boundary rechecks and settlement fencing are implemented together.
+selected/decrypted by the metadata API. Only the internal lock-holder resolver
+opts into envelope loading. The collector remains gated on request-boundary
+rechecks, bounded runtime ownership and settlement fencing together.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from app.models import PersonalConnectorAuthorization as Authorization
 from app.models import Platform, Source, Tenant, TenantUser, User
 from app.models import WorkspaceAuthorizationGrant as Grant
 from app.models import WorkspaceRole
-from app.services.social.connector_authorizations import AuthorizationUnavailable
+from app.services.social.connector_authorizations import AuthorizationUnavailable, _decode_telegram_material
 from app.types import ActionType, PlatformType
 
 _BINDING = "telegram_authorization"
@@ -93,17 +94,22 @@ def _validate_selection_context(selection):
         raise AuthorizationUnavailable()
 
 
-async def _inspect_source_grant(session, selection: SourceGrantSelection) -> SourceGrantSnapshot:
-    """Reload source, owner rights, grant and account in one SQL snapshot.
+async def _read_source_grant(
+    session, selection: SourceGrantSelection, *, include_authorization=False, expected_authorization_id=None
+):
+    """One SQL snapshot for source/owner/grant/account; secret opt-in is internal.
 
-    Job initiator/payer authorization is a separate responsibility. An active
-    source owner with source.view may retain their own consent after losing
-    CREATE, as with local detach; no platform-admin or missing-tenant bypass.
-    Provider validity and envelope integrity are not established by metadata.
+    The guarded runtime resolver explicitly selects the authorization entity;
+    metadata callers select only its ID. Both paths use the same predicates and
+    refresh the identity map in a READ COMMITTED lock transaction.
     """
     _validate_selection_context(selection)
     statement = (
-        select(Source, Authorization.id.label("authorization_id"), WorkspaceRole.codename.label("owner_role"))
+        select(
+            Source,
+            Authorization if include_authorization else Authorization.id.label("authorization_id"),
+            WorkspaceRole.codename.label("owner_role"),
+        )
         .join(Platform, Platform.id == Source.platform_id)
         .join(Tenant, Tenant.id == Source.tenant_id)
         .join(User, User.id == selection.owner_user_id)
@@ -139,15 +145,40 @@ async def _inspect_source_grant(session, selection: SourceGrantSelection) -> Sou
             Authorization.secret_encrypted != "",
         )
     )
+    if include_authorization:
+        # Never even select another account's envelope under the old account lock
+        # if a grant was rebound after lock acquisition.
+        statement = statement.where(Authorization.id == _positive(expected_authorization_id))
     # A lock holder may inspect repeatedly in one READ COMMITTED transaction.
     # Refresh ORM identities too; a new SQL row must not reuse stale Source.params.
     row = (await session.execute(statement.execution_options(populate_existing=True))).one_or_none()
     if row is None:
         raise AuthorizationUnavailable()
-    source, authorization_id, owner_role = row
+    source, authorization, owner_role = row
     if source_grant_selection(source) != selection or ("source", ActionType.VIEW) not in workspace_grants(owner_role):
         raise AuthorizationUnavailable()
-    return SourceGrantSnapshot(selection, authorization_id)
+    authorization_id = authorization.id if include_authorization else authorization
+    return SourceGrantSnapshot(selection, authorization_id), authorization
+
+
+async def _inspect_source_grant(session, selection: SourceGrantSelection) -> SourceGrantSnapshot:
+    """Metadata only; initiator/payer rights and provider health remain separate."""
+    snapshot, _ = await _read_source_grant(session, selection)
+    return snapshot
+
+
+async def _resolve_source_grant_material(session, expected: SourceGrantSnapshot):
+    """Internal lock-holder helper, never an endpoint or standalone I/O permit.
+
+    Read the exact account and its envelope in the same SQL snapshot as consent.
+    The guard must check the returned account pin and recheck after decryption.
+    """
+    snapshot, authorization = await _read_source_grant(
+        session, expected.selection, include_authorization=True, expected_authorization_id=expected.authorization_id
+    )
+    if snapshot != expected:
+        raise AuthorizationUnavailable()
+    return snapshot, _decode_telegram_material(authorization)
 
 
 async def inspect_source_grant(selection: SourceGrantSelection) -> SourceGrantSnapshot:

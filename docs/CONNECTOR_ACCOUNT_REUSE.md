@@ -11,8 +11,9 @@ StringSession, access/refresh token or API key per workspace.
 This P12-T14 draft implements encrypted persistence, explicit consent/reuse and
 local disconnect/revoke operations for `telegram` / `mtproto`, plus a bounded
 phone/code/2FA **machine API**. It includes partial personal-account and workspace-grant web pages, but does **not**
-yet implement a source picker, source binding/runtime secret resolution or safe
-shared-session execution.
+yet implement a source picker, source binding writes or safe shared-session
+execution. Private in-lock setup-material resolution is delivered below, not a
+collector execution path.
 No public endpoint accepts a StringSession. Legacy vault sessions are not
 imported. Do not deploy this slice or present it as completed Telegram onboarding.
 
@@ -176,8 +177,8 @@ contacts a provider.
 cannot establish envelope integrity or provider health and does not prevent a
 change after the read. It is not yet called by the collector or a public source
 picker. The existing collector remains legacy-vault based. Complete the binding
-write/CSRF UI, durable shared-session lease, in-lease decryption, request-boundary
-fresh checks and output/admission fencing together before switching runtime or
+write/CSRF UI, durable shared-session execution ownership, request-boundary fresh
+checks and output/admission fencing together before switching runtime or
 claiming workspace-consented collection. PostgreSQL checks on an exclusively owned synthetic schema and separate
 DB-exempt unit/SQL-compilation checks are recorded with exact revision/scopes in
 the task card and #308; neither is provider/runtime acceptance. No migration or existing source binding is changed here.
@@ -211,11 +212,40 @@ the lifetime and handle uncertainty without automatic replay.
 
 Detach and local revoke do not wait for this advisory lock; their changes are
 visible at the next fresh metadata check. They may still happen after that check.
-There is no provider-request/response-output fence, secret resolution/decryption,
-initiator/payer authorization, collector integration or public API in this slice.
+There is no provider-request/response-output fence, initiator/payer authorization,
+collector integration or public API. Private setup-material resolution is described
+below; it does not supply those missing execution boundaries.
 In particular it does not yet prevent revoked work from admitting output; those
 boundaries must be completed before using new-store grants in runtime. Legacy
 collection remains unchanged. No schema migration is required for this lock.
+
+## In-lock Telegram envelope resolution (private setup only)
+
+`guard._setup_material()` is an internal async context, not a public endpoint or
+an execution permit. It selects the exact authorization envelope in the same
+joined SQL snapshot as source, owner rights, grant and revision checks, with an
+explicit account-ID predicate matching the held lock. Rebinding a grant cannot
+select or decrypt the replacement account under the old account lock. The
+shared decoder validates active Telegram/MTProto capability, exact envelope
+shape, all identity pins (including strict JSON scalar types), and the bounded
+material shape. Reuse/attach uses the same decoder but still returns no plaintext.
+After decryption the guard checks the complete metadata pin again before yield.
+Any failed read/check invalidates the guard; cancellation propagates, with no
+fallback or automatic replay.
+
+The setup object has a redacted representation and rejects normal copying,
+pickling, dataclass serialization and `vars`. It allows value access only from
+its owner task in the original active transaction and tenant context. Retained
+values are cleared on setup-scope exit, guard invalidation or outer lock exit;
+failed post-decryption checks clear them before yield. This is a trusted internal
+Python boundary, not a sandbox: already-read strings cannot be recalled or
+reliably zeroized. Property access checks local lifetime, **not fresh database
+state**. No duration/TTL, provider health, initiator/payer authorization, request
+fence or output-admission fence is implied. The collector remains unchanged.
+
+Targeted fake-session/real-synthetic-crypto and owned PostgreSQL evidence is
+recorded in the task card and #308; it does not replace the final full suite or
+independent audit. No migration, real account/session or provider call is needed.
 
 ## Draft machine API
 

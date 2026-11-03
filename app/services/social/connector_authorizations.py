@@ -78,7 +78,7 @@ def _validate_material(material):
             raise AuthorizationUnavailable()
 
 
-def _check_reusable(row):
+def _decode_telegram_material(row):
     # A capability allowlist, not "all connectors can share credentials".
     if row.provider_id != PROVIDER or row.auth_method != METHOD or row.state != "active":
         raise AuthorizationUnavailable()
@@ -86,12 +86,25 @@ def _check_reusable(row):
         payload = json.loads(decrypt_secret(row.secret_encrypted))
         if not isinstance(payload, dict) or set(payload) != {"identity", "material"}:
             raise AuthorizationUnavailable()
-        if payload["identity"] != _identity(row):
+        identity = payload["identity"]
+        expected = _identity(row)
+        # JSON booleans/floats must not compare equal to integer envelope pins.
+        if (
+            not isinstance(identity, dict)
+            or identity != expected
+            or any(type(identity[key]) is not type(value) for key, value in expected.items())
+        ):
             raise AuthorizationUnavailable()
         _validate_material(payload["material"])
+        return payload["material"]
     except (ValueError, RuntimeError, TypeError, UnicodeError, RecursionError):
         raise AuthorizationUnavailable() from None
-    # Do not return plaintext to metadata/reuse callers.
+
+
+def _check_reusable(row):
+    # Do not return plaintext to metadata/reuse callers. The internal runtime
+    # resolver uses the identical envelope validation, not a weaker decoder.
+    _decode_telegram_material(row)
 
 
 def _account_projection(row):

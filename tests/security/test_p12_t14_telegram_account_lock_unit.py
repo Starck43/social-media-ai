@@ -203,3 +203,168 @@ async def test_caller_failure_unwinds_transaction_and_invalidates_handle(fake, f
     assert session.outcome == "rolled_back"
     with pytest.raises(AuthorizationUnavailable):
         await guard.inspect()
+
+
+@pytest.fixture
+def material_resolver(fake, monkeypatch):
+    values = {"api_id": 123, "api_hash": "SYNTHETIC-HASH", "session": "SYNTHETIC-NOT-A-SESSION"}
+    resolver = AsyncMock(return_value=(SNAPSHOT, values))
+    monkeypatch.setattr(module, "_resolve_source_grant_material", resolver)
+    return *fake, resolver, values
+
+
+async def test_setup_material_rechecks_after_resolution_and_clears_on_scope_exit(material_resolver, caplog):
+    session, inspect, resolver, values = material_resolver
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard:
+            async with guard._setup_material() as material:
+                resolver.assert_awaited_once_with(session, SNAPSHOT)
+                assert inspect.await_count == 3
+                assert material.api_id == 123
+                assert material.api_hash == "SYNTHETIC-HASH"
+                assert material.session == "SYNTHETIC-NOT-A-SESSION"
+                assert repr(material) == "<TelegramSetupMaterial>"
+                assert "SYNTHETIC" not in repr(guard) + repr(material) + caplog.text
+            assert values == {}
+            with pytest.raises(AuthorizationUnavailable):
+                _ = material.session
+            assert await guard.inspect() == SNAPSHOT
+    assert session.outcome == "committed"
+
+
+async def test_material_cannot_be_copied_pickled_or_dataclass_serialized(material_resolver):
+    import copy
+    import pickle
+    from dataclasses import asdict
+
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard, guard._setup_material() as material:
+            for operation in (copy.copy, copy.deepcopy, pickle.dumps, asdict, vars):
+                with pytest.raises(TypeError):
+                    operation(material)
+
+
+async def test_nested_material_scope_is_rejected_without_closing_owner_scope(material_resolver):
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard, guard._setup_material() as material:
+            with pytest.raises(AuthorizationUnavailable):
+                async with guard._setup_material():
+                    pytest.fail("no nested material scope")
+            assert material.api_id == 123
+
+
+async def test_child_task_cannot_read_material_or_resolve_another_scope(material_resolver):
+    async def child(guard, material):
+        with pytest.raises(AuthorizationUnavailable):
+            _ = material.session
+        with pytest.raises(AuthorizationUnavailable):
+            async with guard._setup_material():
+                pytest.fail("child cannot resolve")
+
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard, guard._setup_material() as material:
+            await asyncio.create_task(child(guard, material))
+            assert material.api_id == 123
+    assert material_resolver[2].await_count == 1
+
+
+@pytest.mark.parametrize("changed", ["closed", "replacement", "inactive", "tenant", "bypass"])
+async def test_local_lifetime_or_context_loss_clears_material_permanently(material_resolver, changed):
+    session, inspect, resolver, values = material_resolver
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard, guard._setup_material() as material:
+            original = session.transaction
+            if changed == "inactive":
+                session.is_active = False
+            elif changed in ("closed", "replacement"):
+                session.transaction = None if changed == "closed" else object()
+            with tenant_scope(13 if changed == "tenant" else 12, bypass=changed == "bypass"):
+                with pytest.raises(AuthorizationUnavailable):
+                    _ = material.session
+            session.transaction, session.is_active = original, True
+            assert values == {}
+            with pytest.raises(AuthorizationUnavailable):
+                _ = material.api_id
+            with pytest.raises(AuthorizationUnavailable):
+                await guard.inspect()
+
+
+@pytest.mark.parametrize("stage", ["resolve", "postcheck"])
+@pytest.mark.parametrize(
+    "failure", [AuthorizationUnavailable(), RuntimeError("SYNTHETIC-SECRET"), asyncio.CancelledError()]
+)
+async def test_setup_failures_are_opaque_cancel_safe_and_never_replayed(material_resolver, stage, failure, caplog):
+    session, inspect, resolver, values = material_resolver
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard:
+            (resolver if stage == "resolve" else inspect).side_effect = failure
+            expected = (
+                asyncio.CancelledError if isinstance(failure, asyncio.CancelledError) else AuthorizationUnavailable
+            )
+            with pytest.raises(expected) as error:
+                async with guard._setup_material():
+                    pytest.fail("failed setup must not yield")
+            assert "SYNTHETIC" not in str(error.value) + repr(error.value) + caplog.text
+            resolver.side_effect = inspect.side_effect = None
+            with pytest.raises(AuthorizationUnavailable):
+                await guard.inspect()
+            with pytest.raises(AuthorizationUnavailable):
+                async with guard._setup_material():
+                    pytest.fail("failed handle must not restart")
+            assert resolver.await_count == 1
+            if stage == "postcheck":
+                assert values == {}
+
+
+async def test_resolved_different_account_clears_material_and_invalidates_guard(material_resolver):
+    session, inspect, resolver, values = material_resolver
+    resolver.return_value = SourceGrantSnapshot(PIN, 100), values
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard:
+            with pytest.raises(AuthorizationUnavailable):
+                async with guard._setup_material():
+                    pytest.fail("account changed")
+            assert values == {} and inspect.await_count == 2
+            with pytest.raises(AuthorizationUnavailable):
+                await guard.inspect()
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("SYNTHETIC-CALLER"), asyncio.CancelledError()])
+async def test_material_body_failure_preserves_error_and_clears_scope(material_resolver, failure):
+    session, inspect, resolver, values = material_resolver
+    with tenant_scope(12), pytest.raises(type(failure)) as error:
+        async with module.locked_source_grant(PIN) as guard, guard._setup_material() as material:
+            raise failure
+    assert error.value is failure and values == {} and session.outcome == "rolled_back"
+    with pytest.raises(AuthorizationUnavailable):
+        _ = material.session
+
+
+async def test_failed_later_inspect_clears_already_resolved_material(material_resolver):
+    session, inspect, resolver, values = material_resolver
+    with tenant_scope(12):
+        async with module.locked_source_grant(PIN) as guard, guard._setup_material() as material:
+            inspect.side_effect = AuthorizationUnavailable()
+            with pytest.raises(AuthorizationUnavailable):
+                await guard.inspect()
+            assert values == {}
+            with pytest.raises(AuthorizationUnavailable):
+                _ = material.session
+
+
+async def test_no_material_resolution_before_lock_or_after_exit(material_resolver):
+    session, inspect, resolver, values = material_resolver
+    with tenant_scope(12):
+        session.lock = False
+        with pytest.raises(module.TelegramAccountBusy):
+            async with module.locked_source_grant(PIN):
+                pytest.fail("busy")
+        resolver.assert_not_awaited()
+        session.lock = True
+        session.transaction = object()
+        async with module.locked_source_grant(PIN) as guard:
+            pass
+        with pytest.raises(AuthorizationUnavailable):
+            async with guard._setup_material():
+                pytest.fail("exited guard")
+        resolver.assert_not_awaited()

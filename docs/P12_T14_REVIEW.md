@@ -81,12 +81,26 @@ platform type instead of a display label. Handles are task/lifetime-bound and
 fail closed on failed recheck or connection loss. Normal exit/error/cancellation
 releases the lock. Revoke/detach remain independently available.
 
-This foundation does not decrypt, call providers, wire the collector, authorize
-initiator/payer, reclaim stale workers or fence remote requests/output. It is not
+The lock-only foundation did not decrypt. Its private setup-material extension
+below still does not call providers, wire the collector, authorize initiator/payer,
+reclaim stale workers or fence remote requests/output. It is not
 a complete renewable/durable execution lease. Targeted fake-session and synthetic
 PostgreSQL tests (including an independent process and lost-connection case) are
 separate from unrun runtime/provider and full migration-history gates. See the
 account-reuse contract and latest card/#308 evidence for exact scopes/revision.
+
+## In-lock envelope continuation (partial item 1)
+
+The private `guard._setup_material()` scope loads the exact account envelope with
+the same joined source/owner/grant/revision predicates, validates it through the
+shared reuse decoder, and rechecks metadata after decryption before yield. Setup
+values are task/transaction/tenant/scope-bound, repr-redacted and cleared on exit
+or invalidation; already-read Python strings cannot be recalled or zeroized.
+Property access is not a fresh database authorization or provider-operation right.
+Failed resolution/checks and cancellation fail closed without replay or fallback.
+This remains preparatory: no runtime TTL, initiator/payer checks, request/output
+fence, collector integration or real-provider validation. See latest card/#308
+for scoped synthetic tests; the full suite and independent audit remain end gates.
 
 ## Account-only local revocation continuation
 

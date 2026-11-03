@@ -1,4 +1,8 @@
-"""Local-only validation: real manager-backed identities in isolated test_schema."""
+"""Validation that the DB wrapper exposes real manager-backed identities.
+
+Needs the normal serialized `test_schema` route (root conftest); it creates no
+cross-tenant isolation proof of its own - see tests/shared/README.md.
+"""
 
 import pytest
 
@@ -10,7 +14,7 @@ pytest_plugins = ("tests.shared.business_tenancy", "tests.shared.fixtures.person
 pytestmark = [pytest.mark.asyncio, pytest.mark.tenancy]
 
 
-async def test_business_db_world_exposes_two_persisted_tenants_and_actors(business_db_world):
+async def test_business_db_world_exposes_manager_backed_identities(business_db_world):
     world = business_db_world
     assert len({tenant.id for tenant in world.tenants}) == 2
     assert world.users[1].id != world.users[2].id

@@ -29,6 +29,7 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/connector-accounts | list_reusable_accounts_api_v1_connector_accounts_get |
 | GET | /api/v1/connector-accounts/grants | list_workspace_grants_api_v1_connector_accounts_grants_get |
 | POST | /api/v1/connector-accounts/grants/{grant_id}/detach | detach_workspace_grant_api_v1_connector_accounts_grants__grant_id__detach_post |
+| GET | /api/v1/connector-accounts/personal | list_personal_accounts_api_v1_connector_accounts_personal_get |
 | POST | /api/v1/connector-accounts/telegram/login | begin_telegram_login_api_v1_connector_accounts_telegram_login_post |
 | GET | /api/v1/connector-accounts/telegram/login/{attempt_id} | telegram_login_status_api_v1_connector_accounts_telegram_login__attempt_id__get |
 | POST | /api/v1/connector-accounts/telegram/login/{attempt_id}/cancel | cancel_telegram_login_api_v1_connector_accounts_telegram_login__attempt_id__cancel_post |

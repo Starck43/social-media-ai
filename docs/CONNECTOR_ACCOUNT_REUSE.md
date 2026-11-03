@@ -180,12 +180,47 @@ provider exception text. An inaccessible/foreign/stale/locally unreadable select
 has the same `404 connection_unavailable` answer. Middleware authentication and
 membership failures retain their existing 401/403 policy.
 
+### Response contract and client migration
+
+The mounted OpenAPI declares explicit metadata-only response models. Existing
+successful JSON keys, status 200 and nullable fields are retained:
+
+- Account: `authorization_id`, `provider_id`, `auth_method`, `subject_key`,
+  `revision`, `state` (`active`, `reauth` or `revoked`).
+- Grant: `grant_id`, `authorization_id`, `authorization_revision`, `is_active`.
+- Root list: `accounts` (account records), `can_attach`; personal/grant lists are
+  arrays, not wrappers.
+- Login: `attempt_id`, `state`, `revision`, `expires_at`, `failure_code`,
+  `code_attempts_remaining`, `password_attempts_remaining`, `authorization_id`,
+  `grant_id`. IDs may be null until completion. `expires_at` retains the previous
+  ISO datetime spelling (including UTC `+00:00`, not a forced `Z`).
+
+Unlisted service fields are filtered at serialization, including nested account
+records. Invalid internal projections fail with a fixed
+`500 {"detail":"account_response_unavailable"}` rather than raw validation input.
+This is an HTTP field allowlist, not proof of provider health or safe arbitrary
+text inside a declared field. Service projections must still emit only trusted
+metadata/fixed failure codes. Request validation stays
+`422 {"detail":"invalid_account_selection"}`; auth/membership 401/403 and opaque
+selection 404 policy do not change. Start/submission document 409/503 and start
+also 429. Do not blindly retry conflicts, unknown provider outcomes or rate limits.
+
+A 200 login response may be `processing`, `code`, `password`, `completed`,
+`failed`, `expired` or `cancelled`. Consumers must inspect state/revision and
+nullable IDs, not treat every 200 as an authorized connection. A failed provider
+step remains state metadata, not an invented transport-success guarantee.
+
 Legacy `POST /api/v1/credentials/login` now returns
 `409 workspace_telegram_authorization_not_available`: it must never run terminal
 `input()` in an HTTP worker. API consumers need to handle this explicit unsupported
 state and deliberately switch to the new bounded API; this is not a compatible
 replacement request body. Do not substitute the legacy CLI session writer for a
-workspace-consented web login.
+workspace-consented web login. The legacy operation is marked deprecated and its
+OpenAPI response is 409, not the former misleading 200 credential schema. No
+legacy request fields, disable aliases or authentication policy change here.
+DB-exempt JWT/ASGI and full-application OpenAPI checks exercise these contracts
+with fake services. They do not replace real consumer migration, database-backed
+HTTP/transaction checks or full migration-history validation.
 
 ## Bounded login state and failure policy
 

@@ -3,13 +3,20 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictInt
 
 from app.core.tenant_context import current_tenant_id
 from app.models import User
 from app.models.managers.workspace_connection_manager import ConnectionDenied
+from app.schemas.connector_account import (
+    ConnectorAccountError,
+    ConnectorAccountMetadata,
+    ReusableConnectorAccounts,
+    TelegramLoginMetadata,
+    WorkspaceGrantMetadata,
+)
 from app.services.social.connector_authorizations import connector_authorizations
 from app.services.social.telegram_login import LoginRejected, telegram_logins
 from app.services.user.auth import get_authenticated_user
@@ -26,11 +33,29 @@ class PrivateSelectionRoute(APIRoute):
                 # Unexpected input may contain a pasted key/session. Never echo
                 # Pydantic's raw `input` values in a rejected selection response.
                 raise HTTPException(status_code=422, detail="invalid_account_selection") from None
+            except ResponseValidationError:
+                # A broken internal projection may contain secret fields too.
+                # Do not expose Pydantic input/errors in the response or traceback.
+                raise HTTPException(status_code=500, detail="account_response_unavailable") from None
 
         return handle
 
 
-router = APIRouter(tags=["connector-accounts"], route_class=PrivateSelectionRoute)
+router = APIRouter(
+    tags=["connector-accounts"],
+    route_class=PrivateSelectionRoute,
+    responses={
+        401: {"model": ConnectorAccountError, "description": "Active access Bearer JWT required"},
+        403: {"model": ConnectorAccountError, "description": "Workspace access denied where membership is required"},
+        404: {"model": ConnectorAccountError, "description": "Opaque unavailable account, grant or attempt selection"},
+        422: {"model": ConnectorAccountError, "description": "Fixed validation code; rejected input is never echoed"},
+        500: {"model": ConnectorAccountError, "description": "Invalid internal response; no raw validation detail"},
+    },
+)
+_LOGIN_RESPONSES = {
+    409: {"model": ConnectorAccountError, "description": "Conflicting phase/revision or existing pending login"},
+    503: {"model": ConnectorAccountError, "description": "Local login configuration or private logging unavailable"},
+}
 
 
 class AuthorizationSelection(BaseModel):
@@ -51,24 +76,24 @@ async def _call(target, **arguments):
         raise HTTPException(status_code=404, detail="connection_unavailable") from None
 
 
-@router.get("")
+@router.get("", response_model=ReusableConnectorAccounts)
 async def list_reusable_accounts(user: User = Depends(get_authenticated_user)):
     rows, can_attach = await _call(connector_authorizations.list_reusable, **_scope(user))
     return {"accounts": rows, "can_attach": can_attach}
 
 
-@router.get("/personal")
+@router.get("/personal", response_model=list[ConnectorAccountMetadata])
 async def list_personal_accounts(user: User = Depends(get_authenticated_user)):
     """Account-level self-service metadata; no workspace is read or selected."""
     return await _call(connector_authorizations.list_personal, actor_id=user.id)
 
 
-@router.get("/grants")
+@router.get("/grants", response_model=list[WorkspaceGrantMetadata])
 async def list_workspace_grants(user: User = Depends(get_authenticated_user)):
     return await _call(connector_authorizations.list_grants, **_scope(user))
 
 
-@router.post("/{authorization_id}/attach")
+@router.post("/{authorization_id}/attach", response_model=WorkspaceGrantMetadata)
 async def attach_account(
     authorization_id: int, selection: AuthorizationSelection, user: User = Depends(get_authenticated_user)
 ):
@@ -80,12 +105,12 @@ async def attach_account(
     )
 
 
-@router.post("/grants/{grant_id}/detach")
+@router.post("/grants/{grant_id}/detach", response_model=WorkspaceGrantMetadata)
 async def detach_workspace_grant(grant_id: int, user: User = Depends(get_authenticated_user)):
     return await _call(connector_authorizations.detach, **_scope(user), grant_id=grant_id)
 
 
-@router.post("/{authorization_id}/revoke")
+@router.post("/{authorization_id}/revoke", response_model=ConnectorAccountMetadata)
 async def revoke_personal_authorization(
     authorization_id: int, selection: AuthorizationSelection, user: User = Depends(get_authenticated_user)
 ):
@@ -111,19 +136,26 @@ class TelegramPassword(AuthorizationSelection):
     password: SecretStr
 
 
-@router.post("/telegram/login")
+@router.post(
+    "/telegram/login",
+    response_model=TelegramLoginMetadata,
+    responses={
+        **_LOGIN_RESPONSES,
+        429: {"model": ConnectorAccountError, "description": "Login start rate limit; no blind provider retry"},
+    },
+)
 async def begin_telegram_login(payload: TelegramLoginStart, user: User = Depends(get_authenticated_user)):
     return await _call(
         telegram_logins.start, **_scope(user), request_id=payload.request_id, phone=payload.phone.get_secret_value()
     )
 
 
-@router.get("/telegram/login/{attempt_id}")
+@router.get("/telegram/login/{attempt_id}", response_model=TelegramLoginMetadata)
 async def telegram_login_status(attempt_id: UUID, user: User = Depends(get_authenticated_user)):
     return await _call(telegram_logins.status, **_scope(user), attempt_id=str(attempt_id))
 
 
-@router.post("/telegram/login/{attempt_id}/code")
+@router.post("/telegram/login/{attempt_id}/code", response_model=TelegramLoginMetadata, responses=_LOGIN_RESPONSES)
 async def submit_telegram_code(attempt_id: UUID, payload: TelegramCode, user: User = Depends(get_authenticated_user)):
     return await _call(
         telegram_logins.submit,
@@ -135,7 +167,7 @@ async def submit_telegram_code(attempt_id: UUID, payload: TelegramCode, user: Us
     )
 
 
-@router.post("/telegram/login/{attempt_id}/password")
+@router.post("/telegram/login/{attempt_id}/password", response_model=TelegramLoginMetadata, responses=_LOGIN_RESPONSES)
 async def submit_telegram_password(
     attempt_id: UUID, payload: TelegramPassword, user: User = Depends(get_authenticated_user)
 ):
@@ -149,6 +181,6 @@ async def submit_telegram_password(
     )
 
 
-@router.post("/telegram/login/{attempt_id}/cancel")
+@router.post("/telegram/login/{attempt_id}/cancel", response_model=TelegramLoginMetadata)
 async def cancel_telegram_login(attempt_id: UUID, user: User = Depends(get_authenticated_user)):
     return await _call(telegram_logins.cancel, **_scope(user), attempt_id=str(attempt_id))

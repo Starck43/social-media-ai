@@ -36,6 +36,15 @@ provider call. All other connector-account routes remain workspace-scoped.
 There is no anonymous/cookie-auth exception or broad prefix bypass. Reauthorization
 and the account-level CSRF web journey remain open.
 
+The connector-account OpenAPI now publishes explicit metadata-only response
+shapes and fixed error envelopes. Unlisted internal fields are filtered; an
+invalid service projection produces fixed `500 account_response_unavailable`.
+Existing success keys, nullable IDs and ISO datetime offsets are preserved.
+Legacy login is declared deprecated with its actual 409 response, not a phantom
+200 credential result. See the [response/client contract](CONNECTOR_ACCOUNT_REUSE.md#response-contract-and-client-migration).
+These fake-service contract checks are only a partial compatibility gate, not
+proof that real clients, migrations or database transactions have been validated.
+
 ## Base URL
 
 ```

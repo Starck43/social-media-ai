@@ -81,6 +81,17 @@ remain membership-bound. Fake-transaction/JWT-ASGI tests are distinct from the
 authored-but-unrun PostgreSQL/assembled-app rollback and no-membership checks.
 No account settings UI or reauthorization/reconsent is delivered by this slice.
 
+## Machine API contract continuation
+
+Connector-account responses now have explicit metadata-only OpenAPI models and
+HTTP output field filtering, with fixed non-echoing 500 on invalid internal
+projections. Existing success fields/statuses, nullable IDs and datetime offsets
+are preserved. Legacy credential login is declared deprecated with its actual
+409 response; credential-disable compatibility aliases remain unchanged. The
+generated route index includes personal listing. DB-exempt JWT/ASGI and mounted
+application OpenAPI checks are not database or real consumer evidence. API
+consumer migration and full migration-history checks remain open.
+
 ## Remaining completion gates
 
 - Telegram reauthorization/recovery, metadata retention and operational recovery;

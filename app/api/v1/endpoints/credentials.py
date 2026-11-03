@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import require_model_perm
 from app.models import User, UserCredential
+from app.schemas.connector_account import ConnectorAccountError
 from app.schemas.credential import CredentialLoginRequest, CredentialOauthRequest, CredentialResponse
 from app.services.social.platform_config import load_platform_config
 from app.types import ActionType
@@ -58,15 +59,21 @@ async def disable_credential(
     return {"status": "disabled", "credential_id": row.id}
 
 
-@router.post("/login", response_model=CredentialResponse)
+@router.post(
+    "/login",
+    status_code=409,
+    response_model=ConnectorAccountError,
+    deprecated=True,
+    responses={409: {"description": "Legacy terminal login is unsupported; use the bounded workspace login API"}},
+)
 async def login_credential(
     request: CredentialLoginRequest,
     current_user: User = Depends(require_model_perm("credential", ActionType.CONFIGURE)),
 ):
     """Reject legacy terminal login: HTTP must never call input() or echo errors.
 
-    A persisted workspace-consent foundation is not a completed login journey.
-    The future phone/code/2FA endpoint must own its bounded encrypted attempts.
+    Use the bounded workspace phone/code/2FA API with encrypted attempts.
+    Its machine contract does not imply a completed web onboarding journey.
     """
     raise HTTPException(status_code=409, detail="workspace_telegram_authorization_not_available")
 

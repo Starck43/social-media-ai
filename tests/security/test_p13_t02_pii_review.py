@@ -13,7 +13,13 @@ from cli.commands import pii as pii_cli
 
 
 def _table():
-    return Table("probe", MetaData(), Column("id", Integer), Column("email_encrypted", String))
+    return Table(
+        "probe",
+        MetaData(),
+        Column("id", Integer),
+        Column("email_encrypted", String),
+        Column("pii_updated_at", Integer),
+    )
 
 
 class _Session:
@@ -28,7 +34,7 @@ class _Session:
         if isinstance(statement, Update):
             return SimpleNamespace(rowcount=self.rowcount)
         self.selects += 1
-        return SimpleNamespace(all=lambda: [(7, "old-ciphertext")] if self.selects == 1 else [])
+        return SimpleNamespace(all=lambda: [(7, "old-ciphertext", 1)] if self.selects == 1 else [])
 
     def commit(self):
         self.commits += 1

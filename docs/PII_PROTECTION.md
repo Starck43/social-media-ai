@@ -67,6 +67,10 @@ Rules:
 - Never put ciphertext or the index in API responses, admin lists or `repr`.
 - A module owning encrypted columns adds its table/column to
   `REGISTRY` in `cli/commands/pii.py`; nothing is auto-discovered.
+- The table carries an integer marker column (`ROTATION_MARKER_COLUMN`, default
+  `pii_updated_at`) and **every writer bumps it** on insert and update. Rotation
+  refuses a table without it: a ciphertext comparison alone cannot tell a row
+  whose value was rewritten during the run from one that was merely skipped.
 - Kinds are closed (`email`, `phone`, `username`). Adding one means adding a
   normalizer and its tests, not a free-form string.
 
@@ -85,13 +89,20 @@ Encryption keys rotate; the index does not.
    and independent verification, remove `<old>` and restart. The dry run only
    lists targets; it does not prove all rows have been rotated.
 
-Rotation uses a conditional update against the ciphertext it read. A concurrent
-change is never overwritten: a conflict is counted, the command exits non-zero,
-and operators must rerun and verify before retiring any key. Earlier committed
+Rotation uses a conditional update against the ciphertext **and** the marker it
+read. A concurrent write either changes both or is counted as a conflict, so the
+command is never fooled by a rewrite that stored byte-identical ciphertext; a
+conflict makes it exit non-zero, and operators must rerun and verify before
+retiring any key. The guarantee is: no write is overwritten, and every write that
+landed during the run is reported. It is not a row lock - a writer that neither
+changes the value nor bumps the marker is out of contract, which is why the marker
+is mandatory. Earlier committed
 batches remain committed. This does not protect against a stale writer later
 using the old active key; update or stop all old-key writers before rotation.
-Empty-string sentinels are skipped. Local PostgreSQL concurrency validation is
-required before using rotation on registered production columns.
+Empty-string sentinels are skipped. The guard is verified on PostgreSQL by
+`python scripts/ci/pii_rotation_pg.py` (disposable schema, two connections: clean
+run, rerun after retirement, different-value and identical-ciphertext races, and
+a table without the marker refused). Run it after changing the command.
 
 `PII_INDEX_KEY` stays unchanged. Rotating it would change every index value and
 requires an approved rebuild of every indexed column; the command refuses index

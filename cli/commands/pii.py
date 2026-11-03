@@ -33,6 +33,12 @@ app = typer.Typer(name="pii", help="Rotate the personal-data encryption key")
 # guessing, because a wrong guess would re-encrypt the wrong column.
 REGISTRY: tuple[tuple[str, str, str], ...] = ()
 
+# Every registered table carries this integer column and every writer bumps it on
+# write. Rotation requires it: a ciphertext-only guard cannot see a concurrent
+# write that stored byte-identical ciphertext, so "no conflicts" would not mean
+# "nobody wrote during the run".
+ROTATION_MARKER_COLUMN = "pii_updated_at"
+
 
 def _run(coro):
     from app.core.tenant_context import tenant_scope
@@ -42,32 +48,55 @@ def _run(coro):
 
 
 def _rotate_table(session, table_name: str, column: str, *, batch: int, limit: int | None) -> tuple[int, int, int]:
-    """Re-encrypt using compare-and-set. Returns (examined, rewritten, conflicts)."""
+    """Re-encrypt using compare-and-set. Returns (examined, rewritten, conflicts).
+
+    The guard is the ciphertext *and* the row's rotation marker (see
+    `ROTATION_MARKER_COLUMN`). Ciphertext alone is not enough: a concurrent write
+    that stores a different value usually produces different ciphertext, but a
+    write of the *same* value re-encrypts to different bytes too (Fernet is not
+    deterministic), and a write that reproduces the very same bytes - the same
+    plaintext under the same active key - would be invisible. The marker makes
+    every conditional write either match or count as a conflict.
+    """
     from app.core.pii import decrypt_pii, encrypt_pii, is_active_ciphertext
 
     if column.endswith("_index"):
         raise PIIError("blind-index columns must not be rotated")
     table = _table(session, table_name, column)
+    if ROTATION_MARKER_COLUMN not in table.c:
+        raise PIIError(
+            f"{ROTATION_MARKER_COLUMN!r} is missing on {table_name!r}; rotation needs a monotonic "
+            "marker the writer bumps, otherwise a concurrent write can go undetected"
+        )
     examined = rewritten = conflicts = 0
     last_id = 0
     while True:
         rows = session.execute(
-            select(table.c.id, table.c[column])
+            select(table.c.id, table.c[column], table.c[ROTATION_MARKER_COLUMN])
             .where(table.c[column].is_not(None), table.c[column] != "", table.c.id > last_id)
             .order_by(table.c.id)
             .limit(batch)
         ).all()
         if not rows:
             break
-        for row_id, value in rows:
+        for row_id, value, marker in rows:
             examined += 1
             if is_active_ciphertext(value):
                 continue
             plaintext = decrypt_pii(value) or ""
             result = session.execute(
                 table.update()
-                .where(table.c.id == row_id, table.c[column] == value)
-                .values(**{column: encrypt_pii(plaintext)})
+                .where(
+                    table.c.id == row_id,
+                    table.c[column] == value,
+                    table.c[ROTATION_MARKER_COLUMN] == marker,
+                )
+                .values(
+                    **{
+                        column: encrypt_pii(plaintext),
+                        ROTATION_MARKER_COLUMN: table.c[ROTATION_MARKER_COLUMN] + 1,
+                    }
+                )
             )
             if result.rowcount == 0:
                 conflicts += 1
@@ -112,7 +141,7 @@ def rotate(
         if dry_run:
             rprint(f"[yellow]dry run[/yellow]: {len(targets)} table(s); pass --yes to rewrite rows")
             for table_name, column, _kind in targets:
-                rprint(f"  {table_name}.{column}")
+                rprint(f"  {table_name}.{column} (marker: {ROTATION_MARKER_COLUMN})")
             return
         from app.core.database import SessionLocal
 

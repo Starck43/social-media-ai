@@ -112,8 +112,7 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
   See the active card and [reconciled original plan](../FILE_WORKSPACE_ROADMAP.md)
   for implementation, dependencies and remaining work.
 
-- [P12-T13](../tasks/p12-t13.md): prepare file-workspace slice 1 contracts and
-  candidate-provider review.
+- [P12-T13 audit](../audit/p12-t13.md): **DONE 2026-11-03**, accepted contract-review scope at PR #327 source `6433ae6a7615f63f2b204636b8538196986d18a9`; provider activation and implementation remain in P12-T12/P8-T34.
 - [P8-T34](../tasks/p8-t34.md): owner-selected Yandex Disk pilot, transferred from
   P8; one folder, read-only. Folder-level restrictions and mutation safety are
   required; no provider writes or delete operation in this pilot.

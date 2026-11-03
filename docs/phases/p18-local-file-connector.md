@@ -10,7 +10,7 @@ Owner estimate (TZ): 6–8 weeks — not a repository commitment.
 ## Baseline: done and arriving
 
 - In `dev`: `LOCAL_GATEWAY` descriptor (certificate fingerprint), `local_only`/`company`/`cloud` boundaries with chat refusal for local-only content (P12-T11), local-connector constraints in [PRODUCT_PLAN](../PRODUCT_PLAN.md#extension-contracts).
-- Arriving via open PRs: P12-T12 file workspace — private catalog, scans/traversal, bounded text read, line evidence, private storage, admission contract ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)); P12-T13 contracts (READY); P8-T34 Yandex Disk read-only pilot. Folder policies: P12-T15 (TODO).
+- Arriving via open PRs: P12-T12 file workspace — private catalog, scans/traversal, bounded text read, line evidence, private storage, admission contract ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)); [P12-T13 contract review (accepted)](../audit/p12-t13.md); P8-T34 Yandex Disk read-only pilot. Folder policies: P12-T15 (TODO).
 
 ## Adapted requirements
 

@@ -23,6 +23,7 @@ configuration references a numeric model ID in the current user's catalog.
 from __future__ import annotations
 
 import math
+from html import escape
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
@@ -303,6 +304,11 @@ async def settings_page(request: Request):
             workspace_connection_rows=workspace_rows,
             workspace_connection_write=can_configure,
             workspace_providers=WORKSPACE_PROVIDERS,
+            yandex_browse_csrf=(
+                _yandex_browse_csrf(request)
+                if any(row.get("provider_id") == "yandex_disk" and row.get("is_active") for row in workspace_rows)
+                else ""
+            ),
         )
         context["connections"] = [
             {
@@ -1099,7 +1105,7 @@ async def yandex_connection_save(request: Request):
     except RuntimeError:
         return HTMLResponse("Не удалось безопасно сохранить подключение", status_code=503)
     else:
-        add_flash(request, "success", "Подключение сохранено. Доступ не проверен; просмотр файлов ещё не включён.")
+        add_flash(request, "success", "Подключение сохранено. Доступ не проверен; просмотр папки доступен по кнопке.")
     return RedirectResponse(f"{BACK}?tab=connections#conn-ws-yandex_disk", status_code=303)
 
 
@@ -1125,3 +1131,126 @@ async def yandex_connection_disable(request: Request, connection_id: int):
         return HTMLResponse("Подключение недоступно", status_code=403)
     add_flash(request, "success", "Подключение отключено и токен удалён. Отзовите доступ приложения в Яндексе.")
     return RedirectResponse(f"{BACK}?tab=connections#conn-ws-yandex_disk", status_code=303)
+
+
+def _yandex_browse_session_id(request: Request, *, create: bool) -> str | None:
+    """Bind browsing CSRF to the signed session, actor and active workspace."""
+    from app.admin.csrf import SESSION_ID_KEY, ensure_session_id
+
+    session_id = ensure_session_id(request) if create else request.session.get(SESSION_ID_KEY)
+    actor = getattr(getattr(request.state, "web_user", None), "id", None)
+    tenant = getattr(request.state, "tenant_id", None)
+    if not isinstance(session_id, str) or type(actor) is not int or type(tenant) is not int:
+        return None
+    return f"yandex-browse:{session_id}:{actor}:{tenant}"
+
+
+def _yandex_browse_csrf(request: Request) -> str:
+    session_id = _yandex_browse_session_id(request, create=True)
+    if not session_id:
+        return ""
+    return request.app.state.csrf_manager.generate_token(session_id=session_id)
+
+
+def _verify_yandex_browse_csrf(request: Request, token: str) -> bool:
+    session_id = _yandex_browse_session_id(request, create=False)
+    return bool(session_id and request.app.state.csrf_manager.verify_token(token, session_id=session_id))
+
+
+def _private_file_response(response: HTMLResponse) -> HTMLResponse:
+    """Do not cache listings or load third-party scripts alongside file names."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+    )
+    return response
+
+
+@router.post("/yandex-connections/{connection_id}/browse")
+async def yandex_connection_browse(request: Request, connection_id: int):
+    """Read one bounded metadata page after CSRF and fresh owner/policy checks."""
+    from urllib.parse import parse_qsl
+
+    from app.integrations.file_workspace.policy import _components
+    from app.integrations.file_workspace.yandex_disk import MetadataError, _disk_path
+    from app.models.managers.workspace_connection_manager import ConnectionDenied
+    from app.services.file_workspace.yandex_reader import list_owned_folder
+
+    if not _personal_access(request):
+        return _private_file_response(HTMLResponse("Подключение недоступно", status_code=403))
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/x-www-form-urlencoded":
+        return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
+    # Bound even chunked requests before parsing; paths never appear in the URL.
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 65536:
+            return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
+        body.extend(chunk)
+    try:
+        pairs = parse_qsl(
+            body.decode("utf-8"), keep_blank_values=True, strict_parsing=True, max_num_fields=3, errors="strict"
+        )
+        form = dict(pairs)
+        if len(pairs) != len(form) or set(form) not in ({"_csrf"}, {"_csrf", "folder", "offset"}):
+            raise ValueError
+        if "folder" in form:
+            raw_offset = form["offset"]
+            if not raw_offset.isascii() or not raw_offset.isdecimal() or len(raw_offset) > 7:
+                raise ValueError
+            offset = int(raw_offset)
+            if offset > 1_000_000:
+                raise ValueError
+            folder = form["folder"]
+        else:
+            folder, offset = None, 0
+    except (ValueError, UnicodeError):
+        return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
+    if not _verify_yandex_browse_csrf(request, form["_csrf"]):
+        return _private_file_response(HTMLResponse("Недостаточно прав или сессия истекла", status_code=403))
+    try:
+        page = await list_owned_folder(
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            connection_id=connection_id,
+            folder=folder,
+            offset=offset,
+        )
+    except ConnectionDenied:
+        return _private_file_response(HTMLResponse("Подключение или папка недоступны", status_code=403))
+    except MetadataError as error:
+        messages = {
+            "reauthorization_required": "Доступ к Диску отклонён. Проверьте токен и разрешения в Яндексе.",
+            "rate_limited": "Яндекс.Диск временно ограничил запросы. Попробуйте позже.",
+            "response_too_large": "Ответ слишком большой для безопасного просмотра.",
+            "invalid_page": "Некорректная страница списка.",
+            "invalid_provider_response": "Не удалось обработать ответ Диска.",
+        }
+        message = messages.get(str(error), "Не удалось получить список. Проверьте подключение и попробуйте позже.")
+        # Provider failure is not a folder: the shared browse template carries the
+        # sibling navigation legend and would look like a directory claim.
+        return _private_file_response(
+            HTMLResponse(
+                '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+                '<meta name="referrer" content="no-referrer"><title>Папка недоступна</title></head>'
+                f'<body><main><p role="alert">{escape(message)}</p>'
+                '<p><a href="/app/settings?tab=connections#conn-ws-yandex_disk">'
+                "← К подключениям</a></p></main></body></html>",
+                status_code=503,
+            )
+        )
+    current, root = _components(page.current_path), _components(page.root_path)
+    parent = _disk_path(current[:-1]) if len(current) > len(root) else None
+    response = render(
+        request,
+        "web/yandex_file_browser.html",
+        connection_id=connection_id,
+        page=page,
+        parent=parent,
+        offset=offset,
+        previous_offset=max(0, offset - 100) if offset else None,
+        error=None,
+        csrf=_yandex_browse_csrf(request),
+    )
+    return _private_file_response(response)

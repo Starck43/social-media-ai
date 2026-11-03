@@ -106,9 +106,9 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 
 ## File-workspace continuation
 
-- [P12-T12](../tasks/p12-t12.md): plan an originals-first file workspace, compact
+- [P12-T12](../tasks/p12-t12.md): originals-first file workspace, compact
   version-aware agent knowledge, safe original-file opening and approved actions.
-  Planning requested; implementation and connector-pilot activation are not started.
+  See the active card for implementation, dependencies and remaining work.
 
 - [P12-T13](../tasks/p12-t13.md): prepare file-workspace slice 1 contracts and
   candidate-provider review.

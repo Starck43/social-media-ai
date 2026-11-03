@@ -160,6 +160,77 @@ Data residue is an acceptance defect if test cleanup is required.
 Report briefly: `✅ <ID>: <result>; removed from ROADMAP; archive: <link>;
 checks: <actual results>`. State pending integration/cleanup separately.
 
+## Owner questions
+
+The owner is a decision source, not a reviewer of routine detail. Ask when a
+decision hits a trigger; otherwise decide, record and proceed. A task that waits
+for the owner is a task that is not moving, so a silent stall is a defect.
+
+### When to ask (four triggers)
+
+Ask the owner **before** implementing when the choice:
+
+1. **Changes money, certificates or infrastructure** - paid services, code-signing
+   or notarization, a new cloud component, a recurring bill, a support burden
+   the owner has to staff. Say the annual cost in the question.
+2. **Alters an accepted contract** - a document in `docs/audit/`, an API shape
+   other modules already consume, a test that encodes an accepted decision, a
+   closed owner decision. Changing what was accepted is the owner's call, even
+   when the change looks locally right.
+3. **Is irreversible once merged** - migrations that drop or rewrite data,
+   deletions, a public API another party depends on, anything that cannot be
+   rolled back by a follow-up commit.
+4. **Changes what a subscriber sees** - user-visible behaviour, install and
+   onboarding friction, warnings a customer must click through, anything that
+   reads as the product's promise.
+
+Everything else belongs to the executor: naming, internal structure, library
+choice inside one module, test layout, documentation wording. **"It is a
+judgment call" is not a reason to ask** - the triggers are the reason; if none
+of the four applies, decide.
+
+### How to ask
+
+- **Short.** 2-3 options and a recommendation per question. Each option one
+  sentence; the consequence that made you recommend it, not a restatement of the
+  option.
+- **Batch related questions** in one message, one option list each, so the owner
+  answers once. Do not split a decision across several messages.
+- **Recommend one**, marked as such. "You decide" without a recommendation is not
+  an answer the owner can act on.
+- Ask through the interface the owner reads this session (chat question tool,
+  PR comment, or issue comment), in Russian when the owner writes Russian.
+
+### When the owner is unavailable
+
+Do not stall. For a doubt that hits a trigger but must be resolved to continue:
+
+1. **Record it in the task card** in an `## Open doubts` section: the doubt,
+   the options, the chosen default, the reason, and **how to reverse it**. Add the
+   section when the first doubt appears; a card without one has none.
+2. **Proceed on the chosen default** with the smallest reversible step - prefer
+   adding an option over replacing an accepted one.
+3. **Mark the task as needing owner confirmation** in the PR body. It may reach
+   READY when every check passes, but the auditor names the open doubt in the
+   acceptance note; a question the owner has not answered is never recorded as
+   approved.
+4. **Surface it in the next status report**, together with the other open
+   questions, so the owner closes them in one pass.
+
+An answer given anywhere - chat, PR comment, issue - is written back into the
+registry the same session: ROADMAP question row or task card, with the decision
+ID, the choice, the date and the link to where it was said. A decision that lives
+only in chat is not a decision the next agent can rely on.
+
+### Owner decisions in a register
+
+When several open questions block as a group, keep them in one register card
+(Q-18 was one, now closed and kept as [history](audit/q-18-owner-decisions.md))
+rather than scattered across task cards: one table row per decision
+with ID, question, recommended default and the task that needs it. Each task card
+names its decision by ID. When the last row is answered, the register moves to
+`docs/audit/` and its ROADMAP row is removed.
+
 ## Delegation
 
 Delegate bounded routine edits/inventories/test commands to a cheaper agent when

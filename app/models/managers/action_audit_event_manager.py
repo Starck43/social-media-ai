@@ -10,14 +10,13 @@ from typing import Any
 from sqlalchemy import delete, select, text
 
 from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+from app.services.audit_codes import AUDIT_ACTIONS, AUDIT_CODES
 
 from .base_manager import BaseManager
 
-_ACTION = re.compile(r"^[a-z][a-z0-9_]{0,31}\.[a-z][a-z0-9_]{0,31}$", re.ASCII)
-_SAFE_ACTIONS = frozenset({"scheduling.task_admit"})
+_ACTION = re.compile(r"^[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){1,2}$", re.ASCII)
+_SAFE_ACTIONS = AUDIT_ACTIONS
 _SAFE_OUTCOMES = frozenset({"succeeded", "unknown"})
-_SAFE_REASONS = frozenset({"launch_unconfirmed"})
-_SAFE_RESOURCE_KIND = "agent_task"
 _MAX_DB_ID = 2147483647
 MAX_EXPORT_SIZE = 1000
 MAX_EXPORT_WINDOW = timedelta(days=90)
@@ -62,12 +61,13 @@ class ActionAuditEventManager(BaseManager):
             actor_id = str(actor_id)
         elif (actor_kind, actor_id) not in {("service", "task_runner"), ("scheduler", "scheduler")}:
             raise ValueError("Invalid action-audit actor identity")
-        if resource_kind != _SAFE_RESOURCE_KIND:
+        if resource_kind != AUDIT_CODES[action].resource_kind:
             raise ValueError("Invalid action-audit resource kind")
         if type(resource_id) is not int or not 0 < resource_id <= _MAX_DB_ID:
             raise ValueError("Invalid action-audit resource identity")
         resource_id = str(resource_id)
-        if reason_code is not None and reason_code not in _SAFE_REASONS:
+        expected_reason = None if outcome == "succeeded" else AUDIT_CODES[action].unknown_reason
+        if reason_code != expected_reason:
             raise ValueError("Invalid action-audit reason code")
         if request_id is not None or receipt_ref is not None:
             raise ValueError("Request and receipt references are not enabled for this action")

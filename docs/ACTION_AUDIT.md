@@ -162,3 +162,27 @@ A complete acceptance run must prove, at minimum:
    covered by an owner-approved policy. Current source-only checks and offline
    migration generation do not substitute for test-schema migration, database
    tests, cleanup verification or production lifecycle approval.
+
+## Business action registry (P13-T05)
+
+`app/services/audit_codes.py` is the closed, source-owned registration point for
+new action codes. It maps each explicit code to its resource kind and safe
+unknown-outcome reason. Namespaces include `crm`, `comms`, `planner`, `calendar`,
+`onec`, `files.connector`, `documents`, `commands`; namespace membership alone
+never authorizes arbitrary suffixes. Adding an operation requires updating that
+registry **and a new Alembic migration**, model/manager parity tests and the
+module's transaction/authorization tests. Never mutate the registry at runtime.
+
+Migration `0132_business_audit_codes` freezes action/resource/reason checks in the
+DB and preserves the existing `scheduling.task_admit` action, actor identities,
+immutable retention controls and separate persisted/diagnostic outcomes.
+Business unknown events use `operation_unconfirmed`; legacy task admission uses
+`launch_unconfirmed`. Success has no reason. Resource IDs remain positive integer
+identities, not paths, addresses or arbitrary strings. Request/receipt payload
+fields remain disabled. No new execution hooks or permission grants are enabled.
+
+Downgrade refuses **before constraint changes** while business audit events
+remain: it never erases immutable evidence to force an old schema to fit. Keep
+forward code or wait for normal policy-governed retention before retrying. The
+migration cycle gate uses only synthetic test-schema events and cleans them via
+the existing retention marker; it does not authorize deleting real evidence.

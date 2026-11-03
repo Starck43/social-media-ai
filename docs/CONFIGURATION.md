@@ -667,3 +667,12 @@ using the normal invalidation fence; originals/catalog metadata remain. It is
 not result re-encryption. An error rolls back credential changes and purge in the
 same transaction. Users must grant consent again and perform a fresh read.
 Never change the environment key alone or disable the revocation triggers.
+
+## API schema publication
+
+`API_DOCS_ENABLED` is an optional boolean controlling `/docs`, `/redoc` and
+`/openapi.json`. Unset enables them only in development/test/testing; production
+and unknown `ENVIRONMENT` values default off. Explicit true/false overrides the
+default. It never changes endpoint authentication or membership requirements.
+See [business API conventions](API.md#business-modules) for the opt-in router and
+schema contract. Offline `app.openapi()` generation remains available.

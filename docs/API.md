@@ -1828,3 +1828,59 @@ failures redirect with a generic value-free message. Existing personal
 VK/Telegram credential and OAuth routes are unchanged; legacy settings creation
 of generic business keys is rejected. Migration 0121 and limitations are in
 [connector configuration](CONNECTOR_CONFIGURATION.md).
+
+## Business modules
+
+New module routes use `/api/v1/<domain>/…` and the opt-in
+`app.api.v1.conventions.business_router(domain, permission=...)`. Registered domains
+and tags live in `BUSINESS_TAGS`: `crm`, `comms`, `planner`, `calendar`, `onec`,
+`files`, `documents`, `commands`. These are conventions, not enabled features.
+No existing routes are moved or silently opted in.
+
+- Mount under the existing API entry router. `ApiScopeMiddleware` authenticates
+  bearer JWTs, resolves active workspace membership and binds actor/permission
+  context. `require_business_scope` rejects absent, mismatched or bypass scope;
+  caller-supplied headers alone are never authority. Supply the existing
+  `require_model_perm(...)` dependency for **each action group**, not a no-op
+  or mere login check; services must recheck current rights at execution.
+- Every route declares a typed `response_model` and registered tag. Run
+  `validate_business_routes(router)` in each module's contract test. Responses
+  are explicitly allowlisted projections, not ORM dumps or arbitrary dictionaries.
+- Lists use `BusinessPage[Item]`: `items`, `limit` (1–100, default 50),
+  `next_before_id` (positive ID or null). Read with a stable descending-ID cursor
+  and a bounded SQL limit inside the current tenant; the envelope does not query,
+  authorize or paginate for the caller.
+- Router-handled errors contain exactly `code`, `message`, `request_id`.
+  Documented statuses: 400, 401, 403, 404, 409, 422, 429, 500, 503. Validation
+  input, exception details and provider messages are never copied. Request IDs
+  reuse `RequestContextMiddleware`'s bounded opaque token, not an idempotency key.
+  Pre-router API middleware retains its existing authentication/tenant error
+  responses (`detail`); consumers must handle that transport boundary separately.
+- A POST that creates a command sets `openapi_extra={"x-creates-command": True}`.
+  Its `Idempotency-Key` header must be a single 1–128 character ASCII token
+  (`A–Z`, `a–z`, digits, `_`, `.`, `:`, `-`). This dependency validates syntax
+  **only**: the command service must atomically bind tenant + actor + operation +
+  payload digest, reject payload mismatch and preserve unknown outcomes; it is
+  not an execution/replay ledger and does not authorize a retry.
+- Examples and schemas use synthetic IDs only. Never include personal data,
+  paths, payloads, authorization material or credential examples.
+
+### OpenAPI exposure
+
+`API_DOCS_ENABLED` controls `/docs`, `/redoc` and `/openapi.json` together.
+When unset, they are enabled only for `ENVIRONMENT=development`, `test` or
+`testing`; production and unknown environments default off, independently of
+`DEBUG`. Explicit `true` opts in (operator access controls still required for a
+production deployment); explicit `false` disables them everywhere. This does not
+protect actual API endpoints or change bearer/membership checks. `app.openapi()`
+remains available to the guarded offline reference generator without exposing an
+HTTP endpoint.
+
+### Module delivery checks
+
+Each module card must name focused contract tests, source coverage gate,
+`python scripts/reference/generate.py` followed by
+`python scripts/reference/generate.py --check`, and, for schema work, an Alembic
+upgrade → downgrade → re-upgrade on exclusive `test_schema` with full inventory
+comparison and verified synthetic-record cleanup. Remote DB-exempt checks are
+not substitutes for the local DB/integration gate.

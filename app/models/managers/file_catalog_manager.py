@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -46,6 +47,14 @@ def _path(value):
 
 def _key(value):
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _search_key(value):
+    """NFKC casefold independent of the PostgreSQL cluster locale.
+
+    Keep the 0125 backfill algorithm in sync. Original names stay unchanged.
+    """
+    return unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", value).casefold())
 
 
 def _policy_key(config):
@@ -283,6 +292,7 @@ class FileCatalogManager:
                         path_key=_key(path),
                         path=path,
                         name=item.name,
+                        name_search=_search_key(item.name),
                         kind=item.kind,
                         observation_number=1,
                         observed_at=ticket.issued_at,
@@ -296,7 +306,9 @@ class FileCatalogManager:
                             raise CatalogCapacityError("observation_quota")
                         row.observation_number += 1
                         changed += 1
-                    row.name, row.kind, row.observed_at = item.name, item.kind, ticket.issued_at
+                    row.name, row.name_search, row.kind, row.observed_at = (
+                        item.name, _search_key(item.name), item.kind, ticket.issued_at
+                    )
                 if different:
                     session.add(
                         FileCatalogObservation(
@@ -324,7 +336,7 @@ class FileCatalogManager:
                 _visible_paths(FileCatalogObject.path, connection.config),
             )
             if query.strip():
-                stmt = stmt.where(FileCatalogObject.name.icontains(query.strip(), autoescape=True))
+                stmt = stmt.where(FileCatalogObject.name_search.contains(_search_key(query.strip()), autoescape=True))
             rows = (await session.scalars(stmt.order_by(FileCatalogObject.id).limit(limit))).all()
             return {
                 "items": [_object_dict(row) for row in rows],

@@ -4,7 +4,7 @@ Connection ownership/policy remain the authority. These models intentionally hav
 no generic BaseManager: use FileCatalogManager, which rechecks that authority.
 """
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint, Index, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
@@ -40,6 +40,8 @@ class FileCatalogObject(TenantScopedMixin, TimestampMixin, Base):
     path_key: Mapped[str] = mapped_column(String(64))
     path: Mapped[str] = mapped_column(String(2048))
     name: Mapped[str] = mapped_column(String(500))
+    # Derived search data, not identity or display text.
+    name_search: Mapped[str] = mapped_column(Text)
     kind: Mapped[str] = mapped_column(String(10))
     observation_number: Mapped[int] = mapped_column(Integer, default=1)
     observed_at = mapped_column(DateTime(timezone=True), nullable=False)

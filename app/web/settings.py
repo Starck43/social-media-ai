@@ -23,6 +23,7 @@ configuration references a numeric model ID in the current user's catalog.
 from __future__ import annotations
 
 import math
+from html import escape
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
@@ -1228,7 +1229,18 @@ async def yandex_connection_browse(request: Request, connection_id: int):
             "invalid_provider_response": "Не удалось обработать ответ Диска.",
         }
         message = messages.get(str(error), "Не удалось получить список. Проверьте подключение и попробуйте позже.")
-        return _private_file_response(render(request, "web/yandex_file_browser.html", status_code=503, error=message))
+        # Provider failure is not a folder: the shared browse template carries the
+        # sibling navigation legend and would look like a directory claim.
+        return _private_file_response(
+            HTMLResponse(
+                '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+                '<meta name="referrer" content="no-referrer"><title>Папка недоступна</title></head>'
+                f'<body><main><p role="alert">{escape(message)}</p>'
+                '<p><a href="/app/settings?tab=connections#conn-ws-yandex_disk">'
+                "← К подключениям</a></p></main></body></html>",
+                status_code=503,
+            )
+        )
     current, root = _components(page.current_path), _components(page.root_path)
     parent = _disk_path(current[:-1]) if len(current) > len(root) else None
     response = render(

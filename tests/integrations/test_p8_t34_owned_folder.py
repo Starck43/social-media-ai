@@ -831,5 +831,7 @@ async def test_assembled_browse_pagination_and_provider_error(workspace_data, pi
         pinned_http.status = b"401 Unauthorized"
         error = await client.post(endpoint, data={"_csrf": csrf})
         assert error.status_code == 503 and "Проверьте токен" in error.text
+        # A provider failure is not a folder view: no listing legend, no sibling nav.
+        assert "Содержимое папки" not in error.text and "Следующая страница" not in error.text
         assert TEST_TOKEN not in error.text and error.headers["cache-control"] == "no-store"
         assert len(pinned_http.calls) == 3 and all(writer.closed for writer in pinned_http.calls)

@@ -56,6 +56,26 @@ re-earned by this run.
 One commit instead of six, chosen by the owner. The six tasks therefore share this
 one record and one `P2` line item instead of six.
 
+## Applied to the working schema
+
+2026-11-04, owner-authorized: `public` was on `0130` and does not advance with the
+code. A `pg_dump` of `public`, `test_schema` and `test_schema_p10t19` was taken
+first, then `alembic upgrade head` through the same `config.attributes`
+connection harness the verification used.
+
+| Check | Result |
+| --- | --- |
+| Revision | `0130 -> 0136` |
+| Relations | 77 -> 85: exactly `business_commands`, `business_command_targets`, `crm_entities`, `greeting_history` and their sequences |
+| Triggers | 60 -> 62: the two new `contact_pii_marker` triggers |
+| Pre-existing rows | `tenants` 2, `users` 2, `workspace_connections` 0 — unchanged |
+| New tables | empty; no synthetic records |
+| ORM metadata against `public` | no missing table |
+| Focused tests against `public` | 34 passed |
+
+`test_schema` was left at `0133`; it is the isolated schema for audits and is not
+the working one.
+
 ## Not covered
 
 - No live provider call was made: Bitrix24, the OAuth token endpoint and the AI

@@ -92,6 +92,8 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/integrations/bitrix/contacts/sync | trigger_bitrix_contacts_sync_api_v1_integrations_bitrix_contacts_sync_post |
 | GET | /api/v1/integrations/bitrix/contacts/sync/status | get_bitrix_contacts_sync_status_api_v1_integrations_bitrix_contacts_sync_status_get |
 | GET | /api/v1/integrations/bitrix/contacts/{crm_entity_id} | get_bitrix_crm_contact_card_api_v1_integrations_bitrix_contacts__crm_entity_id__get |
+| POST | /api/v1/integrations/bitrix/greetings/draft | create_bitrix_greeting_draft_api_v1_integrations_bitrix_greetings_draft_post |
+| GET | /api/v1/integrations/bitrix/greetings/upcoming | list_bitrix_upcoming_greetings_api_v1_integrations_bitrix_greetings_upcoming_get |
 | GET | /api/v1/llm/llm-models/ | list_llm_models_api_v1_llm_llm_models__get |
 | POST | /api/v1/llm/llm-models/ | create_llm_model_api_v1_llm_llm_models__post |
 | DELETE | /api/v1/llm/llm-models/{model_id} | delete_llm_model_api_v1_llm_llm_models__model_id__delete |

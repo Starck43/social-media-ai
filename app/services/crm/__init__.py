@@ -1,10 +1,22 @@
-"""CRM services package (Bitrix24 incremental sync and contact cards, P14-T02..T03)."""
+"""CRM services package (Bitrix24 incremental sync, contact cards, upcoming events & greetings, P14-T02..T04)."""
 
 from .cards import (
     PORTAL_ENTITY_PATHS,
     CrmContactCardService,
     build_portal_entity_url,
     crm_contact_card_service,
+)
+from .greetings import (
+    ALLOWLISTED_CONTEXT_KEYS,
+    DEFAULT_WORKSPACE_TIMEZONE,
+    REMINDER_DAYS,
+    CrmGreetingsService,
+    GreetingDraftOutput,
+    build_allowlisted_greeting_context,
+    crm_greetings_service,
+    default_template_greeting_generator,
+    next_occurrence_date,
+    resolve_workspace_today,
 )
 from .sync import (
     DEFAULT_ANNIVERSARY_FIELD,
@@ -24,22 +36,32 @@ from .sync import (
 )
 
 __all__ = [
+    "ALLOWLISTED_CONTEXT_KEYS",
     "BitrixSyncService",
     "CrmContactCardService",
+    "CrmGreetingsService",
     "DEFAULT_ANNIVERSARY_FIELD",
     "DEFAULT_BIRTHDAY_FIELD",
+    "DEFAULT_WORKSPACE_TIMEZONE",
     "ENTITY_IDENTITY_KINDS",
     "ENTITY_LIST_METHODS",
+    "GreetingDraftOutput",
     "PAGE_SIZE",
     "PORTAL_ENTITY_PATHS",
+    "REMINDER_DAYS",
     "SYNC_INTERVAL_SECONDS",
     "bitrix_sync_service",
+    "build_allowlisted_greeting_context",
     "build_entity_title",
     "build_portal_entity_url",
     "crm_contact_card_service",
+    "crm_greetings_service",
+    "default_template_greeting_generator",
     "extract_allowlisted_custom_fields",
     "extract_multifield_values",
     "get_field_mapping_config",
+    "next_occurrence_date",
     "parse_bitrix_timestamp",
     "parse_crm_date_field",
+    "resolve_workspace_today",
 ]

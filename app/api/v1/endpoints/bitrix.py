@@ -14,6 +14,7 @@ from app.integrations.bitrix24 import Bitrix24Error, bitrix24_service
 from app.models import User
 from app.schemas.business import BusinessSchema
 from app.services.crm.cards import crm_contact_card_service
+from app.services.crm.greetings import crm_greetings_service
 from app.services.crm.sync import bitrix_sync_service
 from app.services.user.auth import get_authenticated_user
 from app.types import ActionType
@@ -405,6 +406,53 @@ async def get_bitrix_crm_contact_card(
             crm_entity_id=crm_entity_id,
         )
         return CrmContactCardOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise HTTPException(status_code=exc.status_code) from None
+
+
+@router.get("/greetings/upcoming", response_model=UpcomingGreetingEventsOut)
+async def list_bitrix_upcoming_greetings(
+    request: Request,
+    horizon_days: int = Query(default=14, ge=1, le=366),
+    reminder_days_only: bool = Query(default=False),
+    current_user: User = Depends(get_authenticated_user),
+):
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        data = await crm_greetings_service.list_upcoming_events(
+            tenant_id=tenant_id,
+            actor_id=current_user.id,
+            horizon_days=horizon_days,
+            reminder_days_only=reminder_days_only,
+        )
+        return UpcomingGreetingEventsOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise HTTPException(status_code=exc.status_code) from None
+
+
+@router.post(
+    "/greetings/draft",
+    response_model=GreetingDraftOut,
+    status_code=201,
+    dependencies=[Depends(require_model_perm("source", ActionType.CREATE))],
+)
+async def create_bitrix_greeting_draft(
+    body: GreetingDraftCreateRequest,
+    request: Request,
+    current_user: User = Depends(get_authenticated_user),
+):
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        data = await crm_greetings_service.generate_greeting_draft(
+            tenant_id=tenant_id,
+            actor_id=current_user.id,
+            contact_id=body.contact_id,
+            event_type=body.event_type,
+            year=body.year,
+            channel=body.channel,
+            tone=body.tone,
+        )
+        return GreetingDraftOut.model_validate(data)
     except Bitrix24Error as exc:
         raise HTTPException(status_code=exc.status_code) from None
 

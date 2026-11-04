@@ -35,7 +35,7 @@ from .collection import (
     Source,
 )
 from .contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
-from .crm import CrmEntity
+from .crm import CrmEntity, GreetingHistory
 from .file_workspace import FileCatalogObject, FileCatalogObservation, FileCatalogScan
 from .file_workspace.private_insights import (
     FileInsightAttempt,
@@ -78,6 +78,7 @@ __all__ = [
     "ContactConsent",
     "ContactMergeJournal",
     "CrmEntity",
+    "GreetingHistory",
     "FileCatalogObject",
     "FileCatalogObservation",
     "FileCatalogScan",

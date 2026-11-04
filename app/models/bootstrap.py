@@ -66,6 +66,7 @@ def bind_managers(models):
     models.LocalConnectorRequest.objects = BaseManager(models.LocalConnectorRequest)
     crm_managers = import_module("app.models.managers.crm_entity_manager")
     models.CrmEntity.objects = crm_managers.CrmEntityManager()
+    models.GreetingHistory.objects = crm_managers.GreetingHistoryManager()
     models.WorkspaceConnection.objects = BaseManager(models.WorkspaceConnection)
     models.WorkspaceConnectionSecret.objects = BaseManager(models.WorkspaceConnectionSecret)
     models.UserCredential.objects = import_module("app.models.managers.user_credential_manager").UserCredentialManager()

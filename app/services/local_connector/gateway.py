@@ -1,9 +1,18 @@
 """Bounded fan-out with fresh ownership/consent checks before dispatch and release."""
 
 import asyncio
+from dataclasses import dataclass
 
 from .channel import ConnectorChannels
 from .wire import ConnectorUnavailable, SearchArgs, canonical, new_request, sign
+
+
+@dataclass(frozen=True)
+class SearchDispatch:
+    """Bounded result payload plus snapshots to reauthorize at HTTP release."""
+
+    payload: dict
+    snapshots: dict[int, tuple]
 
 
 class ConnectorGateway:
@@ -15,8 +24,16 @@ class ConnectorGateway:
     async def _search_device(self, owner_id, device_id, args):
         snapshot = await self.store.authorize(owner_id=owner_id, device_id=device_id, roots=args.roots)
         tid, owner, device, epoch, consent, policy = snapshot
-        request = new_request(key_id=self.authority.key_id, tenant_id=tid, owner_id=owner, device_id=device,
-                              device_epoch=epoch, consent_epoch=consent, policy_epoch=policy, args=args)
+        request = new_request(
+            key_id=self.authority.key_id,
+            tenant_id=tid,
+            owner_id=owner,
+            device_id=device,
+            device_epoch=epoch,
+            consent_epoch=consent,
+            policy_epoch=policy,
+            args=args,
+        )
         payload, digest = sign(request, self.authority.signer)
         await self.store.reserve(request, digest)
         response = await self.channels.search(device_id, request, payload, digest)
@@ -32,8 +49,9 @@ class ConnectorGateway:
         # Check EVERY requested device before any query leaves the API process.
         for device in device_ids:
             await self.store.authorize(owner_id=owner_id, device_id=device, roots=args.roots)
-        responses = await asyncio.gather(*(self._search_device(owner_id, device, args) for device in device_ids),
-                                         return_exceptions=True)
+        responses = await asyncio.gather(
+            *(self._search_device(owner_id, device, args) for device in device_ids), return_exceptions=True
+        )
         hits = []
         snapshots = {}
         partial = False
@@ -48,16 +66,18 @@ class ConnectorGateway:
                 hits.extend(response.hits)
         hits.sort(key=lambda hit: (-hit.rank, hit.reference.root_id, hit.reference.object_id))
         partial |= len(hits) > args.limit
-        hits = hits[:args.limit]
+        hits = hits[: args.limit]
         if sum(hit.snippet is not None for hit in hits) > 8:
             raise ConnectorUnavailable()
         # Recheck every selected registration after fan-out, not only the first
         # response (revocation/policy may have committed while others were slow).
         for device in device_ids:
-            await self.store.authorize(owner_id=owner_id, device_id=device, roots=args.roots, previous=snapshots.get(device))
+            await self.store.authorize(
+                owner_id=owner_id, device_id=device, roots=args.roots, previous=snapshots.get(device)
+            )
         result = {"hits": [hit.model_dump() for hit in hits], "partial": partial}
         canonical(result)  # aggregate response has the same 64-KiB ceiling
-        return result
+        return SearchDispatch(payload=result, snapshots=snapshots)
 
 
 def cloud_chat_references(hits):

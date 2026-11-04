@@ -2,7 +2,7 @@
 
 [Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p17)
 
-**Phase status: PLANNED** (registered by [P13-T01](../tasks/p13-t01.md); ROADMAP owns task status).
+**Phase status: PLANNED** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
 Owner estimate (TZ): 4–5 weeks — not a repository commitment.
 
 **Goal:** Read 1C:Enterprise 8.3+ catalogs, documents and registers through a typed, allowlisted query layer, answer natural-language questions with verified tables and exports, and execute approved write commands with full audit.

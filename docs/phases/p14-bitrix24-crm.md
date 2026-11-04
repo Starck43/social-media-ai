@@ -2,7 +2,7 @@
 
 [Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p14)
 
-**Phase status: PLANNED** (registered by [P13-T01](../tasks/p13-t01.md); ROADMAP owns task status).
+**Phase status: PLANNED** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
 Owner estimate (TZ): 3–4 weeks — not a repository commitment.
 
 **Goal:** Connect Bitrix24 portals, keep contacts/companies/leads/deals synchronized, show upcoming birthdays and anniversaries with AI greeting drafts, then — after the communication hub — send approved greetings and consented batch messages.

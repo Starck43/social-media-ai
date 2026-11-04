@@ -2,7 +2,7 @@
 
 [Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p13)
 
-**Phase status: PLANNED** (registered by [P13-T01](../tasks/p13-t01.md); ROADMAP owns task status).
+**Phase status: PLANNED** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
 Owner estimate (TZ): Spread across modules (no separate TZ estimate) — not a repository commitment.
 
 **Goal:** Deliver the shared requirements of the owner's TZ once — protected personal data, contact core, outbound rate limits, approval workflow for writes, audit codes, API/OpenAPI conventions, OAuth framework and an enforceable 80% coverage gate — so modules P14–P19 reuse them instead of re-implementing them.
@@ -38,7 +38,7 @@ Conventions: integer keys, `TenantScopedMixin`, `settings.DB_SCHEMA`, Alembic re
 
 ## Plan
 
-1. [P13-T01](../tasks/p13-t01.md) — Business-module plan registration and TZ review · `P2` · `C2` · depends: —
+1. [P13-T01 accepted](../audit/p13-t01.md) — Business-module plan registration and TZ review · `P2` · `C2` · depends: —
 2. [P13-T02](../audit/p13-t02.md) — Protected personal-data fields: Fernet encryption, blind index and log redaction · `P2` · `C4` · **ACCEPTED 2026-11-04** (`c2abb03a`, [audit](../audit/p13-t02.md)) · depends: P12-T14 integrated ([PR #308](https://github.com/Starck43/social-media-ai/pull/308)) — shares credential/key handling
 3. [P13-T03 accepted](../audit/p13-t03.md) — Shared external-API rate limiter and retry policy · `P2` · `C3` · depends: —
 4. [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md) — Business write-approval workflow and command ledger · `P2` · `C4` · depends: [P13-T05 accepted](../audit/p13-t05.md) audit codes (can proceed in parallel; integrate before READY)

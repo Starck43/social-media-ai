@@ -35,11 +35,44 @@ is removed once every decision is answered.
 
 - D13 — **answered (owner, 2026-11-04): mail networking is an outbound consumer,
   not a bypass.** SMTP and IMAP resolve and validate their destination through the
-  [P14-T09](p14-t09.md) seam exactly like every other connector: no connector keeps
+  [P14-T09](../tasks/p14-t09.md) seam exactly like every other connector: no connector keeps
   its own allowlist, DNS call or `is_global` shortcut. The pinned TLS policy in
   `app/integrations/mail_check.py` stays the transport detail; the seam decides
   **where** we may connect. Private-network mail servers therefore need an
   installation-level trusted entry like any client-hosted portal.
+
+- D14 — **answered (owner, 2026-11-04): sending rights are a permission
+  registration, not a new authorization model.** The existing catalog
+  (`app/core/access_catalog.py`, `has_permission`, `member_decision`) already answers
+  "which action on which subsystem" for API, web and managers alike; what is missing
+  is that it has **no communications resources at all**. Register
+  `comms.message` (`VIEW CREATE UPDATE DELETE`) and `comms.outbox`
+  (`VIEW CREATE APPROVE CONFIGURE`, no `CREATE` — nothing is sent without an approved
+  item, and `APPROVE` is the sender confirming what is on screen, not a second
+  person). Both workspace-scoped. Role presets: `owner`/`admin` all actions,
+  `manager` all but `DELETE`, `analyst` and `viewer` read only.
+  Special consequence: with the current catalog, `contact.VIEW` is what scopes a
+  contact to a `Bitrix24Contact` row, and a manager without that permission sees the
+  `Bitrix24Contact` link **plus its contact** as an unresolved record in Bitrix24,
+  while a manager with `VIEW` sees the same thing merged. See the consequence below.
+
+- D15 — **answered (owner, 2026-11-04): an explicitly recorded opt-in, and a reply
+  is not one.** A message in the dialog is exempt because the person wrote to us.
+  Greeting and marketing require a recorded `contact_consents` row for that channel
+  and purpose, granted and not withdrawn. A channel merely present on a
+  `Bitrix24Contact` card, or a phone number imported from CRM, is **not** consent:
+  CRM supplies candidates, consent is added separately.
+
+- D16 — **answered (owner, 2026-11-04): one click, no login.** Every message carries
+  an unsubscribe link/command (already promised by D7). The click writes a withdrawal
+  for that channel and purpose and the contact drops out of every future campaign
+  immediately; the person sees a confirmation without signing in.
+
+- D17 — **answered (owner, 2026-11-04): a manager may record consent manually, and
+  it is never silent.** `ContactManager.record_consent` already refuses a consent
+  without a granted or withdrawn timestamp and requires basis and evidence; a manual
+  record keeps that requirement and additionally writes an audit row naming the
+  manager.
 
 ## Consequences worth remembering
 
@@ -63,3 +96,22 @@ is removed once every decision is answered.
 - **D13 couples mail to P14-T09:** `P15-T06` and `P15-T01` are only complete once
   the seam exists. Whoever lands sending before the seam uses a temporary call-site
   shim that the seam then replaces — never a private resolver.
+
+- **D14 exposes an existing gap that sending makes reachable.** A `Bitrix24Contact`
+  row stores the person's identity PII; the contact is scoped by `contact.VIEW` and
+  the link by the bitrix resource. So a manager **without** `contact.VIEW` sees the
+  same thing (the link plus its contact) as a manager **with** it, but cannot see
+  that the two are connected — a record in Bitrix24 that does not look like a
+  contact. Replying to and briefing a client from a single thread therefore needs
+  both permissions. This is a Bitrix-linkage defect that predates sending and is
+  **not fixed here**; recorded so that P14-T05/T06 and [P15-T08](../tasks/p15-t08.md)
+  do not invent a per-feature workaround for it.
+
+- **D14 removes a tempting shortcut.** `comms.outbox` gets no `CREATE` action: nothing
+  enters the outbox without an approved item, so a future feature cannot "just send"
+  by writing a row. `APPROVE` stays the sender confirming content (P12-T04 binding),
+  never an approval workflow with a second person.
+
+- **D15 makes CRM imports honest.** An imported base produces candidates, not a
+  sendable list. A workspace that expects "just mail everyone in Bitrix24" gets a
+  coverage warning at the campaign step, not a silent smaller send.

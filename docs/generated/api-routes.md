@@ -77,6 +77,10 @@ and execution permissions remain in the handwritten references and code.
 | PUT | /api/v1/files/connectors/{device_id}/roots | consent_api_v1_files_connectors__device_id__roots_put |
 | POST | /api/v1/files/search | search_api_v1_files_search_post |
 | GET | /api/v1/health | health_check_api_v1_health_get |
+| POST | /api/v1/integrations/bitrix/connect | connect_bitrix_portal_api_v1_integrations_bitrix_connect_post |
+| GET | /api/v1/integrations/bitrix/connections | list_bitrix_connections_api_v1_integrations_bitrix_connections_get |
+| DELETE | /api/v1/integrations/bitrix/connections/{connection_id} | delete_bitrix_connection_api_v1_integrations_bitrix_connections__connection_id__delete |
+| POST | /api/v1/integrations/bitrix/connections/{connection_id}/health | check_bitrix_connection_health_api_v1_integrations_bitrix_connections__connection_id__health_post |
 | GET | /api/v1/llm/llm-models/ | list_llm_models_api_v1_llm_llm_models__get |
 | POST | /api/v1/llm/llm-models/ | create_llm_model_api_v1_llm_llm_models__post |
 | DELETE | /api/v1/llm/llm-models/{model_id} | delete_llm_model_api_v1_llm_llm_models__model_id__delete |

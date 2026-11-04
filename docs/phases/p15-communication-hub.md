@@ -43,8 +43,8 @@ TZ criteria: contacts merged by email/phone (T03); chronological per-contact vie
 2. [P15-T02](../tasks/p15-t02.md) — Unified message store and channel ingestion (Telegram, MAX, email) · `P3` · `C4` · depends: [P13-T07 accepted](../audit/p13-t07.md), P12-T14 integrated (Telegram personal runtime gates)
 3. [P15-T03](../tasks/p15-t03.md) — Identity reconciliation: suggestions, manual merge and unmerge · `P3` · `C4` · depends: [P15-T02](../tasks/p15-t02.md), [P14-T03 accepted](../audit/p13-t04-p14-t04-business-crm.md) (CRM duplicate candidates, optional)
 4. [P15-T04](../tasks/p15-t04.md) — Unified inbox: threads, filters, search and read state · `P3` · `C4` · depends: [P15-T02](../tasks/p15-t02.md), [P15-T03](../tasks/p15-t03.md)
-5. [P15-T05](../tasks/p15-t05.md) — Persistent outbox, scheduling and delivery tracking · `P3` · `C4` · depends: [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md), [P15-T02](../tasks/p15-t02.md)
-6. [P15-T06](../tasks/p15-t06.md) — Channel senders: SMTP, Telegram bot and MAX bot capabilities · `P3` · `C4` · depends: [P15-T05](../tasks/p15-t05.md), [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
+5. [P15-T06](../tasks/p15-t06.md) — Channel senders: SMTP, Telegram bot and MAX bot capabilities — **transport, lands first** · `P3` · `C4` · depends: [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md), [P14-T09](../tasks/p14-t09.md) (egress seam; [D13](../audit/q-19-messaging-decisions.md))
+6. [P15-T05](../tasks/p15-t05.md) — Persistent outbox, scheduling and delivery tracking — **transport, consumes the senders** · `P3` · `C4` · depends: [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md), [P15-T02](../tasks/p15-t02.md), [P15-T06](../tasks/p15-t06.md)
 7. [P15-T07](../tasks/p15-t07.md) — Channel recommendation with confidence score · `P3` · `C3` · depends: [P15-T02](../tasks/p15-t02.md)
 8. [P15-T08](../tasks/p15-t08.md) — Reply from the unified interface · `P3` · `C3` · depends: [P15-T04](../tasks/p15-t04.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../tasks/p15-t06.md)
 

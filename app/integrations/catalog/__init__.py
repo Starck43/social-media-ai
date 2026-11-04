@@ -38,7 +38,8 @@ class OAuthMethod(Method):
     """Provider-neutral OAuth 2.0 authorization-code + PKCE descriptor (P13-T08).
 
     Client credentials (`client_config_keys`) come exclusively from deployment
-    configuration, never from user form input.
+    configuration, never from user form input. A global application (P14-T05)
+    leaves them empty and resolves credentials from the operator's secret source.
     """
 
     authorize_url: str = ""
@@ -174,7 +175,8 @@ BITRIX24_OAUTH_METHOD = OAuthMethod(
     scopes=("crm", "user"),
     pkce=True,
     redirect_path="/app/settings/oauth/bitrix24/callback",
-    client_config_keys=("BITRIX24_CLIENT_ID", "BITRIX24_CLIENT_SECRET"),
+    # P14-T05: a global application's credentials come from the operator's secret source
+    # (`app.integrations.oauth.credentials`), never from deployment settings.
     allowed_hosts=(
         "oauth.bitrix.info",
         "*.bitrix24.ru",

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 import socket
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -24,7 +25,7 @@ from unittest.mock import AsyncMock
 
 from cryptography.fernet import Fernet
 
-os.environ.setdefault("SECRET_KEY", "unit-test-secret-key-0123456789abcdef")
+os.environ.setdefault("SECRET_KEY", secrets.token_hex(16))
 os.environ.setdefault("POSTGRES_URL", "postgresql+asyncpg://user:pass@localhost:5432/test_db")
 os.environ.setdefault("CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
 
@@ -48,7 +49,7 @@ from app.integrations.bitrix24 import (
     normalize_portal_domain,
 )
 from app.integrations.oauth import (
-    RUNTIME_OAUTH_CLIENT_CREDENTIALS,
+    INJECTED_APP_CREDENTIALS,
     OAuthStateStore,
     WorkspaceOAuthService,
 )
@@ -171,7 +172,8 @@ def _setup_bitrix(monkeypatch: pytest.MonkeyPatch):
         "objects",
         SimpleNamespace(record_success=audit_mock, record_unknown=audit_mock),
     )
-    monkeypatch.setitem(RUNTIME_OAUTH_CLIENT_CREDENTIALS, "bitrix24", ("b24-cid", "b24-csec"))
+    # Global application (P14-T05): credentials come from the injected operator source.
+    monkeypatch.setitem(INJECTED_APP_CREDENTIALS, "bitrix24", ("b24-cid", "b24-csec"))
     set_current_user(SimpleNamespace(id=101, is_active=True))
     yield audit_mock
     set_current_user(None)

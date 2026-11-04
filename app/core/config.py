@@ -60,6 +60,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(repr=False)
     DEBUG: bool = False
 
+    # Local gateway is default-OFF; deployment requires independent security review.
+    LOCAL_CONNECTOR_ENABLED: bool = False
+    LOCAL_CONNECTOR_SECURITY_REVIEWED: bool = False
+    LOCAL_CONNECTOR_CA_CERT: str = ""
+    LOCAL_CONNECTOR_CA_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
+    LOCAL_CONNECTOR_SIGNING_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
+    LOCAL_CONNECTOR_PAIRING_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
+    LOCAL_CONNECTOR_KEY_ID: str = "local-gateway-v1"
+
     # Admin settings
     ADMIN_ENABLED: bool = True
     # P12-T12 catalog read UI only. Requires 0124; does not enable provider refresh,

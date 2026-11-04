@@ -34,6 +34,9 @@ API_PREFIX = "/api"
 # consent — it cannot carry a bearer token; the signed `state` protects it).
 PUBLIC_API_PATHS = frozenset(
     {
+        # Connector enrollment is authenticated by a short-lived, rate-limited
+        # pairing secret + CSR proof, NOT by ambient browser identity.
+        "/api/v1/files/connectors/register",
         "/api/v1/auth/login",
         "/api/v1/auth/refresh-token",
         "/api/v1/auth/register",

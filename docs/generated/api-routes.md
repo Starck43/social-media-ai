@@ -26,6 +26,13 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/auth/login | login_access_token_api_v1_auth_login_post |
 | POST | /api/v1/auth/refresh-token | refresh_access_token_api_v1_auth_refresh_token_post |
 | POST | /api/v1/auth/register | create_user_api_v1_auth_register_post |
+| GET | /api/v1/commands | list_commands_endpoint_api_v1_commands_get |
+| POST | /api/v1/commands/preview | preview_command_endpoint_api_v1_commands_preview_post |
+| GET | /api/v1/commands/{command_id} | get_command_endpoint_api_v1_commands__command_id__get |
+| POST | /api/v1/commands/{command_id}/approve | approve_command_endpoint_api_v1_commands__command_id__approve_post |
+| POST | /api/v1/commands/{command_id}/execute | execute_command_endpoint_api_v1_commands__command_id__execute_post |
+| POST | /api/v1/commands/{command_id}/reconcile | reconcile_command_endpoint_api_v1_commands__command_id__reconcile_post |
+| POST | /api/v1/commands/{command_id}/reject | reject_command_endpoint_api_v1_commands__command_id__reject_post |
 | GET | /api/v1/connector-accounts | list_reusable_accounts_api_v1_connector_accounts_get |
 | GET | /api/v1/connector-accounts/grants | list_workspace_grants_api_v1_connector_accounts_grants_get |
 | POST | /api/v1/connector-accounts/grants/{grant_id}/detach | detach_workspace_grant_api_v1_connector_accounts_grants__grant_id__detach_post |
@@ -81,6 +88,8 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/integrations/bitrix/connections | list_bitrix_connections_api_v1_integrations_bitrix_connections_get |
 | DELETE | /api/v1/integrations/bitrix/connections/{connection_id} | delete_bitrix_connection_api_v1_integrations_bitrix_connections__connection_id__delete |
 | POST | /api/v1/integrations/bitrix/connections/{connection_id}/health | check_bitrix_connection_health_api_v1_integrations_bitrix_connections__connection_id__health_post |
+| POST | /api/v1/integrations/bitrix/contacts/sync | trigger_bitrix_contacts_sync_api_v1_integrations_bitrix_contacts_sync_post |
+| GET | /api/v1/integrations/bitrix/contacts/sync/status | get_bitrix_contacts_sync_status_api_v1_integrations_bitrix_contacts_sync_status_get |
 | GET | /api/v1/llm/llm-models/ | list_llm_models_api_v1_llm_llm_models__get |
 | POST | /api/v1/llm/llm-models/ | create_llm_model_api_v1_llm_llm_models__post |
 | DELETE | /api/v1/llm/llm-models/{model_id} | delete_llm_model_api_v1_llm_llm_models__model_id__delete |

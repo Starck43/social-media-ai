@@ -13,6 +13,7 @@ from .auth import router as auth_router
 from .billing import router as billing_router
 from .cases import router as cases_router
 from .chat import router as chat_router
+from .commands import router as commands_router
 from .communications import router as communications_router
 from .connections import router as connections_router
 from .connector_accounts import router as connector_accounts_router
@@ -44,6 +45,7 @@ web_router.include_router(analytics_router)
 web_router.include_router(dashboard_router)
 web_router.include_router(cases_router)
 web_router.include_router(chat_router)
+web_router.include_router(commands_router)
 web_router.include_router(communications_router)
 web_router.include_router(connections_router)
 web_router.include_router(connector_accounts_router)

@@ -6,7 +6,7 @@ from __future__ import annotations
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 # isort: split
-from .actions import AgentAction, BotAction
+from .actions import AgentAction, BotAction, BusinessCommand, BusinessCommandTarget
 from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 from .analysis.agent_scenario import AgentScenario
 from .analysis.ai_analytics import AIAnalytics
@@ -35,6 +35,7 @@ from .collection import (
     Source,
 )
 from .contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
+from .crm import CrmEntity
 from .file_workspace import FileCatalogObject, FileCatalogObservation, FileCatalogScan
 from .file_workspace.private_insights import (
     FileInsightAttempt,
@@ -76,6 +77,7 @@ __all__ = [
     "ContactIdentity",
     "ContactConsent",
     "ContactMergeJournal",
+    "CrmEntity",
     "FileCatalogObject",
     "FileCatalogObservation",
     "FileCatalogScan",
@@ -129,6 +131,8 @@ __all__ = [
     "AgentScenario",
     "BotAction",
     "AgentAction",
+    "BusinessCommand",
+    "BusinessCommandTarget",
     "ActionAuditEvent",
     "WorkspaceOffboardingEvent",
     # AI models

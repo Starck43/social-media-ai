@@ -24,7 +24,9 @@ def _resource(key, model, table, actions, workspace=False, personal=False):
 
 
 RESOURCES = (
-    _resource("integrations.local_connector", "LocalConnector", "local_connectors", "VIEW CREATE DELETE CONFIGURE", True),
+    _resource(
+        "integrations.local_connector", "LocalConnector", "local_connectors", "VIEW CREATE DELETE CONFIGURE", True
+    ),
     _resource("contacts.contact", "Contact", "contacts", "VIEW CREATE UPDATE DELETE EXPORT", True),
     _resource("identity.user", "User", "users", "VIEW CREATE UPDATE DELETE"),
     _resource("identity.platform_role", "PlatformRole", "roles", "VIEW CONFIGURE"),

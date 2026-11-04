@@ -4,8 +4,10 @@ Per Owner Decision D2 (Q-18):
 - Cloud portals (`*.bitrix24.ru`, `*.bitrix24.by`, `*.bitrix24.kz`, `*.bitrix24.com`,
   `*.bitrix24.eu`, `*.bitrix24.de`, `*.bitrix24.ua`, `*.bitrix24.pl`, `*.bitrix24.br`,
   `*.bitrix24.in`) are accepted by default.
-- On-premise portals are accepted ONLY when explicitly listed in the deployment
-  allowlist (`allowed_onprem_domains`).
+- On-premise portals are accepted ONLY when the installation administrator has
+  approved the host in the trusted outbound host registry (P14-T09); the caller
+  passes that decision as `is_trusted_host`. `allowed_onprem_domains` remains a
+  static, code-owned list for compatibility; no connector reads it from settings.
 - Raw IP literals, credentials, ports, query strings, paths, or internal hostnames
   are always rejected.
 """
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+from typing import Callable
 
 CLOUD_BITRIX_SUFFIXES: tuple[str, ...] = (
     ".bitrix24.ru",
@@ -43,6 +46,7 @@ def normalize_portal_domain(
     raw_domain: str,
     *,
     allowed_onprem_domains: set[str] | tuple[str, ...] = (),
+    is_trusted_host: Callable[[str], bool] | None = None,
 ) -> str:
     """Validate and normalize a Bitrix24 portal hostname (e.g., `company.bitrix24.ru`)."""
     if not isinstance(raw_domain, str) or not raw_domain.strip():
@@ -69,6 +73,8 @@ def normalize_portal_domain(
 
     onprem_allowlist = {d.strip().lower() for d in allowed_onprem_domains if isinstance(d, str) and d.strip()}
     if candidate in onprem_allowlist:
+        return candidate
+    if is_trusted_host is not None and is_trusted_host(candidate):
         return candidate
 
     for suffix in CLOUD_BITRIX_SUFFIXES:

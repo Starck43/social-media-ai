@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import imaplib
-import ipaddress
 import socket
 import ssl
 from dataclasses import dataclass
 
+from app.core.outbound import OutboundRefusal, StaticPolicy, acquire_outbound_target
 from app.integrations.catalog import PROVIDERS, WORKSPACE_PROVIDER_IDS
 
 SOCKET_TIMEOUT = 8
@@ -26,7 +26,7 @@ class _PinnedIMAP(imaplib.IMAP4_SSL):
         self.debug = 0
 
     def _create_socket(self, timeout):
-        # Resolve once, validate all answers, and connect to the validated IP.
+        # The seam resolved and validated all answers; connect to the validated IP.
         # SNI and certificate verification still use the fixed provider hostname.
         sock = socket.create_connection((self._address, 993), timeout)
         try:
@@ -43,11 +43,15 @@ def check_mail(provider_id: str, login: str, password: str) -> CheckResult:
     host = dict(PROVIDERS[provider_id].defaults)["imap_host"]
     client = None
     try:
-        answers = socket.getaddrinfo(host, 993, type=socket.SOCK_STREAM)
-        addresses = [answer[4][0] for answer in answers]
-        if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+        # P14-T09: the shared egress seam owns DNS and address policy; the fixed
+        # catalog host is this provider's whole static policy.
+        try:
+            target = acquire_outbound_target(host, 993, policy=StaticPolicy((host,)))
+        except OutboundRefusal as refusal:
+            if isinstance(refusal.__cause__, OSError):
+                return CheckResult("error", "connection_failed")
             return CheckResult("error", "unsafe_address")
-        client = _PinnedIMAP(host, addresses[0])
+        client = _PinnedIMAP(target.host, target.addresses[0])
         # Yandex documents the local part as the login for @yandex.ru.
         auth_login = (
             login.split("@", 1)[0] if provider_id == "yandex_mail" and login.lower().endswith("@yandex.ru") else login

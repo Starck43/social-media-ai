@@ -14,8 +14,16 @@ from app.api.deps import require_model_perm
 from app.api.v1.conventions import BusinessRoute, _error, business_router
 from app.core.tenant_context import tenant_scope
 from app.schemas.business import BusinessPage, BusinessSchema
+from app.services.local_connector.gateway import cloud_chat_references
 from app.services.local_connector.runtime import get_gateway
-from app.services.local_connector.wire import MAX_CONTROL_BYTES, TIMEOUT, ConnectorUnavailable, SearchArgs, SearchHit
+from app.services.local_connector.wire import (
+    MAX_CONTROL_BYTES,
+    TIMEOUT,
+    ConnectorUnavailable,
+    FileReference,
+    SearchArgs,
+    SearchHit,
+)
 from app.types import ActionType
 
 Root = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")]
@@ -128,16 +136,27 @@ class Results(BusinessSchema):
     partial: bool
 
 
+class ChatReferences(BusinessSchema):
+    references: list[FileReference]
+    partial: bool
+
+
 class SearchReleaseResponse(JSONResponse):
     """Reauthorize and serialize revocation before emitting bounded result bytes."""
 
-    def __init__(self, *, request, gateway, owner_id, roots, dispatch):
+    def __init__(self, *, request, gateway, owner_id, roots, dispatch, references_only=False):
         self.request = request
         self.gateway = gateway
         self.owner_id = owner_id
         self.roots = roots
         self.dispatch = dispatch
-        payload = Results.model_validate(dispatch.payload).model_dump(mode="json")
+        if references_only:
+            hits = [SearchHit.model_validate(hit) for hit in dispatch.payload["hits"]]
+            payload = ChatReferences(
+                references=cloud_chat_references(hits), partial=dispatch.payload["partial"]
+            ).model_dump(mode="json")
+        else:
+            payload = Results.model_validate(dispatch.payload).model_dump(mode="json")
         super().__init__(content=payload)
         if len(self.body) > MAX_CONTROL_BYTES:
             raise HTTPException(503)

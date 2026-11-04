@@ -28,14 +28,50 @@ reference plus what is genuinely ours.
   copies of source content. What survives is the reference and the last fact we learned
   from it, marked with when we learned it.
 
+- D25 — **answered (owner, 2026-11-05): orchestrate, do not invent a second copy of
+  the model.** People already have tasks and calendars in several services, and one
+  workspace may connect more than one. We do not build a task system or a calendar of
+  our own; we build **one registry of every connected source** and an orchestration
+  layer over it. This **modifies part 1 of D24**: the identifier of an object is stored
+  once, in a source registry that every service shares, not inside each module's own
+  table.
+
+## Consequences worth remembering for D25
+
+- **`calendar_events` and `planner_tasks` must not each grow their own external-id
+  scheme.** The uniqueness is already on `(tenant_id, connection_id, external_id)` —
+  the identifier lives in the connection's source, so it moves into one registry of
+  source objects, and a module keeps only what it decided about the object.
+
+- **One object, several sources is the normal case, not an exception.** A meeting may
+  exist in Google Calendar and in a client's Bitrix24; a task may be in our planner and
+  in a Yandex calendar. The registry records which source is authoritative for which
+  field, per object, and the merge is read-time. Never auto-merge two source objects:
+  suggestion first, a human decides, exactly as [P15-T03](../tasks/p15-t03.md) settles
+  contacts.
+
+- **Per-connection consent is not shared** ([D4](q-18-owner-decisions.md)). Connecting a
+  second calendar does not extend the first connection's consent, and a conflict in one
+  provider is approved per item, not globally.
+
+- **The orchestration layer owns scheduling, not content.** It answers "what is on the
+  agenda", "which source is late", "which two objects look like the same thing". It
+  does not compute recurrence when the source does, and does not store a merged event.
+
+- **Outbound writes become the hard part.** Two-way sync means writing into a source
+  we do not own; the approval, `If-Match` and conflict rules already in
+  [P16-T03](../tasks/p16-t03.md) apply unchanged and must not be relaxed because a
+  second provider was added.
+
 ## Where this bites first
 
 | Task | The source decides | We keep | Forbidden |
 | --- | --- | --- | --- |
 | [P16-T01](../tasks/p16-t01.md) planner tasks | nothing yet — no external task system is connected | the task itself, its recurrence, its status, its visibility | a mirrored copy of a Bitrix24 task or calendar event |
 | [P16-T03](../tasks/p16-t03.md)/[P16-T04](../tasks/p16-t04.md) calendar | event times, recurrence, attendees, which calendar | our link, our per-connection consent ([D4](q-18-owner-decisions.md)), our per-event audit | a second calendar model that re-computes recurrence once the connection exists |
-| [P14-T04](../tasks/p14-t04.md) greetings | birthdays/anniversaries and contact facts from Bitrix24 | the draft text and the once-per-year ledger | a copy of the contact's events |
-| [P14-T02](../tasks/p14-t02.md) CRM sync | entity fields, deletion, ownership | the link and the sync position | a third party's field values served from our copy when the portal answers |
+| [P14-T01..T04](p13-t04-p14-t04-business-crm.md) greetings | birthdays/anniversaries and contact facts from Bitrix24 | the draft text and the once-per-year ledger | a copy of the contact's events |
+| [P14-T02](p13-t04-p14-t04-business-crm.md) CRM sync | entity fields, deletion, ownership | the link and the sync position | a third party's field values served from our copy when the portal answers |
+| P16-T01/T03 together | which source owns a field of a shared object | the registry entry and the read-time merge | a merged event or task stored as a new object |
 | [P15-T02](../tasks/p15-t02.md) unified messages | the message itself and its body | metadata, original URL, content hash | storing bodies or attachments (D11) |
 
 ## Consequences worth remembering

@@ -2,7 +2,7 @@
 
 [Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p18)
 
-**Phase status: PLANNED** (registered by [P13-T01](../tasks/p13-t01.md); ROADMAP owns task status).
+**Phase status: IN_PROGRESS** (implementation started; ROADMAP owns open task status).
 Owner estimate (TZ): 6–8 weeks — not a repository commitment.
 
 **Goal:** An installable desktop connector that indexes user-selected folders locally (including OCR) and answers federated search from the cloud with metadata and snippets only, uploading a file only on explicit request.
@@ -39,11 +39,11 @@ TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text s
 ## Plan
 
 1. [P18-T01](../audit/p18-t01.md) — Local connector protocol, pairing and revocation contract · `P3` · `C3` · **ACCEPTED 2026-11-03** (`8b805aaa`, [audit](../audit/p18-t01.md)); P12-T12 increment integrated. The protocol ships in `docs/LOCAL_CONNECTOR_PROTOCOL.md`
-2. [P18-T02](../tasks/p18-t02.md) — Cloud connector gateway: registration, device management and search proxy · `P3` · `C4` · depends: [P18-T01](../audit/p18-t01.md), [P13-T05 accepted](../audit/p13-t05.md)
+2. [P18-T02 accepted](../audit/p18-t02.md) — DONE 2026-11-04; owner-scoped default-off gateway and chat references; source `8618eeb0634fa2600be558fb611c3433f51b109b`.
 3. [P18-T03](../tasks/p18-t03.md) — Desktop connector core: folder selection, safe paths and incremental index · `P3` · `C5` · depends: [P18-T01](../audit/p18-t01.md)
 4. [P18-T04](../tasks/p18-t04.md) — Text extraction and OCR with resource limits · `P3` · `C4` · depends: [P18-T03](../tasks/p18-t03.md)
 5. [P18-T05](../tasks/p18-t05.md) — Local search API: ranking, filters, snippets and ACL awareness · `P3` · `C4` · depends: [P18-T04](../tasks/p18-t04.md), P12-T15 (folder policy, optional)
-6. [P18-T06](../tasks/p18-t06.md) — Explicit file fetch, version tracking and index deletion · `P3` · `C3` · depends: [P18-T05](../tasks/p18-t05.md), [P18-T02](../tasks/p18-t02.md)
+6. [P18-T06](../tasks/p18-t06.md) — Explicit file fetch, version tracking and index deletion · `P3` · `C3` · depends: [P18-T05](../tasks/p18-t05.md), [P18-T02 accepted](../audit/p18-t02.md)
 7. [P18-T07](../tasks/p18-t07.md) — Packaging, signing and auto-update for Windows, macOS and Linux · `P3` · `C4` · depends: [P18-T03](../tasks/p18-t03.md)
 
 ## Dependencies and gates

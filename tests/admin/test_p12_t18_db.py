@@ -423,7 +423,9 @@ async def test_admin_projections_use_real_tenant_managers_and_hide_private_field
             denied_file,
             request_for(actor, "/admin/file-catalog", tenant_id=current_tenant_id),
         )
-    assert exc.value.status_code == 404
+    # SQLAdmin's exposed-route gate returns 403 before the view's internal
+    # feature-flag guard can return its 404.
+    assert exc.value.status_code == 403
     connections.assert_not_awaited()
 
     denied_connector = connector_view()

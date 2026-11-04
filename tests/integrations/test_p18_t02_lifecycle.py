@@ -14,6 +14,7 @@ from sqlalchemy import delete, func, select, update
 
 from app.core.database import async_session_maker
 from app.core.tenant_context import tenant_scope
+from app.models import ActionAuditEvent
 from app.models.integrations.local_connector import LocalConnector, LocalConnectorPairing, LocalConnectorRequest
 from app.services.local_connector import store as store_module
 from app.services.local_connector.crypto import ConnectorAuthority
@@ -75,12 +76,20 @@ async def connector_world(personal_world):
     try:
         yield world
     finally:
+        # Only this fixture's tenants are eligible. Exercise the supported
+        # retention manager with a future clock before removing those tenants;
+        # audit evidence deliberately prevents ordinary cascading deletion.
+        for tenant_id in tenants:
+            with tenant_scope(tenant_id):
+                await ActionAuditEvent.objects.delete_expired(
+                    now=datetime.now(timezone.utc) + timedelta(days=36600), batch_size=5000
+                )
         async with async_session_maker() as session, session.begin():
             await session.execute(delete(LocalConnectorRequest).where(LocalConnectorRequest.tenant_id.in_(tenants)))
             await session.execute(delete(LocalConnectorPairing).where(LocalConnectorPairing.tenant_id.in_(tenants)))
             await session.execute(delete(LocalConnector).where(LocalConnector.tenant_id.in_(tenants)))
         async with async_session_maker() as session:
-            for model in (LocalConnectorRequest, LocalConnectorPairing, LocalConnector):
+            for model in (ActionAuditEvent, LocalConnectorRequest, LocalConnectorPairing, LocalConnector):
                 remaining = await session.scalar(
                     select(func.count()).select_from(model).where(model.tenant_id.in_(tenants))
                 )

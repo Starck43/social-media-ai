@@ -80,10 +80,14 @@ reference plus what is genuinely ours.
   the reference unavailable and keep it; only an explicit source event (or the owner's
   offboarding) removes anything. This extends the rule already used for messages.
 
-- **Recurrence will move, once.** Until a calendar connection exists, the planner
-  computes its own RRULE subset. The moment [P16-T03](../tasks/p16-t03.md) lands, a
-  task connected to a calendar event must read the recurrence from the calendar and
-  stop computing it — a call-site change, not a second engine running in parallel.
+- **Recurrence moves once, and the storage decides whether it is cheap.** Until a
+  calendar connection exists, the planner computes its own RRULE subset. The moment
+  [P16-T03](../tasks/p16-t03.md) lands, a task connected to a calendar event reads the
+  recurrence from the calendar and stops computing it. That is a call-site change
+  **only if** the planner never expands a rule into pre-created occurrences and carries
+  a `recurrence_source` column from its first migration
+  ([P16-T01](../tasks/p16-t01.md), steps 2, 2a, 2b). Expanding a rule into a year of
+  rows would turn the hand-over into a data migration with a reconciliation on top.
 
 - **The reference is not a licence to read.** Holding the identifier of an upstream
   object authorizes nothing; the read still re-checks the connection, the actor and the

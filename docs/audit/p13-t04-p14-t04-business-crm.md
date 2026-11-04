@@ -17,6 +17,16 @@ linear chain and the stack was reviewed as a single tree.
 Owner decisions consumed here: [D2](q-18-owner-decisions.md) (Bitrix24 OAuth 2.0
 local application), D4, D5, D6.
 
+
+## Later rule that constrains P14-T02/T04
+
+[D24](../audit/q-21-source-authority.md) (owner, 2026-11-05) fixes what these tasks
+already do in part: the portal decides entity fields, deletion and ownership, and
+birthday/anniversary dates; we keep the link, the sync position, the greeting draft
+text and the once-per-year ledger. A record that vanishes upstream is marked
+unavailable, never deleted, and the portal's value is served whenever the portal
+answers instead of our copy.
+
 ## Delivered
 
 | Task | Contract |

@@ -172,6 +172,17 @@ class Settings(BaseSettings):
     # Endpoints, version and OAuth URLs live in Platform.params: no runtime fallback.
     VK_REQUEST_TIMEOUT: float = 30.0
 
+    # Bitrix24 global application (P14-T05): the OAuth client secret never travels in
+    # environment configuration. The deployment knows only the path of an operator-supplied
+    # secret file and the name of the secret inside it. Empty path means no application
+    # credentials; resolution then fails closed with `bitrix_credentials_unavailable`.
+    BITRIX24_APP_SECRET_FILE: str = ""
+    BITRIX24_APP_SECRET_NAME: str = "client_secret"
+    # Rollback-only bridge: read `BITRIX24_CLIENT_ID` / `BITRIX24_CLIENT_SECRET` from
+    # deployment settings when the operator store is not in place yet. Default OFF, and
+    # never consulted while `BITRIX24_APP_SECRET_FILE` is set.
+    BITRIX24_LEGACY_ENV_CREDENTIALS: bool = False
+
     TELEGRAM_BOT_TOKEN: str | None = Field(default=None, repr=False)
     # Legacy migration input only (0120); ignored by runtime.
     TELEGRAM_API_BASE_URL: str = "https://api.telegram.org"

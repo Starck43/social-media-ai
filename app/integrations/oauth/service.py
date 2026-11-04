@@ -43,6 +43,7 @@ from app.models.tenancy.workspace_role import WorkspaceRole
 from app.types import ActionType, NotificationType
 from app.utils.crypto import decrypt_secret, encrypt_secret
 
+from .credentials import BITRIX24_PROVIDER_ID, resolve_app_credentials
 from .network import OAuthNetworkError, ResolverCallable, default_dns_resolver, post_oauth_form, validate_oauth_url
 from .state import DEFAULT_STATE_TTL_SECONDS, OAuthPendingState, OAuthStateError, OAuthStateStore, oauth_state_store
 
@@ -77,6 +78,10 @@ def resolve_oauth_method(provider_id: str, method_id: str = "oauth2") -> OAuthMe
 
 
 def resolve_client_credentials(method: OAuthMethod, provider_id: str) -> tuple[str, str]:
+    # Global applications (P14-T05) resolve from the operator's secret source, never from
+    # `client_config_keys`; a missing source fails closed with `bitrix_credentials_unavailable`.
+    if provider_id == BITRIX24_PROVIDER_ID:
+        return resolve_app_credentials(provider_id)
     if provider_id in RUNTIME_OAUTH_CLIENT_CREDENTIALS:
         cid, csec = RUNTIME_OAUTH_CLIENT_CREDENTIALS[provider_id]
         if cid and csec:

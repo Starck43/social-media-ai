@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 import socket
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -27,7 +28,7 @@ from unittest.mock import AsyncMock
 
 from cryptography.fernet import Fernet
 
-os.environ.setdefault("SECRET_KEY", "unit-test-secret-key-0123456789abcdef")
+os.environ.setdefault("SECRET_KEY", secrets.token_hex(16))
 os.environ.setdefault("POSTGRES_URL", "postgresql+asyncpg://user:pass@localhost:5432/test_db")
 os.environ.setdefault("CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
 
@@ -41,7 +42,7 @@ from app.core.permissions import set_current_user
 from app.core.tenant_context import tenant_scope
 from app.integrations.catalog import OAuthMethod
 from app.integrations.oauth import (
-    RUNTIME_OAUTH_CLIENT_CREDENTIALS,
+    INJECTED_APP_CREDENTIALS,
     RUNTIME_OAUTH_METHODS,
     OAuthFlowError,
     OAuthNetworkError,
@@ -166,11 +167,11 @@ def _setup_oauth_catalog(monkeypatch: pytest.MonkeyPatch):
         scopes=("crm", "user"),
         pkce=True,
         redirect_path="/app/settings/oauth/bitrix24/callback",
-        client_config_keys=("BITRIX24_CLIENT_ID", "BITRIX24_CLIENT_SECRET"),
         allowed_hosts=("oauth.bitrix.info", "*.bitrix24.ru", "*.bitrix24.com"),
     )
     monkeypatch.setitem(RUNTIME_OAUTH_METHODS, "bitrix24", test_method)
-    monkeypatch.setitem(RUNTIME_OAUTH_CLIENT_CREDENTIALS, "bitrix24", ("b24-client-id", "b24-client-secret"))
+    # Global application (P14-T05): credentials come from the injected operator source.
+    monkeypatch.setitem(INJECTED_APP_CREDENTIALS, "bitrix24", ("b24-client-id", "b24-client-secret"))
     set_current_user(SimpleNamespace(id=101, is_active=True))
     yield audit_mock
     set_current_user(None)

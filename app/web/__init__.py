@@ -13,6 +13,7 @@ from .auth import router as auth_router
 from .billing import router as billing_router
 from .cases import router as cases_router
 from .chat import router as chat_router
+from .commands import router as commands_router
 from .communications import router as communications_router
 from .connections import router as connections_router
 from .connector_accounts import router as connector_accounts_router
@@ -30,6 +31,7 @@ from .onboarding import router as onboarding_router
 from .scenarios import router as scenarios_router
 from .settings import router as settings_router
 from .settings_llm import router as settings_llm_router
+from .settings_oauth import router as settings_oauth_router
 from .sources import router as sources_router
 from .tasks import router as tasks_router
 from .telegram_login import router as telegram_login_router
@@ -43,6 +45,7 @@ web_router.include_router(analytics_router)
 web_router.include_router(dashboard_router)
 web_router.include_router(cases_router)
 web_router.include_router(chat_router)
+web_router.include_router(commands_router)
 web_router.include_router(communications_router)
 web_router.include_router(connections_router)
 web_router.include_router(connector_accounts_router)
@@ -59,6 +62,7 @@ web_router.include_router(onboarding_router)
 web_router.include_router(scenarios_router)
 web_router.include_router(settings_router)
 web_router.include_router(settings_llm_router)
+web_router.include_router(settings_oauth_router)
 web_router.include_router(sources_router)
 web_router.include_router(tasks_router)
 web_router.include_router(telegram_login_router)

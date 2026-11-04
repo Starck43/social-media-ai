@@ -41,6 +41,11 @@ REGISTRY: tuple[tuple[str, str, str | None], ...] = (
     ("contact_consents", "basis_encrypted", None),
     ("contact_consents", "source_evidence_encrypted", None),
     ("contact_merge_journal", "reason_encrypted", None),
+    ("crm_entities", "title_encrypted", None),
+    ("crm_entities", "personal_fields_encrypted", None),
+    ("crm_entities", "custom_fields_encrypted", None),
+    ("greeting_history", "subject_encrypted", None),
+    ("greeting_history", "draft_text_encrypted", None),
 )
 
 # Every registered table carries this integer column and every writer bumps it on

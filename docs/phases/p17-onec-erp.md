@@ -41,7 +41,7 @@ TZ criteria: connect via REST (T01); read-only queries (T02); NL translation (T0
 1. [P17-T01](../tasks/p17-t01.md) — 1C connection: OData/HTTP-service endpoints, credentials and health · `P3` · `C3` · depends: [P13-T03 accepted](../audit/p13-t03.md)
 2. [P17-T02](../tasks/p17-t02.md) — 1C read-only data extraction from catalogs, documents and registers · `P3` · `C4` · depends: [P17-T01](../tasks/p17-t01.md)
 3. [P17-T03](../tasks/p17-t03.md) — Natural-language queries, result formatting, export and history · `P3` · `C4` · depends: [P17-T02](../tasks/p17-t02.md)
-4. [P17-T04](../tasks/p17-t04.md) — 1C write commands with preview, approval and audit · `P3` · `C5` · depends: [P17-T02](../tasks/p17-t02.md), [P13-T04](../tasks/p13-t04.md)
+4. [P17-T04](../tasks/p17-t04.md) — 1C write commands with preview, approval and audit · `P3` · `C5` · depends: [P17-T02](../tasks/p17-t02.md), [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
 5. [P17-T05](../tasks/p17-t05.md) — 1C role-based access policy and audit views · `P3` · `C3` · depends: [P17-T03](../tasks/p17-t03.md)
 
 ## Dependencies and gates

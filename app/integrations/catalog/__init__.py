@@ -34,6 +34,24 @@ class Method:
 
 
 @dataclass(frozen=True)
+class OAuthMethod(Method):
+    """Provider-neutral OAuth 2.0 authorization-code + PKCE descriptor (P13-T08).
+
+    Client credentials (`client_config_keys`) come exclusively from deployment
+    configuration, never from user form input.
+    """
+
+    authorize_url: str = ""
+    token_url: str = ""
+    scopes: tuple[str, ...] = ()
+    pkce: bool = True
+    redirect_path: str = ""
+    client_config_keys: tuple[str, str] = ("", "")
+    revoke_url: str = ""
+    allowed_hosts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Provider:
     id: str
     platform: str
@@ -146,11 +164,35 @@ MAILRU_CLOUD = Provider(
 # Presentation is code-owned. A descriptor, field schema or icon does not
 # authorize a connection or implement a transport. Availability describes the
 # existing route, not health, account permissions or future capabilities.
+BITRIX24_OAUTH_METHOD = OAuthMethod(
+    id="oauth2",
+    label="OAuth 2.0 (Локальное приложение портала)",
+    fields=(Field("portal_domain", "Домен портала Битрикс24", example="company.bitrix24.ru"),),
+    authorize_url="https://oauth.bitrix.info/oauth/authorize/",
+    token_url="https://oauth.bitrix.info/oauth/token/",
+    revoke_url="https://oauth.bitrix.info/oauth/revoke/",
+    scopes=("crm", "user"),
+    pkce=True,
+    redirect_path="/app/settings/oauth/bitrix24/callback",
+    client_config_keys=("BITRIX24_CLIENT_ID", "BITRIX24_CLIENT_SECRET"),
+    allowed_hosts=(
+        "oauth.bitrix.info",
+        "*.bitrix24.ru",
+        "*.bitrix24.by",
+        "*.bitrix24.kz",
+        "*.bitrix24.com",
+        "*.bitrix24.eu",
+        "*.bitrix24.de",
+    ),
+)
 BITRIX24 = Provider(
     "bitrix24",
     "bitrix24",
     "Битрикс24 CRM",
-    (Method("webhook_secret", "Входящий вебхук", (Field("webhook_secret", "Вебхук", kind="secret"),)),),
+    (
+        BITRIX24_OAUTH_METHOD,
+        Method("webhook_secret", "Входящий вебхук", (Field("webhook_secret", "Вебхук", kind="secret"),)),
+    ),
 )
 ONEC = Provider(
     "onec",

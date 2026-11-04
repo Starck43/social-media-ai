@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 from urllib.parse import urlencode
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import select, update
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 
 from app.admin import connector_registry as connector_module

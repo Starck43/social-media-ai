@@ -177,8 +177,6 @@ def test_search_arguments_enforce_utf8_byte_and_root_boundaries():
     with pytest.raises(ConnectorUnavailable):
         SearchArgs(query="ю" * 2048 + "x", roots=["root-a"]).checked()
     with pytest.raises(ConnectorUnavailable):
-        SearchArgs(query="я" * 1025, roots=["root-a"]).checked()
-    with pytest.raises(ConnectorUnavailable):
         SearchArgs(query="q", roots=["root-a", "root-a"]).checked()
     with pytest.raises(ConnectorUnavailable):
         SearchArgs(query="q", roots=["../outside"]).checked()

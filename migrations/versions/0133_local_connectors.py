@@ -11,6 +11,54 @@ branch_labels = None
 depends_on = None
 
 
+def _registry(add: bool) -> None:
+    bind = op.get_bind()
+    schema = bind.dialect.identifier_preparer.quote_schema(settings.DB_SCHEMA)
+    resource_key = "integrations.local_connector"
+    if add:
+        bind.execute(
+            sa.text(f"""
+                INSERT INTO {schema}.model_types
+                    (resource_key, model_name, table_name, description, is_managed, created_at, updated_at)
+                VALUES (:resource_key, 'localconnector', 'local_connectors',
+                        'Tenant-owned local connector device', true, now(), now())
+                ON CONFLICT (resource_key) DO NOTHING
+                """),
+            {"resource_key": resource_key},
+        )
+        for action in ("VIEW", "CREATE", "DELETE", "CONFIGURE"):
+            bind.execute(
+                sa.text(f"""
+                    INSERT INTO {schema}.permissions (name, action_type, model_type_id, created_at, updated_at)
+                    SELECT :name, CAST(:action AS {schema}.action_type), id, now(), now()
+                    FROM {schema}.model_types WHERE resource_key = :resource_key
+                    ON CONFLICT (model_type_id, action_type) DO NOTHING
+                    """),
+                {"name": "Local connector: " + action.lower(), "action": action, "resource_key": resource_key},
+            )
+        return
+
+    for link in ("role_permission", "workspace_role_permission"):
+        bind.execute(
+            sa.text(f"""
+                DELETE FROM {schema}.{link} l USING {schema}.permissions p, {schema}.model_types m
+                WHERE l.permission_id = p.id AND p.model_type_id = m.id AND m.resource_key = :resource_key
+                """),
+            {"resource_key": resource_key},
+        )
+    bind.execute(
+        sa.text(f"""
+            DELETE FROM {schema}.permissions p USING {schema}.model_types m
+            WHERE p.model_type_id = m.id AND m.resource_key = :resource_key
+            """),
+        {"resource_key": resource_key},
+    )
+    bind.execute(
+        sa.text(f"DELETE FROM {schema}.model_types WHERE resource_key = :resource_key"),
+        {"resource_key": resource_key},
+    )
+
+
 def upgrade() -> None:
     schema = settings.DB_SCHEMA
     op.create_table(
@@ -99,6 +147,7 @@ def upgrade() -> None:
         ["tenant_id", "device_id", "expires_at"],
         schema=schema,
     )
+    _registry(add=True)
 
 
 def downgrade() -> None:
@@ -108,6 +157,7 @@ def downgrade() -> None:
         table = sa.table(name, sa.column("id", sa.Integer()), schema=schema)
         if bind.execute(sa.select(sa.literal(1)).select_from(table).limit(1)).first():
             raise ValueError("local_connector_downgrade_requires_empty_tables")
+    _registry(add=False)
     op.drop_table("local_connector_requests", schema=schema)
     op.drop_table("local_connector_pairings", schema=schema)
     op.drop_table("local_connectors", schema=schema)

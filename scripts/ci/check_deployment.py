@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import ast
 import base64
+import json
 import os
 import re
 import secrets
@@ -80,6 +81,22 @@ def development_websocket_config() -> None:
             name in values and ast.literal_eval(values[name]) == value,
             f"app.main uvicorn.run must set {name}={value!r}",
         )
+
+
+def dockerfile_websocket_config() -> None:
+    dockerfile = ROOT / "docker/Dockerfile"
+    commands = []
+    for line in read(dockerfile).splitlines():
+        match = re.match(r"^\s*CMD\s+(\[.*\])\s*$", line)
+        if match:
+            commands.append(json.loads(match.group(1)))
+    require(len(commands) == 1, "Dockerfile must define exactly one JSON-form CMD")
+    command = commands[0]
+    require(
+        isinstance(command, list) and command[:2] == ["uvicorn", "app.main:app"],
+        "Dockerfile default CMD must launch the API through Uvicorn",
+    )
+    websocket_server_config(command, "Dockerfile default API")
 
 
 def require(condition: bool, message: str) -> None:
@@ -690,6 +707,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         production, staging = compose_contract()
+        dockerfile_websocket_config()
         dockerfile_contract(production, "production")
         dockerfile_contract(staging, "staging")
         workflow_contract()

@@ -183,8 +183,6 @@ class SourceAdmin(BaseAdmin, model=Source):
         "external_id",
         "is_active",
         "last_checked",
-        "date_from",
-        "date_to",
     ]
     column_searchable_list = ["name", "external_id"]
     column_sortable_list = ["name", "is_active", "last_checked"]
@@ -207,6 +205,8 @@ class SourceAdmin(BaseAdmin, model=Source):
         **BaseAdmin.column_labels,
     )
     column_details_exclude_list = ["platform_id"]
+    # Ownership is actor-derived at creation and must remain read-only here.
+    column_labels = {**column_labels, "owner_user_id": "Пользователь для сбора"}
 
     form_columns = [
         "tenant",

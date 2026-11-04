@@ -48,7 +48,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P12-T18](docs/tasks/p12-t18.md) Admin views for newly migrated tables — **IN_PROGRESS** · notion-ai-p12-t18 · [dialogue](https://app.notion.com/chat?t=40db8cc34a7980cf864f00a99b1fae7b) · `P2` · `C4`
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **IN_PROGRESS** · notion-ai-p8-t33 · [chat](https://app.notion.com/chat?t=40a3d3cc6f4080648d4000a9e3177cc4) · `P2` · `C4`
 - [P8-T46](docs/tasks/p8-t46.md) VK video search category — **IN_PROGRESS** · notion-ai-p8-t46 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
 - [P8-T47](docs/tasks/p8-t47.md) VK apps/games search category — **IN_PROGRESS** · notion-ai-p8-t47 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
@@ -94,7 +93,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P17-T03](docs/tasks/p17-t03.md) Natural-language queries, result formatting, export and history — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P17-T04](docs/tasks/p17-t04.md) 1C write commands with preview, approval and audit — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P17-T05](docs/tasks/p17-t05.md) 1C role-based access policy and audit views — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
-- [P18-T02](docs/tasks/p18-t02.md) Cloud connector gateway: registration, device management and search proxy — **IN_PROGRESS** · notion-ai-p18-t02 · [dialogue](https://app.notion.com/chat?t=40d9f429293c80f4bf8000a9f5aa8a58) · `P3` · `C4`
+- [P18-T02](docs/tasks/p18-t02.md) Cloud connector gateway: registration, device management and search proxy — **IN_PROGRESS** · codex+helpers · [PR #371 handoff](https://github.com/Starck43/social-media-ai/pull/371#issuecomment-6619280615) · `P3` · `C4`
 - [P18-T03](docs/tasks/p18-t03.md) Desktop connector core: folder selection, safe paths and incremental index — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P18-T04](docs/tasks/p18-t04.md) Text extraction and OCR with resource limits — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`

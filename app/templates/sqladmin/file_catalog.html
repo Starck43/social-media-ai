@@ -1,0 +1,37 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="col-12">
+    <p class="text-secondary">Только сохранённые метаданные ваших подключённых папок. Это не полный снимок диска; содержимое файлов не копируется.</p>
+    {% if mounts %}
+    <form method="get" action="/admin/file-catalog" class="card card-body mb-3">
+        <label for="connection">Подключённая папка</label>
+        <select id="connection" name="connection_id" class="form-select">
+            {% for mount in mounts %}<option value="{{ mount.id }}" {% if selected == mount.id %}selected{% endif %}>{{ mount.label }}</option>{% endfor %}
+        </select>
+        <label for="q" class="mt-2">Название файла или папки</label>
+        <input id="q" name="q" value="{{ query }}" maxlength="200" class="form-control">
+        <button class="btn btn-primary mt-2" type="submit">Найти</button>
+    </form>
+    {% if scan_message %}<p role="status">{{ scan_message }}</p>{% endif %}
+    {% if detail %}
+    <div class="card"><div class="card-header"><h2 class="card-title">История метаданных: {{ detail.name }}</h2></div>
+        <div class="table-responsive"><table class="table table-vcenter card-table">
+            <thead><tr><th>Номер наблюдения</th><th>Название</th><th>Тип</th><th>Получено</th></tr></thead><tbody>
+            {% for row in detail.observations %}<tr><td>{{ row.number }}</td><td>{{ row.name }}</td><td>{{ 'Папка' if row.kind == 'dir' else 'Файл' }}</td><td>{{ row.observed_at }}</td></tr>
+            {% else %}<tr><td colspan="4">История недоступна.</td></tr>{% endfor %}
+            </tbody></table></div>
+        <div class="card-body"><a href="?connection_id={{ selected }}">К списку</a></div>
+    </div>
+    {% else %}
+    <div class="card"><div class="card-header"><h2 class="card-title">Файлы и папки</h2></div>
+        <div class="table-responsive"><table class="table table-vcenter card-table">
+            <thead><tr><th>Название</th><th>Тип</th><th>Сведения получены</th></tr></thead><tbody>
+            {% for row in files %}<tr><td><a href="?connection_id={{ selected }}&amp;object_id={{ row.id }}">{{ row.name }}</a></td><td>{{ 'Папка' if row.kind == 'dir' else 'Файл' }}</td><td>{{ row.observed_at }}</td></tr>
+            {% else %}<tr><td colspan="3">Нет доступных сохранённых записей на этой странице.</td></tr>{% endfor %}
+            </tbody></table></div>
+        {% if next_url %}<div class="card-body"><a href="{{ next_url }}" rel="next">Следующая страница →</a></div>{% endif %}
+    </div>
+    {% endif %}
+    {% else %}<p>Нет доступных подключённых папок.</p>{% endif %}
+</div>
+{% endblock %}

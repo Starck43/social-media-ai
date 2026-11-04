@@ -10,11 +10,12 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.x509.oid import NameOID
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from app.core.database import async_session_maker
 from app.core.tenant_context import tenant_scope
 from app.models.integrations.local_connector import LocalConnector, LocalConnectorPairing, LocalConnectorRequest
+from app.services.local_connector import store as store_module
 from app.services.local_connector.crypto import ConnectorAuthority
 from app.services.local_connector.store import LocalConnectorStore
 from app.services.local_connector.wire import ConnectorUnavailable, SearchArgs, new_request
@@ -54,7 +55,7 @@ def make_authority():
 
 def make_csr():
     key = Ed25519PrivateKey.generate()
-    csr = x509.CertificateSigningRequestBuilder().sign(key, algorithm=None)
+    csr = x509.CertificateSigningRequestBuilder().subject_name(x509.Name([])).sign(key, algorithm=None)
     return key, csr.public_bytes(serialization.Encoding.PEM).decode("ascii")
 
 
@@ -268,3 +269,83 @@ async def test_company_root_consent_epochs_and_revocation_invalidate_ledger_and_
         assert device_row.epoch == after[3] + 1
         assert device_row.cloud_roots == []
         assert ledger.state == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_replay_ledger_persists_across_store_restart_and_prunes_expired_rows(connector_world, monkeypatch):
+    world = connector_world
+    device = await pair_device(world)
+    with tenant_scope(world.tenant_id):
+        await world.store.consent(owner_id=world.owner_id, device_id=device.device_id, roots=["company"])
+        snapshot = await world.store.authorize(owner_id=world.owner_id, device_id=device.device_id, roots=["company"])
+
+        def request():
+            return new_request(
+                key_id=world.authority.key_id,
+                tenant_id=snapshot[0],
+                owner_id=snapshot[1],
+                device_id=snapshot[2],
+                device_epoch=snapshot[3],
+                consent_epoch=snapshot[4],
+                policy_epoch=snapshot[5],
+                args=SearchArgs(query="synthetic replay", roots=["company"]),
+            )
+
+        first = request()
+        first_digest = "a" * 64
+        restarted_store = LocalConnectorStore(world.authority)
+        await world.store.reserve(first, first_digest)
+        with pytest.raises(ConnectorUnavailable):
+            await restarted_store.reserve(first, first_digest)
+        with pytest.raises(ConnectorUnavailable):
+            await restarted_store.reserve(first, "b" * 64)
+
+        await restarted_store.finish(first, first_digest)
+        with pytest.raises(ConnectorUnavailable):
+            await restarted_store.finish(first, first_digest)
+
+        async with async_session_maker() as session:
+            ledger = (
+                await session.execute(
+                    select(LocalConnectorRequest).where(
+                        LocalConnectorRequest.tenant_id == world.tenant_id,
+                        LocalConnectorRequest.device_id == device.device_id,
+                        LocalConnectorRequest.request_id == first.request_id,
+                    )
+                )
+            ).scalar_one()
+            assert ledger.state == "completed"
+
+        monkeypatch.setattr(store_module, "REPLAY_CAPACITY", 1)
+        second = request()
+        with pytest.raises(ConnectorUnavailable):
+            await restarted_store.reserve(second, "c" * 64)
+
+        async with async_session_maker() as session, session.begin():
+            await session.execute(
+                update(LocalConnectorRequest)
+                .where(
+                    LocalConnectorRequest.tenant_id == world.tenant_id,
+                    LocalConnectorRequest.device_id == device.device_id,
+                    LocalConnectorRequest.request_id == first.request_id,
+                )
+                .values(expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+            )
+
+        await restarted_store.reserve(second, "c" * 64)
+        third = request()
+        with pytest.raises(ConnectorUnavailable):
+            await restarted_store.reserve(third, "d" * 64)
+
+        async with async_session_maker() as session:
+            remaining_ids = set(
+                (
+                    await session.scalars(
+                        select(LocalConnectorRequest.request_id).where(
+                            LocalConnectorRequest.tenant_id == world.tenant_id,
+                            LocalConnectorRequest.device_id == device.device_id,
+                        )
+                    )
+                ).all()
+            )
+        assert remaining_ids == {second.request_id}

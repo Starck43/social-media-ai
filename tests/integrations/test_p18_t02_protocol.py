@@ -70,9 +70,7 @@ def make_authority(*, ca_is_ca=True, expired=False, pairing_key=b"p" * 32, wrong
 
 def make_csr(key=None, *, subject=None, extension=False):
     key = key or Ed25519PrivateKey.generate()
-    builder = x509.CertificateSigningRequestBuilder()
-    if subject is not None:
-        builder = builder.subject_name(subject)
+    builder = x509.CertificateSigningRequestBuilder().subject_name(subject if subject is not None else x509.Name([]))
     if extension:
         builder = builder.add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
     algorithm = None if isinstance(key, Ed25519PrivateKey) else hashes.SHA256()

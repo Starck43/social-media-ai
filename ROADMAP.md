@@ -64,7 +64,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q-18-owner-decisions.md)):
 
 - [P14-T07](docs/tasks/p14-t07.md) Bitrix24 as a global application with tenant-scoped portal settings instead of deployment client credentials — **IN_PROGRESS** · remote-agent (`feat/p14-t05-bitrix-global-app`) · owner decision 2026-11-04: the OAuth client secret is not carried in environment configuration · `P2` · `C3`
-- [P14-T08](docs/tasks/p14-t08.md) Trusted on-premise portal hosts administered at runtime — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resume on the first request; the card keeps the contract, estimate 1-2 days, no sizeable infrastructure) · unclaimed · `P2` · `C3`
+- [P14-T08](docs/tasks/p14-t08.md) Trusted on-premise portal hosts administered at runtime, with the Bitrix24 authorization form — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resume on the first request) · assignment ready in the card · `P2` · `C3`
 
 - [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
 - [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`

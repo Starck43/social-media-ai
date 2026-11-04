@@ -24,6 +24,7 @@ from starlette.websockets import WebSocket
 from app.admin.csrf import AdminCSRFMiddleware, CSRFTokenManager
 from app.admin.scope import AdminScopeMiddleware
 from app.api.v1 import entry
+from app.api.v1.conventions import BUSINESS_TAGS, openapi_options
 from app.core.api_scope import ApiScopeMiddleware
 from app.core.config import settings
 from app.core.database import async_engine, init_db
@@ -102,6 +103,8 @@ def create_application() -> FastAPI:
         version=__version__,
         debug=settings.DEBUG,
         lifespan=lifespan,
+        **openapi_options(settings.ENVIRONMENT, settings.API_DOCS_ENABLED),
+        openapi_tags=[{"name": tag} for tag in BUSINESS_TAGS.values()],
     )
 
     async def _unhandled_error_with_request_id(request: Request, error: Exception) -> Response:

@@ -47,6 +47,8 @@ class Settings(BaseSettings):
 
     # Настройки приложения
     ENVIRONMENT: str = "development"
+    # None: development/test only; explicit True opts into exposure in any environment.
+    API_DOCS_ENABLED: bool | None = None
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://localhost:8501"
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # React dev server

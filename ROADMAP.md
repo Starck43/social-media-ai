@@ -58,13 +58,13 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [Q-17](docs/tasks/q-17.md) Web test-suite debt in `tests/unit_web/` — **OPEN** · unassigned · raised while closing [P12-T16](docs/audit/p12-t16.md) · `P2` · `C3`
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **IN_PROGRESS** · codex-p12-pr-completion ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)) · [owner-authorized completion](https://github.com/Starck43/social-media-ai/pull/327#issuecomment-6609629474) · `P2` · `C5`
-- [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **IN_PROGRESS** · codex-p12-pr-completion ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)) · [owner-authorized completion](https://github.com/Starck43/social-media-ai/pull/327#issuecomment-6609629474) · [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
+- [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 
 Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q-18-owner-decisions.md)):
 
 - [P14-T07](docs/tasks/p14-t07.md) Bitrix24 as a global application with tenant-scoped portal settings instead of deployment client credentials — **IN_PROGRESS** · remote-agent (`feat/p14-t05-bitrix-global-app`) · owner decision 2026-11-04: the OAuth client secret is not carried in environment configuration · `P2` · `C3`
-- [P14-T08](docs/tasks/p14-t08.md) Trusted on-premise portal hosts administered at runtime, with a per-host egress authorization — **TODO** · unclaimed · owner request 2026-11-04: an on-premise portal must not require a deployment edit · `P2` · `C3`
+- [P14-T08](docs/tasks/p14-t08.md) Trusted on-premise portal hosts administered at runtime — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resume on the first request; the card keeps the contract, estimate 1-2 days, no sizeable infrastructure) · unclaimed · `P2` · `C3`
 
 - [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
 - [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`

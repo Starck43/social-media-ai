@@ -3,7 +3,19 @@
 from datetime import datetime
 from typing import ClassVar
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
@@ -44,13 +56,19 @@ class LocalConnectorPairing(Base, TenantScopedMixin):
     __tablename__ = "local_connector_pairings"
     __table_args__ = (
         UniqueConstraint("pairing_id", name="uq_local_connector_pairing_id"),
-        ForeignKeyConstraint(["tenant_id", "device_id"], [f"{S}.local_connectors.tenant_id", f"{S}.local_connectors.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(
+            ["tenant_id", "device_id"],
+            [f"{S}.local_connectors.tenant_id", f"{S}.local_connectors.id"],
+            ondelete="CASCADE",
+        ),
         CheckConstraint("attempts >= 0 AND attempts <= 5", name="ck_local_connector_pairing_attempts"),
+        Index("ix_local_connector_pairing_owner_created", "tenant_id", "owner_user_id", "created_at"),
         {"schema": S},
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     pairing_id: Mapped[str] = mapped_column(String(32), nullable=False)
     owner_user_id: Mapped[int] = mapped_column(ForeignKey(f"{S}.users.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
@@ -66,7 +84,11 @@ class LocalConnectorPairing(Base, TenantScopedMixin):
 class LocalConnectorRequest(Base, TenantScopedMixin):
     __tablename__ = "local_connector_requests"
     __table_args__ = (
-        ForeignKeyConstraint(["tenant_id", "device_id"], [f"{S}.local_connectors.tenant_id", f"{S}.local_connectors.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(
+            ["tenant_id", "device_id"],
+            [f"{S}.local_connectors.tenant_id", f"{S}.local_connectors.id"],
+            ondelete="CASCADE",
+        ),
         UniqueConstraint("tenant_id", "device_id", "request_id", name="uq_local_connector_request"),
         CheckConstraint("state IN ('dispatched','completed','unknown')", name="ck_local_connector_request_state"),
         Index("ix_local_connector_request_expiry", "tenant_id", "device_id", "expires_at"),

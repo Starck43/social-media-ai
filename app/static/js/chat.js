@@ -30,6 +30,12 @@ function chatApp() {
             confirmation: null,
             autoScroll: true,
             messages: [],
+            connectorSearch: window.__chatConnectorSearch || { enabled: false, devices: [] },
+            connectorDeviceId: String((window.__chatConnectorSearch?.devices || [])[0]?.id || ''),
+            connectorReferences: [],
+            connectorSearchPending: false,
+            connectorSearchError: '',
+            connectorSearchPartial: false,
             thinkingSeconds: 0,
             thinkingTimer: null,
             starters: [
@@ -247,6 +253,55 @@ function chatApp() {
                 const docs = this.attachmentPolicy.allowed_document_extensions || [];
                 const imgs = this.attachmentPolicy.allowed_image_extensions || [];
                 return [...docs, ...imgs].join(',');
+            },
+            selectedConnectorRoots() {
+                const device = this.connectorSearch.devices.find((item) => String(item.id) === this.connectorDeviceId);
+                return device?.roots || [];
+            },
+            companyReferenceLabel(reference) {
+                const parts = [reference.path || 'Файл'];
+                if (reference.page) parts.push('стр. ' + reference.page);
+                if (reference.sheet) parts.push('лист ' + reference.sheet);
+                return parts.join(' · ');
+            },
+            async searchCompanyReferences() {
+                const query = (this.$refs.input?.value || '').trim();
+                const selectedRoots = [...this.$root.querySelectorAll('[data-company-root]:checked')].map((input) => input.value);
+                if (!query || !this.connectorDeviceId || !selectedRoots.length) {
+                    this.connectorSearchError = 'Введите запрос и выберите согласованные папки.';
+                    this.connectorReferences = [];
+                    return;
+                }
+                this.connectorSearchPending = true;
+                this.connectorSearchError = '';
+                this.connectorReferences = [];
+                this.connectorSearchPartial = false;
+                try {
+                    const body = new URLSearchParams({
+                        '_csrf': this.csrf,
+                        'query': query,
+                        'device_id': this.connectorDeviceId,
+                    });
+                    selectedRoots.forEach((root) => body.append('roots', root));
+                    const response = await fetch('/app/chat/connector-search', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body,
+                        cache: 'no-store',
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || data.error) throw new Error(data.error || 'Поиск подключённых папок недоступен.');
+                    this.connectorReferences = Array.isArray(data.references) ? data.references : [];
+                    this.connectorSearchPartial = Boolean(data.partial);
+                } catch (error) {
+                    this.connectorSearchError = error.message || 'Поиск подключённых папок недоступен.';
+                } finally {
+                    this.connectorSearchPending = false;
+                }
             },
             handleAttachClick() {
                 if (!this.attachmentEnabled()) {

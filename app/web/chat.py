@@ -34,6 +34,7 @@ router.include_router(workspace_router)
 # to the model (see `agent_messages.recent`), so a long page is scroll, not
 # context.
 TRANSCRIPT_LIMIT = 40
+MAX_CONNECTOR_SEARCH_FORM_BYTES = 65_536
 
 
 def _format_message_time(dt_val) -> str:
@@ -247,11 +248,27 @@ async def chat_page(
     user = getattr(request.state, "web_user", None)
     tenant_id = getattr(request.state, "tenant_id", None)
     if user is None or tenant_id is None:
+        connector_search = {"enabled": False, "devices": []}
         if is_ajax:
-            return JSONResponse({"messages": [], "is_owner": False, "scoped_context": scoped_context})
+            return JSONResponse(
+                {
+                    "messages": [],
+                    "is_owner": False,
+                    "scoped_context": scoped_context,
+                    "connector_search": connector_search,
+                }
+            )
         return render(
-            request, "web/chat.html", section="chat", messages=[], is_owner=False, scoped_context=scoped_context
+            request,
+            "web/chat.html",
+            section="chat",
+            messages=[],
+            is_owner=False,
+            scoped_context=scoped_context,
+            connector_search=connector_search,
         )
+
+    connector_search = await _company_connector_search_options(user.id)
 
     messages = []
     session_id = await web_session_id(user.id)
@@ -279,6 +296,7 @@ async def chat_page(
                 "is_owner": _is_owner(request),
                 "attachment_policy": policy_dict,
                 "scoped_context": scoped_context,
+                "connector_search": connector_search,
             }
         )
 
@@ -291,7 +309,123 @@ async def chat_page(
         awaiting_confirmation=await _confirmation_pending(user.id),
         attachment_policy=policy_dict,
         scoped_context=scoped_context,
+        connector_search=connector_search,
     )
+
+
+async def _company_connector_search_options(owner_id: int) -> dict:
+    """Expose only active, online, already-consented company roots to this owner."""
+    from app.core.config import settings
+
+    if not settings.LOCAL_CONNECTOR_ENABLED or not settings.LOCAL_CONNECTOR_SECURITY_REVIEWED:
+        return {"enabled": False, "devices": []}
+    try:
+        from app.services.local_connector.runtime import get_gateway
+        from app.services.local_connector.wire import TOKEN, ConnectorUnavailable
+
+        gateway = get_gateway()
+        devices = await gateway.store.list_owned(owner_id=owner_id, limit=100)
+        options = []
+        for device in devices:
+            roots = device.cloud_roots if isinstance(device.cloud_roots, list) else []
+            roots = sorted({root for root in roots if type(root) is str and re.fullmatch(TOKEN, root)})
+            if device.revoked_at is None and device.id in gateway.channels.sessions and roots:
+                options.append({"id": device.id, "name": device.device_name_encrypted, "roots": roots})
+        return {"enabled": bool(options), "devices": options}
+    except ConnectorUnavailable:
+        return {"enabled": False, "devices": []}
+
+
+@router.post("/connector-search")
+async def chat_connector_search(request: Request):
+    """Search one selected company connector and return references outside model context."""
+    denied = _chat_denied(request, True)
+    if denied is not None:
+        return denied
+    try:
+        content_length = request.headers.get("content-length")
+        if content_length is not None and int(content_length) > MAX_CONNECTOR_SEARCH_FORM_BYTES:
+            return JSONResponse({"error": "Запрос слишком велик."}, status_code=413)
+        if (
+            request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            != "application/x-www-form-urlencoded"
+        ):
+            return JSONResponse({"error": "Некорректный формат запроса."}, status_code=400)
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > MAX_CONNECTOR_SEARCH_FORM_BYTES:
+                return JSONResponse({"error": "Запрос слишком велик."}, status_code=413)
+            body.extend(chunk)
+        request._body = bytes(body)
+        form = await request.form(max_files=0, max_fields=20, max_part_size=MAX_CONNECTOR_SEARCH_FORM_BYTES)
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "Некорректный формат запроса."}, status_code=400)
+    allowed_fields = {"_csrf", "query", "device_id", "roots"}
+    if set(form.keys()) != allowed_fields or any(
+        len(form.getlist(name)) != 1 for name in ("_csrf", "query", "device_id")
+    ):
+        return JSONResponse({"error": "Некорректный формат запроса."}, status_code=400)
+    token = form.get("_csrf")
+    if not ensure_csrf(request, token):
+        return JSONResponse({"error": "Сессия истекла, обновите страницу."}, status_code=403)
+    actor = _valid_chat_actor(request)
+    if actor is None:
+        return JSONResponse({"error": "Не авторизован."}, status_code=401)
+    user, _tenant_id = actor
+
+    from app.core.config import settings
+
+    if not settings.LOCAL_CONNECTOR_ENABLED or not settings.LOCAL_CONNECTOR_SECURITY_REVIEWED:
+        return JSONResponse({"error": "Поиск подключённых папок недоступен."}, status_code=503)
+    query = form.get("query", "")
+    raw_device_id = form.get("device_id", "")
+    roots = form.getlist("roots")
+    if (
+        not isinstance(query, str)
+        or not isinstance(raw_device_id, str)
+        or not re.fullmatch(r"[1-9][0-9]{0,9}", raw_device_id)
+    ):
+        return JSONResponse({"error": "Укажите запрос, устройство и согласованные папки."}, status_code=400)
+    device_id = int(raw_device_id)
+    if device_id > 2_147_483_647:
+        return JSONResponse({"error": "Укажите запрос, устройство и согласованные папки."}, status_code=400)
+    query = query.strip()
+    if not query or len(query.encode("utf-8")) > 4096:
+        return JSONResponse({"error": "Укажите запрос, устройство и согласованные папки."}, status_code=400)
+    if not 1 <= len(roots) <= 16 or len(set(roots)) != len(roots):
+        return JSONResponse({"error": "Выберите согласованные папки."}, status_code=400)
+
+    try:
+        from app.api.v1.endpoints.files_connectors import SearchReleaseResponse
+        from app.services.local_connector.runtime import get_gateway
+        from app.services.local_connector.wire import TOKEN, ConnectorUnavailable, SearchArgs
+
+        if any(type(root) is not str or not re.fullmatch(TOKEN, root) for root in roots):
+            return JSONResponse({"error": "Некорректная область поиска."}, status_code=400)
+        gateway = get_gateway()
+        devices = await gateway.store.list_owned(owner_id=user.id, limit=100)
+        device = next((item for item in devices if item.id == device_id), None)
+        if (
+            device is None
+            or device.revoked_at is not None
+            or device_id not in gateway.channels.sessions
+            or not set(roots) <= set(device.cloud_roots or [])
+        ):
+            return JSONResponse({"error": "Поиск недоступен для выбранной области."}, status_code=404)
+        args = SearchArgs(query=query, roots=roots).checked()
+        dispatch = await gateway.search(owner_id=user.id, device_ids=[device_id], args=args)
+        return SearchReleaseResponse(
+            request=request,
+            gateway=gateway,
+            owner_id=user.id,
+            roots=roots,
+            dispatch=dispatch,
+            references_only=True,
+        )
+    except ConnectorUnavailable:
+        return JSONResponse({"error": "Поиск подключённых папок недоступен."}, status_code=404)
+    except Exception:
+        return JSONResponse({"error": "Поиск подключённых папок недоступен."}, status_code=503)
 
 
 @router.post("")

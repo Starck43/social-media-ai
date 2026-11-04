@@ -68,6 +68,7 @@ async def connector_world(personal_world):
         other_tenant_id=tenants[1],
         owner_id=personal_world.users[0].id,
         other_owner_id=personal_world.users[1].id,
+        other_tenant_owner_id=personal_world.users[2].id,
     )
     world.authority = world.store.authority
     try:
@@ -198,11 +199,13 @@ async def test_owner_and_tenant_boundaries_apply_to_listing_consent_and_revoke(c
         with pytest.raises(ConnectorUnavailable):
             await world.store.revoke(owner_id=world.other_owner_id, device_id=device.device_id)
     with tenant_scope(world.other_tenant_id):
-        assert await world.store.list_owned(owner_id=world.owner_id) == []
+        assert await world.store.list_owned(owner_id=world.other_tenant_owner_id) == []
         with pytest.raises(ConnectorUnavailable):
-            await world.store.consent(owner_id=world.owner_id, device_id=device.device_id, roots=["company"])
+            await world.store.consent(
+                owner_id=world.other_tenant_owner_id, device_id=device.device_id, roots=["company"]
+            )
         with pytest.raises(ConnectorUnavailable):
-            await world.store.revoke(owner_id=world.owner_id, device_id=device.device_id)
+            await world.store.revoke(owner_id=world.other_tenant_owner_id, device_id=device.device_id)
 
 
 @pytest.mark.asyncio

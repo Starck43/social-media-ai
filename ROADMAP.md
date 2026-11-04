@@ -67,8 +67,8 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P14-T09](docs/tasks/p14-t09.md) Installation-wide trusted outbound hosts: one egress seam, registry and admin surface for every self-hosted connector — **IN_PROGRESS** · remote-agent (`feat/p14-t09-trusted-outbound`) · owner decision 2026-11-04: shared infrastructure, Bitrix24 as pilot · `P2` · `C4`
 - [P14-T08](docs/tasks/p14-t08.md) Bitrix24 on-premise authorization form on top of the P14-T09 seam — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resumes with P14-T09) · `P2` · `C3`
 
-- [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
-- [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
+- [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **feature on top of the P15 transport** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **feature on top of the P15 transport** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 
 ### Priority P3
 
@@ -76,8 +76,8 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P15-T02](docs/tasks/p15-t02.md) Unified message store and channel ingestion (Telegram, MAX, email) — **IN_PROGRESS** · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T03](docs/tasks/p15-t03.md) Identity reconciliation: suggestions, manual merge and unmerge — **IN_PROGRESS** · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T04](docs/tasks/p15-t04.md) Unified inbox: threads, filters, search and read state — **IN_PROGRESS** · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P15-T05](docs/tasks/p15-t05.md) Persistent outbox, scheduling and delivery tracking — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P15-T06](docs/tasks/p15-t06.md) Channel senders: SMTP, Telegram bot and MAX bot capabilities — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T05](docs/tasks/p15-t05.md) Persistent outbox, scheduling and delivery tracking — **transport, consumes P15-T06** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T06](docs/tasks/p15-t06.md) Channel senders: SMTP, Telegram bot and MAX bot capabilities — **transport, lands first** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T07](docs/tasks/p15-t07.md) Channel recommendation with confidence score — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P16-T01](docs/tasks/p16-t01.md) Planner tasks: model, CRUD, subtasks and recurrence — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`

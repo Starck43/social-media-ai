@@ -29,7 +29,8 @@ column, it amends `0137` before the stack is published, never adds `0138`.
 ## Shared contract these four tasks must agree on
 
 - Tables: `unified_messages`, `message_threads`, `contact_channel_stats`.
-  **No `message_content_cache`** — owner decision D3 (metadata only). Do not add
+  **No `message_content_cache`** — owner decision D3, settled by D11: metadata only, and
+not even a size-limited body cache ([Q-19](../audit/q-19-messaging-decisions.md)). Do not add
   an FTS column, a `tsvector` or a language configuration.
 - `unified_messages` unique key: `(tenant_id, connection_id, channel, original_id)` (R-09).
   Ingestion is an idempotent upsert on that key, never a blind insert.

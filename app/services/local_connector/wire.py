@@ -98,7 +98,11 @@ class SearchResponse(WireModel):
     hits: list[SearchHit] = Field(default_factory=list, max_length=50)
 
     def checked(self, request: SearchRequest, digest: str):
-        if self.request_id != request.request_id or self.device_id != request.device_id or self.request_digest != digest:
+        if (
+            self.request_id != request.request_id
+            or self.device_id != request.device_id
+            or self.request_digest != digest
+        ):
             raise ConnectorUnavailable()
         if len(self.hits) > request.args.limit or sum(hit.snippet is not None for hit in self.hits) > MAX_SNIPPETS:
             raise ConnectorUnavailable()
@@ -126,8 +130,12 @@ def decode(payload: bytes) -> dict:
     if type(payload) is not bytes or not 0 < len(payload) <= MAX_CONTROL_BYTES:
         raise ConnectorUnavailable()
     try:
-        value = json.loads(payload.decode("utf-8"), object_pairs_hook=_pairs,
-                           parse_float=_invalid_number, parse_constant=_invalid_number)
+        value = json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=_pairs,
+            parse_float=_invalid_number,
+            parse_constant=_invalid_number,
+        )
         if type(value) is not dict:
             raise ValueError
         return value
@@ -137,7 +145,9 @@ def decode(payload: bytes) -> dict:
 
 def canonical(value: dict) -> bytes:
     try:
-        payload = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        payload = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode(
+            "utf-8"
+        )
         decode(payload)
         return payload
     except (ValueError, TypeError, UnicodeError, RecursionError):
@@ -164,7 +174,10 @@ def verify(payload: bytes, key: Ed25519PublicKey, *, key_id: str, now: int | Non
         clock = int(time.time()) if now is None else now
         if request.key_id != key_id or request.owner_id != request.actor_id:
             raise ValueError
-        if not request.issued_at <= clock <= request.expires_at or not 0 < request.expires_at-request.issued_at <= TIMEOUT:
+        if (
+            not request.issued_at <= clock <= request.expires_at
+            or not 0 < request.expires_at - request.issued_at <= TIMEOUT
+        ):
             raise ValueError
         request.args.checked()
         return request
@@ -174,7 +187,17 @@ def verify(payload: bytes, key: Ed25519PublicKey, *, key_id: str, now: int | Non
 
 def new_request(*, key_id, tenant_id, owner_id, device_id, device_epoch, consent_epoch, policy_epoch, args):
     now = int(time.time())
-    return SearchRequest(key_id=key_id, request_id=uuid.uuid4().hex, tenant_id=tenant_id, owner_id=owner_id,
-                         actor_id=owner_id, device_id=device_id, issued_at=now, expires_at=now+TIMEOUT,
-                         device_epoch=device_epoch, consent_epoch=consent_epoch, policy_epoch=policy_epoch,
-                         args=args)
+    return SearchRequest(
+        key_id=key_id,
+        request_id=uuid.uuid4().hex,
+        tenant_id=tenant_id,
+        owner_id=owner_id,
+        actor_id=owner_id,
+        device_id=device_id,
+        issued_at=now,
+        expires_at=now + TIMEOUT,
+        device_epoch=device_epoch,
+        consent_epoch=consent_epoch,
+        policy_epoch=policy_epoch,
+        args=args,
+    )

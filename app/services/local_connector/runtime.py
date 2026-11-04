@@ -10,6 +10,7 @@ from .wire import ConnectorUnavailable
 @lru_cache(maxsize=1)
 def get_gateway():
     from app.core.config import settings
+
     from .store import LocalConnectorStore
 
     if not settings.LOCAL_CONNECTOR_ENABLED or not settings.LOCAL_CONNECTOR_SECURITY_REVIEWED:

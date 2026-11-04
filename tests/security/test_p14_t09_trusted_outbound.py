@@ -6,6 +6,7 @@ import asyncio
 import re
 import runpy
 import socket
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -82,25 +83,31 @@ def test_static_host_with_private_answer_is_private_address_forbidden(address):
 def test_private_entry_authorizes_exactly_its_addresses_and_dns_change_fails_closed():
     reader = registry(TrustedHost(ONPREM, "private", frozenset({"10.0.0.5", "10.0.0.6"})))
     resolver = Resolver("10.0.0.5", "10.0.0.6")
-    assert acquire_outbound_target(ONPREM, 443, policy=CLOUD, registry=reader, resolver=resolver).addresses == (
+    assert acquire_outbound_target(
+        ONPREM, 443, policy=StaticPolicy((ONPREM,)), registry=reader, resolver=resolver
+    ).addresses == (
         "10.0.0.5",
         "10.0.0.6",
     )
     resolver.addresses = ["10.0.0.5", "10.0.0.7"]  # DNS answer changed between attempts
     with pytest.raises(OutboundRefusal) as refused:
-        acquire_outbound_target(ONPREM, 443, policy=CLOUD, registry=reader, resolver=resolver)
+        acquire_outbound_target(ONPREM, 443, policy=StaticPolicy((ONPREM,)), registry=reader, resolver=resolver)
     assert refused.value.code == ADDRESS_NOT_AUTHORIZED
     resolver.addresses = ["8.8.8.8"]  # even a public answer is not on the private list
     with pytest.raises(OutboundRefusal):
-        acquire_outbound_target(ONPREM, 443, policy=CLOUD, registry=reader, resolver=resolver)
+        acquire_outbound_target(ONPREM, 443, policy=StaticPolicy((ONPREM,)), registry=reader, resolver=resolver)
     assert resolver.calls == 3, "DNS is resolved on every attempt, never pinned"
 
 
 def test_public_entry_keeps_global_rule():
     reader = registry(TrustedHost(ONPREM, "public"))
-    assert acquire_outbound_target(ONPREM, 443, policy=CLOUD, registry=reader, resolver=Resolver("8.8.4.4"))
+    assert acquire_outbound_target(
+        ONPREM, 443, policy=StaticPolicy((ONPREM,)), registry=reader, resolver=Resolver("8.8.4.4")
+    )
     with pytest.raises(OutboundRefusal) as refused:
-        acquire_outbound_target(ONPREM, 443, policy=CLOUD, registry=reader, resolver=Resolver("10.1.1.1"))
+        acquire_outbound_target(
+            ONPREM, 443, policy=StaticPolicy((ONPREM,)), registry=reader, resolver=Resolver("10.1.1.1")
+        )
     assert refused.value.code == ADDRESS_NOT_AUTHORIZED
 
 
@@ -132,7 +139,11 @@ def test_registry_scope_is_per_operation_and_loader_failure_is_empty():
     async def attempt():
         async with registry_scope(loader):
             async with registry_scope(loader):  # nested calls share one snapshot
-                return acquire_outbound_target(ONPREM, 443, policy=CLOUD, resolver=Resolver("8.8.8.8"))
+                if outbound.current_registry()(ONPREM) is None:
+                    raise OutboundRefusal(HOST_NOT_TRUSTED, ONPREM)
+                return acquire_outbound_target(
+                    ONPREM, 443, policy=StaticPolicy((ONPREM,)), resolver=Resolver("8.8.8.8")
+                )
 
     with pytest.raises(OutboundRefusal):
         run(attempt())
@@ -183,11 +194,11 @@ def test_oauth_guard_uses_registry_entry():
 
     reader = registry(TrustedHost(ONPREM, "private", frozenset({"10.0.0.5"})))
     assert validate_oauth_url(
-        f"https://{ONPREM}/oauth/", allowed_hosts=("*.bitrix24.ru",), resolver=Resolver("10.0.0.5"), registry=reader
+        f"https://{ONPREM}/oauth/", allowed_hosts=(ONPREM,), resolver=Resolver("10.0.0.5"), registry=reader
     ) == (ONPREM, 443)
     with pytest.raises(OAuthNetworkError) as err:
         validate_oauth_url(
-            f"https://{ONPREM}/oauth/", allowed_hosts=("*.bitrix24.ru",), resolver=Resolver("10.0.0.9"), registry=reader
+            f"https://{ONPREM}/oauth/", allowed_hosts=(ONPREM,), resolver=Resolver("10.0.0.9"), registry=reader
         )
     assert err.value.code == "address_not_authorized" and err.value.refusal.host == ONPREM
 
@@ -203,12 +214,9 @@ class FakeOAuth:
         self.started = []
 
     async def start_authorization(self, **kwargs):
-        from app.integrations.catalog import BITRIX24_OAUTH_METHOD
         from app.integrations.oauth.network import validate_oauth_url
 
-        validate_oauth_url(
-            kwargs["authorize_url_override"], allowed_hosts=BITRIX24_OAUTH_METHOD.allowed_hosts, resolver=self.resolver
-        )
+        validate_oauth_url(kwargs["authorize_url_override"], allowed_hosts=(), resolver=self.resolver)
         self.started.append(kwargs["account_key"])
         return {"authorize_url": kwargs["authorize_url_override"]}
 
@@ -241,7 +249,8 @@ def test_bitrix_onprem_add_remove_without_restart():
     resolver.addresses = ["10.0.0.6"]
     with pytest.raises(Exception) as changed:
         connect()
-    assert getattr(changed.value, "code", None) == "address_not_authorized"
+    assert changed.value.code == "address_not_authorized" and changed.value.status_code == 422
+    assert ONPREM in str(changed.value) and "администратор" in str(changed.value).lower()
     del table[ONPREM]
     with pytest.raises(Bitrix24Error) as removed:
         connect()
@@ -249,11 +258,29 @@ def test_bitrix_onprem_add_remove_without_restart():
     assert oauth.started == [ONPREM]
 
 
+def test_bitrix_api_returns_value_safe_422_message(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.api.v1.endpoints import bitrix as api
+    from app.integrations.bitrix24.client import Bitrix24Error
+
+    async def refused(**kwargs):
+        refusal = OutboundRefusal(ADDRESS_NOT_AUTHORIZED, ONPREM)
+        raise Bitrix24Error(refusal.code, str(refusal), status_code=422)
+
+    monkeypatch.setattr(api.bitrix24_service, "start_oauth_connect", refused)
+    body = api.BitrixConnectRequest(portal_domain=ONPREM)
+    with pytest.raises(HTTPException) as err:
+        run(api.connect_bitrix_portal(body, SimpleNamespace(state=SimpleNamespace(tenant_id=1)), SimpleNamespace(id=7)))
+    assert err.value.status_code == 422 and err.value.detail["code"] == ADDRESS_NOT_AUTHORIZED
+    assert ONPREM in err.value.detail["message"] and "администратор" in err.value.detail["message"].lower()
+    assert api._bitrix_http_error(Bitrix24Error("other", "secret", status_code=502)).detail != "secret"
+
+
 def test_bitrix_cloud_unchanged_with_empty_registry():
     service, oauth = bitrix({}, Resolver("8.8.8.8"))
     run(service.start_oauth_connect(tenant_id=1, actor_id=1, portal_domain="acme.bitrix24.ru"))
     assert oauth.started == ["acme.bitrix24.ru"]
-    assert "acme.bitrix24.ru" not in service._allowed_hosts_for("acme.bitrix24.ru")
 
 
 def test_bitrix_service_has_no_constructor_allowlist():
@@ -329,8 +356,16 @@ class FakeResult:
     def scalar(self):
         return self.value
 
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self.value
+
 
 class FakeSession:
+    next_id = 40
+
     def __init__(self, *results):
         self.results = list(results)
         self.added, self.deleted = [], []
@@ -345,21 +380,20 @@ class FakeSession:
         self.deleted.append(row)
 
     async def flush(self):
-        for index, row in enumerate(self.added, start=41):
-            row.id = getattr(row, "id", None) or index
+        for row in self.added:
+            if getattr(row, "id", None) is None:
+                FakeSession.next_id += 1
+                row.id = FakeSession.next_id
+            if hasattr(row, "created_at") and row.created_at is None:
+                row.created_at = datetime.now(timezone.utc)
 
 
-@pytest.fixture
-def audit(monkeypatch):
-    from app.models.audit.action_audit_event import ActionAuditEvent
+@pytest.fixture(autouse=True)
+def installation_context():
+    from app.core.installation_context import installation_scope
 
-    events = []
-
-    async def record_success(**kwargs):
-        events.append(kwargs)
-
-    monkeypatch.setattr(ActionAuditEvent.objects, "record_success", record_success)
-    return events
+    with installation_scope(7):
+        yield
 
 
 def manager():
@@ -369,52 +403,72 @@ def manager():
 
 
 @pytest.mark.parametrize("codename", ["user", "superuser", None])
-def test_non_admin_and_tenant_actor_cannot_add(codename, audit):
+def test_non_admin_and_tenant_actor_cannot_add(codename):
     from app.models.managers.trusted_outbound_host_manager import TrustedHostError
 
     session = FakeSession(codename)
     with pytest.raises(TrustedHostError) as err:
         run(manager().add_host(actor_id=7, host=ONPREM, kind="public", session=session))
     assert err.value.code == "admin_required"
-    assert session.added == [] and audit == []
+    assert session.added == []
 
 
 @pytest.mark.parametrize("codename", ["operator", "admin"])
-def test_admin_add_and_remove_are_audited_with_actor(codename, audit):
+def test_admin_add_and_remove_capture_identical_snapshots(codename, monkeypatch):
+    from app.models.audit.action_audit_event import ActionAuditEvent
+
+    monkeypatch.setattr(
+        ActionAuditEvent.objects, "record_success", lambda **kw: pytest.fail("workspace ledger touched")
+    )
     session = FakeSession(codename, None)
     row = run(
         manager().add_host(
             actor_id=7, host=f" {ONPREM.upper()}. ", kind="private", addresses=["10.0.0.5", "10.0.0.5"], session=session
         )
     )
+    assert len(session.added) == 2
+    event = session.added[1]
     assert (row.host, row.kind, row.authorized_addresses, row.created_by_actor_id) == (
         ONPREM,
         "private",
         ["10.0.0.5"],
         7,
     )
-    assert audit[-1] == {
-        "session": session,
-        "actor_kind": "user",
-        "actor_id": 7,
-        "action": "admin.trusted_host_add",
-        "resource_kind": "trusted_host",
-        "resource_id": row.id,
-    }
+    assert (event.action, event.actor_id, event.host, event.host_entry_id) == (
+        "admin.trusted_host_add",
+        7,
+        ONPREM,
+        row.id,
+    )
     removal = FakeSession(codename, row)
     assert run(manager().remove_host(actor_id=7, host_id=row.id, confirm_host=ONPREM, session=removal)) == ONPREM
+    assert len(removal.added) == 1
+    removed_event = removal.added[0]
     assert removal.deleted == [row]
-    assert audit[-1]["action"] == "admin.trusted_host_remove" and audit[-1]["actor_id"] == 7
+    assert (removed_event.action, removed_event.host, removed_event.snapshot) == (
+        "admin.trusted_host_remove",
+        ONPREM,
+        event.snapshot,
+    )
+    assert set(event.snapshot) == {
+        "id",
+        "host",
+        "kind",
+        "authorized_addresses",
+        "note",
+        "created_by_actor_id",
+        "created_at",
+    }
 
 
-def test_remove_requires_matching_confirmation(audit):
+def test_remove_requires_matching_confirmation():
     from app.models.managers.trusted_outbound_host_manager import TrustedHostError
 
     row = SimpleNamespace(id=3, host=ONPREM)
     session = FakeSession("admin", row)
     with pytest.raises(TrustedHostError) as err:
         run(manager().remove_host(actor_id=7, host_id=3, confirm_host="other.example", session=session))
-    assert err.value.code == "confirmation_required" and session.deleted == [] and audit == []
+    assert err.value.code == "confirmation_required" and session.deleted == [] and session.added == []
 
 
 @pytest.mark.parametrize(
@@ -437,6 +491,11 @@ def test_invalid_entries_are_refused_before_db(host, kind, addresses, code):
     with pytest.raises(TrustedHostError) as err:
         run(manager().add_host(actor_id=7, host=host, kind=kind, addresses=addresses, session=FakeSession()))
     assert err.value.code == code
+
+
+def test_registry_manager_exposes_no_generic_unaudited_mutation_or_queries():
+    for name in ("create", "update", "update_by_id", "delete", "delete_by_id", "filter", "all", "get_queryset"):
+        assert not hasattr(manager(), name)
 
 
 def test_installation_admin_roles_match_web_gate():
@@ -485,9 +544,9 @@ def web_client(monkeypatch, codename, tenant_id=5):
     calls = []
 
     async def add_host(**kwargs):
-        from app.core.tenant_context import current_tenant_id
+        from app.core.installation_context import installation_actor
 
-        calls.append((kwargs, current_tenant_id()))
+        calls.append((kwargs, installation_actor()))
         return SimpleNamespace(host=kwargs["host"])
 
     monkeypatch.setattr(manager(), "add_host", add_host)
@@ -508,16 +567,16 @@ def test_non_superuser_role_refused_on_admin_routes(monkeypatch, codename):
     assert calls == []
 
 
-def test_superuser_role_add_runs_in_tenant_scope_for_audit(monkeypatch):
-    client, calls = web_client(monkeypatch, "admin")
+def test_superuser_role_add_runs_in_installation_scope_without_tenant(monkeypatch):
+    client, calls = web_client(monkeypatch, "admin", tenant_id=None)
     response = client.post(
         "/app/admin/trusted-hosts/add",
         data={"_csrf": "ok", "host": ONPREM, "kind": "private", "addresses": "10.0.0.5, 10.0.0.6", "note": "pilot"},
         follow_redirects=False,
     )
     assert response.status_code == 302
-    kwargs, tenant = calls[0]
-    assert tenant == 5 and kwargs["actor_id"] == 7 and kwargs["addresses"] == ["10.0.0.5", "10.0.0.6"]
+    kwargs, actor = calls[0]
+    assert actor == 7 and kwargs["actor_id"] == 7 and kwargs["addresses"] == ["10.0.0.5", "10.0.0.6"]
     refused = client.post("/app/admin/trusted-hosts/add", data={"_csrf": "bad", "host": ONPREM}, follow_redirects=False)
     assert refused.status_code == 302 and len(calls) == 1
 
@@ -532,68 +591,195 @@ def test_admin_page_shows_live_resolution_through_the_seam(monkeypatch):
     assert run(trusted_hosts._resolve(entry))["addresses"] == ("10.0.0.5",)
 
 
-# --- schema: audit codes in four places, ORM == migration ------------------------------
+# --- installation ledger, isolation and migration -----------------------------------
 
 
-def test_audit_codes_in_sync_across_registry_manager_model_and_migration():
-    from app.models.audit.action_audit_event import ActionAuditEvent
-    from app.models.managers import action_audit_event_manager
+def test_provider_allowlist_cannot_be_widened_by_registry():
+    from app.integrations.oauth.network import OAuthNetworkError, validate_oauth_url
+
+    reader = registry(TrustedHost(ONPREM, "public"))
+    resolver = Resolver("8.8.8.8")
+    with pytest.raises(OAuthNetworkError) as err:
+        validate_oauth_url(
+            f"https://{ONPREM}/oauth/", allowed_hosts=("*.yandex.ru",), resolver=resolver, registry=reader
+        )
+    assert err.value.code == "untrusted_oauth_host" and resolver.calls == 0
+
+
+def test_real_bitrix_authorize_validates_only_the_selected_portal(monkeypatch):
+    from app.integrations.oauth import service as oauth_service
+
+    monkeypatch.setattr(oauth_service, "resolve_client_credentials", lambda *args: ("client", "secret"))
+
+    async def stop_after_validation(*args, **kwargs):
+        raise RuntimeError("reached authorization boundary")
+
+    monkeypatch.setattr(oauth_service, "_authorize_member", stop_after_validation)
+    service = oauth_service.WorkspaceOAuthService(resolver=Resolver("10.0.0.5"))
+
+    async def invoke(provider, account, url):
+        return await service.start_authorization(
+            tenant_id=1,
+            actor_id=1,
+            provider_id=provider,
+            account_key=account,
+            authorize_url_override=url,
+            session=object(),
+        )
+
+    async def loader():
+        return registry(TrustedHost(ONPREM, "private", frozenset({"10.0.0.5"})))
+
+    async def exercise():
+        async with registry_scope(loader):
+            with pytest.raises(RuntimeError, match="reached authorization boundary"):
+                await invoke("bitrix24", ONPREM, f"https://{ONPREM}/oauth/authorize/")
+            with pytest.raises(oauth_service.OAuthFlowError) as mismatch:
+                await invoke("bitrix24", ONPREM, "https://elsewhere.example/oauth/authorize/")
+            assert mismatch.value.code == "untrusted_oauth_host"
+
+    run(exercise())
+
+
+def test_workspace_member_cannot_read_installation_ledger():
+    from app.admin.table_registry import build_table_registry
+    from app.models import Base
+    from app.models.managers.trusted_outbound_host_event_manager import writer
+    from app.models.managers.trusted_outbound_host_manager import TrustedHostError
     from app.services.audit_codes import AUDIT_CODES, audit_check_sql
 
-    added = {"admin.trusted_host_add", "admin.trusted_host_remove"}
-    assert added <= set(AUDIT_CODES) and {AUDIT_CODES[c].resource_kind for c in added} == {"trusted_host"}
-    assert added <= action_audit_event_manager._SAFE_ACTIONS
-    checks = {c.name: str(c.sqltext) for c in ActionAuditEvent.__table__.constraints if hasattr(c, "sqltext")}
-    assert all(f"'{code}'" in checks["ck_action_audit_events_action"] for code in added)
-    migration = runpy.run_path(str(ROOT / "migrations/versions/0138_trusted_outbound_hosts.py"))
-    assert migration["NEW_CHECKS"] == audit_check_sql()
-    assert {code for code, _, _ in migration["ADDED_CODES"]} == added
-    assert migration["revision"] == "0138"
+    session = FakeSession("user")
+    with pytest.raises(TrustedHostError, match="admin_required"):
+        run(writer.list_events(actor_id=7, session=session))
+    assert session.results == [] and session.added == []
+    assert not {"admin.trusted_host_add", "admin.trusted_host_remove"} & set(AUDIT_CODES)
+    assert "admin.trusted_host_" not in audit_check_sql()["action"]
+    assert "trusted_outbound_host_events" not in {item["table"] for item in build_table_registry(Base.metadata)}
 
 
-def test_migration_table_matches_orm_and_downgrade_refuses_lossy(monkeypatch):
+def test_installation_administrator_can_read_ledger_after_role_recheck():
+    from app.models.managers.trusted_outbound_host_event_manager import writer
+
+    event = SimpleNamespace(host=ONPREM)
+    session = FakeSession("admin", [event])
+    assert run(writer.list_events(actor_id=7, session=session)) == [event]
+    assert not session.results
+
+
+def test_installation_event_writer_is_append_only():
+    from app.models.managers.trusted_outbound_host_event_manager import writer
+
+    for operation in (writer.update, writer.update_by_id, writer.delete, writer.delete_by_id):
+        with pytest.raises(PermissionError, match="append-only"):
+            run(operation())
+
+
+def test_dormant_yandex_resolver_is_a_named_exception():
+    source = (ROOT / "app/integrations/file_workspace/yandex_network.py").read_text()
+    assert "future Yandex metadata transport" in source and OWN_RESOLUTION.search(source)
+    # This isolated primitive has no production caller; migration to the seam is mandatory before activation.
+    import ast
+
+    importers = set()
+    for path in (ROOT / "app").rglob("*.py"):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.endswith("yandex_network"):
+                importers.add(str(path.relative_to(ROOT)))
+            if isinstance(node, ast.Import) and any(alias.name.endswith("yandex_network") for alias in node.names):
+                importers.add(str(path.relative_to(ROOT)))
+    assert importers == {
+        "app/integrations/file_workspace/yandex_tls.py",
+        "app/integrations/file_workspace/yandex_http.py",
+        "app/integrations/file_workspace/yandex_content.py",
+    }
+
+
+def test_readd_is_a_new_row_with_new_creator_and_date():
+    from app.core.installation_context import installation_scope
+
+    first_session = FakeSession("admin", None)
+    first = run(manager().add_host(actor_id=7, host=ONPREM, kind="public", session=first_session))
+    removed = FakeSession("admin", first)
+    run(manager().remove_host(actor_id=7, host_id=first.id, confirm_host=ONPREM, session=removed))
+    with installation_scope(8):
+        later = FakeSession("admin", None)
+        second = run(manager().add_host(actor_id=8, host=ONPREM, kind="public", session=later))
+    assert first is not second and second.id != first.id
+    assert first.created_by_actor_id == 7 and second.created_by_actor_id == 8
+    assert first.created_at is not None and second.created_at is not None
+    assert removed.deleted == [first]
+
+
+def test_missing_or_mismatched_installation_scope_refuses_before_db():
+    from app.core.installation_context import installation_scope
+    from app.models.managers.trusted_outbound_host_manager import TrustedHostError
+
+    for context in (None, 8):
+        session = FakeSession()
+        with installation_scope(context), pytest.raises(TrustedHostError, match="installation_context_required"):
+            run(manager().add_host(actor_id=7, host=ONPREM, kind="public", session=session))
+        assert session.added == [] and session.results == []
+    for operation in (
+        manager().list_hosts(actor_id=7, session=FakeSession()),
+        manager().remove_host(actor_id=7, host_id=1, confirm_host=ONPREM, session=FakeSession()),
+    ):
+        with installation_scope(None), pytest.raises(TrustedHostError, match="installation_context_required"):
+            run(operation)
+
+
+def test_installation_tables_have_no_tenant_fk_or_workspace_audit_dependency():
+    from app.models.integrations.trusted_outbound_host import TrustedOutboundHost
+    from app.models.integrations.trusted_outbound_host_event import TrustedOutboundHostEvent
+
+    for model in (TrustedOutboundHost, TrustedOutboundHostEvent):
+        assert "tenant_id" not in model.__table__.columns
+        assert not model.__table__.foreign_keys
+        assert "2026-11-04" in model.__doc__
+    manager_source = (ROOT / "app/models/managers/trusted_outbound_host_manager.py").read_text()
+    assert "ActionAuditEvent" not in manager_source
+    offboarding = (ROOT / "app/models/managers/workspace_offboarding_manager.py").read_text()
+    assert "trusted_outbound_host" not in offboarding
+
+
+def test_migration_tables_match_orm_and_downgrade_uses_current_registry(monkeypatch):
     import sqlalchemy as sa
 
-    from app.models.integrations.trusted_outbound_host import HOST_PATTERN, TrustedOutboundHost
+    from app.models.integrations.trusted_outbound_host import TrustedOutboundHost
+    from app.models.integrations.trusted_outbound_host_event import TrustedOutboundHostEvent
 
     migration = runpy.run_path(str(ROOT / "migrations/versions/0138_trusted_outbound_hosts.py"))
-    assert migration["HOST_PATTERN"] == HOST_PATTERN
     op = migration["op"]
-    created, calls = {}, []
-    monkeypatch.setattr(op, "create_table", lambda name, *items, **kw: created.update(name=name, items=items, kw=kw))
-    monkeypatch.setattr(op, "drop_constraint", lambda *a, **kw: calls.append(("drop", a)))
-    monkeypatch.setattr(op, "create_check_constraint", lambda *a, **kw: calls.append(("create", a)))
-    monkeypatch.setattr(op, "drop_table", lambda *a, **kw: calls.append(("drop_table", a)))
+    created, calls, statements = {}, [], []
+    monkeypatch.setattr(op, "create_table", lambda name, *items, **kw: created.update({name: (items, kw)}))
+    monkeypatch.setattr(op, "drop_table", lambda name, **kw: calls.append(name))
     migration["upgrade"]()
-    assert created["name"] == TrustedOutboundHost.__tablename__ and created["kw"]["schema"]
-    columns = {c.name: c for c in created["items"] if isinstance(c, sa.Column)}
-    orm = TrustedOutboundHost.__table__
-    assert set(columns) == set(orm.columns.keys())
-    for name, column in columns.items():
-        assert column.nullable == orm.columns[name].nullable, name
+    for model in (TrustedOutboundHost, TrustedOutboundHostEvent):
+        items, kw = created[model.__tablename__]
+        columns = {c.name: c for c in items if isinstance(c, sa.Column)}
+        assert kw["schema"] and set(columns) == set(model.__table__.columns.keys())
+        assert all(column.nullable == model.__table__.columns[name].nullable for name, column in columns.items())
 
-    def named(items):
-        return {
-            c.name: str(getattr(c, "sqltext", ""))
-            for c in items
-            if isinstance(c, (sa.CheckConstraint, sa.UniqueConstraint))
-        }
+        def named(constraints):
+            return {
+                c.name: str(getattr(c, "sqltext", ""))
+                for c in constraints
+                if isinstance(c, (sa.CheckConstraint, sa.UniqueConstraint))
+            }
 
-    assert named(created["items"]) == named(orm.constraints)
-    assert len(calls) == 6
+        assert named(items) == named(model.__table__.constraints)
 
-    monkeypatch.setattr(op, "get_bind", lambda: SimpleNamespace(execute=lambda q: SimpleNamespace(first=lambda: (1,))))
-    calls.clear()
-    with pytest.raises(ValueError, match="expired_events"):
+    def bind_with(result):
+        def execute(q):
+            statements.append(str(q))
+            return SimpleNamespace(first=lambda: result)
+
+        return SimpleNamespace(execute=execute)
+
+    monkeypatch.setattr(op, "get_bind", lambda: bind_with((1,)))
+    with pytest.raises(ValueError, match="empty_registry"):
         migration["downgrade"]()
-    assert calls == []
-    monkeypatch.setattr(op, "get_bind", lambda: SimpleNamespace(execute=lambda q: SimpleNamespace(first=lambda: None)))
+    assert not calls and "trusted_outbound_hosts" in statements[-1] and "action_audit_events" not in statements[-1]
+    monkeypatch.setattr(op, "get_bind", lambda: bind_with(None))
     migration["downgrade"]()
-    assert calls[-1][0] == "drop_table" and len(calls) == 7
-
-
-def test_model_has_no_tenant_and_cites_the_exception():
-    from app.models.integrations.trusted_outbound_host import TrustedOutboundHost
-
-    assert "tenant_id" not in TrustedOutboundHost.__table__.columns
-    assert "2026-11-04" in TrustedOutboundHost.__doc__
+    assert calls == ["trusted_outbound_host_events", "trusted_outbound_hosts"]

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint, func, text
+from sqlalchemy import CheckConstraint, DateTime, Integer, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,7 +28,7 @@ class TrustedOutboundHost(Base):
 
     `kind = 'public'` keeps the global-address rule and carries no addresses;
     `kind = 'private'` authorizes exactly `authorized_addresses`, per address.
-    Changes are audited in `action_audit_events` (`admin.trusted_host_add/remove`).
+    Changes are recorded in the installation-level `trusted_outbound_host_events` ledger.
     """
 
     __tablename__ = "trusted_outbound_hosts"
@@ -43,6 +43,7 @@ class TrustedOutboundHost(Base):
             name="ck_trusted_outbound_hosts_addresses",
         ),
         CheckConstraint("length(note) <= 200", name="ck_trusted_outbound_hosts_note"),
+        CheckConstraint("created_by_actor_id > 0", name="ck_trusted_outbound_hosts_creator"),
         {"schema": settings.DB_SCHEMA},
     )
 
@@ -51,9 +52,7 @@ class TrustedOutboundHost(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     authorized_addresses: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     note: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
-    created_by_actor_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="SET NULL"), nullable=True
-    )
+    created_by_actor_id: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     if TYPE_CHECKING:

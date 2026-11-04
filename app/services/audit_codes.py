@@ -32,8 +32,6 @@ def _registry() -> dict[str, AuditCode]:
     register("files.connector", "local_connector", ("register", "revoke", "search", "fetch", "index_delete"))
     register("documents", "document", ("create", "approve", "export"))
     register("commands", "command", ("create", "approve", "execute"))
-    # P14-T09: installation-level trusted outbound hosts; migration 0138.
-    register("admin", "trusted_host", ("trusted_host_add", "trusted_host_remove"))
     return codes
 
 

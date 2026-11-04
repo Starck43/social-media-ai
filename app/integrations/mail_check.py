@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import imaplib
+import ipaddress
 import socket
 import ssl
 from dataclasses import dataclass
@@ -28,7 +29,15 @@ class _PinnedIMAP(imaplib.IMAP4_SSL):
     def _create_socket(self, timeout):
         # The seam resolved and validated all answers; connect to the validated IP.
         # SNI and certificate verification still use the fixed provider hostname.
-        sock = socket.create_connection((self._address, 993), timeout)
+        ip = ipaddress.ip_address(self._address)
+        family = socket.AF_INET6 if ip.version == 6 else socket.AF_INET
+        sock = socket.socket(family, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(timeout)
+            sock.connect((str(ip), 993))
+        except BaseException:
+            sock.close()
+            raise
         try:
             return self.ssl_context.wrap_socket(sock, server_hostname=self.host)
         except BaseException:

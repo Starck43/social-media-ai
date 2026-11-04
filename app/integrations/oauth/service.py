@@ -221,7 +221,29 @@ class WorkspaceOAuthService:
         method = resolve_oauth_method(provider_id, method_id)
         client_id, _ = resolve_client_credentials(method, provider_id)
         auth_url_base = authorize_url_override or method.authorize_url
-        validate_oauth_url(auth_url_base, allowed_hosts=method.allowed_hosts, resolver=self._resolver)
+        allowed_hosts = method.allowed_hosts
+        if provider_id == "bitrix24" and authorize_url_override:
+            # Bitrix's explicit portal flow can use an approved installation host;
+            # the exact URL and account are bound before constructing its policy.
+            from app.core.outbound import current_registry
+            from app.integrations.bitrix24.portal import (
+                InvalidBitrixPortalError,
+                build_portal_authorize_url,
+                normalize_portal_domain,
+            )
+
+            try:
+                portal = normalize_portal_domain(
+                    account_key, is_trusted_host=lambda host: current_registry()(host) is not None
+                )
+            except InvalidBitrixPortalError as exc:
+                raise OAuthFlowError(exc.code) from exc
+            if authorize_url_override != build_portal_authorize_url(portal):
+                raise OAuthFlowError("untrusted_oauth_host")
+            # This portal flow is open by design, only after binding the approved
+            # portal and exact authorize URL above. Other providers stay closed.
+            allowed_hosts = ()
+        validate_oauth_url(auth_url_base, allowed_hosts=allowed_hosts, resolver=self._resolver)
 
         if session is None:
             async with async_session_maker() as owned, owned.begin():

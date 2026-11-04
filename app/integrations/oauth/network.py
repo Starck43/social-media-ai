@@ -3,7 +3,7 @@
 Reuses the P12-T08 network safety rules:
 - Only `https://` URLs with no embedded credentials or fragments are allowed.
 - Hostname must match the provider's allowlisted hosts (or exact template pattern),
-  or carry an installation-approved entry in the trusted outbound host registry.
+  (installation approval does not widen a non-empty provider allowlist).
 - DNS resolution must return at least one address, and EVERY resolved IP address
   must be globally routable unless the registry authorizes it (P14-T09).
 - HTTP redirects are disabled (`follow_redirects=False`).

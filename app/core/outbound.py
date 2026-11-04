@@ -9,9 +9,8 @@ a DNS resolver and a registry reader — so tests never touch the network or a D
 Rules, in order:
 
 1. Normalize the host (lower case, no trailing dot).
-2. A host is eligible when it matches the caller's static policy (cloud suffixes
-   and known endpoints stay code-owned) or has an installation-approved entry in
-   the trusted outbound host registry. Otherwise: `host_not_trusted`.
+2. A non-empty static policy must match the host, regardless of registry entries.
+   Explicit self-hosted flows validate the host before choosing their policy.
 3. Resolve DNS on *every* attempt. Nothing here caches or pins an address.
 4. Without a registry entry every resolved address must be globally routable
    (`private_address_forbidden`). A `public` entry keeps that rule; a `private`
@@ -180,7 +179,7 @@ def acquire_outbound_target(
     if entry is not None and entry.kind not in KINDS:
         entry = None
 
-    if entry is None and not policy.matches(normalized):
+    if not policy.matches(normalized):
         raise OutboundRefusal(HOST_NOT_TRUSTED, normalized)
 
     if _is_ip(normalized):

@@ -15,6 +15,8 @@ from typing import Any, Iterable
 from sqlalchemy import select
 
 from app.core import outbound
+from app.core.installation_context import installation_actor
+from app.models.managers.trusted_outbound_host_event_manager import writer
 from app.types import PlatformRoleType
 
 from .base_manager import BaseManager
@@ -25,9 +27,6 @@ logger = logging.getLogger(__name__)
 INSTALLATION_ADMIN_ROLES = frozenset({PlatformRoleType.OPERATOR.value, PlatformRoleType.ADMIN.value})
 MAX_ADDRESSES = 16
 MAX_HOSTS = 200
-AUDIT_ADD = "admin.trusted_host_add"
-AUDIT_REMOVE = "admin.trusted_host_remove"
-AUDIT_RESOURCE = "trusted_host"
 
 
 class TrustedHostError(ValueError):
@@ -84,11 +83,16 @@ def to_entry(row: Any) -> outbound.TrustedHost:
     )
 
 
-class TrustedOutboundHostManager(BaseManager):
+class TrustedOutboundHostManager:
     def __init__(self):
         from ..integrations.trusted_outbound_host import TrustedOutboundHost
 
-        super().__init__(TrustedOutboundHost)
+        self.model = TrustedOutboundHost
+        # Use only the session helper, not generic unaudited mutation APIs.
+        self._sessions = BaseManager(TrustedOutboundHost)
+
+    def _get_owned_session(self, session=None):
+        return self._sessions._get_owned_session(session)
 
     async def snapshot(self, session=None) -> outbound.RegistryReader:
         async with self._get_owned_session(session) as db:
@@ -112,7 +116,18 @@ class TrustedOutboundHostManager(BaseManager):
         if codename not in INSTALLATION_ADMIN_ROLES:
             raise TrustedHostError("admin_required")
 
+    @staticmethod
+    def _require_context(actor_id: int) -> None:
+        if (
+            type(actor_id) is not int
+            or actor_id <= 0
+            or type(installation_actor()) is not int
+            or installation_actor() != actor_id
+        ):
+            raise TrustedHostError("installation_context_required")
+
     async def list_hosts(self, *, actor_id: int, session=None) -> list[Any]:
+        self._require_context(actor_id)
         async with self._get_owned_session(session) as db:
             await self._require_admin(db, actor_id)
             return list((await db.execute(select(self.model).order_by(self.model.host))).scalars().all())
@@ -127,8 +142,7 @@ class TrustedOutboundHostManager(BaseManager):
         note: str = "",
         session=None,
     ):
-        from app.models.audit.action_audit_event import ActionAuditEvent
-
+        self._require_context(actor_id)
         normalized = validate_host(host)
         authorized = validate_addresses(kind, addresses)
         clean_note = str(note or "").strip()[:200]
@@ -146,19 +160,11 @@ class TrustedOutboundHostManager(BaseManager):
             )
             db.add(row)
             await db.flush()
-            await ActionAuditEvent.objects.record_success(
-                session=db,
-                actor_kind="user",
-                actor_id=actor_id,
-                action=AUDIT_ADD,
-                resource_kind=AUDIT_RESOURCE,
-                resource_id=row.id,
-            )
+            await writer._record(session=db, action="admin.trusted_host_add", actor_id=actor_id, row=row)
             return row
 
     async def remove_host(self, *, actor_id: int, host_id: int, confirm_host: str, session=None) -> str:
-        from app.models.audit.action_audit_event import ActionAuditEvent
-
+        self._require_context(actor_id)
         async with self._get_owned_session(session) as db:
             await self._require_admin(db, actor_id)
             row = (await db.execute(select(self.model).where(self.model.id == host_id).with_for_update())).scalar()
@@ -167,14 +173,7 @@ class TrustedOutboundHostManager(BaseManager):
             if str(confirm_host or "").strip().lower() != row.host:
                 raise TrustedHostError("confirmation_required")
             host = row.host
-            await ActionAuditEvent.objects.record_success(
-                session=db,
-                actor_kind="user",
-                actor_id=actor_id,
-                action=AUDIT_REMOVE,
-                resource_kind=AUDIT_RESOURCE,
-                resource_id=row.id,
-            )
+            await writer._record(session=db, action="admin.trusted_host_remove", actor_id=actor_id, row=row)
             await db.delete(row)
             await db.flush()
             return host

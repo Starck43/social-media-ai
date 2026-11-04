@@ -15,7 +15,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from app.core import outbound
-from app.core.tenant_context import tenant_scope
+from app.core.installation_context import installation_scope
 from app.models.managers.trusted_outbound_host_manager import TrustedHostError, to_entry
 
 from .deps import add_flash, ensure_csrf, guard_superuser, render
@@ -39,6 +39,7 @@ _ERRORS = {
     "host_already_trusted": "Этот хост уже есть в списке.",
     "host_not_found": "Хост уже удалён.",
     "confirmation_required": "Удаление не подтверждено.",
+    "installation_context_required": "Контекст администратора установки недоступен",
     "admin_required": "Недостаточно прав для этого действия",
 }
 
@@ -49,11 +50,6 @@ def _actor_id(request: Request) -> int | None:
     if user is None or not getattr(user, "is_active", False) or type(actor_id) is not int or actor_id <= 0:
         return None
     return actor_id
-
-
-def _tenant_id(request: Request) -> int | None:
-    tenant_id = getattr(request.state, "tenant_id", None)
-    return tenant_id if type(tenant_id) is int and tenant_id > 0 else None
 
 
 def _check(entry: outbound.TrustedHost) -> dict:
@@ -83,9 +79,10 @@ async def trusted_hosts_page(request: Request):
         return denied
     actor_id = _actor_id(request)
     try:
-        rows = await TrustedOutboundHost.objects.list_hosts(actor_id=actor_id)
-    except TrustedHostError:
-        add_flash(request, "error", _ERRORS["admin_required"])
+        with installation_scope(actor_id):
+            rows = await TrustedOutboundHost.objects.list_hosts(actor_id=actor_id)
+    except TrustedHostError as exc:
+        add_flash(request, "error", _ERRORS.get(exc.code, _ERRORS["admin_required"]))
         return RedirectResponse(DENIED_BACK, status_code=302)
     checks = await asyncio.gather(*(_resolve(to_entry(row)) for row in rows))
     return render(
@@ -93,7 +90,7 @@ async def trusted_hosts_page(request: Request):
         "web/trusted_hosts.html",
         section="admin",
         hosts=list(zip(rows, checks)),
-        can_write=_tenant_id(request) is not None,
+        can_write=True,
     )
 
 
@@ -118,12 +115,8 @@ async def trusted_host_add(
     denied = guard_superuser(request, back=DENIED_BACK)
     if denied is not None:
         return denied
-    tenant_id = _tenant_id(request)
-    if tenant_id is None:
-        add_flash(request, "error", "Выберите пространство: изменение записывается в его журнал аудита")
-        return RedirectResponse(BACK, status_code=302)
     try:
-        with tenant_scope(tenant_id):
+        with installation_scope(_actor_id(request)):
             row = await TrustedOutboundHost.objects.add_host(
                 actor_id=_actor_id(request),
                 host=host,
@@ -153,12 +146,8 @@ async def trusted_host_remove(
     denied = guard_superuser(request, back=DENIED_BACK)
     if denied is not None:
         return denied
-    tenant_id = _tenant_id(request)
-    if tenant_id is None:
-        add_flash(request, "error", "Выберите пространство: изменение записывается в его журнал аудита")
-        return RedirectResponse(BACK, status_code=302)
     try:
-        with tenant_scope(tenant_id):
+        with installation_scope(_actor_id(request)):
             host = await TrustedOutboundHost.objects.remove_host(
                 actor_id=_actor_id(request), host_id=host_id, confirm_host=confirm_host
             )

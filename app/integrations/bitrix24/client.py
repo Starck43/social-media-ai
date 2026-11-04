@@ -48,7 +48,6 @@ from app.types import ActionType
 from app.utils.crypto import decrypt_secret, encrypt_secret
 
 from .portal import (
-    CLOUD_BITRIX_SUFFIXES,
     InvalidBitrixPortalError,
     build_portal_authorize_url,
     build_portal_rest_url,
@@ -165,13 +164,6 @@ async def _load_trusted_registry() -> outbound.RegistryReader:
     return await load_trusted_registry()
 
 
-# Code-owned cloud policy. On-premise portals are never listed here: they reach the
-# seam only through an installation-approved registry entry (P14-T09).
-BITRIX24_STATIC_POLICY = outbound.StaticPolicy(
-    ("oauth.bitrix.info", *[f"*{suffix}" for suffix in CLOUD_BITRIX_SUFFIXES])
-)
-
-
 class Bitrix24Service:
     """Bitrix24 OAuth 2.0 connection manager, REST client, batch executor, and health checker.
 
@@ -194,9 +186,6 @@ class Bitrix24Service:
         self._resolver = resolver
         self._http_client = http_client
         self._registry_loader = registry_loader
-
-    def _allowed_hosts_for(self, portal_domain: str) -> tuple[str, ...]:
-        return BITRIX24_STATIC_POLICY.allowed_hosts
 
     @staticmethod
     def _portal(raw_domain: str) -> str:
@@ -269,6 +258,12 @@ class Bitrix24Service:
                 redirect_uri=redirect_uri,
                 session=session,
             )
+        except OAuthNetworkError as exc:
+            raise Bitrix24Error(
+                exc.code,
+                str(exc.refusal or "Bitrix24 operation failed"),
+                status_code=422 if exc.refusal and exc.refusal.code in outbound.TRUST_REFUSALS else 502,
+            ) from exc
         except OAuthFlowError as exc:
             raise Bitrix24Error(exc.code, status_code=400) from exc
 
@@ -390,7 +385,7 @@ class Bitrix24Service:
 
         portal_domain = str((row.config or {}).get("portal_domain") or row.account_key)
         # Re-checked per attempt: a host removed from the registry fails closed here.
-        self._portal(portal_domain)
+        portal_domain = self._portal(portal_domain)
 
         secret_row = await session.get(WorkspaceConnectionSecret, row.id)
         if secret_row is None or not secret_row.secret_encrypted:
@@ -418,12 +413,17 @@ class Bitrix24Service:
             status_code, body = await post_oauth_form(
                 url,
                 form_payload,
-                allowed_hosts=self._allowed_hosts_for(portal_domain),
+                # Open policy is safe here only after the explicit portal check above.
+                allowed_hosts=(),
                 resolver=self._resolver,
                 http_client=self._http_client,
             )
         except OAuthNetworkError as exc:
-            raise Bitrix24Error(exc.code, str(exc.refusal or "Bitrix24 operation failed"), status_code=502) from exc
+            raise Bitrix24Error(
+                exc.code,
+                str(exc.refusal or "Bitrix24 operation failed"),
+                status_code=422 if exc.refusal and exc.refusal.code in outbound.TRUST_REFUSALS else 502,
+            ) from exc
 
         error_code = str(body.get("error") or "").strip()
         if error_code in {"expired_token", "invalid_token", "NO_AUTH_FOUND"} or status_code == 401:

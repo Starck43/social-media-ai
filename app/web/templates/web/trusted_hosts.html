@@ -20,7 +20,7 @@
                     <th class="py-2 pr-4">Хост</th>
                     <th class="py-2 pr-4">Тип</th>
                     <th class="py-2 pr-4">Разрешённые адреса</th>
-                    <th class="py-2 pr-4">Адреса сейчас</th>
+                    <th class="py-2 pr-4">Адреса сейчас (порт 443)</th>
                     <th class="py-2 pr-4">Комментарий</th>
                     <th class="py-2"></th>
                 </tr>
@@ -89,7 +89,7 @@
         </div>
     </form>
     {% else %}
-        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Выберите пространство: каждое изменение записывается в его журнал аудита.</p>
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Изменение недоступно.</p>
     {% endif %}
 </section>
 {% endblock %}

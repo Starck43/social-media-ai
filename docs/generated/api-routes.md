@@ -26,6 +26,13 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/auth/login | login_access_token_api_v1_auth_login_post |
 | POST | /api/v1/auth/refresh-token | refresh_access_token_api_v1_auth_refresh_token_post |
 | POST | /api/v1/auth/register | create_user_api_v1_auth_register_post |
+| GET | /api/v1/commands | list_commands_endpoint_api_v1_commands_get |
+| POST | /api/v1/commands/preview | preview_command_endpoint_api_v1_commands_preview_post |
+| GET | /api/v1/commands/{command_id} | get_command_endpoint_api_v1_commands__command_id__get |
+| POST | /api/v1/commands/{command_id}/approve | approve_command_endpoint_api_v1_commands__command_id__approve_post |
+| POST | /api/v1/commands/{command_id}/execute | execute_command_endpoint_api_v1_commands__command_id__execute_post |
+| POST | /api/v1/commands/{command_id}/reconcile | reconcile_command_endpoint_api_v1_commands__command_id__reconcile_post |
+| POST | /api/v1/commands/{command_id}/reject | reject_command_endpoint_api_v1_commands__command_id__reject_post |
 | GET | /api/v1/connector-accounts | list_reusable_accounts_api_v1_connector_accounts_get |
 | GET | /api/v1/connector-accounts/grants | list_workspace_grants_api_v1_connector_accounts_grants_get |
 | POST | /api/v1/connector-accounts/grants/{grant_id}/detach | detach_workspace_grant_api_v1_connector_accounts_grants__grant_id__detach_post |

@@ -91,6 +91,8 @@ def bind_managers(models):
     models.PersonalLLMBillingIncident.objects = BaseManager(models.PersonalLLMBillingIncident)
     models.LLMProvider.objects = import_module("app.models.managers.llm_provider_manager").LLMProviderManager()
     models.BotAction.objects = import_module("app.models.managers.bot_action_manager").BotActionManager()
+    models.BusinessCommand.objects = BaseManager(models.BusinessCommand)
+    models.BusinessCommandTarget.objects = BaseManager(models.BusinessCommandTarget)
     models.Source.objects = import_module("app.models.managers.source_manager").SourceManager()
     models.AgentTask.objects = import_module("app.models.managers.agent_task_manager").AgentTaskManager()
     models.AgentScenario.objects = import_module("app.models.managers.agent_scenario_manager").AgentScenarioManager()

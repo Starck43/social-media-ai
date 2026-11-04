@@ -146,14 +146,12 @@ Rollback for each of the three: they are additive columns and one table with no 
 outside the two calendar tasks, so backing out is deleting the table and the column,
 not migrating data.
 
-### The channel question (P15-T07) — deliberately unanswered
+### Scope note: calendars and task systems only
 
-A contact's "primary channel" is not the same shape as "which calendar", because the
-channel is **per contact and per purpose**, and consent is recorded per channel and
-purpose ([D15](q-19-messaging-decisions.md)). A single "main channel" would silently
-override consent. `P15-T07`'s scored recommendation with reasons is the honest version:
-it suggests, it names why, and it never sends. It should not gain a default until a user
-interface needs one.
+D26 governs **sources of the same capability connected side by side** — calendars, task
+systems. Which channel reaches a contact is not that question: it is chosen per contact
+and per moment by the agent in [P15-T07](../tasks/p15-t07.md), bounded only by consent
+([D15](q-19-messaging-decisions.md)). Nothing about a channel is stored as a default here.
 
 ## Where this bites first
 

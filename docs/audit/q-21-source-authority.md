@@ -99,6 +99,62 @@ reference plus what is genuinely ours.
   provider can be registered and still not be the chosen one.
 
 
+## What is realistically buildable (auditor summary, 2026-11-05)
+
+D24, D25 and D26 are one rule with three layers. The layers do **not** cost the same,
+and pretending they do is how a small decision becomes a phase.
+
+**Cheap — text and one column per module.** D24 in full: a module keeps only what we
+decided; an unreachable source degrades to "unavailable"; the planner stores its rule
+as text with `recurrence_source` ([P16-T01](../tasks/p16-t01.md) steps 2/2a/2b). No new
+table, no new migration beyond the one each task already needs.
+
+**Cheap — one small table at the second consumer, not the first.** D25's shared
+registry of source objects is real, but the first calendar does not need it: with one
+provider, `(tenant_id, connection_id, external_id)` inside the module is already the
+registry. It becomes a table when the **second** consumer arrives
+([P16-T04](../tasks/p16-t04.md), Yandex next to Google). Building it before then would
+be an abstraction with one caller and no test that can fail for the right reason.
+
+**Cheap — one stored choice per capability.** D26 is a tenant-scoped row the user
+creates by answering: which source is used for calendars, which for task systems. No
+matching, no scoring, no heuristic. The overlap prompt on a second connection is a
+read of "more than one registered connection of this capability", which the connection
+table already answers. What is *not* cheap, and is explicitly out of scope: detecting
+that two *objects* are the same thing. That stays a suggestion surfaced through a normal
+flow ([P15-T03](../tasks/p15-t03.md) rule), never an automatic merge.
+
+**Not cheap, and not asked for.** A unified task model spanning every provider, a
+merged calendar view stored as rows, recurrence reconciliation across providers. All
+three are what D25's "orchestrate, do not invent" rules out.
+
+### Decision: link the cards, do not open a new task
+
+The cards already carry the boundaries (P16-T01/T03/T04). Opening a separate
+"source registry" task would create an ownerless row with no first consumer, and the
+first consumer decides its shape. Instead:
+
+1. `P16-T03` builds the connection-scoped identity it already specifies and does **not**
+   generalise it.
+2. `P16-T04` is where the registry table is introduced — because it is the first
+   second-consumer — and it is bound to moving `P16-T03`'s identity into it, not to
+   copying it.
+3. `P16-T01`'s `recurrence_source` is the only hand-over switch; nothing else changes
+   shape when a calendar arrives.
+
+Rollback for each of the three: they are additive columns and one table with no readers
+outside the two calendar tasks, so backing out is deleting the table and the column,
+not migrating data.
+
+### The channel question (P15-T07) — deliberately unanswered
+
+A contact's "primary channel" is not the same shape as "which calendar", because the
+channel is **per contact and per purpose**, and consent is recorded per channel and
+purpose ([D15](q-19-messaging-decisions.md)). A single "main channel" would silently
+override consent. `P15-T07`'s scored recommendation with reasons is the honest version:
+it suggests, it names why, and it never sends. It should not gain a default until a user
+interface needs one.
+
 ## Where this bites first
 
 | Task | The source decides | We keep | Forbidden |

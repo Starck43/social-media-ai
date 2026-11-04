@@ -173,6 +173,9 @@ def test_signed_request_rejects_actor_substitution_and_unknown_fields():
 
 
 def test_search_arguments_enforce_utf8_byte_and_root_boundaries():
+    assert SearchArgs(query="ю" * 2048, roots=["root-a"]).checked().query == "ю" * 2048
+    with pytest.raises(ConnectorUnavailable):
+        SearchArgs(query="ю" * 2048 + "x", roots=["root-a"]).checked()
     with pytest.raises(ConnectorUnavailable):
         SearchArgs(query="я" * 1025, roots=["root-a"]).checked()
     with pytest.raises(ConnectorUnavailable):
@@ -548,16 +551,24 @@ def test_runtime_fails_closed_when_connector_is_not_enabled(monkeypatch):
 
 
 def test_route_wiring_exposes_connector_lifecycle_and_results_search_contract():
-    routes = {(route.path, method): route for route in api_router.routes for method in getattr(route, "methods", ())}
+    from fastapi import FastAPI
+
+    application = FastAPI()
+    application.include_router(api_router, prefix="/api/v1")
+    openapi = application.openapi()
+    routes = {(path, method.upper()) for path, operations in openapi["paths"].items() for method in operations}
     expected = {
-        ("/files/connectors/pairings", "POST"),
-        ("/files/connectors/register", "POST"),
-        ("/files/connectors/pairings/{pairing_id}/confirm", "POST"),
-        ("/files/connectors", "GET"),
-        ("/files/connectors/{device_id}", "DELETE"),
-        ("/files/connectors/{device_id}/roots", "PUT"),
-        ("/files/search", "POST"),
+        ("/api/v1/files/connectors/pairings", "POST"),
+        ("/api/v1/files/connectors/register", "POST"),
+        ("/api/v1/files/connectors/pairings/{pairing_id}/confirm", "POST"),
+        ("/api/v1/files/connectors", "GET"),
+        ("/api/v1/files/connectors/{device_id}", "DELETE"),
+        ("/api/v1/files/connectors/{device_id}/roots", "PUT"),
+        ("/api/v1/files/search", "POST"),
     }
-    assert expected <= routes.keys()
-    assert routes[("/files/search", "POST")].response_model is Results
-    assert {"hits", "partial"} <= set(Results.model_fields)
+    assert expected <= routes
+    response_schema = openapi["paths"]["/api/v1/files/search"]["post"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert response_schema == {"$ref": "#/components/schemas/Results"}
+    assert {"hits", "partial"} <= set(openapi["components"]["schemas"]["Results"]["properties"])

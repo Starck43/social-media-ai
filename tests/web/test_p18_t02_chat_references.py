@@ -243,7 +243,10 @@ async def test_chat_search_is_default_off_and_sanitizes_malformed_gateway_payloa
     monkeypatch.setattr(settings, "LOCAL_CONNECTOR_ENABLED", True)
     monkeypatch.setattr(settings, "LOCAL_CONNECTOR_SECURITY_REVIEWED", True)
     monkeypatch.setattr(runtime, "get_gateway", lambda: connector_gateway)
-    connector_gateway.dispatch.payload = {"hits": [{"snippet": "SECRET-MALFORMED"}], "partial": False}
+    connector_gateway.dispatch = SearchDispatch(
+        payload={"hits": [{"snippet": "SECRET-MALFORMED"}], "partial": False},
+        snapshots=connector_gateway.dispatch.snapshots,
+    )
     malformed = await chat.chat_connector_search(
         make_request(fields={"query": "q", "device_id": "11", "roots": ["company-root"]})
     )

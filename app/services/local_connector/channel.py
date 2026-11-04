@@ -3,6 +3,8 @@
 import asyncio
 from dataclasses import dataclass, field
 
+from pydantic import ValidationError
+
 from .wire import MAX_CONTROL_BYTES, TIMEOUT, ConnectorUnavailable, SearchResponse, decode
 
 
@@ -67,7 +69,11 @@ class ConnectorChannels:
     def receive(self, device_id, session, payload):
         if self.sessions.get(device_id) is not session or len(payload) > MAX_CONTROL_BYTES:
             raise ConnectorUnavailable()
-        response = SearchResponse.model_validate(decode(payload))
+        decoded = decode(payload)
+        try:
+            response = SearchResponse.model_validate(decoded)
+        except ValidationError:
+            raise ConnectorUnavailable() from None
         future = session.pending.get(response.request_id)
         if future is None or future.done():
             raise ConnectorUnavailable()

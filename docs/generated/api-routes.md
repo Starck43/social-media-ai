@@ -69,6 +69,13 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/dashboard/topic-chains/{chain_id} | get_topic_chain_details_api_v1_dashboard_topic_chains__chain_id__get |
 | GET | /api/v1/dashboard/topic-chains/{chain_id}/evolution | get_topic_chain_evolution_api_v1_dashboard_topic_chains__chain_id__evolution_get |
 | GET | /api/v1/dashboard/trends/{source_id} | get_source_trends_api_v1_dashboard_trends__source_id__get |
+| GET | /api/v1/files/connectors | devices_api_v1_files_connectors_get |
+| POST | /api/v1/files/connectors/pairings | begin_api_v1_files_connectors_pairings_post |
+| POST | /api/v1/files/connectors/pairings/{pairing_id}/confirm | confirm_api_v1_files_connectors_pairings__pairing_id__confirm_post |
+| POST | /api/v1/files/connectors/register | offer_api_v1_files_connectors_register_post |
+| DELETE | /api/v1/files/connectors/{device_id} | revoke_api_v1_files_connectors__device_id__delete |
+| PUT | /api/v1/files/connectors/{device_id}/roots | consent_api_v1_files_connectors__device_id__roots_put |
+| POST | /api/v1/files/search | search_api_v1_files_search_post |
 | GET | /api/v1/health | health_check_api_v1_health_get |
 | GET | /api/v1/llm/llm-models/ | list_llm_models_api_v1_llm_llm_models__get |
 | POST | /api/v1/llm/llm-models/ | create_llm_model_api_v1_llm_llm_models__post |

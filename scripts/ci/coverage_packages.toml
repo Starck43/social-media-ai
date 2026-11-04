@@ -19,3 +19,14 @@ tests = ["tests/api/test_p13_t05_contracts.py"]
 [[package]]
 path = "app/schemas/business.py"
 tests = ["tests/api/test_p13_t05_contracts.py"]
+
+[[package]]
+path = "app/services/local_connector"
+tests = [
+    "tests/integrations/test_p18_t02_pairing_bounds.py",
+    "tests/integrations/test_p18_t02_lifecycle.py",
+    "tests/integrations/test_p18_t02_protocol.py",
+    "tests/integrations/test_p18_t02_release_fence.py",
+    "tests/integrations/test_p18_t02_websocket_size.py",
+    "tests/web/test_p18_t02_chat_references.py",
+]

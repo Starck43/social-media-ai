@@ -33,5 +33,5 @@ EXPOSE 8000
 
 # Default entrypoint: API (the agent runtime is started via
 # `python -m app.runtime`, the worker via `python -m app.worker`)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--ws", "websockets", "--ws-max-size", "65536", "--ws-max-queue", "1", "--ws-per-message-deflate", "false"]
 

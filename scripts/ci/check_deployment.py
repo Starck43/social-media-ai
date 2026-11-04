@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import ast
 import base64
+import json
 import os
 import re
 import secrets
@@ -33,6 +34,69 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/deploy.yml"
 PASS_COUNT = 0
 INVALID_PLACEHOLDER = "replace-with-test-placeholder"
+WEBSOCKET_MAX_MESSAGE_BYTES = 65_536
+
+
+def websocket_server_config(command: str | list[str], label: str) -> None:
+    rendered = command if isinstance(command, str) else " ".join(command)
+    value_boundary = r'(?:\s|["\']|$)'
+    requirements = (
+        (r"(?:^|\s)--ws\s+websockets" + value_boundary, "explicit Uvicorn websockets backend"),
+        (
+            rf"(?:^|\s)--ws-max-size\s+{WEBSOCKET_MAX_MESSAGE_BYTES}" + value_boundary,
+            "64 KiB pre-ASGI message limit",
+        ),
+        (r"(?:^|\s)--ws-max-queue\s+1" + value_boundary, "bounded one-message queue"),
+        (r"(?:^|\s)--ws-per-message-deflate\s+false" + value_boundary, "disabled per-message compression"),
+    )
+    for pattern, description in requirements:
+        require(bool(re.search(pattern, rendered)), f"{label} must configure {description}")
+
+
+def development_websocket_config() -> None:
+    compose = load_yaml(ROOT / "docker/docker-compose.yml")
+    command = compose.get("services", {}).get("api", {}).get("command", "")
+    websocket_server_config(command, "Development API")
+
+    tree = ast.parse(read(ROOT / "app/main.py"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "uvicorn"
+    ]
+    require(len(calls) == 1, "Development entrypoint must define exactly one uvicorn.run call")
+    values = {keyword.arg: keyword.value for keyword in calls[0].keywords if keyword.arg is not None}
+    expected = {
+        "ws": "websockets",
+        "ws_max_size": WEBSOCKET_MAX_MESSAGE_BYTES,
+        "ws_max_queue": 1,
+        "ws_per_message_deflate": False,
+    }
+    for name, value in expected.items():
+        require(
+            name in values and ast.literal_eval(values[name]) == value,
+            f"app.main uvicorn.run must set {name}={value!r}",
+        )
+
+
+def dockerfile_websocket_config() -> None:
+    dockerfile = ROOT / "docker/Dockerfile"
+    commands = []
+    for line in read(dockerfile).splitlines():
+        match = re.match(r"^\s*CMD\s+(\[.*\])\s*$", line)
+        if match:
+            commands.append(json.loads(match.group(1)))
+    require(len(commands) == 1, "Dockerfile must define exactly one JSON-form CMD")
+    command = commands[0]
+    require(
+        isinstance(command, list) and command[:2] == ["uvicorn", "app.main:app"],
+        "Dockerfile default CMD must launch the API through Uvicorn",
+    )
+    websocket_server_config(command, "Dockerfile default API")
 
 
 def require(condition: bool, message: str) -> None:
@@ -59,6 +123,7 @@ def list_value(value) -> list:
 
 
 def compose_contract() -> tuple[dict, dict]:
+    development_websocket_config()
     production = load_yaml(ROOT / "docker/docker-compose.production.yml")
     staging = load_yaml(ROOT / "docker/docker-compose.staging.yml")
     prod_services = production.get("services", {})
@@ -124,6 +189,7 @@ def compose_contract() -> tuple[dict, dict]:
         require(
             "uvicorn" in api_command and "alembic" not in api_command, f"{name} API startup must not run migrations"
         )
+        websocket_server_config(list_value(services["api"].get("command")), f"{name} API")
         require(
             list_value(services["api"].get("expose")) == ["8000"], f"{name} API must expose only its internal HTTP port"
         )
@@ -641,6 +707,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         production, staging = compose_contract()
+        dockerfile_websocket_config()
         dockerfile_contract(production, "production")
         dockerfile_contract(staging, "staging")
         workflow_contract()

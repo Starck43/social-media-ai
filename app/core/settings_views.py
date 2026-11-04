@@ -10,6 +10,9 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 SENSITIVE_FIELDS = frozenset(
     {
+        "LOCAL_CONNECTOR_CA_KEY",
+        "LOCAL_CONNECTOR_SIGNING_KEY",
+        "LOCAL_CONNECTOR_PAIRING_KEY",
         "SECRET_KEY",
         "POSTGRES_URL",
         "REDIS_URL",

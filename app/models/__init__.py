@@ -44,6 +44,9 @@ from .file_workspace.private_insights import (
 )
 from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
 from .integrations import (
+    LocalConnector,
+    LocalConnectorPairing,
+    LocalConnectorRequest,
     PersonalConnectorAuthorization,
     TelegramLoginAttempt,
     TelegramLoginRequestKey,
@@ -66,6 +69,9 @@ from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
 __all__ = [
+    "LocalConnector",
+    "LocalConnectorPairing",
+    "LocalConnectorRequest",
     "Contact",
     "ContactIdentity",
     "ContactConsent",

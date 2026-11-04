@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     contacts,
     credentials,
     dashboard,
+    files_connectors,
     llm_models,
     llm_providers,
     monitoring,
@@ -50,6 +51,7 @@ router.include_router(credentials.router, prefix="/credentials", tags=["credenti
 router.include_router(
     connector_accounts.router, prefix="/connector-accounts", tags=["connector-accounts"], dependencies=API_AUTH
 )
+router.include_router(files_connectors.router)
 router.include_router(action_audit.router, prefix="/audit", tags=["action-audit"], dependencies=API_AUTH)
 
 

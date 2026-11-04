@@ -21,6 +21,8 @@ dependencies = [
     "fastapi==0.143.2",
     "starlette==1.8.0",
     "uvicorn==0.54.0",
+    # Uvicorn uses this backend's protocol-level message limit before delivering ASGI frames.
+    "websockets==17.4",
     "python-multipart==0.0.32",
     "httpx==0.28.1",
     # Used explicitly by the pinned Yandex TLS transport; independent of CA env overrides.

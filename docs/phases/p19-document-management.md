@@ -2,7 +2,7 @@
 
 [Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p19)
 
-**Phase status: PLANNED** (registered by [P13-T01](../tasks/p13-t01.md); ROADMAP owns task status).
+**Phase status: PLANNED** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
 Owner estimate (TZ): 4–5 weeks — not a repository commitment.
 
 **Goal:** Draft business letters and claim responses with AI from case/CRM context, keep full version history with diff/restore, run approval on an exact revision and export/deliver DOCX/PDF.

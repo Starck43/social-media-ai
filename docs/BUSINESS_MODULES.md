@@ -1,7 +1,7 @@
 # Business modules P13–P19: adapted specification and review
 
 [Product direction](PRODUCT_PLAN.md#business-modules) · [Phases](phases/README.md) ·
-[ROADMAP](../ROADMAP.md#p13) · planning task [P13-T01](tasks/p13-t01.md) · owner decisions [Q-18](audit/q-18-owner-decisions.md)
+[ROADMAP](../ROADMAP.md#p13) · planning task [P13-T01 accepted](audit/p13-t01.md) · owner decisions [Q-18](audit/q-18-owner-decisions.md)
 
 The owner's technical specification (TZ, 2026-11-03) adds six business modules
 with an owner estimate of 26–33 weeks. This document is the canonical,
@@ -176,7 +176,7 @@ is kept for reference only.
 | --- | --- | --- | --- |
 | D1 | Priority band of the new phases — **answered 2026-11-04**: P13 + P14 in `P2`, P15–P19 in `P3` | P13 + P14 in `P2`, P15–P19 in `P3` (row order = TZ order) | ROADMAP |
 | D2 | Bitrix24 authorization — **answered 2026-11-04**: OAuth 2.0 local application per portal; webhook is an admin-only single-portal alternative (not a second equal path) | OAuth 2.0 local application per portal (TZ); incoming webhook kept as an admin-only alternative for a single portal | P14-T01 |
-| D3 | Searchable message/document content vs. Fernet — **answered 2026-11-04**: metadata only; no content cache, no full-text index. Content search is a new measured decision later, not a pre-approved option | Encrypt identifiers; keep an optional per-workspace content cache with retention TTL and PostgreSQL full-text index, disabled by default; otherwise search metadata only. Answer this together with the FTS dependency: no `tsvector`/`pg_trgm`/`unaccent` usage or Russian configuration exists in the current code or migrations, so the index type and language configuration must be decided and measured first (audit F-4 of [P13-T01](audit/p13-t01.md)) | P15-T04, P19-T06 |
+| D3 | Searchable message/document content vs. Fernet — **answered 2026-11-04**: metadata only; no content cache, no full-text index. Content search is a new measured decision later, not a pre-approved option | Encrypt identifiers; keep an optional per-workspace content cache with retention TTL and PostgreSQL full-text index, disabled by default; otherwise search metadata only. Answer this together with the FTS dependency: no `tsvector`/`pg_trgm`/`unaccent` usage or Russian configuration exists in the current code or migrations, so the index type and language configuration must be decided and measured first (audit F-4 of [P13-T01 accepted](audit/p13-t01.md)) | P15-T04, P19-T06 |
 | D4 | Calendar write approval mode — **answered 2026-11-04**: per-connection consent + per-event audit; conflicting or deleting changes need per-item approval | Explicit per-connection write consent + per-event audit; conflicting or deleting changes require per-item approval | P16-T03/T04 |
 | D5 | 1C network path — **answered 2026-11-04**: published HTTPS with allowlisted host first; P18 connector as documented fallback | Published HTTPS endpoint with allowlisted host first; tunnel via P18 connector later | P17-T01 |
 | D6 | Desktop connector stack and signing — **answered 2026-11-04**: Python + PyInstaller; pilot and early builds unsigned (Windows SmartScreen and macOS Gatekeeper warnings accepted), signing and notarization deferred to a follow-up after the pilot | Python + PyInstaller, signed builds for Windows/macOS, AppImage/deb for Linux | P18-T03/T07 |

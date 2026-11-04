@@ -2,7 +2,7 @@
 
 [Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p15)
 
-**Phase status: PLANNED** (registered by [P13-T01](../tasks/p13-t01.md); ROADMAP owns task status).
+**Phase status: PLANNED** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
 Owner estimate (TZ): 5–6 weeks — not a repository commitment.
 
 **Goal:** Combine conversations from Telegram, MAX and email into one inbox per contact, reconcile identities, recommend the right channel and send approved, scheduled, multi-channel messages with delivery tracking.

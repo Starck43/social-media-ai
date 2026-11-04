@@ -1,6 +1,6 @@
 # Q-18 — Owner decisions for business modules P13–P19
 
-Closed 2026-11-04. Raised by [P13-T01](../tasks/p13-t01.md) while adapting the
+Closed 2026-11-04. Raised by [P13-T01 accepted](../audit/p13-t01.md) while adapting the
 owner's TZ; request: https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f
 
 All nine decisions are answered, so the ROADMAP row is removed and this note is

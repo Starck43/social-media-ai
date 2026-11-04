@@ -22,6 +22,7 @@ from typing import Any, Callable
 import httpx
 from sqlalchemy import select
 
+from app.core import outbound
 from app.core.access_catalog import workspace_grants
 from app.core.database import async_session_maker
 from app.core.permissions import get_current_user
@@ -32,7 +33,6 @@ from app.integrations.oauth import (
     OAuthNetworkError,
     WorkspaceOAuthService,
     decode_secret_bundle,
-    default_dns_resolver,
     post_oauth_form,
     sanitize_connection_view,
     workspace_oauth,
@@ -48,7 +48,6 @@ from app.types import ActionType
 from app.utils.crypto import decrypt_secret, encrypt_secret
 
 from .portal import (
-    CLOUD_BITRIX_SUFFIXES,
     InvalidBitrixPortalError,
     build_portal_authorize_url,
     build_portal_rest_url,
@@ -159,30 +158,47 @@ async def _require_workspace_role(session, tenant_id: int, actor_id: int, *, req
     return str(role_code)
 
 
+async def _load_trusted_registry() -> outbound.RegistryReader:
+    from app.models.managers.trusted_outbound_host_manager import load_trusted_registry
+
+    return await load_trusted_registry()
+
+
 class Bitrix24Service:
-    """Bitrix24 OAuth 2.0 connection manager, REST client, batch executor, and health checker."""
+    """Bitrix24 OAuth 2.0 connection manager, REST client, batch executor, and health checker.
+
+    Egress goes through `app.core.outbound`: the resolver and the registry loader are
+    injected, and the registry is re-read for every operation, so an administrator's
+    add or remove applies to the next attempt without a restart.
+    """
 
     def __init__(
         self,
         *,
         oauth_service: WorkspaceOAuthService = workspace_oauth,
         rate_gate: PortalRateGate | None = None,
-        resolver=default_dns_resolver,
+        resolver: outbound.Resolver = outbound.default_dns_resolver,
         http_client: httpx.AsyncClient | None = None,
-        allowed_onprem_domains: set[str] | tuple[str, ...] = (),
+        registry_loader: outbound.RegistryLoader = _load_trusted_registry,
     ) -> None:
         self._oauth = oauth_service
         self._rate_gate = rate_gate or PortalRateGate()
         self._resolver = resolver
         self._http_client = http_client
-        self._allowed_onprem = set(allowed_onprem_domains)
+        self._registry_loader = registry_loader
 
-    def _allowed_hosts_for(self, portal_domain: str) -> tuple[str, ...]:
-        return (
-            "oauth.bitrix.info",
-            portal_domain,
-            *[f"*{suffix}" for suffix in CLOUD_BITRIX_SUFFIXES],
-        )
+    @staticmethod
+    def _portal(raw_domain: str) -> str:
+        """Cloud portal, or an on-premise host the installation administrator approved."""
+        registry = outbound.current_registry()
+        try:
+            return normalize_portal_domain(raw_domain, is_trusted_host=lambda host: registry(host) is not None)
+        except InvalidBitrixPortalError as exc:
+            if exc.code == "untrusted_portal_domain":
+                host = raw_domain.strip().lower().removeprefix("https://").rstrip("/")[:253]
+                refusal = outbound.OutboundRefusal(outbound.HOST_NOT_TRUSTED, host)
+                raise Bitrix24Error(refusal.code, str(refusal), status_code=422) from exc
+            raise Bitrix24Error(exc.code, str(exc), status_code=422) from exc
 
     async def start_oauth_connect(
         self,
@@ -196,10 +212,31 @@ class Bitrix24Service:
         redirect_uri: str = "https://app.example.test/app/settings/oauth/bitrix24/callback",
         session=None,
     ) -> dict[str, Any]:
-        try:
-            normalized_domain = normalize_portal_domain(portal_domain, allowed_onprem_domains=self._allowed_onprem)
-        except InvalidBitrixPortalError as exc:
-            raise Bitrix24Error(exc.code, str(exc), status_code=422) from exc
+        async with outbound.registry_scope(self._registry_loader):
+            return await self._start_oauth_connect(
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                portal_domain=portal_domain,
+                label=label,
+                member_id=member_id,
+                scopes=scopes,
+                redirect_uri=redirect_uri,
+                session=session,
+            )
+
+    async def _start_oauth_connect(
+        self,
+        *,
+        tenant_id: int,
+        actor_id: int,
+        portal_domain: str,
+        label: str,
+        member_id: str | None,
+        scopes: tuple[str, ...],
+        redirect_uri: str,
+        session,
+    ) -> dict[str, Any]:
+        normalized_domain = self._portal(portal_domain)
 
         config_overrides: dict[str, Any] = {
             "portal_domain": normalized_domain,
@@ -221,6 +258,12 @@ class Bitrix24Service:
                 redirect_uri=redirect_uri,
                 session=session,
             )
+        except OAuthNetworkError as exc:
+            raise Bitrix24Error(
+                exc.code,
+                str(exc.refusal or "Bitrix24 operation failed"),
+                status_code=422 if exc.refusal and exc.refusal.code in outbound.TRUST_REFUSALS else 502,
+            ) from exc
         except OAuthFlowError as exc:
             raise Bitrix24Error(exc.code, status_code=400) from exc
 
@@ -235,10 +278,8 @@ class Bitrix24Service:
         session=None,
     ) -> dict[str, Any]:
         """Admin-only single-portal incoming webhook alternative per Owner Decision D2."""
-        try:
-            normalized_domain = normalize_portal_domain(portal_domain, allowed_onprem_domains=self._allowed_onprem)
-        except InvalidBitrixPortalError as exc:
-            raise Bitrix24Error(exc.code, str(exc), status_code=422) from exc
+        async with outbound.registry_scope(self._registry_loader):
+            normalized_domain = self._portal(portal_domain)
 
         if not isinstance(webhook_secret, str) or not webhook_secret.strip():
             raise Bitrix24Error("webhook_secret_required", status_code=422)
@@ -297,6 +338,28 @@ class Bitrix24Service:
         _retried_refresh: bool = False,
     ) -> dict[str, Any]:
         """Execute one Bitrix24 REST method call under the portal rate budget (`<= 2 req/s`)."""
+        async with outbound.registry_scope(self._registry_loader):
+            return await self._call_method(
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                connection_id=connection_id,
+                method_name=method_name,
+                params=params,
+                session=session,
+                _retried_refresh=_retried_refresh,
+            )
+
+    async def _call_method(
+        self,
+        *,
+        tenant_id: int,
+        actor_id: int,
+        connection_id: int,
+        method_name: str,
+        params: dict[str, Any] | None,
+        session,
+        _retried_refresh: bool,
+    ) -> dict[str, Any]:
         if session is None:
             async with async_session_maker() as owned, owned.begin():
                 return await self.call_method(
@@ -321,7 +384,8 @@ class Bitrix24Service:
             raise Bitrix24Error("connection_not_found", status_code=404)
 
         portal_domain = str((row.config or {}).get("portal_domain") or row.account_key)
-        normalize_portal_domain(portal_domain, allowed_onprem_domains=self._allowed_onprem)
+        # Re-checked per attempt: a host removed from the registry fails closed here.
+        portal_domain = self._portal(portal_domain)
 
         secret_row = await session.get(WorkspaceConnectionSecret, row.id)
         if secret_row is None or not secret_row.secret_encrypted:
@@ -349,12 +413,17 @@ class Bitrix24Service:
             status_code, body = await post_oauth_form(
                 url,
                 form_payload,
-                allowed_hosts=self._allowed_hosts_for(portal_domain),
+                # Open policy is safe here only after the explicit portal check above.
+                allowed_hosts=(),
                 resolver=self._resolver,
                 http_client=self._http_client,
             )
         except OAuthNetworkError as exc:
-            raise Bitrix24Error(exc.code, status_code=502) from exc
+            raise Bitrix24Error(
+                exc.code,
+                str(exc.refusal or "Bitrix24 operation failed"),
+                status_code=422 if exc.refusal and exc.refusal.code in outbound.TRUST_REFUSALS else 502,
+            ) from exc
 
         error_code = str(body.get("error") or "").strip()
         if error_code in {"expired_token", "invalid_token", "NO_AUTH_FOUND"} or status_code == 401:

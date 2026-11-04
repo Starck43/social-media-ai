@@ -73,8 +73,21 @@ def test_tls_uses_fixed_hostname_and_validated_ip(monkeypatch):
 
     instance = object.__new__(mail_check._PinnedIMAP)
     instance.host, instance._address, instance.ssl_context = "imap.mail.ru", "8.8.8.8", TLS()
-    monkeypatch.setattr(
-        socket, "create_connection", lambda address, timeout: calls.append((address, timeout)) or object()
-    )
+
+    class Sock:
+        def settimeout(self, timeout):
+            calls.append(("timeout", timeout))
+
+        def connect(self, address):
+            calls.append(("connect", address))
+
+    monkeypatch.setattr(socket, "socket", lambda family, kind: calls.append((family, kind)) or Sock())
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: pytest.fail("must not resolve again"))
+
     assert instance._create_socket(8) == "tls-socket"
-    assert calls == [(("8.8.8.8", 993), 8), "imap.mail.ru"]
+    assert calls == [
+        (socket.AF_INET, socket.SOCK_STREAM),
+        ("timeout", 8),
+        ("connect", ("8.8.8.8", 993)),
+        "imap.mail.ru",
+    ]

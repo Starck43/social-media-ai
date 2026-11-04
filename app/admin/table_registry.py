@@ -1,4 +1,4 @@
-"""Owner-only, read-only registry of every table the platform knows.
+"""Owner-only, read-only registry of platform tables except installation evidence.
 
 The owner asked for one place that shows all data tables. The constraint is
 just as firm: no query box, no DDL, no DML, no export. So the registry is a
@@ -50,7 +50,7 @@ def _metadata_signature(metadata) -> tuple:
 
 
 def build_table_registry(metadata) -> list[dict]:
-    """Describe every model and association table, sorted by table name."""
+    """Describe model and association tables, excluding installation evidence."""
     signature = _metadata_signature(metadata)
     try:
         cached = _REGISTRY_CACHE.get(metadata)
@@ -61,6 +61,8 @@ def build_table_registry(metadata) -> list[dict]:
 
     tables = []
     for table in metadata.tables.values():
+        if table.name == "trusted_outbound_host_events":
+            continue  # Installation evidence is not a generic listing or export.
         resource = _BY_TABLE.get(table.name)
         tables.append(
             {

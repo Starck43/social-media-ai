@@ -1,4 +1,7 @@
-"""REST API v1 endpoints for Bitrix24 portal connections, incremental sync, CRM cards, and greeting drafts (`/api/v1/integrations/bitrix`, P14-T01..T04)."""
+"""REST endpoints for Bitrix24 connections, sync, CRM cards and greeting drafts.
+
+Mounted at `/api/v1/integrations/bitrix` (P14-T01..T04).
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,14 @@ from app.services.crm.greetings import crm_greetings_service
 from app.services.crm.sync import bitrix_sync_service
 from app.services.user.auth import get_authenticated_user
 from app.types import ActionType
+
+
+def _bitrix_http_error(exc: Bitrix24Error) -> HTTPException:
+    # Only typed, value-safe trust refusals may expose their host-facing message.
+    trust_codes = {"host_not_trusted", "address_not_authorized", "unsafe_address", "untrusted_oauth_host"}
+    if exc.status_code == 422 and exc.code in trust_codes:
+        return HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
+    return HTTPException(status_code=exc.status_code)
 
 
 class BitrixConnectionOut(BusinessSchema):
@@ -265,7 +276,7 @@ async def connect_bitrix_portal(
         )
         return BitrixConnectOut.model_validate(started)
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 @router.get("/connections", response_model=BitrixConnectionsListOut)
@@ -278,7 +289,7 @@ async def list_bitrix_connections(
         items = await bitrix24_service.list_connections(tenant_id=tenant_id, actor_id=current_user.id)
         return BitrixConnectionsListOut(items=[BitrixConnectionOut.model_validate(i) for i in items])
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 @router.post(
@@ -300,7 +311,7 @@ async def check_bitrix_connection_health(
         )
         return BitrixConnectionOut.model_validate(data)
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 @router.delete(
@@ -322,7 +333,7 @@ async def delete_bitrix_connection(
         )
         return BitrixConnectionOut.model_validate(data)
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 @router.get("/contacts", response_model=CrmContactListOut)
@@ -348,7 +359,7 @@ async def list_bitrix_crm_contacts(
         )
         return CrmContactListOut.model_validate(data)
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 @router.post(
@@ -371,7 +382,7 @@ async def trigger_bitrix_contacts_sync(
         )
         return BitrixSyncRunOut.model_validate(result)
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 @router.get("/contacts/sync/status", response_model=BitrixSyncStatusListOut)
@@ -389,7 +400,7 @@ async def get_bitrix_contacts_sync_status(
         )
         return BitrixSyncStatusListOut.model_validate(data)
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 @router.get("/contacts/{crm_entity_id}", response_model=CrmContactCardOut)
@@ -407,7 +418,7 @@ async def get_bitrix_crm_contact_card(
         )
         return CrmContactCardOut.model_validate(data)
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 @router.get("/greetings/upcoming", response_model=UpcomingGreetingEventsOut)
@@ -427,7 +438,7 @@ async def list_bitrix_upcoming_greetings(
         )
         return UpcomingGreetingEventsOut.model_validate(data)
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 @router.post(
@@ -454,7 +465,7 @@ async def create_bitrix_greeting_draft(
         )
         return GreetingDraftOut.model_validate(data)
     except Bitrix24Error as exc:
-        raise HTTPException(status_code=exc.status_code) from None
+        raise _bitrix_http_error(exc) from None
 
 
 validate_business_routes(router)

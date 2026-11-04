@@ -59,7 +59,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: originals-first navigation, compact agent memory and safe file actions — **IN_PROGRESS** · codex-p12-pr-completion ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)) · [owner-authorized completion](https://github.com/Starck43/social-media-ai/pull/327#issuecomment-6609629474) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
-- [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
+- [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **re-scope against accepted P12-T12 first (D21)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 
 Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q-18-owner-decisions.md)):
 
@@ -81,7 +81,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P15-T07](docs/tasks/p15-t07.md) Channel recommendation with confidence score — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P16-T01](docs/tasks/p16-t01.md) Planner tasks: model, CRUD, subtasks and recurrence — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P16-T02](docs/tasks/p16-t02.md) Reminders, snooze and multi-channel notifications — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P16-T02](docs/tasks/p16-t02.md) Reminders, snooze and multi-channel notifications — **no second sender (D18/D19/D20)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P16-T03](docs/tasks/p16-t03.md) Calendar connections and Google Calendar two-way sync — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P16-T04](docs/tasks/p16-t04.md) Yandex Calendar two-way sync over CalDAV — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P16-T05](docs/tasks/p16-t05.md) Event planning: birthday tasks and templates — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`

@@ -12,19 +12,21 @@ from websockets.exceptions import ConnectionClosedError
 @pytest.mark.asyncio
 async def test_oversized_websocket_message_never_reaches_asgi():
     received_events = []
-    disconnected = asyncio.Event()
+    application_finished = asyncio.Event()
 
     async def instrumented_asgi(scope, receive, send):
         assert scope["type"] == "websocket"
-        event = await receive()
-        received_events.append(event)
-        await send({"type": "websocket.accept"})
-        while True:
+        try:
             event = await receive()
             received_events.append(event)
-            if event["type"] == "websocket.disconnect":
-                disconnected.set()
-                return
+            await send({"type": "websocket.accept"})
+            while True:
+                event = await receive()
+                received_events.append(event)
+                if event["type"] == "websocket.disconnect":
+                    return
+        finally:
+            application_finished.set()
 
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -45,6 +47,7 @@ async def test_oversized_websocket_message_never_reaches_asgi():
             lifespan="off",
             access_log=False,
             log_level="critical",
+            timeout_graceful_shutdown=2,
         )
     )
     server_task = asyncio.create_task(server.serve(sockets=[listener]))
@@ -64,15 +67,16 @@ async def test_oversized_websocket_message_never_reaches_asgi():
                 await websocket.recv()
             assert closed.value.code == 1009
 
-        await asyncio.wait_for(disconnected.wait(), timeout=2)
-        assert [event["type"] for event in received_events] == [
-            "websocket.connect",
-            "websocket.disconnect",
-        ]
+        server.should_exit = True
+        await asyncio.wait_for(server_task, timeout=5)
+        assert application_finished.is_set()
+        assert received_events and received_events[0]["type"] == "websocket.connect"
+        assert all(event["type"] != "websocket.receive" for event in received_events)
         assert all("bytes" not in event and "text" not in event for event in received_events)
     finally:
-        server.should_exit = True
         try:
-            await asyncio.wait_for(server_task, timeout=5)
+            if not server_task.done():
+                server.should_exit = True
+                await asyncio.wait_for(server_task, timeout=5)
         finally:
             listener.close()

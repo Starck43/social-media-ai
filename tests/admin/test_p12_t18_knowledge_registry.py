@@ -135,6 +135,7 @@ async def test_invalid_boundary_is_rejected(monkeypatch):
     read.assert_not_awaited()
 
 
+@pytest.mark.tenancy
 def test_evidence_managers_embed_acl_boundary_and_tenant_constraints():
     from sqlalchemy.dialects import postgresql
 

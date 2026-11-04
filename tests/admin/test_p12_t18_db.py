@@ -116,8 +116,10 @@ async def restore_fixture_user_role(data, *, user_index, role):
 
 
 async def add_knowledge_rows(data):
-    body = "PRIVATE-REVISION-CONTENT-MUST-NOT-RENDER"
-    revision_hash = "sha256:" + sha256(body.encode()).hexdigest()
+    revision_bodies = (
+        "PRIVATE-REVISION-CONTENT-MUST-NOT-RENDER",
+        "FOREIGN-TENANT-REVISION-CONTENT",
+    )
     async with async_session_maker() as session, session.begin():
         snippets = [
             KnowledgeSnippet(
@@ -172,8 +174,8 @@ async def add_knowledge_rows(data):
                 tenant_id=data.tenants[index].id,
                 document_id=document.id,
                 version=1,
-                content_hash=revision_hash,
-                body_text=body if index == 0 else "FOREIGN-TENANT-REVISION-CONTENT",
+                content_hash="sha256:" + sha256(revision_bodies[index].encode()).hexdigest(),
+                body_text=revision_bodies[index],
                 status="draft",
                 author="PRIVATE-REVISION-AUTHOR",
                 approved_by=None,

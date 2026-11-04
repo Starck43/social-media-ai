@@ -28,4 +28,5 @@ tests = [
     "tests/integrations/test_p18_t02_protocol.py",
     "tests/integrations/test_p18_t02_release_fence.py",
     "tests/integrations/test_p18_t02_websocket_size.py",
+    "tests/web/test_p18_t02_chat_references.py",
 ]

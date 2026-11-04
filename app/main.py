@@ -204,4 +204,13 @@ async def root():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host=settings.HOST or "0.0.0.0", port=settings.PORT or 8000, reload=settings.DEBUG)
+    uvicorn.run(
+        "app.main:app",
+        host=settings.HOST or "0.0.0.0",
+        port=settings.PORT or 8000,
+        reload=settings.DEBUG,
+        ws="websockets",
+        ws_max_size=65_536,
+        ws_max_queue=1,
+        ws_per_message_deflate=False,
+    )

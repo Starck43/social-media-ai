@@ -3,7 +3,7 @@
 import asyncio
 from dataclasses import dataclass, field
 
-from .wire import ConnectorUnavailable, MAX_CONTROL_BYTES, TIMEOUT, SearchResponse, decode
+from .wire import MAX_CONTROL_BYTES, TIMEOUT, ConnectorUnavailable, SearchResponse, decode
 
 
 @dataclass
@@ -19,6 +19,10 @@ class ConnectorChannels:
         self.maximum = maximum
         self.per_device = per_device
         self.sessions = {}
+        # Search responses and device-policy transitions share this process
+        # fence. It is intentionally separate from DB transactions: response
+        # bytes may be sent while holding it, but never while holding row locks.
+        self.release_fence = asyncio.Lock()
 
     def attach(self, device_id, socket, epoch):
         if len(self.sessions) >= self.maximum or device_id in self.sessions:

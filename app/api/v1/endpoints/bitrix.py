@@ -13,6 +13,7 @@ from app.api.v1.conventions import BusinessRoute, require_business_scope, valida
 from app.integrations.bitrix24 import Bitrix24Error, bitrix24_service
 from app.models import User
 from app.schemas.business import BusinessSchema
+from app.services.crm.cards import crm_contact_card_service
 from app.services.crm.sync import bitrix_sync_service
 from app.services.user.auth import get_authenticated_user
 from app.types import ActionType
@@ -323,6 +324,32 @@ async def delete_bitrix_connection(
         raise HTTPException(status_code=exc.status_code) from None
 
 
+@router.get("/contacts", response_model=CrmContactListOut)
+async def list_bitrix_crm_contacts(
+    request: Request,
+    entity_kind: str | None = Query(default=None),
+    updated_since: datetime | None = Query(default=None),
+    has_birthday: bool | None = Query(default=None),
+    connection_id: int | None = Query(default=None, gt=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: User = Depends(get_authenticated_user),
+):
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        data = await crm_contact_card_service.list_crm_contacts(
+            tenant_id=tenant_id,
+            actor_id=current_user.id,
+            entity_kind=entity_kind,
+            updated_since=updated_since,
+            has_birthday=has_birthday,
+            connection_id=connection_id,
+            limit=limit,
+        )
+        return CrmContactListOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise HTTPException(status_code=exc.status_code) from None
+
+
 @router.post(
     "/contacts/sync",
     response_model=BitrixSyncRunOut,
@@ -360,6 +387,24 @@ async def get_bitrix_contacts_sync_status(
             connection_id=connection_id,
         )
         return BitrixSyncStatusListOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise HTTPException(status_code=exc.status_code) from None
+
+
+@router.get("/contacts/{crm_entity_id}", response_model=CrmContactCardOut)
+async def get_bitrix_crm_contact_card(
+    request: Request,
+    crm_entity_id: int = Path(gt=0),
+    current_user: User = Depends(get_authenticated_user),
+):
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        data = await crm_contact_card_service.get_crm_contact_card(
+            tenant_id=tenant_id,
+            actor_id=current_user.id,
+            crm_entity_id=crm_entity_id,
+        )
+        return CrmContactCardOut.model_validate(data)
     except Bitrix24Error as exc:
         raise HTTPException(status_code=exc.status_code) from None
 

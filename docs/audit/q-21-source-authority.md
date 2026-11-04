@@ -36,6 +36,15 @@ reference plus what is genuinely ours.
   once, in a source registry that every service shares, not inside each module's own
   table.
 
+- D26 — **answered (owner, 2026-11-05): offer the choice, and keep the current one
+  unless the user changes it.** When a second source of the same capability is
+  connected (two calendars, two task systems), the product notices the overlap and asks
+  which one to use. If nothing is chosen yet it offers a choice; if something is chosen
+  it offers to keep the current one or switch. **Silence never switches anything**: no
+  automatic pick, no "first connected wins" that the user never saw, and a source that
+  becomes unavailable does not silently promote another one into its place. The same
+  pattern as [P15-T07](../tasks/p15-t07.md): a suggestion with a reason, a human decides.
+
 ## Consequences worth remembering for D25
 
 - **`calendar_events` and `planner_tasks` must not each grow their own external-id
@@ -62,6 +71,33 @@ reference plus what is genuinely ours.
   we do not own; the approval, `If-Match` and conflict rules already in
   [P16-T03](../tasks/p16-t03.md) apply unchanged and must not be relaxed because a
   second provider was added.
+
+## Consequences worth remembering for D26
+
+- **The chosen source is a stored decision of ours** — tenant-scoped, part 2 of
+  [D24](q-21-source-authority.md) — while "what the calendar says" stays with the
+  calendar. It is exactly the kind of fact we are allowed to hold.
+
+- **The default is per workspace, not per user, unless the object is personal.** A
+  team calendar used by the team is chosen once; a personal calendar is chosen by its
+  owner. Both are the same column on the connection/target pair, not two mechanisms.
+
+- **A question is asked once.** After a choice exists, the prompt does not reappear on
+  every login; it reappears only when a *new* overlapping source is connected, and then
+  it says what is currently used. Nagging to re-confirm a decision is as bad as
+  switching silently.
+
+- **"Leave the current one" is a real answer.** It must be recorded, otherwise the
+  product asks again at the next connection and the user learns to dismiss the dialog
+  without reading it.
+
+- **Deleting the chosen source is not a switch.** It leaves the overlap without a
+  choice, so the product asks — it does not quietly fall back to the other provider.
+
+- **This is not the source registry.** [D25](q-21-source-authority.md) answers "where
+  does this object live"; D26 answers "which source do we use for this capability". A
+  provider can be registered and still not be the chosen one.
+
 
 ## Where this bites first
 

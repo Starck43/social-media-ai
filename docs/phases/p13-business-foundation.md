@@ -16,7 +16,7 @@ Owner estimate (TZ): Spread across modules (no separate TZ estimate) — not a r
 ## Adapted requirements
 
 - Shared requirements table and review findings: [BUSINESS_MODULES](../BUSINESS_MODULES.md#shared-requirements).
-- Every later module consumes: `app/core/pii.py` ([P13-T02 accepted](../audit/p13-t02.md)), [contact core](../audit/p13-t07.md), `app/integrations/ratelimit` ([P13-T03 accepted](../audit/p13-t03.md)), `app/services/commands` ([P13-T04](../tasks/p13-t04.md)), audit codes and API conventions ([P13-T05](../tasks/p13-t05.md)), coverage script and mocks ([P13-T06 accepted](../audit/p13-t06.md)), OAuth framework ([P13-T08](../tasks/p13-t08.md)).
+- Every later module consumes: `app/core/pii.py` ([P13-T02 accepted](../audit/p13-t02.md)), [contact core](../audit/p13-t07.md), `app/integrations/ratelimit` ([P13-T03 accepted](../audit/p13-t03.md)), `app/services/commands` ([P13-T04](../tasks/p13-t04.md)), [audit codes and API conventions](../audit/p13-t05.md), coverage script and mocks ([P13-T06 accepted](../audit/p13-t06.md)), OAuth framework ([P13-T08](../tasks/p13-t08.md)).
 
 ## Data model (adapted)
 
@@ -41,8 +41,8 @@ Conventions: integer keys, `TenantScopedMixin`, `settings.DB_SCHEMA`, Alembic re
 1. [P13-T01](../tasks/p13-t01.md) — Business-module plan registration and TZ review · `P2` · `C2` · depends: —
 2. [P13-T02](../audit/p13-t02.md) — Protected personal-data fields: Fernet encryption, blind index and log redaction · `P2` · `C4` · **ACCEPTED 2026-11-04** (`c2abb03a`, [audit](../audit/p13-t02.md)) · depends: P12-T14 integrated ([PR #308](https://github.com/Starck43/social-media-ai/pull/308)) — shares credential/key handling
 3. [P13-T03 accepted](../audit/p13-t03.md) — Shared external-API rate limiter and retry policy · `P2` · `C3` · depends: —
-4. [P13-T04](../tasks/p13-t04.md) — Business write-approval workflow and command ledger · `P2` · `C4` · depends: [P13-T05](../tasks/p13-t05.md) audit codes (can proceed in parallel; integrate before READY)
-5. [P13-T05](../tasks/p13-t05.md) — Audit codes, business API conventions and OpenAPI contract · `P2` · `C3` · depends: —
+4. [P13-T04](../tasks/p13-t04.md) — Business write-approval workflow and command ledger · `P2` · `C4` · depends: [P13-T05 accepted](../audit/p13-t05.md) audit codes (can proceed in parallel; integrate before READY)
+5. [P13-T05 audit](../audit/p13-t05.md) — Audit codes, business API conventions and OpenAPI contract · `P2` · `C3` · **ACCEPTED 2026-11-04** (`98329336`, PR #368) · depends: —
 6. [P13-T06](../audit/p13-t06.md) — Per-package coverage gate and mock-provider test kit · `P2` · `C2` · depends: — · **ACCEPTED 2026-11-03** (`89ec26bb`, [audit](../audit/p13-t06.md))
 7. [P13-T07 audit](../audit/p13-t07.md) — Contact core: contacts, identities and consent · `P2` · `C4` · **ACCEPTED 2026-11-04** (`c51847dc`, PR #362) · depends: [P13-T02 accepted](../audit/p13-t02.md) (encrypted fields, blind index)
 8. [P13-T08](../tasks/p13-t08.md) — OAuth 2.0 workspace-connection framework (authorization code + refresh) · `P2` · `C4` · depends: P12-T14 integrated ([PR #308](https://github.com/Starck43/social-media-ai/pull/308): connector authorizations), [P13-T03 accepted](../audit/p13-t03.md)

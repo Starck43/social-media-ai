@@ -1,0 +1,80 @@
+{% extends "web/base.html" %}
+{% block title %}Карточка контакта CRM — {{ card.title }}{% endblock %}
+{% block page_heading %}{{ card.title }}{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <section class="ui-card space-y-4" aria-labelledby="crm-card-heading">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h2 id="crm-card-heading" class="text-lg font-semibold">Данные Битрикс24 ({{ card.entity_kind }} #{{ card.external_id }})</h2>
+                <p class="mt-1 ui-muted">Последняя синхронизация: {{ card.last_synced_at }}</p>
+            </div>
+            {% if card.portal_url %}
+            <a class="ui-control" href="{{ card.portal_url }}" target="_blank" rel="noopener noreferrer">
+                Открыть в Битрикс24
+            </a>
+            {% endif %}
+        </div>
+
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <div>
+                <dt class="text-sm ui-muted">День рождения (только чтение — источник CRM)</dt>
+                <dd class="font-medium">{{ card.birthday or 'Не указан' }}</dd>
+            </div>
+            <div>
+                <dt class="text-sm ui-muted">Памятная дата / годовщина (только чтение — источник CRM)</dt>
+                <dd class="font-medium">{{ card.anniversary or 'Не указана' }}</dd>
+            </div>
+        </dl>
+    </section>
+
+    <section class="ui-card space-y-4" aria-labelledby="crm-deals-heading">
+        <h2 id="crm-deals-heading" class="text-lg font-semibold">
+            Сделки ({{ card.deals_summary.total_count }}, открытых: {{ card.deals_summary.open_count }})
+        </h2>
+        {% if card.deals_summary.deals %}
+        <ul class="divide-y divide-slate-200 dark:divide-slate-700" aria-label="Связанные сделки">
+            {% for deal in card.deals_summary.deals %}
+            <li class="py-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <span class="font-medium">{{ deal.title }}</span>
+                    <span class="ml-2 text-sm ui-muted">{{ deal.stage_code or 'Без стадии' }}</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    {% if deal.opportunity_amount is not none %}
+                    <span class="font-medium">{{ deal.opportunity_amount }} {{ deal.currency_code or '' }}</span>
+                    {% endif %}
+                    {% if deal.portal_url %}
+                    <a class="text-sm underline" href="{{ deal.portal_url }}" target="_blank" rel="noopener noreferrer">В портале</a>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="ui-muted">Связанных сделок не найдено.</p>
+        {% endif %}
+    </section>
+
+    <section class="ui-card space-y-4" aria-labelledby="crm-duplicates-heading">
+        <h2 id="crm-duplicates-heading" class="text-lg font-semibold">Вероятные дубликаты (кандидаты на сверку P15-T03)</h2>
+        {% if card.duplicate_candidates %}
+        <ul class="divide-y divide-slate-200 dark:divide-slate-700" aria-label="Кандидаты в дубликаты">
+            {% for dup in card.duplicate_candidates %}
+            <li class="py-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <span class="font-medium">{{ dup.display_name }}</span>
+                    <span class="ml-2 text-sm ui-muted">({{ dup.explanation }})</span>
+                </div>
+                <span class="text-xs px-2 py-1 rounded bg-amber-100 text-amber-900">
+                    Совпадение: {{ dup.matched_kinds | join(', ') }}
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="ui-muted">Дубликатов в текущем рабочем пространстве не обнаружено.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

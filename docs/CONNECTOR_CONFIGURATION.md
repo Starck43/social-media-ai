@@ -142,3 +142,25 @@ status is still subject to expiry and any other failure. Coordinate the key on
 all instances before restarting writers. If the target changed, key is wrong or
 outcome is uncertain, stop and investigate; do not blindly retry or clear a
 claim manually. This is not a substitute for reauthorization or key rotation.
+
+## OAuth 2.0 workspace-connection framework (P13-T08)
+
+Provider-neutral OAuth 2.0 authorization-code + PKCE + refresh (`app/integrations/oauth/`)
+extends `app/integrations/catalog/` with `OAuthMethod(authorize_url, token_url, scopes, pkce, redirect_path, client_config_keys, revoke_url, allowed_hosts)`:
+
+- **Deployment client credentials:** `client_id` and `client_secret` are resolved from deployment configuration (`client_config_keys`), never accepted from form input or stored in `workspace_connections.config`.
+- **Single-use state + PKCE (`S256`):** `start_authorization` issues a short-lived single-use `state` bound to `(tenant_id, actor_user_id, provider_id, connection_id)` and PKCE `code_verifier`. Replayed, expired, cross-tenant, cross-actor, or foreign-connection callbacks fail closed.
+- **Global DNS and TLS enforcement:** `validate_oauth_url` resolves hostnames and rejects loopback, RFC1918 private, link-local, non-HTTPS, credentialed URLs, untrusted hosts, and HTTP redirects (`follow_redirects=False`).
+- **Encrypted secret storage & serialized refresh:** Access/refresh tokens and expiry are stored exclusively as Fernet-encrypted JSON inside `workspace_connection_secrets.secret_encrypted`. `refresh_tokens` holds a per-connection async lock and row lock (`SELECT ... FOR UPDATE`), performing at most one provider HTTP call under concurrent callers. Refresh rejection (`invalid_grant` / `400` / `401`) transitions `workspace_connections.state` to `reauth`, clears the secret, and creates an `action_required` `Notification` (`SOURCE_AUTH_REQUIRED`).
+- **Disconnect:** `disconnect` revokes the token at the provider when `revoke_url` is configured, clears `secret_encrypted`, and marks the connection `disabled`.
+
+## Bitrix24 portal connection and health (P14-T01)
+
+Per Owner Decision D2 ([Q-18](audit/q-18-owner-decisions.md)), Bitrix24 connections (`app/integrations/bitrix24/`, `/api/v1/integrations/bitrix`) use **OAuth 2.0 local portal applications** (`https://<portal>/oauth/authorize/`, token exchange at `https://oauth.bitrix.info/oauth/token/`), with an **admin-only** incoming webhook alternative (`auth_method="webhook_secret"`, restricted to workspace `owner` and `admin` roles):
+
+- **Portal domain validation (`normalize_portal_domain`):** Accepts cloud Bitrix24 suffixes (`*.bitrix24.ru`, `*.bitrix24.by`, `*.bitrix24.kz`, `*.bitrix24.com`, `*.bitrix24.eu`, `*.bitrix24.de`, etc.) and explicitly allowlisted on-premise domains. Rejects HTTP URLs, IP literals, ports, paths, and untrusted domains.
+- **Non-secret config vs. encrypted secrets:** `WorkspaceConnection.config` stores only `portal_domain`, `member_id`, and `scopes`. OAuth tokens and webhook secrets live exclusively in `WorkspaceConnectionSecret.secret_encrypted`.
+- **Rate budget (`PortalRateGate`):** Enforces `<= 2 req/s` per portal (`POLICIES["bitrix24"]`). Supports `/rest/batch.json` up to 50 commands (`MAX_BATCH_COMMANDS = 50`).
+- **Health check (`check_health`):** Calls `app.info` to verify token validity and record `member_id`, setting `state` to `verified` (`bitrix_healthy`), `reauth` (`oauth_reauth_required`), or `error`.
+
+

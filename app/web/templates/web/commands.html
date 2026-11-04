@@ -1,0 +1,38 @@
+{% extends "web/base.html" %}
+{% block title %}Команды записи — Журнал подтверждений{% endblock %}
+{% block content %}
+<div class="space-y-6">
+  <div>
+    <h1 class="text-xl font-semibold text-slate-900">Журнал бизнес-команд (P13-T04)</h1>
+    <p class="text-sm text-slate-600">Ни одна внешняя запись не выполняется без подтверждённого хеша полезной нагрузки и активного TTL.</p>
+  </div>
+  <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">ID</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Операция</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Статус</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Хеш нагрузки</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Целей</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for item in items %}
+        <tr>
+          <td class="px-4 py-3 font-mono text-xs">#{{ item.id }}</td>
+          <td class="px-4 py-3">{{ item.capability }}</td>
+          <td class="px-4 py-3"><span class="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium">{{ item.state }}</span></td>
+          <td class="px-4 py-3 font-mono text-xs">{{ item.payload_hash[:24] }}…</td>
+          <td class="px-4 py-3">{{ item.target_refs | length }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="px-4 py-6 text-center text-slate-500">Нет ожидающих или выполненных бизнес-команд.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

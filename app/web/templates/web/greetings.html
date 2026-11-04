@@ -1,0 +1,41 @@
+{% extends "web/base.html" %}
+{% block title %}Предстоящие события и черновики поздравлений — AI Assistant{% endblock %}
+{% block page_heading %}Поздравления и памятные даты CRM{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <section class="ui-card space-y-4" aria-labelledby="upcoming-events-heading">
+        <div>
+            <h2 id="upcoming-events-heading" class="text-lg font-semibold">Предстоящие дни рождения и годовщины (напоминания за 7 / 3 / 1 день)</h2>
+            <p class="mt-1 ui-muted">ИИ-черновики создаются по разрешённым полям карточки. Отправка через каналы будет активирована после подключения единого хаба (P14-T05).</p>
+        </div>
+
+        {% if items %}
+        <ul class="divide-y divide-slate-200 dark:divide-slate-700" aria-label="Список предстоящих событий">
+            {% for item in items %}
+            <li class="py-4 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <span class="font-medium">{{ item.display_name }}</span>
+                    {% if item.company_title %}
+                    <span class="ml-2 text-sm ui-muted">({{ item.company_title }})</span>
+                    {% endif %}
+                    <p class="text-sm ui-muted">
+                        Событие: {{ item.event_type }} · Дата: {{ item.event_date }} (через {{ item.days_until }} дн.)
+                    </p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-800">
+                        Статус: {{ item.history_status or 'нет черновика' }}
+                    </span>
+                    <button type="button" class="ui-control opacity-60 cursor-not-allowed" disabled aria-disabled="true" title="Отправка будет доступна в P14-T05 после подключения единого коммуникационного хаба">
+                        Одобрить и отправить (P14-T05)
+                    </button>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="py-6 ui-muted" role="status">Предстоящих дней рождения и памятных дат в выбранном горизонте нет.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

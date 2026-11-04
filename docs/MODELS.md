@@ -613,6 +613,57 @@ seals `dry_run=false` manual intent, commits one dispatch reservation before HTT
 and persists a safe live receipt or UNKNOWN without automatic replay. Generic
 simulation and legacy social execution are not activated by this exception.
 
+### `business_commands` and `business_command_targets` (0134)
+
+[Canonical source](../app/models/actions/business_command.py),
+[service](../app/services/commands/ledger.py),
+[migration 0134](../migrations/versions/0134_business_commands.py).
+
+`business_commands` is the reusable tenant-scoped write-approval and execution
+ledger for external business writes across P14–P19 (`crm.greeting_send.v1`,
+`comms.batch_campaign.v1`, `calendar.event_write.v1`, `onec.document_write.v1`,
+`documents.delivery_send.v1`). Inherits `TenantScopedMixin` and `TimestampMixin`
+(`@app_label("scheduling")`). Fields: `id` PK; non-null `capability` String(80),
+`capability_version` Integer default 1, `approval_policy` String(30) checked in
+(`per_item`, `per_batch`, `connection_consent`); `actor_user_id` FK → `users.id`
+RESTRICT; nullable `connection_id` Integer; non-null `idempotency_key` String(128);
+`target_refs` JSON list; `payload` JSON object; `payload_hash` String(71) checked
+against `^sha256:[0-9a-f]{64}$`; `preview_snapshot` JSON object; `state` String(20)
+checked in (`draft`, `previewed`, `approved`, `claimed`, `succeeded`, `failed`,
+`unknown`, `cancelled`, `expired`); nullable `approved_user_id` FK → `users.id`
+SET NULL, `approved_payload_hash` String(71), `approved_at`, `approval_expires_at`,
+`claimed_at`, `executed_at` timezone-aware DateTime; nullable `outcome_summary`
+JSON, `error_code` String(64), `reconcile_hint` Text. Unique constraints:
+`uq_business_commands_tenant_id` (`tenant_id`, `id`) and
+`uq_business_commands_idempotency` (`tenant_id`, `actor_user_id`, `capability`,
+`idempotency_key`). Indexes: (`tenant_id`, `state`) and (`tenant_id`, `capability`).
+
+`business_command_targets` stores per-target batch execution rows under a composite
+FK (`tenant_id`, `command_id`) → `business_commands(tenant_id, id)` ON DELETE CASCADE.
+Fields: `id` PK; `command_id` Integer; `target_ref` String(200);
+`target_idempotency_key` String(160); `state` String(20) checked in (`pending`,
+`claimed`, `succeeded`, `failed`, `unknown`, `cancelled`); nullable
+`provider_receipt` String(160), `error_code` String(64), `executed_at`
+timezone-aware DateTime. Unique constraints: `uq_business_command_target_ref`
+(`tenant_id`, `command_id`, `target_ref`) and `uq_business_command_target_idempotency`
+(`tenant_id`, `target_idempotency_key`).
+
+### `crm_entities` (0135)
+
+[Canonical source](../app/models/crm/entity.py),
+[sync service](../app/services/crm/sync.py),
+[migration 0135](../migrations/versions/0135_crm_entities.py).
+
+`crm_entities` stores normalized tenant-scoped CRM records (`contact`, `company`, `lead`, `deal`) pulled read-only from Bitrix24 (`P14-T02`) and linked to canonical `contacts` (`P14-T03`). Inherits `TenantScopedMixin` and `TimestampMixin` (`@app_label("contacts")`). Fields: `id` PK; `connection_id` Integer FK → `workspace_connections.id` ON DELETE CASCADE; nullable `contact_id` Integer FK → `contacts.id` ON DELETE SET NULL; `provider` String(40) checked in (`bitrix24`); `entity_kind` String(20) checked in (`contact`, `company`, `lead`, `deal`); `external_id` String(128); Fernet-encrypted PII columns (`title_encrypted`, `personal_fields_encrypted`, `custom_fields_encrypted`) with `pii_updated_at` monotonic rotation marker (`contact_pii_marker` trigger); deal/lead pipeline metadata (`stage_code`, `status_code`, `currency_code` String(10), `opportunity_amount` Numeric(18, 2), `is_closed` Boolean, `assigned_by_external_id`, `company_external_id`); `source_modified_at`, `last_synced_at`, and `deleted_at` timezone-aware DateTime. Unique constraints: `uq_crm_entities_tenant_id` (`tenant_id`, `id`) and `uq_crm_entities_connection_external` (`tenant_id`, `connection_id`, `entity_kind`, `external_id`).
+
+### `greeting_history` (0136)
+
+[Canonical source](../app/models/crm/greeting_history.py),
+[greetings service](../app/services/crm/greetings.py),
+[migration 0136](../migrations/versions/0136_greeting_history.py).
+
+`greeting_history` tracks upcoming birthday/anniversary events, AI-generated greeting drafts, and explicit operator approval linkages (`P14-T04`). Inherits `TenantScopedMixin` and `TimestampMixin` (`@app_label("contacts")`). Fields: `id` PK; `contact_id` Integer composite FK → `contacts(tenant_id, id)` ON DELETE CASCADE; `event_type` String(30) checked in (`birthday`, `anniversary`); `event_date` Date; `year` Integer checked in `1970..2100`; `channel` String(30) checked in (`email`, `phone`, `telegram`, `max`, `bitrix24`); Fernet-encrypted `subject_encrypted` and `draft_text_encrypted` with `pii_updated_at` monotonic rotation marker (`contact_pii_marker` trigger); `ai_generated` Boolean; `status` String(20) checked in (`draft`, `approved`, `sent`, `failed`, `skipped`, `unknown`); nullable `command_id` Integer composite FK → `business_commands(tenant_id, id)` ON DELETE SET NULL; `actor_user_id` FK → `users.id` ON DELETE SET NULL; `error_code` String(64); `sent_at` timezone-aware DateTime. Unique constraints: `uq_greeting_history_tenant_id` (`tenant_id`, `id`) and `uq_greeting_history_contact_event_year` (`tenant_id`, `contact_id`, `event_type`, `year`).
+
 ## ER views from declared foreign keys
 
 Views are intentionally split for readability. Common tenant FKs and some fields are omitted; nullable parent FKs use o|. Arrows do not guarantee equal tenant IDs across endpoints: source FKs are not composite tenant-identity constraints. Logical references are noted separately, never invented as FKs.
@@ -711,6 +762,14 @@ Selected milestones, not a complete replay audit:
 | 0121 (P12-T08) | Workspace connection and encrypted connection-secret tables; follows `0120` |
 | 0122 (P12-T11) | Persisted knowledge/document evidence and revision tables; follows `0121` |
 | 0123 (P12-T16) | Nullable source member owner and source-auth-required notification kind; follows `0122` |
+| 0124–0129 (P12) | File workspace, communication inbox, case workflow, calendar/outbox, and connector account extensions; follows `0123` |
+| 0130 (P13-T02) | Contact core (`contacts`, `contact_identities`, `contact_consents`, `contact_merge_journal`) with Fernet PII columns; follows `0129` |
+| 0131 (P13-T03) | Provider rate budgets (`provider_rate_budgets`) and sync cursor leases; follows `0130` |
+| 0132 (P13-T05) | Business module action audit allowlist expansion (`ck_action_audit_events_action`); follows `0131` |
+| 0133 (P18-T02) | Local connector gateway persistence (`local_connectors`, `local_connector_pairings`, `local_connector_requests`); follows `0132` |
+| 0134 (P13-T04) | Business write-approval command ledger (`business_commands`) and per-target batch items (`business_command_targets`); follows `0133` |
+| 0135 (P14-T02) | Normalized CRM entities (`crm_entities`) with Fernet PII columns; follows `0134` |
+| 0136 (P14-T04) | Birthday/holiday greeting drafts and history (`greeting_history`) with Fernet PII columns; follows `0135` |
 | 0031 / 0060 | Analytics cost tracking / sub-cent Numeric precision |
 | 0041 / 0042 / 0043 | Task queue / digest runs / agent tables |
 | 0044 | Tenancy foundation |
@@ -751,9 +810,10 @@ Selected milestones, not a complete replay audit:
 | **0107** | Add model price units, nullable cache tariffs and usage evidence; preserve legacy pricing snapshots |
 
 At the original Q-15 review revision the graph had one root, `baseline_0118`,
-and one follow-up, `0119`; later source revisions added `0120` through `0123`.
+and one follow-up, `0119`; later source revisions added `0120` through `0136`.
 The current checked-in chain is `baseline_0118` → `0119` → `0120` → `0121` →
-`0122` → `0123`. Q-14 replaced the earlier numbered history with the frozen
+`0122` → `0123` → `0124` → `0125` → `0126` → `0127` → `0128` → `0129` →
+`0130` → `0131` → `0132` → `0133` → `0134` → `0135` → `0136`. Q-14 replaced the earlier numbered history with the frozen
 baseline; the table above retains selected historical milestones. This is
 static source structure, not `alembic current`, an `alembic check`, a replay
 rehearsal or acceptance of any arbitrary target schema. Q-14 verified the

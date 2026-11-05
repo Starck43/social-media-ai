@@ -93,7 +93,7 @@ def _prepare(account: MailAccount, request: EmailRequest) -> tuple[bytes, str]:
 def _send_email(account: MailAccount, request: EmailRequest) -> SendResult:
     code = admission_code(EMAIL, account.binding)
     if code:
-        return SendResult("blocked", code)
+        return SendResult("blocked", "account_send_disabled" if code == "capability_killed" else code)
     if account.send_enabled is not True:
         return SendResult("blocked", "account_send_disabled")
     if account.provider_id not in _MAIL_PROVIDERS:
@@ -115,7 +115,9 @@ def _send_email(account: MailAccount, request: EmailRequest) -> SendResult:
         target = acquire_outbound_target(host, 465, policy=StaticPolicy((host,)))
         code = admission_code(EMAIL, account.binding)
         if code:
-            return SendResult("blocked", code, message_id=message_id)
+            return SendResult(
+                "blocked", "account_send_disabled" if code == "capability_killed" else code, message_id=message_id
+            )
         client = _PinnedSMTP(target, account.binding)
         if client.ehlo()[0] != 250:
             return SendResult("rejected", "smtp_greeting_failed", message_id=message_id)
@@ -123,7 +125,9 @@ def _send_email(account: MailAccount, request: EmailRequest) -> SendResult:
         # Auth can take time: a kill/removal must stop DATA, not only connection.
         code = admission_code(EMAIL, account.binding)
         if code:
-            return SendResult("blocked", code, message_id=message_id)
+            return SendResult(
+                "blocked", "account_send_disabled" if code == "capability_killed" else code, message_id=message_id
+            )
         # sendmail sends MAIL FROM and RCPT TO before it calls data().
         smtp_exchange_started = True
         refused = client.sendmail(account.account_login, [request.recipient], data)

@@ -2,4 +2,6 @@
 
 from __future__ import annotations
 
-from . import actions, collect, llm, reports, scenarios, sources, system, tasks  # noqa: F401
+from . import actions, collect, llm, planner, reports, scenarios, sources, system, tasks  # noqa: F401
+
+planner.register_planner_tools()

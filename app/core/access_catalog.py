@@ -28,6 +28,7 @@ RESOURCES = (
         "integrations.local_connector", "LocalConnector", "local_connectors", "VIEW CREATE DELETE CONFIGURE", True
     ),
     _resource("contacts.contact", "Contact", "contacts", "VIEW CREATE UPDATE DELETE EXPORT", True),
+    _resource("comms.message", "UnifiedMessage", "unified_messages", "VIEW CREATE UPDATE DELETE", True),
     _resource("identity.user", "User", "users", "VIEW CREATE UPDATE DELETE"),
     _resource("identity.platform_role", "PlatformRole", "roles", "VIEW CONFIGURE"),
     _resource("identity.permission", "Permission", "permissions", "VIEW"),
@@ -110,6 +111,7 @@ _OLD_DOMAINS = {
     "notifications": ("social",),
     "audit": (),
     "contacts": (),
+    "comms": (),
     "integrations": (),
 }
 _ALIASES = {
@@ -173,6 +175,8 @@ def workspace_grants(codename):
         elif role == WorkspaceRoleType.MANAGER:
             if r.key in ("collection.source", "analysis.scenario", "scheduling.task"):
                 actions = set(r.actions)
+            elif r.key == "comms.message":
+                actions = set(r.actions) - {ActionType.DELETE}
             elif r.key in ("analysis.result", "notifications.digest_run", "notifications.notification"):
                 actions = {ActionType.VIEW}
         elif role == WorkspaceRoleType.ANALYST:
@@ -182,8 +186,10 @@ def workspace_grants(codename):
                 actions = {ActionType.VIEW, ActionType.ANALYZE, ActionType.EXPORT}
             elif r.key == "notifications.digest_run":
                 actions = {ActionType.VIEW, ActionType.CREATE, ActionType.EXPORT}
+            elif r.key == "comms.message":
+                actions = {ActionType.VIEW}
         elif role == WorkspaceRoleType.VIEWER:
-            if r.key in ("collection.source", "analysis.result", "notifications.digest_run"):
+            if r.key in ("collection.source", "analysis.result", "notifications.digest_run", "comms.message"):
                 actions = {ActionType.VIEW}
         # Everyone with AI access can operate ONLY their own conversation records.
         if r.personal:

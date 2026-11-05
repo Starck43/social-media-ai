@@ -167,8 +167,8 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
     }
     # P11-T12 added action-audit, P11-T28 added one workspace action, and
     # P11-T29 added the platform offboarding journal after the 0096 snapshot.
-    # Keep that migration immutable and make only these post-baseline deltas
-    # explicit; every other resource identity and scope flag must still match.
+    # Keep that migration immutable and make each post-baseline resource explicit;
+    # every other resource identity and scope flag must still match.
     actual["action_audit_events"] = ("audit.action_audit", "actionauditevent", {"view", "export"}, True, False)
     actual["workspace_offboarding_events"] = (
         "audit.workspace_offboarding",
@@ -177,26 +177,71 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
         False,
         False,
     )
-    # P15-T09 adds a symbolic outbox permission resource before the outbox table
-    # exists. It is catalog-seeded, not introduced by the immutable 0096 migration.
-    actual["outbox_messages"] = (
-        "comms.outbox",
-        "outboxmessage",
-        {"view", "update", "configure"},
-        True,
-        False,
-    )
+    # Frozen post-0096 declarations: 0133 local connectors, 0130 contact core,
+    # and 0139 unified messages. P15-T09's outbox is catalog-only until its
+    # storage task; its metadata actions were approved in PR #417.
+    post_0096_resources = {
+        "local_connectors": (
+            "integrations.local_connector",
+            "localconnector",
+            {"view", "create", "delete", "configure"},
+            True,
+            False,
+        ),
+        "contacts": (
+            "contacts.contact",
+            "contact",
+            {"view", "create", "update", "delete", "export"},
+            True,
+            False,
+        ),
+        "unified_messages": (
+            "comms.message",
+            "unifiedmessage",
+            {"view", "create", "update", "delete"},
+            True,
+            False,
+        ),
+        "outbox_messages": (
+            "comms.outbox",
+            "outboxmessage",
+            {"view", "update", "configure"},
+            True,
+            False,
+        ),
+    }
+    assert post_0096_resources.keys().isdisjoint(actual)
+    actual.update(post_0096_resources)
     key, model, actions, is_workspace, is_personal = actual["tenants"]
     actual["tenants"] = (key, model, actions | {"delete"}, is_workspace, is_personal)
     assert expected == actual
+    # 0139 declares the message role matrix; P15-T09 approves the outbox matrix.
+    # Local connectors and contacts have only implicit owner/admin workspace
+    # grants in the current preset policy, with no grants for other roles.
+    post_0096_grants = {
+        "owner": {("integrations.local_connector", action) for action in ("view", "create", "delete", "configure")}
+        | {("contacts.contact", action) for action in ("view", "create", "update", "delete", "export")}
+        | {("comms.message", action) for action in ("view", "create", "update", "delete")}
+        | {("comms.outbox", action) for action in ("view", "update", "configure")},
+        "admin": {("integrations.local_connector", action) for action in ("view", "create", "delete", "configure")}
+        | {("contacts.contact", action) for action in ("view", "create", "update", "delete", "export")}
+        | {("comms.message", action) for action in ("view", "create", "update", "delete")}
+        | {("comms.outbox", action) for action in ("view", "update", "configure")},
+        "manager": {("comms.message", action) for action in ("view", "create", "update")}
+        | {("comms.outbox", action) for action in ("view", "update")},
+        "analyst": {("comms.message", "view"), ("comms.outbox", "view")},
+        "viewer": {("comms.message", "view"), ("comms.outbox", "view")},
+    }
     for role, pairs in migration._workspace_grant_pairs().items():
-        canonical = {
-            (resource_for(model).key, action.db_value)
-            for model, action in workspace_grants(role)
-            if resource_for(model).key != "comms.outbox"
-        }
-        baseline_pairs = pairs | (
-            {("audit.action_audit", "view"), ("audit.action_audit", "export")} if role in ("owner", "admin") else set()
+        canonical = {(resource_for(model).key, action.db_value) for model, action in workspace_grants(role)}
+        baseline_pairs = (
+            pairs
+            | (
+                {("audit.action_audit", "view"), ("audit.action_audit", "export")}
+                if role in ("owner", "admin")
+                else set()
+            )
+            | post_0096_grants[role]
         )
         assert canonical == baseline_pairs
 

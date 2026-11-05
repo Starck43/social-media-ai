@@ -33,6 +33,15 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/commands/{command_id}/execute | execute_command_endpoint_api_v1_commands__command_id__execute_post |
 | POST | /api/v1/commands/{command_id}/reconcile | reconcile_command_endpoint_api_v1_commands__command_id__reconcile_post |
 | POST | /api/v1/commands/{command_id}/reject | reject_command_endpoint_api_v1_commands__command_id__reject_post |
+| POST | /api/v1/communication/contacts/merge | post_communication_contact_merge_api_v1_communication_contacts_merge_post |
+| GET | /api/v1/communication/contacts/suggestions | get_communication_contact_merge_suggestions_api_v1_communication_contacts_suggestions_get |
+| POST | /api/v1/communication/contacts/unmerge | post_communication_contact_unmerge_api_v1_communication_contacts_unmerge_post |
+| GET | /api/v1/communication/inbox | get_communication_inbox_api_v1_communication_inbox_get |
+| POST | /api/v1/communication/inbox/archive | post_communication_archive_api_v1_communication_inbox_archive_post |
+| GET | /api/v1/communication/inbox/contacts/{contact_id}/messages | get_communication_contact_messages_api_v1_communication_inbox_contacts__contact_id__messages_get |
+| POST | /api/v1/communication/inbox/hide | post_communication_hide_message_api_v1_communication_inbox_hide_post |
+| POST | /api/v1/communication/inbox/mark-read | post_communication_mark_read_api_v1_communication_inbox_mark_read_post |
+| GET | /api/v1/communication/inbox/threads/{thread_id} | get_communication_thread_detail_api_v1_communication_inbox_threads__thread_id__get |
 | GET | /api/v1/connector-accounts | list_reusable_accounts_api_v1_connector_accounts_get |
 | GET | /api/v1/connector-accounts/grants | list_workspace_grants_api_v1_connector_accounts_grants_get |
 | POST | /api/v1/connector-accounts/grants/{grant_id}/detach | detach_workspace_grant_api_v1_connector_accounts_grants__grant_id__detach_post |

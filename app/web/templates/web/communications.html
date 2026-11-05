@@ -5,6 +5,7 @@
 
 {% block page_actions %}
 <a href="/app/chat" class="ui-control">← К чату</a>
+<a href="/app/contacts" class="ui-control">Контакты</a>
 <a href="/app/followups" class="ui-control">Договорённости</a>
 {% endblock %}
 
@@ -12,22 +13,134 @@
 <div class="space-y-3 text-sm">
     <h2 class="font-semibold">О переписке</h2>
 
-    <p class="text-xs ui-muted">Здесь показаны сохранённые фрагменты переписки и сведения о доставке. Наличие записи не означает, что сообщение отправлено.</p>
+    <p class="text-xs ui-muted">Единый реестр метаданных переписки (Email, Telegram, MAX, Телефон, Битрикс24). Хранятся только метаданные (тема, участники, даты, канал, направление, хеш и ссылка на оригинал) — тексты сообщений и вложения не сохраняются.</p>
 </div>
     {% include "web/_evidence_details.html" %}
 {% endblock %}
 
 {% block content %}
-<div class="space-y-6" data-p12-communications="communications-outbox">
-    <section class="ui-card">
+<div class="space-y-6" data-p12-communications="communications-outbox" data-p15-inbox="unified-inbox">
+    <nav class="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3" aria-label="Разделы переписки" data-inbox-tabs>
+        <a href="/app/communications?tab=inbox&boundary={{ boundary | default('cloud') }}"
+           class="ui-control text-xs {% if (active_tab | default('inbox')) == 'inbox' %}font-semibold{% endif %}"
+           data-tab="inbox">Входящие цепочки</a>
+        <a href="/app/communications?tab=outbox&boundary={{ boundary | default('cloud') }}"
+           class="ui-control text-xs {% if (active_tab | default('inbox')) == 'outbox' %}font-semibold{% endif %}"
+           data-tab="outbox">Сохранённые записи</a>
+        <a href="/app/contacts/merge"
+           class="ui-control text-xs {% if (active_tab | default('inbox')) == 'contacts_merge' %}font-semibold{% endif %}"
+           data-tab="contacts_merge">Сверка контактов</a>
+    </nav>
+
+    <section class="ui-card space-y-4" data-inbox-search-panel>
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
-                <h2 class="text-sm font-semibold">Сохранённые записи переписки</h2>
-                <p class="mt-1 text-xs ui-muted">Здесь можно изучить доступные записи, но не отправить сообщение. Каналы доставки дайджестов настраиваются в <a href="/app/settings?tab=channels" class="underline">настройках</a>.</p>
+                <h2 class="text-sm font-semibold">Единый входящий поток и поиск по метаданным</h2>
+                <p class="mt-1 text-xs ui-muted">Поиск выполняется только по метаданным (тема, участники, контакт, канал, направление, период). Каналы доставки настраиваются в <a href="/app/settings?tab=channels" class="underline">настройках</a>.</p>
             </div>
-            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">Сохранённые записи</span>
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">Только метаданные (D3/D11)</span>
         </div>
+
+        <form method="get" action="/app/communications" class="flex flex-wrap items-end gap-3" data-inbox-filter-form>
+            <input type="hidden" name="tab" value="{{ active_tab | default('inbox') }}">
+            <input type="hidden" name="boundary" value="{{ boundary | default('cloud') }}">
+            <div class="flex-1 min-w-[200px]">
+                <label for="inbox-q" class="block text-xs ui-muted mb-1">Поиск по теме, участникам или контакту</label>
+                <input id="inbox-q" type="search" name="q" value="{{ q | default('') }}" placeholder="Тема, email, телефон, имя..." class="ui-control w-full text-sm">
+            </div>
+            <div>
+                <label for="inbox-channel" class="block text-xs ui-muted mb-1">Канал</label>
+                <select id="inbox-channel" name="channel" class="ui-control text-sm">
+                    <option value="">Все каналы</option>
+                    <option value="email" {% if channel_filter == 'email' %}selected{% endif %}>Email</option>
+                    <option value="telegram" {% if channel_filter == 'telegram' %}selected{% endif %}>Telegram</option>
+                    <option value="max" {% if channel_filter == 'max' %}selected{% endif %}>MAX</option>
+                    <option value="phone" {% if channel_filter == 'phone' %}selected{% endif %}>Телефон</option>
+                    <option value="bitrix24" {% if channel_filter == 'bitrix24' %}selected{% endif %}>Битрикс24</option>
+                </select>
+            </div>
+            <button type="submit" class="ui-control text-sm">Найти</button>
+        </form>
     </section>
+
+    {% if (active_tab | default('inbox')) == 'contacts_merge' %}
+    <section class="ui-card space-y-3" data-contacts-merge-panel>
+        <h2 class="text-sm font-semibold">Кандидаты на объединение контактов</h2>
+        <p class="text-xs ui-muted">Точные совпадения по закрытому индексу email/телефона (высокая уверенность) и совпадения имени с общей цепочкой (низкая уверенность). Объединение выполняется только вручную и полностью обратимо.</p>
+        {% if merge_suggestions %}
+        <div class="space-y-2">
+            {% for item in merge_suggestions %}
+            <div class="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 p-3 text-xs" data-merge-suggestion>
+                <div>
+                    <span class="font-medium">Контакт #{{ item.source_contact_id }} → #{{ item.target_contact_id }}</span>
+                    <span class="ml-2 ui-muted">({{ item.confidence }}, оценка {{ item.score }})</span>
+                    <p class="ui-muted mt-1">Основания: {{ item.reasons | join(', ') }}</p>
+                </div>
+                <span class="px-2 py-0.5 rounded border border-slate-700">Только вручную</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-xs ui-muted" data-merge-suggestions-empty>Дубликатов для объединения не обнаружено.</p>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% if inbox_threads %}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" data-inbox-workspace>
+        <section class="ui-card space-y-3" data-inbox-thread-list>
+            <h2 class="text-sm font-semibold">Цепочки сообщений</h2>
+            <div class="space-y-2">
+                {% for th in inbox_threads %}
+                <article class="rounded border border-slate-800 p-3 text-xs space-y-1" data-inbox-thread-item="{{ th.id }}">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="px-2 py-0.5 rounded border border-slate-700 font-medium {{ th.channel_badge }}" data-channel-badge="{{ th.channel }}">{{ th.channel_label }}</span>
+                        <span class="ui-muted">{{ th.message_count }} сообщ.{% if th.unread_count %} · непрочитано: {{ th.unread_count }}{% endif %}</span>
+                    </div>
+                    <h3 class="text-sm font-semibold">
+                        <a href="/app/communications?tab=inbox&thread_id={{ th.id }}&boundary={{ boundary | default('cloud') }}" class="underline">{{ th.subject or th.thread_key }}</a>
+                    </h3>
+                    {% if th.contact_display_name %}
+                    <p class="ui-muted">Контакт: {{ th.contact_display_name }}</p>
+                    {% endif %}
+                    {% if th.participants %}
+                    <p class="ui-muted font-mono">{{ th.participants | join(', ') }}</p>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        {% if selected_thread_detail %}
+        <section class="ui-card space-y-3" data-inbox-thread-detail="{{ selected_thread_detail.thread.id }}">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-sm font-semibold">{{ selected_thread_detail.thread.subject or selected_thread_detail.thread.thread_key }}</h2>
+                <span class="px-2 py-0.5 rounded border border-slate-700 text-xs {{ selected_thread_detail.thread.channel_badge }}" data-channel-badge="{{ selected_thread_detail.thread.channel }}">{{ selected_thread_detail.thread.channel_label }}</span>
+            </div>
+            <div class="space-y-2" data-thread-messages>
+                {% for msg in selected_thread_detail.messages %}
+                <article class="rounded border border-slate-800 p-3 text-xs space-y-1" data-unified-message="{{ msg.id }}">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="font-medium {{ msg.channel_badge }}" data-channel-badge="{{ msg.channel }}">{{ msg.channel_label }} · {{ msg.direction }}</span>
+                        <span class="ui-muted font-mono">{{ msg.sent_at }}</span>
+                    </div>
+                    {% if msg.subject %}<p class="font-medium">{{ msg.subject }}</p>{% endif %}
+                    <p class="ui-muted">{{ msg.sender or '—' }} → {{ msg.recipient or '—' }}</p>
+                    <div class="flex flex-wrap items-center gap-3 pt-1">
+                        {% if msg.is_unavailable %}
+                        <span class="text-amber-400 font-medium" data-original-unavailable>Оригинал недоступен во внешнем источнике</span>
+                        {% elif msg.original_url %}
+                        <a href="{{ msg.original_url }}" target="_blank" rel="noopener noreferrer" class="underline" data-original-url>Открыть оригинал</a>
+                        {% endif %}
+                        <a href="/app/chat?context_type=communication&context_id={{ msg.id }}&boundary={{ boundary | default('cloud') }}" class="ui-control text-xs" data-inbox-chat-handoff>В чат ({{ boundary | default('cloud') }})</a>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+    </div>
+    {% endif %}
 
     {% include "web/_evidence_rows.html" %}
 

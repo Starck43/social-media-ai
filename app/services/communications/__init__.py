@@ -1,5 +1,15 @@
-"""Tenant-scoped unified communications package (`P15-T02`)."""
+"""Communications services package: delivery outbox, verified routes, unified message ingestion, and inbox."""
 
+from .inbox import (
+    CHANNEL_BADGES,
+    InboxItemUnavailable,
+    archive_thread,
+    get_thread_detail,
+    hide_message_locally,
+    list_contact_messages,
+    list_inbox_threads,
+    mark_thread_read,
+)
 from .ingest import (
     CommunicationIngestError,
     IngestMessageInput,
@@ -8,6 +18,7 @@ from .ingest import (
     compute_content_hash,
     derive_thread_key,
     extract_reference_ids,
+    follow_merge_chain,
     hash_message_id,
     ingest,
     ingest_max_update,
@@ -19,18 +30,27 @@ from .ingest import (
 )
 
 __all__ = [
+    "CHANNEL_BADGES",
     "CommunicationIngestError",
+    "InboxItemUnavailable",
     "IngestMessageInput",
     "IngestResult",
     "PersonalConnectorDisabledError",
+    "archive_thread",
     "compute_content_hash",
     "derive_thread_key",
     "extract_reference_ids",
+    "follow_merge_chain",
+    "get_thread_detail",
     "hash_message_id",
+    "hide_message_locally",
     "ingest",
     "ingest_max_update",
     "ingest_telegram_update",
+    "list_contact_messages",
+    "list_inbox_threads",
     "mark_message_unavailable",
+    "mark_thread_read",
     "normalize_message_id",
     "normalize_subject_for_thread",
     "prune_expired_messages",

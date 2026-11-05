@@ -71,7 +71,8 @@ def _prepare(account: MailAccount, request: EmailRequest) -> tuple[bytes, str]:
     message["Date"] = formatdate(usegmt=True)
     if request.in_reply_to is not None:
         message["In-Reply-To"] = request.in_reply_to
-    message.set_content(request.text)
+    # Keep a 7-bit wire body: do not assume or silently require SMTPUTF8/8BITMIME.
+    message.set_content(request.text, cte="quoted-printable")
     return message.as_bytes(), message_id
 
 

@@ -20,6 +20,8 @@ _HOSTS = {TELEGRAM: "api.telegram.org", MAX: "platform-api2.max.ru"}
 
 
 def _input_code(capability: str, account: BotAccount, recipient: BotRecipient, text: str) -> str | None:
+    if capability not in _HOSTS:
+        return "unsupported_capability"
     code = admission_code(capability, account.binding)
     if code:
         return code

@@ -629,3 +629,19 @@ def test_boolean_ambient_scope_not_a_workspace(monkeypatch):
     release(monkeypatch, EMAIL)
     with tenant_scope(True):
         assert admission_code(EMAIL, replace(BINDING, workspace_id=1)) == "workspace_mismatch"
+
+
+def test_unicode_mail_uses_7bit_wire_without_8bitmime(monkeypatch):
+    client, _ = smtp_double(monkeypatch)
+    request = replace(REQUEST, subject="Тема письма", text="Привет, клиент! 👋\n")
+    assert smtp_send._send_email(MAIL, request).outcome == "sent"
+    data = client.calls[-1][3]
+    assert data.isascii()
+    message = BytesParser(policy=policy.default).parsebytes(data)
+    assert message.get_content().replace("\r\n", "\n") == request.text
+    assert str(message["Subject"]) == request.subject
+
+
+def test_bot_adapter_rejects_non_bot_capability(monkeypatch):
+    release(monkeypatch, EMAIL)
+    assert bots._send_bot(EMAIL, account(MAX), recipient(MAX), "hi").code == "unsupported_capability"

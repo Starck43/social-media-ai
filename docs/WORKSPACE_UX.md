@@ -3,7 +3,8 @@
 Target design recorded by [P20-T01](tasks/p20-t01.md) at the owner's request
 (2026-11-05). It is **not shipped**: every change lands through its own task and
 acceptance. Current navigation is data in `app/web/nav.py`; current chat behavior
-is in [AGENT](AGENT.md). Russian strings below are proposed UI labels.
+is in [AGENT](AGENT.md). Russian strings below are proposed UI labels, except
+where owner decisions are recorded below.
 
 ## Principles
 
@@ -34,7 +35,7 @@ is in [AGENT](AGENT.md). Russian strings below are proposed UI labels.
 
 | Group | Item | Owner / current route | Notes |
 | --- | --- | --- | --- |
-| Работа | Сегодня | `/app/` (today «Обзор»), [P20-T07](tasks/p20-t07.md) | Default landing |
+| Работа | Сегодня | Current dashboard `/app/`, [P20-T07](tasks/p20-t07.md) | Default landing; user can choose another in settings |
 | Работа | Чат с агентом | `/app/chat`, [P20-T08](tasks/p20-t08.md) | Same conversation as the Telegram/MAX bot |
 | Работа | Входящие | `/app/communications` inbox, [P15-T04](tasks/p15-t04.md), triage [P20-T09](tasks/p20-t09.md) | Inbound and outbound in one thread |
 | Работа | Задачи | hub over `/app/planner` ([P16-T01](tasks/p16-t01.md)) and `/app/tasks`, [P20-T10](tasks/p20-t10.md) | Tabs «Мои дела», «Поручения агенту», «Календарь» |
@@ -52,8 +53,9 @@ Rules:
 - Pending decisions appear in «Сегодня», as a header badge and in chat; a
   separate «На согласовании» page exists for volume ([P20-T03](tasks/p20-t03.md)),
   not as another daily entry point.
-- Mobile bar: «Сегодня», «Чат», «Входящие», «Задачи», «Ещё» (drawer). Today's
-  `MOBILE_NAV_KEYS` omits chat although chat is the primary workspace.
+- Proposed mobile bar: «Сегодня», «Чат», «Входящие», «Задачи», «Ещё» (drawer).
+  Today's `MOBILE_NAV_KEYS` omits chat although chat is the primary workspace;
+  composition remains open (O-3).
 
 ## Chat page
 
@@ -94,6 +96,8 @@ Section order: brief → «Ждут решения» → «По плану на 
 overdue, calendar events, scheduled agent runs) → «Ждут ответа» (inbox triage) →
 «Требует внимания» (reconnect, failed or unknown delivery, budget limits) →
 «Последние результаты». Empty or unavailable providers collapse with their reason.
+Existing dashboard sections remain accessible. The user can select a start page
+in settings; «Сегодня» is the default (O-2).
 
 **Attention item projection** (read-time, no copy): provider and kind,
 authoritative reference and route, redacted title, reason, recommended priority
@@ -135,11 +139,12 @@ Tasks can be created from chat, a message, a document or «Сегодня».
 ## Team work
 
 A workspace is the team space. Assignee, watchers and the «Моё / Команда» switch
-use existing roles. Collective work in services people already use (Bitrix24
-tasks, trackers) is connected as a task source by reference
-([P20-T11](tasks/p20-t11.md)); we do not build a second tracker. Writes back
-(comment, status, assignee) go through the command ledger with preview and
-approval. Mentions and reminders use the one notification surface (D18).
+use existing roles. Users choose the task service they use; supported services
+are connected as task sources by reference ([P20-T11](tasks/p20-t11.md)). The
+first connector is not yet chosen and unsupported services are not implied to be
+available. We do not build a second tracker. Writes back (comment, status,
+assignee) go through the command ledger with preview and approval. Mentions and
+reminders use the one notification surface (D18).
 
 ## Documents, CRM and 1C
 
@@ -162,11 +167,12 @@ Every user capability is one permission-checked service behind several surfaces.
 | Bot decision buttons | Later task | Until then the bot links to the web decision |
 | Desktop | Future | See [PLATFORM_TOPOLOGY](PLATFORM_TOPOLOGY.md#access-clients) |
 
-## Open owner decisions
+## Owner decisions and open questions
 
-- O-1 Labels: «Мои дела» for planner tasks and «Поручения агенту» for agent tasks
-  under one «Задачи» (default), instead of today's «Задачи» meaning agent tasks.
-- O-2 «Сегодня» replaces «Обзор» as `/app/` (default yes, existing sections kept below).
-- O-3 Mobile bar composition (default above).
-- O-4 First external team task system for [P20-T11](tasks/p20-t11.md).
-- O-5 Web search provider and spend for [P20-T12](tasks/p20-t12.md).
+Source: [owner answers](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250).
+
+- **O-1 decided:** one «Задачи» section with «Мои дела», «Поручения агенту» and «Календарь». Coordinate with the active P16-T01 owner.
+- **O-2 decided:** users choose the start page in settings; «Сегодня» is the default. Route and migration details are for implementation.
+- **O-3 open:** mobile bar composition; the bar above is a proposal, not an owner decision.
+- **O-4 decided in principle:** users choose their own task service. The first supported connector and rollout order remain open; no universal provider mandated.
+- **O-5 decided for now:** use a stub for web search; prioritize Yandex Search API for a future provider. Real-provider activation and spending have not been approved.

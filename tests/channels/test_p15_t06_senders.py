@@ -7,7 +7,7 @@ import json
 import smtplib
 import socket
 import ssl
-from dataclasses import replace
+from dataclasses import fields, replace
 from email import policy
 from email.parser import BytesParser
 from types import SimpleNamespace
@@ -25,6 +25,7 @@ from app.channels.senders.contracts import (
     EmailRequest,
     MailAccount,
     SendBinding,
+    SendResult,
     bot_fingerprint,
 )
 from app.core import outbound
@@ -343,8 +344,31 @@ def test_smtp_greeting_and_recipient_refusal(monkeypatch):
 def test_smtp_switch_rechecked_after_auth(monkeypatch):
     client, _ = smtp_double(monkeypatch)
     client.on_login = lambda: monkeypatch.setenv("P15_EMAIL_SEND_KILL", "1")
-    assert smtp_send._send_email(MAIL, REQUEST).code == "capability_killed"
+    result = smtp_send._send_email(MAIL, REQUEST)
+    assert (result.outcome, result.code) == ("blocked", "account_send_disabled")
     assert not any(x[0] == "send" for x in client.calls)
+
+
+def test_smtp_switch_before_dns_is_retryable_block(monkeypatch):
+    release(monkeypatch, EMAIL)
+    monkeypatch.setenv("P15_EMAIL_SEND_KILL", "1")
+    result = smtp_send._send_email(MAIL, REQUEST)
+    assert (result.outcome, result.code) == ("blocked", "account_send_disabled")
+
+
+def test_smtp_switch_after_resolution_is_retryable_block(monkeypatch):
+    release(monkeypatch, EMAIL)
+    calls = []
+
+    def acquire(host, port, **kwargs):
+        calls.append(host)
+        monkeypatch.setenv("P15_EMAIL_SEND_KILL", "1")
+        return outbound.OutboundTarget(host, port, ("8.8.8.8",))
+
+    monkeypatch.setattr(smtp_send, "acquire_outbound_target", acquire)
+    result = smtp_send._send_email(MAIL, REQUEST)
+    assert (result.outcome, result.code) == ("blocked", "account_send_disabled")
+    assert calls == ["smtp.mail.ru"]
 
 
 @pytest.mark.parametrize("kill_during", [None, "mail", "rcpt"])
@@ -403,7 +427,9 @@ def test_smtp_rechecks_kill_after_envelope_before_data(monkeypatch, kill_during)
     result = smtp_send._send_email(MAIL, REQUEST)
 
     killed = kill_during is not None
-    assert (result.outcome, result.code) == (("blocked", "capability_killed") if killed else ("sent", "smtp_accepted"))
+    assert (result.outcome, result.code) == (
+        ("unknown", "smtp_envelope_disclosed") if killed else ("sent", "smtp_accepted")
+    )
     assert [call[0] for call in client.calls if call[0] in {"mail", "rcpt"}] == ["mail", "rcpt"]
     commands = [call[1] for call in client.calls if call[0] == "command"]
     wire = [call[1] for call in client.calls if call[0] == "wire"]
@@ -578,9 +604,10 @@ def test_revalidate_each_attempt_and_switch_after_resolution(monkeypatch, capabi
             else bots._send_bot(capability, account(capability), recipient(capability), "hi")
         )
 
-    assert send().code == "capability_killed"
+    expected = "account_send_disabled" if capability == EMAIL else "capability_killed"
+    assert send().code == expected
     monkeypatch.setenv(f"{PREFIXES[capability]}_KILL", "0")
-    assert send().code == "capability_killed" and len(calls) == 2
+    assert send().code == expected and len(calls) == 2
 
 
 @pytest.mark.parametrize("capability", [TELEGRAM, MAX])
@@ -670,10 +697,40 @@ async def test_async_public_adapters(monkeypatch):
         assert (await send(account(capability), recipient(capability), "hello")).outcome == "sent"
 
 
+async def test_async_smtp_unknown_is_not_retried(monkeypatch):
+    calls = []
+
+    def unknown_once(account, request):
+        calls.append((account, request))
+        return SendResult("unknown", "smtp_envelope_disclosed")
+
+    monkeypatch.setattr(smtp_send, "_send_email", unknown_once)
+    result = await smtp_send.send_email(MAIL, REQUEST)
+    assert (result.outcome, result.code) == ("unknown", "smtp_envelope_disclosed")
+    assert calls == [(MAIL, REQUEST)]
+
+
 def test_sensitive_inputs_not_in_repr():
-    assert "private-password" not in repr(MAIL)
-    assert "private-token" not in repr(account(TELEGRAM))
-    assert REQUEST.recipient not in repr(REQUEST) and REQUEST.text not in repr(REQUEST)
+    expected_sensitive = {
+        MailAccount: {"account_login", "app_password"},
+        BotAccount: {"token"},
+        EmailRequest: {"recipient", "subject", "text"},
+        BotRecipient: {"user_id"},
+    }
+    samples = (MAIL, account(TELEGRAM), REQUEST, RECIPIENT)
+    assert {type(sample) for sample in samples} == set(expected_sensitive)
+
+    for sample in samples:
+        sample_fields = fields(sample)
+        declared_sensitive = {item.name for item in sample_fields if not item.repr}
+        expected = expected_sensitive[type(sample)]
+        assert declared_sensitive == expected
+
+        markers = {name: f"p15-t06-sensitive-{type(sample).__name__}-{name}" for name in expected}
+        redacted_sample = replace(sample, **markers)
+        rendered = repr(redacted_sample)
+        for marker in markers.values():
+            assert marker not in rendered
 
 
 @pytest.mark.parametrize("capability", [TELEGRAM, MAX])

@@ -9,7 +9,7 @@ import pytest
 __source_only__ = True
 
 from app.core.access_catalog import RESOURCES, resolve_permission_key, resource_for, workspace_grants
-from app.core.permissions import has_permission, has_permission_by_codename, has_role, permission_scope
+from app.core.permissions import has_permission, has_permission_by_codename, has_role, member_decision, permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import ModelType, Permission, PlatformRole, User, WorkspaceRole
 from app.types import ActionType, PlatformRoleType, WorkspaceRoleType
@@ -177,15 +177,75 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
         False,
         False,
     )
+    # P15-T09 adds a symbolic outbox permission resource before the outbox table
+    # exists. It is catalog-seeded, not introduced by the immutable 0096 migration.
+    actual["outbox_messages"] = (
+        "comms.outbox",
+        "outboxmessage",
+        {"view", "update", "configure"},
+        True,
+        False,
+    )
     key, model, actions, is_workspace, is_personal = actual["tenants"]
     actual["tenants"] = (key, model, actions | {"delete"}, is_workspace, is_personal)
     assert expected == actual
     for role, pairs in migration._workspace_grant_pairs().items():
-        canonical = {(resource_for(model).key, action.db_value) for model, action in workspace_grants(role)}
+        canonical = {
+            (resource_for(model).key, action.db_value)
+            for model, action in workspace_grants(role)
+            if resource_for(model).key != "comms.outbox"
+        }
         baseline_pairs = pairs | (
             {("audit.action_audit", "view"), ("audit.action_audit", "export")} if role in ("owner", "admin") else set()
         )
         assert canonical == baseline_pairs
+
+
+def test_p15_t09_comms_outbox_preset_is_metadata_only():
+    resource = resource_for("comms.outbox")
+    assert resource is not None
+    assert (resource.model_name, resource.table_name, resource.workspace) == (
+        "outboxmessage",
+        "outbox_messages",
+        True,
+    )
+    assert resource.actions == {ActionType.VIEW, ActionType.UPDATE, ActionType.CONFIGURE}
+    for action in resource.actions:
+        assert resolve_permission_key(f"comms.outbox.{action.db_value}") == (resource, action)
+
+    expected_by_role = {
+        "owner": {ActionType.VIEW, ActionType.UPDATE, ActionType.CONFIGURE},
+        "admin": {ActionType.VIEW, ActionType.UPDATE, ActionType.CONFIGURE},
+        "manager": {ActionType.VIEW, ActionType.UPDATE},
+        "analyst": {ActionType.VIEW},
+        "viewer": {ActionType.VIEW},
+    }
+    for role, expected in expected_by_role.items():
+        grants = {action for model, action in workspace_grants(role) if model == resource.model_name}
+        assert grants == expected
+
+    # UPDATE is metadata editing only. D14 APPROVE remains unsupported and
+    # must fail closed; this catalog grants no send/approval authorization.
+    for action in ("create", "delete", "approve"):
+        assert resolve_permission_key(f"comms.outbox.{action}") is None
+
+
+def test_p15_t09_manager_update_is_metadata_not_approval():
+    actor = user("user")
+    membership = member("manager")
+    grants = workspace_grants("manager")
+    web_perms = WebPerms(actor, [membership], 11, grants)
+
+    with tenant_scope(11), permission_scope(actor, member_grants=grants):
+        assert member_decision(actor, "outboxmessage", ActionType.UPDATE) is True
+        assert has_permission(actor, "comms.outbox", ActionType.UPDATE)
+        assert has_permission_by_codename(actor, "comms.outbox.update")
+        assert not has_permission(actor, "comms.outbox", "approve")
+        assert not has_permission_by_codename(actor, "comms.outbox.approve")
+        assert member_decision(actor, "outboxmessage", "approve") is False
+
+    assert web_perms.can("comms.outbox", ActionType.UPDATE)
+    assert not web_perms.can("comms.outbox", "approve")
 
 
 def test_migration_permission_map_keeps_canonical_model_without_permissions(monkeypatch):

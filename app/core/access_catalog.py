@@ -29,6 +29,7 @@ RESOURCES = (
     ),
     _resource("contacts.contact", "Contact", "contacts", "VIEW CREATE UPDATE DELETE EXPORT", True),
     _resource("comms.message", "UnifiedMessage", "unified_messages", "VIEW CREATE UPDATE DELETE", True),
+    _resource("comms.outbox", "OutboxMessage", "outbox_messages", "VIEW UPDATE CONFIGURE", True),
     _resource("identity.user", "User", "users", "VIEW CREATE UPDATE DELETE"),
     _resource("identity.platform_role", "PlatformRole", "roles", "VIEW CONFIGURE"),
     _resource("identity.permission", "Permission", "permissions", "VIEW"),
@@ -177,6 +178,8 @@ def workspace_grants(codename):
                 actions = set(r.actions)
             elif r.key == "comms.message":
                 actions = set(r.actions) - {ActionType.DELETE}
+            elif r.key == "comms.outbox":
+                actions = {ActionType.VIEW, ActionType.UPDATE}
             elif r.key in ("analysis.result", "notifications.digest_run", "notifications.notification"):
                 actions = {ActionType.VIEW}
         elif role == WorkspaceRoleType.ANALYST:
@@ -186,10 +189,16 @@ def workspace_grants(codename):
                 actions = {ActionType.VIEW, ActionType.ANALYZE, ActionType.EXPORT}
             elif r.key == "notifications.digest_run":
                 actions = {ActionType.VIEW, ActionType.CREATE, ActionType.EXPORT}
-            elif r.key == "comms.message":
+            elif r.key in ("comms.message", "comms.outbox"):
                 actions = {ActionType.VIEW}
         elif role == WorkspaceRoleType.VIEWER:
-            if r.key in ("collection.source", "analysis.result", "notifications.digest_run", "comms.message"):
+            if r.key in (
+                "collection.source",
+                "analysis.result",
+                "notifications.digest_run",
+                "comms.message",
+                "comms.outbox",
+            ):
                 actions = {ActionType.VIEW}
         # Everyone with AI access can operate ONLY their own conversation records.
         if r.personal:

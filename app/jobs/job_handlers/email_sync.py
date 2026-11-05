@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from sqlalchemy import select
@@ -51,6 +52,11 @@ async def handle_email_sync(
     runs: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for conn in connections:
+        # One savepoint per connection (B-13): a failure here must not discard rows another
+        # connection has already ingested in this run.
+        savepoint = session.begin_nested()
+        if inspect.isawaitable(savepoint):
+            savepoint = await savepoint
         try:
             result = await sync_service.sync_connection(
                 session,
@@ -59,6 +65,11 @@ async def handle_email_sync(
             )
             runs.append(result)
         except Exception as exc:  # noqa: BLE001
+            rollback = getattr(savepoint, "rollback", None)
+            if rollback is not None:
+                rolled_back = rollback()
+                if inspect.isawaitable(rolled_back):
+                    await rolled_back
             if connection_id is not None:
                 raise
             errors.append(
@@ -67,6 +78,12 @@ async def handle_email_sync(
                     "error": getattr(exc, "code", exc.__class__.__name__),
                 }
             )
+        else:
+            commit = getattr(savepoint, "commit", None)
+            if commit is not None:
+                committed = commit()
+                if inspect.isawaitable(committed):
+                    await committed
 
     return {
         "job": JOB_NAME,

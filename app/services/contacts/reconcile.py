@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -339,6 +340,27 @@ async def suggest_contact_merges(
     return [s.to_dict() for s in suggestions]
 
 
+# Keys ingestion derives per channel (`app.services.communications.ingest.derive_thread_key`).
+_THREAD_KEY_PREFIX = re.compile(r"^(?P<channel>[a-z_]+):(?P<kind>msgid|subj|orig|chat):")
+
+
+def _thread_key_for_message(msg: UnifiedMessage, current: str | None) -> str:
+    """Derive a thread key ingestion can regenerate for this message's own channel (B-12).
+
+    A key that already belongs to the message's channel is kept, so re-binding inside one
+    channel does not fragment a conversation. A key from another channel is replaced: its
+    suffix is re-scoped under the message's channel. The merge journal keeps the previous
+    key, so unmerge restores it.
+    """
+    value = str(current or "")
+    match = _THREAD_KEY_PREFIX.match(value)
+    if match is not None and match.group("channel") == msg.channel:
+        return value
+    suffix = value[match.end() :] if match is not None else value
+    suffix = suffix[:200] or str(msg.original_id or "")[:200]
+    return f"{msg.channel}:orig:{suffix}"
+
+
 def _snapshot_thread(th: MessageThread) -> dict[str, Any]:
     return {
         "id": th.id,
@@ -626,8 +648,10 @@ async def merge_contacts(
         if msg.thread_id is not None:
             cur_th = all_tracked_threads.get(msg.thread_id)
             if cur_th is not None and cur_th.connection_id != msg.connection_id:
-                # Re-bind message to a thread matching its own connection_id (B-9)
-                conn_key = (msg.connection_id, msg.channel, cur_th.thread_key)
+                # Re-bind message to a thread of its own connection (B-9). The key has to be one
+                # ingestion can regenerate for this message's channel (B-12).
+                dest_key = _thread_key_for_message(msg, cur_th.thread_key)
+                conn_key = (msg.connection_id, msg.channel, dest_key)
                 dest_th = threads_by_conn_key.get(conn_key)
                 if dest_th is None:
                     dest_th = MessageThread(
@@ -635,7 +659,7 @@ async def merge_contacts(
                         connection_id=msg.connection_id,
                         contact_id=target_contact_id,
                         channel=msg.channel,
-                        thread_key=cur_th.thread_key,
+                        thread_key=dest_key,
                         subject_encrypted=cur_th.subject_encrypted,
                         participants_encrypted=cur_th.participants_encrypted,
                         last_message_at=msg.sent_at,
@@ -648,7 +672,6 @@ async def merge_contacts(
                     threads_by_conn_key[conn_key] = dest_th
                     all_tracked_threads[dest_th.id] = dest_th
                     created_thread_ids.append(dest_th.id)
-                    moved_thread_ids.append(dest_th.id)
                 reassigned_threads.add(cur_th.id)
                 reassigned_threads.add(dest_th.id)
                 msg.thread_id = dest_th.id
@@ -901,6 +924,8 @@ async def unmerge_contacts(
             before_th = threads_before_by_id.get(th.id)
             if before_th is not None:
                 th.contact_id = before_th.get("contact_id")
+                if "thread_key" in before_th:
+                    th.thread_key = before_th["thread_key"]
                 th.message_count = int(before_th.get("message_count", th.message_count or 0))
                 th.unread_count = int(before_th.get("unread_count", th.unread_count or 0))
                 if "last_message_at" in before_th:

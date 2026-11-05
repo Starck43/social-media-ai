@@ -320,10 +320,14 @@ def _fetch_folder_batches_sync(
     effective_last_uid = 0 if uidvalidity_reset else max(0, int(last_uid))
 
     status, search_data = client.uid("SEARCH", None, "UID 1:*")
-    if status != "OK" or not search_data:
+    if status != "OK":
         return current_uidvalidity, uidvalidity_reset, [], set(), True
+    # An OK answer with no data is not evidence that the folder is empty (B-14): the scan is
+    # incomplete, so the expunge check must not treat the stored backlog as deleted.
+    if not search_data or not search_data[0] or not isinstance(search_data[0], (bytes, str)):
+        return current_uidvalidity, uidvalidity_reset, [], set(), False
 
-    raw_uids = search_data[0].split() if search_data[0] and isinstance(search_data[0], (bytes, str)) else []
+    raw_uids = search_data[0].split()
     present_uids: set[int] = {
         int(u.decode("ascii") if isinstance(u, bytes) else str(u))
         for u in raw_uids
@@ -600,15 +604,13 @@ class ImapSyncService:
                 conn.config = dict(config)
                 await session.flush()
 
+            rescan_needed = uv_reset and not all_batches_ok
             sync_state[folder] = {
                 "uidvalidity": current_uv,
-                "last_uid": highest_uid,
+                # A partial scan cannot move the cursor past messages it never read (N-1).
+                "last_uid": 0 if rescan_needed else highest_uid,
                 "last_synced_at": datetime.now(timezone.utc).isoformat(),
-                **(
-                    {"uidvalidity_reset_pending": True}
-                    if (uv_reset and not all_batches_ok)
-                    else {}
-                ),
+                **({"uidvalidity_reset_pending": True} if rescan_needed else {}),
             }
 
             # Detect messages expunged from this folder on the IMAP server (B-6)
@@ -632,8 +634,11 @@ class ImapSyncService:
                 if len(parts) != 3 or not parts[2].isdigit():
                     continue
                 msg_uv_str, msg_uid = parts[1], int(parts[2])
+                # Only one exact, complete scan can prove a message is gone (B-14).
                 is_expunged_in_current_uv = (
-                    msg_uv_str == str(current_uv)
+                    all_batches_ok
+                    and present_uids
+                    and msg_uv_str == str(current_uv)
                     and msg_uid <= highest_uid
                     and msg_uid not in present_uids
                 )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import imaplib
 import ssl
 import sys
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -61,6 +62,24 @@ class _FakeResult:
         return list(self._rows)
 
 
+class _InMemorySavepoint:
+    """Savepoint that discards the rows added between `begin_nested` and `rollback` (B-13)."""
+
+    _LISTS = ("connections", "secrets", "contacts", "identities", "threads", "messages", "stats")
+
+    def __init__(self, session):
+        self.session = session
+        self._marks = {name: len(getattr(session, name)) for name in self._LISTS}
+
+    async def rollback(self) -> None:
+        for name, mark in self._marks.items():
+            rows = getattr(self.session, name)
+            del rows[mark:]
+
+    async def commit(self) -> None:
+        return None
+
+
 class _InMemoryImapDbSession:
     def __init__(self):
         self.connections: list[WorkspaceConnection] = []
@@ -93,6 +112,9 @@ class _InMemoryImapDbSession:
 
     async def flush(self) -> None:
         return None
+
+    def begin_nested(self):
+        return _InMemorySavepoint(self)
 
     async def execute(self, stmt: Any) -> _FakeResult:
         sql = str(stmt)
@@ -239,6 +261,9 @@ class _FakeImapServerClient:
         messages: dict[int, tuple[bytes, bytes]] = folder_info["messages"]
 
         if cmd_upper == "SEARCH":
+            if folder_info.get("empty_search_reply"):
+                # An OK answer with no data: not evidence that the folder is empty (B-14).
+                return "OK", [None]
             criterion = str(args[1] or "")
             min_uid = 1
             if "UID " in criterion and ":*" in criterion:
@@ -851,6 +876,107 @@ async def test_b1_b4_rescan_after_uidvalidity_reset_creates_zero_new_rows():
         assert rescan_res["total_created"] == 0
         assert rescan_res["total_uid_rebound"] == 0
         assert len(session.messages) == 5
+
+
+@pytest.mark.asyncio
+async def test_b13_one_failing_connection_keeps_the_other_connection_rows():
+    """B-13: a failing connection rolls back only its own savepoint; an earlier connection's rows survive."""
+
+    class _FailSecondService:
+        def __init__(self):
+            self.calls: list[int] = []
+
+        async def sync_connection(self, session, *, connection_id, folders=None):
+            self.calls.append(connection_id)
+            if connection_id == 2:
+                raise RuntimeError("imap_session_expired")
+            session.add(
+                UnifiedMessage(
+                    tenant_id=1,
+                    connection_id=connection_id,
+                    channel="email",
+                    original_id=f"INBOX:1:{connection_id}",
+                    direction="inbound",
+                    sent_at=datetime(2026, 11, 4, 10, 0, tzinfo=timezone.utc),
+                    received_at=datetime(2026, 11, 4, 10, 0, tzinfo=timezone.utc),
+                    content_hash="sha256:" + str(connection_id) * 64,
+                    is_read=False,
+                )
+            )
+            return {"connection_id": connection_id, "created": 1}
+
+    session = _InMemoryImapDbSession()
+    for cid, provider in ((1, "mailru_mail"), (2, "yandex_mail")):
+        session.add(
+            WorkspaceConnection(
+                id=cid,
+                tenant_id=1,
+                owner_user_id=7,
+                platform="email",
+                provider_id=provider,
+                auth_method="app_password",
+                schema_version=1,
+                label=f"Mail {cid}",
+                account_key=f"team{cid}@example.com",
+                config={"account_login": f"team{cid}@example.com", "imap_host": "imap.example.com"},
+                is_active=True,
+                state="verified",
+            )
+        )
+
+    service = _FailSecondService()
+    with tenant_scope(1):
+        result = await handle_email_sync({}, sync_service=service, session=session)
+
+    assert service.calls == [1, 2]
+    assert result["connections_synced"] == 1
+    assert result["errors"] == [{"connection_id": 2, "error": "RuntimeError"}]
+    assert [m.connection_id for m in session.messages] == [1]
+
+
+@pytest.mark.asyncio
+async def test_b14_empty_search_reply_never_marks_the_folder_unavailable():
+    """B-14: an OK SEARCH reply without data leaves the stored backlog untouched."""
+
+    session = _InMemoryImapDbSession()
+    conn = WorkspaceConnection(
+        id=21,
+        tenant_id=1,
+        owner_user_id=7,
+        platform="email",
+        provider_id="mailru_mail",
+        auth_method="app_password",
+        schema_version=1,
+        label="Mail.ru",
+        account_key="sales@mail.ru",
+        config={"account_login": "sales@mail.ru", "imap_host": "imap.mail.ru", "imap_folders": ["INBOX"]},
+        is_active=True,
+        state="verified",
+    )
+    session.add(conn)
+    session.add(WorkspaceConnectionSecret(connection_id=21, secret_encrypted=encrypt_secret("pw")))
+
+    headers = (
+        b"From: Client <client@example.com>\r\n"
+        b"To: sales@mail.ru\r\n"
+        b"Subject: Invoice\r\n"
+        b"Date: Wed, 04 Nov 2026 10:00:00 +0000\r\n"
+        b"Message-ID: <invoice-1@example.com>\r\n\r\n"
+    )
+    folders_state: dict[str, dict[str, Any]] = {"INBOX": {"uidvalidity": 5, "messages": {1: (b"", headers)}}}
+    service = ImapSyncService(client_factory=lambda *a: _FakeImapServerClient(folders_state))
+
+    with tenant_scope(1):
+        first = await service.sync_connection(session, connection_id=21)
+        assert first["total_created"] == 1
+        assert [m.unavailable_at for m in session.messages] == [None]
+
+        # The server now answers the scan with no data although the folder still has content.
+        folders_state["INBOX"] = {"uidvalidity": 5, "messages": {1: (b"", headers)}, "empty_search_reply": True}
+        second = await service.sync_connection(session, connection_id=21)
+
+        assert second["total_marked_unavailable"] == 0
+        assert [m.unavailable_at for m in session.messages] == [None], "an empty reply is not proof of deletion"
 
 
 @pytest.mark.asyncio

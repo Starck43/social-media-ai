@@ -736,6 +736,10 @@ async def test_b9_cross_connection_merge_and_unmerge_preserves_thread_connection
         assert rebound_th.contact_id == 10
         assert rebound_th.message_count == 1
         assert rebound_th.unread_count == 1
+        # B-12: the re-bound email message must not keep the Telegram thread's key
+        assert rebound_th.channel == "email"
+        assert rebound_th.thread_key != "telegram:chat:777"
+        assert rebound_th.thread_key.startswith("email:")
 
         # Unmerge restores exact pre-merge state for all threads and messages
         unmerge_res = await unmerge_contacts(session, journal_id=merge_res["journal_id"])

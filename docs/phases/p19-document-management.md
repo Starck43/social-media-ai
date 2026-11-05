@@ -34,7 +34,7 @@ As in TZ under `/api/v1/documents/…`: CRUD, `{id}/versions`, `{id}/restore/{ve
 
 ## Acceptance
 
-TZ criteria: AI letters from context (T02); templates (T02); every version saved (T01/T03); diff (T03); approval request→approve/reject (T04); notifications (T04); edit after approval invalidates it (T04); PDF/DOCX export (T05); email with attachment (T05); content search (T06).
+TZ criteria: AI letters from context (T02); templates (T02); every version saved (T01/T03); diff (T03); approval request→approve/reject (T04); notifications (T04); edit after approval invalidates it (T04); PDF/DOCX export (T05); email with attachment (T05); metadata search; content search not built under D3 (T06).
 
 ## Plan
 

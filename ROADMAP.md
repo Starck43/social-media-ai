@@ -50,6 +50,10 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P20-T01](docs/tasks/p20-t01.md) Plan proactive assistant improvements and safe orchestration — **IN_PROGRESS** · notion-ai-p20-t01 · [dialogue](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C2`
 
+- [P20-T06](docs/tasks/p20-t06.md) Workspace navigation and entry points — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C3`
+- [P20-T07](docs/tasks/p20-t07.md) «Сегодня»: read-time attention and decisions home — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C4`
+- [P20-T08](docs/tasks/p20-t08.md) Chat workspace: context panel, inline cards and chat dock — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C4`
+
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **IN_PROGRESS** · notion-ai-p8-t33 · [chat](https://app.notion.com/chat?t=40a3d3cc6f4080648d4000a9e3177cc4) · `P2` · `C4`
 - [P8-T46](docs/tasks/p8-t46.md) VK video search category — **IN_PROGRESS** · notion-ai-p8-t46 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
 - [P8-T47](docs/tasks/p8-t47.md) VK apps/games search category — **IN_PROGRESS** · notion-ai-p8-t47 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
@@ -71,6 +75,15 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **feature on top of the P15 transport; opt-in required (D15)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 
 ### Priority P3
+
+- [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T03](docs/tasks/p20-t03.md) Unified approval inbox on existing ledgers — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T09](docs/tasks/p20-t09.md) Inbox triage and agent-suggested replies — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T10](docs/tasks/p20-t10.md) Unified task surface: my to-dos, agent assignments and calendar — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T11](docs/tasks/p20-t11.md) Team work through connected task systems — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T04](docs/tasks/p20-t04.md) Bounded specialist delegation for research — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
+- [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
 - [P15-T05](docs/tasks/p15-t05.md) Persistent outbox, scheduling and delivery tracking — **transport, consumes P15-T06; permission `comms.outbox` (D14)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T06](docs/tasks/p15-t06.md) Channel senders: SMTP, Telegram bot and MAX bot capabilities — **transport, lands first; sends only customer-account mail through the P14-T09 seam (D12/D13)** — **IN_PROGRESS** · Codex audit · [finding](https://github.com/Starck43/social-media-ai/pull/411#issuecomment-6658502964) · [PR #411](https://github.com/Starck43/social-media-ai/pull/411) · `P3` · `C4`
@@ -179,7 +192,7 @@ Document management (TZ module 6); use the P19 cards in the execution queue.
 
 ## [P20](docs/phases/p20-proactive-assistant.md)
 
-Proactive assistant planning; use the P20 cards in the execution queue.
+Proactive assistant and unified workspace; use the P20 cards in the execution queue.
 
 ## Questions
 

@@ -1,0 +1,124 @@
+{% extends "web/base.html" %}
+{% block title %}Планировщик — AI Assistant{% endblock %}
+{% block page_heading %}Планировщик{% endblock %}
+{% block extra_head %}
+{{ super() }}
+<style>
+    /* The shared ui-control minimum is 40px; planner forms use touch-sized targets. */
+    .planner-page .ui-control { min-height: 44px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="planner-page space-y-6">
+    <section class="ui-card space-y-4" aria-labelledby="planner-heading">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <h2 id="planner-heading" class="text-lg font-semibold">Задачи пространства</h2>
+                <p class="ui-muted mt-2">Ваши дела, сроки и подзадачи. Не расписание запуска агента.</p>
+            </div>
+            <nav class="flex flex-wrap gap-2" aria-label="Вид планировщика">
+                <a href="/app/planner?view=list" class="ui-control min-h-[44px]" {% if view == 'list' %}aria-current="page"{% endif %}>Список</a>
+                <a href="/app/planner?view=board" class="ui-control min-h-[44px]" {% if view == 'board' %}aria-current="page"{% endif %}>Доска</a>
+            </nav>
+        </div>
+        <p class="ui-muted text-sm">Доска показывает текущую страницу, до 50 задач. Завершение повтора создаёт только следующий срок.</p>
+    </section>
+
+    {% if editing and can_update %}
+    <section class="ui-card space-y-4" aria-labelledby="edit-heading">
+        <h2 id="edit-heading" class="text-lg font-semibold">Изменить задачу №{{ editing.id }}</h2>
+        <form method="post" action="/app/planner/{{ editing.id }}/edit" class="space-y-4">
+            <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ editing.version }}">
+            <label class="block">Название<input class="ui-control w-full mt-2" name="title" maxlength="500" required value="{{ editing.title }}"></label>
+            <label class="block">Описание<textarea class="ui-control w-full mt-2" name="description" maxlength="20000" rows="3">{{ editing.description }}</textarea></label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label class="block">Область изменения<select class="ui-control w-full mt-2" name="scope"><option value="occurrence">Только эта задача</option><option value="series">Эта и будущие задачи серии</option></select></label>
+                <label class="block">Приоритет<select class="ui-control w-full mt-2" name="priority">{% for key, label in priority_labels.items() %}<option value="{{ key }}" {% if key == editing.priority %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+                <label class="block">Исполнитель · ID пользователя<input class="ui-control w-full mt-2" type="number" min="1" name="assignee_id" value="{{ editing.assignee_id or '' }}"></label>
+                <label class="block">Родительская задача · ID<input class="ui-control w-full mt-2" type="number" min="1" name="parent_id" value="{{ editing.parent_id or '' }}"></label>
+                <label class="block">Контакт · ID<input class="ui-control w-full mt-2" type="number" min="1" name="contact_id" value="{{ editing.contact_id or '' }}"></label>
+                <label class="block">Статус<select class="ui-control w-full mt-2" name="status">{% for key in ['todo', 'in_progress', 'cancelled'] %}<option value="{{ key }}" {% if key == editing.status %}selected{% endif %}>{{ status_labels[key] }}</option>{% endfor %}</select></label>
+                <label class="block">Категория<input class="ui-control w-full mt-2" name="category" maxlength="100" value="{{ editing.category }}"></label>
+                <label class="block">Метки через запятую<input class="ui-control w-full mt-2" name="tags" value="{{ editing.tags|join(', ') }}"></label>
+            </div>
+            <button class="ui-control min-h-[44px]" type="submit">Сохранить изменения</button>
+        </form>
+        <form method="post" action="/app/planner/{{ editing.id }}/reschedule" class="space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+            <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ editing.version }}">
+            <input type="hidden" name="scope" value="occurrence">
+            <h3 class="font-semibold">Перенести только эту задачу</h3>
+            <p class="ui-muted text-sm">Правило и будущие сроки серии сохранятся. Для повтора оставьте тот же тип срока: дата или время.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label>Дата<input class="ui-control w-full mt-2" type="date" name="due_date" value="{{ editing.due_date or '' }}"></label>
+                <label>Время со смещением<input class="ui-control w-full mt-2" name="due_at" value="{{ editing.due_at.isoformat() if editing.due_at else '' }}" placeholder="2026-11-10T09:00:00+03:00"></label>
+                <label>Часовой пояс<input class="ui-control w-full mt-2" name="timezone" value="{{ editing.timezone }}" required></label>
+            </div>
+            <button class="ui-control min-h-[44px]" type="submit">Перенести только эту задачу</button>
+        </form>
+        <form method="post" action="/app/planner/{{ editing.id }}/reschedule" class="space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+            <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ editing.version }}">
+            <h3 class="font-semibold">Перенести срок / изменить правило серии</h3>
+            <p class="ui-muted text-sm">Укажите либо дату, либо время ISO 8601 со смещением. Новый срок начинает отсчёт COUNT заново; завершённые задачи не меняются.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label>Дата<input class="ui-control w-full mt-2" type="date" name="due_date" value="{{ editing.due_date or '' }}"></label>
+                <label>Время со смещением<input class="ui-control w-full mt-2" name="due_at" value="{{ editing.due_at.isoformat() if editing.due_at else '' }}" placeholder="2026-11-10T09:00:00+03:00"></label>
+                <label>Часовой пояс<input class="ui-control w-full mt-2" name="timezone" value="{{ editing.timezone }}" required></label>
+                <label>RRULE · пусто — без повтора<input class="ui-control w-full mt-2" name="recurrence" value="{{ editing.recurrence or '' }}" maxlength="150"></label>
+            </div>
+            <input type="hidden" name="scope" value="series">
+            <button class="ui-control min-h-[44px]" type="submit">Перенести эту и будущие задачи</button>
+        </form>
+        <a class="ui-control inline-flex min-h-[44px]" href="/app/planner">Вернуться к списку</a>
+    </section>
+    {% elif can_create %}
+    <section class="ui-card space-y-4" aria-labelledby="create-heading">
+        <h2 id="create-heading" class="text-lg font-semibold">Новая задача</h2>
+        <form method="post" action="/app/planner" class="space-y-4">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <label class="block">Название<input class="ui-control w-full mt-2" name="title" required maxlength="500" placeholder="Что нужно сделать?"></label>
+            <label class="block">Описание<textarea class="ui-control w-full mt-2" name="description" rows="2" maxlength="20000"></textarea></label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label>Дата без времени<input class="ui-control w-full mt-2" type="date" name="due_date"></label>
+                <label>Или время со смещением<input class="ui-control w-full mt-2" name="due_at" placeholder="2026-11-10T09:00:00+03:00"></label>
+                <label>Часовой пояс<input class="ui-control w-full mt-2" name="timezone" value="UTC" required></label>
+                <label>Приоритет<select class="ui-control w-full mt-2" name="priority">{% for key, label in priority_labels.items() %}<option value="{{ key }}" {% if key == 'medium' %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+                <label>Исполнитель · ID пользователя<input class="ui-control w-full mt-2" type="number" min="1" name="assignee_id"></label>
+                <label>Контакт · ID<input class="ui-control w-full mt-2" type="number" min="1" name="contact_id"></label>
+                <label>Родительская задача · ID<input class="ui-control w-full mt-2" type="number" min="1" name="parent_id"></label>
+                <label>Категория<input class="ui-control w-full mt-2" name="category" maxlength="100"></label>
+                <label>Метки через запятую<input class="ui-control w-full mt-2" name="tags"></label>
+                <label>Повтор · RRULE<input class="ui-control w-full mt-2" name="recurrence" maxlength="150" placeholder="FREQ=WEEKLY;INTERVAL=1"></label>
+            </div>
+            <p class="ui-muted text-sm">Поддерживаются DAILY, WEEKLY, MONTHLY; INTERVAL и COUNT либо UNTIL. Для повтора нужен срок.</p>
+            <button class="ui-control min-h-[44px]" type="submit">Создать задачу</button>
+        </form>
+    </section>
+    {% endif %}
+
+    <section aria-label="Задачи" class="{% if view == 'board' %}grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4{% else %}space-y-4{% endif %}">
+    {% for status, label in status_labels.items() %}
+        <div class="ui-card min-w-0 space-y-4">
+            <h2 class="font-semibold">{{ label }}</h2>
+            {% set group = items|selectattr('status', 'equalto', status)|list %}
+            {% for item in group %}
+            <article class="space-y-3 border-t border-slate-200 dark:border-slate-700 pt-4" aria-labelledby="task-{{ item.id }}">
+                <h3 id="task-{{ item.id }}" class="font-semibold break-words" style="overflow-wrap:anywhere">{{ item.title }}</h3>
+                <p class="ui-muted text-sm">№{{ item.id }} · {{ priority_labels[item.priority] }}{% if item.parent_id %} · Подзадача №{{ item.parent_id }}{% endif %}</p>
+                <p class="break-words">{% if item.due_at %}<time datetime="{{ item.due_at.isoformat() }}">{{ item.due_at|human_dt(tz=item.timezone) }}</time> · {{ item.timezone }}{% elif item.due_date %}<time datetime="{{ item.due_date }}">{{ item.due_date|human_dt }}</time>{% else %}Без срока{% endif %}</p>
+                {% if item.recurrence %}<p class="ui-muted text-sm break-words" style="overflow-wrap:anywhere">Повтор: {{ item.recurrence }}</p>{% endif %}
+                {% if item.description %}<p class="break-words whitespace-pre-wrap" style="overflow-wrap:anywhere">{{ item.description }}</p>{% endif %}
+                <div class="flex flex-wrap gap-2">
+                    {% if can_update and item.status not in ['done','cancelled'] %}
+                    <a class="ui-control inline-flex min-h-[44px]" href="/app/planner/{{ item.id }}/edit">Изменить</a>
+                    <form method="post" action="/app/planner/{{ item.id }}/complete"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><button type="submit" class="ui-control min-h-[44px]">Завершить</button></form>
+                    {% endif %}
+                    {% if can_delete %}<form method="post" action="/app/planner/{{ item.id }}/delete" data-confirm="Удалить задачу, её следующие повторы и подзадачи? Для корня серии удалится вся серия."><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><button type="submit" class="ui-control min-h-[44px]">Удалить{% if item.id == item.series_id %} серию{% else %} и повторы{% endif %}</button></form>{% endif %}
+                </div>
+            </article>
+            {% else %}<p class="ui-muted py-4" role="status">Задач пока нет.</p>{% endfor %}
+        </div>
+    {% endfor %}
+    </section>
+    {% if next_before_id %}<a class="ui-control inline-flex min-h-[44px]" href="/app/planner?view={{ view }}&amp;before_id={{ next_before_id }}">Следующие задачи</a>{% endif %}
+</div>
+{% endblock %}

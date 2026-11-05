@@ -105,6 +105,15 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         group="knowledge",
         group_label="База знаний и документы",
     ),
+    NavItem(
+        "planner",
+        "/app/planner",
+        "Планировщик",
+        required_permission="planner.task.view",
+        icon="calendar",
+        group="communications",
+        group_label="Коммуникации и поручения",
+    ),
     # 4. Contacts, Communications & Follow-ups
     NavItem(
         "contacts",

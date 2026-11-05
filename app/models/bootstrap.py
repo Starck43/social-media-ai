@@ -61,12 +61,17 @@ def bind_managers(models):
     models.ContactIdentity.objects = BaseManager(models.ContactIdentity)
     models.ContactConsent.objects = BaseManager(models.ContactConsent)
     models.ContactMergeJournal.objects = BaseManager(models.ContactMergeJournal)
+    models.PlannerTask.objects = import_module("app.models.planner.manager").PlannerManager()
     models.LocalConnector.objects = BaseManager(models.LocalConnector)
     models.LocalConnectorPairing.objects = BaseManager(models.LocalConnectorPairing)
     models.LocalConnectorRequest.objects = BaseManager(models.LocalConnectorRequest)
     crm_managers = import_module("app.models.managers.crm_entity_manager")
     models.CrmEntity.objects = crm_managers.CrmEntityManager()
     models.GreetingHistory.objects = crm_managers.GreetingHistoryManager()
+    comms_managers = import_module("app.models.managers.unified_message_manager")
+    models.UnifiedMessage.objects = comms_managers.UnifiedMessageManager()
+    models.MessageThread.objects = comms_managers.MessageThreadManager()
+    models.ContactChannelStat.objects = comms_managers.ContactChannelStatManager()
     models.TrustedOutboundHost.objects = import_module(
         "app.models.managers.trusted_outbound_host_manager"
     ).TrustedOutboundHostManager()

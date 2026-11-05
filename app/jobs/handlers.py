@@ -2150,6 +2150,12 @@ def _aggregate_memory_job_results(results: list[dict[str, Any]]) -> dict[str, An
     }
 
 
+async def handle_email_sync(payload: dict[str, Any]) -> dict[str, Any]:
+    from app.jobs.job_handlers.email_sync import handle_email_sync as execute
+
+    return await execute(payload)
+
+
 HANDLERS = {
     "collect": handle_collect,
     "digest": handle_digest,
@@ -2157,4 +2163,5 @@ HANDLERS = {
     "analyze": handle_analyze,
     "learn": handle_learn,
     "reflect": handle_reflect,
+    "comms.email.sync": handle_email_sync,
 }

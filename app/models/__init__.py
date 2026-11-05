@@ -34,6 +34,7 @@ from .collection import (
     Platform,
     Source,
 )
+from .communications import ContactChannelStat, MessageThread, UnifiedMessage
 from .contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
 from .crm import CrmEntity, GreetingHistory
 from .file_workspace import FileCatalogObject, FileCatalogObservation, FileCatalogScan
@@ -68,6 +69,7 @@ from .llm import (
     LLMProvider,
 )
 from .notifications import DigestRun, Notification, NotificationPreference, NotificationReceipt
+from .planner import PlannerTask
 from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
@@ -79,6 +81,10 @@ __all__ = [
     "ContactIdentity",
     "ContactConsent",
     "ContactMergeJournal",
+    "MessageThread",
+    "UnifiedMessage",
+    "ContactChannelStat",
+    "PlannerTask",
     "CrmEntity",
     "GreetingHistory",
     "FileCatalogObject",

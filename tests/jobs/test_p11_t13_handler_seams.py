@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 from tests.source_import_isolation import load_isolated_source
 
+__source_only__ = True
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -52,7 +54,7 @@ class HandlerSeamTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_public_dispatch_stays_on_the_facade(self):
         tree = ast.parse((ROOT / "app/jobs/handlers.py").read_text())
-        for name in ("handle_digest", "handle_prune"):
+        for name in ("handle_digest", "handle_prune", "handle_email_sync"):
             function = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == name)
             self.assertEqual([a.arg for a in function.args.args], ["payload"])
             self.assertTrue(
@@ -75,6 +77,7 @@ class HandlerSeamTests(unittest.IsolatedAsyncioTestCase):
                 "prune": "handle_prune",
                 "learn": "handle_learn",
                 "reflect": "handle_reflect",
+                "comms.email.sync": "handle_email_sync",
             },
         )
 
@@ -83,6 +86,7 @@ class PruneSeamTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.audit = AsyncMock(return_value=2)
         self.staged = AsyncMock(return_value=1)
+        self.messages_prune = AsyncMock(return_value=4)
         self.analytics = AsyncMock(return_value=3)
         self.cleanup_jobs = AsyncMock(return_value=5)
         self.logger = MagicMock()
@@ -101,6 +105,7 @@ class PruneSeamTests(unittest.IsolatedAsyncioTestCase):
                     CollectedItem=NS(objects=NS(delete_older_than=self.staged)),
                     AIAnalytics=NS(objects=NS(delete_expired=self.analytics)),
                 ),
+                "app.services.communications.ingest": NS(prune_expired_messages=self.messages_prune),
                 "app.utils.retention": NS(months_before=lambda *_: self.cutoff),
                 "app.jobs.lifecycle": NS(
                     retention_policy=lambda _: (24, 72), cleanup_terminal_job_history=self.cleanup_jobs
@@ -118,8 +123,10 @@ class PruneSeamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["action_audit_deleted"], 2)
         self.assertEqual(result["analytics_deleted"], 3)
         self.assertEqual(result["staged_deleted"], 1)
+        self.assertEqual(result["messages_deleted"], 4)
         self.audit.assert_awaited_once()
         self.assertIsNotNone(self.audit.await_args.kwargs["now"].utcoffset())
+        self.messages_prune.assert_awaited_once()
         self.analytics.assert_awaited_once_with(self.cutoff)
         self.session.close.assert_awaited_once()
         self.logger.warning.assert_not_called()

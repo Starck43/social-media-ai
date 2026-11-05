@@ -31,7 +31,7 @@ jobs = JobManager()
 
 
 _FAILURE_MESSAGE = "Не удалось завершить обработку. Подробности сохранены в задаче."
-_LOG_JOB_TYPES = frozenset({"collect", "digest", "prune", "analyze", "learn", "reflect"})
+_LOG_JOB_TYPES = frozenset({"collect", "digest", "prune", "analyze", "learn", "reflect", "comms.email.sync"})
 
 
 class JobOutcomePersistenceError(RuntimeError):
@@ -105,6 +105,7 @@ def _job_label(job_type: str) -> str:
         "analyze": "Анализ",
         "learn": "Обучение",
         "reflect": "Рефлексия",
+        "comms.email.sync": "Синхронизация почты",
     }
     return labels.get(job_type, job_type)
 

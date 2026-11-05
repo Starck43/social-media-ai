@@ -9,7 +9,7 @@ import pytest
 __source_only__ = True
 
 from app.core.access_catalog import RESOURCES, resolve_permission_key, resource_for, workspace_grants
-from app.core.permissions import has_permission, has_permission_by_codename, has_role, permission_scope
+from app.core.permissions import has_permission, has_permission_by_codename, has_role, member_decision, permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import ModelType, Permission, PlatformRole, User, WorkspaceRole
 from app.types import ActionType, PlatformRoleType, WorkspaceRoleType
@@ -167,8 +167,8 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
     }
     # P11-T12 added action-audit, P11-T28 added one workspace action, and
     # P11-T29 added the platform offboarding journal after the 0096 snapshot.
-    # Keep that migration immutable and make only these post-baseline deltas
-    # explicit; every other resource identity and scope flag must still match.
+    # Keep that migration immutable and make each post-baseline resource explicit;
+    # every other resource identity and scope flag must still match.
     actual["action_audit_events"] = ("audit.action_audit", "actionauditevent", {"view", "export"}, True, False)
     actual["workspace_offboarding_events"] = (
         "audit.workspace_offboarding",
@@ -177,15 +177,133 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
         False,
         False,
     )
+    # Frozen post-0096 declarations: 0133 local connectors, 0130 contact core,
+    # and 0139 unified messages. P15-T09's outbox is catalog-only until its
+    # storage task; its metadata actions were approved in PR #417.
+    post_0096_resources = {
+        "local_connectors": (
+            "integrations.local_connector",
+            "localconnector",
+            {"view", "create", "delete", "configure"},
+            True,
+            False,
+        ),
+        "contacts": (
+            "contacts.contact",
+            "contact",
+            {"view", "create", "update", "delete", "export"},
+            True,
+            False,
+        ),
+        "unified_messages": (
+            "comms.message",
+            "unifiedmessage",
+            {"view", "create", "update", "delete"},
+            True,
+            False,
+        ),
+        "outbox_messages": (
+            "comms.outbox",
+            "outboxmessage",
+            {"view", "update", "configure"},
+            True,
+            False,
+        ),
+        "planner_tasks": (
+            "planner.task",
+            "plannertask",
+            {"view", "create", "update", "delete"},
+            True,
+            False,
+        ),
+    }
+    assert post_0096_resources.keys().isdisjoint(actual)
+    actual.update(post_0096_resources)
     key, model, actions, is_workspace, is_personal = actual["tenants"]
     actual["tenants"] = (key, model, actions | {"delete"}, is_workspace, is_personal)
     assert expected == actual
+    # 0140 grants the planner matrix role by role (owner/admin/manager all four
+    # actions, analyst view/create/update, viewer view), matching the catalog.
+    # 0139 declares the message role matrix; P15-T09 approves the outbox matrix.
+    # Local connectors and contacts have only implicit owner/admin workspace
+    # grants in the current preset policy, with no grants for other roles.
+    post_0096_grants = {
+        "owner": {("integrations.local_connector", action) for action in ("view", "create", "delete", "configure")}
+        | {("contacts.contact", action) for action in ("view", "create", "update", "delete", "export")}
+        | {("comms.message", action) for action in ("view", "create", "update", "delete")}
+        | {("comms.outbox", action) for action in ("view", "update", "configure")}
+        | {("planner.task", action) for action in ("view", "create", "update", "delete")},
+        "admin": {("integrations.local_connector", action) for action in ("view", "create", "delete", "configure")}
+        | {("contacts.contact", action) for action in ("view", "create", "update", "delete", "export")}
+        | {("comms.message", action) for action in ("view", "create", "update", "delete")}
+        | {("comms.outbox", action) for action in ("view", "update", "configure")}
+        | {("planner.task", action) for action in ("view", "create", "update", "delete")},
+        "manager": {("comms.message", action) for action in ("view", "create", "update")}
+        | {("comms.outbox", action) for action in ("view", "update")}
+        | {("planner.task", action) for action in ("view", "create", "update", "delete")},
+        "analyst": {("comms.message", "view"), ("comms.outbox", "view"), ("planner.task", "view")}
+        | {("planner.task", action) for action in ("create", "update")},
+        "viewer": {("comms.message", "view"), ("comms.outbox", "view"), ("planner.task", "view")},
+    }
     for role, pairs in migration._workspace_grant_pairs().items():
         canonical = {(resource_for(model).key, action.db_value) for model, action in workspace_grants(role)}
-        baseline_pairs = pairs | (
-            {("audit.action_audit", "view"), ("audit.action_audit", "export")} if role in ("owner", "admin") else set()
+        baseline_pairs = (
+            pairs
+            | (
+                {("audit.action_audit", "view"), ("audit.action_audit", "export")}
+                if role in ("owner", "admin")
+                else set()
+            )
+            | post_0096_grants[role]
         )
         assert canonical == baseline_pairs
+
+
+def test_p15_t09_comms_outbox_preset_is_metadata_only():
+    resource = resource_for("comms.outbox")
+    assert resource is not None
+    assert (resource.model_name, resource.table_name, resource.workspace) == (
+        "outboxmessage",
+        "outbox_messages",
+        True,
+    )
+    assert resource.actions == {ActionType.VIEW, ActionType.UPDATE, ActionType.CONFIGURE}
+    for action in resource.actions:
+        assert resolve_permission_key(f"comms.outbox.{action.db_value}") == (resource, action)
+
+    expected_by_role = {
+        "owner": {ActionType.VIEW, ActionType.UPDATE, ActionType.CONFIGURE},
+        "admin": {ActionType.VIEW, ActionType.UPDATE, ActionType.CONFIGURE},
+        "manager": {ActionType.VIEW, ActionType.UPDATE},
+        "analyst": {ActionType.VIEW},
+        "viewer": {ActionType.VIEW},
+    }
+    for role, expected in expected_by_role.items():
+        grants = {action for model, action in workspace_grants(role) if model == resource.model_name}
+        assert grants == expected
+
+    # UPDATE is metadata editing only. D14 APPROVE remains unsupported and
+    # must fail closed; this catalog grants no send/approval authorization.
+    for action in ("create", "delete", "approve"):
+        assert resolve_permission_key(f"comms.outbox.{action}") is None
+
+
+def test_p15_t09_manager_update_is_metadata_not_approval():
+    actor = user("user")
+    membership = member("manager")
+    grants = workspace_grants("manager")
+    web_perms = WebPerms(actor, [membership], 11, grants)
+
+    with tenant_scope(11), permission_scope(actor, member_grants=grants):
+        assert member_decision(actor, "outboxmessage", ActionType.UPDATE) is True
+        assert has_permission(actor, "comms.outbox", ActionType.UPDATE)
+        assert has_permission_by_codename(actor, "comms.outbox.update")
+        assert not has_permission(actor, "comms.outbox", "approve")
+        assert not has_permission_by_codename(actor, "comms.outbox.approve")
+        assert member_decision(actor, "outboxmessage", "approve") is False
+
+    assert web_perms.can("comms.outbox", ActionType.UPDATE)
+    assert not web_perms.can("comms.outbox", "approve")
 
 
 def test_migration_permission_map_keeps_canonical_model_without_permissions(monkeypatch):

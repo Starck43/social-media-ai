@@ -47,6 +47,7 @@ TZ criteria: contacts merged by email/phone (T03); chronological per-contact vie
 6. [P15-T05](../tasks/p15-t05.md) — Persistent outbox, scheduling and delivery tracking — **transport, consumes the senders** · `P3` · `C4` · depends: [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md), [P15-T02](../tasks/p15-t02.md), [P15-T06](../tasks/p15-t06.md)
 7. [P15-T07](../tasks/p15-t07.md) — Channel recommendation with confidence score · `P3` · `C3` · depends: [P15-T02](../tasks/p15-t02.md)
 8. [P15-T08](../tasks/p15-t08.md) — Reply from the unified interface · `P3` · `C3` · depends: [P15-T04](../tasks/p15-t04.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../tasks/p15-t06.md)
+9. [P15-T09](../tasks/p15-t09.md) — Register D14 `comms.outbox` in the central permission catalog and presets · `P3` · `C2` · depends: [P15-T05](../tasks/p15-t05.md), [P15-T06](../tasks/p15-t06.md)
 
 ## Dependencies and gates
 

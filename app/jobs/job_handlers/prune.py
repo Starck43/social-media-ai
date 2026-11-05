@@ -72,10 +72,20 @@ async def handle_prune(payload: dict[str, Any], *, logger, log_id, error_kind) -
     # `days` unless the task says otherwise.
     staged_days = min(int(payload.get("staged_days", days)), (now - retention_cutoff).days)
     staged_deleted = 0
+    messages_deleted = 0
     session = new_session()
     try:
         async with session.begin():
             staged_deleted = await CollectedItem.objects.delete_older_than(session, staged_days)
+            from app.core.tenant_context import current_tenant_id
+            from app.services.communications.ingest import prune_expired_messages
+
+            messages_deleted = await prune_expired_messages(
+                session,
+                retention_days=max(1, (now - retention_cutoff).days),
+                now=now,
+                tenant_id=current_tenant_id(),
+            )
     except Exception as e:  # noqa: BLE001 — a sweep failure must not fail the prune
         logger.warning(
             "staged_retention_failed job_id=%s error_code=%s",
@@ -102,6 +112,7 @@ async def handle_prune(payload: dict[str, Any], *, logger, log_id, error_kind) -
         "deleted": deleted,
         "staged_deleted": staged_deleted,
         "staged_days": staged_days,
+        "messages_deleted": messages_deleted,
         "analytics_deleted": analytics_deleted,
         "retention_months": retention_months,
         "action_audit_deleted": action_audit_deleted,

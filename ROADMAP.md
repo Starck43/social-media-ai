@@ -48,6 +48,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
+- [P20-T01](docs/tasks/p20-t01.md) Plan proactive assistant improvements and safe orchestration — **IN_PROGRESS** · notion-ai-p20-t01 · [dialogue](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C2`
+
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **IN_PROGRESS** · notion-ai-p8-t33 · [chat](https://app.notion.com/chat?t=40a3d3cc6f4080648d4000a9e3177cc4) · `P2` · `C4`
 - [P8-T46](docs/tasks/p8-t46.md) VK video search category — **IN_PROGRESS** · notion-ai-p8-t46 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
 - [P8-T47](docs/tasks/p8-t47.md) VK apps/games search category — **IN_PROGRESS** · notion-ai-p8-t47 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
@@ -179,6 +181,10 @@ Local file connector (TZ module 5); use the P18 cards in the execution queue.
 ## [P19](docs/phases/p19-document-management.md)
 
 Document management (TZ module 6); use the P19 cards in the execution queue.
+
+## [P20](docs/phases/p20-proactive-assistant.md)
+
+Proactive assistant planning; use the P20 cards in the execution queue.
 
 ## Questions
 

@@ -141,3 +141,146 @@ Fix B-0..B-10 on the same branch, with tests for each: two folders holding one m
 reply, a registered and scheduled `comms.email.sync`, a retention sweep wired into `handle_prune`,
 `unavailable` on a deleted original, the route gate on `comms.message`, connection-scoped
 identity lookup, cross-connection merge, and the chat handoff (or its removal, recorded).
+
+## Round 2 — reviewed at `f972b6b1` (2026-11-05)
+
+Delta: `83e66841..f972b6b1` (one commit, `fix(p15): address round-1 audit findings
+B-0..B-10 and N-1..N-6 on 0139`). Round 1's record stays as written.
+
+Verdict: **not accepted at `f972b6b1`**. Round 1's findings are answered and five of the
+six checks I could run against the real schema now pass. Round 2 found two correctness
+regressions in the new merge/expunge code, one durability gap, and one registry collision
+that has to be resolved before this branch can land at all.
+
+### Round 1 findings: closed
+
+| Finding | How it is now |
+| --- | --- |
+| B-0 | `0139` on top of `0138`; `0138 -> 0139 -> 0138` twice is clean and restores tables, triggers, `comms.message` and the workspace presets (owner/admin 4, manager 3, analyst/viewer 1) |
+| B-1 | dedupe flag is `uv_reset`, not `uv_reset or True`; a message in `INBOX` and `Archive` keeps two rows (`test_b1_*`) |
+| B-2 | the hash lookup returns a chosen candidate, never `scalar_one_or_none`; a duplicate `Message-ID` re-binds instead of aborting |
+| B-3 | a message without `Message-ID` re-binds on the header `content_hash` (`test_b3_*`) |
+| B-4 | the cursor advances to the batch's highest candidate UID on a successful batch only (`test_b4_*`) |
+| B-5 | `comms.email.sync` is in `HANDLERS`, in `DEFAULT_TASKS` (`*/15`) and in the dispatcher labels |
+| B-6 | `prune` sweeps `unified_messages` (7 aged rows deleted on the real schema); IMAP expunge marks `unavailable` |
+| B-7 | every communication route gates on `comms.message` |
+| B-8 | identity lookup stays inside the connection; a same-connection repeat reuses the contact (contacts 2 -> 2) |
+| B-10 | `knowledge/workspace.py` resolves `context_type='communication'` |
+
+Probes on `test_schema` at `0139`: concurrent ingest of one message -> 1 row (loser on the
+unique key); the same `original_id` in two workspaces -> 1 row each; reset re-binds
+`INBOX:1:10 -> INBOX:2:11` as `created=False, uid_rebound=True`; NULL `Message-ID` re-binds
+`INBOX:2:50 -> INBOX:3:51` through `content_hash` with no new row; `prune` deleted 7 aged
+messages and left the rest. `39 passed` locally for the four suites.
+
+### New blocking findings
+
+**B-11 — unmerge can delete a thread the target already owned.**
+`app/services/contacts/reconcile.py:641-651` appends `dest_th.id` to both
+`created_thread_ids` and `moved_thread_ids` **after** `threads_by_conn_key.get(conn_key)`
+may have returned an *existing* target thread. `unmerge` then runs
+`DELETE FROM message_threads WHERE id IN created_thread_ids` (`:911-918`), so a pre-existing
+thread disappears and its messages keep a dangling `thread_id`. The test at
+`tests/contacts/test_p15_t03_reconcile_unit.py:699-750` misses it only because its fixture
+keys do not actually collide. Fix: keep "created by this merge" separate from "re-bound to",
+and never delete a thread that existed before the merge.
+
+**B-12 — re-binding keeps the source thread's key, which ingest can never regenerate.**
+`reconcile.py:630-639` builds the destination thread with `thread_key=cur_th.thread_key`
+while changing `channel` to `msg.channel`. An email message re-bound out of a Telegram
+thread becomes `(connection, "email", "telegram:chat:777")`; `ingest` derives keys per
+channel, so the next real email for that conversation opens a second thread. Fix: re-derive
+the key with the same helper ingest uses, or refuse cross-channel re-binding.
+
+**B-13 — a failed connection discards the earlier connections' committed work.**
+`app/jobs/job_handlers/email_sync.py:53-69` runs every connection in one transaction and one
+session. `sync_connection` flushes `conn.config` (cursor) inside its loop
+(`app/integrations/email/imap_sync.py:588-601`), so a later folder raising leaves partial
+cursor writes in the transaction. A failure in connection *n* also drops connection *n-1*'s
+rows, which were already ingested. Fix: a savepoint per connection.
+
+**B-14 — a transient empty `SEARCH` reply marks a whole folder unavailable.**
+`imap_sync.py:322-324` returns `present_uids=set(), all_batches_ok=True` when the server
+answers `OK` with no data; the expunge test at `:635-639` then sees every stored message
+"missing" and marks the folder's backlog `unavailable`. Fix: an empty reply is not evidence
+of deletion — skip marking and flag the folder as incomplete.
+
+### New non-blocking
+
+- **N-7** per-folder cursor progress is only persisted through the final
+  `conn.config = config` (`imap_sync.py:668-670`); an abort in a later folder loses the
+  earlier folders' progress even though their rows are ingested.
+- **N-8** a message moved between folders shows as `unavailable` in the old folder *and*
+  available in the new one — acceptable under TZ 2.5, worth stating in the card.
+- **N-9** `mark_thread_read`/re-sync make read state one-way (clearing `\Seen` on the server
+  never returns a message to unread). Document it or fix it.
+- **N-10** `access_catalog.py`, `app/models/bootstrap.py`, `app/tasks/bootstrap.py`,
+  `app/jobs/handlers.py`, `app/jobs/dispatcher.py`, `cli/commands/pii.py`,
+  `app/services/knowledge/workspace.py` and `tests/jobs/test_p11_t13_handler_seams.py` are
+  outside every P15 card's owned paths and land in one commit. The cards ask for a separate
+  small commit; the PR body should name each one and why.
+
+### Registry collision — must be fixed before landing
+
+The branch also moves `P15-T06` from `TODO`/unassigned to `IN_PROGRESS`/Notion AI
+(`ROADMAP.md:78`), which belongs to another lane's claim. Remove it from this branch; the
+auditor reconciles the registry, and a task branch may not.
+
+### What the executor delivers next
+
+B-11, B-12, B-13, B-14 with one test each — in particular a merge/unmerge round trip where
+the destination thread already exists, a cross-channel re-bound message followed by a
+normal ingest of the same conversation, a two-connection job where the second fails, and an
+empty `SEARCH` reply. Then drop the `P15-T06` line and state the shared-path files in the PR.
+
+## Round 2 — state check (2026-11-05, after the review)
+
+PR #391 is still **open and unmerged** at `f972b6b1`; round 2 has not been answered.
+`ROADMAP.md` keeps `P15-T01..T04` at `READY`, which is the correct status for work whose
+audit found open blockers.
+
+One correction to the round-2 record: the `P15-T06` claim in `ROADMAP.md:78` is **not** a
+collision. The line names its own owner (Notion AI) and a different dialogue, and that lane
+is landing on `feat/p15-t06-channel-senders`. The finding stands only in one respect — a
+task branch edits a row it does not own. Whoever resolves the branch should keep the
+`P15-T06` claim intact when rebasing, not revert it.
+
+## Round 3 — auditor fixes at `0a55061d` (2026-11-05)
+
+Round 2 stayed unanswered, so the auditor made the remaining fixes in the branch itself
+rather than leaving the stack idle. Nothing about the review standard changed; two round-2
+findings were corrected against the code.
+
+### Corrections to the round-2 record
+
+- **B-11 withdrawn.** `reconcile.py:641-651` records `dest_th.id` as created only inside
+  `if dest_th is None`, so a thread the target already owned before the merge is never
+  deleted on unmerge. The round-2 claim came from reading
+  `threads_by_conn_key.get(conn_key)` as a hit when that path had already returned `None`.
+  The only real defect left was the duplicate entry in `moved_thread_ids`, now removed.
+- **B-14 cause restated.** `imap_sync.py:322` folds "no data" into the error branch, so the
+  caller is told `all_batches_ok=True` and the expunge check clears the folder's backlog.
+
+### Fixes
+
+| Finding | Change |
+| --- | --- |
+| B-12 | `_thread_key_for_message()` re-scopes a foreign-channel key under the message's own channel before the re-bound thread is created; unmerge restores `thread_key` from the journal |
+| B-13 | `job_handlers/email_sync.py` wraps each connection in `session.begin_nested()`, committing or rolling back per mailbox |
+| B-14 | an `OK` reply without data returns `all_batches_ok=False`; the expunge check needs one complete, non-empty scan |
+| N-1 | a partial scan keeps `last_uid` at 0 and stays `uidvalidity_reset_pending` |
+| registry drift | `ROADMAP.md`, `docs/CHANNELS.md`, `docs/tasks/p15-t06.md`, `docs/tasks/p16-t01.md` and a P20 card were carried from before the T06 lane landed; they now match `dev` (`61e2840e`) |
+
+### Evidence at `0a55061d`
+
+- `pytest tests/integrations/test_p15_t01_imap_unit.py tests/contacts tests/communications -q`
+  → **94 passed**.
+- The B-14 test fails with the previous `imap_sync.py` reverted, so it exercises the guard.
+- `test_schema` `0139 -> 0138 -> 0139`, twice: version and the three tables round-trip.
+  The audit tenants `audit-p15-a` (8) and `audit-p15-b` (9) and their rows are removed;
+  `unified_messages`, `message_threads` and `contact_channel_stats` are empty.
+- No new migration, no route, no content column; `0139` untouched.
+
+Still open, none blocking: N-7 (earlier folders' cursor progress lost when a later folder
+returns nothing), N-8 (a moved message shows unavailable *and* available — acceptable under
+TZ 2.5), N-9 (read state is one-way), N-10 (shared files listed in the PR body).

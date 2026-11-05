@@ -72,6 +72,11 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 
 ### Priority P3
 
+- [P20-T02](docs/tasks/p20-t02.md) Social triage and evidence-linked morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T03](docs/tasks/p20-t03.md) Unified approval inbox on existing ledgers — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T04](docs/tasks/p20-t04.md) Bounded specialist delegation for research — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
+- [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
+
 - [P15-T01](docs/tasks/p15-t01.md) Email connector: IMAP incremental read sync — **READY** (round-2 audit: B-11..B-14 open) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T02](docs/tasks/p15-t02.md) Unified message store and channel ingestion (Telegram, MAX, email) — **READY** (round-2 audit: B-11..B-14 open) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T03](docs/tasks/p15-t03.md) Identity reconciliation: suggestions, manual merge and unmerge — **READY** (round-2 audit: B-11..B-14 open) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`

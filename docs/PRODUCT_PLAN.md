@@ -74,6 +74,10 @@ coverage, retrieval quality, successful completion, delivery duplication, cost p
 outcome and time saved against representative fixtures. Preserve inspect/correct,
 pause/revoke/cancel and eligible export/delete controls.
 
+## Proactive assistance
+
+The planned [P20](phases/p20-proactive-assistant.md) builds on the existing social task and digest journey: explainable triage and a morning brief, a review inbox over existing approval authorities, and separately gated experiments for bounded specialist delegation and isolated browser use. These are planned, not current capabilities. They do not replace command ledgers, notification delivery, source authorization or the existing confirmation gates; no recurring approval rule, browser infrastructure or additional provider capability is authorized by this direction alone.
+
 ## Business modules
 
 The owner's TZ (2026-11-03) selects six business modules after the P12 domain

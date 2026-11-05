@@ -284,3 +284,27 @@ findings were corrected against the code.
 Still open, none blocking: N-7 (earlier folders' cursor progress lost when a later folder
 returns nothing), N-8 (a moved message shows unavailable *and* available — acceptable under
 TZ 2.5), N-9 (read state is one-way), N-10 (shared files listed in the PR body).
+
+## Acceptance — `9fe76fe3` (2026-11-05)
+
+Accepted and merged into `dev` as `9fe76fe3` ("unified inbox stack — T01..T04 with 0139 on
+0138"), after the branch was merged with `dev` (`3db24a36`) and the one conflict
+(`docs/CHANNELS.md`, both sides the P15-T06 sender section) resolved to `dev`'s version.
+
+Checks on the merged tree:
+
+- 94 focused tests pass (`tests/integrations/test_p15_t01_imap_unit.py`, `tests/contacts`,
+  `tests/communications`); `tests/jobs/test_p11_t13_handler_seams.py` passes.
+- `0139` sits on `0138`; `test_schema` round-trips `0139 -> 0138 -> 0139` twice with the
+  three tables intact (round 3).
+- The audit's synthetic tenants (`audit-p15-a` 8, `audit-p15-b` 9) and their rows are gone
+  from `test_schema`.
+
+Accepted with these open, non-blocking items: N-7 (cursor of earlier folders survives a
+later empty folder only after the next full pass), N-8 (a message moved between folders shows
+`unavailable` in the old one and available in the new one — TZ 2.5), N-9 (read state is
+one-way), N-10 (shared entrypoint files land with the stack; listed in the PR comment).
+
+`tests/security/test_access_policy.py::test_migration_catalog_and_presets_match_runtime_without_database`
+fails on `dev` before this merge as well; recorded as a pre-existing red, not caused by `0139`.
+The four ROADMAP rows are removed by the auditor; the four task cards stay as their record.

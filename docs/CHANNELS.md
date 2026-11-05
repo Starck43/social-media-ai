@@ -384,7 +384,8 @@ No group/channel destinations, usernames, MTProto or personal-account automation
   to that customer's account (D12). One recipient, plain text, generated
   `Message-ID` and `Date`; optional validated `In-Reply-To`. No caller-supplied
   sender, CC/BCC, installation-domain fallback, attachments or HTML. A bounded
-  1 MiB UTF-8 body and ASCII mailboxes avoid unnegotiated SMTPUTF8.
+  1 MiB UTF-8 body and ASCII mailboxes avoid unnegotiated SMTPUTF8; text uses
+  quoted-printable on the wire rather than assuming 8BITMIME support.
 - Telegram uses only `api.telegram.org` Bot API `sendMessage`; MAX uses only
   `platform-api2.max.ru/messages?user_id=...`, with its token in `Authorization`.
   One plain message (conservative UTF-16 limit 4096 / 4000), no splitting, retry,

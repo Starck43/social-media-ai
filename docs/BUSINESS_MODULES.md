@@ -83,6 +83,7 @@ providers) before integrating it with another module.
 | OpenAPI documentation | Every new `/api/v1` route has typed request/response schemas, tags, error model and examples without personal data; generated route tables regenerated and checked; production exposure of `/docs` follows configuration. | [P13-T05 audit](audit/p13-t05.md) |
 | Do not log personal data | Existing rule; redaction helpers from P13-T02 are mandatory in new adapters; tests assert absence of identifiers in logs. | all |
 | Follow existing architecture | This document; deviations need a task-card decision. | all |
+| Surface parity and placement (owner request 2026-11-05) | One permission-checked service per capability behind web, `/api/v1`, CLI for operator/bulk/recovery operations and a chat tool where the agent can usefully read, preview or draft ([surface parity](WORKSPACE_UX.md#surface-parity)). A module adds a sidebar item only for a daily list of its own objects; it contributes to «Сегодня»/decisions through read-time projections, never copies. Applies to tasks claimed after 2026-11-05; in-flight tasks adopt it at their next revision without reopening acceptance. | all; [P20](phases/p20-proactive-assistant.md) |
 
 ## Review findings: corrections to the TZ
 

@@ -74,9 +74,13 @@ coverage, retrieval quality, successful completion, delivery duplication, cost p
 outcome and time saved against representative fixtures. Preserve inspect/correct,
 pause/revoke/cancel and eligible export/delete controls.
 
-## Proactive assistance
+## Proactive assistance and unified workspace
 
-The planned [P20](phases/p20-proactive-assistant.md) builds on the existing social task and digest journey: explainable triage and a morning brief, a review inbox over existing approval authorities, and separately gated experiments for bounded specialist delegation and isolated browser use. These are planned, not current capabilities. They do not replace command ledgers, notification delivery, source authorization or the existing confirmation gates; no recurring approval rule, browser infrastructure or additional provider capability is authorized by this direction alone.
+The planned [P20](phases/p20-proactive-assistant.md) makes daily work start from four entry points — «Сегодня», the agent chat, «Входящие» and «Задачи» — designed in [WORKSPACE_UX](WORKSPACE_UX.md). «Сегодня» and the task/calendar views are read-time projections over the owning modules; decisions shown anywhere call their existing ledgers; tasks are the universal tool for both personal to-dos and agent assignments, and teams keep working in connected task systems by reference. Triage, a morning brief, inbox reply suggestions, web research and bounded delegation follow; isolated browser use is a later, separately gated experiment. These are planned, not current capabilities. They do not replace command ledgers, notification delivery, source authorization or confirmation gates; no recurring approval rule, browser infrastructure or additional provider capability is authorized by this direction alone.
+
+## Deployment and access evolution
+
+The monolith on one VPS is completed first. Self-hosted and hybrid modes (a minimal core on the owner's VPS, personal data on a corporate data node), boundary-based model routing to cloud, company or local models, and a later desktop client are recorded as a direction with guardrails in [PLATFORM_TOPOLOGY](PLATFORM_TOPOLOGY.md); they are not scheduled.
 
 ## Business modules
 

@@ -212,7 +212,6 @@ def test_kill_wins(monkeypatch, capability, kill):
         ({"workspace_id": 0}, "invalid_binding"),
         ({"owner_user_id": -1}, "invalid_binding"),
         ({"actor_user_id": 0}, "invalid_binding"),
-        ({"actor_user_id": 4}, "account_owner_mismatch"),
         ({"workspace_id": 8}, "workspace_mismatch"),
         ({"active": False}, "account_unavailable"),
         ({"verified": False}, "account_unavailable"),
@@ -221,6 +220,18 @@ def test_kill_wins(monkeypatch, capability, kill):
 def test_binding_guards(monkeypatch, change, code):
     release(monkeypatch, EMAIL)
     assert admission_code(EMAIL, replace(BINDING, **change)) == code
+
+
+@pytest.mark.parametrize("capability", PREFIXES)
+def test_transport_admission_accepts_distinct_actor_for_released_binding(monkeypatch, capability):
+    binding = replace(BINDING, actor_user_id=4)
+    assert admission_code(capability, binding) == "capability_disabled"
+    release(monkeypatch, capability)
+    assert admission_code(capability, binding) is None
+    monkeypatch.setenv(f"{PREFIXES[capability]}_KILL", "1")
+    assert admission_code(capability, binding) == "capability_killed"
+    monkeypatch.setenv(f"{PREFIXES[capability]}_KILL", "0")
+    assert admission_code(capability, replace(binding, workspace_id=8)) == "workspace_mismatch"
 
 
 @pytest.mark.parametrize("workspace,bypass", [(None, False), (7, True), (None, True)])

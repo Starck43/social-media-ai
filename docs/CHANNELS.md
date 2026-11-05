@@ -353,11 +353,15 @@ fails closed. A bot token or an approved command cannot override these controls.
 An email connection also requires its own `send_enabled is True`; the catalog
 presets stay false. No global installation token/mail account is used as fallback.
 
-The adapters require an explicit matching non-bypass `tenant_scope` and an
-active, verified binding with the same positive owner/actor ID. Switches are
-read again after egress resolution and immediately before SMTP DATA / Bot API
-POST. Environment changes must reach **every serving process**; there is no
-instant cross-process propagation or recall of an already issued request.
+The adapters require an explicit matching non-bypass `tenant_scope`, positive
+owner/actor IDs, and an active, verified binding. The transport does not require
+the actor to be the connection owner or decide `comms.outbox` permissions. Under
+D14, the trusted caller must verify fresh workspace-scoped actor permissions,
+connection ownership and approval before dispatch; these DTO values are not
+proof of authorization. Switches are read again after egress resolution and
+immediately before SMTP DATA / Bot API POST. Environment changes must reach
+**every serving process**; there is no instant cross-process propagation or
+recall of an already issued request.
 
 `SendBinding`, `MailAccount`, `BotAccount` and `BotRecipient` are immutable inputs
 from a **trusted service**, not authorization evidence by themselves. Never

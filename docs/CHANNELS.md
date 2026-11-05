@@ -408,15 +408,23 @@ No group/channel destinations, usernames, MTProto or personal-account automation
   the two fixed public SMTP presets, not arbitrary SMTP hosts.
 - `SendResult.outcome` is `blocked` (pre-send refusal), `rejected` (known negative),
   `sent` (provider acceptance), or **`unknown`** (timeout / uncertain effect).
+  If the SMTP kill is observed before `sendmail()` starts, the adapter returns
+  `blocked/account_send_disabled`; no envelope command was issued and a fresh
+  attempt may be made after an operator re-enables sending. Once `sendmail()`
+  starts, it can disclose the envelope before the adapter regains control.
+  If a kill or revocation is observed after SMTP `MAIL FROM`/`RCPT TO` begins but
+  before `DATA`, the adapter returns `unknown/smtp_envelope_disclosed`: recipient
+  envelope metadata reached the server, while the message body was not sent.
   A SMTP acceptance is not proof of delivery; its locally generated `message_id`
   is not a provider receipt. Bot `receipt_id` requires a valid acknowledgement
   naming the requested private recipient. Only fixed codes / bounded receipt IDs
   escape; no provider bodies, raw exceptions, credentials or message content in
   logs/results. Authentication and TLS failures have fixed SMTP codes.
-- No outcome is retried automatically. After `unknown`, cancellation or process
-  death the caller must retain its durable claim and reconcile, never dispatch
-  blindly. Async adapters use a worker thread: cancelling the await does **not**
-  prove the socket stopped. A fresh caller invocation is a new attempt, not
+- No outcome is retried automatically. After `unknown`, the caller must retain its
+  durable claim and reconcile, never dispatch blindly. Cancellation or process
+  death does not prove the send stopped. Async adapters use a worker thread:
+  cancelling the await does **not** prove the socket stopped. A fresh caller
+  invocation is a new attempt, not
   transport idempotency; `Message-ID` alone does not deduplicate SMTP. Durable
   replay prevention and receipt persistence are deliberately T05 responsibilities.
 

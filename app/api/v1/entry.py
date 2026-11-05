@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     auth,
     bitrix,
     commands,
+    communication,
     connector_accounts,
     contacts,
     credentials,
@@ -36,6 +37,7 @@ DB_PROBE_TIMEOUT_SECONDS = 2.0
 API_AUTH = [Depends(get_authenticated_user)]
 
 router.include_router(contacts.router, prefix="/contacts", tags=["contacts"], dependencies=API_AUTH)
+router.include_router(communication.router, prefix="/communication", tags=["communication"], dependencies=API_AUTH)
 router.include_router(commands.router, dependencies=API_AUTH)
 router.include_router(bitrix.router, prefix="/integrations/bitrix", tags=["CRM"], dependencies=API_AUTH)
 router.include_router(user.router, prefix="/users", tags=["user"], dependencies=API_AUTH)

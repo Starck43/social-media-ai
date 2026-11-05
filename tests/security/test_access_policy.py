@@ -209,12 +209,21 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
             True,
             False,
         ),
+        "planner_tasks": (
+            "planner.task",
+            "plannertask",
+            {"view", "create", "update", "delete"},
+            True,
+            False,
+        ),
     }
     assert post_0096_resources.keys().isdisjoint(actual)
     actual.update(post_0096_resources)
     key, model, actions, is_workspace, is_personal = actual["tenants"]
     actual["tenants"] = (key, model, actions | {"delete"}, is_workspace, is_personal)
     assert expected == actual
+    # 0140 grants the planner matrix role by role (owner/admin/manager all four
+    # actions, analyst view/create/update, viewer view), matching the catalog.
     # 0139 declares the message role matrix; P15-T09 approves the outbox matrix.
     # Local connectors and contacts have only implicit owner/admin workspace
     # grants in the current preset policy, with no grants for other roles.
@@ -222,15 +231,19 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
         "owner": {("integrations.local_connector", action) for action in ("view", "create", "delete", "configure")}
         | {("contacts.contact", action) for action in ("view", "create", "update", "delete", "export")}
         | {("comms.message", action) for action in ("view", "create", "update", "delete")}
-        | {("comms.outbox", action) for action in ("view", "update", "configure")},
+        | {("comms.outbox", action) for action in ("view", "update", "configure")}
+        | {("planner.task", action) for action in ("view", "create", "update", "delete")},
         "admin": {("integrations.local_connector", action) for action in ("view", "create", "delete", "configure")}
         | {("contacts.contact", action) for action in ("view", "create", "update", "delete", "export")}
         | {("comms.message", action) for action in ("view", "create", "update", "delete")}
-        | {("comms.outbox", action) for action in ("view", "update", "configure")},
+        | {("comms.outbox", action) for action in ("view", "update", "configure")}
+        | {("planner.task", action) for action in ("view", "create", "update", "delete")},
         "manager": {("comms.message", action) for action in ("view", "create", "update")}
-        | {("comms.outbox", action) for action in ("view", "update")},
-        "analyst": {("comms.message", "view"), ("comms.outbox", "view")},
-        "viewer": {("comms.message", "view"), ("comms.outbox", "view")},
+        | {("comms.outbox", action) for action in ("view", "update")}
+        | {("planner.task", action) for action in ("view", "create", "update", "delete")},
+        "analyst": {("comms.message", "view"), ("comms.outbox", "view"), ("planner.task", "view")}
+        | {("planner.task", action) for action in ("create", "update")},
+        "viewer": {("comms.message", "view"), ("comms.outbox", "view"), ("planner.task", "view")},
     }
     for role, pairs in migration._workspace_grant_pairs().items():
         canonical = {(resource_for(model).key, action.db_value) for model, action in workspace_grants(role)}

@@ -4,7 +4,8 @@ PR [#391](https://github.com/Starck43/social-media-ai/pull/391) (`feat/p15-inbox
 `a309eb1a`, base `dev` `8bb693d4`), stack `P15-T01..T04` under the binding contract in
 [p15-stack-kickoff](../tasks/p15-stack-kickoff.md).
 
-Verdict: **not accepted at `a309eb1a`**. The store, the migration and the isolation
+Verdict: **not accepted at `a309eb1a`** (eleven blocking findings; B-0 added after the
+first posting, see the note under it). The store, the migration and the isolation
 boundary hold; the acceptance path that the contract calls out — UIDVALIDITY reset,
 `BODY.PEEK`, unique key under concurrency — breaks in the reset and in the duplicate
 handling, and the parts the card requires to exist (job registration, retention,
@@ -23,6 +24,18 @@ unavailable) have no producer.
 | Crash without a message | failed `ingest()` | row count stays 1 |
 
 ## Blocking findings
+
+### B-0 — the stack migration carries the wrong number and points backwards
+
+`migrations/versions/0137_unified_messages.py` declares `revision = "0137"` and
+`down_revision = "0138"`. The trusted-outbound migration closed at `8bb693d4` is `0138`
+(`0138_trusted_outbound_hosts.py:19-20`), so the inbox stack belongs at `0139` on top of
+it. As written Alembic reads the new tables as *older* than the trusted-outbound schema,
+`alembic history` reports the wrong order, and the stack claims a number for a position
+that is already closed. The round trip itself succeeds on an existing schema — that is
+why the check below passed — but the revision graph is wrong and must be fixed before
+acceptance: rename to `0139_unified_messages.py`, `revision = "0139"`,
+`down_revision = "0138"`. Nothing else in the stack depends on the number.
 
 ### B-1 — the reset de-duplication is not a de-duplication
 
@@ -123,7 +136,7 @@ unified messages are never written. T04 item 4 (evidence drawer handoff) is unre
 
 ## What the executor must deliver next
 
-Fix B-1..B-10 on the same branch, with tests for each: two folders holding one message,
+Fix B-0..B-10 on the same branch, with tests for each: two folders holding one message,
 `Message-ID` shared by two messages, NULL `Message-ID` across a reset, an unparseable FETCH
 reply, a registered and scheduled `comms.email.sync`, a retention sweep wired into `handle_prune`,
 `unavailable` on a deleted original, the route gate on `comms.message`, connection-scoped

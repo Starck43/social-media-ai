@@ -48,6 +48,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
+- [P20-T01](docs/tasks/p20-t01.md) Plan proactive assistant improvements and safe orchestration — **IN_PROGRESS** · notion-ai-p20-t01 · [dialogue](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C2`
+
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **IN_PROGRESS** · notion-ai-p8-t33 · [chat](https://app.notion.com/chat?t=40a3d3cc6f4080648d4000a9e3177cc4) · `P2` · `C4`
 - [P8-T46](docs/tasks/p8-t46.md) VK video search category — **IN_PROGRESS** · notion-ai-p8-t46 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
 - [P8-T47](docs/tasks/p8-t47.md) VK apps/games search category — **IN_PROGRESS** · notion-ai-p8-t47 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
@@ -70,15 +72,15 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 
 ### Priority P3
 
-- [P15-T01](docs/tasks/p15-t01.md) Email connector: IMAP incremental read sync — **READY** (round-1 audit found 10 blocking findings) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P15-T02](docs/tasks/p15-t02.md) Unified message store and channel ingestion (Telegram, MAX, email) — **READY** (round-1 audit found 10 blocking findings) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P15-T03](docs/tasks/p15-t03.md) Identity reconciliation: suggestions, manual merge and unmerge — **READY** (round-1 audit found 10 blocking findings) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P15-T04](docs/tasks/p15-t04.md) Unified inbox: threads, filters, search and read state — **READY** (round-1 audit found 10 blocking findings) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T01](docs/tasks/p15-t01.md) Email connector: IMAP incremental read sync — **READY** (round-2 audit: B-11..B-14 open) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T02](docs/tasks/p15-t02.md) Unified message store and channel ingestion (Telegram, MAX, email) — **READY** (round-2 audit: B-11..B-14 open) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T03](docs/tasks/p15-t03.md) Identity reconciliation: suggestions, manual merge and unmerge — **READY** (round-2 audit: B-11..B-14 open) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P15-T04](docs/tasks/p15-t04.md) Unified inbox: threads, filters, search and read state — **READY** (round-2 audit: B-11..B-14 open) · remote-agent (`feat/p15-inbox-base`, one stack) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T05](docs/tasks/p15-t05.md) Persistent outbox, scheduling and delivery tracking — **transport, consumes P15-T06; permission `comms.outbox` (D14)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P15-T06](docs/tasks/p15-t06.md) Channel senders: SMTP, Telegram bot and MAX bot capabilities — **transport, lands first; sends only customer-account mail through the P14-T09 seam (D12/D13)** — **IN_PROGRESS** · Notion AI (remote executor) · [dialogue](https://app.notion.com/chat?t=40f1a42bf8b4809aa13b00a9a9a06567) · `P3` · `C4`
+- [P15-T06](docs/tasks/p15-t06.md) Channel senders: SMTP, Telegram bot and MAX bot capabilities — **transport, lands first; sends only customer-account mail through the P14-T09 seam (D12/D13)** — **IN_PROGRESS** · Codex audit · [finding](https://github.com/Starck43/social-media-ai/pull/411#issuecomment-6658502964) · [PR #411](https://github.com/Starck43/social-media-ai/pull/411) · `P3` · `C4`
 - [P15-T07](docs/tasks/p15-t07.md) Channel recommendation with confidence score — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
-- [P16-T01](docs/tasks/p16-t01.md) Planner tasks: model, CRUD, subtasks and recurrence — **recurrence is ours until a calendar connection exists (D24)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P16-T01](docs/tasks/p16-t01.md) Planner tasks: model, CRUD, subtasks and recurrence — **recurrence is ours until a calendar connection exists (D24)** — **IN_PROGRESS** · Notion AI (remote executor) · [dialogue](https://app.notion.com/chat?t=40f1a42bf8b4809aa13b00a9a9a06567) · `P3` · `C4`
 - [P16-T02](docs/tasks/p16-t02.md) Reminders, snooze and multi-channel notifications — **no second sender (D18/D19/D20)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P16-T03](docs/tasks/p16-t03.md) Calendar connections and Google Calendar two-way sync — **the calendar owns events and recurrence (D24)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P16-T04](docs/tasks/p16-t04.md) Yandex Calendar two-way sync over CalDAV — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
@@ -179,6 +181,10 @@ Local file connector (TZ module 5); use the P18 cards in the execution queue.
 ## [P19](docs/phases/p19-document-management.md)
 
 Document management (TZ module 6); use the P19 cards in the execution queue.
+
+## [P20](docs/phases/p20-proactive-assistant.md)
+
+Proactive assistant planning; use the P20 cards in the execution queue.
 
 ## Questions
 

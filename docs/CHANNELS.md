@@ -325,3 +325,97 @@ failure; durable destination/part progress is a separate follow-up.
 | Inbound Types | `message`, `channel_post` | `message_created`, `message_edited` |
 | Parse Mode | `HTML` | `html` / `markdown` |
 | Special | Requires admin of channel for `channel_post` updates | Requires Russian root CA |
+
+---
+
+## Customer communications senders (P15-T06)
+
+`app/channels/senders/` and `app/integrations/email/smtp_send.py` expose internal,
+**default-off** single-attempt adapters, separate from `Channel.send`, digest
+routing and employee notifications (`app/services/notifications/`, D19). They
+create no API/agent-tool entrypoint, command, outbox, schedule or migration.
+P15-T05 is the consumer, not part of this transport task.
+
+| Capability | Adapter | Exact deployment prefix | Binding ID |
+| --- | --- | --- | --- |
+| `comms.email.send.v1` | `send_email(MailAccount, EmailRequest)` | `P15_EMAIL_SEND` | owned `WorkspaceConnection.id` |
+| `comms.telegram.bot_send.v1` | `send_telegram(BotAccount, BotRecipient, text)` | `P15_TELEGRAM_BOT_SEND` | private `TenantChannel.id` |
+| `comms.max.bot_send.v1` | `send_max(BotAccount, BotRecipient, text)` | `P15_MAX_BOT_SEND` | private `TenantChannel.id` |
+
+### Release and caller contract
+
+For each prefix, `_ENABLED=1` **and** `_BINDINGS=workspace_id:binding_id` release
+only those exact pairs; `_KILL=1` stops new admissions independently. All three
+are off by default. Binding lists are comma-separated positive integer pairs,
+without spaces, wildcards or leading zeroes; any malformed entry refuses the
+entire list. Missing enable/bindings or any kill value other than exactly `0`
+fails closed. A bot token or an approved command cannot override these controls.
+An email connection also requires its own `send_enabled is True`; the catalog
+presets stay false. No global installation token/mail account is used as fallback.
+
+The adapters require an explicit matching non-bypass `tenant_scope` and an
+active, verified binding with the same positive owner/actor ID. Switches are
+read again after egress resolution and immediately before SMTP DATA / Bot API
+POST. Environment changes must reach **every serving process**; there is no
+instant cross-process propagation or recall of an already issued request.
+
+`SendBinding`, `MailAccount`, `BotAccount` and `BotRecipient` are immutable inputs
+from a **trusted service**, not authorization evidence by themselves. Never
+populate their flags, credential or recipient consent directly from HTTP/agent
+input. Before enabling a consumer, it must use the existing managers/approval
+ledger to resolve fresh workspace/account/actor authority, hold the appropriate
+revocation locks across dispatch, seal exact destination/content/credential
+identity into approval, and commit a durable single-dispatch claim before I/O.
+This task does not register or activate a business-command executor; P15-T05
+owns that integration with the existing central capability registry and ledger.
+Calling an adapter directly from an unreviewed tool/route is not supported.
+
+For bots the trusted caller must resolve persisted **same-bot** private-chat
+start/consent evidence, bound to the workspace, binding, numeric user ID and
+`bot_fingerprint(capability, token)`. A numeric ID, membership or a caller-supplied
+`started_bot=True` is not proof. Token rotation invalidates old fingerprinted
+evidence and reviewed intent; it does not silently authorize a different bot.
+No group/channel destinations, usernames, MTProto or personal-account automation.
+
+### Transport and outcome contract
+
+- SMTP uses the Mail.ru/Yandex catalog hostname, implicit verified TLS on 465
+  and the customer's app password. Both envelope sender and `From` are forced
+  to that customer's account (D12). One recipient, plain text, generated
+  `Message-ID` and `Date`; optional validated `In-Reply-To`. No caller-supplied
+  sender, CC/BCC, installation-domain fallback, attachments or HTML. A bounded
+  1 MiB UTF-8 body and ASCII mailboxes avoid unnegotiated SMTPUTF8; text uses
+  quoted-printable on the wire rather than assuming 8BITMIME support.
+- Telegram uses only `api.telegram.org` Bot API `sendMessage`; MAX uses only
+  `platform-api2.max.ru/messages?user_id=...`, with its token in `Authorization`.
+  One plain message (conservative UTF-16 limit 4096 / 4000), no splitting, retry,
+  redirect, proxy or alternate endpoint. MAX pacing / batching belongs to T05;
+  a 429 is not retried here. TLS verification is never disabled; required MAX
+  root-certificate provisioning remains the operator's separate responsibility.
+- **Every socket destination** passes `acquire_outbound_target` (P14-T09) on each
+  attempt. All DNS answers must pass that seam; sockets connect to one validated
+  IP without a second hostname lookup, keeping original-host SNI/certificate
+  verification. There is no address fallback. Open the existing `registry_scope`
+  in the trusted caller when its operation needs an installation snapshot.
+  Mailbox domains are SMTP envelope data, not separate socket destinations.
+- Boxed/self-hosted SMTP on `10.x` / `192.168.x` cannot pass P14-T09's accepted
+  global-address restriction, just as for self-hosted Bitrix24. This is a known
+  limitation, **not a bug** or permission to bypass the seam. This task supports
+  the two fixed public SMTP presets, not arbitrary SMTP hosts.
+- `SendResult.outcome` is `blocked` (pre-send refusal), `rejected` (known negative),
+  `sent` (provider acceptance), or **`unknown`** (timeout / uncertain effect).
+  A SMTP acceptance is not proof of delivery; its locally generated `message_id`
+  is not a provider receipt. Bot `receipt_id` requires a valid acknowledgement
+  naming the requested private recipient. Only fixed codes / bounded receipt IDs
+  escape; no provider bodies, raw exceptions, credentials or message content in
+  logs/results. Authentication and TLS failures have fixed SMTP codes.
+- No outcome is retried automatically. After `unknown`, cancellation or process
+  death the caller must retain its durable claim and reconcile, never dispatch
+  blindly. Async adapters use a worker thread: cancelling the await does **not**
+  prove the socket stopped. A fresh caller invocation is a new attempt, not
+  transport idempotency; `Message-ID` alone does not deduplicate SMTP. Durable
+  replay prevention and receipt persistence are deliberately T05 responsibilities.
+
+Focused no-DB tests: `tests/channels/test_p15_t06_senders.py`. They replace
+SMTP/HTTP/DNS/socket boundaries explicitly and do not certify live credentials,
+bot permissions, deployment activation or the future T05 caller integration.

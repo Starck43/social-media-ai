@@ -7,7 +7,7 @@ import json
 import smtplib
 import socket
 import ssl
-from dataclasses import replace
+from dataclasses import fields, replace
 from email import policy
 from email.parser import BytesParser
 from types import SimpleNamespace
@@ -403,7 +403,9 @@ def test_smtp_rechecks_kill_after_envelope_before_data(monkeypatch, kill_during)
     result = smtp_send._send_email(MAIL, REQUEST)
 
     killed = kill_during is not None
-    assert (result.outcome, result.code) == (("blocked", "capability_killed") if killed else ("sent", "smtp_accepted"))
+    assert (result.outcome, result.code) == (
+        ("unknown", "smtp_envelope_disclosed") if killed else ("sent", "smtp_accepted")
+    )
     assert [call[0] for call in client.calls if call[0] in {"mail", "rcpt"}] == ["mail", "rcpt"]
     commands = [call[1] for call in client.calls if call[0] == "command"]
     wire = [call[1] for call in client.calls if call[0] == "wire"]
@@ -671,9 +673,26 @@ async def test_async_public_adapters(monkeypatch):
 
 
 def test_sensitive_inputs_not_in_repr():
-    assert "private-password" not in repr(MAIL)
-    assert "private-token" not in repr(account(TELEGRAM))
-    assert REQUEST.recipient not in repr(REQUEST) and REQUEST.text not in repr(REQUEST)
+    expected_sensitive = {
+        MailAccount: {"account_login", "app_password"},
+        BotAccount: {"token"},
+        EmailRequest: {"recipient", "subject", "text"},
+        BotRecipient: {"user_id"},
+    }
+    samples = (MAIL, account(TELEGRAM), REQUEST, RECIPIENT)
+    assert {type(sample) for sample in samples} == set(expected_sensitive)
+
+    for sample in samples:
+        sample_fields = fields(sample)
+        declared_sensitive = {item.name for item in sample_fields if not item.repr}
+        expected = expected_sensitive[type(sample)]
+        assert declared_sensitive == expected
+
+        markers = {name: f"p15-t06-sensitive-{type(sample).__name__}-{name}" for name in expected}
+        redacted_sample = replace(sample, **markers)
+        rendered = repr(redacted_sample)
+        for marker in markers.values():
+            assert marker not in rendered
 
 
 @pytest.mark.parametrize("capability", [TELEGRAM, MAX])

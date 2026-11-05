@@ -24,8 +24,7 @@ MAX_BODY_BYTES = 1024 * 1024
 
 
 class _AdmissionRefusal(Exception):
-    def __init__(self, code: str):
-        self.code = code
+    """Admission closed after SMTP envelope commands started but before DATA."""
 
 
 class _PinnedSMTP(smtplib.SMTP_SSL):
@@ -44,7 +43,7 @@ class _PinnedSMTP(smtplib.SMTP_SSL):
         # prevents the message body from leaving this process.
         code = admission_code(EMAIL, self._binding)
         if code:
-            raise _AdmissionRefusal(code)
+            raise _AdmissionRefusal
         return super().data(msg)
 
 
@@ -111,7 +110,7 @@ def _send_email(account: MailAccount, request: EmailRequest) -> SendResult:
         return SendResult("blocked", "invalid_message")
     host = dict(PROVIDERS[account.provider_id].defaults)["smtp_host"]
     client = None
-    data_attempted = False
+    smtp_exchange_started = False
     try:
         target = acquire_outbound_target(host, 465, policy=StaticPolicy((host,)))
         code = admission_code(EMAIL, account.binding)
@@ -125,19 +124,20 @@ def _send_email(account: MailAccount, request: EmailRequest) -> SendResult:
         code = admission_code(EMAIL, account.binding)
         if code:
             return SendResult("blocked", code, message_id=message_id)
-        data_attempted = True
+        # sendmail sends MAIL FROM and RCPT TO before it calls data().
+        smtp_exchange_started = True
         refused = client.sendmail(account.account_login, [request.recipient], data)
         if refused:
             return SendResult("rejected", "smtp_recipient_rejected", message_id=message_id)
         return SendResult("sent", "smtp_accepted", message_id=message_id)
-    except _AdmissionRefusal as exc:
-        return SendResult("blocked", exc.code, message_id=message_id)
+    except _AdmissionRefusal:
+        return SendResult("unknown", "smtp_envelope_disclosed", message_id=message_id)
     except OutboundRefusal as exc:
         return SendResult("blocked", exc.code, message_id=message_id)
     except TimeoutError:
         return SendResult("unknown", "smtp_timeout", message_id=message_id)
     except ssl.SSLError:
-        return SendResult("unknown" if data_attempted else "rejected", "smtp_tls_failed", message_id=message_id)
+        return SendResult("unknown" if smtp_exchange_started else "rejected", "smtp_tls_failed", message_id=message_id)
     except smtplib.SMTPAuthenticationError:
         return SendResult("rejected", "smtp_auth_failed", message_id=message_id)
     except smtplib.SMTPRecipientsRefused:
@@ -145,7 +145,9 @@ def _send_email(account: MailAccount, request: EmailRequest) -> SendResult:
     except (smtplib.SMTPSenderRefused, smtplib.SMTPDataError):
         return SendResult("rejected", "smtp_rejected", message_id=message_id)
     except (smtplib.SMTPException, OSError):
-        return SendResult("unknown" if data_attempted else "rejected", "smtp_transport_error", message_id=message_id)
+        return SendResult(
+            "unknown" if smtp_exchange_started else "rejected", "smtp_transport_error", message_id=message_id
+        )
     finally:
         if client is not None:
             # Do not issue QUIT: a cleanup failure cannot erase a DATA receipt.

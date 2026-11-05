@@ -404,6 +404,9 @@ No group/channel destinations, usernames, MTProto or personal-account automation
   the two fixed public SMTP presets, not arbitrary SMTP hosts.
 - `SendResult.outcome` is `blocked` (pre-send refusal), `rejected` (known negative),
   `sent` (provider acceptance), or **`unknown`** (timeout / uncertain effect).
+  If a kill or revocation is observed after SMTP `MAIL FROM`/`RCPT TO` begins but
+  before `DATA`, the adapter returns `unknown/smtp_envelope_disclosed`: recipient
+  envelope metadata reached the server, while the message body was not sent.
   A SMTP acceptance is not proof of delivery; its locally generated `message_id`
   is not a provider receipt. Bot `receipt_id` requires a valid acknowledgement
   naming the requested private recipient. Only fixed codes / bounded receipt IDs

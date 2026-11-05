@@ -4,6 +4,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -65,6 +66,7 @@ class PlannerTask(Base, TenantScopedMixin, TimestampMixin):
         {"schema": S},
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pii_updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")
     owner_user_id: Mapped[int] = mapped_column(ForeignKey(f"{S}.users.id", ondelete="CASCADE"), nullable=False)
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.users.id", ondelete="SET NULL"))
     title_encrypted: Mapped[str] = mapped_column(EncryptedText(), nullable=False)

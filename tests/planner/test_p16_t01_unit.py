@@ -756,3 +756,82 @@ async def test_contact_link_rejects_stale_cached_permission(service, monkeypatch
     monkeypatch.setattr(tasks, "workspace_grants", lambda role: {("plannertask", action) for action in ActionType})
     with pytest.raises(PermissionError, match="contact_denied"):
         await service._references(Session(values=[5]), create_request(contact_id=5), (7, 3, "member"))
+
+
+def test_migration_0140_matches_model_and_owns_full_lifecycle(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    from sqlalchemy import Column, Integer, MetaData, Table, Text, UniqueConstraint
+
+    path = Path(__file__).resolve().parents[2] / "migrations/versions/0140_planner_tasks.py"
+    spec = importlib.util.spec_from_file_location("planner_0140_unit", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.revision == "0140" and migration.down_revision == "0139"
+    metadata = MetaData(schema="test_schema")
+    for name in ("tenants", "users", "contacts"):
+        Table(
+            name,
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("tenant_id", Integer),
+            UniqueConstraint("tenant_id", "id"),
+        )
+    statements, created, indexes, dropped = [], [], [], []
+    bind = SimpleNamespace(
+        dialect=postgresql.dialect(), execute=lambda sql, params=None: statements.append((str(sql), params))
+    )
+
+    def create_table(name, *columns, **kwargs):
+        created.append(Table(name, metadata, *columns, **kwargs))
+
+    monkeypatch.setattr(migration, "settings", SimpleNamespace(DB_SCHEMA="test_schema"))
+    monkeypatch.setattr(
+        migration,
+        "op",
+        SimpleNamespace(
+            get_bind=lambda: bind,
+            create_table=create_table,
+            create_index=lambda *args, **kwargs: indexes.append((args, kwargs)),
+            execute=lambda sql: statements.append((str(sql), None)),
+            drop_table=lambda *args, **kwargs: dropped.append((args, kwargs)),
+        ),
+    )
+    migration.upgrade()
+    assert len(created) == 1 and created[0].name == "planner_tasks"
+    table = created[0]
+    assert set(table.c.keys()) == set(PlannerTask.__table__.c.keys())
+    for column in table.c:
+        model_column = PlannerTask.__table__.c[column.name]
+        assert column.nullable == model_column.nullable, column.name
+        assert column.type.compile(dialect=postgresql.dialect()) == model_column.type.compile(
+            dialect=postgresql.dialect()
+        ), column.name
+    assert isinstance(table.c.recurrence.type, Text)
+    assert table.c.recurrence_source.server_default.arg == "planner"
+    assert table.c.pii_updated_at.server_default.arg == "1"
+    assert len(indexes) == 1 and indexes[0][0][2] == ["tenant_id", "status", "due_at", "due_date"]
+
+    def foreign_keys(source):
+        return {
+            (
+                tuple(f.column_keys),
+                tuple(e.target_fullname.split(".", 1)[1] for e in f.elements),
+                f.ondelete,
+                f.deferrable,
+                f.initially,
+            )
+            for f in source.foreign_key_constraints
+        }
+
+    assert foreign_keys(table) == foreign_keys(PlannerTask.__table__)
+    assert "CREATE TABLE test_schema.planner_tasks" in str(CreateTable(table).compile(dialect=postgresql.dialect()))
+    assert any(
+        "CREATE TRIGGER contact_pii_marker" in sql and "test_schema.planner_tasks" in sql for sql, _ in statements
+    )
+    assert any(params and params.get("resource_key") == "planner.task" for _, params in statements)
+    assert migration.WORKSPACE_ROLE_PRESETS["viewer"] == ("VIEW",)
+    migration.downgrade()
+    assert dropped == [(("planner_tasks",), {"schema": "test_schema"})]
+    assert any("DELETE FROM test_schema.model_types" in sql for sql, _ in statements)

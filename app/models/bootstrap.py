@@ -67,6 +67,10 @@ def bind_managers(models):
     crm_managers = import_module("app.models.managers.crm_entity_manager")
     models.CrmEntity.objects = crm_managers.CrmEntityManager()
     models.GreetingHistory.objects = crm_managers.GreetingHistoryManager()
+    comms_managers = import_module("app.models.managers.unified_message_manager")
+    models.UnifiedMessage.objects = comms_managers.UnifiedMessageManager()
+    models.MessageThread.objects = comms_managers.MessageThreadManager()
+    models.ContactChannelStat.objects = comms_managers.ContactChannelStatManager()
     models.TrustedOutboundHost.objects = import_module(
         "app.models.managers.trusted_outbound_host_manager"
     ).TrustedOutboundHostManager()

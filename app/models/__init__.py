@@ -34,6 +34,7 @@ from .collection import (
     Platform,
     Source,
 )
+from .communications import ContactChannelStat, MessageThread, UnifiedMessage
 from .contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
 from .crm import CrmEntity, GreetingHistory
 from .file_workspace import FileCatalogObject, FileCatalogObservation, FileCatalogScan
@@ -79,6 +80,9 @@ __all__ = [
     "ContactIdentity",
     "ContactConsent",
     "ContactMergeJournal",
+    "MessageThread",
+    "UnifiedMessage",
+    "ContactChannelStat",
     "CrmEntity",
     "GreetingHistory",
     "FileCatalogObject",

@@ -28,6 +28,7 @@ RESOURCES = (
         "integrations.local_connector", "LocalConnector", "local_connectors", "VIEW CREATE DELETE CONFIGURE", True
     ),
     _resource("contacts.contact", "Contact", "contacts", "VIEW CREATE UPDATE DELETE EXPORT", True),
+    _resource("planner.task", "PlannerTask", "planner_tasks", "VIEW CREATE UPDATE DELETE", True),
     _resource("comms.message", "UnifiedMessage", "unified_messages", "VIEW CREATE UPDATE DELETE", True),
     _resource("comms.outbox", "OutboxMessage", "outbox_messages", "VIEW UPDATE CONFIGURE", True),
     _resource("identity.user", "User", "users", "VIEW CREATE UPDATE DELETE"),
@@ -114,6 +115,7 @@ _OLD_DOMAINS = {
     "contacts": (),
     "comms": (),
     "integrations": (),
+    "planner": (),
 }
 _ALIASES = {
     f"{old}.{r.model_name}.{a.db_value}": (r, a)
@@ -174,7 +176,7 @@ def workspace_grants(codename):
         if role in (WorkspaceRoleType.OWNER, WorkspaceRoleType.ADMIN):
             actions = set(r.actions)
         elif role == WorkspaceRoleType.MANAGER:
-            if r.key in ("collection.source", "analysis.scenario", "scheduling.task"):
+            if r.key in ("collection.source", "analysis.scenario", "scheduling.task", "planner.task"):
                 actions = set(r.actions)
             elif r.key == "comms.message":
                 actions = set(r.actions) - {ActionType.DELETE}
@@ -191,6 +193,8 @@ def workspace_grants(codename):
                 actions = {ActionType.VIEW, ActionType.CREATE, ActionType.EXPORT}
             elif r.key in ("comms.message", "comms.outbox"):
                 actions = {ActionType.VIEW}
+            elif r.key == "planner.task":
+                actions = {ActionType.VIEW, ActionType.CREATE, ActionType.UPDATE}
         elif role == WorkspaceRoleType.VIEWER:
             if r.key in (
                 "collection.source",
@@ -198,6 +202,7 @@ def workspace_grants(codename):
                 "notifications.digest_run",
                 "comms.message",
                 "comms.outbox",
+                "planner.task",
             ):
                 actions = {ActionType.VIEW}
         # Everyone with AI access can operate ONLY their own conversation records.

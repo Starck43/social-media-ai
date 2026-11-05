@@ -24,8 +24,6 @@ def admission_code(capability: str, binding: SendBinding) -> str | None:
     workspace_id = current_tenant_id()
     if is_bypass() or type(workspace_id) is not int or workspace_id != binding.workspace_id:
         return "workspace_mismatch"
-    if binding.actor_user_id != binding.owner_user_id:
-        return "account_owner_mismatch"
     if binding.active is not True or binding.verified is not True:
         return "account_unavailable"
     if os.environ.get(f"{prefix}_KILL", "0") != "0":

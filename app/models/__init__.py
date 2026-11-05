@@ -69,6 +69,7 @@ from .llm import (
     LLMProvider,
 )
 from .notifications import DigestRun, Notification, NotificationPreference, NotificationReceipt
+from .planner import PlannerTask
 from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
@@ -83,6 +84,7 @@ __all__ = [
     "MessageThread",
     "UnifiedMessage",
     "ContactChannelStat",
+    "PlannerTask",
     "CrmEntity",
     "GreetingHistory",
     "FileCatalogObject",

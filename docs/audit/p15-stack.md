@@ -244,3 +244,43 @@ collision. The line names its own owner (Notion AI) and a different dialogue, an
 is landing on `feat/p15-t06-channel-senders`. The finding stands only in one respect — a
 task branch edits a row it does not own. Whoever resolves the branch should keep the
 `P15-T06` claim intact when rebasing, not revert it.
+
+## Round 3 — auditor fixes at `0a55061d` (2026-11-05)
+
+Round 2 stayed unanswered, so the auditor made the remaining fixes in the branch itself
+rather than leaving the stack idle. Nothing about the review standard changed; two round-2
+findings were corrected against the code.
+
+### Corrections to the round-2 record
+
+- **B-11 withdrawn.** `reconcile.py:641-651` records `dest_th.id` as created only inside
+  `if dest_th is None`, so a thread the target already owned before the merge is never
+  deleted on unmerge. The round-2 claim came from reading
+  `threads_by_conn_key.get(conn_key)` as a hit when that path had already returned `None`.
+  The only real defect left was the duplicate entry in `moved_thread_ids`, now removed.
+- **B-14 cause restated.** `imap_sync.py:322` folds "no data" into the error branch, so the
+  caller is told `all_batches_ok=True` and the expunge check clears the folder's backlog.
+
+### Fixes
+
+| Finding | Change |
+| --- | --- |
+| B-12 | `_thread_key_for_message()` re-scopes a foreign-channel key under the message's own channel before the re-bound thread is created; unmerge restores `thread_key` from the journal |
+| B-13 | `job_handlers/email_sync.py` wraps each connection in `session.begin_nested()`, committing or rolling back per mailbox |
+| B-14 | an `OK` reply without data returns `all_batches_ok=False`; the expunge check needs one complete, non-empty scan |
+| N-1 | a partial scan keeps `last_uid` at 0 and stays `uidvalidity_reset_pending` |
+| registry drift | `ROADMAP.md`, `docs/CHANNELS.md`, `docs/tasks/p15-t06.md`, `docs/tasks/p16-t01.md` and a P20 card were carried from before the T06 lane landed; they now match `dev` (`61e2840e`) |
+
+### Evidence at `0a55061d`
+
+- `pytest tests/integrations/test_p15_t01_imap_unit.py tests/contacts tests/communications -q`
+  → **94 passed**.
+- The B-14 test fails with the previous `imap_sync.py` reverted, so it exercises the guard.
+- `test_schema` `0139 -> 0138 -> 0139`, twice: version and the three tables round-trip.
+  The audit tenants `audit-p15-a` (8) and `audit-p15-b` (9) and their rows are removed;
+  `unified_messages`, `message_threads` and `contact_channel_stats` are empty.
+- No new migration, no route, no content column; `0139` untouched.
+
+Still open, none blocking: N-7 (earlier folders' cursor progress lost when a later folder
+returns nothing), N-8 (a moved message shows unavailable *and* available — acceptable under
+TZ 2.5), N-9 (read state is one-way), N-10 (shared files listed in the PR body).

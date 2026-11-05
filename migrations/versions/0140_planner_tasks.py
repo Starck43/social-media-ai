@@ -108,7 +108,7 @@ def upgrade() -> None:
         sa.Column("owner_user_id", sa.Integer(), sa.ForeignKey(f"{s}.users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("assignee_id", sa.Integer(), sa.ForeignKey(f"{s}.users.id", ondelete="SET NULL"), nullable=True),
         sa.Column("title_encrypted", sa.String(), nullable=False),
-        sa.Column("description_encrypted", sa.String(), nullable=False),
+        sa.Column("description_encrypted", sa.String(), nullable=True),
         sa.Column("series_template_encrypted", sa.String(), nullable=False),
         sa.Column("due_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("due_date", sa.Date(), nullable=True),

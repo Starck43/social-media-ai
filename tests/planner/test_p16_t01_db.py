@@ -114,7 +114,9 @@ async def test_tenant_crud_subtasks_versions_and_ciphertext(planner_world):
                     {"id": child.id},
                 )
             ).one()
-            assert all(value.startswith("pii:v1:") for value in stored)
+            # An empty description is stored as NULL, not as a ciphertext of nothing.
+            assert stored[0].startswith("pii:v1:") and stored[2].startswith("pii:v1:")
+            assert stored[1] is None
             assert "Synthetic" not in repr(stored) and "Renamed" not in repr(stored)
     with scope(world, 1):
         assert not (await planner_service.list())["items"]

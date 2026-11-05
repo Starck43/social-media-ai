@@ -30,13 +30,17 @@ class PlannerConflict(ValueError):
 
 def _projection(row) -> TaskOut:
     values = {key: getattr(row, key) for key in TaskOut.model_fields if key not in {"title", "description"}}
-    return TaskOut(title=row.title_encrypted, description=row.description_encrypted, **values)
+    # An empty description is stored as NULL; the response contract keeps "" so a task
+    # created without one can still be listed (round-1 audit).
+    return TaskOut(title=row.title_encrypted, description=row.description_encrypted or "", **values)
 
 
 def _values(request: TaskCreate):
     values = request.model_dump()
     values["title_encrypted"] = values.pop("title")
-    values["description_encrypted"] = values.pop("description")
+    # "" is not secret; store NULL so an empty field is not a ciphertext of nothing and
+    # the column's NOT NULL contract stays meaningful for real content.
+    values["description_encrypted"] = values.pop("description") or None
     return values
 
 

@@ -70,7 +70,7 @@ class PlannerTask(Base, TenantScopedMixin, TimestampMixin):
     owner_user_id: Mapped[int] = mapped_column(ForeignKey(f"{S}.users.id", ondelete="CASCADE"), nullable=False)
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.users.id", ondelete="SET NULL"))
     title_encrypted: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
-    description_encrypted: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
+    description_encrypted: Mapped[str | None] = mapped_column(EncryptedText(), nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     due_date: Mapped[date | None] = mapped_column(Date)
     timezone: Mapped[str] = mapped_column(String(100), nullable=False)

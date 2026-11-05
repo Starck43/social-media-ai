@@ -232,3 +232,15 @@ B-11, B-12, B-13, B-14 with one test each — in particular a merge/unmerge roun
 the destination thread already exists, a cross-channel re-bound message followed by a
 normal ingest of the same conversation, a two-connection job where the second fails, and an
 empty `SEARCH` reply. Then drop the `P15-T06` line and state the shared-path files in the PR.
+
+## Round 2 — state check (2026-11-05, after the review)
+
+PR #391 is still **open and unmerged** at `f972b6b1`; round 2 has not been answered.
+`ROADMAP.md` keeps `P15-T01..T04` at `READY`, which is the correct status for work whose
+audit found open blockers.
+
+One correction to the round-2 record: the `P15-T06` claim in `ROADMAP.md:78` is **not** a
+collision. The line names its own owner (Notion AI) and a different dialogue, and that lane
+is landing on `feat/p15-t06-channel-senders`. The finding stands only in one respect — a
+task branch edits a row it does not own. Whoever resolves the branch should keep the
+`P15-T06` claim intact when rebasing, not revert it.

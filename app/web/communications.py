@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.core.database import async_session_maker
-from app.core.tenant_context import current_tenant_id
+from app.core.tenant_context import TenantContextError, current_tenant_id
 from app.services.communications.inbox import (
     CHANNEL_BADGES,
     get_thread_detail,
@@ -68,6 +68,8 @@ async def communications_page(
                     selected_thread_detail = await get_thread_detail(session, int(active_thread_id))
                 if tab == "contacts_merge":
                     merge_suggestions = await suggest_contact_merges(session, limit=50)
+        except (PermissionError, TenantContextError):
+            raise HTTPException(status_code=403) from None
         except Exception:  # noqa: BLE001
             pass
 

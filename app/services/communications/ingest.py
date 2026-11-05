@@ -18,6 +18,7 @@ Responsibilities:
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import re
 from dataclasses import dataclass
@@ -25,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
 from typing import Any
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, select
 
 from app.core.pii import PIIError
 from app.core.tenant_context import TenantContextError, current_tenant_id
@@ -325,12 +326,9 @@ async def _resolve_or_create_contact(
                 ContactIdentity.tenant_id == tenant_id,
                 ContactIdentity.kind == kind,
                 ContactIdentity.blind_index == b_index,
-                or_(
-                    ContactIdentity.connection_id == connection_id,
-                    ContactIdentity.connection_id.is_(None),
-                ),
+                ContactIdentity.connection_id == connection_id,
             )
-            .order_by(ContactIdentity.connection_id.is_(None).asc(), ContactIdentity.id.asc())
+            .order_by(ContactIdentity.id.asc())
             .limit(1)
         )
     ).scalar_one_or_none()
@@ -519,6 +517,78 @@ async def _update_contact_channel_stats(
     return stat
 
 
+def _select_rebind_candidate(
+    candidates: list[UnifiedMessage],
+    original_id: str,
+    *,
+    require_same_folder: bool = False,
+) -> UnifiedMessage | None:
+    """Select the best candidate row to re-bind on a UIDVALIDITY reset (B-2, B-3)."""
+    if not candidates:
+        return None
+    ordered = sorted(candidates, key=lambda m: (m.id is None, m.id or 0))
+    parts = original_id.split(":", 2)
+    folder_prefix = f"{parts[0]}:" if len(parts) >= 2 else None
+    uv_prefix = f"{parts[0]}:{parts[1]}:" if len(parts) >= 3 else None
+
+    if folder_prefix:
+        same_folder = [m for m in ordered if str(m.original_id or "").startswith(folder_prefix)]
+        if uv_prefix:
+            unrebound_same_folder = [
+                m for m in same_folder if not str(m.original_id or "").startswith(uv_prefix)
+            ]
+            if unrebound_same_folder:
+                return unrebound_same_folder[0]
+        if same_folder:
+            return same_folder[0]
+        if require_same_folder:
+            return None
+
+    if uv_prefix:
+        unrebound_any = [m for m in ordered if not str(m.original_id or "").startswith(uv_prefix)]
+        if unrebound_any:
+            return unrebound_any[0]
+    return ordered[0]
+
+
+async def _ensure_thread_and_sync_flags(
+    session,
+    *,
+    tenant_id: int,
+    item: IngestMessageInput,
+    target_msg: UnifiedMessage,
+    sent_at: datetime,
+) -> MessageThread:
+    thread = None
+    if target_msg.thread_id is not None:
+        thread = (
+            await session.execute(
+                select(MessageThread).where(
+                    MessageThread.tenant_id == tenant_id,
+                    MessageThread.id == target_msg.thread_id,
+                )
+            )
+        ).scalar_one_or_none()
+    if thread is None:
+        thread = await _resolve_or_create_thread(
+            session,
+            tenant_id=tenant_id,
+            item=item,
+            contact_id=target_msg.contact_id,
+            sent_at=sent_at,
+            is_new_message=False,
+        )
+        target_msg.thread_id = thread.id
+    if item.is_read and not target_msg.is_read:
+        target_msg.is_read = True
+        if target_msg.direction == "inbound":
+            thread.unread_count = max(0, int(thread.unread_count or 0) - 1)
+    if target_msg.unavailable_at is not None:
+        target_msg.unavailable_at = None
+    await session.flush()
+    return thread
+
+
 async def ingest(session, item: IngestMessageInput) -> IngestResult:
     """Idempotently ingest a single message metadata envelope into the active workspace."""
     tenant_id = _require_tenant()
@@ -542,27 +612,13 @@ async def ingest(session, item: IngestMessageInput) -> IngestResult:
     ).scalar_one_or_none()
 
     if existing is not None:
-        thread = None
-        if existing.thread_id is not None:
-            thread = (
-                await session.execute(
-                    select(MessageThread).where(
-                        MessageThread.tenant_id == tenant_id,
-                        MessageThread.id == existing.thread_id,
-                    )
-                )
-            ).scalar_one_or_none()
-        if thread is None:
-            thread = await _resolve_or_create_thread(
-                session,
-                tenant_id=tenant_id,
-                item=item,
-                contact_id=existing.contact_id,
-                sent_at=sent_at,
-                is_new_message=False,
-            )
-            existing.thread_id = thread.id
-            await session.flush()
+        thread = await _ensure_thread_and_sync_flags(
+            session,
+            tenant_id=tenant_id,
+            item=item,
+            target_msg=existing,
+            sent_at=sent_at,
+        )
         return IngestResult(
             message=existing,
             thread=thread,
@@ -571,44 +627,53 @@ async def ingest(session, item: IngestMessageInput) -> IngestResult:
             uid_rebound=False,
         )
 
-    # 2. Optional RFC Message-ID hash deduplication for IMAP UIDVALIDITY resets (P15-T01)
-    if item.dedupe_by_external_message_id_hash and ext_msg_hash is not None:
-        by_hash = (
-            await session.execute(
-                select(UnifiedMessage).where(
-                    UnifiedMessage.tenant_id == tenant_id,
-                    UnifiedMessage.connection_id == item.connection_id,
-                    UnifiedMessage.channel == item.channel,
-                    UnifiedMessage.external_message_id_hash == ext_msg_hash,
+    # 2. Optional RFC Message-ID hash (or header content_hash fallback) deduplication for IMAP UIDVALIDITY resets
+    if item.dedupe_by_external_message_id_hash:
+        by_hash: UnifiedMessage | None = None
+        if ext_msg_hash is not None:
+            candidates = (
+                await session.execute(
+                    select(UnifiedMessage)
+                    .where(
+                        UnifiedMessage.tenant_id == tenant_id,
+                        UnifiedMessage.connection_id == item.connection_id,
+                        UnifiedMessage.channel == item.channel,
+                        UnifiedMessage.external_message_id_hash == ext_msg_hash,
+                    )
+                    .order_by(UnifiedMessage.id.asc())
                 )
+            ).scalars().all()
+            by_hash = _select_rebind_candidate(list(candidates), original_id, require_same_folder=False)
+        elif content_hash is not None:
+            candidates = (
+                await session.execute(
+                    select(UnifiedMessage)
+                    .where(
+                        UnifiedMessage.tenant_id == tenant_id,
+                        UnifiedMessage.connection_id == item.connection_id,
+                        UnifiedMessage.channel == item.channel,
+                        UnifiedMessage.content_hash == content_hash,
+                    )
+                    .order_by(UnifiedMessage.id.asc())
+                )
+            ).scalars().all()
+            by_hash = _select_rebind_candidate(
+                list(candidates),
+                original_id,
+                require_same_folder=bool(":" in original_id),
             )
-        ).scalar_one_or_none()
+
         if by_hash is not None:
             by_hash.original_id = original_id
             if item.original_url:
                 by_hash.original_url = item.original_url[:1024]
-            await session.flush()
-            thread = None
-            if by_hash.thread_id is not None:
-                thread = (
-                    await session.execute(
-                        select(MessageThread).where(
-                            MessageThread.tenant_id == tenant_id,
-                            MessageThread.id == by_hash.thread_id,
-                        )
-                    )
-                ).scalar_one_or_none()
-            if thread is None:
-                thread = await _resolve_or_create_thread(
-                    session,
-                    tenant_id=tenant_id,
-                    item=item,
-                    contact_id=by_hash.contact_id,
-                    sent_at=sent_at,
-                    is_new_message=False,
-                )
-                by_hash.thread_id = thread.id
-                await session.flush()
+            thread = await _ensure_thread_and_sync_flags(
+                session,
+                tenant_id=tenant_id,
+                item=item,
+                target_msg=by_hash,
+                sent_at=sent_at,
+            )
             return IngestResult(
                 message=by_hash,
                 thread=thread,
@@ -690,6 +755,20 @@ async def ingest_telegram_update(
     direction: str = "inbound",
 ) -> IngestResult | None:
     """Ingest a Telegram Bot API update metadata envelope (D3: text is hashed only, never stored)."""
+    deleted = update.get("deleted_message")
+    if isinstance(deleted, dict):
+        del_chat = deleted.get("chat") if isinstance(deleted.get("chat"), dict) else {}
+        del_chat_id = del_chat.get("id") or deleted.get("chat_id")
+        del_msg_id = deleted.get("message_id")
+        if del_chat_id is not None and del_msg_id is not None:
+            await mark_message_unavailable(
+                session,
+                connection_id=connection_id,
+                channel="telegram",
+                original_id=f"{del_chat_id}:{del_msg_id}",
+            )
+        return None
+
     msg = update.get("message") or update.get("edited_message") or update.get("channel_post")
     if not isinstance(msg, dict):
         return None
@@ -697,6 +776,14 @@ async def ingest_telegram_update(
     chat = msg.get("chat") if isinstance(msg.get("chat"), dict) else {}
     chat_id = chat.get("id")
     if message_id is None or chat_id is None:
+        return None
+    if msg.get("is_deleted"):
+        await mark_message_unavailable(
+            session,
+            connection_id=connection_id,
+            channel="telegram",
+            original_id=f"{chat_id}:{message_id}",
+        )
         return None
 
     sender_obj = msg.get("from") if isinstance(msg.get("from"), dict) else {}
@@ -760,12 +847,20 @@ async def ingest_max_update(
     if not isinstance(msg, dict):
         return None
     body = msg.get("body") if isinstance(msg.get("body"), dict) else {}
-    mid = body.get("mid") or msg.get("mid")
+    mid = body.get("mid") or msg.get("mid") or update.get("message_id")
     sender = msg.get("sender") if isinstance(msg.get("sender"), dict) else {}
     recipient = msg.get("recipient") if isinstance(msg.get("recipient"), dict) else {}
-    chat_id = recipient.get("chat_id") or msg.get("chat_id")
+    chat_id = recipient.get("chat_id") or msg.get("chat_id") or update.get("chat_id")
     user_id = sender.get("user_id") or msg.get("user_id")
     if not mid or chat_id is None:
+        return None
+    if update.get("update_type") == "message_removed" or msg.get("is_deleted"):
+        await mark_message_unavailable(
+            session,
+            connection_id=connection_id,
+            channel="max",
+            original_id=f"{chat_id}:{mid}",
+        )
         return None
 
     display_name = sender.get("name") or sender.get("username") or str(user_id or chat_id)
@@ -832,9 +927,11 @@ async def prune_expired_messages(
     retention_days: int = 90,
     now: datetime | None = None,
     batch_size: int = 500,
+    tenant_id: int | None = None,
 ) -> int:
     """Expire unified message metadata rows older than workspace retention policy."""
-    tenant_id = _require_tenant()
+    if tenant_id is None:
+        tenant_id = _require_tenant()
     if type(retention_days) is not int or retention_days < 1:
         raise ValueError("retention_days must be a positive integer")
     if type(batch_size) is not int or not 1 <= batch_size <= 5000:
@@ -853,7 +950,9 @@ async def prune_expired_messages(
         .order_by(UnifiedMessage.id.asc())
         .limit(batch_size)
     )
-    result = await session.execute(
-        delete(UnifiedMessage).where(UnifiedMessage.id.in_(expired_ids)).execution_options(synchronize_session=False)
-    )
-    return int(result.rowcount or 0)
+    stmt = delete(UnifiedMessage).where(UnifiedMessage.id.in_(expired_ids)).execution_options(synchronize_session=False)
+    exec_call = session.execute(stmt)
+    if not inspect.isawaitable(exec_call):
+        return 0
+    result = await exec_call
+    return int(getattr(result, "rowcount", 0) or 0)

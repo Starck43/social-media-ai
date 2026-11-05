@@ -1,10 +1,10 @@
 """Tenant-scoped unified communication hub tables (`message_threads`, `unified_messages`, `contact_channel_stats`, P15-T02).
 
-Revision ID: 0137
+Revision ID: 0139
 Revises: 0138
 Owned by P15-T02 for the P15-T01..T04 inbox stack. Metadata-only per D3 and D11:
 no message bodies, no attachments, and no full-text search index. Registers
-`comms.message` (`VIEW CREATE UPDATE DELETE`) per D14.
+`comms.message` (`VIEW CREATE UPDATE DELETE`) and workspace role presets per D14.
 """
 
 import sqlalchemy as sa
@@ -12,7 +12,7 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "0137"
+revision = "0139"
 down_revision = "0138"
 branch_labels = None
 depends_on = None
@@ -21,6 +21,13 @@ CHANNELS = "'email', 'telegram', 'max', 'phone', 'bitrix24'"
 DIRECTIONS = "'inbound', 'outbound'"
 PII_TABLES = ("message_threads", "unified_messages")
 ALL_TABLES = ("message_threads", "unified_messages", "contact_channel_stats")
+WORKSPACE_ROLE_PRESETS = {
+    "owner": ("VIEW", "CREATE", "UPDATE", "DELETE"),
+    "admin": ("VIEW", "CREATE", "UPDATE", "DELETE"),
+    "manager": ("VIEW", "CREATE", "UPDATE"),
+    "analyst": ("VIEW",),
+    "viewer": ("VIEW",),
+}
 
 
 def _registry(add: bool) -> None:
@@ -52,6 +59,24 @@ def _registry(add: bool) -> None:
                 ),
                 {"name": "Unified message: " + action.lower(), "action": action, "resource_key": resource_key},
             )
+        for codename, actions in WORKSPACE_ROLE_PRESETS.items():
+            for action in actions:
+                bind.execute(
+                    sa.text(
+                        f"""
+                        INSERT INTO {schema}.workspace_role_permission (role_id, permission_id)
+                        SELECT wr.id, p.id
+                        FROM {schema}.workspace_roles wr
+                        CROSS JOIN {schema}.permissions p
+                        JOIN {schema}.model_types m ON p.model_type_id = m.id
+                        WHERE wr.codename = :codename
+                          AND m.resource_key = :resource_key
+                          AND p.action_type = CAST(:action AS {schema}.action_type)
+                        ON CONFLICT (role_id, permission_id) DO NOTHING
+                        """
+                    ),
+                    {"codename": codename, "resource_key": resource_key, "action": action},
+                )
         return
 
     for link in ("role_permission", "workspace_role_permission"):

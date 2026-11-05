@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.core.database import async_session_maker
-from app.core.tenant_context import current_tenant_id
+from app.core.tenant_context import TenantContextError, current_tenant_id
 from app.services.contacts.reconcile import suggest_contact_merges
 from app.web.deps import render
 
@@ -23,6 +23,8 @@ async def contacts_merge_page(
         try:
             async with async_session_maker() as session:
                 suggestions = await suggest_contact_merges(session, limit=limit)
+        except (PermissionError, TenantContextError):
+            raise HTTPException(status_code=403) from None
         except Exception:  # noqa: BLE001
             suggestions = []
     return render(

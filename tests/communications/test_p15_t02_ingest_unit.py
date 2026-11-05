@@ -61,7 +61,10 @@ class _FakeResult:
         return self._rows[0] if self._rows else None
 
     def scalars(self):
-        return SimpleNamespace(all=lambda: list(self._rows))
+        return SimpleNamespace(
+            all=lambda: list(self._rows),
+            first=lambda: self._rows[0] if self._rows else None,
+        )
 
     def all(self):
         return list(self._rows)
@@ -149,7 +152,7 @@ class _InMemoryCommsSession:
                 if ident.tenant_id == t_id
                 and ident.kind == kind
                 and ident.blind_index == b_idx
-                and (ident.connection_id == conn_id or ident.connection_id is None)
+                and ident.connection_id == conn_id
             ]
             return _FakeResult(matches)
 
@@ -187,6 +190,7 @@ class _InMemoryCommsSession:
             channel = params.get("channel_1")
             orig_id = params.get("original_id_1")
             ext_hash = params.get("external_message_id_hash_1")
+            c_hash = params.get("content_hash_1")
             if orig_id is not None:
                 return _FakeResult(
                     [
@@ -209,6 +213,17 @@ class _InMemoryCommsSession:
                         and m.external_message_id_hash == ext_hash
                     ]
                 )
+            if c_hash is not None:
+                return _FakeResult(
+                    [
+                        m
+                        for m in self.messages
+                        if m.tenant_id == t_id
+                        and m.connection_id == conn_id
+                        and m.channel == channel
+                        and m.content_hash == c_hash
+                    ]
+                )
 
         if "FROM" in sql and "contact_channel_stats" in sql:
             t_id = params.get("tenant_id_1")
@@ -225,14 +240,16 @@ class _InMemoryCommsSession:
         return _FakeResult([])
 
 
-def test_migration_0137_and_pii_registry_contracts(monkeypatch):
-    migration = runpy.run_path(str(ROOT / "migrations/versions/0137_unified_messages.py"))
-    assert migration["revision"] == "0137"
+def test_migration_0139_and_pii_registry_contracts(monkeypatch):
+    migration = runpy.run_path(str(ROOT / "migrations/versions/0139_unified_messages.py"))
+    assert migration["revision"] == "0139"
     assert migration["down_revision"] == "0138"
 
-    source_text = (ROOT / "migrations/versions/0137_unified_messages.py").read_text(encoding="utf-8")
+    source_text = (ROOT / "migrations/versions/0139_unified_messages.py").read_text(encoding="utf-8")
     assert "message_content_cache" not in source_text
     assert "tsvector" not in source_text
+    assert "workspace_role_permission" in source_text
+    assert "WORKSPACE_ROLE_PRESETS" in source_text
 
     registered = {(tbl, col) for tbl, col, _ in REGISTRY}
     assert ("message_threads", "subject_encrypted") in registered
@@ -243,11 +260,12 @@ def test_migration_0137_and_pii_registry_contracts(monkeypatch):
 
     created_tables: list[str] = []
     dropped_tables: list[str] = []
+    executed_sql: list[str] = []
     op = migration["op"]
     monkeypatch.setattr(op, "create_table", lambda name, *a, **kw: created_tables.append(name))
     monkeypatch.setattr(op, "create_index", lambda *a, **kw: None)
     monkeypatch.setattr(op, "drop_table", lambda name, *a, **kw: dropped_tables.append(name))
-    monkeypatch.setattr(op, "execute", lambda *a, **kw: None)
+    monkeypatch.setattr(op, "execute", lambda sql, *a, **kw: executed_sql.append(str(sql)))
     monkeypatch.setattr(
         op,
         "get_bind",
@@ -724,4 +742,312 @@ def test_communications_outbox_and_followups_contracts():
         cancel_outbox_item(sent, "u1")
     cancelled = cancel_outbox_item(edited, "u1")
     assert cancelled["state"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_b8_no_cross_connection_or_null_connection_contact_auto_link():
+    """B-8: Ingest must never auto-link a ContactIdentity from connection_id=None or another connection."""
+    session = _InMemoryCommsSession()
+    session.add(
+        WorkspaceConnection(
+            id=41,
+            tenant_id=1,
+            owner_user_id=7,
+            platform="email",
+            provider_id="yandex_mail",
+            auth_method="app_password",
+            schema_version=1,
+            label="Mailbox 1",
+            account_key="m1@yandex.ru",
+            config={},
+            is_active=True,
+            state="verified",
+        )
+    )
+    session.add(
+        WorkspaceConnection(
+            id=42,
+            tenant_id=1,
+            owner_user_id=7,
+            platform="email",
+            provider_id="yandex_mail",
+            auth_method="app_password",
+            schema_version=1,
+            label="Mailbox 2",
+            account_key="m2@yandex.ru",
+            config={},
+            is_active=True,
+            state="verified",
+        )
+    )
+
+    from app.services.contacts.identity import identity_index
+
+    b_idx = identity_index("email", "shared@client.ru")
+    # Pre-existing manual contact with connection_id=None and another contact on connection_id=41
+    c_null = Contact(id=10, tenant_id=1, display_name_encrypted="Manual Contact")
+    c_conn41 = Contact(id=11, tenant_id=1, display_name_encrypted="Conn 41 Contact")
+    session.add(c_null)
+    session.add(c_conn41)
+    session.add(
+        ContactIdentity(
+            id=210,
+            tenant_id=1,
+            contact_id=10,
+            kind="email",
+            connection_id=None,
+            value_encrypted="shared@client.ru",
+            blind_index=b_idx,
+            verified=False,
+        )
+    )
+    session.add(
+        ContactIdentity(
+            id=211,
+            tenant_id=1,
+            contact_id=11,
+            kind="email",
+            connection_id=41,
+            value_encrypted="shared@client.ru",
+            blind_index=b_idx,
+            verified=False,
+        )
+    )
+
+    now = datetime.now(timezone.utc)
+    with tenant_scope(1):
+        # Ingesting on connection 42 must NOT auto-link to c_null (10) or c_conn41 (11)
+        res = await ingest(
+            session,
+            IngestMessageInput(
+                connection_id=42,
+                channel="email",
+                original_id="INBOX:1:1",
+                direction="inbound",
+                sent_at=now,
+                subject="Hello",
+                sender="shared@client.ru",
+                recipient="m2@yandex.ru",
+            ),
+        )
+        assert res.contact_id not in (10, 11)
+        new_ident = next(i for i in session.identities if i.contact_id == res.contact_id)
+        assert new_ident.connection_id == 42
+
+
+@pytest.mark.asyncio
+async def test_b2_b3_n2_b6_duplicate_message_id_null_message_id_read_sync_and_deletions():
+    """B-2, B-3, B-6, N-2: Multi-row Message-ID rebind, NULL Message-ID header hash fallback, read sync, and TG/MAX delete."""
+    session = _InMemoryCommsSession()
+    session.add(
+        WorkspaceConnection(
+            id=50,
+            tenant_id=1,
+            owner_user_id=7,
+            platform="email",
+            provider_id="yandex_mail",
+            auth_method="app_password",
+            schema_version=1,
+            label="Yandex",
+            account_key="team@yandex.ru",
+            config={},
+            is_active=True,
+            state="verified",
+        )
+    )
+    session.add(
+        WorkspaceConnection(
+            id=51,
+            tenant_id=1,
+            owner_user_id=7,
+            platform="telegram",
+            provider_id="telegram_bot",
+            auth_method="bot_token",
+            schema_version=1,
+            label="TG Bot",
+            account_key="bot51",
+            config={},
+            is_active=True,
+            state="verified",
+        )
+    )
+    session.add(
+        WorkspaceConnection(
+            id=52,
+            tenant_id=1,
+            owner_user_id=7,
+            platform="max",
+            provider_id="max_bot",
+            auth_method="bot_token",
+            schema_version=1,
+            label="MAX Bot",
+            account_key="max52",
+            config={},
+            is_active=True,
+            state="verified",
+        )
+    )
+
+    now = datetime.now(timezone.utc)
+    header_hash_no_msgid = compute_content_hash(b"From: a@b.ru\r\nSubject: No MsgID\r\n\r\n")
+
+    with tenant_scope(1):
+        # 1. Two messages sharing the same Message-ID in INBOX (normal sync: dedupe=False)
+        r1 = await ingest(
+            session,
+            IngestMessageInput(
+                connection_id=50,
+                channel="email",
+                original_id="INBOX:10:1",
+                direction="inbound",
+                sent_at=now,
+                subject="Shared ID 1",
+                sender="a@b.ru",
+                recipient="team@yandex.ru",
+                external_message_id="<dup-id@b.ru>",
+                is_read=False,
+                dedupe_by_external_message_id_hash=False,
+            ),
+        )
+        r2 = await ingest(
+            session,
+            IngestMessageInput(
+                connection_id=50,
+                channel="email",
+                original_id="INBOX:10:2",
+                direction="inbound",
+                sent_at=now,
+                subject="Shared ID 2",
+                sender="a@b.ru",
+                recipient="team@yandex.ru",
+                external_message_id="<dup-id@b.ru>",
+                is_read=False,
+                dedupe_by_external_message_id_hash=False,
+            ),
+        )
+        assert r1.created is True and r2.created is True
+        assert r1.thread.unread_count == 2
+
+        # N-2: Re-ingesting r1 with is_read=True updates is_read and decrements unread_count
+        r1_seen = await ingest(
+            session,
+            IngestMessageInput(
+                connection_id=50,
+                channel="email",
+                original_id="INBOX:10:1",
+                direction="inbound",
+                sent_at=now,
+                subject="Shared ID 1",
+                sender="a@b.ru",
+                recipient="team@yandex.ru",
+                external_message_id="<dup-id@b.ru>",
+                is_read=True,
+                dedupe_by_external_message_id_hash=False,
+            ),
+        )
+        assert r1_seen.created is False
+        assert r1.message.is_read is True
+        assert r1.thread.unread_count == 1
+
+        # B-2: UIDVALIDITY reset (10 -> 20) re-binds both rows sharing <dup-id@b.ru> without MultipleResultsFound
+        reb1 = await ingest(
+            session,
+            IngestMessageInput(
+                connection_id=50,
+                channel="email",
+                original_id="INBOX:20:101",
+                direction="inbound",
+                sent_at=now,
+                subject="Shared ID 1",
+                sender="a@b.ru",
+                recipient="team@yandex.ru",
+                external_message_id="<dup-id@b.ru>",
+                is_read=True,
+                dedupe_by_external_message_id_hash=True,
+            ),
+        )
+        reb2 = await ingest(
+            session,
+            IngestMessageInput(
+                connection_id=50,
+                channel="email",
+                original_id="INBOX:20:102",
+                direction="inbound",
+                sent_at=now,
+                subject="Shared ID 2",
+                sender="a@b.ru",
+                recipient="team@yandex.ru",
+                external_message_id="<dup-id@b.ru>",
+                is_read=True,
+                dedupe_by_external_message_id_hash=True,
+            ),
+        )
+        assert reb1.uid_rebound is True and reb2.uid_rebound is True
+        assert {r1.message.original_id, r2.message.original_id} == {"INBOX:20:101", "INBOX:20:102"}
+
+        # B-3: Message with NULL Message-ID re-binds via content_hash scoped to same folder on reset
+        no_id_init = await ingest(
+            session,
+            IngestMessageInput(
+                connection_id=50,
+                channel="email",
+                original_id="INBOX:20:105",
+                direction="inbound",
+                sent_at=now,
+                subject="No MsgID",
+                sender="a@b.ru",
+                recipient="team@yandex.ru",
+                external_message_id=None,
+                content_hash=header_hash_no_msgid,
+                dedupe_by_external_message_id_hash=False,
+            ),
+        )
+        assert no_id_init.created is True
+        no_id_reset = await ingest(
+            session,
+            IngestMessageInput(
+                connection_id=50,
+                channel="email",
+                original_id="INBOX:30:205",
+                direction="inbound",
+                sent_at=now,
+                subject="No MsgID",
+                sender="a@b.ru",
+                recipient="team@yandex.ru",
+                external_message_id=None,
+                content_hash=header_hash_no_msgid,
+                dedupe_by_external_message_id_hash=True,
+            ),
+        )
+        assert no_id_reset.created is False
+        assert no_id_reset.uid_rebound is True
+        assert no_id_init.message.original_id == "INBOX:30:205"
+
+        # B-6: Telegram and MAX deletion events mark unavailable_at
+        tg_res = await ingest_telegram_update(
+            session,
+            connection_id=51,
+            update={"message": {"message_id": 77, "date": 1762250000, "chat": {"id": 900}, "text": "hi"}},
+        )
+        assert tg_res is not None and tg_res.message.is_unavailable is False
+        await ingest_telegram_update(
+            session,
+            connection_id=51,
+            update={"deleted_message": {"message_id": 77, "chat": {"id": 900}}},
+        )
+        assert tg_res.message.is_unavailable is True
+
+        max_res = await ingest_max_update(
+            session,
+            connection_id=52,
+            update={"message": {"body": {"mid": "m-99", "text": "yo"}, "recipient": {"chat_id": 800}}},
+        )
+        assert max_res is not None and max_res.message.is_unavailable is False
+        await ingest_max_update(
+            session,
+            connection_id=52,
+            update={"update_type": "message_removed", "message_id": "m-99", "chat_id": 800},
+        )
+        assert max_res.message.is_unavailable is True
+
 

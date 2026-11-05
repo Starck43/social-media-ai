@@ -25,12 +25,13 @@ from typing import Any
 
 from sqlalchemy import delete, select
 
-from app.core.permissions import get_current_user
+from app.core.permissions import get_current_user, has_permission
+from app.core.tenant_context import TenantContextError, current_tenant_id
 from app.models.audit.action_audit_event import ActionAuditEvent
 from app.models.communications.message import ContactChannelStat, MessageThread, UnifiedMessage
 from app.models.contacts.core import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
 from app.models.crm.entity import CrmEntity
-from app.models.managers.contact_manager import ContactUnavailable, require_contact_permission
+from app.models.managers.contact_manager import ContactUnavailable
 from app.types import ActionType
 
 logger = logging.getLogger("app.audit.comms")
@@ -38,6 +39,17 @@ logger = logging.getLogger("app.audit.comms")
 AUDIT_ACTION_MERGE = "comms.contact.merge"
 AUDIT_ACTION_UNMERGE = "comms.contact.unmerge"
 STRONG_MATCH_KINDS = ("email", "phone")
+
+
+def _require_reconcile_permission(action: ActionType) -> int:
+    """Require active workspace and either `comms.message` or `contact` permission."""
+    tenant = current_tenant_id()
+    if tenant is None:
+        raise TenantContextError("Contact reconciliation requires a selected workspace")
+    user = get_current_user()
+    if not (has_permission(user, "comms.message", action) or has_permission(user, "contact", action)):
+        raise PermissionError("Contact reconciliation access denied")
+    return tenant
 
 
 class ContactMergeError(ValueError):
@@ -216,7 +228,7 @@ async def suggest_contact_merges(
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """Compute exact blind-index (strong) and shared-thread display-name (weak) merge candidates."""
-    tenant_id = require_contact_permission(ActionType.VIEW)
+    tenant_id = _require_reconcile_permission(ActionType.VIEW)
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError("limit must be between 1 and 100")
 
@@ -327,6 +339,19 @@ async def suggest_contact_merges(
     return [s.to_dict() for s in suggestions]
 
 
+def _snapshot_thread(th: MessageThread) -> dict[str, Any]:
+    return {
+        "id": th.id,
+        "contact_id": th.contact_id,
+        "connection_id": th.connection_id,
+        "channel": th.channel,
+        "thread_key": th.thread_key,
+        "message_count": int(th.message_count or 0),
+        "unread_count": int(th.unread_count or 0),
+        "last_message_at": _dt_to_iso(th.last_message_at),
+    }
+
+
 async def merge_contacts(
     session,
     *,
@@ -337,7 +362,7 @@ async def merge_contacts(
     actor_id: int | None = None,
 ) -> dict[str, Any]:
     """Merge `source_contact_id` into survivor `target_contact_id` with full before-state journal."""
-    tenant_id = require_contact_permission(ActionType.UPDATE)
+    tenant_id = _require_reconcile_permission(ActionType.UPDATE)
     if (
         type(source_contact_id) is not int
         or type(target_contact_id) is not int
@@ -437,6 +462,20 @@ async def merge_contacts(
         .scalars()
         .all()
     )
+    target_messages = list(
+        (
+            await session.execute(
+                select(UnifiedMessage)
+                .where(
+                    UnifiedMessage.tenant_id == tenant_id,
+                    UnifiedMessage.contact_id == target_contact_id,
+                )
+                .order_by(UnifiedMessage.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     source_threads = list(
         (
             await session.execute(
@@ -451,6 +490,43 @@ async def merge_contacts(
         .scalars()
         .all()
     )
+    target_threads = list(
+        (
+            await session.execute(
+                select(MessageThread)
+                .where(
+                    MessageThread.tenant_id == tenant_id,
+                    MessageThread.contact_id == target_contact_id,
+                )
+                .order_by(MessageThread.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    known_thread_ids = {t.id for t in source_threads} | {t.id for t in target_threads}
+    extra_thread_ids = {
+        m.thread_id
+        for m in [*source_messages, *target_messages]
+        if m.thread_id is not None and m.thread_id not in known_thread_ids
+    }
+    extra_threads: list[MessageThread] = []
+    if extra_thread_ids:
+        extra_threads = list(
+            (
+                await session.execute(
+                    select(MessageThread)
+                    .where(
+                        MessageThread.tenant_id == tenant_id,
+                        MessageThread.id.in_(extra_thread_ids),
+                    )
+                    .order_by(MessageThread.id.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+
     source_crm_entities = list(
         (
             await session.execute(
@@ -494,6 +570,20 @@ async def merge_contacts(
         .all()
     )
 
+    # Snapshot messages and threads before mutation (B-9)
+    all_tracked_threads: dict[int, MessageThread] = {
+        th.id: th for th in [*source_threads, *target_threads, *extra_threads]
+    }
+    threads_before = [_snapshot_thread(th) for th in sorted(all_tracked_threads.values(), key=lambda x: x.id)]
+    messages_before = [
+        {
+            "id": m.id,
+            "contact_id": m.contact_id,
+            "thread_id": m.thread_id,
+        }
+        for m in source_messages
+    ]
+
     # Move identities that do not collide with an identical (kind, blind_index, connection_id) on target
     target_ident_keys = {(i.kind, i.blind_index, i.connection_id) for i in target_identities}
     moved_identity_ids: list[int] = []
@@ -508,13 +598,71 @@ async def merge_contacts(
     for consent in source_consents:
         consent.contact_id = target_contact_id
 
+    # Enforce per-connection thread invariant (B-9):
+    # Threads are uniquely scoped by (tenant_id, connection_id, channel, thread_key).
+    # Merging across different connection_ids keeps each connection's thread separate
+    # and re-points contact_id to target_contact_id.
+    threads_by_conn_key: dict[tuple[int | None, str, str], MessageThread] = {
+        (th.connection_id, th.channel, th.thread_key): th for th in target_threads
+    }
+    moved_thread_ids: list[int] = []
+    created_thread_ids: list[int] = []
+    reassigned_threads: set[int] = set()
+
+    for th in source_threads:
+        th.contact_id = target_contact_id
+        moved_thread_ids.append(th.id)
+        threads_by_conn_key.setdefault((th.connection_id, th.channel, th.thread_key), th)
+
+    for th in extra_threads:
+        if th.contact_id is None:
+            th.contact_id = target_contact_id
+            moved_thread_ids.append(th.id)
+        threads_by_conn_key.setdefault((th.connection_id, th.channel, th.thread_key), th)
+
     moved_message_ids = [m.id for m in source_messages]
     for msg in source_messages:
         msg.contact_id = target_contact_id
+        if msg.thread_id is not None:
+            cur_th = all_tracked_threads.get(msg.thread_id)
+            if cur_th is not None and cur_th.connection_id != msg.connection_id:
+                # Re-bind message to a thread matching its own connection_id (B-9)
+                conn_key = (msg.connection_id, msg.channel, cur_th.thread_key)
+                dest_th = threads_by_conn_key.get(conn_key)
+                if dest_th is None:
+                    dest_th = MessageThread(
+                        tenant_id=tenant_id,
+                        connection_id=msg.connection_id,
+                        contact_id=target_contact_id,
+                        channel=msg.channel,
+                        thread_key=cur_th.thread_key,
+                        subject_encrypted=cur_th.subject_encrypted,
+                        participants_encrypted=cur_th.participants_encrypted,
+                        last_message_at=msg.sent_at,
+                        message_count=0,
+                        unread_count=0,
+                        is_archived=bool(cur_th.is_archived),
+                    )
+                    session.add(dest_th)
+                    await session.flush()
+                    threads_by_conn_key[conn_key] = dest_th
+                    all_tracked_threads[dest_th.id] = dest_th
+                    created_thread_ids.append(dest_th.id)
+                    moved_thread_ids.append(dest_th.id)
+                reassigned_threads.add(cur_th.id)
+                reassigned_threads.add(dest_th.id)
+                msg.thread_id = dest_th.id
 
-    moved_thread_ids = [t.id for t in source_threads]
-    for th in source_threads:
-        th.contact_id = target_contact_id
+    if reassigned_threads:
+        all_known_msgs = [*source_messages, *target_messages]
+        for th_id in reassigned_threads:
+            th_obj = all_tracked_threads.get(th_id)
+            if th_obj is None:
+                continue
+            th_msgs = [m for m in all_known_msgs if m.thread_id == th_id and not m.is_hidden]
+            th_obj.message_count = len(th_msgs)
+            th_obj.unread_count = sum(1 for m in th_msgs if not m.is_read and m.direction == "inbound")
+            th_obj.last_message_at = max((m.sent_at for m in th_msgs), default=th_obj.last_message_at)
 
     moved_crm_entity_ids = [e.id for e in source_crm_entities]
     for entity in source_crm_entities:
@@ -576,6 +724,9 @@ async def merge_contacts(
         "moved_consent_ids": moved_consent_ids,
         "moved_message_ids": moved_message_ids,
         "moved_thread_ids": moved_thread_ids,
+        "created_thread_ids": created_thread_ids,
+        "messages_before": messages_before,
+        "threads_before": threads_before,
         "moved_crm_entity_ids": moved_crm_entity_ids,
         "source_stats_before": source_stats_snap,
         "target_stats_before": target_stats_snap,
@@ -617,7 +768,7 @@ async def unmerge_contacts(
     actor_id: int | None = None,
 ) -> dict[str, Any]:
     """Reverse a prior merge by `journal_id`, restoring the exact pre-merge state."""
-    tenant_id = require_contact_permission(ActionType.UPDATE)
+    tenant_id = _require_reconcile_permission(ActionType.UPDATE)
     if type(journal_id) is not int or journal_id <= 0:
         raise ContactMergeError("journal_id must be a positive integer")
 
@@ -699,6 +850,11 @@ async def unmerge_contacts(
             consent.contact_id = source_id
 
     moved_message_ids = set(snapshot.get("moved_message_ids") or [])
+    messages_before_by_id = {
+        int(entry["id"]): entry
+        for entry in (snapshot.get("messages_before") or [])
+        if isinstance(entry, dict) and "id" in entry
+    }
     if moved_message_ids:
         msg_rows = (
             (
@@ -713,16 +869,28 @@ async def unmerge_contacts(
             .all()
         )
         for msg in msg_rows:
-            msg.contact_id = source_id
+            before_entry = messages_before_by_id.get(msg.id)
+            if before_entry is not None:
+                msg.contact_id = before_entry.get("contact_id", source_id)
+                if "thread_id" in before_entry:
+                    msg.thread_id = before_entry["thread_id"]
+            else:
+                msg.contact_id = source_id
 
     moved_thread_ids = set(snapshot.get("moved_thread_ids") or [])
-    if moved_thread_ids:
+    threads_before_by_id = {
+        int(entry["id"]): entry
+        for entry in (snapshot.get("threads_before") or [])
+        if isinstance(entry, dict) and "id" in entry
+    }
+    thread_ids_to_restore = moved_thread_ids | set(threads_before_by_id.keys())
+    if thread_ids_to_restore:
         th_rows = (
             (
                 await session.execute(
                     select(MessageThread).where(
                         MessageThread.tenant_id == tenant_id,
-                        MessageThread.id.in_(moved_thread_ids),
+                        MessageThread.id.in_(thread_ids_to_restore),
                     )
                 )
             )
@@ -730,7 +898,24 @@ async def unmerge_contacts(
             .all()
         )
         for th in th_rows:
-            th.contact_id = source_id
+            before_th = threads_before_by_id.get(th.id)
+            if before_th is not None:
+                th.contact_id = before_th.get("contact_id")
+                th.message_count = int(before_th.get("message_count", th.message_count or 0))
+                th.unread_count = int(before_th.get("unread_count", th.unread_count or 0))
+                if "last_message_at" in before_th:
+                    th.last_message_at = _iso_to_dt(before_th.get("last_message_at"))
+            elif th.id in moved_thread_ids:
+                th.contact_id = source_id
+
+    created_thread_ids = set(snapshot.get("created_thread_ids") or [])
+    if created_thread_ids:
+        await session.execute(
+            delete(MessageThread).where(
+                MessageThread.tenant_id == tenant_id,
+                MessageThread.id.in_(created_thread_ids),
+            )
+        )
 
     moved_crm_ids = set(snapshot.get("moved_crm_entity_ids") or [])
     if moved_crm_ids:

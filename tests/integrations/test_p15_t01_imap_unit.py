@@ -52,7 +52,10 @@ class _FakeResult:
         return self._rows[0] if self._rows else None
 
     def scalars(self):
-        return SimpleNamespace(all=lambda: list(self._rows))
+        return SimpleNamespace(
+            all=lambda: list(self._rows),
+            first=lambda: self._rows[0] if self._rows else None,
+        )
 
     def all(self):
         return list(self._rows)
@@ -118,7 +121,7 @@ class _InMemoryImapDbSession:
                     if i.tenant_id == t_id
                     and i.kind == kind
                     and i.blind_index == b_idx
-                    and (i.connection_id == conn_id or i.connection_id is None)
+                    and i.connection_id == conn_id
                 ]
             )
 
@@ -154,6 +157,7 @@ class _InMemoryImapDbSession:
             channel = params.get("channel_1")
             orig_id = params.get("original_id_1")
             ext_hash = params.get("external_message_id_hash_1")
+            c_hash = params.get("content_hash_1")
             if orig_id is not None:
                 return _FakeResult(
                     [
@@ -176,6 +180,24 @@ class _InMemoryImapDbSession:
                         and m.external_message_id_hash == ext_hash
                     ]
                 )
+            if c_hash is not None:
+                return _FakeResult(
+                    [
+                        m
+                        for m in self.messages
+                        if m.tenant_id == t_id
+                        and m.connection_id == conn_id
+                        and m.channel == channel
+                        and m.content_hash == c_hash
+                    ]
+                )
+            return _FakeResult(
+                [
+                    m
+                    for m in self.messages
+                    if m.tenant_id == t_id and m.connection_id == conn_id and m.channel == channel
+                ]
+            )
 
         if "FROM" in sql and "contact_channel_stats" in sql:
             t_id = params.get("tenant_id_1")
@@ -229,6 +251,9 @@ class _FakeImapServerClient:
             spec = str(args[1])
             assert "BODY.PEEK[" in spec, "IMAP sync must use BODY.PEEK so flags are never changed"
             requested_uids = [int(x) for x in uid_set_str.split(",") if x.isdigit()]
+            custom_fetch = folder_info.get("custom_fetch")
+            if callable(custom_fetch):
+                return custom_fetch(requested_uids, messages)
             response_items: list[Any] = []
             for u in requested_uids:
                 if u in messages:
@@ -503,3 +528,386 @@ def test_open_pinned_imap_client_error_mapping(monkeypatch):
     )
     assert env.is_seen is True
     assert env.subject == "Hi"
+
+
+@pytest.mark.asyncio
+async def test_b1_same_message_in_two_folders_keeps_two_rows():
+    """B-1 (Test 1): Same email in INBOX and Archive creates and preserves two separate rows."""
+    session = _InMemoryImapDbSession()
+    conn = WorkspaceConnection(
+        id=10,
+        tenant_id=1,
+        owner_user_id=7,
+        platform="email",
+        provider_id="yandex_mail",
+        auth_method="app_password",
+        schema_version=1,
+        label="Yandex",
+        account_key="sales@yandex.ru",
+        config={
+            "account_login": "sales@yandex.ru",
+            "imap_host": "imap.yandex.ru",
+            "imap_folders": ["INBOX", "Archive"],
+        },
+        is_active=True,
+        state="verified",
+    )
+    session.add(conn)
+    session.add(WorkspaceConnectionSecret(connection_id=10, secret_encrypted=encrypt_secret("secret")))
+
+    same_headers = (
+        b"From: Client <client@example.com>\r\n"
+        b"To: sales@yandex.ru\r\n"
+        b"Subject: Contract\r\n"
+        b"Date: Wed, 04 Nov 2026 10:00:00 +0000\r\n"
+        b"Message-ID: <shared-across-folders@example.com>\r\n\r\n"
+    )
+    folders_state = {
+        "INBOX": {"uidvalidity": 10, "messages": {1: (b"", same_headers)}},
+        "Archive": {"uidvalidity": 20, "messages": {5: (b"\\Seen", same_headers)}},
+    }
+    service = ImapSyncService(client_factory=lambda *a: _FakeImapServerClient(folders_state))
+
+    with tenant_scope(1):
+        res = await service.sync_connection(session, connection_id=10)
+        assert res["total_created"] == 2
+        assert res["total_uid_rebound"] == 0
+        assert len(session.messages) == 2
+        assert {m.original_id for m in session.messages} == {"INBOX:10:1", "Archive:20:5"}
+
+
+@pytest.mark.asyncio
+async def test_b2_two_messages_sharing_message_id_in_same_folder_and_reset():
+    """B-2 (Test 2): Two messages sharing a Message-ID do not crash sync and both rebind across UIDVALIDITY reset."""
+    session = _InMemoryImapDbSession()
+    conn = WorkspaceConnection(
+        id=11,
+        tenant_id=1,
+        owner_user_id=7,
+        platform="email",
+        provider_id="yandex_mail",
+        auth_method="app_password",
+        schema_version=1,
+        label="Yandex",
+        account_key="sales@yandex.ru",
+        config={"account_login": "sales@yandex.ru", "imap_host": "imap.yandex.ru", "imap_folders": ["INBOX"]},
+        is_active=True,
+        state="verified",
+    )
+    session.add(conn)
+    session.add(WorkspaceConnectionSecret(connection_id=11, secret_encrypted=encrypt_secret("secret")))
+
+    dup_headers_a = (
+        b"From: Bot <bot@example.com>\r\n"
+        b"To: sales@yandex.ru\r\n"
+        b"Subject: Notification A\r\n"
+        b"Date: Wed, 04 Nov 2026 10:00:00 +0000\r\n"
+        b"Message-ID: <broken-mailer-fixed-id@example.com>\r\n\r\n"
+    )
+    dup_headers_b = (
+        b"From: Bot <bot@example.com>\r\n"
+        b"To: sales@yandex.ru\r\n"
+        b"Subject: Notification B\r\n"
+        b"Date: Wed, 04 Nov 2026 10:01:00 +0000\r\n"
+        b"Message-ID: <broken-mailer-fixed-id@example.com>\r\n\r\n"
+    )
+    folders_state = {
+        "INBOX": {
+            "uidvalidity": 100,
+            "messages": {
+                1: (b"", dup_headers_a),
+                2: (b"", dup_headers_b),
+            },
+        }
+    }
+    service = ImapSyncService(client_factory=lambda *a: _FakeImapServerClient(folders_state))
+
+    with tenant_scope(1):
+        res1 = await service.sync_connection(session, connection_id=11)
+        assert res1["total_created"] == 2
+        assert len(session.messages) == 2
+
+        # Trigger UIDVALIDITY reset (100 -> 200) where UIDs 1, 2 become 51, 52
+        folders_state["INBOX"] = {
+            "uidvalidity": 200,
+            "messages": {
+                51: (b"", dup_headers_a),
+                52: (b"", dup_headers_b),
+            },
+        }
+        res2 = await service.sync_connection(session, connection_id=11)
+        assert res2["total_created"] == 0
+        assert res2["total_uid_rebound"] == 2
+        assert len(session.messages) == 2
+        assert {m.original_id for m in session.messages} == {"INBOX:200:51", "INBOX:200:52"}
+
+
+@pytest.mark.asyncio
+async def test_b3_message_without_message_id_rebinds_across_uidvalidity_reset():
+    """B-3 (Test 3): Message without Message-ID re-binds via header content_hash across UIDVALIDITY reset."""
+    session = _InMemoryImapDbSession()
+    conn = WorkspaceConnection(
+        id=12,
+        tenant_id=1,
+        owner_user_id=7,
+        platform="email",
+        provider_id="yandex_mail",
+        auth_method="app_password",
+        schema_version=1,
+        label="Yandex",
+        account_key="sales@yandex.ru",
+        config={"account_login": "sales@yandex.ru", "imap_host": "imap.yandex.ru", "imap_folders": ["INBOX"]},
+        is_active=True,
+        state="verified",
+    )
+    session.add(conn)
+    session.add(WorkspaceConnectionSecret(connection_id=12, secret_encrypted=encrypt_secret("secret")))
+
+    no_msgid_headers = (
+        b"From: Legacy Daemon <daemon@example.com>\r\n"
+        b"To: sales@yandex.ru\r\n"
+        b"Subject: Cron Report\r\n"
+        b"Date: Wed, 04 Nov 2026 11:00:00 +0000\r\n\r\n"
+    )
+    folders_state = {
+        "INBOX": {
+            "uidvalidity": 10,
+            "messages": {
+                7: (b"", no_msgid_headers),
+            },
+        }
+    }
+    service = ImapSyncService(client_factory=lambda *a: _FakeImapServerClient(folders_state))
+
+    with tenant_scope(1):
+        res1 = await service.sync_connection(session, connection_id=12)
+        assert res1["total_created"] == 1
+        assert session.messages[0].external_message_id_hash is None
+        assert session.messages[0].original_id == "INBOX:10:7"
+
+        # UIDVALIDITY reset (10 -> 11) where UID 7 becomes UID 42
+        folders_state["INBOX"] = {
+            "uidvalidity": 11,
+            "messages": {
+                42: (b"\\Seen", no_msgid_headers),
+            },
+        }
+        res2 = await service.sync_connection(session, connection_id=12)
+        assert res2["total_created"] == 0
+        assert res2["total_uid_rebound"] == 1
+        assert len(session.messages) == 1
+        assert session.messages[0].original_id == "INBOX:11:42"
+        assert session.messages[0].is_read is True
+
+
+@pytest.mark.asyncio
+async def test_b4_unparseable_fetch_reply_does_not_advance_cursor_past_failed_uid():
+    """B-4 (Test 4): Unparseable FETCH reply makes batch unsuccessful and keeps last_uid below failed UID."""
+    session = _InMemoryImapDbSession()
+    conn = WorkspaceConnection(
+        id=13,
+        tenant_id=1,
+        owner_user_id=7,
+        platform="email",
+        provider_id="yandex_mail",
+        auth_method="app_password",
+        schema_version=1,
+        label="Yandex",
+        account_key="sales@yandex.ru",
+        config={"account_login": "sales@yandex.ru", "imap_host": "imap.yandex.ru", "imap_folders": ["INBOX"]},
+        is_active=True,
+        state="verified",
+    )
+    session.add(conn)
+    session.add(WorkspaceConnectionSecret(connection_id=13, secret_encrypted=encrypt_secret("secret")))
+
+    h14 = b"From: a@b.ru\r\nTo: sales@yandex.ru\r\nSubject: M14\r\nMessage-ID: <m14@b.ru>\r\n\r\n"
+    h15 = b"From: a@b.ru\r\nTo: sales@yandex.ru\r\nSubject: M15\r\nMessage-ID: <m15@b.ru>\r\n\r\n"
+    h16 = b"From: a@b.ru\r\nTo: sales@yandex.ru\r\nSubject: M16\r\nMessage-ID: <m16@b.ru>\r\n\r\n"
+
+    corrupt_15 = True
+
+    def _custom_fetch(requested_uids: list[int], messages: dict[int, tuple[bytes, bytes]]):
+        items: list[Any] = []
+        for u in requested_uids:
+            if u == 15 and corrupt_15:
+                # Malformed FETCH item missing UID token
+                items.append((b"15 (FLAGS (\\Seen) BODY[HEADER.FIELDS] {10})", h15))
+                items.append(b")")
+            elif u in messages:
+                flags_b, headers_b = messages[u]
+                meta = f"{u} (UID {u} FLAGS ({flags_b.decode('ascii')}) BODY[HEADER.FIELDS] {{{len(headers_b)}}})".encode(
+                    "ascii"
+                )
+                items.append((meta, headers_b))
+                items.append(b")")
+        return "OK", items
+
+    folders_state = {
+        "INBOX": {
+            "uidvalidity": 50,
+            "messages": {
+                14: (b"", h14),
+                15: (b"", h15),
+                16: (b"", h16),
+            },
+            "custom_fetch": _custom_fetch,
+        }
+    }
+    # Batch 1 = [14] (succeeds), Batch 2 = [15, 16] (fails on UID 15)
+    service = ImapSyncService(client_factory=lambda *a: _FakeImapServerClient(folders_state), batch_size=1)
+
+    with tenant_scope(1):
+        res1 = await service.sync_connection(session, connection_id=13)
+        assert res1["total_created"] == 1
+        # Cursor advanced to 14 (Batch 1), stopped before failed Batch 2 (UID 15)
+        assert conn.config["imap_sync_state"]["INBOX"]["last_uid"] == 14
+        assert len(session.messages) == 1
+
+        # Fix server response for UID 15 and re-run: UIDs 15 and 16 are both fetched and ingested
+        corrupt_15 = False
+        res2 = await service.sync_connection(session, connection_id=13)
+        assert res2["total_created"] == 2
+        assert conn.config["imap_sync_state"]["INBOX"]["last_uid"] == 16
+        assert len(session.messages) == 3
+
+
+@pytest.mark.asyncio
+async def test_b1_b4_rescan_after_uidvalidity_reset_creates_zero_new_rows():
+    """B-1..B-4 (Test 5): Re-scan after UIDVALIDITY reset creates zero new rows across all edge cases."""
+    session = _InMemoryImapDbSession()
+    conn = WorkspaceConnection(
+        id=14,
+        tenant_id=1,
+        owner_user_id=7,
+        platform="email",
+        provider_id="yandex_mail",
+        auth_method="app_password",
+        schema_version=1,
+        label="Yandex",
+        account_key="sales@yandex.ru",
+        config={
+            "account_login": "sales@yandex.ru",
+            "imap_host": "imap.yandex.ru",
+            "imap_folders": ["INBOX", "Archive"],
+        },
+        is_active=True,
+        state="verified",
+    )
+    session.add(conn)
+    session.add(WorkspaceConnectionSecret(connection_id=14, secret_encrypted=encrypt_secret("secret")))
+
+    h_shared_folder = b"From: c@d.ru\r\nTo: sales@yandex.ru\r\nSubject: FolderCopy\r\nMessage-ID: <fcopy@d.ru>\r\n\r\n"
+    h_dup_id = b"From: c@d.ru\r\nTo: sales@yandex.ru\r\nSubject: DupID\r\nMessage-ID: <dupid@d.ru>\r\n\r\n"
+    h_no_id = b"From: c@d.ru\r\nTo: sales@yandex.ru\r\nSubject: NoID\r\nDate: Wed, 04 Nov 2026 12:00:00 +0000\r\n\r\n"
+
+    folders_state = {
+        "INBOX": {
+            "uidvalidity": 100,
+            "messages": {
+                1: (b"", h_shared_folder),
+                2: (b"", h_dup_id),
+                3: (b"", h_dup_id),
+                4: (b"", h_no_id),
+            },
+        },
+        "Archive": {
+            "uidvalidity": 200,
+            "messages": {
+                9: (b"\\Seen", h_shared_folder),
+            },
+        },
+    }
+    service = ImapSyncService(client_factory=lambda *a: _FakeImapServerClient(folders_state))
+
+    with tenant_scope(1):
+        init_res = await service.sync_connection(session, connection_id=14)
+        assert init_res["total_created"] == 5
+        assert len(session.messages) == 5
+
+        # UIDVALIDITY reset on both folders
+        folders_state["INBOX"] = {
+            "uidvalidity": 101,
+            "messages": {
+                11: (b"", h_shared_folder),
+                12: (b"", h_dup_id),
+                13: (b"", h_dup_id),
+                14: (b"", h_no_id),
+            },
+        }
+        folders_state["Archive"] = {
+            "uidvalidity": 201,
+            "messages": {
+                19: (b"\\Seen", h_shared_folder),
+            },
+        }
+        reset_res = await service.sync_connection(session, connection_id=14)
+        assert reset_res["total_created"] == 0
+        assert reset_res["total_uid_rebound"] == 5
+        assert len(session.messages) == 5
+
+        # Immediate subsequent re-scan after UIDVALIDITY reset also creates zero new rows
+        rescan_res = await service.sync_connection(session, connection_id=14)
+        assert rescan_res["total_created"] == 0
+        assert rescan_res["total_uid_rebound"] == 0
+        assert len(session.messages) == 5
+
+
+@pytest.mark.asyncio
+async def test_b5_b6_dispatcher_bootstrap_registration_and_imap_expunge_marks_unavailable():
+    """B-5, B-6: comms.email.sync is registered in HANDLERS/DEFAULT_TASKS and expunged UIDs mark unavailable_at."""
+    from app.jobs.dispatcher import _LOG_JOB_TYPES, _job_label
+    from app.jobs.handlers import HANDLERS
+    from app.tasks.bootstrap import DEFAULT_TASKS
+
+    assert "comms.email.sync" in HANDLERS
+    assert "comms.email.sync" in _LOG_JOB_TYPES
+    assert _job_label("comms.email.sync") == "Синхронизация почты"
+    assert "comms-email-sync" in DEFAULT_TASKS
+    assert DEFAULT_TASKS["comms-email-sync"][1] == "comms.email.sync"
+
+    session = _InMemoryImapDbSession()
+    conn = WorkspaceConnection(
+        id=15,
+        tenant_id=1,
+        owner_user_id=7,
+        platform="email",
+        provider_id="yandex_mail",
+        auth_method="app_password",
+        schema_version=1,
+        label="Yandex",
+        account_key="sales@yandex.ru",
+        config={"account_login": "sales@yandex.ru", "imap_host": "imap.yandex.ru", "imap_folders": ["INBOX"]},
+        is_active=True,
+        state="verified",
+    )
+    session.add(conn)
+    session.add(WorkspaceConnectionSecret(connection_id=15, secret_encrypted=encrypt_secret("secret")))
+
+    h1 = b"From: u@v.ru\r\nTo: sales@yandex.ru\r\nSubject: To Be Expunged\r\nMessage-ID: <exp-1@v.ru>\r\n\r\n"
+    h2 = b"From: u@v.ru\r\nTo: sales@yandex.ru\r\nSubject: Kept\r\nMessage-ID: <kept-2@v.ru>\r\n\r\n"
+    folders_state = {
+        "INBOX": {
+            "uidvalidity": 77,
+            "messages": {
+                10: (b"", h1),
+                11: (b"", h2),
+            },
+        }
+    }
+    service = ImapSyncService(client_factory=lambda *a: _FakeImapServerClient(folders_state))
+
+    with tenant_scope(1):
+        await service.sync_connection(session, connection_id=15)
+        msg10 = next(m for m in session.messages if m.original_id == "INBOX:77:10")
+        msg11 = next(m for m in session.messages if m.original_id == "INBOX:77:11")
+        assert msg10.is_unavailable is False
+        assert msg11.is_unavailable is False
+
+        # Expunge UID 10 from server
+        del folders_state["INBOX"]["messages"][10]
+        res_after_delete = await service.sync_connection(session, connection_id=15)
+        assert res_after_delete["total_marked_unavailable"] == 1
+        assert msg10.is_unavailable is True
+        assert msg11.is_unavailable is False
+

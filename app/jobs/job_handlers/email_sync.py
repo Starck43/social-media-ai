@@ -49,17 +49,29 @@ async def handle_email_sync(
 
     connections = list((await session.execute(stmt)).scalars().all())
     runs: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
     for conn in connections:
-        result = await sync_service.sync_connection(
-            session,
-            connection_id=conn.id,
-            folders=folders,
-        )
-        runs.append(result)
+        try:
+            result = await sync_service.sync_connection(
+                session,
+                connection_id=conn.id,
+                folders=folders,
+            )
+            runs.append(result)
+        except Exception as exc:  # noqa: BLE001
+            if connection_id is not None:
+                raise
+            errors.append(
+                {
+                    "connection_id": conn.id,
+                    "error": getattr(exc, "code", exc.__class__.__name__),
+                }
+            )
 
     return {
         "job": JOB_NAME,
         "tenant_id": tenant_id,
         "connections_synced": len(runs),
         "runs": runs,
+        "errors": errors,
     }

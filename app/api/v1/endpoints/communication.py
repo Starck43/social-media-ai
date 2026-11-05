@@ -183,7 +183,7 @@ class ContactUnmergeOut(BusinessSchema):
 
 router = APIRouter(
     tags=["Communications"],
-    dependencies=[Depends(require_business_scope), Depends(require_model_perm("contact", ActionType.VIEW))],
+    dependencies=[Depends(require_business_scope), Depends(require_model_perm("comms.message", ActionType.VIEW))],
     route_class=BusinessRoute,
 )
 
@@ -265,7 +265,7 @@ async def get_communication_contact_messages(
 @router.post(
     "/inbox/mark-read",
     response_model=MarkReadOut,
-    dependencies=[Depends(require_model_perm("contact", ActionType.UPDATE))],
+    dependencies=[Depends(require_model_perm("comms.message", ActionType.UPDATE))],
 )
 async def post_communication_mark_read(body: MarkReadRequest):
     try:
@@ -285,7 +285,7 @@ async def post_communication_mark_read(body: MarkReadRequest):
 @router.post(
     "/inbox/archive",
     response_model=ArchiveThreadOut,
-    dependencies=[Depends(require_model_perm("contact", ActionType.UPDATE))],
+    dependencies=[Depends(require_model_perm("comms.message", ActionType.UPDATE))],
 )
 async def post_communication_archive(body: ArchiveThreadRequest):
     try:
@@ -305,7 +305,7 @@ async def post_communication_archive(body: ArchiveThreadRequest):
 @router.post(
     "/inbox/hide",
     response_model=HideMessageOut,
-    dependencies=[Depends(require_model_perm("contact", ActionType.UPDATE))],
+    dependencies=[Depends(require_model_perm("comms.message", ActionType.UPDATE))],
 )
 async def post_communication_hide_message(body: HideMessageRequest):
     try:
@@ -339,7 +339,7 @@ async def get_communication_contact_merge_suggestions(
 @router.post(
     "/contacts/merge",
     response_model=ContactMergeOut,
-    dependencies=[Depends(require_model_perm("contact", ActionType.UPDATE))],
+    dependencies=[Depends(require_model_perm("comms.message", ActionType.UPDATE))],
 )
 async def post_communication_contact_merge(
     body: ContactMergeRequest,
@@ -369,7 +369,7 @@ async def post_communication_contact_merge(
 @router.post(
     "/contacts/unmerge",
     response_model=ContactUnmergeOut,
-    dependencies=[Depends(require_model_perm("contact", ActionType.UPDATE))],
+    dependencies=[Depends(require_model_perm("comms.message", ActionType.UPDATE))],
 )
 async def post_communication_contact_unmerge(
     body: ContactUnmergeRequest,

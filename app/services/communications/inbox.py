@@ -30,7 +30,7 @@ from app.models.communications.message import (
     UnifiedMessage,
 )
 from app.models.contacts.core import Contact
-from app.models.managers.contact_manager import ContactUnavailable, require_contact_permission
+from app.models.managers.contact_manager import ContactUnavailable
 from app.models.managers.unified_message_manager import require_message_permission
 from app.types import ActionType
 
@@ -360,7 +360,6 @@ async def list_contact_messages(
     before_id: int | None = None,
 ) -> dict[str, Any]:
     """Return chronological unified messages for a specific contact (`TZ AC`)."""
-    require_contact_permission(ActionType.VIEW)
     tenant_id = require_message_permission(ActionType.VIEW)
     if type(contact_id) is not int or contact_id <= 0:
         raise ContactUnavailable("Contact unavailable")
@@ -452,7 +451,7 @@ async def mark_thread_read(
         thread.unread_count = 0
     else:
         unread = sum(1 for m in messages if not m.is_hidden and not m.is_read)
-        thread.unread_count = max(1, unread) if messages else 0
+        thread.unread_count = unread
     await session.flush()
 
     return {

@@ -109,6 +109,11 @@ class _InMemoryReconcileSession:
             self.stats = [s for s in self.stats if s.contact_id not in flat_ids]
             return _FakeResult([])
 
+        if "DELETE FROM" in sql and "message_threads" in sql:
+            in_ids = next((set(v) for k, v in params.items() if "id" in k and isinstance(v, (list, tuple, set))), set())
+            self.threads = [t for t in self.threads if t.id not in in_ids]
+            return _FakeResult([])
+
         if "FROM" in sql and "contact_merge_journal" in sql:
             t_id = params.get("tenant_id_1")
             j_id = params.get("id_1")
@@ -589,4 +594,159 @@ async def test_contacts_identity_and_workspace_projection_contracts(monkeypatch)
         assert len(detail["consents"]) == 1
         exported = await ContactPrivacy.export_contact.__wrapped__(ContactPrivacy, 1, SimpleNamespace())
         assert len(exported["merge_journal"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_b9_cross_connection_merge_and_unmerge_preserves_thread_connection_invariants():
+    """B-9: Merging contacts across connections keeps threads scoped per connection_id and repairs/restores thread state."""
+    session = _InMemoryReconcileSession()
+    t1 = datetime(2026, 11, 4, 10, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 11, 4, 11, 0, tzinfo=timezone.utc)
+    t3 = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
+
+    # Target contact (id=10) on connection 101, Source contact (id=20) on connection 202
+    c_target = Contact(id=10, tenant_id=1, display_name_encrypted="Target Person", last_active_at=t1, last_active_channel="email")
+    c_source = Contact(id=20, tenant_id=1, display_name_encrypted="Source Person", last_active_at=t3, last_active_channel="telegram")
+    session.add(c_target)
+    session.add(c_source)
+
+    # Thread on connection 101 owned by target (same thread_key as source thread, but different connection_id)
+    th_conn101 = MessageThread(
+        id=301,
+        tenant_id=1,
+        connection_id=101,
+        contact_id=10,
+        channel="email",
+        thread_key="email:subj:shared",
+        subject_encrypted="Shared Subject",
+        last_message_at=t1,
+        message_count=1,
+        unread_count=1,
+    )
+    # Thread on connection 202 owned by source
+    th_conn202 = MessageThread(
+        id=302,
+        tenant_id=1,
+        connection_id=202,
+        contact_id=20,
+        channel="email",
+        thread_key="email:subj:shared",
+        subject_encrypted="Shared Subject",
+        last_message_at=t2,
+        message_count=1,
+        unread_count=0,
+    )
+    # Thread on connection 303 where contact_id was initially None, but source sent a message on it
+    th_unassigned = MessageThread(
+        id=303,
+        tenant_id=1,
+        connection_id=303,
+        contact_id=None,
+        channel="telegram",
+        thread_key="telegram:chat:777",
+        subject_encrypted="TG Group",
+        last_message_at=t3,
+        message_count=2,
+        unread_count=2,
+    )
+    session.add(th_conn101)
+    session.add(th_conn202)
+    session.add(th_unassigned)
+
+    m1 = UnifiedMessage(
+        id=401,
+        tenant_id=1,
+        connection_id=101,
+        contact_id=10,
+        thread_id=301,
+        channel="email",
+        original_id="INBOX:1:1",
+        direction="inbound",
+        sent_at=t1,
+        received_at=t1,
+        content_hash="sha256:" + "1" * 64,
+        is_read=False,
+    )
+    m2 = UnifiedMessage(
+        id=402,
+        tenant_id=1,
+        connection_id=202,
+        contact_id=20,
+        thread_id=302,
+        channel="email",
+        original_id="INBOX:1:2",
+        direction="outbound",
+        sent_at=t2,
+        received_at=t2,
+        content_hash="sha256:" + "2" * 64,
+        is_read=True,
+    )
+    m3_unassigned_th = UnifiedMessage(
+        id=403,
+        tenant_id=1,
+        connection_id=303,
+        contact_id=20,
+        thread_id=303,
+        channel="telegram",
+        original_id="777:1",
+        direction="inbound",
+        sent_at=t2,
+        received_at=t2,
+        content_hash="sha256:" + "3" * 64,
+        is_read=False,
+    )
+    # Message on connection 202 that was anomalously attached to thread 303 (connection 303)
+    m4_cross_conn = UnifiedMessage(
+        id=404,
+        tenant_id=1,
+        connection_id=202,
+        contact_id=20,
+        thread_id=303,
+        channel="email",
+        original_id="INBOX:1:9",
+        direction="inbound",
+        sent_at=t3,
+        received_at=t3,
+        content_hash="sha256:" + "4" * 64,
+        is_read=False,
+    )
+    session.add(m1)
+    session.add(m2)
+    session.add(m3_unassigned_th)
+    session.add(m4_cross_conn)
+
+    with tenant_scope(1):
+        merge_res = await merge_contacts(
+            session,
+            source_contact_id=20,
+            target_contact_id=10,
+            reason="cross_connection_reconcile",
+            field_choices={"display_name": "target"},
+        )
+        # Threads on different connections stay separate on their respective connection_ids
+        assert th_conn101.connection_id == 101 and th_conn101.contact_id == 10
+        assert th_conn202.connection_id == 202 and th_conn202.contact_id == 10
+        # Unassigned thread 303 was claimed by target_contact_id=10 and its counts recomputed after m4 moved
+        assert th_unassigned.contact_id == 10
+        assert th_unassigned.message_count == 1
+        assert th_unassigned.unread_count == 1
+        # Cross-connection message m4 was re-bound to a thread on its own connection 202
+        rebound_th = next(t for t in session.threads if t.id == m4_cross_conn.thread_id)
+        assert rebound_th.connection_id == 202
+        assert rebound_th.contact_id == 10
+        assert rebound_th.message_count == 1
+        assert rebound_th.unread_count == 1
+
+        # Unmerge restores exact pre-merge state for all threads and messages
+        unmerge_res = await unmerge_contacts(session, journal_id=merge_res["journal_id"])
+        assert unmerge_res["restored_messages"] == 3
+        assert th_conn101.contact_id == 10
+        assert th_conn202.contact_id == 20
+        assert th_unassigned.contact_id is None
+        assert th_unassigned.message_count == 2
+        assert th_unassigned.unread_count == 2
+        assert m2.contact_id == 20 and m2.thread_id == 302
+        assert m3_unassigned_th.contact_id == 20 and m3_unassigned_th.thread_id == 303
+        assert m4_cross_conn.contact_id == 20 and m4_cross_conn.thread_id == 303
+
 

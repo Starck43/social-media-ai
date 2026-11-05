@@ -4,9 +4,12 @@ from urllib.parse import urlencode
 
 from fastapi import HTTPException
 
+from app.core.permissions import get_current_user, has_permission
 from app.core.tenant_context import current_tenant_id
-from app.models import DocumentRevision, KnowledgeDocument, KnowledgeSnippet
+from app.models import DocumentRevision, KnowledgeDocument, KnowledgeSnippet, UnifiedMessage
+from app.models.managers.knowledge_manager import BOUNDARIES
 from app.services.knowledge.documents import STATUS_LABELS
+from app.types import ActionType
 
 CONTEXT_TYPES = {"knowledge", "document", "communication", "followup", "case"}
 
@@ -43,6 +46,68 @@ def evidence_dict(record, *, context_type=None, revision=None):
             unsupported_terms_note=revision.unsupported_terms_note,
         )
     return row
+
+
+async def _resolve_unified_message_context(object_id: int, boundary: str) -> dict | None:
+    """Resolve an inbox UnifiedMessage for chat handoff (`context_type='communication'`, B-10)."""
+    tenant_id = current_tenant_id()
+    if tenant_id is None:
+        return None
+    user = get_current_user()
+    if not has_permission(user, "comms.message", ActionType.VIEW):
+        return None
+    try:
+        msg = await UnifiedMessage.objects.filter(
+            id=object_id,
+            tenant_id=tenant_id,
+            is_hidden=False,
+        ).first()
+    except PermissionError:
+        return None
+    if msg is None or bool(getattr(msg, "is_hidden", False)):
+        return None
+    if getattr(msg, "tenant_id", None) != tenant_id:
+        return None
+
+    msg_boundary = getattr(msg, "data_boundary", None) or boundary
+    if msg_boundary not in BOUNDARIES.get(boundary, ()):
+        return None
+
+    title = msg.subject_encrypted or f"{msg.channel.upper()} #{msg.id}"
+    participants = " → ".join(p for p in (msg.sender_encrypted, msg.recipient_encrypted) if p)
+    excerpt = f"{title} ({participants})" if participants else title
+    source_ref = f"{msg.channel}:{msg.original_id}"
+    citation_anchor = f"thread:{msg.thread_id or 0}#msg-{msg.id}"
+    is_unavailable = getattr(msg, "unavailable_at", None) is not None
+    return {
+        "id": msg.id,
+        "thread_id": msg.thread_id,
+        "context_type": "communication",
+        "source_kind": msg.channel,
+        "title": title,
+        "source_ref": source_ref,
+        "href": None if is_unavailable else getattr(msg, "original_url", None),
+        "citation_anchor": citation_anchor,
+        "data_boundary": msg_boundary,
+        "acl_scope": "comms.message.view",
+        "revision_hash": msg.content_hash or "",
+        "excerpt": excerpt,
+        "snippet": excerpt,
+        "extraction_limit_note": (
+            "Оригинал сообщения недоступен в источнике (D24); только метаданные (D3)"
+            if is_unavailable
+            else "Только метаданные сообщения (D3)"
+        ),
+        "context_id": str(msg.id),
+        "chat_url": "/app/chat?"
+        + urlencode(
+            {
+                "context_type": "communication",
+                "context_id": str(msg.id),
+                "boundary": msg_boundary,
+            }
+        ),
+    }
 
 
 async def snippet_rows(context_type="knowledge", boundary="cloud", query=""):
@@ -100,6 +165,8 @@ async def resolve_context(context_type, context_id, boundary):
     else:
         record = await KnowledgeSnippet.objects.visible(boundary, id=object_id, context_type=context_type).first()
         row = evidence_dict(record) if record else None
+        if row is None and context_type == "communication":
+            row = await _resolve_unified_message_context(object_id, boundary)
     if row is None:
         raise HTTPException(404, "Контекст недоступен")
     if row["data_boundary"] != boundary:

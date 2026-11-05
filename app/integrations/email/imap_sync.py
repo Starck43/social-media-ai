@@ -38,8 +38,14 @@ from app.core.outbound import OutboundRefusal, StaticPolicy, acquire_outbound_ta
 from app.core.tenant_context import TenantContextError, current_tenant_id
 from app.integrations.catalog import CATALOG_VERSION, PROVIDERS, WORKSPACE_PROVIDER_IDS
 from app.integrations.mail_check import _PinnedIMAP
+from app.models.communications.message import UnifiedMessage
 from app.models.integrations.connection import WorkspaceConnection, WorkspaceConnectionSecret
-from app.services.communications.ingest import IngestMessageInput, extract_reference_ids, ingest
+from app.services.communications.ingest import (
+    IngestMessageInput,
+    extract_reference_ids,
+    ingest,
+    mark_message_unavailable,
+)
 from app.utils.crypto import decrypt_secret
 
 DEFAULT_IMAP_FOLDERS: tuple[str, ...] = ("INBOX", "Sent")
@@ -286,6 +292,104 @@ def _extract_uidvalidity(client: Any, select_data: list[Any] | None) -> int:
     return 1
 
 
+def _fetch_folder_batches_sync(
+    client: Any,
+    *,
+    folder: str,
+    stored_uidvalidity: int | None,
+    last_uid: int,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    reset_pending: bool = False,
+) -> tuple[int, bool, list[tuple[list[ImapEnvelope], int]], set[int], bool]:
+    """Read-only folder UID scan using `BODY.PEEK` only.
+
+    Returns `(current_uidvalidity, uidvalidity_reset, successful_batches, present_uids, all_batches_ok)`
+    where each entry in `successful_batches` is `(batch_envelopes, max_candidate_uid)`.
+    """
+    if "BODY.PEEK[" not in FETCH_SPEC:
+        raise ImapSyncError("non_peek_fetch_forbidden")
+
+    status, select_data = client.select(folder, readonly=True)
+    if status != "OK":
+        raise ImapSyncError("folder_unavailable")
+
+    current_uidvalidity = _extract_uidvalidity(client, select_data)
+    uidvalidity_reset = bool(
+        reset_pending or (stored_uidvalidity is not None and stored_uidvalidity != current_uidvalidity)
+    )
+    effective_last_uid = 0 if uidvalidity_reset else max(0, int(last_uid))
+
+    status, search_data = client.uid("SEARCH", None, "UID 1:*")
+    if status != "OK" or not search_data:
+        return current_uidvalidity, uidvalidity_reset, [], set(), True
+
+    raw_uids = search_data[0].split() if search_data[0] and isinstance(search_data[0], (bytes, str)) else []
+    present_uids: set[int] = {
+        int(u.decode("ascii") if isinstance(u, bytes) else str(u))
+        for u in raw_uids
+        if (u.decode("ascii") if isinstance(u, bytes) else str(u)).isdigit()
+    }
+    candidate_uids = sorted(u for u in present_uids if u > effective_last_uid)
+    if not candidate_uids:
+        return current_uidvalidity, uidvalidity_reset, [], present_uids, True
+
+    successful_batches: list[tuple[list[ImapEnvelope], int]] = []
+    all_batches_ok = True
+
+    for idx in range(0, len(candidate_uids), batch_size):
+        batch = candidate_uids[idx : idx + batch_size]
+        uid_set = ",".join(str(u) for u in batch)
+        fetch_status, fetch_data = client.uid("FETCH", uid_set, FETCH_SPEC)
+        if fetch_status != "OK" or not fetch_data:
+            if idx == 0:
+                raise ImapSyncError("fetch_failed")
+            all_batches_ok = False
+            break
+
+        batch_envelopes: list[ImapEnvelope] = []
+        batch_ok = True
+        for item in fetch_data:
+            if item is None:
+                continue
+            if isinstance(item, (bytes, str)):
+                stripped = item.strip()
+                if stripped in (b")", b"", ")", ""):
+                    continue
+                batch_ok = False
+                break
+            if not isinstance(item, tuple) or len(item) < 2:
+                batch_ok = False
+                break
+            meta_bytes = item[0] if isinstance(item[0], bytes) else str(item[0]).encode("utf-8")
+            header_bytes = item[1] if isinstance(item[1], bytes) else str(item[1]).encode("utf-8")
+            uid_match = _UID_RE.search(meta_bytes)
+            if not uid_match:
+                batch_ok = False
+                break
+            msg_uid = int(uid_match.group(1))
+            if msg_uid <= effective_last_uid:
+                continue
+            flags_match = _FLAGS_RE.search(meta_bytes)
+            flags_bytes = flags_match.group(1) if flags_match else b""
+            batch_envelopes.append(
+                parse_raw_header_block(
+                    uid=msg_uid,
+                    folder=folder,
+                    header_bytes=header_bytes,
+                    flags_bytes=flags_bytes,
+                )
+            )
+
+        if not batch_ok:
+            all_batches_ok = False
+            break
+
+        batch_envelopes.sort(key=lambda e: e.uid)
+        successful_batches.append((batch_envelopes, max(batch)))
+
+    return current_uidvalidity, uidvalidity_reset, successful_batches, present_uids, all_batches_ok
+
+
 def _fetch_folder_envelopes_sync(
     client: Any,
     *,
@@ -295,64 +399,16 @@ def _fetch_folder_envelopes_sync(
     batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> tuple[int, bool, list[ImapEnvelope]]:
     """Read-only folder UID scan using `BODY.PEEK` only. Never alters server flags."""
-    if "BODY.PEEK[" not in FETCH_SPEC:
-        raise ImapSyncError("non_peek_fetch_forbidden")
-
-    status, select_data = client.select(folder, readonly=True)
-    if status != "OK":
-        raise ImapSyncError("folder_unavailable")
-
-    current_uidvalidity = _extract_uidvalidity(client, select_data)
-    uidvalidity_reset = stored_uidvalidity is not None and stored_uidvalidity != current_uidvalidity
-    effective_last_uid = 0 if uidvalidity_reset else max(0, int(last_uid))
-
-    search_criterion = f"UID {effective_last_uid + 1}:*"
-    status, search_data = client.uid("SEARCH", None, search_criterion)
-    if status != "OK" or not search_data or not search_data[0]:
-        return current_uidvalidity, uidvalidity_reset, []
-
-    raw_uids = search_data[0].split() if isinstance(search_data[0], (bytes, str)) else []
-    candidate_uids = sorted(
-        {
-            int(u.decode("ascii") if isinstance(u, bytes) else str(u))
-            for u in raw_uids
-            if (u.decode("ascii") if isinstance(u, bytes) else str(u)).isdigit()
-        }
+    current_uv, uv_reset, batches, _, _ = _fetch_folder_batches_sync(
+        client,
+        folder=folder,
+        stored_uidvalidity=stored_uidvalidity,
+        last_uid=last_uid,
+        batch_size=batch_size,
     )
-    candidate_uids = [u for u in candidate_uids if u > effective_last_uid]
-    if not candidate_uids:
-        return current_uidvalidity, uidvalidity_reset, []
-
-    envelopes: list[ImapEnvelope] = []
-    for idx in range(0, len(candidate_uids), batch_size):
-        batch = candidate_uids[idx : idx + batch_size]
-        uid_set = ",".join(str(u) for u in batch)
-        fetch_status, fetch_data = client.uid("FETCH", uid_set, FETCH_SPEC)
-        if fetch_status != "OK" or not fetch_data:
-            raise ImapSyncError("fetch_failed")
-        for item in fetch_data:
-            if not isinstance(item, tuple) or len(item) < 2:
-                continue
-            meta_bytes = item[0] if isinstance(item[0], bytes) else str(item[0]).encode("utf-8")
-            header_bytes = item[1] if isinstance(item[1], bytes) else str(item[1]).encode("utf-8")
-            uid_match = _UID_RE.search(meta_bytes)
-            if not uid_match:
-                continue
-            msg_uid = int(uid_match.group(1))
-            if msg_uid <= effective_last_uid:
-                continue
-            flags_match = _FLAGS_RE.search(meta_bytes)
-            flags_bytes = flags_match.group(1) if flags_match else b""
-            envelopes.append(
-                parse_raw_header_block(
-                    uid=msg_uid,
-                    folder=folder,
-                    header_bytes=header_bytes,
-                    flags_bytes=flags_bytes,
-                )
-            )
+    envelopes = [env for batch_envs, _ in batches for env in batch_envs]
     envelopes.sort(key=lambda e: e.uid)
-    return current_uidvalidity, uidvalidity_reset, envelopes
+    return current_uv, uv_reset, envelopes
 
 
 def _infer_direction_and_contact_email(
@@ -444,20 +500,24 @@ class ImapSyncService:
         selected_folders = validate_folder_list(folders) if folders is not None else get_imap_folders(conn)
         sync_state: dict[str, Any] = dict(config.get("imap_sync_state") or {})
 
-        def _poll_all_folders() -> dict[str, tuple[int, bool, list[ImapEnvelope]]]:
+        def _poll_all_folders() -> dict[
+            str, tuple[int, bool, list[tuple[list[ImapEnvelope], int]], set[int], bool]
+        ]:
             client = self._client_factory(conn.provider_id, account_login, password)
             try:
-                out: dict[str, tuple[int, bool, list[ImapEnvelope]]] = {}
+                out: dict[str, tuple[int, bool, list[tuple[list[ImapEnvelope], int]], set[int], bool]] = {}
                 for folder in selected_folders:
                     folder_state = sync_state.get(folder) if isinstance(sync_state.get(folder), dict) else {}
                     stored_uv = folder_state.get("uidvalidity")
                     stored_last_uid = int(folder_state.get("last_uid") or 0)
-                    out[folder] = _fetch_folder_envelopes_sync(
+                    reset_pending = bool(folder_state.get("uidvalidity_reset_pending", False))
+                    out[folder] = _fetch_folder_batches_sync(
                         client,
                         folder=folder,
                         stored_uidvalidity=int(stored_uv) if isinstance(stored_uv, int) else None,
                         last_uid=stored_last_uid,
                         batch_size=self._batch_size,
+                        reset_pending=reset_pending,
                     )
                 return out
             finally:
@@ -468,69 +528,140 @@ class ImapSyncService:
         folder_summaries: list[dict[str, Any]] = []
         total_created = 0
         total_rebound = 0
+        total_unavailable = 0
 
         for folder in selected_folders:
-            current_uv, uv_reset, envelopes = folder_batches[folder]
+            current_uv, uv_reset, successful_batches, present_uids, all_batches_ok = folder_batches[folder]
             folder_state = dict(sync_state.get(folder) or {}) if isinstance(sync_state.get(folder), dict) else {}
             highest_uid = 0 if uv_reset else int(folder_state.get("last_uid") or 0)
             created_count = 0
             rebound_count = 0
+            fetched_count = 0
+            unavailable_count = 0
 
-            for env in envelopes:
-                direction, contact_email, contact_name = _infer_direction_and_contact_email(
-                    folder=folder,
-                    account_email=account_login,
-                    envelope=env,
-                )
-                result = await ingest(
-                    session,
-                    IngestMessageInput(
-                        connection_id=conn.id,
-                        channel="email",
-                        original_id=f"{folder}:{current_uv}:{env.uid}",
-                        direction=direction,
-                        sent_at=env.sent_at,
-                        received_at=datetime.now(timezone.utc),
-                        subject=env.subject,
-                        sender=envelope_addr_or_default(env.sender, account_login if direction == "outbound" else None),
-                        recipient=envelope_addr_or_default(
-                            env.recipient, account_login if direction == "inbound" else None
+            for batch_envelopes, batch_max_uid in successful_batches:
+                for env in batch_envelopes:
+                    fetched_count += 1
+                    direction, contact_email, contact_name = _infer_direction_and_contact_email(
+                        folder=folder,
+                        account_email=account_login,
+                        envelope=env,
+                    )
+                    result = await ingest(
+                        session,
+                        IngestMessageInput(
+                            connection_id=conn.id,
+                            channel="email",
+                            original_id=f"{folder}:{current_uv}:{env.uid}",
+                            direction=direction,
+                            sent_at=env.sent_at,
+                            received_at=datetime.now(timezone.utc),
+                            subject=env.subject,
+                            sender=envelope_addr_or_default(
+                                env.sender, account_login if direction == "outbound" else None
+                            ),
+                            recipient=envelope_addr_or_default(
+                                env.recipient, account_login if direction == "inbound" else None
+                            ),
+                            participants=env.participants,
+                            content_hash=env.header_hash,
+                            external_message_id=env.message_id,
+                            in_reply_to=env.in_reply_to,
+                            references=env.references,
+                            contact_identity_kind="email" if contact_email else None,
+                            contact_identity_value=contact_email,
+                            contact_display_name=contact_name,
+                            is_read=env.is_seen or direction == "outbound",
+                            dedupe_by_external_message_id_hash=uv_reset,
                         ),
-                        participants=env.participants,
-                        content_hash=env.header_hash,
-                        external_message_id=env.message_id,
-                        in_reply_to=env.in_reply_to,
-                        references=env.references,
-                        contact_identity_kind="email" if contact_email else None,
-                        contact_identity_value=contact_email,
-                        contact_display_name=contact_name,
-                        is_read=env.is_seen or direction == "outbound",
-                        dedupe_by_external_message_id_hash=uv_reset or True,
+                    )
+                    if result.created:
+                        created_count += 1
+                        total_created += 1
+                    if result.uid_rebound:
+                        rebound_count += 1
+                        total_rebound += 1
+
+                if batch_max_uid > highest_uid:
+                    highest_uid = batch_max_uid
+
+                # Persist per-batch cursor progress (N-1)
+                sync_state[folder] = {
+                    "uidvalidity": current_uv,
+                    "last_uid": highest_uid,
+                    "last_synced_at": datetime.now(timezone.utc).isoformat(),
+                    **(
+                        {"uidvalidity_reset_pending": True}
+                        if (uv_reset and not all_batches_ok)
+                        else {}
                     ),
-                )
-                if result.created:
-                    created_count += 1
-                    total_created += 1
-                if result.uid_rebound:
-                    rebound_count += 1
-                    total_rebound += 1
-                if env.uid > highest_uid:
-                    highest_uid = env.uid
+                }
+                config["imap_sync_state"] = dict(sync_state)
+                conn.config = dict(config)
+                await session.flush()
 
             sync_state[folder] = {
                 "uidvalidity": current_uv,
                 "last_uid": highest_uid,
                 "last_synced_at": datetime.now(timezone.utc).isoformat(),
+                **(
+                    {"uidvalidity_reset_pending": True}
+                    if (uv_reset and not all_batches_ok)
+                    else {}
+                ),
             }
+
+            # Detect messages expunged from this folder on the IMAP server (B-6)
+            stored_messages = (
+                await session.execute(
+                    select(UnifiedMessage).where(
+                        UnifiedMessage.tenant_id == tenant_id,
+                        UnifiedMessage.connection_id == conn.id,
+                        UnifiedMessage.channel == "email",
+                    )
+                )
+            ).scalars().all()
+            folder_prefix = f"{folder}:"
+            for stored_msg in stored_messages:
+                if stored_msg.unavailable_at is not None:
+                    continue
+                orig = str(stored_msg.original_id or "")
+                if not orig.startswith(folder_prefix):
+                    continue
+                parts = orig.split(":", 2)
+                if len(parts) != 3 or not parts[2].isdigit():
+                    continue
+                msg_uv_str, msg_uid = parts[1], int(parts[2])
+                is_expunged_in_current_uv = (
+                    msg_uv_str == str(current_uv)
+                    and msg_uid <= highest_uid
+                    and msg_uid not in present_uids
+                )
+                is_missing_after_reset = (
+                    uv_reset and all_batches_ok and msg_uv_str != str(current_uv)
+                )
+                if is_expunged_in_current_uv or is_missing_after_reset:
+                    marked = await mark_message_unavailable(
+                        session,
+                        connection_id=conn.id,
+                        channel="email",
+                        original_id=orig,
+                    )
+                    if marked:
+                        unavailable_count += 1
+                        total_unavailable += 1
+
             folder_summaries.append(
                 {
                     "folder": folder,
                     "uidvalidity": current_uv,
                     "uidvalidity_reset": uv_reset,
                     "last_uid": highest_uid,
-                    "fetched": len(envelopes),
+                    "fetched": fetched_count,
                     "created": created_count,
                     "uid_rebound": rebound_count,
+                    "marked_unavailable": unavailable_count,
+                    "batch_incomplete": not all_batches_ok,
                 }
             )
 
@@ -548,6 +679,7 @@ class ImapSyncService:
             "folders": folder_summaries,
             "total_created": total_created,
             "total_uid_rebound": total_rebound,
+            "total_marked_unavailable": total_unavailable,
         }
 
 

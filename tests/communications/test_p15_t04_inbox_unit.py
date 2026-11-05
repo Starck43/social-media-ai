@@ -53,6 +53,9 @@ class _FakeScalarResult:
     def all(self):
         return list(self._rows)
 
+    def first(self):
+        return self._rows[0] if self._rows else None
+
 
 class _FakeExecuteResult:
     def __init__(self, rows):
@@ -79,15 +82,28 @@ class _FakeInboxSession:
         whereclause = getattr(stmt, "whereclause", None)
         if whereclause is None:
             return filters
-        clauses = getattr(whereclause, "clauses", [whereclause])
-        for c in clauses:
-            left = getattr(c, "left", None)
-            right = getattr(c, "right", None)
+
+        def _walk(node):
+            sub = getattr(node, "clauses", None)
+            if sub is not None:
+                for child in sub:
+                    _walk(child)
+                return
+            left = getattr(node, "left", None)
+            right = getattr(node, "right", None)
             col_name = getattr(left, "key", None) or getattr(left, "name", None)
             if not col_name:
-                continue
+                return
             val = getattr(right, "value", None)
+            if val is None and right is not None:
+                r_str = str(right).strip().lower()
+                if r_str == "true":
+                    val = True
+                elif r_str == "false":
+                    val = False
             filters[col_name] = val
+
+        _walk(whereclause)
         return filters
 
     async def execute(self, stmt):
@@ -124,6 +140,8 @@ class _FakeInboxSession:
                 rows = [m for m in rows if m.thread_id == int(eq["thread_id"])]
             if "contact_id" in eq and eq["contact_id"] is not None:
                 rows = [m for m in rows if m.contact_id == int(eq["contact_id"])]
+            if "is_hidden" in eq and eq["is_hidden"] is not None:
+                rows = [m for m in rows if bool(m.is_hidden) is bool(eq["is_hidden"])]
             rows.sort(key=lambda m: (m.sent_at, m.id))
             return _FakeExecuteResult(rows)
 
@@ -137,6 +155,12 @@ class _FakeInboxSession:
         return _FakeExecuteResult([])
 
     async def flush(self):
+        return None
+
+    async def commit(self):
+        return None
+
+    async def rollback(self):
         return None
 
 
@@ -536,3 +560,165 @@ async def test_communication_api_and_web_routes_contract(monkeypatch):
         assert captured["template"] == "web/communications.html"
         assert captured["active_tab"] == "inbox"
         assert captured["selected_thread_detail"]["thread"]["id"] == 102
+
+
+@pytest.mark.asyncio
+async def test_b7_route_and_service_permissions_check_comms_message_not_contact():
+    """B-7: Inbox routes and contact-messages service gate on comms.message, not contact alone."""
+    from app.types import ActionType
+
+    # Verify router-level dependency requires comms.message VIEW
+    router_dep_sets = [
+        frozenset(
+            cell.cell_contents
+            for cell in (getattr(dep.dependency, "__closure__", None) or ())
+            if isinstance(cell.cell_contents, (str, ActionType))
+        )
+        for dep in communication_api.router.dependencies
+    ]
+    assert frozenset({"comms.message", ActionType.VIEW}) in router_dep_sets
+
+    # Verify route-level dependencies on /api/v1/communication/*
+    route_by_path: dict[tuple[str, str], object] = {}
+    for route in communication_api.router.routes:
+        methods = getattr(route, "methods", set()) or set()
+        for m in methods:
+            route_by_path[(m, route.path)] = route
+
+    def _dep_sets(route_obj):
+        sets = []
+        for dep in route_obj.dependant.dependencies:
+            vals = frozenset(
+                cell.cell_contents
+                for cell in (getattr(dep.call, "__closure__", None) or ())
+                if isinstance(cell.cell_contents, (str, ActionType))
+            )
+            if vals:
+                sets.append(vals)
+        return sets
+
+    assert frozenset({"comms.message", ActionType.VIEW}) in _dep_sets(route_by_path[("GET", "/inbox")])
+    assert frozenset({"comms.message", ActionType.VIEW}) in _dep_sets(
+        route_by_path[("GET", "/inbox/threads/{thread_id}")]
+    )
+    assert frozenset({"comms.message", ActionType.VIEW}) in _dep_sets(
+        route_by_path[("GET", "/inbox/contacts/{contact_id}/messages")]
+    )
+    assert frozenset({"comms.message", ActionType.UPDATE}) in _dep_sets(route_by_path[("POST", "/inbox/mark-read")])
+    assert frozenset({"comms.message", ActionType.UPDATE}) in _dep_sets(route_by_path[("POST", "/inbox/archive")])
+    assert frozenset({"comms.message", ActionType.UPDATE}) in _dep_sets(route_by_path[("POST", "/inbox/hide")])
+
+    # Service-level check: an actor granted only contact:view cannot list contact messages or inbox
+    session = _FakeInboxSession()
+    _seed_sample_inbox(session)
+    actor = SimpleNamespace(id=19, is_active=True)
+    contact_only_grants = {("contact", ActionType.VIEW)}
+
+    with tenant_scope(1), permission_scope(actor, member_grants=contact_only_grants):
+        with pytest.raises(PermissionError, match="Unified message access denied"):
+            await list_inbox_threads(session)
+        with pytest.raises(PermissionError, match="Unified message access denied"):
+            await list_contact_messages(session, 10)
+
+
+@pytest.mark.asyncio
+async def test_b10_resolve_context_communication_handoff_to_chat(monkeypatch):
+    """B-10: 'Open in chat' (`context=communication:<id>`) resolves UnifiedMessage with tenant, permission, hidden, and boundary checks."""
+    from app.models.managers import base_manager as bm_mod
+    from app.services.knowledge import workspace as ws_mod
+    from app.types import ActionType
+
+    session = _FakeInboxSession()
+    _seed_sample_inbox(session)
+    actor = SimpleNamespace(id=7, is_active=True)
+
+    @asynccontextmanager
+    async def _fake_cm():
+        yield session
+
+    monkeypatch.setattr(bm_mod, "async_session_maker", _fake_cm)
+
+    with tenant_scope(1), permission_scope(actor, member_grants=workspace_grants("viewer")):
+        ctx = await ws_mod.resolve_context("communication", 1001, "cloud")
+        assert ctx is not None
+        assert ctx["type"] == "communication"
+        assert ctx["id"] == 1001
+        assert ctx["thread_id"] == 101
+        assert ctx["title"] == "Q4 Contract Renewal"
+        assert ctx["source_kind"] == "email"
+        assert ctx["href"] == "imap://mail.example.com/INBOX;UID=1"
+        assert "alice@example.com" in ctx["snippet"]
+
+        # Unavailable original suppresses href
+        ctx_unavail = await ws_mod.resolve_context("communication", 1002, "cloud")
+        assert ctx_unavail is not None
+        assert ctx_unavail["href"] is None
+
+        # Cross-tenant message raises 404
+        with pytest.raises(HTTPException) as exc_cross:
+            await ws_mod.resolve_context("communication", 2001, "cloud")
+        assert exc_cross.value.status_code == 404
+
+        # Locally hidden message raises 404
+        session.messages[0].is_hidden = True
+        with pytest.raises(HTTPException) as exc_hidden:
+            await ws_mod.resolve_context("communication", 1001, "cloud")
+        assert exc_hidden.value.status_code == 404
+        session.messages[0].is_hidden = False
+
+    # Actor without comms.message:view gets 404
+    with tenant_scope(1), permission_scope(actor, member_grants={("contact", ActionType.VIEW)}):
+        with pytest.raises(HTTPException) as exc_perm:
+            await ws_mod.resolve_context("communication", 1001, "cloud")
+        assert exc_perm.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_n3_and_n4_mark_read_all_hidden_and_web_403_propagation(monkeypatch):
+    """N-3 & N-4: mark_thread_read sets unread_count=0 when all messages are hidden; web pages raise 403 on PermissionError."""
+    from app.types import ActionType
+    from app.web import communications as web_comms
+    from app.web import contacts_merge as web_merge
+
+    session = _FakeInboxSession()
+    _seed_sample_inbox(session)
+    actor = SimpleNamespace(id=7, is_active=True)
+
+    with tenant_scope(1), permission_scope(actor, member_grants=workspace_grants("owner")):
+        for m in session.messages:
+            if m.thread_id == 101:
+                m.is_hidden = True
+        res = await mark_thread_read(session, thread_id=101, is_read=False)
+        assert res["unread_count"] == 0
+        assert res["updated_messages"] == 0
+
+    @asynccontextmanager
+    async def _fake_cm():
+        class _BeginCtx:
+            async def __aenter__(self_inner):
+                return session
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        session.begin = _BeginCtx
+        yield session
+
+    monkeypatch.setattr(web_comms, "async_session_maker", _fake_cm)
+    monkeypatch.setattr(web_comms, "snippet_rows", AsyncMock(return_value=[]))
+    monkeypatch.setattr(web_merge, "async_session_maker", _fake_cm)
+
+    with tenant_scope(1), permission_scope(actor, member_grants=set()):
+        with pytest.raises(HTTPException) as exc_comms:
+            await web_comms.communications_page(
+                SimpleNamespace(state=SimpleNamespace()),
+                boundary="cloud",
+                tab="inbox",
+            )
+        assert exc_comms.value.status_code == 403
+
+        with pytest.raises(HTTPException) as exc_merge:
+            await web_merge.contacts_merge_page(SimpleNamespace(state=SimpleNamespace()))
+        assert exc_merge.value.status_code == 403
+        assert isinstance(ActionType.VIEW, ActionType)
+

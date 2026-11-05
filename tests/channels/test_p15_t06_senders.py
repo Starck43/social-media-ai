@@ -116,7 +116,7 @@ def smtp_double(monkeypatch, client=None):
     release(monkeypatch, EMAIL)
     calls = seam_double(monkeypatch, smtp_send)
     client = client or SMTPDouble()
-    monkeypatch.setattr(smtp_send, "_PinnedSMTP", lambda target: client)
+    monkeypatch.setattr(smtp_send, "_PinnedSMTP", lambda target, binding: client)
     return client, calls
 
 
@@ -244,6 +244,7 @@ def test_smtp_disabled_does_not_reach_seam():
         ({"send_enabled": False}, "account_send_disabled"),
         ({"provider_id": "installation_smtp"}, "unsupported_provider"),
         ({"app_password": ""}, "credential_unavailable"),
+        ({"app_password": "pässword"}, "credential_unavailable"),
     ],
 )
 def test_smtp_account_guards(monkeypatch, change, code):
@@ -344,6 +345,73 @@ def test_smtp_switch_rechecked_after_auth(monkeypatch):
     client.on_login = lambda: monkeypatch.setenv("P15_EMAIL_SEND_KILL", "1")
     assert smtp_send._send_email(MAIL, REQUEST).code == "capability_killed"
     assert not any(x[0] == "send" for x in client.calls)
+
+
+@pytest.mark.parametrize("kill_during", [None, "mail", "rcpt"])
+def test_smtp_rechecks_kill_after_envelope_before_data(monkeypatch, kill_during):
+    release(monkeypatch, EMAIL)
+    seam_double(monkeypatch, smtp_send)
+
+    class SMTPDataGate(smtp_send._PinnedSMTP):
+        def __init__(self, target, binding):
+            self._target = target
+            self._binding = binding
+            self.does_esmtp = True
+            self.esmtp_features = {}
+            self.helo_resp = 250
+            self.calls = []
+            self.data_replies = 0
+            self.closed = False
+
+        def ehlo(self):
+            self.calls.append(("ehlo",))
+            return 250, b"ok"
+
+        def login(self, login, password):
+            self.calls.append(("login", login, password))
+
+        def mail(self, sender, options=()):
+            self.calls.append(("mail", sender, options))
+            if kill_during == "mail":
+                monkeypatch.setenv("P15_EMAIL_SEND_KILL", "1")
+            return 250, b"ok"
+
+        def rcpt(self, recipient, options=()):
+            self.calls.append(("rcpt", recipient, options))
+            if kill_during == "rcpt":
+                monkeypatch.setenv("P15_EMAIL_SEND_KILL", "1")
+            return 250, b"ok"
+
+        def putcmd(self, command, args=""):
+            self.calls.append(("command", command, args))
+
+        def getreply(self):
+            self.data_replies += 1
+            if self.data_replies == 1:
+                return 354, b"continue"
+            return 250, b"accepted"
+
+        def send(self, message):
+            self.calls.append(("wire", message))
+
+        def close(self):
+            self.closed = True
+
+    client = SMTPDataGate(None, BINDING)
+    monkeypatch.setattr(smtp_send, "_PinnedSMTP", lambda target, binding: client)
+
+    result = smtp_send._send_email(MAIL, REQUEST)
+
+    killed = kill_during is not None
+    assert (result.outcome, result.code) == (("blocked", "capability_killed") if killed else ("sent", "smtp_accepted"))
+    assert [call[0] for call in client.calls if call[0] in {"mail", "rcpt"}] == ["mail", "rcpt"]
+    commands = [call[1] for call in client.calls if call[0] == "command"]
+    wire = [call[1] for call in client.calls if call[0] == "wire"]
+    if killed:
+        assert commands == [] and wire == []
+    else:
+        assert commands == ["data"] and len(wire) == 1 and wire[0].endswith(b".\r\n")
+    assert client.closed
 
 
 @pytest.mark.parametrize("capability", [TELEGRAM, MAX])
@@ -588,7 +656,7 @@ def test_pinned_protocols_do_not_resolve_hostname_again(monkeypatch):
     assert connection._context.verify_mode == ssl.CERT_REQUIRED and connection._context.check_hostname
     monkeypatch.setattr(smtplib.SMTP, "__init__", lambda self, *args: setattr(self, "debuglevel", 0))
     monkeypatch.setattr(smtp_send, "open_tls_socket", lambda *args: seen.append(args) or "smtp-socket")
-    client = smtp_send._PinnedSMTP(target)
+    client = smtp_send._PinnedSMTP(target, BINDING)
     assert client._get_socket("ignored", 25, 10) == "smtp-socket"
     assert seen[-1][0] == target and client.debuglevel == 0
     assert client.context.verify_mode == ssl.CERT_REQUIRED and client.context.check_hostname

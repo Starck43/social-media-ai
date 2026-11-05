@@ -13,7 +13,7 @@ from email.utils import formatdate, make_msgid
 from email_validator import EmailNotValidError, validate_email
 
 from app.channels.senders.activation import admission_code
-from app.channels.senders.contracts import EMAIL, EmailRequest, MailAccount, SendResult
+from app.channels.senders.contracts import EMAIL, EmailRequest, MailAccount, SendBinding, SendResult
 from app.channels.senders.network import TIMEOUT_SECONDS, open_tls_socket
 from app.core.outbound import OutboundRefusal, OutboundTarget, StaticPolicy, acquire_outbound_target
 from app.integrations.catalog import PROVIDERS
@@ -23,14 +23,29 @@ _MESSAGE_ID = re.compile(r"<[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+>")
 MAX_BODY_BYTES = 1024 * 1024
 
 
+class _AdmissionRefusal(Exception):
+    def __init__(self, code: str):
+        self.code = code
+
+
 class _PinnedSMTP(smtplib.SMTP_SSL):
-    def __init__(self, target: OutboundTarget):
+    def __init__(self, target: OutboundTarget, binding: SendBinding):
         self._target = target
+        self._binding = binding
         super().__init__(target.host, target.port, timeout=TIMEOUT_SECONDS, context=ssl.create_default_context())
         self.set_debuglevel(0)
 
     def _get_socket(self, host, port, timeout):
         return open_tls_socket(self._target, timeout, self.context)
+
+    def data(self, msg):
+        # SMTP.sendmail performs MAIL and RCPT before calling DATA. Recheck at
+        # that exact boundary so an operator kill during envelope negotiation
+        # prevents the message body from leaving this process.
+        code = admission_code(EMAIL, self._binding)
+        if code:
+            raise _AdmissionRefusal(code)
+        return super().data(msg)
 
 
 def _valid_mailbox(value: str) -> bool:
@@ -84,7 +99,11 @@ def _send_email(account: MailAccount, request: EmailRequest) -> SendResult:
         return SendResult("blocked", "account_send_disabled")
     if account.provider_id not in _MAIL_PROVIDERS:
         return SendResult("blocked", "unsupported_provider")
-    if not isinstance(account.app_password, str) or not account.app_password.strip():
+    if (
+        not isinstance(account.app_password, str)
+        or not account.app_password.strip()
+        or not account.app_password.isascii()
+    ):
         return SendResult("blocked", "credential_unavailable")
     try:
         data, message_id = _prepare(account, request)
@@ -98,7 +117,7 @@ def _send_email(account: MailAccount, request: EmailRequest) -> SendResult:
         code = admission_code(EMAIL, account.binding)
         if code:
             return SendResult("blocked", code, message_id=message_id)
-        client = _PinnedSMTP(target)
+        client = _PinnedSMTP(target, account.binding)
         if client.ehlo()[0] != 250:
             return SendResult("rejected", "smtp_greeting_failed", message_id=message_id)
         client.login(account.account_login, account.app_password)
@@ -111,6 +130,8 @@ def _send_email(account: MailAccount, request: EmailRequest) -> SendResult:
         if refused:
             return SendResult("rejected", "smtp_recipient_rejected", message_id=message_id)
         return SendResult("sent", "smtp_accepted", message_id=message_id)
+    except _AdmissionRefusal as exc:
+        return SendResult("blocked", exc.code, message_id=message_id)
     except OutboundRefusal as exc:
         return SendResult("blocked", exc.code, message_id=message_id)
     except TimeoutError:

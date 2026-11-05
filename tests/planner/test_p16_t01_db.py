@@ -89,9 +89,14 @@ async def test_tenant_crud_subtasks_versions_and_ciphertext(planner_world):
         )
         assert child.parent_id == parent.id and child.priority == "critical"
         assert {item.id for item in (await planner_service.list())["items"]} == {parent.id, child.id}
+        async with async_session_maker() as session:
+            marker_before = await session.scalar(select(PlannerTask.pii_updated_at).where(PlannerTask.id == child.id))
         changed = await planner_service.update(
             child.id, TaskUpdate(expected_version=1, scope="occurrence", title="Renamed")
         )
+        async with async_session_maker() as session:
+            marker_after = await session.scalar(select(PlannerTask.pii_updated_at).where(PlannerTask.id == child.id))
+        assert marker_after > marker_before
         assert changed.version == 2
         with pytest.raises(PlannerConflict):
             await planner_service.update(child.id, TaskUpdate(expected_version=1, scope="occurrence", title="stale"))

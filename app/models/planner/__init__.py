@@ -1,4 +1,4 @@
-"""Planner model import is staged; shared bootstrap wiring waits for P15 #391."""
+"""Planner model; task mutation goes through the typed transactional service."""
 
 from .task import PlannerTask
 

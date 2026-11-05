@@ -832,6 +832,57 @@ def test_migration_0140_matches_model_and_owns_full_lifecycle(monkeypatch):
     )
     assert any(params and params.get("resource_key") == "planner.task" for _, params in statements)
     assert migration.WORKSPACE_ROLE_PRESETS["viewer"] == ("VIEW",)
+    from app.core.access_catalog import workspace_grants
+
+    for role, actions in migration.WORKSPACE_ROLE_PRESETS.items():
+        assert {action.name for model, action in workspace_grants(role) if model == "plannertask"} == set(actions)
     migration.downgrade()
     assert dropped == [(("planner_tasks",), {"schema": "test_schema"})]
     assert any("DELETE FROM test_schema.model_types" in sql for sql, _ in statements)
+
+
+def test_integrated_catalog_facade_rotation_and_navigation():
+    from app.core.access_catalog import resolve_permission_key, workspace_grants
+    from app.models import PlannerTask as public_model
+    from app.web.nav import NAV_ITEMS, section_of
+    from cli.commands.pii import REGISTRY
+
+    assert public_model is PlannerTask
+    assert resolve_permission_key("planner.task.view")[0].model_name == "plannertask"
+    for role in ("owner", "admin", "manager"):
+        assert {
+            ("plannertask", action)
+            for action in (ActionType.VIEW, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE)
+        } <= workspace_grants(role)
+    assert ("plannertask", ActionType.VIEW) in workspace_grants("viewer")
+    assert ("plannertask", ActionType.UPDATE) not in workspace_grants("viewer")
+    assert ("plannertask", ActionType.CREATE) in workspace_grants("analyst")
+    assert ("plannertask", ActionType.DELETE) not in workspace_grants("analyst")
+    assert public_model.objects.create.__self__ is tasks.planner_service
+    for forbidden in ("filter", "bulk_create", "update_by_id", "delete_by_id"):
+        with pytest.raises(AttributeError):
+            getattr(public_model.objects, forbidden)
+    expected = {
+        ("planner_tasks", name, None)
+        for name in ("title_encrypted", "description_encrypted", "series_template_encrypted")
+    }
+    assert expected <= set(REGISTRY)
+    nav = next(item for item in NAV_ITEMS if item.key == "planner")
+    assert nav.href == "/app/planner" and nav.required_permission == "planner.task.view" and nav.ready
+    assert section_of("/app/planner/1/edit").key == "planner"
+
+
+def test_public_app_registration_has_no_cron_namespace_overlap():
+    from app.agent.tools import get_tool
+    from app.api.v1.entry import router as api_router
+    from app.web import web_router
+
+    app = FastAPI()
+    app.include_router(api_router, prefix="/api/v1")
+    app.include_router(web_router)
+    paths = app.openapi()["paths"]
+    assert "/api/v1/planner/tasks" in paths
+    assert "/app/planner/{task_id}/edit" in paths
+    assert get_tool("planner_create").confirm
+    assert get_tool("planner_create").required_permission == "planner.task.create"
+    assert not get_tool("planner_list").confirm

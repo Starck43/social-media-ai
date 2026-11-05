@@ -1,7 +1,7 @@
-"""Typed planner handlers. Explicit registration is deferred with the shared catalog.
+"""Typed planner handlers with canonical catalog permissions and confirmation.
 
-Importing this module never registers a fallback permission or enables a tool
-before the planner resource is registered in the post-#391 integration commit.
+Registration checks the shared planner resource before exposing either tool;
+there is no fallback permission, and registered creation requires confirmation.
 """
 
 from typing import Any

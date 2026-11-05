@@ -1,7 +1,4 @@
-"""Transactional planner aggregate. Shared connection/actor locks, no ad-hoc sessions.
-
-Not wired into the app until the separately coordinated post-#391 integration.
-"""
+"""Transactional planner aggregate. Shared connection/actor locks, no ad-hoc sessions."""
 
 from __future__ import annotations
 

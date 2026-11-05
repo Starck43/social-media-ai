@@ -1,4 +1,4 @@
-"""Typed planner CRUD; router mounting waits for post-#391 integration."""
+"""Typed, tenant-scoped planner CRUD, separate from scheduled agent tasks."""
 
 from typing import Literal
 

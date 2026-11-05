@@ -1,4 +1,4 @@
-"""Authenticated, CSRF-protected planner list/board and explicit edits; not mounted yet."""
+"""Authenticated, CSRF-protected planner list/board and explicit edits."""
 
 from typing import Literal
 

@@ -124,6 +124,13 @@ and execution permissions remain in the handwritten references and code.
 | DELETE | /api/v1/notifications/{notification_id} | delete_notification_api_v1_notifications__notification_id__delete |
 | GET | /api/v1/notifications/{notification_id} | get_notification_api_v1_notifications__notification_id__get |
 | POST | /api/v1/notifications/{notification_id}/mark-read | mark_notification_as_read_api_v1_notifications__notification_id__mark_read_post |
+| GET | /api/v1/planner/tasks | list_tasks_api_v1_planner_tasks_get |
+| POST | /api/v1/planner/tasks | create_task_api_v1_planner_tasks_post |
+| DELETE | /api/v1/planner/tasks/{task_id} | delete_task_api_v1_planner_tasks__task_id__delete |
+| GET | /api/v1/planner/tasks/{task_id} | get_task_api_v1_planner_tasks__task_id__get |
+| PATCH | /api/v1/planner/tasks/{task_id} | update_task_api_v1_planner_tasks__task_id__patch |
+| POST | /api/v1/planner/tasks/{task_id}/complete | complete_task_api_v1_planner_tasks__task_id__complete_post |
+| POST | /api/v1/planner/tasks/{task_id}/reschedule | reschedule_task_api_v1_planner_tasks__task_id__reschedule_post |
 | GET | /api/v1/social/callback | vk_callback_api_v1_social_callback_get |
 | GET | /api/v1/social/start | vk_oauth_start_api_v1_social_start_get |
 | GET | /api/v1/sources | list_sources_api_v1_sources_get |

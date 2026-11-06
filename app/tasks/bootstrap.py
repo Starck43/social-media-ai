@@ -25,6 +25,7 @@ DEFAULT_TASKS = {
     # reflect keeps memory clean once a week (both cheap when idle).
     "hourly-learn": ("30 * * * *", "learn", {"min_messages": 8}),
     "weekly-reflect": ("0 5 * * 1", "reflect", {}),
+    "comms-outbox-dispatch": ("* * * * *", "comms.outbox.dispatch", {}),
     "comms-email-sync": ("*/15 * * * *", "comms.email.sync", {}),
 }
 

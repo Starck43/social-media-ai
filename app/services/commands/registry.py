@@ -101,6 +101,25 @@ def _build_registry() -> dict[str, CapabilitySpec]:
             audit_execute="documents.export",
         ),
     )
+    # Transport commands require explicit D14 approval authority. These remain
+    # default-off, independently of the sender's release/kill controls.
+    specs += tuple(
+        CapabilitySpec(
+            code=code,
+            version=1,
+            domain="comms",
+            risk_class="high",
+            required_resource="outboxmessage",
+            required_action=ActionType.CONFIGURE,
+            approval_policy="per_item",
+            kill_switch_key=kill,
+        )
+        for code, kill in (
+            ("comms.email.send.v1", "KILL_COMMS_EMAIL_SEND"),
+            ("comms.telegram.bot_send.v1", "KILL_COMMS_TELEGRAM_BOT_SEND"),
+            ("comms.max.bot_send.v1", "KILL_COMMS_MAX_BOT_SEND"),
+        )
+    )
     return {spec.code: spec for spec in specs}
 
 

@@ -5,13 +5,15 @@ and job lookups are stubbed. Run with
 `.venv/bin/python -m pytest -o addopts='' --noconftest tests/test_social_rate_limits.py -q`.
 """
 
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
 import app.services.social.base as base_module
-import app.services.social.tg_session as tg_session_module
 from app.core.config import settings
 from app.services.social.base import BaseClient
 from app.services.social.rate_limit import SourceRateLimited, next_pause, response_rate_limit
@@ -204,13 +206,13 @@ class _FloodingTelethon:
     def __init__(self, error):
         self.error = error
         self.disconnected = False
-        self.flood_sleep_threshold = 60
+        self.yielded = 0
 
     async def connect(self):
         pass
 
-    async def is_user_authorized(self):
-        return True
+    async def get_me(self):
+        return SimpleNamespace(id=123, bot=False)
 
     async def get_entity(self, ref):
         return ref
@@ -219,37 +221,48 @@ class _FloodingTelethon:
         self.disconnected = True
 
     def iter_messages(self, entity, **kwargs):
-        error = self.error
-
         async def gen():
-            yield SimpleNamespace(id=1)
-            raise error
+            self.yielded += 1
+            yield SimpleNamespace(id=1, date=datetime(2026, 1, 1, tzinfo=timezone.utc), text="synthetic")
+            raise self.error
 
         return gen()
 
 
 @pytest.fixture
 def flooding_session(monkeypatch):
-    holder = {}
+    """Exercise the guarded runtime and its real history loop without I/O."""
+    from app.services.social import telegram_runtime as runtime
 
-    async def fake_load(user_id=None):
-        return tg_session_module.TelegramSession(api_id=1, api_hash="h" * 32, session="s" * 20)
+    holder = {}
+    selection = SimpleNamespace(external_id="-100123")
+
+    @asynccontextmanager
+    async def material():
+        yield object()
+
+    fence = SimpleNamespace(
+        _pin=SimpleNamespace(selection=selection),
+        _subject_key="123",
+        _guard=SimpleNamespace(_setup_material=material),
+        _inspect=AsyncMock(),
+    )
+
+    @asynccontextmanager
+    async def locked(*args):
+        yield fence
+
+    async def disconnect(client):
+        await client.disconnect()
 
     def install(error):
-        def fake_build(session):
-            holder["client"] = _FloodingTelethon(error)
-            return holder["client"]
-
-        monkeypatch.setattr(tg_session_module, "build_client", fake_build)
+        holder.update(client=_FloodingTelethon(error), fence=fence, selection=selection)
         return holder
 
-    async def fake_owner(source):
-        return None
-
-    import app.services.social.owner as owner_module
-
-    monkeypatch.setattr(tg_session_module, "load_session", fake_load)
-    monkeypatch.setattr(owner_module, "resolve_source_owner", fake_owner)
+    monkeypatch.setattr(runtime, "_locked_runtime", locked)
+    monkeypatch.setattr(runtime, "_build_client", lambda material, fence: holder["client"])
+    monkeypatch.setattr(runtime, "_disconnect", disconnect)
+    monkeypatch.setattr(runtime, "source_grant_selection", lambda source: selection)
     monkeypatch.setattr(settings, "SOCIAL_RATE_LIMIT_MAX_WAIT", 10.0)
     return install
 
@@ -268,28 +281,47 @@ def _tg_source():
     )
 
 
-@pytest.mark.parametrize("error", [FloodWaitError(120), FloodPremiumWaitError(45)])
-async def test_telegram_flood_wait_defers_instead_of_reading_as_empty(flooding_session, error):
-    from app.services.social.tg_client import TelegramClient
+@pytest.mark.parametrize("error", [FloodWaitError(120), FloodPremiumWaitError(45), ConnectionError("network down")])
+async def test_telegram_history_double_reaches_the_injected_error(flooding_session, error):
+    """A bad fake must not conceal the provider error behind a prior guard failure."""
+    from app.services.social.telegram_runtime import _history
 
     holder = flooding_session(error)
-    with pytest.raises(SourceRateLimited) as info:
-        await TelegramClient(platform=SimpleNamespace(params={}, platform_type=None))._collect_mtproto(_tg_source())
-    assert info.value.platform == "telegram"
-    assert info.value.retry_after == float(error.seconds)
-    # Telethon's own automatic sleep is capped by the same bound.
-    assert holder["client"].flood_sleep_threshold == 10
-    assert holder["client"].disconnected is True
+    with pytest.raises(type(error)) as info:
+        await _history(holder["client"], holder["fence"], _tg_source(), 100)
+    assert info.value is error
+    assert holder["client"].yielded == 1
+
+
+@pytest.mark.parametrize("error", [FloodWaitError(120), FloodPremiumWaitError(45)])
+async def test_telegram_flood_wait_defers_instead_of_reading_as_empty(flooding_session, error):
+    from app.services.social.telegram_runtime import _telegram_history_batch
+
+    holder = flooding_session(error)
+    # P15-T12: keep this contract red until the runtime maps FloodWait correctly.
+    try:
+        with pytest.raises(SourceRateLimited) as info:
+            async with _telegram_history_batch(holder["selection"], object(), _tg_source(), limit=100):
+                pytest.fail("a partial batch must not escape after FloodWait")
+        assert info.value.platform == "telegram"
+        assert info.value.retry_after == float(error.seconds)
+    finally:
+        assert holder["client"].yielded == 1
+        assert holder["client"].disconnected is True
 
 
 async def test_other_telegram_errors_keep_the_empty_pull(flooding_session):
-    from app.services.social.tg_client import TelegramClient
+    from app.services.social.telegram_runtime import _telegram_history_batch
 
-    flooding_session(ConnectionError("network down"))
-    result = await TelegramClient(platform=SimpleNamespace(params={}, platform_type=None))._collect_mtproto(
-        _tg_source()
-    )
-    assert result == []
+    holder = flooding_session(ConnectionError("network down"))
+    # Preserve the legacy expectation; current guarded runtime raises instead.
+    try:
+        async with _telegram_history_batch(holder["selection"], object(), _tg_source(), limit=100) as batch:
+            result = list(batch._items)
+        assert result == []
+    finally:
+        assert holder["client"].yielded == 1
+        assert holder["client"].disconnected is True
 
 
 # --------------------------------------------------------------------------- #

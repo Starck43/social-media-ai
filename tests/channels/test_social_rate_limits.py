@@ -2,9 +2,11 @@
 
 No network, database or Telegram server: the request boundary, session seams
 and job lookups are stubbed. Run with
-`.venv/bin/python -m pytest -o addopts='' --noconftest tests/test_social_rate_limits.py -q`.
+`.venv/bin/python -m pytest -o addopts='' --noconftest tests/channels/test_social_rate_limits.py -q`.
 """
 
+import ast
+import inspect
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -233,6 +235,7 @@ class _FloodingTelethon:
 def flooding_session(monkeypatch):
     """Exercise the guarded runtime and its real history loop without I/O."""
     from app.services.social import telegram_runtime as runtime
+    from app.services.social.tg_client import TelegramClient
 
     holder = {}
     selection = SimpleNamespace(external_id="-100123")
@@ -263,6 +266,7 @@ def flooding_session(monkeypatch):
     monkeypatch.setattr(runtime, "_build_client", lambda material, fence: holder["client"])
     monkeypatch.setattr(runtime, "_disconnect", disconnect)
     monkeypatch.setattr(runtime, "source_grant_selection", lambda source: selection)
+    monkeypatch.setattr(TelegramClient, "_entity_ref", staticmethod(lambda ref: ref))
     monkeypatch.setattr(settings, "SOCIAL_RATE_LIMIT_MAX_WAIT", 10.0)
     return install
 
@@ -279,6 +283,29 @@ def _tg_source():
         date_to=None,
         source_type="channel",
     )
+
+
+def test_telegram_runtime_has_no_automatic_flood_sleep_or_retry():
+    """Keep the old bounded-sleep safety check for the new no-sleep adapter."""
+    from app.services.social import telegram_runtime as runtime
+
+    tree = ast.parse(inspect.getsource(runtime._build_client))
+    call = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_ReadOnlyClient"
+    )
+    arguments = {
+        kw.arg: ast.literal_eval(kw.value)
+        for kw in call.keywords
+        if kw.arg in {"flood_sleep_threshold", "request_retries", "connection_retries", "auto_reconnect"}
+    }
+    assert arguments == {
+        "flood_sleep_threshold": 0,
+        "request_retries": 0,
+        "connection_retries": 0,
+        "auto_reconnect": False,
+    }
 
 
 @pytest.mark.parametrize("error", [FloodWaitError(120), FloodPremiumWaitError(45), ConnectionError("network down")])

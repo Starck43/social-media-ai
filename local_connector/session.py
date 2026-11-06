@@ -70,8 +70,10 @@ class OutboundSessionClient:
         response = self.transport(envelope)
         if not isinstance(response, Mapping):
             raise ProtocolError("invalid response")
-        if response.get("request_id") not in (None, envelope["request_id"]):
+        if response.get("request_id") != envelope["request_id"]:
             raise ProtocolError("response request mismatch")
+        if response.get("request_digest") != envelope["request_digest"]:
+            raise ProtocolError("response digest mismatch")
         return response
 
 

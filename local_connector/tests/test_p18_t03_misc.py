@@ -28,3 +28,21 @@ def test_watcher_rescan_and_lifecycle(tmp_path: Path) -> None:
         watcher.stop()
     finally:
         store.close()
+
+
+def test_runtime_requires_confirmation_for_local_index_delete(tmp_path: Path) -> None:
+    from local_connector.runtime import ConnectorRuntime
+
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("a", encoding="utf-8")
+    runtime = ConnectorRuntime(ConnectorConfig(tmp_path / "index.sqlite", selected_roots=[root]))
+    try:
+        runtime.select_roots([root])
+        assert runtime.scan().indexed == 1
+        with pytest.raises(PermissionError):
+            runtime.delete_index(confirmed=False)
+        runtime.delete_index(confirmed=True)
+        assert runtime.store.list_files() == []
+    finally:
+        runtime.close()

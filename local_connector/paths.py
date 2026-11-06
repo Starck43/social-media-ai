@@ -87,6 +87,8 @@ def _relative_parts(relative: str | os.PathLike[str]) -> tuple[str, ...]:
     value = os.fspath(relative)
     if "\x00" in value:
         raise PathSafetyError("path contains NUL")
+    if "\\" in value:
+        raise PathSafetyError("backslash paths are not accepted")
     candidate = PurePath(value)
     if candidate.is_absolute() or value.startswith(("/", "\\")):
         raise PathSafetyError("absolute paths are not accepted")

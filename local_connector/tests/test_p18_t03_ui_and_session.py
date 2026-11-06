@@ -47,7 +47,11 @@ def test_outbound_session_rejects_paths_and_binds_response() -> None:
 
     def transport(envelope: dict) -> dict:
         sent.append(envelope)
-        return {"request_id": envelope["request_id"], "outcome": "ok"}
+        return {
+            "request_id": envelope["request_id"],
+            "request_digest": envelope["request_digest"],
+            "outcome": "ok",
+        }
 
     client = OutboundSessionClient(
         transport, device_id="d", tenant_id="t", owner_id="o", actor_id="a", signer=lambda _: "sig"

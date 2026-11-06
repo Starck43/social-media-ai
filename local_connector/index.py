@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from .paths import PathSafetyError, canonicalize_root, iter_files, resolve_relative
+from .paths import DEFAULT_EXCLUDED_NAMES, PathSafetyError, canonicalize_root, iter_files, resolve_relative
 
 
 @dataclass(frozen=True)
@@ -174,8 +174,9 @@ class IndexStore:
     def search(self, query: str, limit: int = 50) -> list[dict[str, str | int | None]]:
         if not query or not 0 < limit <= 50:
             raise ValueError("query and limit are bounded")
-        rows = self.connection.execute(
-            """
+        try:
+            rows = self.connection.execute(
+                """
             SELECT f.root_hash, f.relative_path, f.size, f.mtime_ns, f.file_type,
                    c.text, c.page_anchor, c.sheet_anchor
             FROM chunks_fts AS fts
@@ -183,8 +184,10 @@ class IndexStore:
             JOIN files AS f ON f.path_hash = c.path_hash
             WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?
             """,
-            (query, limit),
-        ).fetchall()
+                (query, limit),
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            raise ValueError("invalid search query") from exc
         return [dict(row) for row in rows]
 
 
@@ -214,7 +217,7 @@ class IndexEngine:
                 digest.update(block)
         return digest.hexdigest()
 
-    def _read(self, path: Path, content_hash: str, size: int) -> tuple[str, list[Chunk]]:
+    def _read(self, path: Path, size: int) -> tuple[str, list[Chunk]]:
         chunks: list[Chunk] = []
         if path.suffix.lower() in self.text_extensions and size <= self.max_text_bytes:
             text = path.read_bytes().decode("utf-8", errors="replace")
@@ -239,7 +242,7 @@ class IndexEngine:
         if existing and existing.size == stat.st_size and existing.mtime_ns == stat.st_mtime_ns:
             if existing.content_hash == content_hash:
                 return False
-        file_type, chunks = self._read(path, content_hash, stat.st_size)
+        file_type, chunks = self._read(path, stat.st_size)
         self.store.replace_file(
             FileRecord(
                 path_hash=path_hash,
@@ -264,15 +267,10 @@ class IndexEngine:
         indexed = skipped = 0
         errors: list[str] = []
         seen: set[str] = set()
-        names_tuple = tuple(excluded_names)
-        names = names_tuple or None
+        names = tuple(DEFAULT_EXCLUDED_NAMES) + tuple(excluded_names)
         for root in roots:
             try:
-                iterator = (
-                    iter_files(root, excluded_paths=excluded_paths)
-                    if names is None
-                    else iter_files(root, excluded_paths=excluded_paths, excluded_names=names)
-                )
+                iterator = iter_files(root, excluded_paths=excluded_paths, excluded_names=names)
                 for _path, relative_path in iterator:
                     root_hash = self._root_hash(root)
                     path_hash = self.store.path_hash(f"{root_hash}\x00{relative_path}")

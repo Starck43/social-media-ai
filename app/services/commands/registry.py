@@ -114,10 +114,12 @@ def _build_registry() -> dict[str, CapabilitySpec]:
             approval_policy="per_item",
             kill_switch_key=kill,
         )
+        # The operator switch is the per-transport pair the outbox already reads
+        # (P15_*_SEND_ENABLED / P15_*_SEND_KILL); one name per capability.
         for code, kill in (
-            ("comms.email.send.v1", "KILL_COMMS_EMAIL_SEND"),
-            ("comms.telegram.bot_send.v1", "KILL_COMMS_TELEGRAM_BOT_SEND"),
-            ("comms.max.bot_send.v1", "KILL_COMMS_MAX_BOT_SEND"),
+            ("comms.email.send.v1", "P15_EMAIL_SEND_KILL"),
+            ("comms.telegram.bot_send.v1", "P15_TELEGRAM_BOT_SEND_KILL"),
+            ("comms.max.bot_send.v1", "P15_MAX_BOT_SEND_KILL"),
         )
     )
     return {spec.code: spec for spec in specs}

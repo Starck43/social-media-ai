@@ -119,6 +119,20 @@ def test_runtime_rejects_cache_inside_selected_root(tmp_path: Path) -> None:
         runtime.close()
 
 
+def test_runtime_rejects_cache_inside_selected_root_after_lexical_normalization(tmp_path: Path) -> None:
+    root = tmp_path / "selected"
+    root.mkdir()
+    # The intermediate path need not exist: IndexStore normalizes the cache
+    # path lexically before creating its private parent directory.
+    database = tmp_path / "other" / ".." / "selected" / "cache" / "index.sqlite"
+    runtime = ConnectorRuntime(ConnectorConfig(database))
+    try:
+        with pytest.raises(PathSafetyError, match="outside selected folders"):
+            runtime.select_roots([root])
+    finally:
+        runtime.close()
+
+
 def test_runtime_ui_starts_http_and_selection_replaces_index_scope(tmp_path: Path) -> None:
     first, second = tmp_path / "first", tmp_path / "second"
     first.mkdir()

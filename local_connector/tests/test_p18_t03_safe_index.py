@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import errno
+import os
 import stat
 import threading
 from pathlib import Path
@@ -10,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from local_connector.index import IndexEngine, IndexStore
-from local_connector.paths import PathSafetyError, SelectedRoot
+from local_connector.paths import PathSafetyError, SelectedRoot, iter_files
 
 
 def test_incomplete_walk_does_not_prune_existing_rows(tmp_path: Path) -> None:
@@ -30,6 +32,33 @@ def test_incomplete_walk_does_not_prune_existing_rows(tmp_path: Path) -> None:
         assert [record.relative_path for record in store.list_files()] == ["good.txt"]
     finally:
         store.close()
+
+
+def test_repeated_directory_enumeration_does_not_duplicate_directory_fds(
+    tmp_path: Path,
+) -> None:
+    import local_connector.paths as paths_module
+
+    root = tmp_path / "selected"
+    root.mkdir()
+    (root / "note.txt").write_text("safe", encoding="utf-8")
+
+    real_dup = os.dup
+    duplicated_fds: list[int] = []
+
+    def track_dup(fd: int) -> int:
+        duplicate = real_dup(fd)
+        duplicated_fds.append(duplicate)
+        return duplicate
+
+    with patch.object(paths_module.os, "dup", track_dup):
+        for _ in range(100):
+            assert [relative for _, relative in iter_files(root)] == ["note.txt"]
+            for duplicate in duplicated_fds:
+                with pytest.raises(OSError) as exc_info:
+                    os.fstat(duplicate)
+                assert exc_info.value.errno == errno.EBADF
+            duplicated_fds.clear()
 
 
 def test_root_and_ancestor_replacement_fail_closed(tmp_path: Path) -> None:

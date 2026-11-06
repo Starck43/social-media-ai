@@ -41,6 +41,9 @@ checks and a per-run CSRF token.
   tray app, installer or production folder picker; owned by P18-T07.
 - Device-side signed command protocol, authentication and cloud search; owned
   by P18-T05/T06 and still gated by Q-19.
+- `IndexStore.search` is an internal, unfiltered storage primitive, not an
+  authorized search API; P18-T05 must validate current OS ACLs and selected-root
+  scope before exposing any results.
 - mTLS deployment, OS device-key-store integration, or real-user activation.
 
 The session API always raises `ProtocolError` and never calls an injected

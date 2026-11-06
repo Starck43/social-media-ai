@@ -227,7 +227,7 @@ def iter_files(
 
     def walk(directory_fd: int, relative_parts: tuple[str, ...]) -> Iterator[tuple[Path, str]]:
         try:
-            with os.scandir(os.dup(directory_fd)) as entries:
+            with os.scandir(directory_fd) as entries:
                 names = sorted((entry.name for entry in entries), key=str.casefold)
         except OSError as exc:
             raise PathSafetyError("selected root cannot be read") from exc

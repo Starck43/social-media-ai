@@ -70,7 +70,7 @@ class ConnectorRuntime:
             self.store.pause_indexing(reason="root_changed")
 
     def _check_cache_separation(self, roots: tuple[SelectedRoot, ...]) -> None:
-        database = Path(self.config.index_path).expanduser().absolute()
+        database = self.store.database_path
         for root in roots:
             try:
                 database.relative_to(root.path)
@@ -79,7 +79,7 @@ class ConnectorRuntime:
             raise PathSafetyError("The local index cache must be outside selected folders.")
 
     def _cache_exclusions(self, roots: tuple[SelectedRoot, ...]) -> tuple[str, ...]:
-        database = Path(self.config.index_path).expanduser().absolute()
+        database = self.store.database_path
         names = {
             database.name,
             database.name + "-wal",

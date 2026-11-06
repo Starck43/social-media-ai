@@ -84,11 +84,13 @@ def test_registry_owns_exact_outbox_matrix_and_generic_hook_is_skipped():
     assert "ON CONFLICT (resource_key) DO NOTHING" in source
     assert '"0141"' in (ROOT / "migrations/env.py").read_text()
     assert "WORKSPACE_ROLE_PRESETS" in source
-    for role, actions in {
+    presets = {
         "owner": ("VIEW", "UPDATE", "CONFIGURE"),
         "admin": ("VIEW", "UPDATE", "CONFIGURE"),
         "manager": ("VIEW", "UPDATE"),
         "analyst": ("VIEW",),
         "viewer": ("VIEW",),
-    }.items():
-        assert f'"{role}": {actions!r}' in source
+    }
+    namespace = {"__name__": "migration_probe"}
+    exec(compile(source, str(PATH), "exec"), namespace)  # noqa: S102 - the revision module itself
+    assert namespace["WORKSPACE_ROLE_PRESETS"] == presets

@@ -58,6 +58,25 @@ def scope(world, workspace=0):
     return stack
 
 
+async def _purge_own_events(tenant_ids):
+    """Delete this test's evidence through the sanctioned retention marker.
+
+    ``purge_tenant_audit_events`` batches 500 rows with one connection per call
+    and is slow under concurrent load; the transaction-local marker below is the
+    same path its fallback uses, so the immutability trigger stays enabled.
+    """
+    table = ActionAuditEvent.__table__
+    qualified = f'"{table.schema}"."{table.name}"'
+    with tenant_scope(bypass=True):
+        async with async_session_maker() as session, session.begin():
+            await session.execute(text("SELECT set_config('app.action_audit_retention', 'on', true)"))
+            await session.execute(delete(ActionAuditEvent).where(ActionAuditEvent.tenant_id.in_(tenant_ids)))
+            remaining = await session.scalar(
+                text(f"SELECT count(*) FROM {qualified} WHERE tenant_id = ANY(:ids)"), {"ids": tenant_ids}
+            )
+            assert remaining == 0
+
+
 @pytest.fixture
 async def outbox_world(personal_world, monkeypatch):  # noqa: F811
     assert settings.DB_SCHEMA == "test_schema", "P15-T05 DB tests require test_schema"
@@ -139,9 +158,11 @@ async def outbox_world(personal_world, monkeypatch):  # noqa: F811
                 BusinessCommand,
                 WorkspaceConnection,
                 Contact,
-                ActionAuditEvent,
             ):
                 await session.execute(delete(model).where(model.tenant_id.in_(tenant_ids)))
+        # Audit evidence outlives a tenant delete (FK ON DELETE RESTRICT), so it
+        # goes last through the sanctioned retention marker.
+        await _purge_own_events(tenant_ids)
         async with async_session_maker() as session:
             for model in (
                 OutboxTarget,

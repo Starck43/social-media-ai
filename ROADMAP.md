@@ -83,7 +83,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P20-T04](docs/tasks/p20-t04.md) Bounded specialist delegation for research — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
-- [P15-T05](docs/tasks/p15-t05.md) Persistent outbox, scheduling and delivery tracking — **transport, consumes P15-T06; permission `comms.outbox` (D14)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P15-T06](docs/tasks/p15-t06.md) Channel senders: SMTP, Telegram bot and MAX bot capabilities — **transport, lands first; sends only customer-account mail through the P14-T09 seam (D12/D13)** — **IN_PROGRESS** · Codex audit · [finding](https://github.com/Starck43/social-media-ai/pull/411#issuecomment-6658502964) · [PR #411](https://github.com/Starck43/social-media-ai/pull/411) · `P3` · `C4`
 - [P15-T07](docs/tasks/p15-t07.md) Channel recommendation with confidence score — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`

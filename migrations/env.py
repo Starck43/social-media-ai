@@ -97,6 +97,10 @@ def on_version_apply(
         "0126",
         "0127",
         "0128",
+        # 0141 owns the outbox model type, permissions and workspace presets.
+        # Running the generic scanner here would make the mapped table a
+        # second, uncatalogued model type on legacy upgrade paths.
+        "0141",
     }:
         return
     from scripts.migrations.register_model_types import register_model_types

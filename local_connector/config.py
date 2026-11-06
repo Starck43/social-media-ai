@@ -1,4 +1,4 @@
-"""Configuration for the standalone desktop connector."""
+"""Configuration for the local-only connector scaffold."""
 
 from __future__ import annotations
 

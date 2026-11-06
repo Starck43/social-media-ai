@@ -1,7 +1,8 @@
-"""Standalone local file connector primitives.
+"""Standalone local-only connector development scaffold.
 
 This package intentionally has no dependency on the server application. It owns
-selected-root validation, the local SQLite index, and outbound-only boundaries.
+selected-root validation and a private local SQLite index. Device sessions are
+disabled until the reviewed protocol is implemented by later P18 work.
 """
 
 from .config import ConnectorConfig

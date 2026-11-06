@@ -40,6 +40,7 @@ class LocalStatusServer:
         self.status = status or (lambda: {"roots": [str(path) for path in self.selection.paths()]})
         self.csrf_token = secrets.token_urlsafe(32)
         self._server: ThreadingHTTPServer | None = None
+        self._serving = False
 
     @property
     def address(self) -> tuple[str, int] | None:
@@ -97,10 +98,15 @@ class LocalStatusServer:
         if self._server is None:
             self.start()
         assert self._server is not None
-        self._server.serve_forever()
+        self._serving = True
+        try:
+            self._server.serve_forever()
+        finally:
+            self._serving = False
 
     def close(self) -> None:
         if self._server is not None:
-            self._server.shutdown()
+            if self._serving:
+                self._server.shutdown()
             self._server.server_close()
             self._server = None

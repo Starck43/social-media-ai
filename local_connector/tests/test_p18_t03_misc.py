@@ -46,3 +46,19 @@ def test_runtime_requires_confirmation_for_local_index_delete(tmp_path: Path) ->
         assert runtime.store.list_files() == []
     finally:
         runtime.close()
+
+
+def test_runtime_start_can_close_before_ui_loop(tmp_path: Path) -> None:
+    from local_connector.runtime import ConnectorRuntime
+
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("a", encoding="utf-8")
+    runtime = ConnectorRuntime(ConnectorConfig(tmp_path / "index.sqlite"))
+    runtime.select_roots([root])
+    try:
+        host, port = runtime.start()
+        assert host == "127.0.0.1"
+        assert port > 0
+    finally:
+        runtime.close()

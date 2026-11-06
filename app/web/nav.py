@@ -8,6 +8,9 @@ the sidebar and mobile drawer both iterate it, marking the active entry by
 `ready=False` means the section has a plan but no page yet: it renders as a
 disabled item with a "скоро" badge instead of a `#` link that silently does
 nothing. Landing the page is one flag flip — no template surgery.
+
+Add sidebar items only for a module’s own objects opened daily. Integrations
+are connections in Settings and appear as context or sources, not new entries.
 """
 
 from __future__ import annotations
@@ -27,37 +30,27 @@ class NavItem(NamedTuple):
 
 
 NAV_GROUP_LABELS: dict[str, str] = {
-    "overview": "Обзор и диалог",
-    "monitoring": "Мониторинг и анализ",
-    "knowledge": "База знаний и документы",
-    "communications": "Коммуникации и поручения",
-    "cases_system": "Кейсы и система",
+    "work": "Работа",
+    "clients": "Клиенты",
+    "knowledge": "Знания",
+    "monitoring": "Мониторинг",
+    "system": "Система",
 }
 
 
-# The shell and mobile drawer consume the same permission-filtered daily sections.
+# Existing routes and permissions remain unchanged; group order is reading order.
 NAV_ITEMS: tuple[NavItem, ...] = (
-    # 1. Overview & Agent dialogue
-    NavItem("dashboard", "/app/", "Обзор", icon="home", group="overview", group_label="Обзор и диалог"),
-    NavItem("chat", "/app/chat", "Чат с агентом", icon="message", group="overview", group_label="Обзор и диалог"),
-    # 2. Social monitoring & analysis (first vertical)
+    # Работа
+    NavItem("dashboard", "/app/", "Сегодня", icon="home", group="work", group_label="Работа"),
+    NavItem("chat", "/app/chat", "Чат с агентом", icon="message", group="work", group_label="Работа"),
     NavItem(
-        "sources",
-        "/app/sources",
-        "Источники",
-        required_permission="collection.source.view",
-        icon="database",
-        group="monitoring",
-        group_label="Мониторинг и анализ",
-    ),
-    NavItem(
-        "scenarios",
-        "/app/scenarios",
-        "Сценарии",
-        required_permission="analysis.scenario.view",
-        icon="layers",
-        group="monitoring",
-        group_label="Мониторинг и анализ",
+        "communications",
+        "/app/communications",
+        "Входящие",
+        required_permission="scheduling.action.view",
+        icon="message",
+        group="work",
+        group_label="Работа",
     ),
     NavItem(
         "tasks",
@@ -65,28 +58,47 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         "Задачи",
         required_permission="scheduling.task.view",
         icon="calendar",
-        group="monitoring",
-        group_label="Мониторинг и анализ",
+        group="work",
+        group_label="Работа",
     ),
     NavItem(
-        "analytics",
-        "/app/analytics",
-        "Аналитика",
-        required_permission="analysis.result.view",
+        "planner",
+        "/app/planner",
+        "Планировщик",
+        required_permission="planner.task.view",
+        icon="calendar",
+        group="work",
+        group_label="Работа",
+    ),
+    # Клиенты
+    NavItem(
+        "contacts",
+        "/app/contacts",
+        "Контакты",
+        required_permission="contacts.contact.view",
+        icon="mentions",
+        group="clients",
+        group_label="Клиенты",
+    ),
+    NavItem(
+        "followups",
+        "/app/followups",
+        "Договорённости",
+        required_permission="scheduling.task.view",
+        icon="calendar",
+        group="clients",
+        group_label="Клиенты",
+    ),
+    NavItem(
+        "cases",
+        "/app/cases",
+        "Предложения",
+        required_permission="scheduling.action.view",
         icon="chart",
-        group="monitoring",
-        group_label="Мониторинг и анализ",
+        group="clients",
+        group_label="Клиенты",
     ),
-    NavItem(
-        "digests",
-        "/app/digests",
-        "Дайджесты",
-        required_permission="notifications.digest_run.view",
-        icon="document",
-        group="monitoring",
-        group_label="Мониторинг и анализ",
-    ),
-    # 3. Knowledge & Documents (P12-T03; connectors live in /app/settings?tab=connections per P12-T02)
+    # Знания
     NavItem(
         "knowledge",
         "/app/knowledge",
@@ -94,7 +106,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="analysis.result.view",
         icon="database",
         group="knowledge",
-        group_label="База знаний и документы",
+        group_label="Знания",
     ),
     NavItem(
         "documents",
@@ -103,63 +115,54 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="analysis.result.view",
         icon="document",
         group="knowledge",
-        group_label="База знаний и документы",
+        group_label="Знания",
+    ),
+    # Мониторинг
+    NavItem(
+        "sources",
+        "/app/sources",
+        "Источники",
+        required_permission="collection.source.view",
+        icon="database",
+        group="monitoring",
+        group_label="Мониторинг",
     ),
     NavItem(
-        "planner",
-        "/app/planner",
-        "Планировщик",
-        required_permission="planner.task.view",
-        icon="calendar",
-        group="communications",
-        group_label="Коммуникации и поручения",
-    ),
-    # 4. Contacts, Communications & Follow-ups
-    NavItem(
-        "contacts",
-        "/app/contacts",
-        "Контакты",
-        required_permission="contacts.contact.view",
-        icon="mentions",
-        group="communications",
-        group_label="Коммуникации и поручения",
+        "scenarios",
+        "/app/scenarios",
+        "Сценарии",
+        required_permission="analysis.scenario.view",
+        icon="layers",
+        group="monitoring",
+        group_label="Мониторинг",
     ),
     NavItem(
-        "communications",
-        "/app/communications",
-        "Переписка",
-        required_permission="scheduling.action.view",
-        icon="message",
-        group="communications",
-        group_label="Коммуникации и поручения",
-    ),
-    NavItem(
-        "followups",
-        "/app/followups",
-        "Договорённости",
-        required_permission="scheduling.task.view",
-        icon="calendar",
-        group="communications",
-        group_label="Коммуникации и поручения",
-    ),
-    # 5. Cases & System execution (P12-T05 + existing actions/jobs/settings)
-    NavItem(
-        "cases",
-        "/app/cases",
-        "Предложения",
-        required_permission="scheduling.action.view",
+        "analytics",
+        "/app/analytics",
+        "Аналитика",
+        required_permission="analysis.result.view",
         icon="chart",
-        group="cases_system",
-        group_label="Кейсы и система",
+        group="monitoring",
+        group_label="Мониторинг",
     ),
+    NavItem(
+        "digests",
+        "/app/digests",
+        "Дайджесты",
+        required_permission="notifications.digest_run.view",
+        icon="document",
+        group="monitoring",
+        group_label="Мониторинг",
+    ),
+    # Система
     NavItem(
         "actions",
         "/app/actions",
         "Действия",
         required_permission="scheduling.action.view",
         icon="document",
-        group="cases_system",
-        group_label="Кейсы и система",
+        group="system",
+        group_label="Система",
     ),
     NavItem(
         "jobs",
@@ -167,25 +170,24 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         "Очередь задач",
         required_permission="scheduling.job.view",
         icon="list",
-        group="cases_system",
-        group_label="Кейсы и система",
+        group="system",
+        group_label="Система",
     ),
     NavItem(
         "settings",
         "/app/settings",
         "Настройки",
         icon="settings",
-        group="cases_system",
-        group_label="Кейсы и система",
+        group="system",
+        group_label="Система",
     ),
 )
 
-# Sections that fit the fixed mobile bar. Capped deliberately: seven full labels
-# do not fit a 360px screen, so the bar carries the daily loop (see a source, see
-# what happened, tweak the schedule) and the rest stays in the sidebar, which
-# returns above `md`.
-MOBILE_NAV_KEYS: frozenset[str] = frozenset({"dashboard", "sources", "tasks", "jobs"})
-MOBILE_NAV_ITEMS: tuple[NavItem, ...] = tuple(item for item in NAV_ITEMS if item.key in MOBILE_NAV_KEYS)
+# Proposed O-3 composition; More is a drawer button in the template.
+MOBILE_NAV_KEYS: tuple[str, ...] = ("dashboard", "chat", "communications", "tasks")
+MOBILE_NAV_ITEMS: tuple[NavItem, ...] = tuple(
+    item for key in MOBILE_NAV_KEYS for item in NAV_ITEMS if item.key == key and item.ready
+)
 
 
 def allows(item: NavItem, perms: Any) -> bool:

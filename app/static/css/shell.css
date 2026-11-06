@@ -671,3 +671,26 @@ body[data-shell-section="chat"] .shell-content {
 html[data-sidebar-collapsed="true"] .shell-sidebar .shell-nav-group {
 	display: none;
 }
+
+/* Daily shortcuts remain permission-filtered by the server, like the drawer. */
+.shell-mobile-bar { display: none; }
+@media (max-width: 767px) {
+    .shell-mobile-bar {
+        position: fixed; inset: auto 0 0; z-index: 36;
+        display: flex; align-items: stretch;
+        padding: 0 0 env(safe-area-inset-bottom);
+        background: var(--color-surface); border-top: 1px solid var(--color-border);
+    }
+    .shell-mobile-bar > a, .shell-mobile-bar > button {
+        flex: 1 1 0; min-width: 0; min-height: 64px;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 2px; padding: 4px 0; color: var(--color-text);
+        box-sizing: border-box; border: 0; background: transparent; text-decoration: none;
+        font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.2; white-space: nowrap;
+    }
+    .shell-mobile-bar svg { width: 20px; height: 20px; flex: none; }
+    .shell-mobile-bar [aria-current="page"] { color: var(--ui-accent); background: var(--ui-accent-soft); }
+    .shell-mobile-bar :focus-visible { outline: 2px solid var(--ui-accent); outline-offset: -2px; }
+    .shell-notification-dock { bottom: calc(80px + env(safe-area-inset-bottom)); }
+    .shell-content { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
+}

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "social-media-ai-local-connector"
+version = "0.1.1"
+description = "Local-only selected-folder connector development scaffold"
+requires-python = ">=3.11"
+dependencies = ["watchdog>=4.0"]
+
+[tool.setuptools]
+packages = ["local_connector"]
+
+[tool.setuptools.package-dir]
+local_connector = "."
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["local_connector"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+fail_under = 80
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120

@@ -48,8 +48,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P20-T01](docs/tasks/p20-t01.md) Plan proactive assistant improvements and safe orchestration — **IN_PROGRESS** · notion-ai-p20-t01 · [dialogue](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C2`
-
 - [P20-T06](docs/tasks/p20-t06.md) Workspace navigation and entry points — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C3`
 - [P20-T07](docs/tasks/p20-t07.md) «Сегодня»: read-time attention and decisions home — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C4`
 - [P20-T08](docs/tasks/p20-t08.md) Chat workspace: context panel, inline cards and chat dock — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C4`

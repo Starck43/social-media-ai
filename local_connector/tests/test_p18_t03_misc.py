@@ -214,34 +214,3 @@ def test_restart_does_not_reapprove_a_replaced_configured_root(tmp_path: Path) -
         assert reopened.scan().indexed == 1
     finally:
         reopened.close()
-
-
-def test_restart_does_not_approve_a_replaced_configured_root(tmp_path: Path) -> None:
-    root, outside = tmp_path / "root", tmp_path / "outside"
-    root.mkdir()
-    outside.mkdir()
-    (root / "safe.txt").write_text("safe", encoding="utf-8")
-    (outside / "private.txt").write_text("private", encoding="utf-8")
-    database = tmp_path / "private-cache" / "index.sqlite"
-    config = ConnectorConfig(database, selected_roots=[root])
-    runtime = ConnectorRuntime(config)
-    try:
-        assert runtime.scan().indexed == 1
-    finally:
-        runtime.close()
-
-    moved = tmp_path / "root-moved"
-    root.rename(moved)
-    root.symlink_to(outside, target_is_directory=True)
-    reopened = ConnectorRuntime(config)
-    try:
-        assert reopened.store.indexing_paused
-        assert reopened.status_payload()["errors"] == ["Folder changed or is unavailable. Select it again."]
-        with pytest.raises(PathSafetyError, match="Select it again"):
-            reopened.resume_indexing()
-        assert reopened.scan().errors
-        assert reopened.store.search("private") == []
-        reopened.select_roots([outside])
-        assert reopened.scan().indexed == 1
-    finally:
-        reopened.close()

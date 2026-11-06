@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from pathlib import Path
 
 from .config import ConnectorConfig
@@ -16,8 +17,8 @@ class ConnectorRuntime:
     """Wire pinned roots, private SQLite, watcher and loopback development UI."""
 
     def __init__(self, config: ConnectorConfig) -> None:
-        self.config = config
         initial = tuple(config.selected_roots)
+        self.config = replace(config, selected_roots=list(initial))
         self._control_lock = threading.RLock()
         self.store = IndexStore(config.index_path)
         self.engine = IndexEngine(

@@ -549,6 +549,10 @@ def _claimed_outcome(receipt: JobOutcomeReceipt) -> dict[str, Any]:
 async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, Any]:
     """Return ordinary committed receipts, never a newer attempt's current row."""
     handler = HANDLERS.get(job.job_type)
+    if handler is None and job.job_type == "comms.outbox.dispatch":
+        from app.jobs.job_handlers.outbox_dispatch import handle_outbox_dispatch
+
+        handler = handle_outbox_dispatch
     if not handler:
         # A missing handler is not a transient execution failure. Stop this row
         # for operator inspection instead of spending its remaining attempts.

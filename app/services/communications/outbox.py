@@ -14,7 +14,7 @@ Key guarantees:
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 # Outbox lifecycle states
@@ -267,3 +267,17 @@ def cancel_outbox_item(
     updated["cancellation_reason"] = f"{reason} [actor={actor_id}]"
     updated["bound_actor"] = None
     return updated
+
+
+def fail_delivery(item: dict[str, Any]) -> dict[str, Any]:
+    """Record a definitive sender rejection; persistent dispatch never retries it."""
+    if item.get("state") != STATE_CLAIMED:
+        raise InvalidApprovalStateError("Cannot fail a message that is not claimed.")
+    return {**item, "state": STATE_FAILED, "state_label": STATE_LABELS[STATE_FAILED]}
+
+
+def reject_approved_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Close an approved target whose fresh admission checks were denied."""
+    if item.get("state") != STATE_APPROVED:
+        raise InvalidApprovalStateError("Cannot reject admission for a target that is not approved.")
+    return {**item, "state": STATE_FAILED, "state_label": STATE_LABELS[STATE_FAILED]}

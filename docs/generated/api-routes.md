@@ -42,6 +42,11 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/communication/inbox/hide | post_communication_hide_message_api_v1_communication_inbox_hide_post |
 | POST | /api/v1/communication/inbox/mark-read | post_communication_mark_read_api_v1_communication_inbox_mark_read_post |
 | GET | /api/v1/communication/inbox/threads/{thread_id} | get_communication_thread_detail_api_v1_communication_inbox_threads__thread_id__get |
+| POST | /api/v1/communication/outbox/draft | create_outbox_draft_api_v1_communication_outbox_draft_post |
+| POST | /api/v1/communication/outbox/schedule | schedule_outbox_api_v1_communication_outbox_schedule_post |
+| GET | /api/v1/communication/outbox/scheduled | list_scheduled_outbox_api_v1_communication_outbox_scheduled_get |
+| DELETE | /api/v1/communication/outbox/scheduled/{message_id} | cancel_scheduled_outbox_api_v1_communication_outbox_scheduled__message_id__delete |
+| GET | /api/v1/communication/outbox/{message_id} | get_outbox_message_api_v1_communication_outbox__message_id__get |
 | GET | /api/v1/connector-accounts | list_reusable_accounts_api_v1_connector_accounts_get |
 | GET | /api/v1/connector-accounts/grants | list_workspace_grants_api_v1_connector_accounts_grants_get |
 | POST | /api/v1/connector-accounts/grants/{grant_id}/detach | detach_workspace_grant_api_v1_connector_accounts_grants__grant_id__detach_post |

@@ -48,4 +48,12 @@ TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text s
 
 ## Dependencies and gates
 
-[P18-T01](../audit/p18-t01.md) protocol is accepted; an independent security review ([Q-19](../tasks/q-19.md)) remains required before any desktop code. P12-T12's delivered increment is integrated (merge `48caea61`). Platforms: Windows, macOS, Linux.
+[P18-T01](../audit/p18-t01.md) protocol is accepted; an independent security review ([Q-19](../tasks/q-19.md)) remains required before real-user activation. P12-T12's delivered increment is integrated (merge `48caea61`). Platforms: Windows, macOS, Linux.
+
+## Owner-scoped intermediate delivery (2026-11-06)
+
+P18-T03 may close as a local-only development scaffold under the
+[owner decision](https://github.com/Starck43/social-media-ai/pull/425#issuecomment-6685420638).
+This does not close the phase or authorize real-user activation. Full device
+session/replay remains P18-T05/T06; tray/install and three-OS path/ACL evidence
+remain P18-T07; real mTLS/key-store and activation remain Q-19/P18-T07.

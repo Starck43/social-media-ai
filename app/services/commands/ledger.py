@@ -15,6 +15,7 @@ Guarantees:
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
@@ -94,6 +95,15 @@ def _is_capability_enabled(spec: CapabilitySpec) -> bool:
         return spec.code in enabled_map
     if isinstance(enabled_map, dict):
         return bool(enabled_map.get(spec.code, spec.enabled_by_default))
+    # New outbox transport capabilities use the already accepted per-transport
+    # operator switches; exact binding/kill checks are repeated by the sender.
+    prefix = {
+        "comms.email.send.v1": "P15_EMAIL_SEND",
+        "comms.telegram.bot_send.v1": "P15_TELEGRAM_BOT_SEND",
+        "comms.max.bot_send.v1": "P15_MAX_BOT_SEND",
+    }.get(spec.code)
+    if prefix is not None:
+        return os.environ.get(f"{prefix}_ENABLED", "0") == "1" and os.environ.get(f"{prefix}_KILL", "0") == "0"
     return spec.enabled_by_default
 
 
@@ -403,6 +413,10 @@ class BusinessCommandLedger:
             raise CommandNotFound("Command not found")
 
         spec = get_capability(cmd.capability)
+        # Outbox transports have a separate pre-I/O durable claim transaction.
+        # Never send or manufacture a success via this generic adapter path.
+        if cmd.capability in {"comms.email.send.v1", "comms.telegram.bot_send.v1", "comms.max.bot_send.v1"}:
+            raise CommandDenied("Transport commands execute only through the persistent outbox")
         # Fail-closed rechecks at execution time: membership, role, capability, kill switch, connection, TTL, hash.
         await _verify_member_grant(session, tenant_id, actor_id, spec)
         if cmd.approved_user_id is None:

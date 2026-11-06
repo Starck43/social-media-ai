@@ -49,6 +49,8 @@ TZ criteria: contacts merged by email/phone (T03); chronological per-contact vie
 8. [P15-T08](../tasks/p15-t08.md) — Reply from the unified interface · `P3` · `C3` · depends: [P15-T04](../tasks/p15-t04.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../tasks/p15-t06.md)
 9. [P15-T09](../tasks/p15-t09.md) — Register D14 `comms.outbox` in the central permission catalog and presets · `P3` · `C2` · depends: [P15-T05](../tasks/p15-t05.md), [P15-T06](../tasks/p15-t06.md)
 
+10. [P15-T11](../tasks/p15-t11.md) — Restore the red channels test suite · `P2` · `C2`
+
 ## Dependencies and gates
 
 Email connector is the TZ's "future module" and is delivered here (T01/T06). Personal Telegram ingestion waits for P12-T14. Mock TG/MAX APIs and test mailboxes only.

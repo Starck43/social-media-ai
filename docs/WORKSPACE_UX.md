@@ -53,9 +53,9 @@ Rules:
 - Pending decisions appear in «Сегодня», as a header badge and in chat; a
   separate «На согласовании» page exists for volume ([P20-T03](tasks/p20-t03.md)),
   not as another daily entry point.
-- Proposed mobile bar: «Сегодня», «Чат», «Входящие», «Задачи», «Ещё» (drawer).
-  Today's `MOBILE_NAV_KEYS` omits chat although chat is the primary workspace;
-  composition remains open (O-3).
+- Mobile bar: «Сегодня», «Чат», «Входящие», «Задачи», «Ещё» (drawer). Chat is
+  included because it is the primary workspace; decided by the owner on
+  2026-11-07 (O-3, see below).
 
 ## Chat page
 
@@ -173,6 +173,6 @@ Source: [owner answers](https://app.notion.com/chat?t=40fa7457748980d094a100a930
 
 - **O-1 decided:** one «Задачи» section with «Мои дела», «Поручения агенту» and «Календарь». Coordinate with the active P16-T01 owner.
 - **O-2 decided:** users choose the start page in settings; «Сегодня» is the default. Route and migration details are for implementation.
-- **O-3 open:** mobile bar composition; the bar above is a proposal, not an owner decision.
+- **O-3 decided (owner, 2026-11-07):** the mobile bar is «Сегодня», «Чат», «Входящие» (when permitted and ready), «Задачи», «Ещё» — exactly as proposed above.
 - **O-4 decided in principle:** users choose their own task service. The first supported connector and rollout order remain open; no universal provider mandated.
 - **O-5 decided for now:** use a stub for web search; prioritize Yandex Search API for a future provider. Real-provider activation and spending have not been approved.

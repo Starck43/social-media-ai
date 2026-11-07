@@ -75,6 +75,14 @@
         <main id="page-content" tabindex="-1" class="shell-content">{% block content %}{% endblock %}</main>
     </div>
 </div>
+{% if user and tenant and request.query_params.get('embedded') != '1' %}
+<nav class="shell-mobile-bar" aria-label="Быстрая навигация">
+    {% for item in mobile_nav %}
+    <a href="{{ item.href }}" {% if section == item.key %}aria-current="page"{% endif %}>{{ icon(item.icon|default('circle')) }}<span>{{ 'Чат' if item.key == 'chat' else item.label }}</span></a>
+    {% endfor %}
+    <button type="button" data-dialog-open="navigation-drawer" aria-controls="navigation-drawer" aria-expanded="false">{{ icon('menu') }}<span>Ещё</span></button>
+</nav>
+{% endif %}
 {% if not user %}<div class="shell-guest-theme">{% set theme_id = 'guest' %}{% include "web/_shell_theme.html" %}</div>{% endif %}
 {% if panel_content|trim %}<dialog id="context-panel" class="shell-right-panel" aria-label="Контекст страницы" data-context-panel><div class="shell-dialog-heading flex items-center justify-between pb-2 mb-3 border-b"><h2 id="context-panel-title" class="text-sm font-semibold" data-evidence-title>Контекст и доказательства</h2><button type="button" class="shell-icon-button" data-dialog-close aria-label="Закрыть контекстную панель">{{ icon('close') }}</button></div><div class="context-panel-body space-y-3" data-evidence-body>{{ panel_content }}</div><div class="context-panel-footer pt-3 mt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between"><a hidden data-chat-handoff class="text-xs font-semibold text-cyan-700 dark:text-cyan-400 hover:underline inline-flex items-center gap-1"><span>Открыть в чате с этим контекстом</span> →</a></div></dialog>{% endif %}
 {% if user and tenant and request.query_params.get('embedded') != '1' %}

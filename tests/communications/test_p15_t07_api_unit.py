@@ -1,5 +1,7 @@
 """No-network endpoint checks for recommendation API."""
 
+__source_only__ = True
+
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 

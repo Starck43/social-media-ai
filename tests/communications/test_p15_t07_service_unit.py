@@ -1,5 +1,7 @@
 """DB-exempt recommendation authorization and route checks."""
 
+__source_only__ = True
+
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock

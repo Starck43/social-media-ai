@@ -1,5 +1,7 @@
 """Pure ranking: no DB, provider, LLM or external network access."""
 
+__source_only__ = True
+
 from datetime import datetime, timedelta, timezone
 
 import pytest

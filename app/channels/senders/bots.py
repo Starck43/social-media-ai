@@ -62,7 +62,7 @@ def _parse_result(capability: str, status: int, body: bytes, recipient_id: str) 
         return SendResult("unknown", "invalid_response")
     try:
         payload = json.loads(body)
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
         return SendResult("unknown", "invalid_response")
     if not isinstance(payload, dict):
         return SendResult("unknown", "invalid_response")

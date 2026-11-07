@@ -556,6 +556,19 @@ def test_malformed_response_unknown(monkeypatch, capability, payload):
 
 
 @pytest.mark.parametrize("capability", [TELEGRAM, MAX])
+def test_deeply_nested_provider_response_unknown_no_retry(monkeypatch, capability):
+    payload = b"[" * 30_000 + b"0" + b"]" * 30_000
+    assert len(payload) < bots.MAX_RESPONSE_BYTES
+    client, _ = bot_double(monkeypatch, capability, payload=payload)
+
+    result = bots._send_bot(capability, account(capability), recipient(capability), "hello")
+
+    assert (result.outcome, result.code) == ("unknown", "invalid_response")
+    assert len(client.calls) == 1
+    assert client.closed
+
+
+@pytest.mark.parametrize("capability", [TELEGRAM, MAX])
 @pytest.mark.parametrize(
     "failure,stage,outcome",
     [

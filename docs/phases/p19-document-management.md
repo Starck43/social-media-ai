@@ -2,7 +2,7 @@
 
 [Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p19)
 
-**Phase status: PLANNED** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
+**Phase status: IN_PROGRESS** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
 Owner estimate (TZ): 4–5 weeks — not a repository commitment.
 
 **Goal:** Draft business letters and claim responses with AI from case/CRM context, keep full version history with diff/restore, run approval on an exact revision and export/deliver DOCX/PDF.
@@ -38,12 +38,12 @@ TZ criteria: AI letters from context (T02); templates (T02); every version saved
 
 ## Plan
 
-1. [P19-T01](../tasks/p19-t01.md) — Document model extension: types, links, templates and status machine · `P3` · `C3` · depends: [P13-T07 accepted](../audit/p13-t07.md)
-2. [P19-T02](../tasks/p19-t02.md) — Templates and AI drafting with evidence and unsupported-claim marking · `P3` · `C4` · depends: [P19-T01](../tasks/p19-t01.md), [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md) or [P15-T02](../tasks/p15-t02.md) (context sources)
-3. [P19-T03](../tasks/p19-t03.md) — Version history, diff and restore · `P3` · `C3` · depends: [P19-T01](../tasks/p19-t01.md)
-4. [P19-T04](../tasks/p19-t04.md) — Document approval workflow bound to an immutable revision hash · `P3` · `C4` · depends: [P19-T01](../tasks/p19-t01.md), [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
-5. [P19-T05](../tasks/p19-t05.md) — Export to DOCX/PDF and delivery via outbox · `P3` · `C3` · depends: [P19-T01](../tasks/p19-t01.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
-6. [P19-T06](../tasks/p19-t06.md) — Document search · `P3` · `C2` · depends: [P19-T01](../tasks/p19-t01.md)
+1. [P19-T01 accepted](../audit/p19-t01.md) — **DONE 2026-11-07**: document types, links, templates, CRUD/API/UI and atomic revision-bound transitions; accepted `b2d8931174f7736afd50e0ffa75d629de20fcdd2`.
+2. [P19-T02](../tasks/p19-t02.md) — Templates and AI drafting with evidence and unsupported-claim marking · `P3` · `C4` · depends: [P19-T01](../audit/p19-t01.md), [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md) or [P15-T02](../tasks/p15-t02.md) (context sources)
+3. [P19-T03](../tasks/p19-t03.md) — Version history, diff and restore · `P3` · `C3` · depends: [P19-T01](../audit/p19-t01.md)
+4. [P19-T04](../tasks/p19-t04.md) — Document approval workflow bound to an immutable revision hash · `P3` · `C4` · depends: [P19-T01](../audit/p19-t01.md), [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
+5. [P19-T05](../tasks/p19-t05.md) — Export to DOCX/PDF and delivery via outbox · `P3` · `C3` · depends: [P19-T01](../audit/p19-t01.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
+6. [P19-T06](../tasks/p19-t06.md) — Document search · `P3` · `C2` · depends: [P19-T01](../audit/p19-t01.md)
 
 ## Dependencies and gates
 

@@ -1,0 +1,112 @@
+{% extends "web/base.html" %}
+{% block title %}Управление документами{% endblock %}
+{% block page_heading %}Управление документами{% endblock %}
+{% block page_actions %}<a href="/app/documents?boundary={{ boundary }}" class="ui-control">← Каталог</a>{% endblock %}
+{% block content %}
+<div class="space-y-6">
+<section class="ui-card space-y-3">
+  <p class="text-sm">Документы и шаблоны принадлежат текущему рабочему пространству. Одобрение в приложении не является электронной подписью.</p>
+  <p class="text-xs ui-muted">Управление не отправляет документы. Изменение текста создаёт новую версию и отменяет прежнее согласование.</p>
+  <nav aria-label="Граница данных" class="flex gap-2 text-sm">
+    <a href="?boundary=cloud">Облако</a><a href="?boundary=company">Компания</a><a href="?boundary=local_only">Локально</a>
+  </nav>
+</section>
+{% if editing %}
+<section class="ui-card space-y-4">
+  <h2 class="font-semibold">{{ editing.title }}</h2>
+  <p class="text-sm">Версия {{ editing.version }} · {{ editing.status }}{% if editing.approval_invalidated %} · прежнее согласование отменено{% endif %}</p>
+  <p class="text-xs ui-muted">Контакт: {{ editing.contact_id or '—' }} · Доказательство по делу: {{ editing.case_evidence_id or '—' }} · Владелец: {{ editing.owner_user_id or '—' }}</p>
+  <p class="text-xs ui-muted break-all">{{ editing.content_hash }}</p>
+  {% if can_update %}
+  <form method="post" action="/app/documents/manage/{{ editing.id }}/edit" class="space-y-3">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
+    <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_updated_at" value="{{ editing.updated_at.isoformat() }}">
+    <label class="block">Название <input class="ui-control w-full" name="title" required maxlength="500" value="{{ editing.title }}"></label>
+    <label class="block">Тип <select class="ui-control" name="document_type" required>
+      {% for value, label in [('letter','Письмо'),('claim_response','Ответ на претензию'),('contract','Договор'),('memo','Записка')] %}<option value="{{ value }}" {% if editing.document_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>
+    <label class="block">Контрагент <input class="ui-control w-full" name="counterparty" maxlength="500" value="{{ editing.counterparty }}"></label>
+    <label class="block">Метки через запятую <input class="ui-control w-full" name="tags" value="{{ editing.tags|join(', ') }}"></label>
+    <label class="block">Граница данных <select class="ui-control" name="data_boundary">{% for value, label in [('local_only','Локально'),('company','Компания'),('cloud','Облако')] %}<option value="{{ value }}" {% if editing.data_boundary == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="block">Текст Markdown <textarea class="ui-control w-full" name="body_text" rows="12" maxlength="200000">{{ editing.body_text }}</textarea></label>
+    <label class="block">Описание изменения текста <input class="ui-control w-full" name="change_description" maxlength="2000"></label>
+    <button class="ui-control" type="submit">Сохранить</button>
+  </form>
+  {% if editing.status == 'draft' %}
+  <form method="post" action="/app/documents/manage/{{ editing.id }}/transition">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
+    <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_updated_at" value="{{ editing.updated_at.isoformat() }}">
+    <input type="hidden" name="expected_hash" value="{{ editing.content_hash }}"><input type="hidden" name="expected_status" value="{{ editing.status }}"><input type="hidden" name="target" value="in_review">
+    <button class="ui-control" type="submit">Передать на рассмотрение</button>
+  </form>
+  {% endif %}
+  {% if editing.status == 'in_review' %}
+  <p class="text-xs ui-muted">Решение может принять только активный owner с правом изменения источников. Это не электронная подпись и документ не отправляется.</p>
+  {% for target, label in [('approved','Согласовать'),('rejected','Отклонить'),('revision_requested','Вернуть на доработку')] %}
+  <form method="post" action="/app/documents/manage/{{ editing.id }}/transition">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
+    <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_updated_at" value="{{ editing.updated_at.isoformat() }}">
+    <input type="hidden" name="expected_hash" value="{{ editing.content_hash }}"><input type="hidden" name="expected_status" value="{{ editing.status }}"><input type="hidden" name="target" value="{{ target }}">
+    <button class="ui-control" type="submit">{{ label }}</button>
+  </form>
+  {% endfor %}
+  {% endif %}
+  <form method="post" action="/app/documents/manage/{{ editing.id }}/edit" class="space-y-2">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
+    <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_updated_at" value="{{ editing.updated_at.isoformat() }}">
+    <label>Контакт (ID; пустое значение очищает связь) <input class="ui-control" name="contact_id" inputmode="numeric"></label>
+    <button class="ui-control" type="submit">Изменить связь с контактом</button>
+  </form>
+  <form method="post" action="/app/documents/manage/{{ editing.id }}/edit" class="space-y-2">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
+    <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_updated_at" value="{{ editing.updated_at.isoformat() }}">
+    <label>Доказательство по делу (ID; пустое значение очищает связь) <input class="ui-control" name="case_evidence_id" inputmode="numeric"></label>
+    <button class="ui-control" type="submit">Изменить связь с доказательством</button>
+  </form>
+  <form method="post" action="/app/documents/manage/{{ editing.id }}/edit" class="space-y-2">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
+    <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_updated_at" value="{{ editing.updated_at.isoformat() }}">
+    <label>Владелец (ID; пустое значение очищает связь) <input class="ui-control" name="owner_user_id" inputmode="numeric"></label>
+    <button class="ui-control" type="submit">Изменить владельца</button>
+  </form>
+  {% endif %}
+  {% if can_delete %}
+  <form method="post" action="/app/documents/manage/{{ editing.id }}/delete" data-confirm="Удалить документ и все его версии? Это действие необратимо.">
+    <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
+    <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_updated_at" value="{{ editing.updated_at.isoformat() }}">
+    <label><input type="checkbox" name="confirm" value="delete" required> Подтверждаю необратимое удаление документа и всех версий</label>
+    <button class="ui-control" type="submit">Удалить документ и все версии</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+<section class="ui-card space-y-3"><h2 class="font-semibold">Документы</h2>
+{% for item in items %}<p><a href="/app/documents/manage/{{ item.id }}?boundary={{ boundary }}">{{ item.title }}</a> · {{ item.status }} · v{{ item.version }}</p>{% else %}<p>Документов в выбранной границе нет.</p>{% endfor %}
+{% if next_before_id %}<p class="text-xs"><a href="/app/documents/manage?boundary={{ boundary }}&amp;before_id={{ next_before_id }}">Следующие документы →</a></p>{% endif %}
+</section>
+{% if can_create %}
+<section class="ui-card space-y-3"><h2 class="font-semibold">Новый документ</h2>
+<form method="post" action="/app/documents/manage/create" class="space-y-3">
+<input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
+<label class="block">Название <input class="ui-control w-full" name="title" required maxlength="500"></label>
+<label class="block">Тип <select class="ui-control" name="document_type"><option value="letter">Письмо</option><option value="claim_response">Ответ на претензию</option><option value="contract">Договор</option><option value="memo">Записка</option></select></label>
+<label class="block">Контрагент <input class="ui-control w-full" name="counterparty" maxlength="500"></label>
+<label class="block">Метки через запятую <input class="ui-control w-full" name="tags"></label>
+<label class="block">ID контакта <input class="ui-control" name="contact_id" inputmode="numeric"></label>
+<label class="block">ID доказательства по делу <input class="ui-control" name="case_evidence_id" inputmode="numeric"></label>
+<label class="block">ID владельца <input class="ui-control" name="owner_user_id" inputmode="numeric"></label>
+<label class="block">Граница данных <select class="ui-control" name="data_boundary"><option value="local_only">Локально</option><option value="company">Компания</option><option value="cloud">Облако</option></select></label>
+<label class="block">Текст Markdown <textarea class="ui-control w-full" name="body_text" rows="8" maxlength="200000"></textarea></label>
+<label class="block">Описание <input class="ui-control w-full" name="change_description" maxlength="2000"></label>
+<button class="ui-control" type="submit">Создать</button></form></section>
+<section class="ui-card space-y-3"><h2 class="font-semibold">Шаблоны</h2>
+{% for item in templates %}<p>{{ item.name }} · {{ item.document_type }}</p>{% else %}<p>Шаблонов пока нет.</p>{% endfor %}
+<form method="post" action="/app/documents/manage/template" class="space-y-3">
+<input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
+<label class="block">Название шаблона <input class="ui-control w-full" name="name" maxlength="500" required></label>
+<label class="block">Тип <select class="ui-control" name="document_type"><option value="letter">Письмо</option><option value="claim_response">Ответ на претензию</option><option value="contract">Договор</option><option value="memo">Записка</option></select></label>
+<label class="block">Текст Markdown <textarea class="ui-control w-full" name="content" maxlength="200000" rows="6"></textarea></label>
+<button class="ui-control" type="submit">Создать шаблон</button></form></section>
+{% endif %}
+</div>
+{% endblock %}

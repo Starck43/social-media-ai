@@ -131,7 +131,7 @@ P8-T40 evidence — that work is unchanged.
 | No plan version carried into the run's effective snapshot | A run cannot be reproduced once the account or plan changes; "exact version" exists only for file objects | contract change, not yet carded |
 | Every task is `collect` or `analyze`; a domain module persists its own execution | P14–P19 each inventing run/progress/payer semantics | [P13-T04 accepted](audit/p13-t04-p14-t04-business-crm.md) command ledger + per-phase cards |
 | Whether business modules reuse the task-plan contract is undecided (source scope, scenario and window currently mean social lanes only) | Recorded as a gap, not a defect: chat composing a CRM query or a document task needs either a contract extension or an explicit decision to keep a separate path | undecided — [Q-18](audit/q-18-owner-decisions.md), then phase cards |
-| `digest` exists as a stage, not as a first-class output type of any module | Reports and CRM/Documents have no shared document/delivery contract | [P19-T01](tasks/p19-t01.md), [P15-T05](tasks/p15-t05.md) |
+| `digest` exists as a stage, not as a first-class output type of any module | Reports and CRM/Documents have no shared document/delivery contract | [P19-T01 accepted](audit/p19-t01.md), [P15-T05](tasks/p15-t05.md) |
 
 ### Product capabilities
 

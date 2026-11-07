@@ -54,6 +54,13 @@ local part as the login per vendor instructions; other mailboxes retain the full
 address. Custom servers, automatic domain aliases, folder selection, SMTP,
 mail OAuth and generic WebDAV forms are not offered.
 
+The separately implemented internal customer sender in
+[CHANNELS.md](CHANNELS.md#customer-communications-senders-p15-t06) does not add
+SMTP to this settings flow: it remains IMAP-only and `send_enabled` stays false.
+Its mail, Telegram and MAX capabilities require their own exact binding release
+and independent kill switch; this connection check neither releases a capability
+nor enables an outbox, runtime sender, or live send.
+
 Vendor references:
 [Mail.ru mail clients](https://help.mail.ru/mail/login/mailer),
 [Yandex mail clients](https://yandex.ru/support/yandex-360/customers/mail/ru/mail-clients/others).

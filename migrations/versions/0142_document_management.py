@@ -31,15 +31,24 @@ def _replace_status_constraint(statuses):
 
 def _revision_guard(schema, extended):
     fields = "NEW.id, NEW.tenant_id, NEW.document_id, NEW.version, NEW.body_text, NEW.content_hash, NEW.author, NEW.created_at, NEW.unsupported_terms_note"
+    author_check = "FALSE"
     if extended:
-        fields += ", NEW.author_user_id, NEW.change_description"
+        fields += ", NEW.change_description"
+        # Preserve immutable authorship while allowing FK-driven erasure when
+        # the referenced account is actually being deleted.
+        author_check = f"""(
+            NEW.author_user_id IS DISTINCT FROM OLD.author_user_id AND NOT (
+                NEW.author_user_id IS NULL AND OLD.author_user_id IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM {schema}.users WHERE id = OLD.author_user_id)
+            )
+        )"""
     old_fields = fields.replace("NEW.", "OLD.")
     op.execute(
         f"""
         CREATE OR REPLACE FUNCTION {schema}.guard_document_revision_content() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
-            IF ROW({fields}) IS DISTINCT FROM ROW({old_fields}) THEN
+            IF ROW({fields}) IS DISTINCT FROM ROW({old_fields}) OR {author_check} THEN
                 RAISE EXCEPTION 'Document revision content is immutable; append a revision'
                     USING ERRCODE = '23514';
             END IF;
@@ -102,6 +111,29 @@ def upgrade():
         ["id"],
         source_schema=schema,
         referent_schema=schema,
+        ondelete="SET NULL",
+    )
+    # PostgreSQL 14 cannot SET NULL just one column of a composite FK. Clear
+    # only the nullable selector when its target is erased; tenant_id remains.
+    op.execute(
+        f"""
+        CREATE FUNCTION {quoted}.detach_document_contact() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            UPDATE {quoted}.knowledge_documents SET contact_id = NULL
+            WHERE tenant_id = OLD.tenant_id AND contact_id = OLD.id;
+            RETURN OLD;
+        END; $$;
+        CREATE TRIGGER document_detach_contact BEFORE DELETE ON {quoted}.contacts
+            FOR EACH ROW EXECUTE FUNCTION {quoted}.detach_document_contact();
+        CREATE FUNCTION {quoted}.detach_document_case() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            UPDATE {quoted}.knowledge_documents SET case_id = NULL
+            WHERE tenant_id = OLD.tenant_id AND case_id = OLD.id;
+            RETURN OLD;
+        END; $$;
+        CREATE TRIGGER document_detach_case BEFORE DELETE ON {quoted}.knowledge_snippets
+            FOR EACH ROW EXECUTE FUNCTION {quoted}.detach_document_case();
+        """
     )
     op.add_column("document_revisions", sa.Column("author_user_id", sa.Integer()), schema=schema)
     op.add_column("document_revisions", sa.Column("change_description", sa.Text()), schema=schema)
@@ -113,6 +145,7 @@ def upgrade():
         ["id"],
         source_schema=schema,
         referent_schema=schema,
+        ondelete="SET NULL",
     )
     _revision_guard(quoted, True)
     op.execute(
@@ -206,6 +239,10 @@ def downgrade():
     if incompatible:
         raise RuntimeError("Downgrade refused: 0142 data cannot be preserved in 0141")
     op.drop_table("document_templates", schema=schema)
+    op.execute(f"DROP TRIGGER document_detach_contact ON {quoted}.contacts")
+    op.execute(f"DROP TRIGGER document_detach_case ON {quoted}.knowledge_snippets")
+    op.execute(f"DROP FUNCTION {quoted}.detach_document_contact()")
+    op.execute(f"DROP FUNCTION {quoted}.detach_document_case()")
     op.execute(f"DROP TRIGGER document_revision_current ON {quoted}.document_revisions")
     op.execute(f"DROP FUNCTION {quoted}.set_document_current_revision()")
     op.drop_constraint("fk_document_current_revision", "knowledge_documents", type_="foreignkey", schema=schema)

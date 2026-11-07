@@ -147,3 +147,20 @@ def test_model_metadata_contains_workspace_scoped_links_and_immutable_revision_f
     assert {"tenant_id", "name", "document_type", "content", "variables_schema"} <= set(
         DocumentTemplate.__table__.c.keys()
     )
+
+
+def test_delete_detachment_and_author_erasure_are_present_in_migration(monkeypatch):
+    op = Mock()
+    op.get_bind.return_value.dialect.identifier_preparer.quote_schema.return_value = '"test_schema"'
+    monkeypatch.setattr(migration, "op", op)
+    migration.upgrade()
+    sql = "\n".join(str(call.args[0]) for call in op.execute.call_args_list)
+    assert "document_detach_contact BEFORE DELETE" in sql
+    assert "WHERE tenant_id = OLD.tenant_id AND contact_id = OLD.id" in sql
+    assert "document_detach_case BEFORE DELETE" in sql
+    assert "WHERE tenant_id = OLD.tenant_id AND case_id = OLD.id" in sql
+    assert "NEW.author_user_id IS DISTINCT FROM OLD.author_user_id" in sql
+    assert 'NOT EXISTS (SELECT 1 FROM "test_schema".users' in sql
+    fks = {call.args[0]: call.kwargs for call in op.create_foreign_key.call_args_list}
+    assert fks["fk_document_owner_user"]["ondelete"] == "SET NULL"
+    assert fks["fk_revision_author_user"]["ondelete"] == "SET NULL"

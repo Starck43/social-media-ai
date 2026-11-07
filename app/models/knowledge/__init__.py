@@ -91,7 +91,7 @@ class KnowledgeDocument(EvidenceFields, TenantScopedMixin, TimestampMixin, Base)
     # Cases currently exist as tenant-scoped case evidence snippets, not a cases table.
     case_id: Mapped[int | None] = mapped_column(Integer)
     owner_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey(f"{settings.DB_SCHEMA}.users.id", name="fk_document_owner_user")
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", name="fk_document_owner_user", ondelete="SET NULL")
     )
     current_revision_id: Mapped[int | None] = mapped_column(Integer)
 
@@ -125,7 +125,7 @@ class DocumentRevision(TenantScopedMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(30), default="draft")
     author: Mapped[str] = mapped_column(String(150), default="")
     author_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey(f"{settings.DB_SCHEMA}.users.id", name="fk_revision_author_user")
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", name="fk_revision_author_user", ondelete="SET NULL")
     )
     change_description: Mapped[str | None] = mapped_column(Text)
     approved_by: Mapped[str | None] = mapped_column(String(150), nullable=True)

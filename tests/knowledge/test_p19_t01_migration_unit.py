@@ -130,6 +130,7 @@ def test_model_metadata_contains_workspace_scoped_links_and_immutable_revision_f
     assert {"document_type", "tags", "contact_id", "case_evidence_id", "owner_user_id", "current_revision_id"} <= set(
         doc.c.keys()
     )
+    assert doc.c.id.autoincrement == "ignore_fk"
     rev = DocumentRevision.__table__
     assert {"author_user_id", "change_description", "body_text", "content_hash"} <= set(rev.c.keys())
     fk = next(

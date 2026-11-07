@@ -83,7 +83,7 @@ class KnowledgeDocument(EvidenceFields, TenantScopedMixin, TimestampMixin, Base)
             initially="DEFERRED",
         ),
     )
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement="ignore_fk")
     counterparty: Mapped[str] = mapped_column(String(500), default="")
     document_type: Mapped[str | None] = mapped_column(String(30))
     tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))

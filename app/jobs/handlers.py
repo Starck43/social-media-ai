@@ -159,6 +159,7 @@ def _runtime_source(
         last_checked=getattr(source, "last_checked", None),
         last_item_id=getattr(source, "last_item_id", None),
         owner_task_id=getattr(source, "owner_task_id", None),
+        owner_user_id=getattr(source, "owner_user_id", None),
         is_active=getattr(source, "is_active", True),
     )
 

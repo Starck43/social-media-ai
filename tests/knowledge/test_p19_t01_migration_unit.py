@@ -28,12 +28,13 @@ def forbid_db(monkeypatch):
 
 
 def test_upgrade_widens_constraint_without_rewriting_revision_content(monkeypatch):
-    op = SimpleNamespace(drop_constraint=Mock(), create_check_constraint=Mock())
+    op = Mock()
+    op.get_bind.return_value.dialect.identifier_preparer.quote_schema.return_value = '"test_schema"'
     monkeypatch.setattr(migration, "op", op)
     migration.upgrade()
     assert migration.revision == "0142" and migration.down_revision == "0141"
-    op.drop_constraint.assert_called_once()
-    sql = op.create_check_constraint.call_args.args[2]
+    assert op.drop_constraint.call_args_list[0].args[0] == "ck_document_revision_status"
+    sql = op.create_check_constraint.call_args_list[0].args[2]
     for status in ("draft", "draft_invalidated", "in_review", "approved", "rejected", "revision_requested"):
         assert f"'{status}'" in sql
 
@@ -45,7 +46,8 @@ def test_downgrade_locks_and_refuses_incompatible_data(monkeypatch, contains_new
         dialect=SimpleNamespace(identifier_preparer=SimpleNamespace(quote_schema=lambda value: f'"{value}"')),
         execute=Mock(side_effect=[None, result]),
     )
-    op = SimpleNamespace(get_bind=lambda: bind, drop_constraint=Mock(), create_check_constraint=Mock())
+    op = Mock()
+    op.get_bind.return_value = bind
     monkeypatch.setattr(migration, "op", op)
     if contains_new_status:
         with pytest.raises(RuntimeError, match="Downgrade refused"):
@@ -116,3 +118,32 @@ async def test_append_keeps_invalidated_status_and_translator_agrees(monkeypatch
     assert values["status"] == "draft_invalidated" and values["approved_by"] is None
     assert f"'{values['status']}'" in migration.NEW_STATUSES
     assert canonical_revision_status(values["status"]) == ("draft", True)
+
+
+def test_model_metadata_contains_workspace_scoped_links_and_immutable_revision_fields():
+    from sqlalchemy import ForeignKeyConstraint, UniqueConstraint
+
+    from app.models.knowledge import DocumentRevision, DocumentTemplate, KnowledgeDocument, KnowledgeSnippet
+
+    doc = KnowledgeDocument.__table__
+    assert {"document_type", "tags", "contact_id", "case_id", "owner_user_id", "current_revision_id"} <= set(
+        doc.c.keys()
+    )
+    rev = DocumentRevision.__table__
+    assert {"author_user_id", "change_description", "body_text", "content_hash"} <= set(rev.c.keys())
+    fk = next(
+        c for c in doc.constraints if isinstance(c, ForeignKeyConstraint) and c.name == "fk_document_current_revision"
+    )
+    assert list(fk.column_keys) == ["tenant_id", "id", "current_revision_id"]
+    assert fk.deferrable is True and fk.initially == "DEFERRED"
+    for name in ("fk_document_contact_tenant", "fk_document_case_tenant"):
+        fk = next(c for c in doc.constraints if isinstance(c, ForeignKeyConstraint) and c.name == name)
+        assert list(fk.column_keys)[0] == "tenant_id"
+    assert any(
+        isinstance(c, UniqueConstraint) and c.name == "uq_knowledge_snippet_tenant"
+        for c in KnowledgeSnippet.__table__.constraints
+    )
+    assert DocumentTemplate.__tenant_scoped__
+    assert {"tenant_id", "name", "document_type", "content", "variables_schema"} <= set(
+        DocumentTemplate.__table__.c.keys()
+    )

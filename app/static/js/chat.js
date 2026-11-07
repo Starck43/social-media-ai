@@ -1,6 +1,13 @@
 function chatApp() {
         return {
             panelOpen: true,
+            workspaceTab: 'context',
+            panelLoading: false,
+            panelData: { decisions: [], runs: [], materials: [] },
+            evidenceContext: window.__chatEvidenceContext || null,
+            workspaceCards: [],
+            workspaceCardsLoading: false,
+            workspaceCardsError: '',
             modalTitle: '',
             modalLoading: false,
             modalError: '',
@@ -49,7 +56,12 @@ function chatApp() {
             csrf: document.querySelector('input[name="_csrf"]')?.value || '',
 
             init() {
-                try { this.panelOpen = sessionStorage.getItem('chat.workspace.panel') !== 'closed'; } catch (_) { /* Storage may be unavailable in private sessions. */ }
+                try {
+                    this.panelOpen = sessionStorage.getItem('chat.workspace.panel') !== 'closed';
+                    const savedTab = sessionStorage.getItem('chat.workspace.tab');
+                    if (['context', 'decisions', 'runs', 'materials'].includes(savedTab)) this.workspaceTab = savedTab;
+                } catch (_) { /* Storage may be unavailable in private sessions. */ }
+                this.syncCardsFromState();
                 this.loadWorkspaceTasks();
                 // Event delegation for JSON copy buttons (added via x-html)
                 document.addEventListener('click', (e) => {
@@ -205,6 +217,7 @@ function chatApp() {
                 this.workspaceTaskError = '';
                 this.workspaceCheckedAt = '';
                 this.workspaceTaskLoading = false;
+                this.syncCardsFromState();
             },
             async refreshWorkspaceTask() {
                 if (!this.workspaceTaskId) return;
@@ -215,18 +228,219 @@ function chatApp() {
                 // Do not keep stale plan/results visible after access changes.
                 this.workspaceTask = null;
                 this.workspaceCheckedAt = '';
+                this.syncCardsFromState();
                 try {
                     const data = await this.workspaceRead('/app/chat/workspace/tasks/' + id);
                     if (request !== this.workspaceTaskRequest || id !== this.workspaceTaskId) return;
                     this.workspaceTask = data;
                     this.workspaceCheckedAt = new Date().toLocaleTimeString('ru-RU');
+                    this.workspaceCardsError = '';
+                    this.syncCardsFromState();
                 } catch (error) {
                     if (request === this.workspaceTaskRequest) {
                         this.workspaceTaskError = [403, 404].includes(error.status) ? 'Задача больше недоступна. Снимите выбор или выберите другую.' : 'Не удалось обновить задачу. Повторите попытку.';
+                        this.syncCardsFromState();
                     }
                 } finally {
                     if (request === this.workspaceTaskRequest) this.workspaceTaskLoading = false;
                 }
+            },
+            selectWorkspaceTab(tab) {
+                if (!['context', 'decisions', 'runs', 'materials'].includes(tab)) return;
+                this.workspaceTab = tab;
+                try { sessionStorage.setItem('chat.workspace.tab', tab); } catch (_) {}
+                if (tab !== 'context') this.loadWorkspacePanel();
+            },
+            async loadWorkspacePanel() {
+                this.panelLoading = true;
+                try {
+                    const params = new URLSearchParams();
+                    if (this.workspaceTaskId) params.set('task_id', String(this.workspaceTaskId));
+                    if (this.evidenceContext) {
+                        params.set('context_type', this.evidenceContext.type || '');
+                        params.set('context_id', String(this.evidenceContext.context_id || this.evidenceContext.id || ''));
+                        params.set('boundary', this.evidenceContext.boundary || 'cloud');
+                    }
+                    const data = await this.workspaceRead('/app/chat/workspace/panel?' + params.toString());
+                    this.panelData = {
+                        decisions: data.decisions || [],
+                        runs: data.runs || [],
+                        materials: data.materials || [],
+                    };
+                } catch (_) {
+                    // Panel fallback uses local state
+                } finally {
+                    this.panelLoading = false;
+                }
+            },
+            syncCardsFromState() {
+                const cards = [];
+                if (this.workspaceTask) {
+                    const snap = this.workspaceTask;
+                    cards.push({
+                        id: 'plan_preview:task:' + snap.id,
+                        card_type: 'plan_preview',
+                        title: 'План задачи: ' + snap.name,
+                        status: snap.plan_status || 'unavailable',
+                        summary: snap.plan?.goal || 'План задачи',
+                        authoritative_ref: 'agent_task:' + snap.id,
+                        authoritative_url: snap.task_url || ('/app/tasks/' + snap.id),
+                        actions: [
+                            { kind: 'link', label: 'Открыть страницу задачи', href: snap.task_url || ('/app/tasks/' + snap.id) },
+                        ],
+                    });
+                    if (snap.latest) {
+                        if (['pending', 'running'].includes(snap.latest.status) || snap.latest.progress) {
+                            cards.push({
+                                id: 'progress:task:' + snap.id,
+                                card_type: 'progress',
+                                title: 'Выполнение: ' + snap.name,
+                                status: snap.latest.status || 'running',
+                                progress: snap.latest.progress || null,
+                                authoritative_ref: 'agent_task:' + snap.id,
+                                authoritative_url: snap.task_url || ('/app/tasks/' + snap.id),
+                                actions: [
+                                    { kind: 'link', label: 'Управление запуском', href: snap.task_url || ('/app/tasks/' + snap.id) },
+                                ],
+                            });
+                        }
+                        cards.push({
+                            id: 'result:task:' + snap.id,
+                            card_type: 'result',
+                            title: 'Результат: ' + snap.name,
+                            status: snap.latest.status || 'done',
+                            limitations: snap.latest.coverage === 'partial_or_bounded' ? 'Охват ограничен параметрами запуска; полнота данных не подтверждена.' : '',
+                            authoritative_ref: 'agent_task:' + snap.id,
+                            authoritative_url: snap.task_url || ('/app/tasks/' + snap.id),
+                            actions: [
+                                { kind: 'link', label: 'Открыть результаты', href: snap.task_url || ('/app/tasks/' + snap.id) },
+                            ],
+                        });
+                    }
+                }
+                if (this.evidenceContext) {
+                    const ctx = this.evidenceContext;
+                    const kind = ctx.type || ctx.context_type || 'knowledge';
+                    const cid = ctx.context_id || ctx.id || '';
+                    const cardType = ['document', 'communication'].includes(kind) ? 'draft' : 'result';
+                    const authUrl = this.evidenceContextPageUrl() || '/app/knowledge';
+                    cards.push({
+                        id: cardType + ':' + kind + ':' + cid,
+                        card_type: cardType,
+                        title: ctx.title || ('Объект #' + cid),
+                        status: ctx.is_local_only || ctx.boundary === 'local_only' ? 'local_only' : (ctx.status || 'ready'),
+                        summary: ctx.excerpt || '',
+                        limitations: ctx.extraction_limit_note || '',
+                        authoritative_ref: ctx.ref || (kind + ':' + cid),
+                        authoritative_url: authUrl,
+                        actions: [
+                            { kind: 'link', label: 'Открыть страницу', href: authUrl },
+                        ],
+                    });
+                }
+                this.workspaceCards = cards;
+            },
+            async refreshWorkspaceCards() {
+                this.workspaceCardsLoading = true;
+                this.workspaceCardsError = '';
+                try {
+                    const params = new URLSearchParams();
+                    if (this.workspaceTaskId) params.set('task_id', String(this.workspaceTaskId));
+                    if (this.evidenceContext) {
+                        params.set('context_type', this.evidenceContext.type || '');
+                        params.set('context_id', String(this.evidenceContext.context_id || this.evidenceContext.id || ''));
+                        params.set('boundary', this.evidenceContext.boundary || 'cloud');
+                    }
+                    const data = await this.workspaceRead('/app/chat/workspace/cards?' + params.toString());
+                    this.workspaceCards = data.cards || [];
+                } catch (error) {
+                    this.workspaceCards = [];
+                    this.workspaceCardsError = [403, 404].includes(error.status)
+                        ? 'Связанная запись больше недоступна или доступ к ней изменился.'
+                        : 'Не удалось обновить карточку из сервиса.';
+                } finally {
+                    this.workspaceCardsLoading = false;
+                }
+            },
+            async clearEvidenceContext() {
+                if (this.pending || this.awaitingConfirmation) return;
+                this.evidenceContext = null;
+                window.__chatEvidenceContext = null;
+                this.workspaceCardsError = '';
+                this.syncCardsFromState();
+                try {
+                    await fetch('/app/chat/context/clear', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: new URLSearchParams({ '_csrf': this.csrf }),
+                    });
+                } catch (_) {
+                    // Best-effort session clear
+                }
+            },
+            activeBoundary() {
+                return this.evidenceContext?.boundary || 'cloud';
+            },
+            boundaryBadgeLabel() {
+                const b = this.activeBoundary();
+                if (b === 'local_only') return 'Контур: local_only (облако заблокировано)';
+                if (b === 'company') return 'Контур: company (корпоративный)';
+                return 'Контур: cloud (облачная модель)';
+            },
+            isLocalOnlyBlocked() {
+                if (this.awaitingConfirmation) return false;
+                const b = this.activeBoundary();
+                return Boolean(this.evidenceContext && b !== 'cloud');
+            },
+            contextTypeLabel(type) {
+                return ({
+                    task: 'Задача',
+                    communication: 'Переписка',
+                    contact: 'Контакт',
+                    document: 'Документ',
+                    case: 'Кейс',
+                    followup: 'Напоминание',
+                    knowledge: 'База знаний',
+                })[type] || 'Контекст';
+            },
+            evidenceContextPageUrl() {
+                if (!this.evidenceContext) return '';
+                const kind = this.evidenceContext.type || this.evidenceContext.context_type || '';
+                const id = this.evidenceContext.id || this.evidenceContext.context_id || '';
+                if (this.evidenceContext.href) return this.evidenceContext.href;
+                if (kind === 'document' && id) return '/app/documents/' + id;
+                if (kind === 'contact' && id) return '/app/contacts/' + id;
+                if (kind === 'task' && id) return '/app/tasks/' + id;
+                if (kind === 'communication') return '/app/communications';
+                if (kind === 'case') return '/app/cases';
+                if (kind === 'followup') return '/app/followups';
+                return '/app/knowledge';
+            },
+            cardTypeLabel(cardType) {
+                return ({
+                    plan_preview: 'План',
+                    decision: 'Решение',
+                    progress: 'В работе',
+                    result: 'Результат',
+                    draft: 'Черновик',
+                    brief: 'Сводка',
+                })[cardType] || 'Карточка';
+            },
+            cardStatusLabel(status) {
+                return ({
+                    available: 'Доступен',
+                    ready: 'Актуально',
+                    pending: 'Ожидает',
+                    running: 'Выполняется',
+                    done: 'Готово',
+                    failed: 'Ошибка',
+                    local_only: 'Только локально',
+                    unavailable: 'Недоступно',
+                })[status] || status || '';
             },
             workspaceContextBlocked() {
                 return Boolean(!this.awaitingConfirmation && this.workspaceTaskId &&
@@ -603,6 +817,10 @@ function chatApp() {
                 const textarea = this.$refs.input
                 const rawText = (typeof preset === 'string' && preset ? preset : textarea.value).trim()
                 const readyAtts = this.readyAttachments()
+                if (this.isLocalOnlyBlocked()) {
+                    this.notice = 'Этот контекст нельзя передавать в облачный чат. Локальный маршрут не настроен.'
+                    return
+                }
                 if ((!rawText && !readyAtts.length) || this.pending || this.workspaceContextBlocked()) return
                 if (this.attachmentUploading) {
                     this.notice = 'Дождитесь завершения проверки и загрузки вложений.'
@@ -630,6 +848,7 @@ function chatApp() {
                 this.notice = ''
                 this.draftNotice = '';
                 const selectedId = this.workspaceTaskId;
+                const activeContext = this.evidenceContext;
 
                 this.pending = true
                 this.sending = true
@@ -665,7 +884,7 @@ ${text}`
                             '_csrf': this.csrf,
                             'text': text,
                             ...(selectedId ? {task_id: selectedId} : {}),
-                            ...(window.__chatEvidenceContext ? {context_type: window.__chatEvidenceContext.type, context_id: window.__chatEvidenceContext.context_id, boundary: window.__chatEvidenceContext.boundary} : {}),
+                            ...(activeContext ? {context_type: activeContext.type, context_id: activeContext.context_id, boundary: activeContext.boundary} : {}),
                             ...(attachmentIds ? {attachment_ids: attachmentIds} : {}),
                             ...(confirmLarge ? {confirm_large: confirmLarge} : {}),
                         }),

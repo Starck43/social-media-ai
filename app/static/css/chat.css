@@ -336,3 +336,17 @@
 .chat-attachment-policy-body p { margin:0; }
 .chat-attachment-dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:12px; }
 .chat-attachment-dialog-actions button { margin-top:0; }
+
+/* P20-T08: Tabbed workspace panel, inline cards, context chips, and 360px layout */
+.chat-panel-tabs button { min-height:34px; padding:4px 8px; font-size:12px; }
+.chat-context-chips { min-width:0; max-width:100%; }
+.chat-inline-cards { min-width:0; max-width:100%; }
+.chat-inline-card { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+@media(max-width:380px) {
+    .chat-page { padding-inline:0; }
+    .chat-composer { padding:8px; margin-inline:0; }
+    .chat-workspace-panel { padding:10px; max-width:100%; box-sizing:border-box; }
+    .chat-panel-tabs { gap:2px; }
+    .chat-panel-tabs button { padding:4px 6px; font-size:11px; }
+}
+

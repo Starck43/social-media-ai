@@ -245,6 +245,7 @@ async def chat_page(
 
     from app.agent.runtime import web_session_id
 
+    active_boundary = (scoped_context or {}).get("boundary") or "cloud"
     user = getattr(request.state, "web_user", None)
     tenant_id = getattr(request.state, "tenant_id", None)
     if user is None or tenant_id is None:
@@ -255,6 +256,7 @@ async def chat_page(
                     "messages": [],
                     "is_owner": False,
                     "scoped_context": scoped_context,
+                    "active_boundary": active_boundary,
                     "connector_search": connector_search,
                 }
             )
@@ -265,6 +267,7 @@ async def chat_page(
             messages=[],
             is_owner=False,
             scoped_context=scoped_context,
+            active_boundary=active_boundary,
             connector_search=connector_search,
         )
 
@@ -296,6 +299,7 @@ async def chat_page(
                 "is_owner": _is_owner(request),
                 "attachment_policy": policy_dict,
                 "scoped_context": scoped_context,
+                "active_boundary": active_boundary,
                 "connector_search": connector_search,
             }
         )
@@ -309,6 +313,7 @@ async def chat_page(
         awaiting_confirmation=await _confirmation_pending(user.id),
         attachment_policy=policy_dict,
         scoped_context=scoped_context,
+        active_boundary=active_boundary,
         connector_search=connector_search,
     )
 
@@ -467,7 +472,8 @@ async def chat_send(
         return RedirectResponse("/app/chat", status_code=302)
     user, tenant_id = actor
 
-    saved_context = request.session.get("evidence_context") or {}
+    session_store = getattr(request, "session", None)
+    saved_context = (session_store.get("evidence_context") if isinstance(session_store, dict) else None) or {}
     if saved_context and saved_context.get("tenant_id") != tenant_id:
         raise HTTPException(403, "Контекст принадлежит другому пространству. Снимите выбор.")
     selected_context = None
@@ -481,7 +487,10 @@ async def chat_send(
     if any(isinstance(value, str) and value for value in (context_type, context_id, boundary)):
         from app.services.knowledge.workspace import resolve_context
 
-        selected_context = await resolve_context(context_type, context_id, boundary)
+        try:
+            selected_context = await resolve_context(context_type, context_id, boundary)
+        except PermissionError as exc:
+            raise HTTPException(403, "Доступ к выбранному контексту изменился. Снимите выбор.") from exc
         # The shared runtime currently has no end-to-end local/company routing
         # guarantee. Refuse, rather than claiming a local badge makes it safe.
         if selected_context["data_boundary"] != "cloud":
@@ -853,3 +862,35 @@ async def chat_attachment_delete(
     if not deleted:
         return JSONResponse({"error": "Вложение не найдено"}, status_code=404)
     return JSONResponse({"ok": True, "id": attachment_id}, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/context/clear")
+async def chat_context_clear(
+    request: Request,
+    token: str = Form("", alias="_csrf"),
+):
+    """Clear the pinned evidence context chip from the session without reloading the page."""
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
+        request.headers.get("accept") or ""
+    )
+    denied = _chat_denied(request, is_ajax=is_ajax)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        if is_ajax:
+            return JSONResponse({"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403)
+        return RedirectResponse("/app/chat", status_code=302)
+    actor = _valid_chat_actor(request)
+    if actor is None:
+        if is_ajax:
+            return JSONResponse({"error": "Не авторизован"}, status_code=401)
+        return RedirectResponse("/app/chat", status_code=302)
+    session_store = getattr(request, "session", None)
+    if isinstance(session_store, dict):
+        session_store.pop("evidence_context", None)
+    if is_ajax:
+        return JSONResponse(
+            {"ok": True, "scoped_context": None, "active_boundary": "cloud"},
+            headers={"Cache-Control": "no-store"},
+        )
+    return RedirectResponse("/app/chat", status_code=303)

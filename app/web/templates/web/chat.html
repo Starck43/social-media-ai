@@ -25,8 +25,21 @@
 <div class="chat-page flex flex-col" x-data="chatApp()" :class="{'chat-panel-open': panelOpen}">
     <!-- Header -->
     <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div>
-
+        <div class="space-y-1">
+            <div class="flex flex-wrap items-center gap-2">
+                <span
+                    class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-mono font-medium border"
+                    :class="activeBoundary() === 'local_only'
+                        ? 'border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-200'
+                        : (activeBoundary() === 'company'
+                            ? 'border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200'
+                            : 'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-300')"
+                    data-chat-boundary-badge
+                    :data-boundary="activeBoundary()"
+                >
+                    <span x-text="boundaryBadgeLabel()">Контур: {{ active_boundary | default(scoped_context.boundary if scoped_context else 'cloud') }}</span>
+                </span>
+            </div>
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {% if is_owner %}
                 Вы владелец workspace — агент будет подтверждать записи, которые меняют его настройки.
@@ -48,12 +61,15 @@
         {% endif %}
     </div>
 
-    <div class="chat-workspace-toolbar" x-show="workspaceTaskId" x-cloak>
+    <div class="chat-workspace-toolbar" x-show="workspaceTaskId || evidenceContext" x-cloak>
         <span class="chat-context-label" x-show="workspaceTaskId" x-cloak>
             <span x-text="workspaceTask ? 'Задача: ' + workspaceTask.name : 'Задача #' + workspaceTaskId"></span>
             <button type="button" @click="clearWorkspaceTask()" :disabled="pending || awaitingConfirmation" aria-label="Снять выбор задачи">×</button>
         </span>
-
+        <span class="chat-context-label" x-show="evidenceContext" x-cloak data-toolbar-context-chip>
+            <span x-text="evidenceContext ? (contextTypeLabel(evidenceContext.type) + ': ' + evidenceContext.title) : ''"></span>
+            <button type="button" @click="clearEvidenceContext()" :disabled="pending || awaitingConfirmation" aria-label="Снять привязанный контекст">×</button>
+        </span>
     </div>
     <div class="chat-workspace-grid">
     <button type="button" class="chat-panel-tab" x-ref="panelToggle" @click="toggleWorkspacePanel()"
@@ -61,7 +77,7 @@
             aria-label="Открыть рабочий контекст" title="Открыть рабочий контекст">‹</button>
     <section class="chat-window" aria-label="Диалог с агентом">
         {% if scoped_context %}
-        <div class="chat-scoped-context-banner p-3 m-3 mb-0 rounded-lg border {% if scoped_context.is_local_only %}border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40{% else %}border-cyan-200 bg-cyan-50/70 dark:border-cyan-900/60 dark:bg-cyan-950/30{% endif %} flex flex-wrap items-center justify-between gap-3 text-xs" data-chat-scoped-context>
+        <div x-show="evidenceContext" class="chat-scoped-context-banner p-3 m-3 mb-0 rounded-lg border {% if scoped_context.is_local_only %}border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40{% else %}border-cyan-200 bg-cyan-50/70 dark:border-cyan-900/60 dark:bg-cyan-950/30{% endif %} flex flex-wrap items-center justify-between gap-3 text-xs" data-chat-scoped-context>
             <div class="space-y-0.5">
                 <div class="flex items-center gap-2">
                     <span class="font-semibold text-slate-800 dark:text-slate-200">Привязанный контекст:</span>
@@ -87,11 +103,56 @@
                     {% endif %}
                 </p>
             </div>
-            <a href="/app/chat" class="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 underline whitespace-nowrap">
+            <a href="/app/chat" @click.prevent="clearEvidenceContext()" class="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 underline whitespace-nowrap">
                 Снять контекст
             </a>
         </div>
         {% endif %}
+
+        <!-- Typed inline cards rendered from owning services and refreshed on open -->
+        <div
+            class="chat-inline-cards px-4 pt-3 space-y-2"
+            x-show="workspaceCards.length > 0 || workspaceCardsError"
+            x-cloak
+            data-chat-inline-cards
+            aria-label="Рабочие карточки"
+        >
+            <div x-show="workspaceCardsError" role="alert" class="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-2.5 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-2" data-chat-card-stale-error>
+                <span x-text="workspaceCardsError"></span>
+                <button type="button" class="underline font-medium" @click="refreshWorkspaceCards()">Обновить</button>
+            </div>
+            <template x-for="card in workspaceCards" :key="card.id">
+                <article
+                    class="chat-inline-card rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-xs space-y-1.5"
+                    :data-card-type="card.card_type"
+                    :data-authoritative-ref="card.authoritative_ref"
+                >
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="rounded bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-cyan-700 dark:text-cyan-300" x-text="cardTypeLabel(card.card_type)"></span>
+                            <a :href="card.authoritative_url" class="font-semibold text-slate-900 dark:text-slate-100 hover:underline truncate" x-text="card.title"></a>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400" x-text="cardStatusLabel(card.status)"></span>
+                            <button type="button" class="text-[11px] text-cyan-700 dark:text-cyan-400 hover:underline" @click="refreshWorkspaceCards()" :disabled="workspaceCardsLoading" title="Обновить карточку из сервиса">↻</button>
+                        </div>
+                    </div>
+                    <p x-show="card.summary" class="text-slate-600 dark:text-slate-300" x-text="card.summary"></p>
+                    <p x-show="card.limitations" class="text-[11px] text-amber-700 dark:text-amber-300" x-text="card.limitations"></p>
+                    <template x-if="card.progress">
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400" x-text="'Прогресс: ' + (card.progress.completed ?? 0) + ' из ' + (card.progress.total ?? 0)"></p>
+                    </template>
+                    <div class="flex flex-wrap items-center gap-2 pt-1" x-show="(card.actions || []).length">
+                        <template x-for="act in (card.actions || [])" :key="act.label">
+                            <span>
+                                <a x-show="act.kind === 'link'" :href="act.href" class="inline-flex items-center rounded border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-medium text-cyan-700 dark:text-cyan-300 hover:bg-slate-50 dark:hover:bg-slate-800" x-text="act.label"></a>
+                                <button x-show="act.kind === 'draft'" type="button" @click="draftAction(act.prompt)" :disabled="pending || awaitingConfirmation" class="inline-flex items-center rounded border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800" x-text="act.label"></button>
+                            </span>
+                        </template>
+                    </div>
+                </article>
+            </template>
+        </div>
         <!-- Messages area: scrolls with the whole page container -->
         <div
             class="chat-messages min-h-0 flex-1 space-y-4 p-4 md:p-5" role="log" aria-live="polite"
@@ -267,9 +328,16 @@
         <p x-show="draftNotice" x-cloak class="chat-notice" role="status" x-text="draftNotice"></p>
         <!-- Composer -->
         <form @submit.prevent="sendMessage()" class="chat-composer" x-ref="form">
-            <div class="chat-context-label" x-show="workspaceTaskId" x-cloak aria-live="polite">
-                <span x-text="workspaceTask ? 'Контекст сообщения: ' + workspaceTask.name : 'Контекст сообщения: задача #' + workspaceTaskId"></span>
-                <button type="button" @click="clearWorkspaceTask()" :disabled="pending || awaitingConfirmation" aria-label="Убрать задачу из контекста сообщения">×</button>
+            <div class="chat-context-chips flex flex-wrap items-center gap-2" data-chat-context-chips aria-live="polite" x-show="workspaceTaskId || evidenceContext" x-cloak>
+                <div class="chat-context-label" x-show="workspaceTaskId" x-cloak data-context-chip data-context-type="task">
+                    <span x-text="workspaceTask ? 'Контекст сообщения: ' + workspaceTask.name : 'Контекст сообщения: задача #' + workspaceTaskId"></span>
+                    <button type="button" @click="clearWorkspaceTask()" :disabled="pending || awaitingConfirmation" aria-label="Убрать задачу из контекста сообщения">×</button>
+                </div>
+                <div class="chat-context-label" x-show="evidenceContext" x-cloak data-context-chip :data-context-type="evidenceContext?.type || 'object'">
+                    <span x-text="evidenceContext ? (contextTypeLabel(evidenceContext.type) + ': ' + evidenceContext.title) : ''"></span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300" x-text="evidenceContext?.boundary || 'cloud'"></span>
+                    <button type="button" data-remove-context-chip @click="clearEvidenceContext()" :disabled="pending || awaitingConfirmation" aria-label="Убрать объект из контекста сообщения">×</button>
+                </div>
             </div>
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <input
@@ -348,11 +416,12 @@
                 class="chat-input"
             ></textarea>
             <div class="chat-composer-bar flex items-center gap-4 justify-between w-full">
-                <div class="chat-suggestions">
+                <div class="chat-suggestions" data-chat-quick-actions>
                     <button type="button" class="chat-attach" @click="handleAttachClick()" :disabled="pending || awaitingConfirmation" :aria-label="attachmentEnabled() ? 'Прикрепить фото или документ' : 'Прикрепить файл — о доступности'" title="Фото и документы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9m-6 12 8-8"/></svg></button>
                     <button type="button" class="chat-attach-limits" x-show="attachmentEnabled()" x-cloak @click="openAttachmentLimits()" :disabled="pending" aria-label="Допустимые форматы и лимиты вложений">Форматы и лимиты</button>
-                    <button type="button" @click="draftAction('Помоги составить задачу. Уточни цель, источники, период и нужный результат; затем покажи план.')" :disabled="pending || awaitingConfirmation">Составить задачу</button>
-                    <button type="button" @click="draftAction('Кратко подведи итог нашего диалога: решения, открытые вопросы и следующий шаг.')" :disabled="pending || awaitingConfirmation">Итог диалога</button>
+                    <button type="button" data-quick-action="prepare-task" @click="draftAction(starters[2].text)" :disabled="pending || awaitingConfirmation">Подготовить задачу</button>
+                    <button type="button" data-quick-action="analyze-result" @click="draftAction(workspaceTaskId ? 'Разбери результаты выбранной задачи: ключевые выводы, ссылки на материалы, охват и ограничения. Отдели подтверждённые данные от предположений.' : 'Разбери результаты, которые мы обсуждали: ключевые выводы, ссылки, охват и ограничения. Если данных не хватает, уточни задачу.')" :disabled="pending || awaitingConfirmation">Разобрать результат</button>
+                    <button type="button" data-quick-action="whats-next" @click="draftAction('Предложи следующий шаг по текущему обсуждению' + (workspaceTaskId ? ' и выбранной задаче' : '') + '. Учти уже сделанное и ограничения. Объясни пользу и дождись моего решения перед действиями.')" :disabled="pending || awaitingConfirmation">Что дальше?</button>
                     <button type="button" @click="draftAction('/help')" :disabled="pending || awaitingConfirmation">Что ты умеешь?</button>
                     <button type="button" @click="draftAction('Покажи статус и доступные результаты выбранной задачи.')"
                             x-show="workspaceTaskId" :disabled="pending || awaitingConfirmation">Статус и результаты</button>
@@ -361,7 +430,7 @@
                 <button
                     type="button" class="chat-send" :class="{ 'chat-send-stop': sending }"
                     @click="sending ? stopGeneration() : sendMessage()"
-                    :disabled="(pending && !sending) || workspaceContextBlocked()"
+                    :disabled="(pending && !sending) || workspaceContextBlocked() || isLocalOnlyBlocked()"
                     :aria-label="sending ? 'Остановить генерацию' : 'Отправить сообщение'"
                     :title="sending ? 'Остановить' : 'Отправить'"
                 >

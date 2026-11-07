@@ -192,16 +192,25 @@ def test_policy_bounds(monkeypatch):
 # Telegram L2: FloodWaitError beyond Telethon's own bounded sleep
 
 
-class FloodWaitError(Exception):
-    """Name-compatible stand-in for telethon.errors.FloodWaitError."""
+class _FloodError(Exception):
+    """Minimal shared base, matching Telethon's sibling exception types."""
 
     def __init__(self, seconds):
         super().__init__(f"A wait of {seconds} seconds is required")
         self.seconds = seconds
 
 
-class FloodPremiumWaitError(FloodWaitError):
+class FloodWaitError(_FloodError):
     pass
+
+
+class FloodPremiumWaitError(_FloodError):
+    pass
+
+
+def test_telegram_flood_doubles_are_sibling_types():
+    assert not issubclass(FloodPremiumWaitError, FloodWaitError)
+    assert not issubclass(FloodWaitError, FloodPremiumWaitError)
 
 
 class _FloodingTelethon:
@@ -209,6 +218,10 @@ class _FloodingTelethon:
         self.error = error
         self.disconnected = False
         self.yielded = 0
+        self.fence = None
+
+    async def send(self, request, ordered=False):
+        raise self.error
 
     async def connect(self):
         pass
@@ -226,7 +239,11 @@ class _FloodingTelethon:
         async def gen():
             self.yielded += 1
             yield SimpleNamespace(id=1, date=datetime(2026, 1, 1, tzinfo=timezone.utc), text="synthetic")
-            raise self.error
+            if self.fence is None:
+                raise self.error  # Direct _history double sanity test.
+            from app.services.social.telegram_runtime import _send_guarded
+
+            await _send_guarded(self, self.fence, object(), False, history_request=True)
 
         return gen()
 
@@ -244,7 +261,12 @@ def flooding_session(monkeypatch):
     async def material():
         yield object()
 
+    @asynccontextmanager
+    async def request():
+        yield
+
     fence = SimpleNamespace(
+        _request=request,
         _pin=SimpleNamespace(selection=selection),
         _subject_key="123",
         _guard=SimpleNamespace(_setup_material=material),
@@ -263,7 +285,12 @@ def flooding_session(monkeypatch):
         return holder
 
     monkeypatch.setattr(runtime, "_locked_runtime", locked)
-    monkeypatch.setattr(runtime, "_build_client", lambda material, fence: holder["client"])
+
+    def build(material, fence):
+        holder["client"].fence = fence
+        return holder["client"]
+
+    monkeypatch.setattr(runtime, "_build_client", build)
     monkeypatch.setattr(runtime, "_disconnect", disconnect)
     monkeypatch.setattr(runtime, "source_grant_selection", lambda source: selection)
     monkeypatch.setattr(TelegramClient, "_entity_ref", staticmethod(lambda ref: ref))
@@ -325,7 +352,7 @@ async def test_telegram_flood_wait_defers_instead_of_reading_as_empty(flooding_s
     from app.services.social.telegram_runtime import _telegram_history_batch
 
     holder = flooding_session(error)
-    # P15-T12: keep this contract red until the runtime maps FloodWait correctly.
+    # The fake raises at the gated provider-send seam, as Telethon does.
     try:
         with pytest.raises(SourceRateLimited) as info:
             async with _telegram_history_batch(holder["selection"], object(), _tg_source(), limit=100):

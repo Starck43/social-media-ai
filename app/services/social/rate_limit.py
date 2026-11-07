@@ -101,9 +101,10 @@ def telegram_flood_wait_seconds(error: BaseException) -> Optional[float]:
     """Seconds of a Telethon flood wait, or None when ``error`` is not one.
 
     Matched by class name across the MRO so the optional Telethon dependency is
-    not imported here (``FloodPremiumWaitError`` subclasses ``FloodWaitError``).
+    not imported here. Telethon 1.45 defines ``FloodPremiumWaitError`` as a
+    sibling, not a subclass, of ``FloodWaitError``.
     """
-    if not any(cls.__name__ == "FloodWaitError" for cls in type(error).__mro__):
+    if not any(cls.__name__ in {"FloodWaitError", "FloodPremiumWaitError"} for cls in type(error).__mro__):
         return None
     return _positive_seconds(getattr(error, "seconds", None)) or 0.0
 

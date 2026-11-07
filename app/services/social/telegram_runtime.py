@@ -11,16 +11,51 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timezone
 
+from app.core.config import settings
 from app.services.social.connector_authorizations import AuthorizationUnavailable
+from app.services.social.rate_limit import SourceRateLimited, telegram_flood_wait_seconds
 from app.services.social.telegram_grant_access import source_grant_selection
 from app.services.social.telegram_queue_selection import TelegramJobRequeueRequired
 from app.services.social.telegram_runtime_fence import _locked_runtime
 
 _HARD_ITEM_LIMIT = 1000
 _DISCONNECT_SECONDS = 5
+_MAX_RETRY_AFTER = 2**31 - 1
+
+
+class _ProviderFloodWait(Exception):
+    """Private, sanitized signal after the request fence has rechecked authority."""
+
+    def __init__(self, retry_after):
+        self.retry_after = retry_after
+        super().__init__("telegram_rate_limited")
+
+
+async def _send_guarded(delegate, fence, request, ordered, *, history_request=False):
+    """Only history RPC long waits defer; setup/identity failures stay fail-closed."""
+    deferred = None
+    result = None
+    async with fence._request():
+        try:
+            result = await delegate.send(request, ordered=ordered)
+        except Exception as error:
+            if not history_request:
+                raise
+            try:
+                seconds = telegram_flood_wait_seconds(error)
+            except OverflowError:
+                seconds = math.inf
+            if seconds is None or seconds <= float(settings.SOCIAL_RATE_LIMIT_MAX_WAIT):
+                raise
+            # Omit unrepresentable/unbounded hints rather than invent a shorter wait.
+            deferred = (seconds if math.isfinite(seconds) and seconds <= _MAX_RETRY_AFTER else None,)
+    if deferred is not None:
+        raise _ProviderFloodWait(deferred[0]) from None
+    return result
 
 
 def _is_connect_config_request(request, *, functions, layer: int, connecting: bool) -> bool:
@@ -83,8 +118,10 @@ def _build_client(material, fence):
                 base = base.query
             if not connect_config and type(base) not in allowed:
                 raise AuthorizationUnavailable()
-            async with fence._request():
-                return await self._delegate.send(request, ordered=ordered)
+            # Connect and identity/entity resolution cannot certify that a source
+            # is merely rate-limited. Defer only the actual history read RPC.
+            history_request = not client._runtime_connecting and type(base) is functions.messages.GetHistoryRequest
+            return await _send_guarded(self._delegate, fence, request, ordered, history_request=history_request)
 
     class _ReadOnlyClient(TelegramClient):
         async def _call(self, sender, request, ordered=False, flood_sleep_threshold=None):
@@ -269,6 +306,7 @@ async def _telegram_history_batch(selection, claim, source, *, limit):
     """Private entry point; the collector requires its default-OFF rollout gate."""
     batch = None
     items = []
+    deferred = None
     try:
         if type(limit) is not int or not 0 < limit <= _HARD_ITEM_LIMIT:
             raise AuthorizationUnavailable()
@@ -283,15 +321,18 @@ async def _telegram_history_batch(selection, claim, source, *, limit):
                     client._runtime_connecting = False
                     await fence._inspect()
                     items = await _history(client, fence, source, limit)
+                except _ProviderFloodWait as error:
+                    deferred = (error.retry_after,)
                 finally:
                     client._runtime_connecting = False
                     await _disconnect(client)
             await fence._inspect()
-            batch = _TelegramReadBatch(fence, items)
-            try:
-                yield batch
-            finally:
-                batch._close()
+            if deferred is None:
+                batch = _TelegramReadBatch(fence, items)
+                try:
+                    yield batch
+                finally:
+                    batch._close()
     except asyncio.CancelledError:
         raise
     except TelegramJobRequeueRequired:
@@ -300,3 +341,5 @@ async def _telegram_history_batch(selection, claim, source, *, limit):
         raise AuthorizationUnavailable() from None
     finally:
         items.clear()
+    if deferred is not None:
+        raise SourceRateLimited("telegram", deferred[0]) from None

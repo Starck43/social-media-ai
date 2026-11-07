@@ -48,6 +48,9 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
+- [P15-T11](docs/tasks/p15-t11.md) Restore the red `tests/channels/` suite — **IN_PROGRESS** · notion-ai-p15-t11 · [owner instruction](https://app.notion.com/chat?t=410f361cdc99804388b100a96e9837bc) · [PR #429](https://github.com/Starck43/social-media-ai/pull/429) · `P2` · `C2`
+- [P15-T12](docs/tasks/p15-t12.md) Restore Telegram FloodWait deferral in the guarded runtime — **TODO** · unassigned · [owner decision](https://app.notion.com/chat?t=410f361cdc99804388b100a96e9837bc) · `P2` · `C3`
+
 - [P20-T06](docs/tasks/p20-t06.md) Workspace navigation and entry points — **IN_PROGRESS** · notion-ai-p20-t06 · [dialogue](https://app.notion.com/chat?t=40d7810652ab805e901700a9f5940232) · `P2` · `C3`
 - [P20-T07](docs/tasks/p20-t07.md) «Сегодня»: read-time attention and decisions home — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C4`
 - [P20-T08](docs/tasks/p20-t08.md) Chat workspace: context panel, inline cards and chat dock — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C4`
@@ -95,7 +98,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P17-T03](docs/tasks/p17-t03.md) Natural-language queries, result formatting, export and history — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P17-T04](docs/tasks/p17-t04.md) 1C write commands with preview, approval and audit — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P17-T05](docs/tasks/p17-t05.md) 1C role-based access policy and audit views — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
-- [P18-T03](docs/tasks/p18-t03.md) Local-only desktop connector scaffold — **IN_PROGRESS** · Codex coordinator / scoped executors · [owner scope](https://github.com/Starck43/social-media-ai/pull/425#issuecomment-6685420638) · [audit](docs/audit/p18-t03.md) · `P3` · `C5`
 - [P18-T04](docs/tasks/p18-t04.md) Text extraction and OCR with resource limits — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`

@@ -48,8 +48,7 @@ def _revision_guard(schema, extended):
             )
         )"""
     old_fields = fields.replace("NEW.", "OLD.")
-    op.execute(
-        f"""
+    op.execute(f"""
         CREATE OR REPLACE FUNCTION {schema}.guard_document_revision_content() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
@@ -59,8 +58,7 @@ def _revision_guard(schema, extended):
             END IF;
             RETURN NEW;
         END; $$;
-    """
-    )
+    """)
 
 
 def upgrade():
@@ -120,8 +118,7 @@ def upgrade():
     )
     # PostgreSQL 14 cannot SET NULL just one column of a composite FK. Clear
     # only the nullable selector when its target is erased; tenant_id remains.
-    op.execute(
-        f"""
+    op.execute(f"""
         CREATE FUNCTION {quoted}.detach_document_contact() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
             UPDATE {quoted}.knowledge_documents SET contact_id = NULL
@@ -138,8 +135,7 @@ def upgrade():
         END; $$;
         CREATE TRIGGER document_detach_case_evidence BEFORE DELETE ON {quoted}.knowledge_snippets
             FOR EACH ROW EXECUTE FUNCTION {quoted}.detach_document_case_evidence();
-        """
-    )
+        """)
     op.add_column("document_revisions", sa.Column("author_user_id", sa.Integer()), schema=schema)
     op.add_column("document_revisions", sa.Column("change_description", sa.Text()), schema=schema)
     op.add_column("document_revisions", sa.Column("decision_actor_user_id", sa.Integer()), schema=schema)
@@ -164,15 +160,13 @@ def upgrade():
         ondelete="SET NULL",
     )
     _revision_guard(quoted, True)
-    op.execute(
-        f"""
+    op.execute(f"""
         UPDATE {quoted}.knowledge_documents AS d SET current_revision_id = (
             SELECT r.id FROM {quoted}.document_revisions r
             WHERE r.tenant_id = d.tenant_id AND r.document_id = d.id
             ORDER BY r.version DESC LIMIT 1
         )
-    """
-    )
+    """)
     op.create_foreign_key(
         "fk_document_current_revision",
         "knowledge_documents",
@@ -186,8 +180,7 @@ def upgrade():
     )
     # Existing manager and direct manager.create callers both advance the pointer.
     # Updating the owning row serializes concurrent inserts, and never rewinds it.
-    op.execute(
-        f"""
+    op.execute(f"""
         CREATE FUNCTION {quoted}.set_document_current_revision() RETURNS trigger
         LANGUAGE plpgsql AS $$
         DECLARE prior_id integer; prior_version integer;
@@ -206,8 +199,7 @@ def upgrade():
         END; $$;
         CREATE TRIGGER document_revision_current AFTER INSERT ON {quoted}.document_revisions
             FOR EACH ROW EXECUTE FUNCTION {quoted}.set_document_current_revision();
-    """
-    )
+    """)
     op.create_table(
         "document_templates",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -236,9 +228,7 @@ def downgrade():
             f"LOCK TABLE {quoted}.knowledge_documents, {quoted}.document_revisions, {quoted}.document_templates IN ACCESS EXCLUSIVE MODE"
         )
     )
-    incompatible = bind.execute(
-        sa.text(
-            f"""
+    incompatible = bind.execute(sa.text(f"""
         SELECT EXISTS (SELECT 1 FROM {quoted}.document_templates)
             OR EXISTS (SELECT 1 FROM {quoted}.document_revisions
                        WHERE status NOT IN ({OLD_STATUSES}) OR author_user_id IS NOT NULL OR change_description IS NOT NULL
@@ -250,9 +240,7 @@ def downgrade():
                               SELECT r.id FROM {quoted}.document_revisions r
                               WHERE r.tenant_id=d.tenant_id AND r.document_id=d.id ORDER BY r.version DESC LIMIT 1
                           ))
-    """
-        )
-    ).scalar_one()
+    """)).scalar_one()
     if incompatible:
         raise RuntimeError("Downgrade refused: 0142 data cannot be preserved in 0141")
     op.drop_table("document_templates", schema=schema)

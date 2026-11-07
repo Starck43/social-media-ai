@@ -17,13 +17,44 @@ STATUS_DRAFT = "draft"
 STATUS_APPROVED = "approved"
 STATUS_DRAFT_INVALIDATED = "draft_invalidated"
 STATUS_REJECTED = "rejected"
+STATUS_IN_REVIEW = "in_review"
+STATUS_REVISION_REQUESTED = "revision_requested"
 
 STATUS_LABELS: dict[str, str] = {
     STATUS_DRAFT: "Черновик",
     STATUS_APPROVED: "Согласовано",
     STATUS_DRAFT_INVALIDATED: "Требуется повторное согласование после правки текста",
     STATUS_REJECTED: "Отклонено",
+    STATUS_IN_REVIEW: "На согласовании",
+    STATUS_REVISION_REQUESTED: "Требуется доработка",
 }
+
+
+# This is a pure state-policy helper, not an approval or persistence operation.
+# A caller must enforce tenant/actor access and atomically compare the stored
+# state and revision; the hash-bound approval workflow belongs to P19-T04.
+_REVIEW_TRANSITIONS = {
+    STATUS_DRAFT: frozenset({STATUS_IN_REVIEW}),
+    STATUS_IN_REVIEW: frozenset({STATUS_APPROVED, STATUS_REJECTED, STATUS_REVISION_REQUESTED}),
+    STATUS_APPROVED: frozenset(),
+    STATUS_REJECTED: frozenset(),
+    STATUS_REVISION_REQUESTED: frozenset(),
+}
+
+
+def canonical_revision_status(status: str) -> tuple[str, bool]:
+    """Map legacy invalidation without losing its meaning; reject unknown values."""
+    if status == STATUS_DRAFT_INVALIDATED:
+        return STATUS_DRAFT, True
+    if status not in _REVIEW_TRANSITIONS:
+        raise ValueError("Unknown document revision status")
+    return status, False
+
+
+def validate_review_transition(current: str, target: str) -> None:
+    """Validate only the review graph; this does not authorize or persist a change."""
+    if current not in _REVIEW_TRANSITIONS or target not in _REVIEW_TRANSITIONS[current]:
+        raise ValueError("Invalid document review transition")
 
 
 def compute_content_hash(body_text: str) -> str:

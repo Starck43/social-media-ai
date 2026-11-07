@@ -11,7 +11,7 @@
 3. [P20-T03](../tasks/p20-t03.md) — one decision projection over existing approval ledgers.
 4. [P20-T04](../tasks/p20-t04.md) — bounded specialist delegation for research.
 5. [P20-T05](../tasks/p20-t05.md) — review-gated isolated browser pilot, only after T12 shows a measured gap.
-6. [P20-T06](../tasks/p20-t06.md) — navigation regrouping and mobile entry points.
+6. ~~P20-T06 — navigation regrouping and mobile entry points.~~ **DONE 2026-11-07**, accepted source `aa9f4e87`, merge `efcbc8b9` (+ regression fix `e4fe0a33`) — [audit](../audit/p20-t06.md).
 7. [P20-T07](../tasks/p20-t07.md) — «Сегодня» home as a read-time projection.
 8. [P20-T08](../tasks/p20-t08.md) — chat context panel, inline cards and chat dock.
 9. [P20-T09](../tasks/p20-t09.md) — inbox triage and agent-suggested replies.

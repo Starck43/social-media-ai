@@ -132,12 +132,40 @@ def _snapshot_stats(rows: list[ContactChannelStat]) -> list[dict[str, Any]]:
             "channel": r.channel,
             "inbound_count": int(r.inbound_count or 0),
             "outbound_count": int(r.outbound_count or 0),
+            "latency_total_ms": int(r.latency_total_ms or 0),
+            "latency_sample_count": int(r.latency_sample_count or 0),
+            "latency_pending_outbound_at": _dt_to_iso(r.latency_pending_outbound_at),
             "last_inbound_at": _dt_to_iso(r.last_inbound_at),
             "last_outbound_at": _dt_to_iso(r.last_outbound_at),
             "last_message_at": _dt_to_iso(r.last_message_at),
         }
         for r in sorted(rows, key=lambda x: x.channel)
     ]
+
+
+def _expected_merged_stats(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expected target stats before any post-merge observations; legacy fields mean unknown/zero."""
+    merged: dict[str, dict[str, Any]] = {}
+    for key in ("source_stats_before", "target_stats_before"):
+        rows = snapshot.get(key)
+        if not isinstance(rows, list):
+            raise ContactMergeConflictError("Cannot prove channel statistics can be restored")
+        seen: set[str] = set()
+        for row in rows:
+            channel = row.get("channel")
+            if not isinstance(channel, str) or channel in seen:
+                raise ContactMergeConflictError("Cannot prove channel statistics can be restored")
+            seen.add(channel)
+            result = merged.setdefault(channel, {"channel": channel})
+            for field in ("inbound_count", "outbound_count", "latency_total_ms", "latency_sample_count"):
+                result[field] = result.get(field, 0) + int(row.get(field) or 0)
+            for field in ("last_inbound_at", "last_outbound_at", "last_message_at"):
+                current = _iso_to_dt(result.get(field))
+                candidate = _iso_to_dt(row.get(field))
+                result[field] = _dt_to_iso(max(current, candidate) if current and candidate else current or candidate)
+            # Pending samples are invalidated by merge (or absent in legacy journals).
+            result["latency_pending_outbound_at"] = None
+    return [merged[channel] for channel in sorted(merged)]
 
 
 def _detect_conflicting_fields(source: Contact, target: Contact) -> tuple[str, ...]:
@@ -572,6 +600,8 @@ async def merge_contacts(
                     ContactChannelStat.contact_id == source_contact_id,
                 )
                 .order_by(ContactChannelStat.id.asc())
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
         )
         .scalars()
@@ -586,6 +616,8 @@ async def merge_contacts(
                     ContactChannelStat.contact_id == target_contact_id,
                 )
                 .order_by(ContactChannelStat.id.asc())
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
         )
         .scalars()
@@ -705,6 +737,8 @@ async def merge_contacts(
         else:
             t_stat.inbound_count = int(t_stat.inbound_count or 0) + int(s_stat.inbound_count or 0)
             t_stat.outbound_count = int(t_stat.outbound_count or 0) + int(s_stat.outbound_count or 0)
+            t_stat.latency_total_ms = int(t_stat.latency_total_ms or 0) + int(s_stat.latency_total_ms or 0)
+            t_stat.latency_sample_count = int(t_stat.latency_sample_count or 0) + int(s_stat.latency_sample_count or 0)
             if s_stat.last_inbound_at and (
                 t_stat.last_inbound_at is None or s_stat.last_inbound_at > t_stat.last_inbound_at
             ):
@@ -718,6 +752,12 @@ async def merge_contacts(
             ):
                 t_stat.last_message_at = s_stat.last_message_at
             await session.execute(delete(ContactChannelStat).where(ContactChannelStat.id == s_stat.id))
+
+    # A pending outbound from one pre-merge contact cannot be paired with an
+    # inbound of the other. Keep past aggregates, discard only this unmeasured
+    # pending state; it remains in the journal for lossless immediate unmerge.
+    for stat in target_stat_by_channel.values():
+        stat.latency_pending_outbound_at = None
 
     # Apply field resolution choices on survivor target contact
     if choices.get("display_name") == "source" and source.display_name_encrypted:
@@ -834,6 +874,30 @@ async def unmerge_contacts(
     target = locked_by_id[target_id]
     if source.merged_into_id != target_id:
         raise ContactMergeConflictError("Source contact is not currently merged into target contact")
+
+    # Contacts are locked in the same transaction as ingest. Never overwrite
+    # post-merge observations with the pre-merge journal. Legacy journals have
+    # no latency fields; zero means unmeasured, never a fabricated sample.
+    current_stats = []
+    for cid in (source_id, target_id):
+        rows = list(
+            (
+                await session.execute(
+                    select(ContactChannelStat)
+                    .where(ContactChannelStat.tenant_id == tenant_id, ContactChannelStat.contact_id == cid)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if cid == source_id and rows:
+            raise ContactMergeConflictError("Channel observations cannot be restored safely")
+        if cid == target_id:
+            current_stats = rows
+    if _snapshot_stats(current_stats) != _expected_merged_stats(snapshot):
+        raise ContactMergeConflictError("Channel observations cannot be restored safely")
 
     _restore_contact_fields(source, snapshot["source_before"])
     _restore_contact_fields(target, snapshot["target_before"])
@@ -978,6 +1042,9 @@ async def unmerge_contacts(
                     channel=st["channel"],
                     inbound_count=int(st.get("inbound_count") or 0),
                     outbound_count=int(st.get("outbound_count") or 0),
+                    latency_total_ms=int(st.get("latency_total_ms") or 0),
+                    latency_sample_count=int(st.get("latency_sample_count") or 0),
+                    latency_pending_outbound_at=_iso_to_dt(st.get("latency_pending_outbound_at")),
                     last_inbound_at=_iso_to_dt(st.get("last_inbound_at")),
                     last_outbound_at=_iso_to_dt(st.get("last_outbound_at")),
                     last_message_at=_iso_to_dt(st.get("last_message_at")),

@@ -2,6 +2,7 @@
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from telethon.errors import FloodWaitError
 
 from app.core.database import async_session_maker
@@ -20,7 +21,11 @@ pytestmark = pytest.mark.tenancy
 async def test_persisted_source_view_reaches_guarded_personal_runtime(flood_runtime_data, monkeypatch):
     data = flood_runtime_data
     async with async_session_maker() as session:
-        row = (await session.execute(select(Source).where(Source.id == data.source.id))).scalar_one()
+        row = (
+            await session.execute(
+                select(Source).options(selectinload(Source.platform)).where(Source.id == data.source.id)
+            )
+        ).scalar_one()
         assert "token_owner" not in row.params
         view = _runtime_source(
             row, task_id=None, task_plan_enabled=False, owner_user_id=None, cli_dates=None, force_refresh=False

@@ -166,3 +166,187 @@ async def test_case_reference_filters_context_acl_tenant_and_boundary(snapshot):
     session.scalar.return_value = None
     with pytest.raises(mod.DocumentUnavailable):
         await mod.DocumentService()._references(session, data, (1, 2, "owner", ("collection.source.view", "public")))
+
+
+@pytest.mark.asyncio
+async def test_actor_rechecks_membership_and_scope(monkeypatch):
+    from app.core import permissions, tenant_context
+    from app.types import ActionType
+
+    actor = SimpleNamespace(id=9, is_active=True)
+    monkeypatch.setattr(tenant_context, "is_bypass", lambda: False)
+    monkeypatch.setattr(tenant_context, "current_tenant_id", lambda: 7)
+    monkeypatch.setattr(permissions, "get_current_user", lambda: actor)
+    monkeypatch.setattr(permissions, "has_permission", lambda *args: True)
+    session = SimpleNamespace(scalar=AsyncMock(side_effect=[9, 7, SimpleNamespace(role_id=3), "owner"]))
+    identity = await mod.DocumentService()._actor(session, ActionType.UPDATE)
+    assert identity[:3] == (7, 9, "owner") and "collection.source.view" in identity[3]
+    session.scalar.side_effect = [None, 7, SimpleNamespace(role_id=3), "owner"]
+    with pytest.raises(PermissionError):
+        await mod.DocumentService()._actor(session, ActionType.UPDATE)
+    session.scalar.side_effect = [9, 7, None]
+    with pytest.raises(PermissionError):
+        await mod.DocumentService()._actor(session, ActionType.VIEW)
+    monkeypatch.setattr(tenant_context, "is_bypass", lambda: True)
+    with pytest.raises(PermissionError):
+        await mod.DocumentService()._actor(session, ActionType.VIEW)
+
+
+@pytest.mark.asyncio
+async def test_document_lookup_is_tenant_and_acl_fenced(snapshot):
+    doc, rev = snapshot
+    service = mod.DocumentService()
+    session = SimpleNamespace(scalar=AsyncMock(return_value=doc))
+    identity = (1, 2, "owner", ("collection.source.view", "public"))
+    assert await service._doc(session, 10, identity, "cloud", lock=True) == doc
+    stmt = session.scalar.await_args.args[0]
+    sql, params = str(stmt), stmt.compile().params
+    assert all(field in sql for field in ("tenant_id", "acl_scope", "data_boundary"))
+    assert 1 in params.values() and 10 in params.values()
+    with pytest.raises(mod.DocumentUnavailable):
+        await service._doc(session, 0, identity, "cloud")
+    session.scalar.return_value = None
+    with pytest.raises(mod.DocumentUnavailable):
+        await service._doc(session, 10, identity, "cloud")
+    with pytest.raises(mod.DocumentUnavailable):
+        await service._revision(session, doc)
+    session.scalar.return_value = rev
+    assert await service._revision(session, doc) == rev
+
+
+@pytest.mark.asyncio
+async def test_output_redacts_inaccessible_relations(monkeypatch, snapshot):
+    from app.core import permissions
+
+    doc, rev = snapshot
+    doc.contact_id = 3
+    doc.case_evidence_id = 4
+    monkeypatch.setattr(permissions, "get_current_user", lambda: object())
+    monkeypatch.setattr(permissions, "has_permission", lambda *args: False)
+    session = SimpleNamespace(scalar=AsyncMock(return_value=None))
+    result = await mod.DocumentService()._output(session, doc, rev, (1, 2, "viewer", ("public",)))
+    assert result.contact_id is None and result.case_evidence_id is None
+    assert doc.contact_id == 3 and doc.case_evidence_id == 4
+
+
+@pytest.mark.asyncio
+async def test_reference_validation_checks_owner_contact_and_evidence(monkeypatch):
+    from app.core import permissions
+
+    monkeypatch.setattr(permissions, "get_current_user", lambda: object())
+    monkeypatch.setattr(permissions, "has_permission", lambda *args: True)
+    data = DocumentCreate(
+        title="x",
+        document_type="memo",
+        body_text="x",
+        data_boundary="cloud",
+        owner_user_id=2,
+        contact_id=3,
+        case_evidence_id=4,
+    )
+    service = mod.DocumentService()
+    identity = (1, 2, "owner", ("public", "collection.source.view"))
+    session = SimpleNamespace(scalar=AsyncMock(side_effect=[2, 3, 4]))
+    await service._references(session, data, identity)
+    assert session.scalar.await_count == 3
+    session.scalar.side_effect = [None]
+    with pytest.raises(mod.DocumentUnavailable):
+        await service._references(session, data, identity)
+    session.scalar.side_effect = [2, None]
+    with pytest.raises(mod.DocumentUnavailable):
+        await service._references(session, data, identity)
+    monkeypatch.setattr(permissions, "has_permission", lambda *args: False)
+    session.scalar.side_effect = [2]
+    with pytest.raises(PermissionError):
+        await service._references(session, data, identity)
+
+
+@pytest.mark.asyncio
+async def test_create_get_list_delete_and_stale_delete(monkeypatch, snapshot):
+    from app.models import DocumentRevision, KnowledgeDocument
+
+    doc, rev = snapshot
+    service = service_fixture(monkeypatch, doc, rev)
+    monkeypatch.setattr(service, "_output", AsyncMock(return_value="projected"))
+    added = []
+    session = SimpleNamespace(
+        add=lambda row: added.append(row), flush=AsyncMock(), refresh=AsyncMock(), delete=AsyncMock()
+    )
+
+    async def flush():
+        for row in added:
+            if isinstance(row, KnowledgeDocument):
+                row.id = 10
+            if isinstance(row, DocumentRevision):
+                row.id = 11
+
+    session.flush.side_effect = flush
+    assert (
+        await service.create({"title": "new", "document_type": "memo", "body_text": "body"}, session=session)
+        == "projected"
+    )
+    assert len(added) == 2 and added[1].status == "draft" and added[1].author_user_id == 2
+    assert await service.get(10, session=session) == "projected"
+    session.scalars = AsyncMock(return_value=SimpleNamespace(all=lambda: [doc]))
+    page = await service.list(session=session)
+    assert page["items"] == ["projected"] and page["next_before_id"] is None
+    with pytest.raises(ValueError):
+        await service.list(limit=0, session=session)
+    with pytest.raises(mod.DocumentConflict):
+        await service.delete(10, {**version(doc, rev), "expected_revision_id": 99}, session=session)
+    assert await service.delete(10, version(doc, rev), session=session) == {"deleted": True}
+    session.delete.assert_awaited_once_with(doc)
+
+
+@pytest.mark.asyncio
+async def test_templates_are_scoped_and_version_checked(monkeypatch):
+    from app.models.knowledge import DocumentTemplate
+    from app.services.knowledge.document_contracts import TemplateCreate
+
+    now = datetime(2026, 11, 7, tzinfo=timezone.utc)
+    template = SimpleNamespace(
+        id=10, tenant_id=1, name="Test", document_type="memo", content="x", variables_schema={}, updated_at=now
+    )
+    service = mod.DocumentService()
+    monkeypatch.setattr(service, "_actor", AsyncMock(return_value=(1, 2, "owner", ("public",))))
+    session = SimpleNamespace(
+        scalar=AsyncMock(return_value=template),
+        scalars=AsyncMock(return_value=SimpleNamespace(all=lambda: [template])),
+        flush=AsyncMock(),
+        refresh=AsyncMock(),
+        delete=AsyncMock(),
+        add=lambda row: None,
+    )
+    assert (await service.get_template(10, session=session)).name == "Test"
+    page = await service.list_templates(session=session)
+    assert len(page["items"]) == 1
+    with pytest.raises(ValueError):
+        await service.list_templates(limit=0, session=session)
+    with pytest.raises(mod.DocumentUnavailable):
+        await service._template(session, -1, (1, 2, "owner", ()))
+    data = {
+        "name": "New",
+        "document_type": "memo",
+        "content": "new",
+        "variables_schema": {},
+        "expected_updated_at": now,
+    }
+    assert (await service.update_template(10, data, session=session)).name == "New"
+    with pytest.raises(mod.DocumentConflict):
+        await service.delete_template(
+            10, {"expected_updated_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}, session=session
+        )
+    assert await service.delete_template(10, {"expected_updated_at": now}, session=session) == {"deleted": True}
+    created = []
+    session.add = lambda row: created.append(row)
+
+    async def flush():
+        created[0].id, created[0].updated_at = 20, now
+
+    session.flush.side_effect = flush
+    result = await service.create_template(
+        TemplateCreate(name="Created", document_type="memo", content="body"), session=session
+    )
+    assert result.id == 20 and isinstance(created[0], DocumentTemplate)
+    with pytest.raises(ValidationError):
+        TemplateCreate(name=" ", document_type="memo", content="x")

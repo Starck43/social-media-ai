@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     contacts,
     credentials,
     dashboard,
+    documents,
     files_connectors,
     llm_models,
     llm_providers,
@@ -40,6 +41,7 @@ API_AUTH = [Depends(get_authenticated_user)]
 
 router.include_router(contacts.router, prefix="/contacts", tags=["contacts"], dependencies=API_AUTH)
 router.include_router(planner.router, dependencies=API_AUTH)
+router.include_router(documents.router, dependencies=API_AUTH)
 router.include_router(outbox.router, dependencies=API_AUTH)
 router.include_router(communication.router, prefix="/communication", tags=["communication"], dependencies=API_AUTH)
 router.include_router(commands.router, dependencies=API_AUTH)

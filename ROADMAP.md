@@ -48,7 +48,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P15-T12](docs/tasks/p15-t12.md) Restore Telegram FloodWait deferral in the guarded runtime — **IN_PROGRESS** · notion-ai-p15-t12 · [owner decision](https://app.notion.com/chat?t=410f361cdc99804388b100a96e9837bc) · [draft PR #432](https://github.com/Starck43/social-media-ai/pull/432) · `P2` · `C3`
 
 - [P20-T06](docs/tasks/p20-t06.md) Workspace navigation and entry points — **IN_PROGRESS** · notion-ai-p20-t06 · [dialogue](https://app.notion.com/chat?t=40d7810652ab805e901700a9f5940232) · `P2` · `C3`
 - [P20-T07](docs/tasks/p20-t07.md) «Сегодня»: read-time attention and decisions home — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C4`
@@ -85,7 +84,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P20-T04](docs/tasks/p20-t04.md) Bounded specialist delegation for research — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
-- [P15-T06](docs/tasks/p15-t06.md) Channel senders: SMTP, Telegram bot and MAX bot capabilities — **transport, lands first; sends only customer-account mail through the P14-T09 seam (D12/D13)** — **IN_PROGRESS** · Codex audit · [finding](https://github.com/Starck43/social-media-ai/pull/411#issuecomment-6658502964) · [PR #411](https://github.com/Starck43/social-media-ai/pull/411) · `P3` · `C4`
+- [P15-T06](docs/tasks/p15-t06.md) Channel senders: SMTP, Telegram bot and MAX bot capabilities — **transport, lands first; sends only customer-account mail through the P14-T09 seam (D12/D13)** — **READY** · Codex finalization (Perch/River) · [final validation](https://github.com/Starck43/social-media-ai/pull/435) · [PR #411](https://github.com/Starck43/social-media-ai/pull/411) · `P3` · `C4`
 - [P15-T07](docs/tasks/p15-t07.md) Channel recommendation with confidence score — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P16-T02](docs/tasks/p16-t02.md) Reminders, snooze and multi-channel notifications — **no second sender (D18/D19/D20)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`

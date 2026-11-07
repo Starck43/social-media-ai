@@ -63,11 +63,11 @@ class _StubPerms:
 
 def test_every_nav_item_belongs_to_a_declared_domain_group() -> None:
     assert set(NAV_GROUP_LABELS) == {
-        "overview",
-        "monitoring",
+        "work",
+        "clients",
         "knowledge",
-        "communications",
-        "cases_system",
+        "monitoring",
+        "system",
     }
     for item in NAV_ITEMS:
         assert item.group in NAV_GROUP_LABELS, f"{item.key} has unknown group {item.group!r}"
@@ -96,7 +96,7 @@ def test_p12_sections_are_live_and_gated() -> None:
         assert item.required_permission is not None
 
 
-def test_ready_routes_and_mobile_bar_remain_unchanged() -> None:
+def test_ready_routes_remain_and_mobile_bar_is_daily_loop() -> None:
     ready = {item.key: item.href for item in NAV_ITEMS if item.ready}
     assert ready == {
         "dashboard": "/app/",
@@ -114,8 +114,10 @@ def test_ready_routes_and_mobile_bar_remain_unchanged() -> None:
         "communications": "/app/communications",
         "followups": "/app/followups",
         "cases": "/app/cases",
+        "planner": "/app/planner",
+        "contacts": "/app/contacts",
     }
-    assert [item.key for item in MOBILE_NAV_ITEMS] == ["dashboard", "sources", "tasks", "jobs"]
+    assert [item.key for item in MOBILE_NAV_ITEMS] == ["dashboard", "chat", "communications", "tasks"]
     assert all(item.ready and item.href.startswith("/app") for item in MOBILE_NAV_ITEMS)
 
 

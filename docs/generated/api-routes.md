@@ -36,6 +36,7 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/communication/contacts/merge | post_communication_contact_merge_api_v1_communication_contacts_merge_post |
 | GET | /api/v1/communication/contacts/suggestions | get_communication_contact_merge_suggestions_api_v1_communication_contacts_suggestions_get |
 | POST | /api/v1/communication/contacts/unmerge | post_communication_contact_unmerge_api_v1_communication_contacts_unmerge_post |
+| GET | /api/v1/communication/contacts/{contact_id}/recommend-channel | get_contact_channel_recommendation_api_v1_communication_contacts__contact_id__recommend_channel_get |
 | GET | /api/v1/communication/inbox | get_communication_inbox_api_v1_communication_inbox_get |
 | POST | /api/v1/communication/inbox/archive | post_communication_archive_api_v1_communication_inbox_archive_post |
 | GET | /api/v1/communication/inbox/contacts/{contact_id}/messages | get_communication_contact_messages_api_v1_communication_inbox_contacts__contact_id__messages_get |

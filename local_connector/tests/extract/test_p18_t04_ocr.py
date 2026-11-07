@@ -1,6 +1,7 @@
 """P18-T04: bounded Tesseract subprocess (double-driven)."""
 
 import os
+import stat as stat_module
 import sys
 import time
 from pathlib import Path
@@ -70,6 +71,44 @@ def test_wall_limit_kills_slow_child(tmp_path, monkeypatch):
     assert outcome.note == "ocr_wall_limit"
     assert elapsed < 10
     monkeypatch.delenv("P18T04_OCR", raising=False)
+
+
+def test_wall_limit_reaps_whole_process_group(tmp_path):
+    if os.name != "posix":
+        pytest.skip("process groups are a POSIX concern")
+    pidfile = tmp_path / "orphan-sleeper.pid"
+    script = tmp_path / "group-sleeper.sh"
+    script.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--list-langs" ]; then\n'
+        "  echo 'List of available languages in ...:'\n"
+        '  echo "rus"\n'
+        '  echo "eng"\n'
+        "  exit 0\n"
+        "fi\n"
+        f"( sleep 60 & echo $! > {pidfile} )\n"
+        "sleep 60\n",
+        encoding="utf-8",
+    )
+    script.chmod(stat_module.S_IRWXU)
+    runner = make_runner(tmp_path, script, wall=1.0)
+    assert runner.ocr_image(b"\x89PNG fake").note == "ocr_wall_limit"
+    deadline = time.monotonic() + 5.0
+    orphan_pid = None
+    while time.monotonic() < deadline:
+        if pidfile.exists():
+            orphan_pid = int(pidfile.read_text(encoding="utf-8").strip())
+            break
+        time.sleep(0.05)
+    if orphan_pid is None:
+        return  # the child was killed before it could register its orphan
+    while time.monotonic() < deadline:
+        try:
+            os.kill(orphan_pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.05)
+    pytest.fail("process-group member outlived the wall timeout")
 
 
 def test_cpu_limit_rlimit(tmp_path, monkeypatch):

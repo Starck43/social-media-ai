@@ -42,6 +42,19 @@ def test_zip_bomb_rejected_before_parse():
     assert len(data) < (1 << 20)
 
 
+def test_docx_backend_absent_is_note(tmp_path, monkeypatch):
+    import io
+    import zipfile as zf
+
+    buffer = io.BytesIO()
+    with zf.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+    monkeypatch.setitem(sys.modules, "docx", None)
+    result = extract_docx(buffer.getvalue(), DocumentLimits())
+    assert result.chunks == ()
+    assert result.notes == ("docx.unavailable",)
+
+
 def test_paragraph_budget_truncation():
     data = make_docx(paragraphs=tuple(f"row {n}" for n in range(10)))
     limits = DocumentLimits(max_docx_paragraphs=3)

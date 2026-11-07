@@ -13,13 +13,19 @@ import time
 from collections.abc import Callable, Sequence
 from datetime import datetime
 
-import pypdf
-
 from .limits import DocumentLimits
 from .models import ExtractionChunk, ExtractionResult
 from .ocr import OcrOutcome, OcrRunner
 
 _COMPACT_DATE = "%Y%m%d%H%M%S"
+
+
+def _default_pdf_reader(stream: Sequence[bytes]) -> object:
+    """Resolve pypdf lazily so the connector imports without the backend."""
+
+    import pypdf
+
+    return pypdf.PdfReader(stream)
 
 
 def _compact(value: str) -> str:
@@ -75,15 +81,23 @@ def extract_pdf(
     limits: DocumentLimits,
     ocr: OcrRunner | None,
     *,
-    reader_factory: Callable[[Sequence[bytes]], object] = pypdf.PdfReader,
+    reader_factory: Callable[[Sequence[bytes]], object] | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> ExtractionResult:
-    """Extract bounded text/pages/metadata; every failure is a note code."""
+    """Extract bounded text/pages/metadata; every failure is a note code.
+
+    ``reader_factory`` injects a reader for tests; the default resolves
+    pypdf per call so an absent backend degrades to ``pdf.unavailable``
+    without breaking package import.
+    """
 
     notes: list[str] = []
 
+    factory = reader_factory if reader_factory is not None else _default_pdf_reader
     try:
-        reader = reader_factory(io.BytesIO(data))
+        reader = factory(io.BytesIO(data))
+    except ImportError:
+        return ExtractionResult(chunks=(), notes=("pdf.unavailable",))
     except Exception as exc:
         return ExtractionResult(chunks=(), notes=("pdf.unsupported_format", type(exc).__name__.lower()))
 

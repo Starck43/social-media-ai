@@ -16,7 +16,7 @@ import signal
 import stat as stat_module
 import subprocess
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -73,6 +73,49 @@ class OcrOutcome:
         return self.text is not None
 
 
+def _bounded_run(
+    command: Sequence[str],
+    *,
+    capture_output: bool,
+    timeout: float | None,
+    check: bool,
+    start_new_session: bool = True,
+    preexec_fn: Callable[[], None] | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    """``subprocess.run`` stand-in that reaps the whole group on timeout.
+
+    The child leads its own session (``start_new_session``), so a wall-clock
+    timeout SIGKILLs the entire process group instead of only the direct
+    child; no group member outlives the bounded call.
+    """
+
+    argv = list(command)
+    process = subprocess.Popen(
+        argv,
+        stdout=subprocess.PIPE if capture_output else None,
+        stderr=subprocess.PIPE if capture_output else None,
+        start_new_session=start_new_session,
+        preexec_fn=preexec_fn,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                pass
+        try:
+            process.kill()
+        except OSError:
+            pass
+        process.communicate()
+        raise
+    if check and process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, argv, stdout, stderr)
+    return subprocess.CompletedProcess(argv, process.returncode, stdout=stdout, stderr=stderr)
+
+
 class OcrRunner:
     """Resolve, validate and invoke one bounded Tesseract binary."""
 
@@ -83,7 +126,7 @@ class OcrRunner:
         workdir: Path | str,
         max_image_bytes: int = DEFAULT_MAX_IMAGE_BYTES,
         which: Callable[[str], str | None] = shutil.which,
-        spawn: Callable[..., "subprocess.CompletedProcess[str]"] = subprocess.run,
+        spawn: Callable[..., "subprocess.CompletedProcess[str]"] = _bounded_run,
     ) -> None:
         if max_image_bytes <= 0:
             raise ValueError("max_image_bytes must be positive")

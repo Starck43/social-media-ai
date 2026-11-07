@@ -48,6 +48,13 @@ def test_bad_pdf_becomes_note(tmp_path):
     assert result.notes[0].startswith("pdf.unsupported_format")
 
 
+def test_pdf_backend_absent_is_note(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pypdf", None)
+    result = extract_pdf(b"%PDF-1.4 fake", DocumentLimits(), None)
+    assert result.chunks == ()
+    assert result.notes == ("pdf.unavailable",)
+
+
 def test_page_limit_truncates(tmp_path):
     data = make_pdf(pages=("one", "two", "three", "four", "five"))
     limits = DocumentLimits(max_pdf_pages=2)

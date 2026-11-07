@@ -61,8 +61,10 @@ def extract_xlsx(data: bytes, limits: DocumentLimits) -> ExtractionResult:
     if status == "too_large":
         return ExtractionResult(chunks=(), notes=("xlsx.uncompressed_limit",))
 
-    import openpyxl
-
+    try:
+        import openpyxl
+    except ImportError:
+        return ExtractionResult(chunks=(), notes=("xlsx.unavailable",))
     try:
         workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:

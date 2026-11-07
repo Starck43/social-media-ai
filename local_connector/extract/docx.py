@@ -39,8 +39,10 @@ def extract_docx(data: bytes, limits: DocumentLimits) -> ExtractionResult:
     if status == "too_large":
         return ExtractionResult(chunks=(), notes=("docx.uncompressed_limit",))
 
-    import docx
-
+    try:
+        import docx
+    except ImportError:
+        return ExtractionResult(chunks=(), notes=("docx.unavailable",))
     try:
         document = docx.Document(io.BytesIO(data))
     except Exception as exc:

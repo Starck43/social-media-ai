@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -228,3 +229,42 @@ def test_config_runtime_limits_flow():
         document_limits=DocumentLimits(max_pdf_pages=7),
     )
     assert with_limits.document_limits.max_pdf_pages == 7
+
+
+def test_connector_importable_without_format_backends(tmp_path):
+    """A missing optional backend must not break importing the connector."""
+
+    root = Path(__file__).resolve().parents[3]
+    probe = tmp_path / "no_backend_probe.py"
+    probe.write_text(
+        "import sys\n"
+        "for name in ('pypdf', 'docx', 'openpyxl', 'PIL'):\n"
+        "    sys.modules[name] = None\n"
+        "import local_connector  # noqa: E402\n"
+        "from local_connector.extract import DocumentLimits, extract_file  # noqa: E402\n"
+        "result = extract_file(b'plain text probe', 'probe.txt', DocumentLimits())\n"
+        "assert result.chunks and result.chunks[0].text == 'plain text probe', result\n"
+        "print('PROBE-OK')\n",
+        encoding="utf-8",
+    )
+    outcome = subprocess.run(
+        [sys.executable, str(probe)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(root)},
+    )
+    assert outcome.returncode == 0, outcome.stderr
+    assert "PROBE-OK" in outcome.stdout
+
+
+def test_long_text_is_split_by_chunk_size(tmp_path):
+    harness = Harness(tmp_path)
+    harness.write("long.txt", "x" * 9000)
+    assert harness.index("long.txt") is True
+    count = harness.store.connection.execute(
+        "SELECT COUNT(*) FROM chunks c "
+        "JOIN files f ON f.path_hash = c.path_hash "
+        "WHERE f.relative_path = 'long.txt'"
+    ).fetchone()[0]
+    assert count == 3
+    harness.close()

@@ -31,6 +31,19 @@ def test_cell_value_types():
     assert result.chunks[0].text == "TRUE 2 1.5 2026-01-02T00:00:00 2026-01-02T03:04:05 x"
 
 
+def test_xlsx_backend_absent_is_note(tmp_path, monkeypatch):
+    import io
+    import zipfile as zf
+
+    buffer = io.BytesIO()
+    with zf.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+    monkeypatch.setitem(sys.modules, "openpyxl", None)
+    result = extract_xlsx(buffer.getvalue(), DocumentLimits())
+    assert result.chunks == ()
+    assert result.notes == ("xlsx.unavailable",)
+
+
 def test_bad_xlsx_becomes_note():
     result = extract_xlsx(b"no workbook here", DocumentLimits())
     assert result.chunks == ()

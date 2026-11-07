@@ -42,4 +42,5 @@ tests = [
     "tests/communications/test_p15_t07_service_unit.py",
     "tests/communications/test_p15_t07_api_unit.py",
     "tests/communications/test_p15_t07_stats_unit.py",
+    "tests/communications/test_p15_t07_migration_unit.py",
 ]

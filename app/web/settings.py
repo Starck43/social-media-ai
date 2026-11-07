@@ -337,10 +337,50 @@ async def settings_page(request: Request):
         context.update(
             channels=await TenantChannelManager().filter(tenant_id=tenant_id), action_types=ActionType.choices()
         )
+    elif tab == "account":
+        from app.services.workspace.today import available_start_pages, get_user_start_page
+
+        context.update(
+            start_page_options=available_start_pages(perms),
+            current_start_page=get_user_start_page(
+                getattr(user, "id", None),
+                getattr(request, "session", None) if isinstance(getattr(request, "session", None), dict) else None,
+            ),
+        )
 
     response = render(request, "web/settings.html", section="settings", **context)
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@router.post("/start-page")
+async def start_page_update(
+    request: Request,
+    start_page: str = Form("dashboard"),
+    token: str = Form("", alias="_csrf"),
+):
+    """Save the user's preferred start page (O-2) with safe fallback if unpermitted."""
+    from app.services.workspace.today import set_user_start_page
+
+    if not _personal_access(request):
+        add_flash(request, "error", "Только для вошедшего пользователя")
+        return RedirectResponse(f"{BACK}?tab=account", status_code=302)
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"{BACK}?tab=account", status_code=302)
+    user = getattr(request.state, "web_user", None)
+    session = getattr(request, "session", None)
+    try:
+        set_user_start_page(
+            getattr(user, "id", None),
+            start_page,
+            session=session if isinstance(session, dict) else None,
+        )
+    except ValueError:
+        add_flash(request, "error", "Некорректная стартовая страница")
+        return RedirectResponse(f"{BACK}?tab=account", status_code=302)
+    add_flash(request, "success", "Стартовая страница сохранена.")
+    return RedirectResponse(f"{BACK}?tab=account", status_code=303)
 
 
 async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:

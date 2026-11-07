@@ -51,7 +51,7 @@ TZ criteria: contacts merged by email/phone (T03); chronological per-contact vie
 
 10. [P15-T11](../tasks/p15-t11.md) — Restore the red channels test suite · `P2` · `C2` — **DONE 2026-11-07**, PR #429 (`57de19ea`); two FloodWait reds stay by owner decision and move to [P15-T12](../tasks/p15-t12.md)
 
-11. [P15-T12](../tasks/p15-t12.md) — Restore Telegram FloodWait deferral in the guarded runtime · `P2` · `C3`
+11. [P15-T12](../tasks/p15-t12.md) — Restore Telegram FloodWait deferral in the guarded runtime · `P2` · `C3` — **DONE 2026-11-07**, PR #432 (`f3d28601`)
 
 ## Dependencies and gates
 

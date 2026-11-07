@@ -19,7 +19,7 @@ TZ 2.1–2.5, adapted:
 
 - **Identity reconciliation:** by email/phone/username through blind indexes; suggestions with reasons; manual merge/unmerge with journal; conflict resolution ([P15-T03](../tasks/p15-t03.md)).
 - **Unified inbox:** thread view, filters (channel, date, read state), search (metadata always; content per D3), chronological order, read/archive, local delete, reply ([P15-T04](../tasks/p15-t04.md), T08).
-- **Channel recommendation:** frequency, last active channel, manual preference, optional AI hint, confidence score ([P15-T07](../tasks/p15-t07.md)).
+- **Channel recommendation:** frequency, last active channel, manual preference, optional AI hint, confidence score ([P15-T07 audit](../audit/p15-t07.md)).
 - **Outbox & scheduling:** drafts with approval, scheduled sending, one text → several channels, delivery tracking, retry only on definite transient failure, cancel ([P15-T05](../tasks/p15-t05.md)/T06).
 - **Storage strategy:** metadata in `unified_messages`, optional content cache, originals stay in source systems, periodic sync, deleted originals → `unavailable` ([P15-T02](../tasks/p15-t02.md)).
 
@@ -45,7 +45,7 @@ TZ criteria: contacts merged by email/phone (T03); chronological per-contact vie
 4. [P15-T04](../tasks/p15-t04.md) — Unified inbox: threads, filters, search and read state · `P3` · `C4` · depends: [P15-T02](../tasks/p15-t02.md), [P15-T03](../tasks/p15-t03.md)
 5. [P15-T06 accepted](../audit/p15-t06.md) — **DONE 2026-11-07**, source `b9eb76d5f0a3c12a6349ec6d2a94de756f413ef5`: default-off customer SMTP and private bot senders, honest outcomes and guarded package validation.
 6. [P15-T05](../tasks/p15-t05.md) — Persistent outbox, scheduling and delivery tracking — **accepted 2026-11-06** ([audit](../audit/p15-t05-0141.md), revision `0141`) · `P3` · `C4`
-7. [P15-T07](../tasks/p15-t07.md) — Channel recommendation with confidence score · `P3` · `C3` · depends: [P15-T02](../tasks/p15-t02.md)
+7. ~~P15-T07 — Channel recommendation with confidence score~~ **DONE 2026-11-08**, accepted source `8afafd93`, PR #438 — [audit](../audit/p15-t07.md)
 8. [P15-T08](../tasks/p15-t08.md) — Reply from the unified interface · `P3` · `C3` · depends: [P15-T04](../tasks/p15-t04.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
 9. [P15-T09](../tasks/p15-t09.md) — Register D14 `comms.outbox` in the central permission catalog and presets · `P3` · `C2` · depends: [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
 

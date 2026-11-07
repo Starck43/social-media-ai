@@ -43,7 +43,7 @@ reference plus what is genuinely ours.
   it offers to keep the current one or switch. **Silence never switches anything**: no
   automatic pick, no "first connected wins" that the user never saw, and a source that
   becomes unavailable does not silently promote another one into its place. The same
-  pattern as [P15-T07](../tasks/p15-t07.md): a suggestion with a reason, a human decides.
+  pattern as [P15-T07](p15-t07.md): a suggestion with a reason, a human decides.
 
 ## Consequences worth remembering for D25
 
@@ -150,7 +150,7 @@ not migrating data.
 
 D26 governs **sources of the same capability connected side by side** — calendars, task
 systems. Which channel reaches a contact is not that question: it is chosen per contact
-and per moment by the agent in [P15-T07](../tasks/p15-t07.md), bounded only by consent
+and per moment by the agent in [P15-T07](p15-t07.md), bounded only by consent
 ([D15](q-19-messaging-decisions.md)). Nothing about a channel is stored as a default here.
 
 ## Where this bites first

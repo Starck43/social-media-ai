@@ -29,6 +29,7 @@ def migration():
 def test_revision_and_additive_unmeasured_defaults(monkeypatch):
     m = migration()
     assert m["revision"] == "0144"
+    assert m["down_revision"] == "0143"
     operations = []
     fake = SimpleNamespace(
         add_column=lambda table, column, **kw: operations.append((table, column, kw)),

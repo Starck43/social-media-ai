@@ -105,6 +105,14 @@ def context(mode):
                 ("chat", "/app/chat", "Чат с агентом", "chat"),
             ]
         ],
+        mobile_nav=[
+            NS(key=key, href=href, label=label, ready=True, icon=icon)
+            for key, href, label, icon in [
+                ("dashboard", "/app/", "Дашборд", "home"),
+                ("chat", "/app/chat", "Чат с агентом", "chat"),
+                ("tasks", "/app/tasks", "Задачи", "tasks"),
+            ]
+        ],
         csrf="fixture-csrf",
         messages=[],
         flashes=[],

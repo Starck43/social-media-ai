@@ -77,7 +77,7 @@
 </div>
 {% if user and tenant and request.query_params.get('embedded') != '1' %}
 <nav class="shell-mobile-bar" aria-label="Быстрая навигация">
-    {% for item in mobile_nav %}
+    {% for item in mobile_nav|default([], true) %}
     <a href="{{ item.href }}" {% if section == item.key %}aria-current="page"{% endif %}>{{ icon(item.icon|default('circle')) }}<span>{{ 'Чат' if item.key == 'chat' else item.label }}</span></a>
     {% endfor %}
     <button type="button" data-dialog-open="navigation-drawer" aria-controls="navigation-drawer" aria-expanded="false">{{ icon('menu') }}<span>Ещё</span></button>

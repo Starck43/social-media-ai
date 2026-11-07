@@ -500,7 +500,7 @@ class DocumentService:
         return {"items": items, "limit": limit, "next_before_id": rows[limit - 1].id if len(rows) > limit else None}
 
     async def update(self, doc_id, data, *, boundary="cloud", session=None):
-        from app.services.knowledge.document_contracts import DocumentCreate, DocumentUpdate
+        from app.services.knowledge.document_contracts import DocumentCreate, DocumentUpdate, StoredDocumentInput
 
         if session is None:
             from app.core.database import with_db_session
@@ -522,7 +522,7 @@ class DocumentService:
         changes = data.model_dump(exclude_unset=True, exclude={"expected_revision_id", "expected_updated_at"})
         base = _project(doc, revision).model_dump(include=set(DocumentCreate.model_fields))
         base.update(changes)
-        updated = DocumentCreate.model_validate(base)
+        updated = StoredDocumentInput.model_validate(base)
         await self._references(session, updated, identity)
         doc = await self._doc(session, doc_id, identity, boundary, lock=True)
         revision = await self._revision(session, doc)

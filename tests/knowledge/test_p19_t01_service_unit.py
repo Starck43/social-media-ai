@@ -350,3 +350,13 @@ async def test_templates_are_scoped_and_version_checked(monkeypatch):
     assert result.id == 20 and isinstance(created[0], DocumentTemplate)
     with pytest.raises(ValidationError):
         TemplateCreate(name=" ", document_type="memo", content="x")
+
+
+@pytest.mark.asyncio
+async def test_legacy_untyped_document_can_be_edited_without_fabricating_type(monkeypatch, snapshot):
+    doc, rev = snapshot
+    doc.document_type = None
+    service = service_fixture(monkeypatch, doc, rev)
+    session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
+    result = await service.update(10, {**version(doc, rev), "title": "New title"}, session=session)
+    assert result.document_type is None and doc.title == "New title"

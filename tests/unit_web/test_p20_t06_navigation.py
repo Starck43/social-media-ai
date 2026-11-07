@@ -94,7 +94,7 @@ def test_template_orders_accessible_groups_and_exposes_drawer_button():
     base = (ROOT / "app/web/templates/web/base.html").read_text()
     assert 'aria-label="Быстрая навигация"' in base
     assert 'data-dialog-open="navigation-drawer" aria-controls="navigation-drawer"' in base
-    assert "{% for item in mobile_nav %}" in base
+    assert "{% for item in mobile_nav|default([], true) %}" in base
 
 
 def test_mobile_bar_renders_only_ready_permitted_items_and_skips_embedded():

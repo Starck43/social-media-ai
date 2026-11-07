@@ -185,6 +185,8 @@ class ContactChannelStat(Base, TimestampMixin, TenantScopedMixin):
         CheckConstraint(f"channel IN ({_sql_list(COMMUNICATION_CHANNELS)})", name="ck_contact_channel_stats_channel"),
         CheckConstraint("inbound_count >= 0", name="ck_contact_channel_stats_inbound_nonneg"),
         CheckConstraint("outbound_count >= 0", name="ck_contact_channel_stats_outbound_nonneg"),
+        CheckConstraint("latency_total_ms >= 0", name="ck_contact_channel_stats_latency_total_nonneg"),
+        CheckConstraint("latency_sample_count >= 0", name="ck_contact_channel_stats_latency_count_nonneg"),
         Index("ix_contact_channel_stats_tenant_contact", "tenant_id", "contact_id"),
         {"schema": settings.DB_SCHEMA},
     )
@@ -194,6 +196,9 @@ class ContactChannelStat(Base, TimestampMixin, TenantScopedMixin):
     channel: Mapped[str] = mapped_column(String(20), nullable=False)
     inbound_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     outbound_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    latency_total_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    latency_sample_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    latency_pending_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

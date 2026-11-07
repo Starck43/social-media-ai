@@ -334,32 +334,30 @@ async def _resolve_or_create_contact(
     ).scalar_one_or_none()
 
     if existing_identity is not None:
+        # Lock each visited contact and re-read the merge link while locked.
+        # Merge/unmerge use contact locks too; concurrent chains either resolve
+        # to a locked survivor or fail closed. A database deadlock aborts the
+        # transaction rather than performing an unlocked update.
         contact_id = existing_identity.contact_id
-        contact = (
-            await session.execute(
-                select(Contact).where(
-                    Contact.tenant_id == tenant_id,
-                    Contact.id == contact_id,
-                )
-            )
-        ).scalar_one_or_none()
-        if contact is not None and contact.merged_into_id is not None:
-            # Follow merge chain to the active survivor contact
-            chain_rows = (
-                await session.execute(
-                    select(Contact.id, Contact.merged_into_id).where(Contact.tenant_id == tenant_id)
-                )
-            ).all()
-            links = {row[0]: row[1] for row in chain_rows}
-            contact_id = follow_merge_chain(contact.id, links)
+        contact = None
+        seen: set[int] = set()
+        for _ in range(16):
+            if contact_id in seen:
+                raise CommunicationIngestError("contact merge cycle")
+            seen.add(contact_id)
             contact = (
                 await session.execute(
-                    select(Contact).where(
-                        Contact.tenant_id == tenant_id,
-                        Contact.id == contact_id,
-                    )
+                    select(Contact)
+                    .where(Contact.tenant_id == tenant_id, Contact.id == contact_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
                 )
             ).scalar_one_or_none()
+            if contact is None or contact.merged_into_id is None:
+                break
+            contact_id = contact.merged_into_id
+        else:
+            raise CommunicationIngestError("contact merge chain too deep")
         if contact is not None:
             if contact.last_active_at is None or sent_at >= contact.last_active_at:
                 contact.last_active_at = sent_at
@@ -483,7 +481,7 @@ async def _update_contact_channel_stats(
                 ContactChannelStat.tenant_id == tenant_id,
                 ContactChannelStat.contact_id == contact_id,
                 ContactChannelStat.channel == channel,
-            )
+            ).with_for_update().execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
 
@@ -497,10 +495,27 @@ async def _update_contact_channel_stats(
             last_inbound_at=sent_at if direction == "inbound" else None,
             last_outbound_at=sent_at if direction == "outbound" else None,
             last_message_at=sent_at,
+            latency_total_ms=0,
+            latency_sample_count=0,
+            latency_pending_outbound_at=sent_at if direction == "outbound" else None,
         )
         session.add(stat)
         await session.flush()
         return stat
+
+    # The contact row is held FOR UPDATE by _resolve_or_create_contact in the
+    # same transaction. Counters, ordering and latency therefore serialize with
+    # concurrent ingestion and merge/unmerge. Equal or late timestamps are
+    # counted but not used as latency evidence: their ordering is ambiguous.
+    is_ordered = stat.last_message_at is None or sent_at > stat.last_message_at
+    if is_ordered and direction == "outbound":
+        stat.latency_pending_outbound_at = sent_at
+    elif is_ordered and direction == "inbound" and stat.latency_pending_outbound_at is not None:
+        delta = sent_at - stat.latency_pending_outbound_at
+        if delta.total_seconds() > 0:
+            stat.latency_total_ms = int(stat.latency_total_ms or 0) + (delta // timedelta(milliseconds=1))
+            stat.latency_sample_count = int(stat.latency_sample_count or 0) + 1
+            stat.latency_pending_outbound_at = None
 
     if direction == "inbound":
         stat.inbound_count = int(stat.inbound_count or 0) + 1

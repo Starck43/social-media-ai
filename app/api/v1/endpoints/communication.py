@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import Field
@@ -22,6 +23,7 @@ from app.services.communications.inbox import (
     list_inbox_threads,
     mark_thread_read,
 )
+from app.services.communications.recommend import recommend_channel
 from app.services.contacts.reconcile import (
     ContactMergeConflictError,
     ContactMergeError,
@@ -186,6 +188,36 @@ router = APIRouter(
     dependencies=[Depends(require_business_scope), Depends(require_model_perm("comms.message", ActionType.VIEW))],
     route_class=BusinessRoute,
 )
+
+
+class ChannelRecommendationOut(BusinessSchema):
+    channel: str | None
+    confidence: float = Field(ge=0, le=1)
+    reasons: list[str]
+
+
+@router.get(
+    "/contacts/{contact_id}/recommend-channel",
+    response_model=ChannelRecommendationOut,
+    dependencies=[Depends(require_model_perm("contact", ActionType.VIEW))],
+)
+async def get_contact_channel_recommendation(
+    contact_id: int = Path(..., gt=0),
+    purpose: Literal["transactional", "greeting", "marketing"] = Query(...),
+):
+    """Advisory only: no dispatch and no replacement for delivery authorization."""
+    try:
+        async with async_session_maker() as session, session.begin():
+            result = await recommend_channel(session, contact_id, purpose)
+            return ChannelRecommendationOut(
+                channel=result.channel, confidence=result.confidence, reasons=list(result.reasons)
+            )
+    except PermissionError:
+        raise HTTPException(status_code=403) from None
+    except ContactUnavailable:
+        raise HTTPException(status_code=404) from None
+    except ValueError:
+        raise HTTPException(status_code=400) from None
 
 
 @router.get("/inbox", response_model=InboxThreadListOut)

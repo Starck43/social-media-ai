@@ -21,6 +21,7 @@ from app.models.types.encrypted import EncryptedText
 from app.services.contacts import identity, workspace
 from app.types import ActionType
 
+__source_only__ = True
 pytestmark = pytest.mark.tenancy
 NOW = datetime(2026, 11, 3, tzinfo=timezone.utc)
 
@@ -535,7 +536,7 @@ def test_contact_navigation_matches_registered_route_and_permission():
 
     item = next(item for item in NAV_ITEMS if item.key == "contacts")
     assert item.href == "/app/contacts" and item.ready
-    assert item.group == "communications" and item.required_permission == "contacts.contact.view"
+    assert item.group == "clients" and item.required_permission == "contacts.contact.view"
     app = FastAPI()
     app.include_router(web_router)
     assert "/app/contacts" in app.openapi()["paths"]

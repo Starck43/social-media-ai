@@ -6,7 +6,11 @@
 
 [[package]]
 path = "app/services/contacts"
-tests = ["tests/contacts/test_p13_t07_unit.py"]
+tests = [
+    "tests/contacts/test_p13_t07_unit.py",
+    "tests/contacts/test_p15_t03_reconcile_unit.py",
+    "tests/communications/test_p15_t07_stats_unit.py",
+]
 
 [[package]]
 path = "app/models/contacts"
@@ -29,4 +33,18 @@ tests = [
     "tests/integrations/test_p18_t02_release_fence.py",
     "tests/integrations/test_p18_t02_websocket_size.py",
     "tests/web/test_p18_t02_chat_references.py",
+]
+
+[[package]]
+path = "app/services/communications"
+tests = [
+    "tests/communications/test_p15_t02_ingest_unit.py",
+    "tests/communications/test_p15_t04_inbox_unit.py",
+    "tests/communications/test_p15_t05_unit.py",
+    "tests/communications/test_p15_t05_migration.py",
+    "tests/communications/test_p15_t07_rank_unit.py",
+    "tests/communications/test_p15_t07_service_unit.py",
+    "tests/communications/test_p15_t07_api_unit.py",
+    "tests/communications/test_p15_t07_stats_unit.py",
+    "tests/communications/test_p15_t07_migration_unit.py",
 ]

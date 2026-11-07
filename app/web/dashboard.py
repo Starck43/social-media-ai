@@ -276,6 +276,63 @@ def _offers(perms) -> dict[str, bool]:
     }
 
 
+async def _today_projection_for_request(
+    request: Request,
+    tenant_id: int | None,
+    user,
+    perms,
+    recent_results: list[dict],
+) -> dict:
+    from fastapi.responses import RedirectResponse
+
+    from app.services.workspace.today import (
+        TodayProjection,
+        get_actor_item_states,
+        normalize_scope,
+        resolve_start_page,
+    )
+
+    query_params = getattr(request, "query_params", None) or {}
+    session = getattr(request, "session", None)
+    user_id = getattr(user, "id", None) if user is not None else None
+
+    start_res = resolve_start_page(user_id, perms, session=session if isinstance(session, dict) else None)
+    explicit_today = (
+        query_params.get("view") in {"today", "overview"}
+        or "scope" in query_params
+        or "show_dismissed" in query_params
+        or "tenant_id" in query_params
+    )
+    if (
+        not explicit_today
+        and start_res["effective_key"] != "dashboard"
+        and not start_res["fell_back"]
+        and start_res["href"] != "/app/"
+    ):
+        return {"redirect": RedirectResponse(start_res["href"], status_code=302)}
+
+    scope = normalize_scope(query_params.get("scope"))
+    show_dismissed = str(query_params.get("show_dismissed") or "") == "1"
+    actor_states = get_actor_item_states(
+        user_id,
+        tenant_id,
+        session=session if isinstance(session, dict) else None,
+    )
+    repository = getattr(getattr(request, "state", None), "today_repository", None)
+    projection = TodayProjection(
+        workspace_id=tenant_id,
+        user_id=user_id,
+        perms=perms,
+        scope=scope,
+        repository=repository,
+        actor_states=actor_states,
+        include_dismissed=show_dismissed,
+    )
+    snapshot = await projection.snapshot(merged_results=recent_results)
+    snapshot["start_page"] = start_res
+    return {"today": snapshot}
+
+
 @router.get("/")
 async def dashboard(request: Request):
     tenant_id = getattr(request.state, "tenant_id", None)
@@ -287,7 +344,8 @@ async def dashboard(request: Request):
     if is_superuser:
         filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
 
-    offer = _offers(getattr(request.state, "web_perms", None))
+    perms = getattr(request.state, "web_perms", None)
+    offer = _offers(perms)
     analyses = (
         await _recent_results(filter_tenant_id if is_superuser else tenant_id, is_superuser, offer["sources"])
         if offer["analytics"]
@@ -314,6 +372,15 @@ async def dashboard(request: Request):
         elif offer["add_task"] and await AgentTask.objects.filter(tenant_id=tenant_id).count() == 0:
             next_step = {"label": "Настройте первую задачу", "href": "/app/tasks"}
 
+    extra_context = {}
+    helper = globals().get("_today_projection_for_request")
+    if callable(helper):
+        outcome = await helper(request, filter_tenant_id if is_superuser else tenant_id, user, perms, recent_results)
+        if isinstance(outcome, dict) and "redirect" in outcome:
+            return outcome["redirect"]
+        if isinstance(outcome, dict):
+            extra_context.update(outcome)
+
     return render(
         request,
         "web/dashboard.html",
@@ -327,5 +394,50 @@ async def dashboard(request: Request):
         filter_tenant_id=filter_tenant_id,
         offer=offer,
         next_step=next_step,
-        can_open_chat=bool(getattr(getattr(request.state, "web_perms", None), "can_open_chat", False)),
+        can_open_chat=bool(getattr(perms, "can_open_chat", False)),
+        **extra_context,
     )
+
+
+@router.post("/today/item-state")
+async def today_item_state(request: Request):
+    """Per-actor seen/snooze/dismiss state for Today items without copying module rows."""
+    from fastapi.responses import JSONResponse, RedirectResponse
+
+    from app.services.workspace.today import normalize_scope, record_actor_item_state
+    from app.web.deps import ensure_csrf
+
+    user = getattr(request.state, "web_user", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if user is None or not getattr(user, "is_active", False) or tenant_id is None:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    form = await request.form()
+    token = str(form.get("_csrf") or "")
+    if not ensure_csrf(request, token):
+        return JSONResponse({"ok": False, "error": "invalid_csrf"}, status_code=403)
+
+    item_key = str(form.get("item_key") or "").strip()
+    operation = str(form.get("operation") or "").strip().lower()
+    scope = normalize_scope(str(form.get("scope") or "mine"))
+    raw_snooze = str(form.get("snooze_minutes") or "240").strip()
+    snooze_minutes = int(raw_snooze) if raw_snooze.isdecimal() else 240
+
+    try:
+        entry = record_actor_item_state(
+            getattr(user, "id", None),
+            tenant_id,
+            item_key,
+            operation,
+            snooze_minutes=snooze_minutes,
+            session=getattr(request, "session", None) if isinstance(getattr(request, "session", None), dict) else None,
+        )
+    except PermissionError:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "invalid_item_state"}, status_code=422)
+
+    accept = (request.headers.get("accept") or "").lower()
+    if "application/json" in accept or request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JSONResponse({"ok": True, "item_state": entry}, headers={"Cache-Control": "no-store"})
+    return RedirectResponse(f"/app/?view=today&scope={scope}", status_code=303)

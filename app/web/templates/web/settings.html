@@ -47,6 +47,22 @@
                     <dl class="mt-3 space-y-2 break-words"><div><dt class="text-xs ui-muted">Имя</dt><dd>{{ user.username }}</dd></div><div><dt class="text-xs ui-muted">Email</dt><dd>{{ user.email|default('—') }}</dd></div></dl>
                     <p class="mt-3 text-sm ui-muted">Тема меняется внизу бокового меню. Профиль здесь доступен только для чтения.</p>
                 </section>
+                <section class="mt-6 ui-card" data-settings-start-page aria-labelledby="account-start-page">
+                    <h2 id="account-start-page" class="mb-2 text-sm font-semibold">Стартовая страница</h2>
+                    <p class="text-sm ui-muted">Какой раздел открывать после входа. По умолчанию — «Сегодня». Если выбранный раздел недоступен в текущем пространстве, откроется «Сегодня».</p>
+                    <form method="post" action="/app/settings/start-page" class="mt-3 space-y-3">
+                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                        <div>
+                            <label for="account-start-page-select" class="mb-1 block text-xs ui-muted">Раздел при входе</label>
+                            <select id="account-start-page-select" name="start_page" class="ui-control w-full max-w-md rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+                                {% for opt in start_page_options|default([{'key': 'dashboard', 'label': 'Сегодня (по умолчанию)'}], true) %}
+                                <option value="{{ opt.key }}" {% if (current_start_page|default('dashboard')) == opt.key %}selected{% endif %}>{{ opt.label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="ui-control rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">Сохранить стартовую страницу</button>
+                    </form>
+                </section>
                 <section class="mt-6 ui-card" aria-labelledby="account-notifications"><h2 id="account-notifications" class="mb-3 text-sm font-semibold">Показ уведомлений</h2>{% include 'web/_notification_preferences.html' %}</section>
             {% elif tab == 'workspace' and not settings_manage %}
                 <section class="mt-6 ui-card" data-workspace-readonly>

@@ -1,7 +1,7 @@
 """P15-T07 observed response-latency aggregates.
 
 Revision ID: 0144
-Revises: 0142 (provisional pending owner decision on paused 0143)
+Revises: 0143
 
 Existing statistics are unmeasured (zero samples, never a zero-latency sample).
 Downgrade refuses to erase observations or outstanding sample state, including
@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.models.types.encrypted import EncryptedText
 
 revision = "0144"
-down_revision = "0142"  # Provisional: 0143 is reserved but absent on dev.
+down_revision = "0143"
 branch_labels = None
 depends_on = None
 

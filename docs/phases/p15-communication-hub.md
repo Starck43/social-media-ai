@@ -53,6 +53,8 @@ TZ criteria: contacts merged by email/phone (T03); chronological per-contact vie
 
 11. [P15-T12](../tasks/p15-t12.md) — Restore Telegram FloodWait deferral in the guarded runtime · `P2` · `C3` — **DONE 2026-11-07**, PR #432 (`f3d28601`)
 
+12. [P15-T13](../audit/p15-t13.md) — Preserve the personal Telegram source owner · **DONE 2026-11-07**, PR #437 (`2e1bdeb5`).
+
 ## Dependencies and gates
 
 Email connector is the TZ's "future module" and is delivered here (T01/T06). Personal Telegram ingestion waits for P12-T14. Mock TG/MAX APIs and test mailboxes only.

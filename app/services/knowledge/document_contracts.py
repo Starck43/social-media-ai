@@ -44,6 +44,12 @@ class DocumentCreate(BusinessSchema):
         return value
 
 
+class StoredDocumentInput(DocumentCreate):
+    """Existing 0122 rows may remain untyped while being edited."""
+
+    document_type: DocumentType | None = None
+
+
 class DocumentVersion(BusinessSchema):
     expected_revision_id: StrictInt = Field(gt=0)
     expected_updated_at: AwareDatetime

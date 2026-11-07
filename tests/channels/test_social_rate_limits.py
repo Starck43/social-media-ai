@@ -341,14 +341,15 @@ async def test_other_telegram_errors_keep_the_empty_pull(flooding_session):
     from app.services.social.telegram_runtime import _telegram_history_batch
 
     holder = flooding_session(ConnectionError("network down"))
-    # Preserve the legacy expectation; current guarded runtime raises instead.
-    try:
-        async with _telegram_history_batch(holder["selection"], object(), _tg_source(), limit=100) as batch:
-            result = list(batch._items)
-        assert result == []
-    finally:
-        assert holder["client"].yielded == 1
-        assert holder["client"].disconnected is True
+    # The pre-guard runtime read a provider failure as an empty pull. The guarded
+    # runtime fails closed instead, and nothing fetched is staged or acknowledged.
+    from app.services.social.connector_authorizations import AuthorizationUnavailable
+
+    with pytest.raises(AuthorizationUnavailable):
+        async with _telegram_history_batch(holder["selection"], object(), _tg_source(), limit=100):
+            pass
+    assert holder["client"].yielded == 1
+    assert holder["client"].disconnected is True
 
 
 # --------------------------------------------------------------------------- #

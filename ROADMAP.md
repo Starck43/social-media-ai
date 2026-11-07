@@ -86,7 +86,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 
 - [P15-T07](docs/tasks/p15-t07.md) Channel recommendation with confidence score — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
-- [P15-T13](docs/tasks/p15-t13.md) Personal Telegram collect loses the source owner — **IN_PROGRESS** · codex · codex · `P2` · `C2`
+- [P15-T13](docs/tasks/p15-t13.md) Personal Telegram collect loses the source owner — **READY** · codex · [PR #437](https://github.com/Starck43/social-media-ai/pull/437) · `P2` · `C2`
 - [P16-T02](docs/tasks/p16-t02.md) Reminders, snooze and multi-channel notifications — **no second sender (D18/D19/D20)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P16-T03](docs/tasks/p16-t03.md) Calendar connections and Google Calendar two-way sync — **the calendar owns events and recurrence (D24)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P16-T04](docs/tasks/p16-t04.md) Yandex Calendar two-way sync over CalDAV — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`

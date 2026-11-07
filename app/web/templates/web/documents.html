@@ -4,6 +4,7 @@
 {% block page_heading %}Документы и версии{% endblock %}
 
 {% block page_actions %}
+<a href="/app/documents/manage?boundary={{ boundary }}" class="ui-control">Управление документами</a>
 {% if file_catalog_enabled|default(false) and boundary == 'cloud' %}
 <a href="/app/knowledge/files" class="ui-control">Файлы подключённых папок</a>
 {% endif %}

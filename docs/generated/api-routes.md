@@ -90,6 +90,17 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/dashboard/topic-chains/{chain_id} | get_topic_chain_details_api_v1_dashboard_topic_chains__chain_id__get |
 | GET | /api/v1/dashboard/topic-chains/{chain_id}/evolution | get_topic_chain_evolution_api_v1_dashboard_topic_chains__chain_id__evolution_get |
 | GET | /api/v1/dashboard/trends/{source_id} | get_source_trends_api_v1_dashboard_trends__source_id__get |
+| GET | /api/v1/documents | list_documents_api_v1_documents_get |
+| POST | /api/v1/documents | create_document_api_v1_documents_post |
+| GET | /api/v1/documents/templates | list_templates_api_v1_documents_templates_get |
+| POST | /api/v1/documents/templates | create_template_api_v1_documents_templates_post |
+| DELETE | /api/v1/documents/templates/{template_id} | delete_template_api_v1_documents_templates__template_id__delete |
+| GET | /api/v1/documents/templates/{template_id} | get_template_api_v1_documents_templates__template_id__get |
+| PUT | /api/v1/documents/templates/{template_id} | update_template_api_v1_documents_templates__template_id__put |
+| DELETE | /api/v1/documents/{document_id} | delete_document_api_v1_documents__document_id__delete |
+| GET | /api/v1/documents/{document_id} | get_document_api_v1_documents__document_id__get |
+| PATCH | /api/v1/documents/{document_id} | update_document_api_v1_documents__document_id__patch |
+| POST | /api/v1/documents/{document_id}/transition | transition_document_api_v1_documents__document_id__transition_post |
 | GET | /api/v1/files/connectors | devices_api_v1_files_connectors_get |
 | POST | /api/v1/files/connectors/pairings | begin_api_v1_files_connectors_pairings_post |
 | POST | /api/v1/files/connectors/pairings/{pairing_id}/confirm | confirm_api_v1_files_connectors_pairings__pairing_id__confirm_post |

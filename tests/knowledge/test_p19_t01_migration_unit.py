@@ -126,7 +126,7 @@ def test_model_metadata_contains_workspace_scoped_links_and_immutable_revision_f
     from app.models.knowledge import DocumentRevision, DocumentTemplate, KnowledgeDocument, KnowledgeSnippet
 
     doc = KnowledgeDocument.__table__
-    assert {"document_type", "tags", "contact_id", "case_id", "owner_user_id", "current_revision_id"} <= set(
+    assert {"document_type", "tags", "contact_id", "case_evidence_id", "owner_user_id", "current_revision_id"} <= set(
         doc.c.keys()
     )
     rev = DocumentRevision.__table__
@@ -136,7 +136,7 @@ def test_model_metadata_contains_workspace_scoped_links_and_immutable_revision_f
     )
     assert list(fk.column_keys) == ["tenant_id", "id", "current_revision_id"]
     assert fk.deferrable is True and fk.initially == "DEFERRED"
-    for name in ("fk_document_contact_tenant", "fk_document_case_tenant"):
+    for name in ("fk_document_contact_tenant", "fk_document_case_evidence_tenant"):
         fk = next(c for c in doc.constraints if isinstance(c, ForeignKeyConstraint) and c.name == name)
         assert list(fk.column_keys)[0] == "tenant_id"
     assert any(
@@ -157,8 +157,8 @@ def test_delete_detachment_and_author_erasure_are_present_in_migration(monkeypat
     sql = "\n".join(str(call.args[0]) for call in op.execute.call_args_list)
     assert "document_detach_contact BEFORE DELETE" in sql
     assert "WHERE tenant_id = OLD.tenant_id AND contact_id = OLD.id" in sql
-    assert "document_detach_case BEFORE DELETE" in sql
-    assert "WHERE tenant_id = OLD.tenant_id AND case_id = OLD.id" in sql
+    assert "document_detach_case_evidence BEFORE DELETE" in sql
+    assert "WHERE tenant_id = OLD.tenant_id AND case_evidence_id = OLD.id" in sql
     assert "NEW.author_user_id IS DISTINCT FROM OLD.author_user_id" in sql
     assert 'NOT EXISTS (SELECT 1 FROM "test_schema".users' in sql
     fks = {call.args[0]: call.kwargs for call in op.create_foreign_key.call_args_list}

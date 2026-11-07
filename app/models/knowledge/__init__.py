@@ -66,9 +66,9 @@ class KnowledgeDocument(EvidenceFields, TenantScopedMixin, TimestampMixin, Base)
             name="fk_document_contact_tenant",
         ),
         ForeignKeyConstraint(
-            ["tenant_id", "case_id"],
+            ["tenant_id", "case_evidence_id"],
             [f"{settings.DB_SCHEMA}.knowledge_snippets.tenant_id", f"{settings.DB_SCHEMA}.knowledge_snippets.id"],
-            name="fk_document_case_tenant",
+            name="fk_document_case_evidence_tenant",
         ),
         ForeignKeyConstraint(
             ["tenant_id", "id", "current_revision_id"],
@@ -89,7 +89,7 @@ class KnowledgeDocument(EvidenceFields, TenantScopedMixin, TimestampMixin, Base)
     tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     contact_id: Mapped[int | None] = mapped_column(Integer)
     # Cases currently exist as tenant-scoped case evidence snippets, not a cases table.
-    case_id: Mapped[int | None] = mapped_column(Integer)
+    case_evidence_id: Mapped[int | None] = mapped_column(Integer)
     owner_user_id: Mapped[int | None] = mapped_column(
         ForeignKey(f"{settings.DB_SCHEMA}.users.id", name="fk_document_owner_user", ondelete="SET NULL")
     )

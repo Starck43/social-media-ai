@@ -3,6 +3,10 @@
 Revision ID: 0142
 Revises: 0141
 
+Deleting a linked contact or case-evidence snippet leaves the document intact and
+sets only its corresponding link to NULL. Deleting a user sets author/owner
+references to NULL, retaining documents and revision content.
+
 Draft: review and real PostgreSQL migration-cycle verification are required.
 """
 
@@ -74,7 +78,7 @@ def upgrade():
         sa.Column("document_type", sa.String(30)),
         sa.Column("tags", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")),
         sa.Column("contact_id", sa.Integer()),
-        sa.Column("case_id", sa.Integer()),
+        sa.Column("case_evidence_id", sa.Integer()),
         sa.Column("owner_user_id", sa.Integer()),
         sa.Column("current_revision_id", sa.Integer()),
     ):
@@ -95,10 +99,10 @@ def upgrade():
         referent_schema=schema,
     )
     op.create_foreign_key(
-        "fk_document_case_tenant",
+        "fk_document_case_evidence_tenant",
         "knowledge_documents",
         "knowledge_snippets",
-        ["tenant_id", "case_id"],
+        ["tenant_id", "case_evidence_id"],
         ["tenant_id", "id"],
         source_schema=schema,
         referent_schema=schema,
@@ -125,14 +129,14 @@ def upgrade():
         END; $$;
         CREATE TRIGGER document_detach_contact BEFORE DELETE ON {quoted}.contacts
             FOR EACH ROW EXECUTE FUNCTION {quoted}.detach_document_contact();
-        CREATE FUNCTION {quoted}.detach_document_case() RETURNS trigger LANGUAGE plpgsql AS $$
+        CREATE FUNCTION {quoted}.detach_document_case_evidence() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
-            UPDATE {quoted}.knowledge_documents SET case_id = NULL
-            WHERE tenant_id = OLD.tenant_id AND case_id = OLD.id;
+            UPDATE {quoted}.knowledge_documents SET case_evidence_id = NULL
+            WHERE tenant_id = OLD.tenant_id AND case_evidence_id = OLD.id;
             RETURN OLD;
         END; $$;
-        CREATE TRIGGER document_detach_case BEFORE DELETE ON {quoted}.knowledge_snippets
-            FOR EACH ROW EXECUTE FUNCTION {quoted}.detach_document_case();
+        CREATE TRIGGER document_detach_case_evidence BEFORE DELETE ON {quoted}.knowledge_snippets
+            FOR EACH ROW EXECUTE FUNCTION {quoted}.detach_document_case_evidence();
         """
     )
     op.add_column("document_revisions", sa.Column("author_user_id", sa.Integer()), schema=schema)
@@ -228,7 +232,7 @@ def downgrade():
                        WHERE status NOT IN ({OLD_STATUSES}) OR author_user_id IS NOT NULL OR change_description IS NOT NULL)
             OR EXISTS (SELECT 1 FROM {quoted}.knowledge_documents d
                        WHERE document_type IS NOT NULL OR tags <> '[]'::jsonb OR contact_id IS NOT NULL
-                          OR case_id IS NOT NULL OR owner_user_id IS NOT NULL
+                          OR case_evidence_id IS NOT NULL OR owner_user_id IS NOT NULL
                           OR current_revision_id IS DISTINCT FROM (
                               SELECT r.id FROM {quoted}.document_revisions r
                               WHERE r.tenant_id=d.tenant_id AND r.document_id=d.id ORDER BY r.version DESC LIMIT 1
@@ -240,9 +244,9 @@ def downgrade():
         raise RuntimeError("Downgrade refused: 0142 data cannot be preserved in 0141")
     op.drop_table("document_templates", schema=schema)
     op.execute(f"DROP TRIGGER document_detach_contact ON {quoted}.contacts")
-    op.execute(f"DROP TRIGGER document_detach_case ON {quoted}.knowledge_snippets")
+    op.execute(f"DROP TRIGGER document_detach_case_evidence ON {quoted}.knowledge_snippets")
     op.execute(f"DROP FUNCTION {quoted}.detach_document_contact()")
-    op.execute(f"DROP FUNCTION {quoted}.detach_document_case()")
+    op.execute(f"DROP FUNCTION {quoted}.detach_document_case_evidence()")
     op.execute(f"DROP TRIGGER document_revision_current ON {quoted}.document_revisions")
     op.execute(f"DROP FUNCTION {quoted}.set_document_current_revision()")
     op.drop_constraint("fk_document_current_revision", "knowledge_documents", type_="foreignkey", schema=schema)
@@ -250,10 +254,10 @@ def downgrade():
     op.drop_constraint("fk_revision_author_user", "document_revisions", type_="foreignkey", schema=schema)
     for column in ("author_user_id", "change_description"):
         op.drop_column("document_revisions", column, schema=schema)
-    for name in ("fk_document_owner_user", "fk_document_case_tenant", "fk_document_contact_tenant"):
+    for name in ("fk_document_owner_user", "fk_document_case_evidence_tenant", "fk_document_contact_tenant"):
         op.drop_constraint(name, "knowledge_documents", type_="foreignkey", schema=schema)
     op.drop_constraint("ck_document_type", "knowledge_documents", type_="check", schema=schema)
-    for column in ("current_revision_id", "owner_user_id", "case_id", "contact_id", "tags", "document_type"):
+    for column in ("current_revision_id", "owner_user_id", "case_evidence_id", "contact_id", "tags", "document_type"):
         op.drop_column("knowledge_documents", column, schema=schema)
     op.drop_constraint("uq_document_revision_document_identity", "document_revisions", type_="unique", schema=schema)
     op.drop_constraint("uq_knowledge_snippet_tenant", "knowledge_snippets", type_="unique", schema=schema)

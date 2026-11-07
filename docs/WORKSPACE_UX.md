@@ -115,7 +115,7 @@ contact. Personal VK messages need their own authorized capability; none is
 planned. Flow: ingest metadata → thread → triage («Нужен ответ», «К сведению»,
 «Подождёт», «Не уверен» with a reason) → the agent proposes a reply draft, a
 planner task, a follow-up, a document or a CRM note → the user edits and approves
-→ outbox ([P15-T05](tasks/p15-t05.md)) and senders ([P15-T06](tasks/p15-t06.md))
+→ outbox ([P15-T05](tasks/p15-t05.md)) and senders ([P15-T06](audit/p15-t06.md))
 → delivery status in the same thread. The agent never sends without the owning
 approval; notifying a workspace user never uses the outbox (D19).
 

@@ -41,8 +41,8 @@ TZ criteria with adaptations: OAuth connection (T01); automatic 15-min sync (T02
 2. [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md) — Bitrix24 read-only incremental sync of contacts, companies, leads and deals · `P2` · `C4` · depends: [P14-T01 accepted](../audit/p13-t04-p14-t04-business-crm.md), [P13-T07 accepted](../audit/p13-t07.md)
 3. [P14-T03 accepted](../audit/p13-t04-p14-t04-business-crm.md) — CRM contact cards and duplicate candidates · `P2` · `C3` · depends: [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md)
 4. [P14-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md) — Upcoming events and AI greeting drafts · `P2` · `C3` · depends: [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md)
-5. [P14-T05](../tasks/p14-t05.md) — Approved greeting delivery via email, Telegram and MAX · `P3` · `C3` · depends: [P14-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md), [P15-T05](../tasks/p15-t05.md) persistent outbox, [P15-T06](../tasks/p15-t06.md) channel senders, [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
-6. [P14-T06](../tasks/p14-t06.md) — Batch messaging with personalization, consent and unsubscribe · `P3` · `C4` · depends: [P14-T05](../tasks/p14-t05.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../tasks/p15-t06.md)
+5. [P14-T05](../tasks/p14-t05.md) — Approved greeting delivery via email, Telegram and MAX · `P3` · `C3` · depends: [P14-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md), [P15-T05](../tasks/p15-t05.md) persistent outbox, [P15-T06](../audit/p15-t06.md) channel senders, [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
+6. [P14-T06](../tasks/p14-t06.md) — Batch messaging with personalization, consent and unsubscribe · `P3` · `C4` · depends: [P14-T05](../tasks/p14-t05.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
 
 ## Dependencies and gates
 

@@ -42,7 +42,7 @@ TZ criteria: AI letters from context (T02); templates (T02); every version saved
 2. [P19-T02](../tasks/p19-t02.md) — Templates and AI drafting with evidence and unsupported-claim marking · `P3` · `C4` · depends: [P19-T01](../tasks/p19-t01.md), [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md) or [P15-T02](../tasks/p15-t02.md) (context sources)
 3. [P19-T03](../tasks/p19-t03.md) — Version history, diff and restore · `P3` · `C3` · depends: [P19-T01](../tasks/p19-t01.md)
 4. [P19-T04](../tasks/p19-t04.md) — Document approval workflow bound to an immutable revision hash · `P3` · `C4` · depends: [P19-T01](../tasks/p19-t01.md), [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
-5. [P19-T05](../tasks/p19-t05.md) — Export to DOCX/PDF and delivery via outbox · `P3` · `C3` · depends: [P19-T01](../tasks/p19-t01.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../tasks/p15-t06.md)
+5. [P19-T05](../tasks/p19-t05.md) — Export to DOCX/PDF and delivery via outbox · `P3` · `C3` · depends: [P19-T01](../tasks/p19-t01.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
 6. [P19-T06](../tasks/p19-t06.md) — Document search · `P3` · `C2` · depends: [P19-T01](../tasks/p19-t01.md)
 
 ## Dependencies and gates

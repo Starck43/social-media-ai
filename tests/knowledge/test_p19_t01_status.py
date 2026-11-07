@@ -29,8 +29,7 @@ def test_status_mapping(legacy, expected):
 
 @pytest.mark.parametrize(
     ("current", "target"),
-    [("draft", "in_review"), ("in_review", "approved"), ("in_review", "rejected"),
-     ("in_review", "revision_requested")],
+    [("draft", "in_review"), ("in_review", "approved"), ("in_review", "rejected"), ("in_review", "revision_requested")],
 )
 def test_valid_transitions(current, target):
     assert documents.validate_review_transition(current, target) is None
@@ -39,8 +38,12 @@ def test_valid_transitions(current, target):
 @pytest.mark.parametrize("current", ["draft", "in_review", "approved", "rejected", "revision_requested", "unknown"])
 @pytest.mark.parametrize("target", ["draft", "in_review", "approved", "rejected", "revision_requested", "unknown"])
 def test_invalid_transitions_fail_closed(current, target):
-    valid = {("draft", "in_review"), ("in_review", "approved"), ("in_review", "rejected"),
-             ("in_review", "revision_requested")}
+    valid = {
+        ("draft", "in_review"),
+        ("in_review", "approved"),
+        ("in_review", "rejected"),
+        ("in_review", "revision_requested"),
+    }
     if (current, target) in valid:
         documents.validate_review_transition(current, target)
     else:

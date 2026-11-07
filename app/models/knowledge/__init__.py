@@ -65,7 +65,8 @@ class DocumentRevision(TenantScopedMixin, TimestampMixin, Base):
             name="ck_document_revision_content_hash",
         ),
         CheckConstraint(
-            "status IN ('draft','approved','draft_invalidated','rejected')", name="ck_document_revision_status"
+            "status IN ('draft','in_review','approved','rejected','revision_requested','draft_invalidated')",
+            name="ck_document_revision_status",
         ),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

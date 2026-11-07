@@ -219,6 +219,7 @@ def _project(doc, revision):
         status=status,
         approval_invalidated=invalidated,
         approved_by=revision.approved_by,
+        decision_actor_user_id=revision.decision_actor_user_id,
         author_user_id=revision.author_user_id,
         updated_at=doc.updated_at,
     )
@@ -258,6 +259,7 @@ class DocumentService:
             select(TenantUser)
             .where(TenantUser.tenant_id == tenant, TenantUser.user_id == actor.id, TenantUser.is_active.is_(True))
             .with_for_update(read=True)
+            .execution_options(populate_existing=True)
         )
         role = (
             None
@@ -304,17 +306,18 @@ class DocumentService:
             raise DocumentUnavailable("document_unavailable")
         return doc
 
-    async def _revision(self, session, doc):
+    async def _revision(self, session, doc, *, lock=False):
         from sqlalchemy import select
 
         from app.models import DocumentRevision
 
+        query = select(DocumentRevision).where(
+            DocumentRevision.id == doc.current_revision_id,
+            DocumentRevision.document_id == doc.id,
+            DocumentRevision.tenant_id == doc.tenant_id,
+        )
         revision = await session.scalar(
-            select(DocumentRevision).where(
-                DocumentRevision.id == doc.current_revision_id,
-                DocumentRevision.document_id == doc.id,
-                DocumentRevision.tenant_id == doc.tenant_id,
-            )
+            query.with_for_update().execution_options(populate_existing=True) if lock else query
         )
         if revision is None:
             raise DocumentUnavailable("document_unavailable")
@@ -527,7 +530,7 @@ class DocumentService:
         doc = await self._doc(session, doc_id, identity, boundary, lock=True)
         revision = await self._revision(session, doc)
         _version_matches(doc, revision, data)
-        for key in (
+        metadata_fields = (
             "title",
             "document_type",
             "counterparty",
@@ -536,9 +539,15 @@ class DocumentService:
             "case_evidence_id",
             "owner_user_id",
             "data_boundary",
-        ):
+        )
+        metadata_changed = any(getattr(doc, key) != getattr(updated, key) for key in metadata_fields)
+        body_changed = updated.body_text != revision.body_text
+        for key in metadata_fields:
             setattr(doc, key, getattr(updated, key))
-        if "body_text" in changes and updated.body_text != revision.body_text:
+        # A material metadata edit also creates a new revision and cannot leave
+        # a decision on the previous document state looking current. FK erasure
+        # on private deletion is a separate database operation, not a user edit.
+        if metadata_changed or body_changed:
             revision = DocumentRevision(
                 tenant_id=identity[0],
                 document_id=doc.id,
@@ -548,7 +557,7 @@ class DocumentService:
                 status=STATUS_DRAFT_INVALIDATED,
                 author="",
                 author_user_id=identity[1],
-                change_description=updated.change_description,
+                change_description=changes.get("change_description"),
                 approved_by=None,
                 unsupported_terms_note=revision.unsupported_terms_note,
             )
@@ -571,7 +580,7 @@ class DocumentService:
         data = DocumentTransition.model_validate(data.model_dump() if isinstance(data, DocumentTransition) else data)
         identity = await self._actor(session, ActionType.UPDATE)
         doc = await self._doc(session, doc_id, identity, boundary, lock=True)
-        revision = await self._revision(session, doc)
+        revision = await self._revision(session, doc, lock=True)
         _version_matches(doc, revision, data)
         if revision.content_hash != data.expected_hash:
             raise DocumentConflict("document_stale")
@@ -582,10 +591,15 @@ class DocumentService:
             validate_review_transition(status, data.target)
         except ValueError:
             raise DocumentConflict("invalid_transition") from None
-        # Until the dedicated P19-T04 approval ledger exists, do not turn
-        # general edit rights into an approval authority.
+        # TEMPORARY P19-T01 ONLY: delete this rule when P19-T04 introduces its
+        # assigned approver and dedicated permission; never extend/inherit it.
+        # _actor locks and re-reads the active user, workspace, membership and
+        # workspace role in this same transaction, before the document lock.
         if data.target in {STATUS_APPROVED, STATUS_REJECTED, STATUS_REVISION_REQUESTED}:
-            raise PermissionError("approval_workflow_unavailable")
+            if identity[2] != "owner":
+                raise PermissionError("document_decision_denied")
+            revision.decision_actor_user_id = identity[1]
+            revision.approved_by = f"user:{identity[1]}" if data.target == STATUS_APPROVED else None
         revision.status = data.target
         doc.updated_at = datetime.now(timezone.utc)
         await session.flush()

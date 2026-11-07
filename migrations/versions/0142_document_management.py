@@ -5,7 +5,8 @@ Revises: 0141
 
 Deleting a linked contact or case-evidence snippet leaves the document intact and
 sets only its corresponding link to NULL. Deleting a user sets author/owner
-references to NULL, retaining documents and revision content.
+references to NULL, retaining documents and revision content. The temporary
+review-decision actor reference is also cleared when that user is deleted.
 
 Draft: review and real PostgreSQL migration-cycle verification are required.
 """
@@ -141,6 +142,17 @@ def upgrade():
     )
     op.add_column("document_revisions", sa.Column("author_user_id", sa.Integer()), schema=schema)
     op.add_column("document_revisions", sa.Column("change_description", sa.Text()), schema=schema)
+    op.add_column("document_revisions", sa.Column("decision_actor_user_id", sa.Integer()), schema=schema)
+    op.create_foreign_key(
+        "fk_revision_decision_actor_user",
+        "document_revisions",
+        "users",
+        ["decision_actor_user_id"],
+        ["id"],
+        source_schema=schema,
+        referent_schema=schema,
+        ondelete="SET NULL",
+    )
     op.create_foreign_key(
         "fk_revision_author_user",
         "document_revisions",
@@ -229,7 +241,8 @@ def downgrade():
             f"""
         SELECT EXISTS (SELECT 1 FROM {quoted}.document_templates)
             OR EXISTS (SELECT 1 FROM {quoted}.document_revisions
-                       WHERE status NOT IN ({OLD_STATUSES}) OR author_user_id IS NOT NULL OR change_description IS NOT NULL)
+                       WHERE status NOT IN ({OLD_STATUSES}) OR author_user_id IS NOT NULL OR change_description IS NOT NULL
+                          OR decision_actor_user_id IS NOT NULL)
             OR EXISTS (SELECT 1 FROM {quoted}.knowledge_documents d
                        WHERE document_type IS NOT NULL OR tags <> '[]'::jsonb OR contact_id IS NOT NULL
                           OR case_evidence_id IS NOT NULL OR owner_user_id IS NOT NULL
@@ -252,7 +265,8 @@ def downgrade():
     op.drop_constraint("fk_document_current_revision", "knowledge_documents", type_="foreignkey", schema=schema)
     _revision_guard(quoted, False)
     op.drop_constraint("fk_revision_author_user", "document_revisions", type_="foreignkey", schema=schema)
-    for column in ("author_user_id", "change_description"):
+    op.drop_constraint("fk_revision_decision_actor_user", "document_revisions", type_="foreignkey", schema=schema)
+    for column in ("author_user_id", "change_description", "decision_actor_user_id"):
         op.drop_column("document_revisions", column, schema=schema)
     for name in ("fk_document_owner_user", "fk_document_case_evidence_tenant", "fk_document_contact_tenant"):
         op.drop_constraint(name, "knowledge_documents", type_="foreignkey", schema=schema)

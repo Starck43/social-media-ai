@@ -61,6 +61,7 @@ def test_downgrade_locks_and_refuses_incompatible_data(monkeypatch, contains_new
     statements = [str(call.args[0]) for call in bind.execute.call_args_list]
     assert statements[0].startswith("LOCK TABLE ")
     assert "SELECT EXISTS" in statements[1]
+    assert "decision_actor_user_id IS NOT NULL" in statements[1]
 
 
 def test_orm_constraint_matches_migration_and_translator():

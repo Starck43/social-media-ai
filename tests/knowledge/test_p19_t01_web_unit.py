@@ -99,3 +99,13 @@ def test_document_management_template_escapes_content_and_confirms_deletion():
     assert "&lt;b&gt;unsafe&lt;/b&gt;" in html
     assert 'name="_csrf" value="csrf-test"' in html
     assert 'name="confirm" value="delete" required' in html
+
+
+def test_review_buttons_have_bound_state_and_clear_owner_only_notice():
+    root = Path(__file__).resolve().parents[2] / "app/web/templates"
+    source = (root / "web/document_management.html").read_text()
+    for target in ("approved", "rejected", "revision_requested"):
+        assert target in source
+    for field in ("expected_revision_id", "expected_hash", "expected_status", "_csrf"):
+        assert field in source
+    assert "только активный owner" in source

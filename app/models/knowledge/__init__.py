@@ -129,6 +129,10 @@ class DocumentRevision(TenantScopedMixin, TimestampMixin, Base):
     )
     change_description: Mapped[str | None] = mapped_column(Text)
     approved_by: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # Temporary P19-T01 decision attribution; P19-T04 replaces this policy.
+    decision_actor_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", name="fk_revision_decision_actor_user", ondelete="SET NULL")
+    )
     unsupported_terms_note: Mapped[str] = mapped_column(Text, default="")
 
 

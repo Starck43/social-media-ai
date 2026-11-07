@@ -48,6 +48,7 @@ def snapshot():
         body_text="body",
         change_description=None,
         approved_by=None,
+        decision_actor_user_id=None,
         author_user_id=2,
         unsupported_terms_note="Existing warning",
     )
@@ -115,6 +116,27 @@ async def test_update_appends_new_revision_without_rewriting_old(monkeypatch, sn
 
 
 @pytest.mark.asyncio
+async def test_metadata_edit_appends_revision_and_invalidates_decision(monkeypatch, snapshot):
+    doc, rev = snapshot
+    rev.status = "approved"
+    rev.approved_by = "user:2"
+    rev.decision_actor_user_id = 2
+    service = service_fixture(monkeypatch, doc, rev)
+    added = []
+    session = SimpleNamespace(add=lambda row: added.append(row), flush=AsyncMock(), refresh=AsyncMock())
+
+    async def flush():
+        added[0].id = 12
+
+    session.flush.side_effect = flush
+    result = await service.update(10, {**version(doc, rev), "title": "Renamed"}, session=session)
+    assert len(added) == 1 and added[0].body_text == "body" and added[0].content_hash == rev.content_hash
+    assert result.title == "Renamed" and result.status == "draft" and result.approval_invalidated
+    assert result.approved_by is None and result.decision_actor_user_id is None
+    assert rev.status == "approved" and rev.decision_actor_user_id == 2
+
+
+@pytest.mark.asyncio
 async def test_stale_update_is_rejected_before_mutating(monkeypatch, snapshot):
     doc, rev = snapshot
     service = service_fixture(monkeypatch, doc, rev)
@@ -140,15 +162,53 @@ async def test_transition_validates_exact_revision_status_and_hash(monkeypatch, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("target", ["approved", "rejected", "revision_requested"])
-async def test_final_review_decision_fails_closed_without_approval_authority(monkeypatch, snapshot, target):
+async def test_owner_decision_is_bound_to_actor_and_locked_revision(monkeypatch, snapshot, target):
     doc, rev = snapshot
     rev.status = "in_review"
     service = service_fixture(monkeypatch, doc, rev)
     session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
     data = {**version(doc, rev), "expected_hash": rev.content_hash, "expected_status": "in_review", "target": target}
+    result = await service.transition(10, data, session=session)
+    assert result.status == target and result.decision_actor_user_id == 2
+    assert rev.approved_by == ("user:2" if target == "approved" else None)
+    assert service._doc.await_args.kwargs["lock"] is True
+    assert service._revision.await_args.kwargs["lock"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["approved", "rejected", "revision_requested"])
+async def test_nonowner_cannot_make_final_review_decision(monkeypatch, snapshot, target):
+    doc, rev = snapshot
+    rev.status = "in_review"
+    service = service_fixture(monkeypatch, doc, rev)
+    service._actor.return_value = (1, 2, "manager", ("public", "collection.source.view"))
+    session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
+    data = {**version(doc, rev), "expected_hash": rev.content_hash, "expected_status": "in_review", "target": target}
     with pytest.raises(PermissionError):
         await service.transition(10, data, session=session)
-    assert rev.status == "in_review" and rev.approved_by is None
+    assert rev.status == "in_review" and rev.approved_by is None and rev.decision_actor_user_id is None
+    session.flush.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,value", [("expected_revision_id", 99), ("expected_status", "draft"), ("expected_hash", "sha256:" + "0" * 64)]
+)
+async def test_owner_cannot_decide_stale_payload(monkeypatch, snapshot, field, value):
+    doc, rev = snapshot
+    rev.status = "in_review"
+    service = service_fixture(monkeypatch, doc, rev)
+    session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
+    data = {
+        **version(doc, rev),
+        "expected_hash": rev.content_hash,
+        "expected_status": "in_review",
+        "target": "approved",
+        field: value,
+    }
+    with pytest.raises(mod.DocumentConflict):
+        await service.transition(10, data, session=session)
+    assert rev.status == "in_review" and rev.decision_actor_user_id is None
     session.flush.assert_not_awaited()
 
 
@@ -181,12 +241,20 @@ async def test_actor_rechecks_membership_and_scope(monkeypatch):
     session = SimpleNamespace(scalar=AsyncMock(side_effect=[9, 7, SimpleNamespace(role_id=3), "owner"]))
     identity = await mod.DocumentService()._actor(session, ActionType.UPDATE)
     assert identity[:3] == (7, 9, "owner") and "collection.source.view" in identity[3]
+    membership_query = session.scalar.await_args_list[2].args[0]
+    assert membership_query._for_update_arg is not None
+    assert membership_query.get_execution_options().get("populate_existing") is True
+    assert "is_active" in str(membership_query)
     session.scalar.side_effect = [None, 7, SimpleNamespace(role_id=3), "owner"]
     with pytest.raises(PermissionError):
         await mod.DocumentService()._actor(session, ActionType.UPDATE)
     session.scalar.side_effect = [9, 7, None]
     with pytest.raises(PermissionError):
         await mod.DocumentService()._actor(session, ActionType.VIEW)
+    session.scalar.side_effect = [9, 7, SimpleNamespace(role_id=3), "owner"]
+    monkeypatch.setattr(permissions, "has_permission", lambda user, resource, action: action != ActionType.UPDATE)
+    with pytest.raises(PermissionError):
+        await mod.DocumentService()._actor(session, ActionType.UPDATE)
     monkeypatch.setattr(tenant_context, "is_bypass", lambda: True)
     with pytest.raises(PermissionError):
         await mod.DocumentService()._actor(session, ActionType.VIEW)
@@ -357,6 +425,12 @@ async def test_legacy_untyped_document_can_be_edited_without_fabricating_type(mo
     doc, rev = snapshot
     doc.document_type = None
     service = service_fixture(monkeypatch, doc, rev)
-    session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
+    added = []
+    session = SimpleNamespace(add=added.append, flush=AsyncMock(), refresh=AsyncMock())
+
+    async def flush():
+        added[0].id = 12
+
+    session.flush.side_effect = flush
     result = await service.update(10, {**version(doc, rev), "title": "New title"}, session=session)
-    assert result.document_type is None and doc.title == "New title"
+    assert result.document_type is None and doc.title == "New title" and result.approval_invalidated

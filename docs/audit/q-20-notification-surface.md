@@ -75,7 +75,7 @@ already in the tree, and the user-facing notifications P16-T02 wants to add.
 
 - **The notification channel list is closed by `messenger.py`** — Telegram and VK
   today. A reminder on "email" or "MAX" is not a plan until the sender capability
-  exists ([P15-T06](../tasks/p15-t06.md)); the card must say what happens for a
+  exists ([P15-T06](p15-t06.md)); the card must say what happens for a
   channel that is configured but not implemented, and the answer cannot be silence.
 
 - **Two later tasks will want the same answers.** Notifications for planner

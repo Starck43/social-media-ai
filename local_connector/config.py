@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .extract.limits import DocumentLimits
 from .paths import DEFAULT_EXCLUDED_NAMES
 
 
@@ -19,6 +20,8 @@ class ConnectorConfig:
     rescan_seconds: float = 300.0
     text_extensions: frozenset[str] = frozenset({".txt", ".md", ".markdown", ".csv", ".json", ".log"})
     max_text_bytes: int = 4 * 1024 * 1024
+    # P18-T04: bounded document extraction and OCR budget.
+    document_limits: DocumentLimits = field(default_factory=DocumentLimits)
 
     def __post_init__(self) -> None:
         self.index_path = Path(self.index_path).expanduser()

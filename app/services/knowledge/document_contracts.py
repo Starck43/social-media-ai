@@ -93,6 +93,7 @@ class DocumentOut(BusinessSchema):
     status: Literal["draft", "in_review", "approved", "rejected", "revision_requested"]
     approval_invalidated: bool
     approved_by: str | None
+    decision_actor_user_id: int | None = None
     author_user_id: int | None
     updated_at: AwareDatetime
 

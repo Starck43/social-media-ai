@@ -35,14 +35,16 @@ class _ProviderFloodWait(Exception):
         super().__init__("telegram_rate_limited")
 
 
-async def _send_guarded(delegate, fence, request, ordered):
-    """Capture only provider-send long waits; guard errors remain fail-closed."""
+async def _send_guarded(delegate, fence, request, ordered, *, history_request=False):
+    """Only history RPC long waits defer; setup/identity failures stay fail-closed."""
     deferred = None
     result = None
     async with fence._request():
         try:
             result = await delegate.send(request, ordered=ordered)
         except Exception as error:
+            if not history_request:
+                raise
             try:
                 seconds = telegram_flood_wait_seconds(error)
             except OverflowError:
@@ -116,7 +118,10 @@ def _build_client(material, fence):
                 base = base.query
             if not connect_config and type(base) not in allowed:
                 raise AuthorizationUnavailable()
-            return await _send_guarded(self._delegate, fence, request, ordered)
+            # Connect and identity/entity resolution cannot certify that a source
+            # is merely rate-limited. Defer only the actual history read RPC.
+            history_request = not client._runtime_connecting and type(base) is functions.messages.GetHistoryRequest
+            return await _send_guarded(self._delegate, fence, request, ordered, history_request=history_request)
 
     class _ReadOnlyClient(TelegramClient):
         async def _call(self, sender, request, ordered=False, flood_sleep_threshold=None):

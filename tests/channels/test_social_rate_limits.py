@@ -243,7 +243,7 @@ class _FloodingTelethon:
                 raise self.error  # Direct _history double sanity test.
             from app.services.social.telegram_runtime import _send_guarded
 
-            await _send_guarded(self, self.fence, object(), False)
+            await _send_guarded(self, self.fence, object(), False, history_request=True)
 
         return gen()
 

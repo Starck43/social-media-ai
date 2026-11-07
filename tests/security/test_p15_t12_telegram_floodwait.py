@@ -137,15 +137,19 @@ def provider(monkeypatch):
                     raise RuntimeError("private disconnect")
 
             async def get_me(self):
+                if where == "identity":
+                    await runtime._send_guarded(Delegate(), active["fence"], object(), False)
                 return NS(id=7, bot=False)
 
             async def get_entity(self, reference):
+                if where == "resolution":
+                    await runtime._send_guarded(Delegate(), active["fence"], object(), False)
                 return "target"
 
             async def iter_messages(self, target, **kwargs):
                 state["yielded"] += 1
                 yield NS(id=22, date=datetime(2026, 1, 1, tzinfo=timezone.utc))
-                await runtime._send_guarded(Delegate(), active["fence"], object(), False)
+                await runtime._send_guarded(Delegate(), active["fence"], object(), False, history_request=True)
 
         @asynccontextmanager
         async def locked_source_grant(selected):
@@ -173,15 +177,14 @@ def provider(monkeypatch):
 
 
 @pytest.mark.parametrize("error_type", [FloodWaitError, FloodPremiumWaitError])
-@pytest.mark.parametrize("where", ["connect", "history"])
-async def test_long_real_telethon_flood_errors_defer_after_fenced_cleanup(provider, error_type, where, caplog):
-    row, selected, state = provider(provider_error(error_type), where=where)
+async def test_long_real_telethon_flood_errors_defer_after_fenced_cleanup(provider, error_type, caplog):
+    row, selected, state = provider(provider_error(error_type), where="history")
     params = dict(row.params)
     with pytest.raises(SourceRateLimited) as caught:
         async with runtime._telegram_history_batch(selected, object(), row, limit=10):
             pytest.fail("partial batch must never be admitted")
     assert caught.value.platform == "telegram" and caught.value.retry_after == 120
-    assert state["sent"] == 1 and state["yielded"] == (where == "history")
+    assert state["sent"] == 1 and state["yielded"] == 1
     assert state["disconnected"] and state["material_closed"] and state["locked_exited"] and state["closed"]
     assert state["inspections"] >= 3
     assert row.params == params and row.last_item_id == "77"
@@ -228,6 +231,10 @@ def test_pinned_telethon_error_classes_are_independently_recognized():
     assert not issubclass(FloodPremiumWaitError, FloodWaitError)
     assert telegram_flood_wait_seconds(provider_error(FloodWaitError)) == 120
     assert telegram_flood_wait_seconds(provider_error(FloodPremiumWaitError)) == 120
+    # The independent diagnostic already recognizes the shared FloodError base.
+    from app.services.social.credential_diagnostics import credential_exception_status
+
+    assert credential_exception_status(provider_error(FloodPremiumWaitError)) == "error: rate_limited"
 
 
 async def test_default_off_gate_still_prevents_provider_entry(monkeypatch):
@@ -268,13 +275,28 @@ async def test_real_job_and_collector_report_deferral_without_staging(provider, 
     assert "private-provider-token" not in str(result) + caplog.text
 
 
-async def test_real_built_sender_gates_read_rpc_and_classifies_real_telethon_error():
+@pytest.mark.parametrize("error_type", [FloodWaitError, FloodPremiumWaitError])
+@pytest.mark.parametrize("where", ["connect", "identity", "resolution"])
+async def test_long_wait_before_history_fails_closed(provider, error_type, where, caplog):
+    row, selected, state = provider(provider_error(error_type), where=where)
+    with pytest.raises(AuthorizationUnavailable) as caught:
+        async with runtime._telegram_history_batch(selected, object(), row, limit=10):
+            pytest.fail("pre-history failures cannot defer or admit")
+    assert state["sent"] == 1 and state["yielded"] == 0
+    assert state["disconnected"] and state["material_closed"] and state["locked_exited"] and state["closed"]
+    assert "private-provider-token" not in str(caught.value) + caplog.text
+
+
+@pytest.mark.parametrize("error_type", [FloodWaitError, FloodPremiumWaitError])
+@pytest.mark.parametrize("stage", ["connect", "identity", "resolution", "history"])
+async def test_real_built_sender_limits_deferral_to_history_rpc(error_type, stage):
     from telethon.crypto import AuthKey
     from telethon.sessions import StringSession
     from telethon.tl import functions
+    from telethon.tl.alltlobjects import LAYER
 
     session = StringSession()
-    session.set_dc(2, "192.0.2.1", 443)  # reserved documentation-only address; never connected
+    session.set_dc(2, "192.0.2.1", 443)  # reserved documentation address; never connected
     session.auth_key = AuthKey(data=bytes(range(256)))
     state = {"inspections": 0, "sent": 0, "closed": False}
     guard = FakeGuard(state)
@@ -284,16 +306,41 @@ async def test_real_built_sender_gates_read_rpc_and_classifies_real_telethon_err
     class Delegate:
         async def send(self, request, ordered=False):
             state["sent"] += 1
-            raise provider_error(FloodPremiumWaitError)
+            raise provider_error(error_type)
 
     client._sender._delegate = Delegate()
     with pytest.raises(AuthorizationUnavailable):
         await client._sender.send(functions.messages.SendMessageRequest(peer=None, message="forbidden"))
     assert state["sent"] == 0
-    with pytest.raises(runtime._ProviderFloodWait) as caught:
-        await client._sender.send(functions.users.GetUsersRequest(id=[]))
-    assert caught.value.retry_after == 120 and state["sent"] == 1 and state["inspections"] == 2
-    assert not state["closed"]
+    if stage == "connect":
+        client._runtime_connecting = True
+        request = functions.InvokeWithLayerRequest(
+            LAYER,
+            functions.InvokeWithoutUpdatesRequest(
+                functions.InitConnectionRequest(
+                    123, "synthetic", "synthetic", "synthetic", "en", "", "en", functions.help.GetConfigRequest()
+                )
+            ),
+        )
+    elif stage == "identity":
+        request = functions.InvokeWithoutUpdatesRequest(functions.users.GetUsersRequest(id=[]))
+    elif stage == "resolution":
+        request = functions.InvokeWithoutUpdatesRequest(functions.contacts.ResolveUsernameRequest(username="synthetic"))
+    else:
+        request = functions.InvokeWithoutUpdatesRequest(
+            functions.messages.GetHistoryRequest(
+                peer=None, offset_id=0, offset_date=None, add_offset=0, limit=1, max_id=0, min_id=0, hash=0
+            )
+        )
+    if stage == "history":
+        with pytest.raises(runtime._ProviderFloodWait) as caught:
+            await client._sender.send(request)
+        assert caught.value.retry_after == 120 and state["inspections"] == 2 and not state["closed"]
+    else:
+        with pytest.raises(AuthorizationUnavailable):
+            await client._sender.send(request)
+        assert state["inspections"] == 1 and state["closed"]
+    assert state["sent"] == 1
 
 
 async def test_cancelled_provider_send_does_not_become_a_deferral(provider):

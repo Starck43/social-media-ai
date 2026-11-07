@@ -192,16 +192,25 @@ def test_policy_bounds(monkeypatch):
 # Telegram L2: FloodWaitError beyond Telethon's own bounded sleep
 
 
-class FloodWaitError(Exception):
-    """Name-compatible stand-in for telethon.errors.FloodWaitError."""
+class _FloodError(Exception):
+    """Minimal shared base, matching Telethon's sibling exception types."""
 
     def __init__(self, seconds):
         super().__init__(f"A wait of {seconds} seconds is required")
         self.seconds = seconds
 
 
-class FloodPremiumWaitError(FloodWaitError):
+class FloodWaitError(_FloodError):
     pass
+
+
+class FloodPremiumWaitError(_FloodError):
+    pass
+
+
+def test_telegram_flood_doubles_are_sibling_types():
+    assert not issubclass(FloodPremiumWaitError, FloodWaitError)
+    assert not issubclass(FloodWaitError, FloodPremiumWaitError)
 
 
 class _FloodingTelethon:

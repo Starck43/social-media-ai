@@ -35,8 +35,8 @@ where owner decisions are recorded below.
 
 | Group | Item | Owner / current route | Notes |
 | --- | --- | --- | --- |
-| Работа | Сегодня | Current dashboard `/app/`, [P20-T07](tasks/p20-t07.md) | Default landing; user can choose another in settings |
-| Работа | Чат с агентом | `/app/chat`, [P20-T08](tasks/p20-t08.md) | Same conversation as the Telegram/MAX bot |
+| Работа | Сегодня | Current dashboard `/app/`, [P20-T07](audit/p20-t07.md) | Default landing; user can choose another in settings |
+| Работа | Чат с агентом | `/app/chat`, [P20-T08](audit/p20-t08.md) | Same conversation as the Telegram/MAX bot |
 | Работа | Входящие | `/app/communications` inbox, [P15-T04](tasks/p15-t04.md), triage [P20-T09](tasks/p20-t09.md) | Inbound and outbound in one thread |
 | Работа | Задачи | hub over `/app/planner` ([P16-T01](tasks/p16-t01.md)) and `/app/tasks`, [P20-T10](tasks/p20-t10.md) | Tabs «Мои дела», «Поручения агенту», «Календарь» |
 | Клиенты | Контакты, Договорённости, Предложения | `/app/contacts`, `/app/followups`, `/app/cases` | CRM/1C data appears inside these as context |

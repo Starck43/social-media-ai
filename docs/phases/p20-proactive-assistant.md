@@ -12,8 +12,8 @@
 4. [P20-T04](../tasks/p20-t04.md) — bounded specialist delegation for research.
 5. [P20-T05](../tasks/p20-t05.md) — review-gated isolated browser pilot, only after T12 shows a measured gap.
 6. ~~P20-T06 — navigation regrouping and mobile entry points.~~ **DONE 2026-11-07**, accepted source `aa9f4e87`, merge `efcbc8b9` (+ regression fix `e4fe0a33`) — [audit](../audit/p20-t06.md).
-7. [P20-T07](../tasks/p20-t07.md) — «Сегодня» home as a read-time projection.
-8. [P20-T08](../tasks/p20-t08.md) — chat context panel, inline cards and chat dock.
+7. ~~P20-T07 — «Сегодня» home as a read-time projection.~~ **DONE 2026-11-08**, accepted source `76da862`, merge `bc550ac5` — [audit](../audit/p20-t07.md).
+8. ~~P20-T08 — chat context panel, inline cards and chat dock.~~ **DONE 2026-11-08**, accepted source `cc121ba`, merge `b86d5b45` — [audit](../audit/p20-t08.md).
 9. [P20-T09](../tasks/p20-t09.md) — inbox triage and agent-suggested replies.
 10. [P20-T10](../tasks/p20-t10.md) — unified task surface with calendar view.
 11. [P20-T11](../tasks/p20-t11.md) — team work through connected task systems.

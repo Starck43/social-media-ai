@@ -137,6 +137,34 @@ async def test_metadata_edit_appends_revision_and_invalidates_decision(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_legacy_long_body_can_receive_metadata_edit(monkeypatch, snapshot):
+    doc, rev = snapshot
+    rev.body_text = "x" * 200001
+    rev.content_hash = mod.compute_content_hash(rev.body_text)
+    service = service_fixture(monkeypatch, doc, rev)
+    added = []
+    session = SimpleNamespace(add=added.append, flush=AsyncMock(), refresh=AsyncMock())
+
+    async def flush():
+        added[0].id = 12
+
+    session.flush.side_effect = flush
+    result = await service.update(10, {**version(doc, rev), "title": "Renamed"}, session=session)
+    assert result.title == "Renamed" and result.body_text == rev.body_text
+    assert len(added) == 1 and added[0].body_text == rev.body_text
+
+
+def test_document_update_retains_limit_for_explicit_body_replacement(snapshot):
+    from app.services.knowledge.document_contracts import DocumentUpdate
+
+    doc, rev = snapshot
+    with pytest.raises(ValidationError):
+        DocumentUpdate.model_validate({**version(doc, rev), "body_text": "x" * 200001})
+    with pytest.raises(ValidationError):
+        DocumentUpdate.model_validate({**version(doc, rev), "body_text": "x\x00"})
+
+
+@pytest.mark.asyncio
 async def test_stale_update_is_rejected_before_mutating(monkeypatch, snapshot):
     doc, rev = snapshot
     service = service_fixture(monkeypatch, doc, rev)
@@ -418,6 +446,12 @@ async def test_templates_are_scoped_and_version_checked(monkeypatch):
     assert result.id == 20 and isinstance(created[0], DocumentTemplate)
     with pytest.raises(ValidationError):
         TemplateCreate(name=" ", document_type="memo", content="x")
+    for schema in ({"title": "bad\x00value"}, {"nested": [{"\x00key": "value"}]}):
+        with pytest.raises(ValidationError):
+            TemplateCreate(name="Invalid", document_type="memo", content="x", variables_schema=schema)
+    assert TemplateCreate(
+        name="Unicode", document_type="memo", content="x", variables_schema={"title": "данные 😀"}
+    ).variables_schema == {"title": "данные 😀"}
 
 
 @pytest.mark.asyncio

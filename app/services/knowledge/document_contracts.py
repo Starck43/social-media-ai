@@ -45,9 +45,10 @@ class DocumentCreate(BusinessSchema):
 
 
 class StoredDocumentInput(DocumentCreate):
-    """Existing 0122 rows may remain untyped while being edited."""
+    """Validate stored legacy documents without applying new-create size limits."""
 
     document_type: DocumentType | None = None
+    body_text: str
 
 
 class DocumentVersion(BusinessSchema):
@@ -58,7 +59,7 @@ class DocumentVersion(BusinessSchema):
 class DocumentUpdate(DocumentVersion):
     title: str | None = None
     document_type: DocumentType | None = None
-    body_text: str | None = None
+    body_text: str | None = Field(default=None, max_length=200000)
     counterparty: str | None = None
     tags: list[str] | None = None
     contact_id: StrictInt | None = Field(default=None, gt=0)
@@ -66,6 +67,13 @@ class DocumentUpdate(DocumentVersion):
     owner_user_id: StrictInt | None = Field(default=None, gt=0)
     data_boundary: Boundary | None = None
     change_description: str | None = None
+
+    @field_validator("body_text")
+    @classmethod
+    def safe_body_text(cls, value):
+        if value is not None and "\x00" in value:
+            raise ValueError("invalid_text")
+        return value
 
 
 class DocumentTransition(DocumentVersion):
@@ -110,6 +118,17 @@ class TemplateCreate(BusinessSchema):
 
         if not self.name.strip() or "\x00" in self.name or "\x00" in self.content:
             raise ValueError("invalid_template")
+        pending = [self.variables_schema]
+        while pending:
+            value = pending.pop()
+            if isinstance(value, str):
+                if "\x00" in value:
+                    raise ValueError("invalid_schema")
+            elif isinstance(value, dict):
+                pending.extend(value.keys())
+                pending.extend(value.values())
+            elif isinstance(value, (list, tuple)):
+                pending.extend(value)
         if len(json.dumps(self.variables_schema, ensure_ascii=True, allow_nan=False)) > 20000:
             raise ValueError("invalid_schema")
         return self

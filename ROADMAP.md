@@ -86,7 +86,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 
 - [P15-T07](docs/tasks/p15-t07.md) Channel recommendation with confidence score — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
-- [P15-T13](docs/tasks/p15-t13.md) Personal Telegram collect loses the source owner — **TODO** · unassigned · — · `P2` · `C2`
+- [P15-T13](docs/tasks/p15-t13.md) Personal Telegram collect loses the source owner — **IN_PROGRESS** · codex · codex · `P2` · `C2`
 - [P16-T02](docs/tasks/p16-t02.md) Reminders, snooze and multi-channel notifications — **no second sender (D18/D19/D20)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P16-T03](docs/tasks/p16-t03.md) Calendar connections and Google Calendar two-way sync — **the calendar owns events and recurrence (D24)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P16-T04](docs/tasks/p16-t04.md) Yandex Calendar two-way sync over CalDAV — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
@@ -100,7 +100,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P18-T07](docs/tasks/p18-t07.md) Packaging, signing and auto-update for Windows, macOS and Linux — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P19-T01](docs/tasks/p19-t01.md) Document model extension: types, links, templates and status machine — **IN_PROGRESS** · notion-ai-p19-t01 · [dialogue](https://app.notion.com/chat?t=4116c57ee76f8018a86500a9740094e4) · `P3` · `C3`
+- [P19-T01](docs/tasks/p19-t01.md) Document model extension: types, links, templates and status machine — **IN_PROGRESS** · Codex local audit/corrections (River validation) · [PR #433](https://github.com/Starck43/social-media-ai/pull/433) · `P3` · `C3`
 - [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P19-T03](docs/tasks/p19-t03.md) Version history, diff and restore — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P19-T04](docs/tasks/p19-t04.md) Document approval workflow bound to an immutable revision hash — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`

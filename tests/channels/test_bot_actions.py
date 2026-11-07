@@ -1,13 +1,24 @@
 """Tests for bot_actions: ledger, guards, write-clients, agent tools."""
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
 from app.core.access_catalog import workspace_grants
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
-from app.models import AgentScenario, AgentTask, BotAction, Platform, Source, TenantUser, WorkspaceRole
+from app.models import (
+    AgentScenario,
+    AgentTask,
+    BotAction,
+    EntitlementUsage,
+    Job,
+    Platform,
+    Source,
+    TenantUser,
+    WorkspaceRole,
+)
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.models.managers.bot_action_manager import BotActionManager
 from app.services.social.guards import GuardsChecker
@@ -101,6 +112,18 @@ async def source(platform, scenario):
     yield s
     await BotAction.objects.filter(source_id=s.id).delete()
     await Source.objects.delete_by_id(s.id)
+
+
+@pytest.fixture
+async def analyze_job(action_world):
+    """Supply the persisted running job that the dispatcher passes to handlers."""
+    job = await Job.objects.create(job_type="analyze", payload={}, status="running", run_at=datetime.now(timezone.utc))
+    try:
+        yield job
+    finally:
+        # Usage survives deletion of a job by design; remove only this fixture's rows.
+        await EntitlementUsage.objects.filter(tenant_id=action_world.tenants[0].id, job_id=job.id).delete()
+        await Job.objects.delete_by_id(job.id)
 
 
 @pytest.fixture
@@ -323,7 +346,7 @@ class TestAgentTools:
 
 
 class TestAnalyzeHandler:
-    async def test_handle_analyze_creates_actions(self, task, scenario, source):
+    async def test_handle_analyze_creates_actions(self, task, scenario, source, analyze_job):
         """TriggerEvaluator pre-filter passes content; BotAction created dry-run.
 
         The trigger and the action come from the task, so the run must be
@@ -343,7 +366,9 @@ class TestAnalyzeHandler:
         )
 
         try:
-            stats = await handle_analyze({"source_ids": [source.id], "agent_task_id": task.id})
+            stats = await handle_analyze(
+                {"source_ids": [source.id], "agent_task_id": task.id, "job_id": analyze_job.id}
+            )
             assert stats["sources"] == 1
             assert stats["actions_created"] >= 1
 
@@ -355,20 +380,22 @@ class TestAnalyzeHandler:
             assert actions[0].agent_task_id == task.id
             # Durable idempotency spans decisions; rejecting does not recreate the intent.
             await BotAction.objects.update_by_id(actions[0].id, status=BotActionStatus.REJECTED)
-            replay = await handle_analyze({"source_ids": [source.id], "agent_task_id": task.id})
+            replay = await handle_analyze(
+                {"source_ids": [source.id], "agent_task_id": task.id, "job_id": analyze_job.id}
+            )
             assert replay["actions_created"] == 0
         finally:
             await AIAnalytics.objects.delete_by_id(analytics.id)
 
-    async def test_handle_analyze_without_content_skips(self, scenario, source):
+    async def test_handle_analyze_without_content_skips(self, scenario, source, analyze_job):
         """No analytics → no actions created."""
         from app.jobs.handlers import handle_analyze
 
-        stats = await handle_analyze({"source_ids": [source.id], "scenario_id": scenario.id})
+        stats = await handle_analyze({"source_ids": [source.id], "scenario_id": scenario.id, "job_id": analyze_job.id})
         assert stats["sources"] == 1
         assert stats["actions_created"] == 0
 
-    async def test_handle_analyze_without_action_type_creates_nothing(self, task, source):
+    async def test_handle_analyze_without_action_type_creates_nothing(self, task, source, analyze_job):
         """A task with no `action_type` analyses and stops.
 
         The action used to be read off the scenario, where it defaulted to
@@ -390,12 +417,14 @@ class TestAnalyzeHandler:
             response_payload={"sentiment": {"score": -0.8}, "response": "reply"},
         )
         try:
-            stats = await handle_analyze({"source_ids": [source.id], "agent_task_id": task.id})
+            stats = await handle_analyze(
+                {"source_ids": [source.id], "agent_task_id": task.id, "job_id": analyze_job.id}
+            )
             assert stats["actions_created"] == 0
         finally:
             await AIAnalytics.objects.delete_by_id(analytics.id)
 
-    async def test_handle_analyze_respects_guards_block(self, task, scenario, source):
+    async def test_handle_analyze_respects_guards_block(self, task, scenario, source, analyze_job):
         """Guard blocks action when rate limit is exceeded."""
         from datetime import date
 
@@ -412,7 +441,9 @@ class TestAnalyzeHandler:
         )
 
         try:
-            stats = await handle_analyze({"source_ids": [source.id], "agent_task_id": task.id})
+            stats = await handle_analyze(
+                {"source_ids": [source.id], "agent_task_id": task.id, "job_id": analyze_job.id}
+            )
             assert stats["actions_created"] == 0
         finally:
             await AIAnalytics.objects.delete_by_id(analytics.id)

@@ -45,7 +45,7 @@ class DocumentCreate(BusinessSchema):
 
 
 class StoredDocumentInput(DocumentCreate):
-    """Validate stored legacy documents without applying new-create size limits."""
+    """Allow legacy stored bodies to exceed the new-document size limit."""
 
     document_type: DocumentType | None = None
     body_text: str
@@ -118,6 +118,9 @@ class TemplateCreate(BusinessSchema):
 
         if not self.name.strip() or "\x00" in self.name or "\x00" in self.content:
             raise ValueError("invalid_template")
+        serialized_schema = json.dumps(self.variables_schema, ensure_ascii=True, allow_nan=False)
+        if len(serialized_schema) > 20000:
+            raise ValueError("invalid_schema")
         pending = [self.variables_schema]
         while pending:
             value = pending.pop()
@@ -129,8 +132,6 @@ class TemplateCreate(BusinessSchema):
                 pending.extend(value.values())
             elif isinstance(value, (list, tuple)):
                 pending.extend(value)
-        if len(json.dumps(self.variables_schema, ensure_ascii=True, allow_nan=False)) > 20000:
-            raise ValueError("invalid_schema")
         return self
 
 

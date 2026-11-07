@@ -452,6 +452,9 @@ async def test_templates_are_scoped_and_version_checked(monkeypatch):
     assert TemplateCreate(
         name="Unicode", document_type="memo", content="x", variables_schema={"title": "данные 😀"}
     ).variables_schema == {"title": "данные 😀"}
+    assert TemplateCreate(
+        name="Escaped", document_type="memo", content="x", variables_schema={"title": r"\u0000"}
+    ).variables_schema == {"title": r"\u0000"}
 
 
 @pytest.mark.asyncio

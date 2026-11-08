@@ -253,6 +253,7 @@ async def test_generation_and_merge_lock_order_avoids_deadlock(personal_world, m
 
 async def test_both_merged_groups_keep_greeting_actions(personal_world, monkeypatch):
     from unittest.mock import AsyncMock
+
     from app.services.planner.events import event_planning_service
 
     world = personal_world
@@ -285,6 +286,7 @@ async def test_both_merged_groups_keep_greeting_actions(personal_world, monkeypa
 
 async def test_repeated_merge_and_unmerge_preserves_all_groups(personal_world, monkeypatch):
     from unittest.mock import AsyncMock
+
     from app.services.planner.events import event_planning_service
 
     world = personal_world
@@ -400,6 +402,7 @@ async def test_erasing_enabler_disables_without_reassignment(personal_world):
 
 async def test_claim_cannot_point_to_a_different_event_or_workspace(personal_world):
     from sqlalchemy.exc import IntegrityError
+
     from app.models.planner.events import PlannerEventClaim
 
     world = personal_world

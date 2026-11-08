@@ -29,8 +29,8 @@ TODAY = date(2032, 2, 26)
 
 @pytest.fixture(autouse=True)
 def isolated_schema(monkeypatch):
-    assert (
-        settings.DB_SCHEMA == settings.DB_TEST_SCHEMA and settings.DB_SCHEMA.startswith("test_schema")
+    assert settings.DB_SCHEMA == settings.DB_TEST_SCHEMA and settings.DB_SCHEMA.startswith(
+        "test_schema"
     ), "P16-T05 DB checks require the configured test_schema* schema"
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
 

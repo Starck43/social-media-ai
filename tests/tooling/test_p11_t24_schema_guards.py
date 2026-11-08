@@ -110,6 +110,12 @@ class _Scope:
         self.flags = {}
         self.expressions = {}
         self.placeholders = set()
+        # ``if flag:`` blocks that refine a local before it reaches SQL.
+        # name -> [(flag, node)]; ``node`` replaces the base for ``Assign`` and
+        # appends to it for ``AugAssign``. 0142's ``_revision_guard`` builds the
+        # extended and the base body from one helper this way.
+        self.replaced = {}
+        self.appended = {}
         # ``SCHEMA = settings.DB_SCHEMA``: the build schema, whatever its name
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign) and isinstance(node.value, ast.Attribute):
@@ -141,6 +147,22 @@ class _Scope:
                     self.text.setdefault(target.id, value.value)
                 elif isinstance(value.value, bool):
                     self.flags.setdefault(target.id, value.value)
+        # Conditional refinements: ``if flag: name = ...`` replaces, ``name += ...`` appends.
+        for condition in ast.walk(tree):
+            if not isinstance(condition, ast.If) or not isinstance(condition.test, ast.Name):
+                continue
+            flag = condition.test.id
+            for node in condition.body:
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            self.replaced.setdefault(target.id, []).append((flag, node.value))
+                elif (
+                    isinstance(node, ast.AugAssign)
+                    and isinstance(node.op, ast.Add)
+                    and isinstance(node.target, ast.Name)
+                ):
+                    self.appended.setdefault(node.target.id, []).append((flag, node.value))
 
     def _is_schema(self, node):
         # Post-baseline revisions also bind `schema = settings.DB_SCHEMA`
@@ -223,17 +245,36 @@ def _render(node, scope, binding=None):
         return _render(node.value, scope, binding)
     if isinstance(node, ast.Name):
         if node.id in binding:
-            return binding[node.id]
-        if node.id in scope.text:
-            return scope.text[node.id]
-        if node.id in scope.quoted:
+            rendered = binding[node.id]
+        elif node.id in scope.text:
+            rendered = scope.text[node.id]
+        elif node.id in scope.quoted:
             aliased = _render(scope.quoted[node.id], scope, binding)
             if aliased is None:
                 return None
-            return aliased if aliased.startswith(_SCHEMA + ".") else f"{_SCHEMA}.{aliased}"
-        if node.id in scope.expressions:
-            return _render(scope.expressions[node.id], scope, binding)
-        return None
+            rendered = aliased if aliased.startswith(_SCHEMA + ".") else f"{_SCHEMA}.{aliased}"
+        elif node.id in scope.expressions:
+            rendered = _render(scope.expressions[node.id], scope, binding)
+        else:
+            return None
+        # Apply ``if flag:`` refinements the call site resolved.
+        for flag, value in scope.replaced.get(node.id, ()):
+            overridden = _render(value, scope, binding)
+            state = _condition(ast.Name(id=flag), scope, binding)
+            if state is None:
+                return None
+            if state:
+                rendered = overridden
+        for flag, value in scope.appended.get(node.id, ()):
+            extra = _render(value, scope, binding)
+            state = _condition(ast.Name(id=flag), scope, binding)
+            if state is None:
+                return None
+            if state:
+                if rendered is None or extra is None:
+                    return None
+                rendered = rendered + extra
+        return rendered
     if isinstance(node, ast.JoinedStr):
         pieces = [_render(part, scope, binding) for part in node.values]
         return None if any(piece is None for piece in pieces) else "".join(pieces)
@@ -242,6 +283,16 @@ def _render(node, scope, binding=None):
     if _is_call(node, "_q", "_qualified"):
         rendered = _render(node.args[0], scope, binding) if node.args else None
         return None if rendered is None else f"{_SCHEMA}.{rendered}"
+    # ``old_fields = fields.replace("NEW.", "OLD.")``: a literal text transform.
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "replace"
+        and len(node.args) == 2
+        and all(isinstance(argument, ast.Constant) and isinstance(argument.value, str) for argument in node.args)
+    ):
+        base = _render(node.func.value, scope, binding)
+        return None if base is None else base.replace(node.args[0].value, node.args[1].value)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
         left, right = _render(node.left, scope, binding), _render(node.right, scope, binding)
         return None if left is None or right is None else left + right
@@ -283,6 +334,19 @@ def _definition(tree, name):
 
 def _parameters(definition):
     return [argument.arg for argument in definition.args.args]
+
+
+def _module_literal(tree, name):
+    """Module-level ``NAME = (...,)`` / ``NAME = [...]`` literal, or ``None``."""
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
+            continue
+        if isinstance(node.value, (ast.Tuple, ast.List)):
+            return node.value
+        return None
+    return None
 
 
 def _reachable_functions(tree, entrypoint="upgrade"):
@@ -364,6 +428,14 @@ def _loop_values(tree, function, name):
                     pairs.append((key.value, value.value))
                 if len(pairs) == len(mapping.keys):
                     return [(target_names, pair) for pair in pairs]
+        # ``for table in TABLES``: follow a module-level literal tuple or list.
+        # Migrations bind the guarded tables once at module scope and loop over
+        # them, so the loop body has no literal to read without this step.
+        if isinstance(iterable, ast.Name):
+            literal = _module_literal(tree, iterable.id)
+            if literal is None:
+                return None
+            iterable = literal
         if isinstance(iterable, (ast.Tuple, ast.List)):
             values = []
             for element in iterable.elts:
@@ -517,12 +589,28 @@ def migration_statements():
                     yield path, statement
 
 
+_CREATE_TRIGGER_SPLIT = re.compile(r"(?=CREATE\s+TRIGGER\s+)", re.IGNORECASE)
+
+
+def _trigger_blocks(statement):
+    """Each ``CREATE TRIGGER`` block of one migration text.
+
+    A single ``op.execute`` may create several triggers (0142 detaches a deleted
+    contact and a deleted case snippet in one text), and ``_CREATE_TRIGGER.search``
+    sees only the first. Splitting keeps one block per trigger so the drift
+    comparison is complete.
+    """
+    parts = [part for part in _CREATE_TRIGGER_SPLIT.split(statement) if _CREATE_TRIGGER.match(part)]
+    return parts or [statement]
+
+
 def migration_trigger_pairs():
     """``(trigger name, table)`` for every reproducible ``CREATE TRIGGER``."""
     return {
-        (match.group("name"), _table_of(statement))
+        (match.group("name"), _table_of(block))
         for _path, statement in migration_statements()
-        for match in [_CREATE_TRIGGER.search(statement)]
+        for block in _trigger_blocks(statement)
+        for match in [_CREATE_TRIGGER.match(block)]
         if match
     }
 
@@ -555,9 +643,10 @@ def migration_trigger_statements():
     """``(trigger name, table) -> statement`` for the last ``CREATE TRIGGER`` per pair."""
     statements = {}
     for _path, statement in migration_statements():
-        match = _CREATE_TRIGGER.search(statement)
-        if match:
-            statements[(match.group("name"), _table_of(statement))] = statement
+        for block in _trigger_blocks(statement):
+            match = _CREATE_TRIGGER.match(block)
+            if match:
+                statements[(match.group("name"), _table_of(block))] = block
     return statements
 
 

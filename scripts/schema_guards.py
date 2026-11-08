@@ -37,17 +37,48 @@ from dataclasses import dataclass
 # only in table references: NEW/OLD rows and keywords are never qualified.
 GUARD_FUNCTIONS: dict[str, str] = {
     # 0122 - reproduce the existing immutable document contract on fresh schemas.
+    # 0142 extends it: the change description joins the immutable set, and an
+    # authorship change is refused except the FK-driven erasure of a deleted user.
     "guard_document_revision_content": (
         " BEGIN IF ROW(NEW.id, NEW.tenant_id, NEW.document_id, NEW.version, NEW.body_text, "
-        "NEW.content_hash, NEW.author, NEW.created_at, NEW.unsupported_terms_note) IS DISTINCT FROM "
-        "ROW(OLD.id, OLD.tenant_id, OLD.document_id, OLD.version, OLD.body_text, "
-        "OLD.content_hash, OLD.author, OLD.created_at, OLD.unsupported_terms_note) THEN "
-        "RAISE EXCEPTION 'Document revision content is immutable; append a revision' "
+        "NEW.content_hash, NEW.author, NEW.created_at, NEW.unsupported_terms_note, NEW.change_description) "
+        "IS DISTINCT FROM ROW(OLD.id, OLD.tenant_id, OLD.document_id, OLD.version, OLD.body_text, "
+        "OLD.content_hash, OLD.author, OLD.created_at, OLD.unsupported_terms_note, OLD.change_description) "
+        "OR (NEW.author_user_id IS DISTINCT FROM OLD.author_user_id AND NOT ("
+        "NEW.author_user_id IS NULL AND OLD.author_user_id IS NOT NULL AND NOT EXISTS "
+        "(SELECT 1 FROM {s}.users WHERE id = OLD.author_user_id))) "
+        "THEN RAISE EXCEPTION 'Document revision content is immutable; append a revision' "
         "USING ERRCODE = '23514'; END IF; RETURN NEW; END; "
     ),
     # 0124 - immutable metadata observations, with connection-lifecycle deletion.
     "guard_file_observation": (
         " BEGIN RAISE EXCEPTION 'File metadata observations are immutable' USING ERRCODE = '23514'; END; "
+    ),
+    # 0130 - the database-side PII marker covers ORM, bulk, SQL and byte-identical rewrites.
+    "bump_contact_pii_marker": (
+        " BEGIN IF TG_OP = 'INSERT' THEN NEW.pii_updated_at := 1; "
+        "ELSE NEW.pii_updated_at := OLD.pii_updated_at + 1; END IF; RETURN NEW; END; "
+    ),
+    # 0142 - a deleted contact must not leave documents pointing at a dead row.
+    "detach_document_contact": (
+        " BEGIN UPDATE {s}.knowledge_documents SET contact_id = NULL "
+        "WHERE tenant_id = OLD.tenant_id AND contact_id = OLD.id; RETURN OLD; END; "
+    ),
+    "detach_document_case_evidence": (
+        " BEGIN UPDATE {s}.knowledge_documents SET case_evidence_id = NULL "
+        "WHERE tenant_id = OLD.tenant_id AND case_evidence_id = OLD.id; RETURN OLD; END; "
+    ),
+    # 0142 - every revision insert advances the pointer, never rewinds it, and
+    # serializes concurrent inserts on the owning document row.
+    "set_document_current_revision": (
+        " DECLARE prior_id integer; prior_version integer; BEGIN "
+        "SELECT d.current_revision_id INTO prior_id FROM {s}.knowledge_documents d "
+        "WHERE d.tenant_id = NEW.tenant_id AND d.id = NEW.document_id FOR UPDATE; "
+        "IF prior_id IS NOT NULL THEN SELECT r.version INTO prior_version FROM {s}.document_revisions r "
+        "WHERE r.tenant_id = NEW.tenant_id AND r.document_id = NEW.document_id AND r.id = prior_id; END IF; "
+        "IF prior_id IS NULL OR NEW.version > prior_version THEN "
+        "UPDATE {s}.knowledge_documents SET current_revision_id = NEW.id "
+        "WHERE tenant_id = NEW.tenant_id AND id = NEW.document_id; END IF; RETURN NEW; END; "
     ),
     # 0093 - dispatch receipts are immutable evidence.
     "reject_llm_receipt_mutation": " BEGIN RAISE EXCEPTION 'Dispatch receipts are immutable' USING ERRCODE = '55000'; END; ",
@@ -516,6 +547,29 @@ def _immutable_guards() -> list[GuardTrigger]:
 
 
 GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
+    # 0142 - document history maintenance on a metadata-built schema.
+    GuardTrigger(
+        "document_revisions", "document_revision_current", "set_document_current_revision", ("INSERT",), timing="AFTER"
+    ),
+    GuardTrigger("contacts", "document_detach_contact", "detach_document_contact", ("DELETE",)),
+    GuardTrigger("knowledge_snippets", "document_detach_case_evidence", "detach_document_case_evidence", ("DELETE",)),
+    # 0130 and the modules that follow it attach the same PII marker to their tables.
+    *(
+        GuardTrigger(table, "contact_pii_marker", "bump_contact_pii_marker", ("INSERT", "UPDATE"))
+        for table in (
+            "contacts",
+            "contact_identities",
+            "contact_consents",
+            "contact_merge_journal",
+            "crm_entities",
+            "greeting_history",
+            "message_threads",
+            "outbox_messages",
+            "outbox_targets",
+            "planner_tasks",
+            "unified_messages",
+        )
+    ),
     GuardTrigger(
         "workspace_connections",
         "file_insight_revoke",

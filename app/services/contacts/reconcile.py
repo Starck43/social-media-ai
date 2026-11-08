@@ -783,6 +783,9 @@ async def merge_contacts(
         target.last_active_at = source.last_active_at
         target.last_active_channel = source.last_active_channel
 
+    from app.services.planner.events import merge_event_lineage
+
+    await merge_event_lineage(session, tenant_id=tenant_id, source_id=source_contact_id, target_id=target_contact_id)
     source.merged_into_id = target_contact_id
 
     snapshot = {
@@ -907,6 +910,9 @@ async def unmerge_contacts(
     if _snapshot_stats(current_stats) != _expected_merged_stats(snapshot):
         raise ContactMergeConflictError("Channel observations cannot be restored safely")
 
+    from app.services.planner.events import unmerge_event_lineage
+
+    await unmerge_event_lineage(session, tenant_id=tenant_id, source_id=source_id, target_id=target_id)
     _restore_contact_fields(source, snapshot["source_before"])
     _restore_contact_fields(target, snapshot["target_before"])
 

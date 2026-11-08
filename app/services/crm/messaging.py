@@ -26,11 +26,13 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.core.config import settings
 from app.core.database import async_session_maker
+from app.core.permissions import operator_permission_scope
 from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
 from app.integrations.bitrix24.client import Bitrix24Error
 from app.models.actions.business_command import BusinessCommand, BusinessCommandTarget
@@ -62,12 +64,23 @@ CHANNEL_TO_IDENTITY_KIND: dict[str, str] = {
 ALLOWED_CAMPAIGN_PURPOSES: tuple[str, ...] = ("greeting", "marketing")
 MAX_BATCH_CONTACTS = 500
 UNSUBSCRIBE_DOMAIN_TAG = b"p14-t06-unsubscribe-v1"
+UNSUBSCRIBE_TOKEN_TTL_SECONDS: int = 90 * 86400
+UNSUBSCRIBE_INVALID_MESSAGE = "Invalid or expired unsubscribe token"
 _PLACEHOLDER_RE = re.compile(r"\{(name|company)\}")
 
 
 def _unsubscribe_secret() -> bytes:
-    raw = getattr(settings, "SECRET_KEY", "") or "fallback-secret-key"
-    return raw.encode("utf-8")
+    """Return the configured HMAC signing secret or fail closed with a controlled error."""
+    raw = getattr(settings, "SECRET_KEY", None)
+    if hasattr(raw, "get_secret_value"):
+        raw = raw.get_secret_value()
+    if not isinstance(raw, str) or not raw.strip():
+        raise Bitrix24Error(
+            "unsubscribe_secret_unconfigured",
+            "Unsubscribe signing secret is not configured",
+            status_code=503,
+        )
+    return raw.strip().encode("utf-8")
 
 
 def create_unsubscribe_token(
@@ -84,7 +97,10 @@ def create_unsubscribe_token(
     if channel not in ALLOWED_DELIVERY_CHANNELS or purpose not in ALLOWED_CAMPAIGN_PURPOSES:
         raise Bitrix24Error("invalid_unsubscribe_scope", status_code=422)
 
+    secret = _unsubscribe_secret()
     iat = int(issued_at if issued_at is not None else datetime.now(UTC).timestamp())
+    if iat <= 0:
+        raise Bitrix24Error("invalid_unsubscribe_scope", status_code=422)
     payload_bytes = json.dumps(
         {"c": contact_id, "ch": channel, "iat": iat, "p": purpose, "t": tenant_id},
         sort_keys=True,
@@ -92,38 +108,40 @@ def create_unsubscribe_token(
     ).encode("utf-8")
     payload_b64 = base64.urlsafe_b64encode(payload_bytes).decode("ascii").rstrip("=")
     signing_input = UNSUBSCRIBE_DOMAIN_TAG + b"." + payload_b64.encode("ascii")
-    sig_bytes = hmac.new(_unsubscribe_secret(), signing_input, hashlib.sha256).digest()
+    sig_bytes = hmac.new(secret, signing_input, hashlib.sha256).digest()
     sig_b64 = base64.urlsafe_b64encode(sig_bytes).decode("ascii").rstrip("=")
     return f"{payload_b64}.{sig_b64}"
 
 
-def verify_unsubscribe_token(token: str) -> dict[str, Any]:
-    """Verify a one-click unsubscribe token and return `{tenant_id, contact_id, channel, purpose, issued_at}`."""
+def verify_unsubscribe_token(
+    token: str,
+    *,
+    now: datetime | None = None,
+    max_age_seconds: int | None = None,
+) -> dict[str, Any]:
+    """Verify a one-click unsubscribe token, enforcing signature, schema, non-future iat, and TTL."""
+    secret = _unsubscribe_secret()
     if not isinstance(token, str) or "." not in token or len(token) > 1024:
-        raise Bitrix24Error("invalid_unsubscribe_token", "Invalid unsubscribe token", status_code=422)
+        raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422)
     payload_b64, sig_b64 = token.split(".", 1)
     if not payload_b64 or not sig_b64:
-        raise Bitrix24Error("invalid_unsubscribe_token", "Invalid unsubscribe token", status_code=422)
+        raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422)
 
     signing_input = UNSUBSCRIBE_DOMAIN_TAG + b"." + payload_b64.encode("ascii")
     expected_sig = (
-        base64.urlsafe_b64encode(hmac.new(_unsubscribe_secret(), signing_input, hashlib.sha256).digest())
-        .decode("ascii")
-        .rstrip("=")
+        base64.urlsafe_b64encode(hmac.new(secret, signing_input, hashlib.sha256).digest()).decode("ascii").rstrip("=")
     )
     if not hmac.compare_digest(sig_b64, expected_sig):
-        raise Bitrix24Error("invalid_unsubscribe_token", "Unsubscribe token signature mismatch", status_code=422)
+        raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422)
 
     try:
         padded = payload_b64 + "=" * (-len(payload_b64) % 4)
         data = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
     except Exception as exc:
-        raise Bitrix24Error(
-            "invalid_unsubscribe_token", "Malformed unsubscribe token payload", status_code=422
-        ) from exc
+        raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422) from exc
 
     if not isinstance(data, dict):
-        raise Bitrix24Error("invalid_unsubscribe_token", status_code=422)
+        raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422)
     tenant_id = data.get("t")
     contact_id = data.get("c")
     channel = data.get("ch")
@@ -137,8 +155,19 @@ def verify_unsubscribe_token(token: str) -> dict[str, Any]:
         or channel not in ALLOWED_DELIVERY_CHANNELS
         or purpose not in ALLOWED_CAMPAIGN_PURPOSES
         or type(issued_at) is not int
+        or issued_at <= 0
     ):
-        raise Bitrix24Error("invalid_unsubscribe_token", status_code=422)
+        raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422)
+
+    effective_now = instant(now or datetime.now(UTC))
+    now_ts = int(effective_now.timestamp())
+    ttl = int(
+        max_age_seconds
+        if max_age_seconds is not None
+        else getattr(settings, "UNSUBSCRIBE_TOKEN_TTL_SECONDS", UNSUBSCRIBE_TOKEN_TTL_SECONDS)
+    )
+    if ttl <= 0 or issued_at > now_ts or (now_ts - issued_at) > ttl:
+        raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422)
 
     return {
         "tenant_id": tenant_id,
@@ -149,20 +178,36 @@ def verify_unsubscribe_token(token: str) -> dict[str, Any]:
     }
 
 
-def build_unsubscribe_url(token: str, *, base_url: str = "") -> str:
-    """Build the public one-click unsubscribe URL for a token."""
-    prefix = base_url.rstrip("/") if base_url else ""
+def build_unsubscribe_url(token: str, *, base_url: str | None = None) -> str:
+    """Build an absolute public one-click unsubscribe URL for a token."""
+    raw_base = base_url if base_url is not None else getattr(settings, "PUBLIC_BASE_URL", "")
+    prefix = (raw_base or "").strip().rstrip("/")
+    parsed = urlsplit(prefix) if prefix else None
+    if (
+        parsed is None
+        or parsed.scheme not in ("http", "https")
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise Bitrix24Error(
+            "unsubscribe_base_url_unconfigured",
+            "PUBLIC_BASE_URL must be configured as an absolute HTTP(S) base URL",
+            status_code=503,
+        )
     return f"{prefix}/api/v1/integrations/bitrix/messaging/unsubscribe?token={token}"
 
 
 def append_unsubscribe_footer(body: str, *, unsubscribe_url: str, channel: str) -> str:
-    """Append a channel-appropriate one-click unsubscribe link/command to message body (D7, D16)."""
+    """Append a channel-appropriate one-click unsubscribe link to message body (D7, D16)."""
     clean_body = (body or "").rstrip()
     if unsubscribe_url in clean_body:
         return clean_body
     if channel == "email":
         return f"{clean_body}\n\n---\nОтписаться от рассылки в один клик (без входа): {unsubscribe_url}"
-    return f"{clean_body}\n\nОтписаться в один клик: {unsubscribe_url} (или отправьте /stop)"
+    return f"{clean_body}\n\nОтписаться в один клик (без входа): {unsubscribe_url}"
 
 
 def render_personalized_template(
@@ -237,21 +282,23 @@ async def _resolve_contact_identity(
     expected_kind = CHANNEL_TO_IDENTITY_KIND.get(channel)
     if expected_kind is None:
         return None
-    identities = list(
-        (
-            await session.execute(
-                select(ContactIdentity)
-                .where(
-                    ContactIdentity.tenant_id == tenant_id,
-                    ContactIdentity.contact_id == contact_id,
-                )
-                .order_by(ContactIdentity.id.asc())
-            )
-        )
-        .scalars()
-        .all()
+    stmt = select(ContactIdentity).where(
+        ContactIdentity.tenant_id == tenant_id,
+        ContactIdentity.contact_id == contact_id,
+        ContactIdentity.kind == expected_kind,
+        ContactIdentity.verified.is_(True),
+        or_(
+            ContactIdentity.connection_id == connection_id,
+            ContactIdentity.connection_id.is_(None),
+        ),
     )
+    if identity_id is not None:
+        stmt = stmt.where(ContactIdentity.id == identity_id)
+    stmt = stmt.order_by(ContactIdentity.id.asc())
+    identities = list((await session.execute(stmt)).scalars().all())
     for ident in identities:
+        if ident.tenant_id != tenant_id or ident.contact_id != contact_id:
+            continue
         if ident.kind != expected_kind or not ident.verified:
             continue
         if identity_id is not None and ident.id != identity_id:
@@ -370,50 +417,55 @@ class CrmMessagingService:
         now: datetime | None = None,
         session=None,
     ) -> dict[str, Any]:
-        """Process a one-click unsubscribe link without requiring login (D16)."""
-        verified = verify_unsubscribe_token(token)
+        """Process a one-click unsubscribe link without requiring login (D16).
+
+        Records a `ContactConsent` withdrawal through `ContactManager.record_consent` (under the
+        `Contact` row lock `SELECT ... FOR UPDATE`) and cancels unclaimed scheduled outbox messages
+        and greeting drafts for the current calendar year (`effective_now.year`).
+        """
+        effective_now = instant(now or datetime.now(UTC))
+        verified = verify_unsubscribe_token(token, now=effective_now)
         tenant_id = verified["tenant_id"]
         contact_id = verified["contact_id"]
         channel = verified["channel"]
         purpose = verified["purpose"]
-        effective_now = instant(now or datetime.now(UTC))
+        current_year = effective_now.year
 
         if session is None:
             async with async_session_maker() as owned, owned.begin():
                 return await self.process_one_click_unsubscribe(token, now=effective_now, session=owned)
 
         with tenant_scope(tenant_id):
-            contact = (
-                await session.execute(
-                    select(Contact).where(
-                        Contact.id == contact_id,
-                        Contact.tenant_id == tenant_id,
+            manager = ContactManager()
+            try:
+                with operator_permission_scope():
+                    await manager.record_consent(
+                        contact_id,
+                        channel,
+                        purpose,
+                        "one_click_unsubscribe",
+                        "one_click_unsubscribe_token",
+                        session=session,
+                        withdrawn_at=effective_now,
                     )
-                )
-            ).scalar_one_or_none()
-            if contact is None or contact.merged_into_id is not None:
-                raise Bitrix24Error("contact_not_found", status_code=404)
+            except (ContactUnavailable, PermissionError, ValueError) as exc:
+                # Uniform 422 response so deleted/missing contacts are indistinguishable from invalid tokens.
+                raise Bitrix24Error(
+                    "invalid_unsubscribe_token",
+                    UNSUBSCRIBE_INVALID_MESSAGE,
+                    status_code=422,
+                ) from exc
 
-            consent_row = ContactConsent(
-                tenant_id=tenant_id,
-                contact_id=contact.id,
-                channel=channel,
-                purpose=purpose,
-                basis_encrypted="one_click_unsubscribe",
-                source_evidence_encrypted="one_click_unsubscribe_token",
-                granted_at=None,
-                withdrawn_at=effective_now,
-            )
-            session.add(consent_row)
-
-            # Immediately cancel any unclaimed scheduled outbox messages for this contact/channel/purpose.
+            # Immediately cancel unclaimed scheduled outbox messages for this contact/channel/purpose
+            # in the current calendar year (`current_year`), leaving prior-year archive rows untouched.
             outbox_msgs = list(
                 (
                     await session.execute(
                         select(OutboxMessage).where(
                             OutboxMessage.tenant_id == tenant_id,
-                            OutboxMessage.contact_id == contact.id,
+                            OutboxMessage.contact_id == contact_id,
                             OutboxMessage.purpose == purpose,
+                            OutboxMessage.state.in_(("validated", "approved")),
                         )
                     )
                 )
@@ -423,6 +475,9 @@ class CrmMessagingService:
             cancelled_targets = 0
             for msg in outbox_msgs:
                 if msg.state not in {"validated", "approved"}:
+                    continue
+                msg_dt = msg.scheduled_at or getattr(msg, "created_at", None)
+                if msg_dt is not None and instant(msg_dt).year != current_year:
                     continue
                 targets = list(
                     (
@@ -461,6 +516,7 @@ class CrmMessagingService:
                                         select(BusinessCommandTarget).where(
                                             BusinessCommandTarget.tenant_id == tenant_id,
                                             BusinessCommandTarget.command_id == tgt.command_id,
+                                            BusinessCommandTarget.state == "pending",
                                         )
                                     )
                                 )
@@ -479,7 +535,10 @@ class CrmMessagingService:
                         await session.execute(
                             select(GreetingHistory).where(
                                 GreetingHistory.tenant_id == tenant_id,
-                                GreetingHistory.contact_id == contact.id,
+                                GreetingHistory.contact_id == contact_id,
+                                GreetingHistory.year == current_year,
+                                GreetingHistory.channel == channel,
+                                GreetingHistory.status == "approved",
                             )
                         )
                     )
@@ -487,7 +546,7 @@ class CrmMessagingService:
                     .all()
                 )
                 for g in greetings:
-                    if g.channel == channel and g.status == "approved":
+                    if g.year == current_year and g.channel == channel and g.status == "approved":
                         g.status = "skipped"
 
             await session.flush()
@@ -497,7 +556,7 @@ class CrmMessagingService:
                 actor_id="task_runner",
                 action="crm.contact_update",
                 resource_kind="contact",
-                resource_id=contact.id,
+                resource_id=contact_id,
             )
 
         return {
@@ -561,23 +620,16 @@ class CrmMessagingService:
         effective_now = instant(now or datetime.now(UTC))
         eff_scheduled = instant(scheduled_at) if scheduled_at is not None else (effective_now + timedelta(minutes=1))
 
-        # Locate the GreetingHistory draft
+        # Locate the GreetingHistory draft in SQL
         row: GreetingHistory | None = None
         if greeting_id is not None:
-            rows = list(
-                (
-                    await session.execute(
-                        select(GreetingHistory).where(
-                            GreetingHistory.tenant_id == tenant_id,
-                            GreetingHistory.contact_id
-                            == (contact_id if contact_id is not None else GreetingHistory.contact_id),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
+            stmt = select(GreetingHistory).where(
+                GreetingHistory.tenant_id == tenant_id,
+                GreetingHistory.id == greeting_id,
             )
-            row = next((r for r in rows if r.id == greeting_id), None)
+            if contact_id is not None:
+                stmt = stmt.where(GreetingHistory.contact_id == contact_id)
+            row = (await session.execute(stmt)).scalar_one_or_none()
         elif contact_id is not None:
             target_year = int(year) if year is not None else effective_now.year
             row = (
@@ -651,7 +703,7 @@ class CrmMessagingService:
             purpose="greeting",
             issued_at=int(effective_now.timestamp()),
         )
-        unsub_url = build_unsubscribe_url(unsub_token)
+        unsub_url = build_unsubscribe_url(unsub_token, base_url=settings.PUBLIC_BASE_URL)
         body_with_unsub = append_unsubscribe_footer(
             row.draft_text_encrypted,
             unsubscribe_url=unsub_url,
@@ -698,7 +750,8 @@ class CrmMessagingService:
         target_out = sched_res["targets"][0]
         row.channel = chosen_channel
         row.command_id = target_out.get("command_id")
-        row.draft_text_encrypted = body_with_unsub
+        # Keep `row.draft_text_encrypted` as the clean approved greeting draft; the outbound
+        # body with the signed unsubscribe footer is persisted in `OutboxMessage.content_encrypted`.
         row.status = _map_outbox_state_to_greeting_status(sched_res.get("state"))
         if row.status == "sent":
             row.sent_at = effective_now
@@ -752,18 +805,14 @@ class CrmMessagingService:
                     session=owned,
                 )
 
-        rows = list(
-            (
-                await session.execute(
-                    select(GreetingHistory).where(
-                        GreetingHistory.tenant_id == tenant_id,
-                    )
+        row = (
+            await session.execute(
+                select(GreetingHistory).where(
+                    GreetingHistory.tenant_id == tenant_id,
+                    GreetingHistory.id == greeting_id,
                 )
             )
-            .scalars()
-            .all()
-        )
-        row = next((r for r in rows if r.id == greeting_id), None)
+        ).scalar_one_or_none()
         if row is None:
             raise Bitrix24Error("greeting_not_found", status_code=404)
 
@@ -774,18 +823,14 @@ class CrmMessagingService:
         error_code = None
 
         if row.command_id is not None:
-            targets = list(
-                (
-                    await session.execute(
-                        select(OutboxTarget).where(
-                            OutboxTarget.tenant_id == tenant_id,
-                        )
+            matched_target = (
+                await session.execute(
+                    select(OutboxTarget).where(
+                        OutboxTarget.tenant_id == tenant_id,
+                        OutboxTarget.command_id == row.command_id,
                     )
                 )
-                .scalars()
-                .all()
-            )
-            matched_target = next((t for t in targets if t.command_id == row.command_id), None)
+            ).scalar_one_or_none()
             if matched_target is not None:
                 outbox_message_id = matched_target.message_id
                 outbox_target_id = matched_target.id
@@ -878,28 +923,17 @@ class CrmMessagingService:
         eff_scheduled = instant(scheduled_at) if scheduled_at is not None else (effective_now + timedelta(minutes=1))
         batch_capability = "comms.batch_campaign.v1"
 
-        # Check idempotency against existing batch BusinessCommand rows
-        existing_cmds = list(
-            (
-                await session.execute(
-                    select(BusinessCommand).where(
-                        BusinessCommand.tenant_id == tenant_id,
-                    )
+        # Check idempotency against existing batch BusinessCommand rows in SQL
+        existing_batch = (
+            await session.execute(
+                select(BusinessCommand).where(
+                    BusinessCommand.tenant_id == tenant_id,
+                    BusinessCommand.actor_user_id == actor_id,
+                    BusinessCommand.capability == batch_capability,
+                    BusinessCommand.idempotency_key == idempotency_key,
                 )
             )
-            .scalars()
-            .all()
-        )
-        existing_batch = next(
-            (
-                c
-                for c in existing_cmds
-                if c.actor_user_id == actor_id
-                and c.capability == batch_capability
-                and c.idempotency_key == idempotency_key
-            ),
-            None,
-        )
+        ).scalar_one_or_none()
         if existing_batch is not None:
             return await self.get_batch_status(
                 tenant_id=tenant_id,
@@ -915,6 +949,8 @@ class CrmMessagingService:
                 await session.execute(
                     select(Contact).where(
                         Contact.tenant_id == tenant_id,
+                        Contact.id.in_(dedup_contact_ids),
+                        Contact.merged_into_id.is_(None),
                     )
                 )
             )
@@ -923,11 +959,12 @@ class CrmMessagingService:
         )
         contacts_by_id = {c.id: c for c in contacts_all if c.merged_into_id is None}
 
-        crm_entities = list(
+        contact_crm_entities = list(
             (
                 await session.execute(
                     select(CrmEntity).where(
                         CrmEntity.tenant_id == tenant_id,
+                        CrmEntity.contact_id.in_(dedup_contact_ids),
                         CrmEntity.is_deleted_remote.is_(False),
                     )
                 )
@@ -935,18 +972,38 @@ class CrmMessagingService:
             .scalars()
             .all()
         )
-        companies_by_ext: dict[tuple[int, str], str] = {}
         crm_by_contact: dict[int, CrmEntity] = {}
-        for ent in crm_entities:
-            if ent.entity_kind == "company":
-                companies_by_ext[(ent.connection_id, ent.external_id)] = ent.title_encrypted
+        company_ext_ids: set[str] = set()
+        for ent in contact_crm_entities:
             if ent.contact_id is not None and ent.contact_id not in crm_by_contact:
                 crm_by_contact[ent.contact_id] = ent
+            if ent.company_external_id:
+                company_ext_ids.add(ent.company_external_id)
+
+        companies_by_ext: dict[tuple[int, str], str] = {}
+        if company_ext_ids:
+            company_rows = list(
+                (
+                    await session.execute(
+                        select(CrmEntity).where(
+                            CrmEntity.tenant_id == tenant_id,
+                            CrmEntity.entity_kind == "company",
+                            CrmEntity.external_id.in_(sorted(company_ext_ids)),
+                            CrmEntity.is_deleted_remote.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for comp in company_rows:
+                companies_by_ext[(comp.connection_id, comp.external_id)] = comp.title_encrypted
 
         effective_outbox = outbox or self._outbox
         items: list[dict[str, Any]] = []
         skipped_no_consent: list[int] = []
         skipped_no_route: list[int] = []
+        skipped_conflict: list[int] = []
         scheduled_message_ids: list[int] = []
 
         for cid in dedup_contact_ids:
@@ -1037,7 +1094,7 @@ class CrmMessagingService:
                 purpose=purpose,
                 issued_at=int(effective_now.timestamp()),
             )
-            unsub_url = build_unsubscribe_url(unsub_token)
+            unsub_url = build_unsubscribe_url(unsub_token, base_url=settings.PUBLIC_BASE_URL)
             final_body = append_unsubscribe_footer(
                 rendered_body,
                 unsubscribe_url=unsub_url,
@@ -1088,7 +1145,19 @@ class CrmMessagingService:
                 )
             except PermissionError as exc:
                 raise Bitrix24Error("outbox_permission_denied", status_code=403) from exc
-            except (OutboxUnavailable, OutboxConflict, outbox_transitions.CommunicationError, ValueError) as exc:
+            except OutboxConflict as exc:
+                skipped_conflict.append(cid)
+                items.append(
+                    {
+                        "contact_id": cid,
+                        "status": "skipped",
+                        "reason": str(exc) or "outbox_conflict",
+                        "outbox_message_id": None,
+                        "outbox_target_id": None,
+                        "command_id": None,
+                    }
+                )
+            except (OutboxUnavailable, outbox_transitions.CommunicationError, ValueError) as exc:
                 skipped_no_route.append(cid)
                 items.append(
                     {
@@ -1111,6 +1180,10 @@ class CrmMessagingService:
             warning_parts.append(
                 f"Пропущено контактов без подтверждённого канала/маршрута '{channel}': {len(skipped_no_route)}."
             )
+        if skipped_conflict:
+            warning_parts.append(
+                f"Пропущено контактов из-за конфликта идемпотентности/состояния outbox: {len(skipped_conflict)}."
+            )
         coverage_warning = " ".join(warning_parts) if warning_parts else None
 
         target_refs = [f"outbox_message:{mid}" for mid in scheduled_message_ids] or [
@@ -1124,6 +1197,7 @@ class CrmMessagingService:
             "scheduled_message_ids": scheduled_message_ids,
             "skipped_no_consent": skipped_no_consent,
             "skipped_no_route": skipped_no_route,
+            "skipped_conflict": skipped_conflict,
         }
         payload_hash = canonical_payload_hash(batch_capability, target_refs, batch_payload)
         batch_cmd = BusinessCommand(
@@ -1189,45 +1263,60 @@ class CrmMessagingService:
                     session=owned,
                 )
 
-        cmds = list(
-            (
-                await session.execute(
-                    select(BusinessCommand).where(
-                        BusinessCommand.tenant_id == tenant_id,
-                    )
+        batch_cmd = (
+            await session.execute(
+                select(BusinessCommand).where(
+                    BusinessCommand.tenant_id == tenant_id,
+                    BusinessCommand.id == batch_id,
                 )
             )
-            .scalars()
-            .all()
-        )
-        batch_cmd = next(
-            (
-                c
-                for c in cmds
-                if c.id == batch_id
-                and (c.capability == "comms.batch_campaign.v1" or str(c.capability).startswith("crm.batch."))
-            ),
-            None,
-        )
-        if batch_cmd is None:
+        ).scalar_one_or_none()
+        if batch_cmd is None or not (
+            batch_cmd.capability == "comms.batch_campaign.v1" or str(batch_cmd.capability).startswith("crm.batch.")
+        ):
             raise Bitrix24Error("batch_not_found", status_code=404)
 
         payload = batch_cmd.payload if isinstance(batch_cmd.payload, dict) else {}
         snapshot = batch_cmd.preview_snapshot if isinstance(batch_cmd.preview_snapshot, dict) else {}
         stored_items = snapshot.get("items") if isinstance(snapshot.get("items"), list) else []
 
-        # Refresh live outbox target states
-        outbox_targets = list(
-            (
-                await session.execute(
-                    select(OutboxTarget).where(
-                        OutboxTarget.tenant_id == tenant_id,
+        target_ids = [
+            int(item["outbox_target_id"])
+            for item in stored_items
+            if isinstance(item, dict) and item.get("outbox_target_id") is not None
+        ]
+        msg_ids = [
+            int(item["outbox_message_id"])
+            for item in stored_items
+            if isinstance(item, dict) and item.get("outbox_message_id") is not None
+        ]
+        outbox_targets: list[OutboxTarget] = []
+        if target_ids:
+            outbox_targets = list(
+                (
+                    await session.execute(
+                        select(OutboxTarget).where(
+                            OutboxTarget.tenant_id == tenant_id,
+                            OutboxTarget.id.in_(target_ids),
+                        )
                     )
                 )
+                .scalars()
+                .all()
             )
-            .scalars()
-            .all()
-        )
+        elif msg_ids:
+            outbox_targets = list(
+                (
+                    await session.execute(
+                        select(OutboxTarget).where(
+                            OutboxTarget.tenant_id == tenant_id,
+                            OutboxTarget.message_id.in_(msg_ids),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
         targets_by_id = {t.id: t for t in outbox_targets}
         targets_by_msg = {t.message_id: t for t in outbox_targets}
 
@@ -1258,6 +1347,7 @@ class CrmMessagingService:
 
         skipped_no_consent_ids = list(payload.get("skipped_no_consent") or [])
         skipped_no_route_ids = list(payload.get("skipped_no_route") or [])
+        skipped_conflict_ids = list(payload.get("skipped_conflict") or [])
         total_req = int(payload.get("total_requested") or len(live_items))
         return {
             "batch_id": batch_cmd.id,
@@ -1272,6 +1362,8 @@ class CrmMessagingService:
             "skipped_no_consent_contact_ids": skipped_no_consent_ids,
             "skipped_no_route_count": len(skipped_no_route_ids),
             "skipped_no_route_contact_ids": skipped_no_route_ids,
+            "skipped_conflict_count": len(skipped_conflict_ids),
+            "skipped_conflict_contact_ids": skipped_conflict_ids,
             "coverage_warning": snapshot.get("coverage_warning"),
             "counts": counts,
             "items": live_items,

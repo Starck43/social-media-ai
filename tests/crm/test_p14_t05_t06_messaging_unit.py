@@ -1,9 +1,11 @@
-"""P14-T05 & P14-T06 unit and HTTP contract tests for greeting delivery, batch messaging, consent, and unsubscribe.
+"""P14-T05 & P14-T06 unit, SQL-backed, and HTTP contract tests for greeting delivery, batch messaging, consent, and unsubscribe.
 
 Covers:
 - P14-T05 (`CrmGreetingsService.send_greeting` / `CrmMessagingService.send_greeting`):
   - Schedules approved birthday/anniversary greetings over `email`, `telegram`, and `max`
     through the P15-T05 `OutboxStore` (`draft` + `schedule`) without creating a second outbox or sender (D10).
+  - Preserves `GreetingHistory.draft_text_encrypted` as the clean greeting text while storing the
+    signed unsubscribe footer only on `OutboxMessage.content_encrypted`.
   - Enforces D7 channel restrictions (`email`, `telegram`, `max` only; rejects `phone`, `bitrix24`, `mtproto`).
   - Enforces D15 explicit opt-in consent for `purpose="greeting"`: a channel/identity on a Bitrix24 CRM card
     without a recorded `ContactConsent` row is rejected with `403 consent_required`.
@@ -15,18 +17,22 @@ Covers:
   - Personalizes `{name}` and `{company}` single-pass (no recursive expansion, no CR/LF injection in subject).
   - Handles 100+ contacts in a batch (`120` contacts tested), filtering out unconsented or withdrawn contacts
     and returning an explicit `coverage_warning` + `skipped_no_consent_count` (D15).
-  - Appends a signed one-click unsubscribe link/command to every greeting and batch message (D7, D16).
-  - Public `GET|POST /api/v1/integrations/bitrix/messaging/unsubscribe` works through `ApiScopeMiddleware`
-    with **no login / no bearer token** (D16), records a `ContactConsent` withdrawal row, and immediately
-    cancels unclaimed scheduled `OutboxMessage` / `OutboxTarget` rows.
-  - Manual consent recording (`POST /api/v1/integrations/bitrix/contacts/{contact_id}/consents`, D17)
-    enforces `contact.UPDATE`, requires `basis` and `source_evidence`, and writes an `ActionAuditEvent`
-    naming the manager (`actor_kind="user"`, `actor_id=manager.id`).
+  - Separates `OutboxConflict` (e.g., `outbox_idempotency_mismatch`) into `skipped_conflict`
+    (`skipped_conflict_count`, `skipped_conflict_contact_ids`) distinct from `skipped_no_route`.
+  - Emits absolute `http(s)://` unsubscribe URLs using `settings.PUBLIC_BASE_URL` and fails closed (`503`)
+    if `PUBLIC_BASE_URL` or `SECRET_KEY` is unconfigured.
+  - Enforces TTL (`UNSUBSCRIBE_TOKEN_TTL_SECONDS`) and rejects expired or future-`iat` unsubscribe tokens.
+  - Records unsubscribe consent withdrawal through `ContactManager.record_consent` (with `Contact` row lock),
+    preserves `withdraw -> grant -> withdraw` ordering, cancels only current-year (`effective_now.year`)
+    unclaimed outbox targets and greeting rows, and returns a uniform `422 invalid_unsubscribe_token`
+    for both invalid tokens and deleted/merged contacts.
+  - Enforces strict tenant isolation in `_resolve_contact_identity`.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -36,222 +42,291 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-
-from app.api.v1.endpoints import bitrix as bitrix_endpoints
-from app.core import api_scope
-from app.core.api_scope import ApiScopeMiddleware
-from app.core.config import settings
-from app.core.permissions import permission_scope
-from app.core.tenant_context import tenant_scope
-from app.integrations.bitrix24.client import Bitrix24Error
-from app.models.actions.business_command import BusinessCommand, BusinessCommandTarget
-from app.models.audit.action_audit_event import ActionAuditEvent
-from app.models.communications.outbox import OutboxMessage, OutboxTarget
-from app.models.contacts.core import Contact, ContactConsent, ContactIdentity
-from app.models.crm.entity import CrmEntity
-from app.models.crm.greeting_history import GreetingHistory
-from app.services.commands.registry import canonical_payload_hash
-from app.services.communications.outbox_contracts import DraftIn, ScheduleIn
-from app.services.crm.greetings import CrmGreetingsService
-from app.services.crm.messaging import (
-    CrmMessagingService,
-    create_unsubscribe_token,
-    has_active_consent,
-    render_personalized_template,
-    verify_unsubscribe_token,
-)
-from app.services.user.auth import get_authenticated_user
-from app.types import ActionType
+from sqlalchemy import create_engine, event, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.orm import Session
 
 _SIGNING_SEED = "unit-test-" + ("ab" * 16)
 os.environ.setdefault("SECRET_KEY", _SIGNING_SEED)
 os.environ.setdefault("POSTGRES_URL", "postgresql+asyncpg://localhost:5432/test_db")
 os.environ.setdefault("CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
 os.environ.setdefault("PII_ENCRYPTION_KEYS", Fernet.generate_key().decode("ascii"))
-os.environ.setdefault("PII_INDEX_KEY", "i" * 64)
+os.environ.setdefault("PII_INDEX_KEY", Fernet.generate_key().decode("ascii"))
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(type_: Any, compiler: Any, **kw: Any) -> str:
+    return "JSON"
+
+
+from app.api.v1.endpoints import bitrix as bitrix_endpoints  # noqa: E402
+from app.core import api_scope  # noqa: E402
+from app.core.access_catalog import workspace_grants  # noqa: E402
+from app.core.api_scope import ApiScopeMiddleware  # noqa: E402
+from app.core.config import settings  # noqa: E402
+from app.core.permissions import operator_permission_scope, permission_scope  # noqa: E402
+from app.core.tenant_context import tenant_scope  # noqa: E402
+from app.integrations.bitrix24.client import Bitrix24Error  # noqa: E402
+from app.models import (  # noqa: E402
+    Contact,
+    ContactConsent,
+    ContactIdentity,
+    Tenant,
+    TenantUser,
+    User,
+    WorkspaceConnection,
+    WorkspaceConnectionSecret,
+    WorkspaceRole,
+)
+from app.models.actions.business_command import BusinessCommand, BusinessCommandTarget  # noqa: E402
+from app.models.audit.action_audit_event import ActionAuditEvent  # noqa: E402
+from app.models.communications.outbox import OutboxMessage, OutboxTarget  # noqa: E402
+from app.models.crm.entity import CrmEntity  # noqa: E402
+from app.models.crm.greeting_history import GreetingHistory  # noqa: E402
+from app.models.managers.contact_manager import ContactManager  # noqa: E402
+from app.services.commands import ledger  # noqa: E402
+from app.services.commands.registry import canonical_payload_hash  # noqa: E402
+from app.services.communications.outbox_contracts import DraftIn, ScheduleIn  # noqa: E402
+from app.services.communications.outbox_store import OutboxConflict, OutboxStore  # noqa: E402
+from app.services.crm.greetings import CrmGreetingsService  # noqa: E402
+from app.services.crm.messaging import (  # noqa: E402
+    CrmMessagingService,
+    _resolve_contact_identity,
+    append_unsubscribe_footer,
+    build_unsubscribe_url,
+    create_unsubscribe_token,
+    has_active_consent,
+    render_personalized_template,
+    verify_unsubscribe_token,
+)
+from app.services.user.auth import get_authenticated_user  # noqa: E402
+from app.types import ActionType  # noqa: E402
+from app.utils.crypto import encrypt_secret  # noqa: E402
 
 __source_only__ = True
 
 UTC = timezone.utc
 
+_SQLITE_MODELS = (
+    Tenant,
+    User,
+    WorkspaceRole,
+    TenantUser,
+    WorkspaceConnection,
+    WorkspaceConnectionSecret,
+    Contact,
+    ContactIdentity,
+    ContactConsent,
+    CrmEntity,
+    GreetingHistory,
+    BusinessCommand,
+    BusinessCommandTarget,
+    OutboxMessage,
+    OutboxTarget,
+)
+
+
+def _ensure_tz(target: Any, *_args: Any, **_kwargs: Any) -> None:
+    for key, val in list(getattr(target, "__dict__", {}).items()):
+        if isinstance(val, datetime) and val.tzinfo is None:
+            target.__dict__[key] = val.replace(tzinfo=UTC)
+
+
+for _model in _SQLITE_MODELS:
+    event.listen(_model, "load", _ensure_tz)
+    event.listen(_model, "refresh", _ensure_tz)
+
 
 @pytest.fixture(autouse=True)
-def _pii_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+def _pii_and_runtime_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode("ascii"))
-    monkeypatch.setattr(settings, "PII_INDEX_KEY", "i" * 64)
+    monkeypatch.setattr(settings, "PII_INDEX_KEY", Fernet.generate_key().decode("ascii"))
+    monkeypatch.setattr(settings, "CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
     monkeypatch.setattr(settings, "SECRET_KEY", _SIGNING_SEED)
+    monkeypatch.setattr(settings, "PUBLIC_BASE_URL", "https://crm.example.com")
+    monkeypatch.setattr(settings, "UNSUBSCRIBE_TOKEN_TTL_SECONDS", 90 * 86400)
+    monkeypatch.setattr(
+        ledger,
+        "RUNTIME_ENABLED_CAPABILITIES",
+        {"comms.email.send.v1", "comms.telegram.bot_send.v1", "comms.max.bot_send.v1"},
+    )
+    monkeypatch.setattr(ledger, "RUNTIME_KILL_SWITCHES", {})
 
 
-class _ScalarResult:
-    def __init__(self, rows: list[Any]) -> None:
-        self._rows = rows
+class SqliteMessagingSession:
+    """Real SQLite-backed SQLAlchemy session executing real SQL queries, joins, and locks."""
 
-    def scalar_one_or_none(self) -> Any:
-        return self._rows[0] if self._rows else None
+    def __init__(self, *, seed_defaults: bool = True) -> None:
+        raw_engine = create_engine("sqlite:///:memory:")
 
-    def scalars(self) -> "_ScalarResult":
-        return self
+        @event.listens_for(raw_engine, "connect")
+        def _register_regexp(dbapi_conn: Any, _record: Any) -> None:
+            dbapi_conn.create_function("regexp", 2, lambda pat, val: bool(re.search(pat, val or "")))
 
-    def all(self) -> list[Any]:
-        return list(self._rows)
+        @event.listens_for(raw_engine, "before_cursor_execute", retval=True)
+        def _strip_pg_clauses(
+            _conn: Any,
+            _cursor: Any,
+            statement: str,
+            parameters: Any,
+            _context: Any,
+            _executemany: bool,
+        ) -> tuple[str, Any]:
+            statement = re.sub(r"::jsonb?", "", statement)
+            statement = re.sub(
+                r"\s+FOR\s+(UPDATE|SHARE)(\s+NOWAIT|\s+SKIP\s+LOCKED)?",
+                "",
+                statement,
+                flags=re.IGNORECASE,
+            )
+            statement = re.sub(
+                r"([a-zA-Z0-9_.]+)\s*~\s*('[^']*')",
+                r"regexp(\2, \1)",
+                statement,
+            )
+            return statement, parameters
 
+        self._engine = raw_engine.execution_options(schema_translate_map={settings.DB_SCHEMA: None, "public": None})
+        for model in _SQLITE_MODELS:
+            model.__table__.create(self._engine, checkfirst=True)
+        self._s = Session(self._engine, expire_on_commit=False)
 
-class FakeMessagingSession:
-    """In-memory SQLAlchemy-compatible session for CRM messaging, consents, greetings, and outbox rows."""
+        if seed_defaults:
+            self._seed_workspace()
 
-    def __init__(self) -> None:
-        self.contacts: dict[int, Contact] = {}
-        self.identities: dict[int, ContactIdentity] = {}
-        self.consents: dict[int, ContactConsent] = {}
-        self.crm_entities: list[CrmEntity] = []
-        self.greetings: dict[int, GreetingHistory] = {}
-        self.outbox_messages: dict[int, OutboxMessage] = {}
-        self.outbox_targets: dict[int, OutboxTarget] = {}
-        self.commands: dict[int, BusinessCommand] = {}
-        self.command_targets: dict[int, BusinessCommandTarget] = {}
-        self._next_id = 1
+    def _seed_workspace(self) -> None:
+        self._s.add(Tenant(id=10, name="Tenant 10", slug="tenant-10", is_active=True))
+        self._s.add(Tenant(id=20, name="Tenant 20", slug="tenant-20", is_active=True))
+        self._s.add(WorkspaceRole(id=1, codename="owner"))
+        self._s.add(
+            User(
+                id=101,
+                username="owner101",
+                email="owner101@example.com",
+                hashed_password="x",
+                is_active=True,
+                role_id=1,
+            )
+        )
+        self._s.add(
+            User(
+                id=42,
+                username="manager42",
+                email="manager42@example.com",
+                hashed_password="x",
+                is_active=True,
+                role_id=1,
+            )
+        )
+        self._s.add(
+            TenantUser(
+                id=1,
+                tenant_id=10,
+                user_id=101,
+                role_id=1,
+                channel="web",
+                external_user_id="101",
+                is_active=True,
+            )
+        )
+        self._s.add(
+            TenantUser(
+                id=2,
+                tenant_id=10,
+                user_id=42,
+                role_id=1,
+                channel="web",
+                external_user_id="42",
+                is_active=True,
+            )
+        )
+        for conn_id, platform, provider_id, auth_method, login_key in (
+            (5, "email", "mailru_mail", "app_password", "smtp@example.com"),
+            (6, "telegram", "telegram_bot", "bot_token", "tg_bot_6"),
+            (7, "max", "max_bot", "bot_token", "max_bot_7"),
+        ):
+            self._s.add(
+                WorkspaceConnection(
+                    id=conn_id,
+                    tenant_id=10,
+                    owner_user_id=101,
+                    platform=platform,
+                    provider_id=provider_id,
+                    auth_method=auth_method,
+                    schema_version=1,
+                    label=f"Conn {conn_id}",
+                    account_key=login_key,
+                    config={"account_login": login_key, "send_enabled": True},
+                    state="verified",
+                    is_active=True,
+                )
+            )
+            self._s.add(
+                WorkspaceConnectionSecret(
+                    connection_id=conn_id,
+                    secret_encrypted=encrypt_secret(f"secret-{conn_id}"),
+                )
+            )
+        self._s.flush()
 
     def add(self, obj: Any) -> None:
-        if getattr(obj, "id", None) is None:
-            obj.id = self._next_id
-            self._next_id += 1
-        if isinstance(obj, Contact):
-            self.contacts[obj.id] = obj
-        elif isinstance(obj, ContactIdentity):
-            self.identities[obj.id] = obj
-        elif isinstance(obj, ContactConsent):
-            self.consents[obj.id] = obj
-        elif isinstance(obj, CrmEntity):
-            self.crm_entities.append(obj)
-        elif isinstance(obj, GreetingHistory):
-            self.greetings[obj.id] = obj
-        elif isinstance(obj, OutboxMessage):
-            self.outbox_messages[obj.id] = obj
-        elif isinstance(obj, OutboxTarget):
-            self.outbox_targets[obj.id] = obj
-        elif isinstance(obj, BusinessCommand):
-            self.commands[obj.id] = obj
-        elif isinstance(obj, BusinessCommandTarget):
-            self.command_targets[obj.id] = obj
+        self._s.add(obj)
+        self._s.flush()
+        _ensure_tz(obj)
 
     async def flush(self) -> None:
-        for collection in (
-            self.contacts.values(),
-            self.identities.values(),
-            self.consents.values(),
-            self.greetings.values(),
-            self.outbox_messages.values(),
-            self.outbox_targets.values(),
-            self.commands.values(),
-            self.command_targets.values(),
-        ):
-            for obj in collection:
-                if getattr(obj, "id", None) is None:
-                    obj.id = self._next_id
-                    self._next_id += 1
+        self._s.flush()
+        for obj in list(self._s.identity_map.values()):
+            _ensure_tz(obj)
 
-    async def refresh(self, _obj: Any) -> None:
-        return None
+    async def refresh(self, obj: Any) -> None:
+        self._s.refresh(obj)
+        _ensure_tz(obj)
 
-    async def execute(self, stmt: Any) -> _ScalarResult:
-        params = stmt.compile().params
-        tables = {getattr(f, "name", "") for f in stmt.get_final_froms()}
-        tid = params.get("tenant_id_1")
+    async def execute(self, stmt: Any, *args: Any, **kwargs: Any) -> Any:
+        res = self._s.execute(stmt, *args, **kwargs)
+        for obj in list(self._s.identity_map.values()):
+            _ensure_tz(obj)
+        return res
 
-        if "contacts" in tables:
-            cid = params.get("id_1")
-            rows = [
-                c
-                for c in self.contacts.values()
-                if (tid is None or c.tenant_id == tid) and (cid is None or c.id == cid)
-            ]
-            return _ScalarResult(rows)
+    async def get(self, entity: Any, ident: Any, **kwargs: Any) -> Any:
+        obj = self._s.get(entity, ident, **kwargs)
+        if obj is not None:
+            _ensure_tz(obj)
+        return obj
 
-        if "contact_identities" in tables:
-            cid = params.get("contact_id_1")
-            rows = [
-                i
-                for i in sorted(self.identities.values(), key=lambda x: x.id)
-                if (tid is None or i.tenant_id == tid) and (cid is None or i.contact_id == cid)
-            ]
-            return _ScalarResult(rows)
+    async def scalar(self, stmt: Any, *args: Any, **kwargs: Any) -> Any:
+        val = self._s.scalar(stmt, *args, **kwargs)
+        if val is not None and hasattr(val, "__dict__"):
+            _ensure_tz(val)
+        return val
 
-        if "contact_consents" in tables:
-            cid = params.get("contact_id_1")
-            ch = params.get("channel_1")
-            purp = params.get("purpose_1")
-            rows = [
-                c
-                for c in sorted(self.consents.values(), key=lambda x: x.id, reverse=True)
-                if (tid is None or c.tenant_id == tid)
-                and (cid is None or c.contact_id == cid)
-                and (ch is None or c.channel == ch)
-                and (purp is None or c.purpose == purp)
-            ]
-            return _ScalarResult(rows)
+    async def scalars(self, stmt: Any, *args: Any, **kwargs: Any) -> Any:
+        res = self._s.scalars(stmt, *args, **kwargs)
+        for obj in list(self._s.identity_map.values()):
+            _ensure_tz(obj)
+        return res
 
-        if "crm_entities" in tables:
-            rows = [e for e in self.crm_entities if (tid is None or e.tenant_id == tid) and not e.is_deleted_remote]
-            return _ScalarResult(rows)
+    @property
+    def greetings(self) -> dict[int, GreetingHistory]:
+        return {g.id: g for g in self._s.scalars(select(GreetingHistory)).all()}
 
-        if "greeting_history" in tables:
-            cid = params.get("contact_id_1")
-            ev_type = params.get("event_type_1")
-            yr = params.get("year_1")
-            rows = [
-                g
-                for g in self.greetings.values()
-                if (tid is None or g.tenant_id == tid)
-                and (cid is None or g.contact_id == cid)
-                and (ev_type is None or g.event_type == ev_type)
-                and (yr is None or g.year == yr)
-            ]
-            return _ScalarResult(rows)
+    @property
+    def outbox_messages(self) -> dict[int, OutboxMessage]:
+        return {m.id: m for m in self._s.scalars(select(OutboxMessage)).all()}
 
-        if "outbox_messages" in tables:
-            cid = params.get("contact_id_1")
-            purp = params.get("purpose_1")
-            rows = [
-                m
-                for m in self.outbox_messages.values()
-                if (tid is None or m.tenant_id == tid)
-                and (cid is None or m.contact_id == cid)
-                and (purp is None or m.purpose == purp)
-            ]
-            return _ScalarResult(rows)
+    @property
+    def outbox_targets(self) -> dict[int, OutboxTarget]:
+        return {t.id: t for t in self._s.scalars(select(OutboxTarget)).all()}
 
-        if "outbox_targets" in tables:
-            mid = params.get("message_id_1")
-            rows = [
-                t
-                for t in self.outbox_targets.values()
-                if (tid is None or t.tenant_id == tid) and (mid is None or t.message_id == mid)
-            ]
-            return _ScalarResult(rows)
-
-        if "business_commands" in tables:
-            cmd_id = params.get("id_1")
-            rows = [
-                c
-                for c in self.commands.values()
-                if (tid is None or c.tenant_id == tid) and (cmd_id is None or c.id == cmd_id)
-            ]
-            return _ScalarResult(rows)
-
-        if "business_command_targets" in tables:
-            cmd_id = params.get("command_id_1")
-            rows = [
-                ct
-                for ct in self.command_targets.values()
-                if (tid is None or ct.tenant_id == tid) and (cmd_id is None or ct.command_id == cmd_id)
-            ]
-            return _ScalarResult(rows)
-
-        return _ScalarResult([])
+    @property
+    def consents(self) -> dict[int, ContactConsent]:
+        return {c.id: c for c in self._s.scalars(select(ContactConsent)).all()}
 
 
-class FakeOutboxStoreAdapter:
-    """In-memory adapter implementing the P15-T05 `OutboxStore.draft` and `OutboxStore.schedule` contract."""
+class SqliteOutboxStoreAdapter:
+    """SQLite-backed adapter persisting real `OutboxMessage`, `OutboxTarget`, and `BusinessCommand` rows."""
 
     def __init__(self, *, tenant_id: int = 10, author_id: int = 101) -> None:
         self.tenant_id = tenant_id
@@ -259,7 +334,7 @@ class FakeOutboxStoreAdapter:
         self.draft_calls: list[tuple[DraftIn, str]] = []
         self.schedule_calls: list[ScheduleIn] = []
 
-    async def draft(self, data: DraftIn, idempotency_key: str, *, session: FakeMessagingSession) -> dict[str, Any]:
+    async def draft(self, data: DraftIn, idempotency_key: str, *, session: SqliteMessagingSession) -> dict[str, Any]:
         self.draft_calls.append((data, idempotency_key))
         target_refs = [f"{t.channel}:{t.connection_id}:{t.identity_id}" for t in data.targets]
         content_hash = canonical_payload_hash(
@@ -273,6 +348,51 @@ class FakeOutboxStoreAdapter:
                 "targets": [t.model_dump() for t in data.targets],
             },
         )
+        existing = (
+            await session.execute(
+                select(OutboxMessage).where(
+                    OutboxMessage.tenant_id == self.tenant_id,
+                    OutboxMessage.author_id == self.author_id,
+                    OutboxMessage.idempotency_key == idempotency_key,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            if existing.request_hash != content_hash:
+                raise OutboxConflict("outbox_idempotency_mismatch")
+            targets = list(
+                (
+                    await session.execute(
+                        select(OutboxTarget).where(
+                            OutboxTarget.tenant_id == self.tenant_id,
+                            OutboxTarget.message_id == existing.id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            return {
+                "id": existing.id,
+                "tenant_id": existing.tenant_id,
+                "author_id": existing.author_id,
+                "contact_id": existing.contact_id,
+                "purpose": existing.purpose,
+                "state": existing.state,
+                "content_hash": existing.content_hash,
+                "targets": [
+                    {
+                        "id": t.id,
+                        "channel": t.channel,
+                        "connection_id": t.connection_id,
+                        "identity_id": t.identity_id,
+                        "state": t.state,
+                        "command_id": t.command_id,
+                    }
+                    for t in targets
+                ],
+            }
+
         msg = OutboxMessage(
             tenant_id=self.tenant_id,
             author_id=self.author_id,
@@ -325,9 +445,9 @@ class FakeOutboxStoreAdapter:
             "targets": target_dicts,
         }
 
-    async def schedule(self, data: ScheduleIn, *, session: FakeMessagingSession) -> dict[str, Any]:
+    async def schedule(self, data: ScheduleIn, *, session: SqliteMessagingSession) -> dict[str, Any]:
         self.schedule_calls.append(data)
-        msg = session.outbox_messages[data.message_id]
+        msg = (await session.execute(select(OutboxMessage).where(OutboxMessage.id == data.message_id))).scalar_one()
         assert msg.content_hash == data.expected_content_hash
         now = datetime.now(UTC)
         msg.state = "approved"
@@ -336,7 +456,9 @@ class FakeOutboxStoreAdapter:
         msg.scheduled_at = data.scheduled_at
         msg.approval_expires_at = data.scheduled_at + timedelta(seconds=data.ttl_seconds)
 
-        targets = [t for t in session.outbox_targets.values() if t.message_id == msg.id]
+        targets = list(
+            (await session.execute(select(OutboxTarget).where(OutboxTarget.message_id == msg.id))).scalars().all()
+        )
         target_dicts = []
         for tgt in targets:
             target_ref = f"{tgt.channel}:{tgt.connection_id}:{tgt.identity_id}"
@@ -369,6 +491,7 @@ class FakeOutboxStoreAdapter:
             )
             tgt.state = "approved"
             tgt.command_id = cmd.id
+            tgt.dispatch_after = data.scheduled_at
             target_dicts.append(
                 {
                     "id": tgt.id,
@@ -388,8 +511,10 @@ class FakeOutboxStoreAdapter:
         }
 
 
-def test_p14_t06_personalization_and_unsubscribe_token_tamper_resistance() -> None:
-    # Single-pass replacement: {name} containing "{company}" must NOT expand recursively
+def test_p14_t06_personalization_and_unsubscribe_token_ttl_secret_and_footer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 1. Single-pass replacement: {name} containing "{company}" must NOT expand recursively
     rendered = render_personalized_template(
         "Здравствуйте, {name} из {company}!",
         name="Агент {company}",
@@ -397,7 +522,7 @@ def test_p14_t06_personalization_and_unsubscribe_token_tamper_resistance() -> No
     )
     assert rendered == "Здравствуйте, Агент {company} из ООО Альфа!"
 
-    # Subject single-line sanitization strips CR/LF
+    # 2. Subject single-line sanitization strips CR/LF
     subj = render_personalized_template(
         "Тема для {name}\r\nBcc: attacker@example.com",
         name="Иван\nПетров",
@@ -405,29 +530,89 @@ def test_p14_t06_personalization_and_unsubscribe_token_tamper_resistance() -> No
     )
     assert "\r" not in subj and "\n" not in subj
 
-    token = create_unsubscribe_token(
+    # 3. Blocker 1: Fresh token succeeds; expired token (e.g. from 2025) and future iat fail with 422
+    now_dt = datetime(2026, 11, 8, 12, 0, tzinfo=UTC)
+    now_ts = int(now_dt.timestamp())
+    fresh_token = create_unsubscribe_token(
         tenant_id=10,
         contact_id=42,
         channel="email",
         purpose="marketing",
-        issued_at=1760000000,
+        issued_at=now_ts,
     )
-    verified = verify_unsubscribe_token(token)
+    verified = verify_unsubscribe_token(fresh_token, now=now_dt)
     assert verified == {
         "tenant_id": 10,
         "contact_id": 42,
         "channel": "email",
         "purpose": "marketing",
-        "issued_at": 1760000000,
+        "issued_at": now_ts,
     }
 
-    # Tampered signature is rejected
-    payload_part, sig_part = token.split(".", 1)
+    token_2025 = create_unsubscribe_token(
+        tenant_id=10,
+        contact_id=42,
+        channel="email",
+        purpose="marketing",
+        issued_at=int(datetime(2025, 6, 1, tzinfo=UTC).timestamp()),
+    )
+    with pytest.raises(Bitrix24Error) as exc_old:
+        verify_unsubscribe_token(token_2025, now=now_dt)
+    assert exc_old.value.code == "invalid_unsubscribe_token"
+    assert exc_old.value.status_code == 422
+
+    token_future = create_unsubscribe_token(
+        tenant_id=10,
+        contact_id=42,
+        channel="email",
+        purpose="marketing",
+        issued_at=now_ts + 3600,
+    )
+    with pytest.raises(Bitrix24Error) as exc_future:
+        verify_unsubscribe_token(token_future, now=now_dt)
+    assert exc_future.value.code == "invalid_unsubscribe_token"
+    assert exc_future.value.status_code == 422
+
+    # 4. Tampered signature is rejected
+    payload_part, sig_part = fresh_token.split(".", 1)
     bad_token = f"{payload_part}.{'A' if sig_part[0] != 'A' else 'B'}{sig_part[1:]}"
     with pytest.raises(Bitrix24Error) as exc_info:
-        verify_unsubscribe_token(bad_token)
+        verify_unsubscribe_token(bad_token, now=now_dt)
     assert exc_info.value.code == "invalid_unsubscribe_token"
     assert exc_info.value.status_code == 422
+
+    # 5. Blocker 2: Empty or whitespace SECRET_KEY fails closed with 503 (never falls back to a default key)
+    monkeypatch.setattr(settings, "SECRET_KEY", "   ")
+    with pytest.raises(Bitrix24Error) as exc_no_secret_create:
+        create_unsubscribe_token(
+            tenant_id=10,
+            contact_id=42,
+            channel="email",
+            purpose="marketing",
+            issued_at=now_ts,
+        )
+    assert exc_no_secret_create.value.code == "unsubscribe_secret_unconfigured"
+    assert exc_no_secret_create.value.status_code == 503
+
+    with pytest.raises(Bitrix24Error) as exc_no_secret_verify:
+        verify_unsubscribe_token(fresh_token, now=now_dt)
+    assert exc_no_secret_verify.value.code == "unsubscribe_secret_unconfigured"
+    assert exc_no_secret_verify.value.status_code == 503
+    monkeypatch.setattr(settings, "SECRET_KEY", _SIGNING_SEED)
+
+    # 6. Blocker 3 & 4: Absolute unsubscribe URL with host & no '/stop' promise in footer
+    abs_url = build_unsubscribe_url(fresh_token)
+    assert abs_url.startswith("https://crm.example.com/api/v1/integrations/bitrix/messaging/unsubscribe?token=")
+    for ch in ("email", "telegram", "max"):
+        footer_text = append_unsubscribe_footer("Привет!", unsubscribe_url=abs_url, channel=ch)
+        assert abs_url in footer_text
+        assert "/stop" not in footer_text
+
+    # Relative or blank PUBLIC_BASE_URL fails closed with 503
+    with pytest.raises(Bitrix24Error) as exc_bad_host:
+        build_unsubscribe_url(fresh_token, base_url="/relative/path")
+    assert exc_bad_host.value.code == "unsubscribe_base_url_unconfigured"
+    assert exc_bad_host.value.status_code == 503
 
     # Public API allowlist includes /api/v1/integrations/bitrix/messaging/unsubscribe
     assert api_scope._is_public("/api/v1/integrations/bitrix/messaging/unsubscribe") is True
@@ -437,8 +622,8 @@ def test_p14_t06_personalization_and_unsubscribe_token_tamper_resistance() -> No
 async def test_p14_t05_greeting_delivery_via_email_telegram_and_max_with_d15_consent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = FakeMessagingSession()
-    fake_outbox = FakeOutboxStoreAdapter(tenant_id=10, author_id=101)
+    session = SqliteMessagingSession()
+    fake_outbox = SqliteOutboxStoreAdapter(tenant_id=10, author_id=101)
     now = datetime(2026, 11, 8, 9, 0, tzinfo=UTC)
     monkeypatch.setattr(ActionAuditEvent.objects, "record_success", AsyncMock(return_value=SimpleNamespace(id=1)))
 
@@ -461,7 +646,7 @@ async def test_p14_t05_greeting_delivery_via_email_telegram_and_max_with_d15_con
             contact_id=1,
             kind="email",
             value_encrypted="ekaterina@example.com",
-            blind_index="h_email",
+            blind_index="1" * 64,
             connection_id=5,
             verified=True,
         )
@@ -473,7 +658,7 @@ async def test_p14_t05_greeting_delivery_via_email_telegram_and_max_with_d15_con
             contact_id=1,
             kind="telegram_id",
             value_encrypted="99887766",
-            blind_index="h_tg",
+            blind_index="2" * 64,
             connection_id=6,
             verified=True,
         )
@@ -485,7 +670,7 @@ async def test_p14_t05_greeting_delivery_via_email_telegram_and_max_with_d15_con
             contact_id=1,
             kind="max_id",
             value_encrypted="max_554433",
-            blind_index="h_max",
+            blind_index="3" * 64,
             connection_id=7,
             verified=True,
         )
@@ -507,6 +692,7 @@ async def test_p14_t05_greeting_delivery_via_email_telegram_and_max_with_d15_con
             session=session,
         )
         assert draft["status"] == "draft"
+        original_draft_text = draft["draft_text"]
 
         # 2. D15: Attempting to send without a recorded ContactConsent row for purpose='greeting' fails with 403
         with pytest.raises(Bitrix24Error) as exc_no_consent:
@@ -563,8 +749,13 @@ async def test_p14_t05_greeting_delivery_via_email_telegram_and_max_with_d15_con
         assert sent_email["status"] == "approved"
         assert sent_email["channel"] == "email"
         assert sent_email["command_id"] is not None
-        assert "/api/v1/integrations/bitrix/messaging/unsubscribe?token=" in sent_email["unsubscribe_url"]
+        assert sent_email["unsubscribe_url"].startswith(
+            "https://crm.example.com/api/v1/integrations/bitrix/messaging/unsubscribe?token="
+        )
         assert sent_email["unsubscribe_url"] in fake_outbox.draft_calls[-1][0].body
+        # Medium 2: GreetingHistory.draft_text_encrypted is NOT overwritten with the unsubscribe URL
+        assert session.greetings[draft["id"]].draft_text_encrypted == original_draft_text
+        assert "unsubscribe?token=" not in session.greetings[draft["id"]].draft_text_encrypted
 
         # 6. Repeat send for the same greeting in the same year is refused with 409
         with pytest.raises(Bitrix24Error) as exc_dup:
@@ -582,8 +773,12 @@ async def test_p14_t05_greeting_delivery_via_email_telegram_and_max_with_d15_con
 
         # 7. Simulate P15-T06 sender completing delivery -> get_greeting_delivery_status updates status to 'sent'
         outbox_tgt = session.outbox_targets[sent_email["outbox_target_id"]]
+        outbox_tgt.attempts = 1
+        outbox_tgt.claim_token = "claim-tok-001"
+        outbox_tgt.claimed_at = now
         outbox_tgt.state = "sent"
         outbox_tgt.provider_message_id = "<smtp-msg-001@example.com>"
+        await session.flush()
         status_out = await messaging_svc.get_greeting_delivery_status(
             tenant_id=10,
             actor_id=101,
@@ -644,8 +839,8 @@ async def test_p14_t05_greeting_delivery_via_email_telegram_and_max_with_d15_con
 async def test_p14_t06_batch_120_contacts_personalization_coverage_warning_and_unsubscribe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = FakeMessagingSession()
-    fake_outbox = FakeOutboxStoreAdapter(tenant_id=10, author_id=101)
+    session = SqliteMessagingSession()
+    fake_outbox = SqliteOutboxStoreAdapter(tenant_id=10, author_id=101)
     now = datetime(2026, 11, 8, 12, 0, tzinfo=UTC)
     monkeypatch.setattr(ActionAuditEvent.objects, "record_success", AsyncMock(return_value=SimpleNamespace(id=99)))
 
@@ -685,7 +880,7 @@ async def test_p14_t06_batch_120_contacts_personalization_coverage_warning_and_u
                 contact_id=i,
                 kind="email",
                 value_encrypted=f"client{i}@example.com",
-                blind_index=f"hash_{i}",
+                blind_index=f"{i:064x}",
                 connection_id=5,
                 verified=True,
             )
@@ -750,6 +945,8 @@ async def test_p14_t06_batch_120_contacts_personalization_coverage_warning_and_u
         assert batch["scheduled_count"] == 100
         assert batch["skipped_no_consent_count"] == 20
         assert len(batch["skipped_no_consent_contact_ids"]) == 20
+        assert batch["skipped_conflict_count"] == 0
+        assert batch["skipped_conflict_contact_ids"] == []
         assert batch["coverage_warning"] is not None
         assert "20 из 120" in batch["coverage_warning"]
         assert len(fake_outbox.draft_calls) == 100
@@ -760,7 +957,8 @@ async def test_p14_t06_batch_120_contacts_personalization_coverage_warning_and_u
         assert first_draft_in.subject == "Специальное предложение для Клиент #1 (ООО Северсталь-Партнёр)"
         assert "Здравствуйте, Клиент #1!" in first_draft_in.body
         assert "Для компании ООО Северсталь-Партнёр доступны новые условия." in first_draft_in.body
-        assert "/api/v1/integrations/bitrix/messaging/unsubscribe?token=" in first_draft_in.body
+        assert "https://crm.example.com/api/v1/integrations/bitrix/messaging/unsubscribe?token=" in first_draft_in.body
+        assert "/stop" not in first_draft_in.body
 
         # Idempotent replay with same idempotency_key does not schedule additional messages
         replay = await svc.send_batch_messages(
@@ -782,6 +980,7 @@ async def test_p14_t06_batch_120_contacts_personalization_coverage_warning_and_u
     # D16: Contact #1 clicks the one-click unsubscribe link (without any login / tenant context)
     first_scheduled_item = next(item for item in batch["items"] if item["contact_id"] == 1)
     unsub_url = first_scheduled_item["unsubscribe_url"]
+    assert unsub_url.startswith("https://crm.example.com/api/v1/integrations/bitrix/messaging/unsubscribe?token=")
     token = unsub_url.split("token=", 1)[1]
 
     unsub_result = await svc.process_one_click_unsubscribe(
@@ -819,10 +1018,339 @@ async def test_p14_t06_batch_120_contacts_personalization_coverage_warning_and_u
 
 
 @pytest.mark.asyncio
+async def test_p14_t05_t06_real_outbox_store_consent_transitions_conflict_bucket_and_tenant_isolation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real DB + real OutboxStore + real ContactManager test covering review blockers and medium items:
+    1. Withdraw -> Grant -> Withdraw ordering through `ContactManager.record_consent` and `process_one_click_unsubscribe`.
+    2. Year-scoped unsubscribe cancellation (`effective_now.year` only; prior-year 2025 rows stay untouched).
+    3. Uniform 422 response (`invalid_unsubscribe_token`) for invalid tokens and deleted/merged contacts.
+    4. Separate `skipped_conflict` bucket when `OutboxStore.draft` raises `OutboxConflict("outbox_idempotency_mismatch")`.
+    5. Strict tenant isolation in `_resolve_contact_identity`.
+    """
+    session = SqliteMessagingSession()
+    real_outbox = OutboxStore()
+    contact_mgr = ContactManager()
+    svc = CrmMessagingService(outbox=real_outbox)
+    now = datetime.now(UTC)
+    monkeypatch.setattr(ActionAuditEvent.objects, "record_success", AsyncMock(return_value=SimpleNamespace(id=300)))
+
+    owner_user = await session.get(User, 101)
+    assert owner_user is not None
+
+    # Tenant 10 contact #50 and Tenant 20 contact #60
+    session.add(Contact(id=50, tenant_id=10, display_name_encrypted="ОльгаОрлова", preferred_channel="email"))
+    session.add(
+        ContactIdentity(
+            id=501,
+            tenant_id=10,
+            contact_id=50,
+            kind="email",
+            value_encrypted="olga@example.com",
+            blind_index="a" * 64,
+            connection_id=5,
+            verified=True,
+        )
+    )
+    session.add(Contact(id=60, tenant_id=20, display_name_encrypted="Чужой Контакт", preferred_channel="email"))
+    session.add(
+        ContactIdentity(
+            id=601,
+            tenant_id=20,
+            contact_id=60,
+            kind="email",
+            value_encrypted="foreign@example.com",
+            blind_index="b" * 64,
+            connection_id=5,
+            verified=True,
+        )
+    )
+
+    with tenant_scope(10), permission_scope(owner_user, member_grants=workspace_grants("owner")):
+        # Tenant isolation in _resolve_contact_identity: tenant 20 identity #601 is never resolved under tenant 10
+        isolated = await _resolve_contact_identity(
+            session,
+            tenant_id=10,
+            contact_id=60,
+            channel="email",
+            connection_id=5,
+            identity_id=601,
+        )
+        assert isolated is None
+
+        # Blocker 5: Withdraw -> Grant -> Withdraw ordering via ContactManager.record_consent and unsubscribe
+        t0 = now - timedelta(minutes=30)
+        t1 = now - timedelta(minutes=20)
+        t2 = now - timedelta(minutes=10)
+
+        await contact_mgr.record_consent(
+            50,
+            "email",
+            "marketing",
+            "initial_withdraw",
+            "manual:0",
+            session=session,
+            withdrawn_at=t0,
+        )
+        assert (
+            await has_active_consent(
+                session,
+                tenant_id=10,
+                contact_id=50,
+                channel="email",
+                purpose="marketing",
+                now=now,
+            )
+            is False
+        )
+
+        # Grant after withdraw -> active consent is True
+        await contact_mgr.record_consent(
+            50,
+            "email",
+            "marketing",
+            "re_opt_in",
+            "web_form:1",
+            session=session,
+            granted_at=t1,
+        )
+        assert (
+            await has_active_consent(
+                session,
+                tenant_id=10,
+                contact_id=50,
+                channel="email",
+                purpose="marketing",
+                now=now,
+            )
+            is True
+        )
+
+    # Withdraw again via one-click unsubscribe at t2 -> active consent becomes False
+    tok_withdraw = create_unsubscribe_token(
+        tenant_id=10,
+        contact_id=50,
+        channel="email",
+        purpose="marketing",
+        issued_at=int(t2.timestamp()),
+    )
+    await svc.process_one_click_unsubscribe(tok_withdraw, now=t2, session=session)
+    with tenant_scope(10):
+        assert (
+            await has_active_consent(
+                session,
+                tenant_id=10,
+                contact_id=50,
+                channel="email",
+                purpose="marketing",
+                now=now,
+            )
+            is False
+        )
+
+    # Re-grant consent for 'greeting' and 'marketing' to test year-scoped cancellation and conflict bucket
+    with tenant_scope(10), operator_permission_scope():
+        await contact_mgr.record_consent(
+            50,
+            "email",
+            "greeting",
+            "opt_in",
+            "form:greeting",
+            session=session,
+            granted_at=now - timedelta(minutes=5),
+        )
+        await contact_mgr.record_consent(
+            50,
+            "email",
+            "marketing",
+            "opt_in",
+            "form:marketing",
+            session=session,
+            granted_at=now - timedelta(minutes=5),
+        )
+
+    # Medium 1: Seed 2025 and 2026 GreetingHistory and OutboxMessage rows for contact 50
+    g_2025 = GreetingHistory(
+        id=901,
+        tenant_id=10,
+        contact_id=50,
+        event_type="birthday",
+        event_date=date(2025, 11, 8),
+        year=2025,
+        channel="email",
+        subject_encrypted="С днём рождения 2025",
+        draft_text_encrypted="Поздравление 2025",
+        status="approved",
+    )
+    g_2026 = GreetingHistory(
+        id=902,
+        tenant_id=10,
+        contact_id=50,
+        event_type="birthday",
+        event_date=date(2026, 11, 8),
+        year=2026,
+        channel="email",
+        subject_encrypted="С днём рождения 2026",
+        draft_text_encrypted="Поздравление 2026",
+        status="approved",
+    )
+    session.add(g_2025)
+    session.add(g_2026)
+
+    sched_2025 = datetime(2025, 11, 8, 10, 0, tzinfo=UTC)
+    sched_2026 = datetime(2026, 11, 8, 10, 0, tzinfo=UTC)
+    msg_2025 = OutboxMessage(
+        id=801,
+        tenant_id=10,
+        author_id=101,
+        contact_id=50,
+        purpose="greeting",
+        state="approved",
+        timezone="UTC",
+        subject_encrypted="2025",
+        content_encrypted="Body 2025",
+        content_hash="sha256:" + ("1" * 64),
+        request_hash="sha256:" + ("1" * 64),
+        idempotency_key="idem-2025",
+        scheduled_at=sched_2025,
+        approved_by=101,
+        approved_hash="sha256:" + ("1" * 64),
+        approval_expires_at=sched_2025 + timedelta(hours=24),
+    )
+    tgt_2025 = OutboxTarget(
+        id=851,
+        tenant_id=10,
+        message_id=801,
+        channel="email",
+        connection_id=5,
+        identity_id=501,
+        recipient_encrypted="olga@example.com",
+        credential_hash="sha256:" + ("1" * 64),
+        content_hash="sha256:" + ("1" * 64),
+        idempotency_key="1" * 64,
+        state="approved",
+        attempts=0,
+        dispatch_after=sched_2025,
+    )
+    msg_2026 = OutboxMessage(
+        id=802,
+        tenant_id=10,
+        author_id=101,
+        contact_id=50,
+        purpose="greeting",
+        state="approved",
+        timezone="UTC",
+        subject_encrypted="2026",
+        content_encrypted="Body 2026",
+        content_hash="sha256:" + ("2" * 64),
+        request_hash="sha256:" + ("2" * 64),
+        idempotency_key="idem-2026",
+        scheduled_at=sched_2026,
+        approved_by=101,
+        approved_hash="sha256:" + ("2" * 64),
+        approval_expires_at=sched_2026 + timedelta(hours=24),
+    )
+    tgt_2026 = OutboxTarget(
+        id=852,
+        tenant_id=10,
+        message_id=802,
+        channel="email",
+        connection_id=5,
+        identity_id=501,
+        recipient_encrypted="olga@example.com",
+        credential_hash="sha256:" + ("2" * 64),
+        content_hash="sha256:" + ("2" * 64),
+        idempotency_key="2" * 64,
+        state="approved",
+        attempts=0,
+        dispatch_after=sched_2026,
+    )
+    session.add(msg_2025)
+    session.add(tgt_2025)
+    session.add(msg_2026)
+    session.add(tgt_2026)
+
+    tok_greeting_2026 = create_unsubscribe_token(
+        tenant_id=10,
+        contact_id=50,
+        channel="email",
+        purpose="greeting",
+        issued_at=int(datetime(2026, 11, 8, 12, 0, tzinfo=UTC).timestamp()),
+    )
+    unsub_2026 = await svc.process_one_click_unsubscribe(
+        tok_greeting_2026,
+        now=datetime(2026, 11, 8, 12, 5, tzinfo=UTC),
+        session=session,
+    )
+    assert unsub_2026["cancelled_outbox_targets"] == 1
+    assert session.greetings[902].status == "skipped"
+    assert session.outbox_targets[852].state == "cancelled"
+    # Historical 2025 greeting and outbox target remain untouched
+    assert session.greetings[901].status == "approved"
+    assert session.outbox_targets[851].state == "approved"
+
+    # Medium 3: OutboxConflict("outbox_idempotency_mismatch") is placed in skipped_conflict, not skipped_no_route
+    session.add(
+        OutboxMessage(
+            id=899,
+            tenant_id=10,
+            author_id=101,
+            contact_id=50,
+            purpose="marketing",
+            state="validated",
+            timezone="UTC",
+            subject_encrypted="Old Subject",
+            content_encrypted="Old Body",
+            content_hash="sha256:" + ("9" * 64),
+            request_hash="sha256:" + ("9" * 64),
+            idempotency_key="batch-conflict-test:c50",
+        )
+    )
+    with tenant_scope(10), permission_scope(owner_user, member_grants=workspace_grants("owner")):
+        conflict_batch = await svc.send_batch_messages(
+            tenant_id=10,
+            actor_id=101,
+            contact_ids=[50],
+            channel="email",
+            connection_id=5,
+            subject_template="New Subject for {name}",
+            body_template="New Body for {name}",
+            purpose="marketing",
+            idempotency_key="batch-conflict-test",
+            now=now,
+            session=session,
+        )
+        assert conflict_batch["scheduled_count"] == 0
+        assert conflict_batch["skipped_no_route_count"] == 0
+        assert conflict_batch["skipped_no_route_contact_ids"] == []
+        assert conflict_batch["skipped_conflict_count"] == 1
+        assert conflict_batch["skipped_conflict_contact_ids"] == [50]
+        assert conflict_batch["items"][0]["reason"] == "outbox_idempotency_mismatch"
+
+    # Medium 4: Uniform 422 response for invalid token AND valid token for non-existent/deleted contact
+    tok_deleted_contact = create_unsubscribe_token(
+        tenant_id=10,
+        contact_id=999999,
+        channel="email",
+        purpose="marketing",
+        issued_at=int(now.timestamp()),
+    )
+    with pytest.raises(Bitrix24Error) as exc_deleted:
+        await svc.process_one_click_unsubscribe(tok_deleted_contact, now=now, session=session)
+    with pytest.raises(Bitrix24Error) as exc_invalid:
+        await svc.process_one_click_unsubscribe("invalid.token", now=now, session=session)
+
+    assert exc_deleted.value.status_code == 422
+    assert exc_invalid.value.status_code == 422
+    assert exc_deleted.value.code == exc_invalid.value.code == "invalid_unsubscribe_token"
+    assert str(exc_deleted.value) == str(exc_invalid.value) == "Invalid or expired unsubscribe token"
+
+
+@pytest.mark.asyncio
 async def test_p14_t06_d17_manual_consent_and_d16_public_http_endpoints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = FakeMessagingSession()
+    session = SqliteMessagingSession()
     now = datetime(2026, 11, 8, 15, 0, tzinfo=UTC)
     session.add(
         Contact(
@@ -835,13 +1363,12 @@ async def test_p14_t06_d17_manual_consent_and_d16_public_http_endpoints(
 
     audit_calls: list[dict[str, Any]] = []
 
-    async def fake_record_success(**kwargs: Any):
+    async def fake_record_success(**kwargs: Any) -> Any:
         audit_calls.append(kwargs)
         return SimpleNamespace(id=777)
 
     monkeypatch.setattr(ActionAuditEvent.objects, "record_success", fake_record_success)
 
-    # Stub ContactManager.record_consent to write into FakeMessagingSession while keeping its real validation
     svc = CrmMessagingService()
     manager_user = SimpleNamespace(
         id=42,
@@ -952,6 +1479,28 @@ async def test_p14_t06_d17_manual_consent_and_d16_public_http_endpoints(
         assert resp_post.status_code == 200
         assert resp_post.json()["unsubscribed"] is True
 
+        # Invalid token and valid token for deleted contact return identical HTTP 422 response
+        deleted_tok = create_unsubscribe_token(
+            tenant_id=10,
+            contact_id=88888,
+            channel="telegram",
+            purpose="marketing",
+            issued_at=int(now.timestamp()),
+        )
+        resp_bad = await client.post(
+            "/api/v1/integrations/bitrix/messaging/unsubscribe",
+            json={"token": "malformed-token"},
+        )
+        resp_deleted = await client.post(
+            "/api/v1/integrations/bitrix/messaging/unsubscribe",
+            json={"token": deleted_tok},
+        )
+        assert resp_bad.status_code == 422
+        assert resp_deleted.status_code == 422
+        bad_payload = {k: v for k, v in resp_bad.json().items() if k != "request_id"}
+        deleted_payload = {k: v for k, v in resp_deleted.json().items() if k != "request_id"}
+        assert bad_payload == deleted_payload
+
         # Protected endpoint (/api/v1/integrations/bitrix/messaging/batch) without Authorization header returns 401
         resp_protected = await client.post("/api/v1/integrations/bitrix/messaging/batch", json={})
         assert resp_protected.status_code == 401
@@ -961,8 +1510,8 @@ async def test_p14_t06_d17_manual_consent_and_d16_public_http_endpoints(
 async def test_p14_t05_t06_greetings_delegate_and_authenticated_rest_endpoints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = FakeMessagingSession()
-    fake_outbox = FakeOutboxStoreAdapter(tenant_id=10, author_id=101)
+    session = SqliteMessagingSession()
+    fake_outbox = SqliteOutboxStoreAdapter(tenant_id=10, author_id=101)
     now = datetime(2026, 11, 8, 16, 0, tzinfo=UTC)
     monkeypatch.setattr(ActionAuditEvent.objects, "record_success", AsyncMock(return_value=SimpleNamespace(id=501)))
 
@@ -983,7 +1532,7 @@ async def test_p14_t05_t06_greetings_delegate_and_authenticated_rest_endpoints(
             contact_id=9,
             kind="telegram_id",
             value_encrypted="11223344",
-            blind_index="h_tg_9",
+            blind_index="9" * 64,
             connection_id=6,
             verified=True,
         )
@@ -1030,7 +1579,11 @@ async def test_p14_t05_t06_greetings_delegate_and_authenticated_rest_endpoints(
 
         # Exercise CrmGreetingsService.get_greeting_delivery_status when target is uncertain_delivery / failed
         tgt = session.outbox_targets[sent["outbox_target_id"]]
+        tgt.attempts = 1
+        tgt.claim_token = "claim-tok-002"
+        tgt.claimed_at = now
         tgt.state = "uncertain_delivery"
+        await session.flush()
         st_uncertain = await greetings_svc.get_greeting_delivery_status(
             tenant_id=10,
             actor_id=101,
@@ -1039,10 +1592,15 @@ async def test_p14_t05_t06_greetings_delegate_and_authenticated_rest_endpoints(
         )
         assert st_uncertain["status"] == "unknown"
 
+        tgt.attempts = 0
+        tgt.claim_token = None
+        tgt.claimed_at = None
         tgt.state = "approved"
-        session.greetings[draft["id"]].status = "approved"
+        g_row = session.greetings[draft["id"]]
+        g_row.status = "approved"
+        await session.flush()
 
-    # Unsubscribe from 'greeting' purpose marks the approved GreetingHistory row as 'skipped'
+    # Unsubscribe from 'greeting' purpose marks the approved 2026 GreetingHistory row as 'skipped'
     unsub_token = sent["unsubscribe_url"].split("token=", 1)[1]
     messaging_svc = CrmMessagingService(outbox=fake_outbox)
     unsub_out = await messaging_svc.process_one_click_unsubscribe(
@@ -1067,7 +1625,7 @@ async def test_p14_t05_t06_greetings_delegate_and_authenticated_rest_endpoints(
     monkeypatch.setattr("app.api.deps._load_with_rights", AsyncMock(return_value=actor))
 
     @app.middleware("http")
-    async def _bind_scope(request, call_next):
+    async def _bind_scope(request: Any, call_next: Any) -> Any:
         request.state.api_user = actor
         request.state.tenant_id = 10
         grants = frozenset(
@@ -1123,6 +1681,8 @@ async def test_p14_t05_t06_greetings_delegate_and_authenticated_rest_endpoints(
         "skipped_no_consent_contact_ids": [10],
         "skipped_no_route_count": 0,
         "skipped_no_route_contact_ids": [],
+        "skipped_conflict_count": 0,
+        "skipped_conflict_contact_ids": [],
         "coverage_warning": "Пропущено контактов без подтверждённого согласия (opt-in D15, цель 'marketing'): 1 из 2.",
         "counts": {"approved": 1, "skipped": 1},
         "items": [
@@ -1192,6 +1752,7 @@ async def test_p14_t05_t06_greetings_delegate_and_authenticated_rest_endpoints(
         assert r_batch.status_code == 202
         assert r_batch.json()["batch_id"] == 88
         assert r_batch.json()["skipped_no_consent_count"] == 1
+        assert r_batch.json()["skipped_conflict_count"] == 0
 
         r_bstatus = await client.get("/api/v1/integrations/bitrix/messaging/status/88")
         assert r_bstatus.status_code == 200

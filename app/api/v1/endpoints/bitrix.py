@@ -349,6 +349,8 @@ class BatchSendOut(BusinessSchema):
     skipped_no_consent_contact_ids: list[int] = Field(default_factory=list)
     skipped_no_route_count: int
     skipped_no_route_contact_ids: list[int] = Field(default_factory=list)
+    skipped_conflict_count: int = 0
+    skipped_conflict_contact_ids: list[int] = Field(default_factory=list)
     coverage_warning: str | None = None
     counts: dict[str, int] = Field(default_factory=dict)
     items: list[BatchTargetItemOut] = Field(default_factory=list)
@@ -366,6 +368,8 @@ class BatchStatusOut(BusinessSchema):
     skipped_no_consent_contact_ids: list[int] = Field(default_factory=list)
     skipped_no_route_count: int
     skipped_no_route_contact_ids: list[int] = Field(default_factory=list)
+    skipped_conflict_count: int = 0
+    skipped_conflict_contact_ids: list[int] = Field(default_factory=list)
     coverage_warning: str | None = None
     counts: dict[str, int] = Field(default_factory=dict)
     items: list[BatchTargetItemOut] = Field(default_factory=list)

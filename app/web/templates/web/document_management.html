@@ -24,13 +24,14 @@
     {% if history["items"] %}
     <form method="get" action="/app/documents/manage/{{ editing.id }}" class="space-y-2">
       <input type="hidden" name="boundary" value="local_only">
-      <label>От <select class="ui-control" name="from_id">{% for rev in history["items"] %}<option value="{{ rev.id }}">v{{ rev.version }}</option>{% endfor %}</select></label>
-      <label>До <select class="ui-control" name="to_id">{% for rev in history["items"] %}<option value="{{ rev.id }}">v{{ rev.version }}</option>{% endfor %}</select></label>
+      <datalist id="revision-ids">{% for rev in history["items"] %}<option value="{{ rev.id }}">v{{ rev.version }}</option>{% endfor %}</datalist>
+      <label>От (ID) <input class="ui-control" name="from_id" type="number" min="1" list="revision-ids" required></label>
+      <label>До (ID) <input class="ui-control" name="to_id" type="number" min="1" list="revision-ids" required></label>
       <label>Сравнение <select class="ui-control" name="granularity"><option value="line">По строкам</option><option value="word">По словам</option></select></label>
       <button class="ui-control" type="submit">Сравнить</button>
     </form>
     {% for rev in history["items"] %}
-    <div class="space-y-1"><p>v{{ rev.version }} · {{ rev.created_at }} · автор: {{ rev.author_user_id or rev.author or '—' }} · {{ rev.change_description or '—' }}</p>
+    <div class="space-y-1"><p>v{{ rev.version }} (ID {{ rev.id }}) · {{ rev.created_at }} · автор: {{ rev.author_user_id or rev.author or '—' }} · {{ rev.change_description or '—' }}</p>
       {% if can_update and editing.data_boundary == 'local_only' %}
       <form method="post" action="/app/documents/manage/{{ editing.id }}/restore/{{ rev.id }}">
         <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="local_only">

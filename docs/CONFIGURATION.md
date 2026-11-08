@@ -271,6 +271,7 @@ LOG_LEVEL=INFO
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8000` | Bind port |
 | `SECRET_KEY` | *(required)* | Pydantic JWT signing key |
+| `PUBLIC_BASE_URL` | *(empty)* | Absolute public HTTP(S) base URL used in unsubscribe links. Greeting/campaign scheduling fails closed with `503` until configured; set the externally reachable host for each environment. |
 | `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:8000,http://localhost:8501` | Compatibility setting; not read by the active CORS middleware |
 | `BACKEND_CORS_ORIGINS` | `["http://localhost:3000", "http://localhost:8000"]` | Active CORS allowlist; set as a JSON list in the environment |
 

@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     # API настройки
     API_V1_STR: str = "/api/v1"
     TOKEN_URL: str = f"{API_V1_STR}/auth/login"
+    # Public links (including unsubscribe URLs) require an explicitly configured host.
+    PUBLIC_BASE_URL: str = ""
+    UNSUBSCRIBE_TOKEN_TTL_SECONDS: int = Field(default=90 * 86400, ge=60)
 
     # JWT настройки: only HMAC with SECRET_KEY; asymmetric algorithms are refused
     # so a public key can never be accepted as an HMAC secret.

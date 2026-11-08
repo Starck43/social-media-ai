@@ -82,3 +82,49 @@ def select_email_origin(thread, inbound, identities: Iterable) -> ReplyOrigin:
     if len(matches) != 1:
         raise ReplyUnavailable("reply_origin_unavailable")
     return ReplyOrigin(thread.id, inbound.id, contact, connection, matches[0].id)
+
+
+@dataclass(frozen=True, repr=False)
+class ReplyHeaders:
+    """Exact validated wire headers; contains private metadata and must not be logged."""
+
+    in_reply_to: str
+    references: tuple[str, ...]
+
+    def approval_value(self) -> dict:
+        """Embed this value in the existing outbox content digest, not alongside it."""
+        return {"in_reply_to": self.in_reply_to, "references": list(self.references)}
+
+
+def verified_email_headers(inbound, provider_message_id, provider_references) -> ReplyHeaders:
+    """Check fetched headers against the persisted source hash and bound resource.
+
+    Inputs must come from a fresh, authenticated read of the exact source message
+    on its bound connection, not from an API caller or model. A hash match alone
+    cannot prove that provenance. Callers must bind the result to approval and
+    revalidate before dispatch; this function itself performs no I/O or approval.
+    """
+    from app.integrations.email.smtp_send import _MESSAGE_ID
+    from app.services.communications.ingest import hash_message_id
+
+    if (
+        not isinstance(provider_message_id, str)
+        or len(provider_message_id) > 998
+        or _MESSAGE_ID.fullmatch(provider_message_id) is None
+        or not isinstance(getattr(inbound, "external_message_id_hash", None), str)
+        or hash_message_id(provider_message_id) != inbound.external_message_id_hash
+        or not isinstance(provider_references, (list, tuple))
+        or len(provider_references) > 30
+    ):
+        raise ReplyUnavailable("reply_headers_unavailable")
+    references = []
+    for ref in provider_references:
+        if not isinstance(ref, str) or len(ref) > 998 or _MESSAGE_ID.fullmatch(ref) is None:
+            raise ReplyUnavailable("reply_headers_unavailable")
+        if ref not in references:
+            references.append(ref)
+    if provider_message_id not in references:
+        references.append(provider_message_id)
+    if len(" ".join(references)) > 998:
+        raise ReplyUnavailable("reply_headers_unavailable")
+    return ReplyHeaders(provider_message_id, tuple(references))

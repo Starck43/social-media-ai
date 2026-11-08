@@ -94,3 +94,49 @@ def test_unsupported_thread_and_missing_contact_refused():
         thread.channel, thread.contact_id = channel, contact
         with pytest.raises(ReplyUnavailable):
             select_email_origin(thread, inbound, [identity])
+
+
+def test_verified_reply_headers_preserve_exact_wire_values_and_hide_repr():
+    from app.services.communications.ingest import hash_message_id
+    from app.services.communications.reply import verified_email_headers
+
+    message_id = "<Message.123@example.invalid>"
+    inbound = NS(external_message_id_hash=hash_message_id(message_id))
+    headers = verified_email_headers(inbound, message_id, ["<root@example.invalid>"])
+    assert headers.approval_value() == {
+        "in_reply_to": message_id,
+        "references": ["<root@example.invalid>", message_id],
+    }
+    assert message_id not in repr(headers)
+
+
+@pytest.mark.parametrize(
+    "message_id,refs,stored",
+    [
+        ("<right@example.invalid>", [], "wrong"),
+        ("<right@example.invalid>\r\nBcc: x@example.invalid", [], "anything"),
+        ("<right@example.invalid>", ["<root@example.invalid>\r\nBcc: x@example.invalid"], "match"),
+        ("<right@example.invalid>", ["<x@example.invalid>"] * 31, "match"),
+        ("<right@example.invalid>", ["<" + "x" * 990 + "@example.invalid>"], "match"),
+        ("<right@example.invalid>", "<root@example.invalid>", "match"),
+    ],
+)
+def test_reply_headers_refuse_mismatched_or_unsafe_input(message_id, refs, stored):
+    from app.services.communications.ingest import hash_message_id
+    from app.services.communications.reply import verified_email_headers
+
+    source_hash = hash_message_id(message_id) if stored == "match" else stored
+    with pytest.raises(ReplyUnavailable, match="^reply_headers_unavailable$"):
+        verified_email_headers(NS(external_message_id_hash=source_hash), message_id, refs)
+
+
+def test_reply_header_approval_value_changes_with_exact_reference():
+    from app.services.communications.ingest import hash_message_id
+    from app.services.communications.outbox_store import digest
+    from app.services.communications.reply import verified_email_headers
+
+    message_id = "<id@example.invalid>"
+    inbound = NS(external_message_id_hash=hash_message_id(message_id))
+    one = verified_email_headers(inbound, message_id, ["<one@example.invalid>"])
+    two = verified_email_headers(inbound, message_id, ["<two@example.invalid>"])
+    assert digest({"reply": one.approval_value()}) != digest({"reply": two.approval_value()})

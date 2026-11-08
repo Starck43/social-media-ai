@@ -25,6 +25,7 @@ class ConnectorRuntime:
             self.store,
             text_extensions=config.text_extensions,
             max_text_bytes=config.max_text_bytes,
+            limits=config.document_limits,
         )
         self.selection = FolderSelection()
         self.config.selected_roots = []

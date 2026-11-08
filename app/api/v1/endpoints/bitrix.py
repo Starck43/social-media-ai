@@ -381,12 +381,6 @@ class OneClickUnsubscribeRequest(BusinessSchema):
 
 class OneClickUnsubscribeOut(BusinessSchema):
     unsubscribed: bool = True
-    tenant_id: int
-    contact_id: int
-    channel: str
-    purpose: str
-    withdrawn_at: datetime
-    cancelled_outbox_targets: int = 0
     message: str
 
 
@@ -769,7 +763,7 @@ async def get_one_click_unsubscribe(
 ):
     try:
         data = await crm_messaging_service.process_one_click_unsubscribe(token)
-        return OneClickUnsubscribeOut.model_validate(data)
+        return OneClickUnsubscribeOut(unsubscribed=data["unsubscribed"], message=data["message"])
     except Bitrix24Error as exc:
         raise _bitrix_http_error(exc) from None
 
@@ -784,7 +778,7 @@ async def post_one_click_unsubscribe(
         raise HTTPException(status_code=422)
     try:
         data = await crm_messaging_service.process_one_click_unsubscribe(resolved_token)
-        return OneClickUnsubscribeOut.model_validate(data)
+        return OneClickUnsubscribeOut(unsubscribed=data["unsubscribed"], message=data["message"])
     except Bitrix24Error as exc:
         raise _bitrix_http_error(exc) from None
 

@@ -18,6 +18,7 @@ import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import delete, func, select, text
 
+import app.services.communications.outbox_store as outbox_store_module
 from app.channels.senders.contracts import EMAIL
 from app.core.access_catalog import workspace_grants
 from app.core.config import settings
@@ -82,7 +83,11 @@ async def _purge_own_events(tenant_ids: list[int]) -> None:
 
 @pytest.fixture
 async def messaging_world(personal_world, monkeypatch):  # noqa: F811
-    assert settings.DB_SCHEMA == "test_schema", "P14-T05/T06 DB tests require test_schema"
+    assert settings.DB_SCHEMA in {
+        "test_schema",
+        "p14_t05_t06_messaging_test",
+    }, "P14-T05/T06 DB tests require test_schema or the dedicated p14_t05_t06_messaging_test schema"
+    assert settings.DB_TEST_SCHEMA == settings.DB_SCHEMA, "DB_TEST_SCHEMA must match the selected isolated schema"
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
     monkeypatch.setattr(settings, "PII_INDEX_KEY", Fernet.generate_key().decode())
     monkeypatch.setattr(settings, "CREDENTIALS_KEY", Fernet.generate_key().decode())
@@ -336,12 +341,24 @@ async def test_db_refusal_without_consent_and_withdraw_grant_withdraw_ordering(m
             )
 
 
-async def test_db_unsubscribe_cancels_current_year_outbox_and_preserves_prior_year(messaging_world) -> None:
+async def test_db_unsubscribe_cancels_current_year_outbox_and_preserves_prior_year(
+    messaging_world, monkeypatch
+) -> None:
     ref = messaging_world.crm_messaging
     greetings_svc = CrmGreetingsService()
     messaging_svc = CrmMessagingService(outbox=outbox_store)
     contact_mgr = ContactManager()
-    now = datetime.now(UTC)
+    now = datetime(2020, 5, 4, 12, 0, tzinfo=UTC)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz else now.replace(tzinfo=None)
+
+    # OutboxStore independently reads the wall clock while validating approval TTL.
+    # Freeze both outbox and approval-ledger clocks so this remains valid on any date.
+    monkeypatch.setattr(outbox_store_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(ledger, "datetime", FrozenDateTime)
 
     with scope(messaging_world, 0):
         async with async_session_maker() as session, session.begin():
@@ -413,6 +430,103 @@ async def test_db_unsubscribe_cancels_current_year_outbox_and_preserves_prior_ye
             assert tgt is not None and tgt.state == "cancelled"
 
 
+async def test_db_batch_replay_after_clock_jump_reuses_durable_message(messaging_world, monkeypatch) -> None:
+    ref = messaging_world.crm_messaging
+    messaging_svc = CrmMessagingService(outbox=outbox_store)
+    contact_mgr = ContactManager()
+    now = datetime.now(UTC)
+    replay_at = now + timedelta(hours=26)
+
+    class FrozenDateTime(datetime):
+        current = now
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current.astimezone(tz) if tz else cls.current.replace(tzinfo=None)
+
+    monkeypatch.setattr(outbox_store_module, "datetime", FrozenDateTime)
+    idem = f"{messaging_world.tag}-durable-replay"
+    request = {
+        "tenant_id": ref.tenant_a,
+        "actor_id": ref.actor_a,
+        "contact_ids": [ref.contact_1],
+        "channel": "email",
+        "connection_id": ref.connection,
+        "subject_template": "Предложение для {name}",
+        "body_template": "Здравствуйте, {name}!",
+        "purpose": "marketing",
+        "idempotency_key": idem,
+    }
+
+    with scope(messaging_world, 0):
+        async with async_session_maker() as session, session.begin():
+            await contact_mgr.record_consent(
+                ref.contact_1,
+                "email",
+                "marketing",
+                "opt_in",
+                "form:durable-replay",
+                session=session,
+                granted_at=now - timedelta(minutes=1),
+            )
+            first = await messaging_svc.send_batch_messages(**request, now=now, session=session)
+
+    first_item = first["items"][0]
+    with scope(messaging_world, 0):
+        async with async_session_maker() as session, session.begin():
+            first_message = await session.get(OutboxMessage, first_item["outbox_message_id"])
+            assert first_message is not None
+            first_body = first_message.content_encrypted
+            first_counts = (
+                await session.scalar(
+                    select(func.count()).select_from(OutboxMessage).where(OutboxMessage.tenant_id == ref.tenant_a)
+                ),
+                await session.scalar(
+                    select(func.count()).select_from(OutboxTarget).where(OutboxTarget.tenant_id == ref.tenant_a)
+                ),
+                await session.scalar(
+                    select(func.count()).select_from(BusinessCommand).where(BusinessCommand.tenant_id == ref.tenant_a)
+                ),
+            )
+            first_token = first_item["unsubscribe_url"].split("token=", 1)[1]
+
+    FrozenDateTime.current = replay_at
+    with scope(messaging_world, 0):
+        async with async_session_maker() as session, session.begin():
+            replay = await messaging_svc.send_batch_messages(**request, now=replay_at, session=session)
+            assert replay["batch_id"] == first["batch_id"]
+            assert replay["items"] == first["items"]
+            assert replay["counts"] == first["counts"]
+            replay_message = await session.get(OutboxMessage, first_item["outbox_message_id"])
+            assert replay_message is not None and replay_message.content_encrypted == first_body
+            replay_counts = (
+                await session.scalar(
+                    select(func.count()).select_from(OutboxMessage).where(OutboxMessage.tenant_id == ref.tenant_a)
+                ),
+                await session.scalar(
+                    select(func.count()).select_from(OutboxTarget).where(OutboxTarget.tenant_id == ref.tenant_a)
+                ),
+                await session.scalar(
+                    select(func.count()).select_from(BusinessCommand).where(BusinessCommand.tenant_id == ref.tenant_a)
+                ),
+            )
+            assert replay_counts == first_counts
+
+    with scope(messaging_world, 0):
+        async with async_session_maker() as session, session.begin():
+            fresh = await messaging_svc.send_batch_messages(
+                **{**request, "idempotency_key": f"{idem}-new"},
+                scheduled_at=replay_at + timedelta(minutes=1),
+                now=replay_at,
+                session=session,
+            )
+            assert fresh["scheduled_count"] == 1
+            fresh_item = fresh["items"][0]
+            assert fresh_item["unsubscribe_url"].split("token=", 1)[1] != first_token
+            fresh_message = await session.get(OutboxMessage, fresh_item["outbox_message_id"])
+            assert fresh_message is not None and fresh_message.content_encrypted != first_body
+
+
 async def test_db_batch_idempotency_conflict_bucket_and_tenant_isolation(messaging_world) -> None:
     ref = messaging_world.crm_messaging
     messaging_svc = CrmMessagingService(outbox=outbox_store)
@@ -477,6 +591,7 @@ async def test_db_batch_idempotency_conflict_bucket_and_tenant_isolation(messagi
             )
             assert batch_replay["batch_id"] == batch_1["batch_id"]
             assert batch_replay["scheduled_count"] == 1
+            assert batch_replay["items"] == batch_1["items"]
 
             # OutboxConflict("outbox_idempotency_mismatch") is placed in skipped_conflict
             session.add(

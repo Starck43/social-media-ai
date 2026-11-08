@@ -1,4 +1,4 @@
-"""P14-T05 & P14-T06 unit, SQL-backed, and HTTP contract tests for greeting delivery, batch messaging, consent, and unsubscribe.
+"""P14-T05 & P14-T06 SQLite, PostgreSQL, and HTTP contract tests for greeting delivery, batch messaging, consent, and unsubscribe.
 
 Covers:
 - P14-T05 (`CrmGreetingsService.send_greeting` / `CrmMessagingService.send_greeting`):
@@ -581,6 +581,12 @@ def test_p14_t06_personalization_and_unsubscribe_token_ttl_secret_and_footer(
     assert exc_info.value.code == "invalid_unsubscribe_token"
     assert exc_info.value.status_code == 422
 
+    for malformed_token in ("é.token", f"{fresh_token.split('.', 1)[0]}.é"):
+        with pytest.raises(Bitrix24Error) as exc_non_ascii:
+            verify_unsubscribe_token(malformed_token, now=now_dt)
+        assert exc_non_ascii.value.code == "invalid_unsubscribe_token"
+        assert exc_non_ascii.value.status_code == 422
+
     # 5. Blocker 2: Empty or whitespace SECRET_KEY fails closed with 503 (never falls back to a default key)
     monkeypatch.setattr(settings, "SECRET_KEY", "   ")
     with pytest.raises(Bitrix24Error) as exc_no_secret_create:
@@ -613,6 +619,12 @@ def test_p14_t06_personalization_and_unsubscribe_token_ttl_secret_and_footer(
         build_unsubscribe_url(fresh_token, base_url="/relative/path")
     assert exc_bad_host.value.code == "unsubscribe_base_url_unconfigured"
     assert exc_bad_host.value.status_code == 503
+    monkeypatch.setattr(settings, "PUBLIC_BASE_URL", "")
+    with pytest.raises(Bitrix24Error) as exc_missing_host:
+        build_unsubscribe_url(fresh_token)
+    assert exc_missing_host.value.code == "unsubscribe_base_url_unconfigured"
+    assert exc_missing_host.value.status_code == 503
+    monkeypatch.setattr(settings, "PUBLIC_BASE_URL", "https://crm.example.com")
 
     # Public API allowlist includes /api/v1/integrations/bitrix/messaging/unsubscribe
     assert api_scope._is_public("/api/v1/integrations/bitrix/messaging/unsubscribe") is True
@@ -1018,10 +1030,10 @@ async def test_p14_t06_batch_120_contacts_personalization_coverage_warning_and_u
 
 
 @pytest.mark.asyncio
-async def test_p14_t05_t06_real_outbox_store_consent_transitions_conflict_bucket_and_tenant_isolation(
+async def test_p14_t05_t06_sqlite_outbox_store_consent_transitions_conflict_bucket_and_tenant_isolation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Real DB + real OutboxStore + real ContactManager test covering review blockers and medium items:
+    """In-memory SQLite + real OutboxStore + real ContactManager test covering review blockers and medium items:
     1. Withdraw -> Grant -> Withdraw ordering through `ContactManager.record_consent` and `process_one_click_unsubscribe`.
     2. Year-scoped unsubscribe cancellation (`effective_now.year` only; prior-year 2025 rows stay untouched).
     3. Uniform 422 response (`invalid_unsubscribe_token`) for invalid tokens and deleted/merged contacts.
@@ -1468,8 +1480,8 @@ async def test_p14_t06_d17_manual_consent_and_d16_public_http_endpoints(
         assert resp_get.status_code == 200
         body_get = resp_get.json()
         assert body_get["unsubscribed"] is True
-        assert body_get["contact_id"] == 7
-        assert body_get["channel"] == "telegram"
+        assert body_get["message"] == "Вы успешно отписались от рассылки."
+        assert set(body_get) == {"unsubscribed", "message"}
 
         # POST without Authorization header succeeds (200)
         resp_post = await client.post(
@@ -1477,7 +1489,7 @@ async def test_p14_t06_d17_manual_consent_and_d16_public_http_endpoints(
             json={"token": token},
         )
         assert resp_post.status_code == 200
-        assert resp_post.json()["unsubscribed"] is True
+        assert set(resp_post.json()) == {"unsubscribed", "message"}
 
         # Invalid token and valid token for deleted contact return identical HTTP 422 response
         deleted_tok = create_unsubscribe_token(
@@ -1500,6 +1512,22 @@ async def test_p14_t06_d17_manual_consent_and_d16_public_http_endpoints(
         bad_payload = {k: v for k, v in resp_bad.json().items() if k != "request_id"}
         deleted_payload = {k: v for k, v in resp_deleted.json().items() if k != "request_id"}
         assert bad_payload == deleted_payload
+
+        for malformed_token in ("é.token", f"{token.split('.', 1)[0]}.é"):
+            resp_non_ascii = await client.get(
+                "/api/v1/integrations/bitrix/messaging/unsubscribe",
+                params={"token": malformed_token},
+            )
+            assert resp_non_ascii.status_code == 422
+            non_ascii_payload = {k: v for k, v in resp_non_ascii.json().items() if k != "request_id"}
+            assert non_ascii_payload == bad_payload
+            resp_non_ascii_post = await client.post(
+                "/api/v1/integrations/bitrix/messaging/unsubscribe",
+                json={"token": malformed_token},
+            )
+            assert resp_non_ascii_post.status_code == 422
+            non_ascii_post_payload = {k: v for k, v in resp_non_ascii_post.json().items() if k != "request_id"}
+            assert non_ascii_post_payload == bad_payload
 
         # Protected endpoint (/api/v1/integrations/bitrix/messaging/batch) without Authorization header returns 401
         resp_protected = await client.post("/api/v1/integrations/bitrix/messaging/batch", json={})

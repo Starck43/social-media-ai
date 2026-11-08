@@ -127,11 +127,16 @@ def verify_unsubscribe_token(
     if not payload_b64 or not sig_b64:
         raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422)
 
-    signing_input = UNSUBSCRIBE_DOMAIN_TAG + b"." + payload_b64.encode("ascii")
+    try:
+        payload_ascii = payload_b64.encode("ascii")
+        signature_ascii = sig_b64.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422) from exc
+    signing_input = UNSUBSCRIBE_DOMAIN_TAG + b"." + payload_ascii
     expected_sig = (
         base64.urlsafe_b64encode(hmac.new(secret, signing_input, hashlib.sha256).digest()).decode("ascii").rstrip("=")
     )
-    if not hmac.compare_digest(sig_b64, expected_sig):
+    if not hmac.compare_digest(signature_ascii, expected_sig.encode("ascii")):
         raise Bitrix24Error("invalid_unsubscribe_token", UNSUBSCRIBE_INVALID_MESSAGE, status_code=422)
 
     try:

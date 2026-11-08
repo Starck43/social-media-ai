@@ -97,7 +97,8 @@ async def test_run_locks_authority_creates_parent_and_steps_once(monkeypatch):
     monkeypatch.setattr(planner_service, "create", create)
     with tenant_scope(7):
         assert await EventPlanningService().run_daily(session=session) == {"status": "ok", "created": 1}
-    (ledger,) = session.added
+    ledger, claim = session.added
+    assert claim.contact_id == 42 and claim.year == 2028
     assert isinstance(ledger, PlannerEventRun)
     assert (ledger.contact_id, ledger.year, ledger.root_task_id, ledger.greeting_task_id) == (42, 2028, 1, 3)
     assert create.await_count == 3
@@ -150,7 +151,7 @@ async def test_draft_requires_matching_ledger_contact(monkeypatch):
     monkeypatch.setattr("app.core.permissions.has_permission", lambda *a: True)
     fake = AsyncMock()
     monkeypatch.setattr(crm_greetings_service, "generate_greeting_draft", fake)
-    session = FakeSession(SimpleNamespace(contact_id=42))
+    session = FakeSession(SimpleNamespace(id=1, contact_id=42, event_type="birthday", year=2028), None)
     with tenant_scope(7), pytest.raises(EventPlanningUnavailable):
         await EventPlanningService().draft_for_task(3, session=session)
     fake.assert_not_awaited()

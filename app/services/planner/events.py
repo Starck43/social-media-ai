@@ -56,6 +56,163 @@ class EventPlanningUnavailable(LookupError):
     """A task or event is missing, invisible, or belongs to another workspace."""
 
 
+async def merge_event_lineage(session, *, tenant_id: int, source_id: int, target_id: int):
+    """Coalesce keys under the caller's tenant and ordered contact locks."""
+    from sqlalchemy import or_, select, update
+
+    from app.models.planner.events import PlannerEventClaim, PlannerEventGroup, PlannerEventRun
+    from app.models.planner.task import PlannerTask
+
+    runs = list(
+        (
+            await session.execute(
+                select(PlannerEventRun)
+                .where(PlannerEventRun.tenant_id == tenant_id, PlannerEventRun.contact_id.in_([source_id, target_id]))
+                .order_by(PlannerEventRun.id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    claims = list(
+        (
+            await session.execute(
+                select(PlannerEventClaim)
+                .where(
+                    PlannerEventClaim.tenant_id == tenant_id, PlannerEventClaim.contact_id.in_([source_id, target_id])
+                )
+                .order_by(PlannerEventClaim.id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    source_claims = {(c.event_type, c.year): c for c in claims if c.contact_id == source_id}
+    target_claims = {(c.event_type, c.year): c for c in claims if c.contact_id == target_id}
+    target_runs = {(r.event_type, r.year): r for r in runs if r.contact_id == target_id}
+    for run in (r for r in runs if r.contact_id == source_id):
+        key = (run.event_type, run.year)
+        if key not in source_claims:
+            claim = PlannerEventClaim(
+                tenant_id=tenant_id, contact_id=source_id, run_id=run.id, event_type=run.event_type, year=run.year
+            )
+            session.add(claim)
+            source_claims[key] = claim
+        groups = list(
+            (
+                await session.execute(
+                    select(PlannerEventGroup)
+                    .where(PlannerEventGroup.tenant_id == tenant_id, PlannerEventGroup.run_id == run.id)
+                    .order_by(PlannerEventGroup.id)
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        roots = [v for v in [run.root_task_id, *(g.root_task_id for g in groups)] if v is not None]
+        greetings = [v for v in [run.greeting_task_id, *(g.greeting_task_id for g in groups)] if v is not None]
+        if roots or greetings:
+            await session.execute(
+                update(PlannerTask)
+                .where(
+                    PlannerTask.tenant_id == tenant_id,
+                    PlannerTask.contact_id == source_id,
+                    or_(PlannerTask.id.in_(roots), PlannerTask.parent_id.in_(roots), PlannerTask.id.in_(greetings)),
+                )
+                .values(contact_id=target_id, version=PlannerTask.version + 1)
+            )
+        target = target_runs.get(key)
+        if target is None and key in target_claims:
+            target = (
+                await session.execute(
+                    select(PlannerEventRun)
+                    .where(PlannerEventRun.tenant_id == tenant_id, PlannerEventRun.id == target_claims[key].run_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+        if target is None:
+            run.contact_id = target_id
+            target = run
+            target_runs[key] = run
+        elif target.id != run.id:
+            session.add(
+                PlannerEventGroup(
+                    tenant_id=tenant_id,
+                    run_id=target.id,
+                    root_task_id=run.root_task_id,
+                    greeting_task_id=run.greeting_task_id,
+                )
+            )
+            for group in groups:
+                group.run_id = target.id
+            # Claims, including those belonging to earlier unmerged contacts,
+            # must survive the coalescence of their backing run.
+            await session.execute(
+                update(PlannerEventClaim)
+                .where(PlannerEventClaim.tenant_id == tenant_id, PlannerEventClaim.run_id == run.id)
+                .values(run_id=target.id)
+            )
+            await session.flush()
+            await session.delete(run)
+            for claim in source_claims.values():
+                if claim.run_id == run.id:
+                    claim.run_id = target.id
+        if key not in target_claims:
+            claim = PlannerEventClaim(
+                tenant_id=tenant_id, contact_id=target_id, run_id=target.id, event_type=key[0], year=key[1]
+            )
+            session.add(claim)
+            target_claims[key] = claim
+    for key, claim in source_claims.items():
+        if key not in target_claims:
+            session.add(
+                PlannerEventClaim(
+                    tenant_id=tenant_id, contact_id=target_id, run_id=claim.run_id, event_type=key[0], year=key[1]
+                )
+            )
+    await session.flush()
+
+
+async def unmerge_event_lineage(session, *, tenant_id: int, source_id: int, target_id: int):
+    """A restored source inherits closed keys; tasks are never regenerated."""
+    from sqlalchemy import select
+
+    from app.models.planner.events import PlannerEventClaim
+
+    claims = list(
+        (
+            await session.execute(
+                select(PlannerEventClaim)
+                .where(
+                    PlannerEventClaim.tenant_id == tenant_id, PlannerEventClaim.contact_id.in_([source_id, target_id])
+                )
+                .order_by(PlannerEventClaim.id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    source_keys = {(c.event_type, c.year) for c in claims if c.contact_id == source_id}
+    for claim in claims:
+        key = (claim.event_type, claim.year)
+        if claim.contact_id == target_id and key not in source_keys:
+            session.add(
+                PlannerEventClaim(
+                    tenant_id=tenant_id,
+                    contact_id=source_id,
+                    run_id=claim.run_id,
+                    event_type=claim.event_type,
+                    year=claim.year,
+                )
+            )
+            source_keys.add(key)
+    await session.flush()
+
+
 class EventPlanningService:
     """Tenant-serialized event generation; never sends or generates a greeting itself."""
 
@@ -112,7 +269,7 @@ class EventPlanningService:
         from app.core.access_catalog import workspace_grants
         from app.core.permissions import permission_scope
         from app.models import Contact, Tenant, TenantUser, User, WorkspaceRole
-        from app.models.planner.events import PlannerEventRun, PlannerEventSettings
+        from app.models.planner.events import PlannerEventClaim, PlannerEventRun, PlannerEventSettings
         from app.services.crm.greetings import crm_greetings_service
         from app.services.planner.contracts import TaskCreate
         from app.services.planner.tasks import planner_service
@@ -180,11 +337,11 @@ class EventPlanningService:
                 if not 1970 <= year <= 2100:
                     raise ValueError("event_year_out_of_range")
                 previous = await session.scalar(
-                    select(PlannerEventRun.id).where(
-                        PlannerEventRun.tenant_id == tenant,
-                        PlannerEventRun.contact_id == event["contact_id"],
-                        PlannerEventRun.event_type == event["event_type"],
-                        PlannerEventRun.year == year,
+                    select(PlannerEventClaim.id).where(
+                        PlannerEventClaim.tenant_id == tenant,
+                        PlannerEventClaim.contact_id == event["contact_id"],
+                        PlannerEventClaim.event_type == event["event_type"],
+                        PlannerEventClaim.year == year,
                     )
                 )
                 if previous is not None:
@@ -194,6 +351,15 @@ class EventPlanningService:
                 )
                 session.add(ledger)
                 await session.flush()  # database unique key is the final concurrent guard
+                session.add(
+                    PlannerEventClaim(
+                        tenant_id=tenant,
+                        contact_id=event["contact_id"],
+                        event_type=event["event_type"],
+                        year=year,
+                        run_id=ledger.id,
+                    )
+                )
                 kind_label = "День рождения" if event["event_type"] == "birthday" else "Памятная дата"
                 name = str(event["display_name"] or "")[:200]
                 root = await planner_service.create(
@@ -241,7 +407,7 @@ class EventPlanningService:
     async def greeting_task_ids(self, task_ids, *, session):
         from sqlalchemy import select
 
-        from app.models.planner.events import PlannerEventRun
+        from app.models.planner.events import PlannerEventGroup, PlannerEventRun
         from app.services.planner.tasks import planner_service
         from app.types import ActionType
 
@@ -254,7 +420,13 @@ class EventPlanningService:
                 PlannerEventRun.tenant_id == tenant, PlannerEventRun.greeting_task_id.in_(task_ids)
             )
         )
-        return set(result.all())
+        ids = set(result.all())
+        extra = await session.scalars(
+            select(PlannerEventGroup.greeting_task_id).where(
+                PlannerEventGroup.tenant_id == tenant, PlannerEventGroup.greeting_task_id.in_(task_ids)
+            )
+        )
+        return ids | set(extra.all())
 
     async def draft_for_task(self, task_id, *, session):
         """Create a draft only after a user action and fresh task/source checks."""
@@ -263,7 +435,7 @@ class EventPlanningService:
         from app.core.access_catalog import workspace_grants
         from app.core.permissions import get_current_user, has_permission
         from app.models import Tenant
-        from app.models.planner.events import PlannerEventRun
+        from app.models.planner.events import PlannerEventClaim, PlannerEventGroup, PlannerEventRun
         from app.services.crm.greetings import crm_greetings_service
         from app.services.planner.tasks import planner_service
         from app.types import ActionType
@@ -280,15 +452,38 @@ class EventPlanningService:
             .where(PlannerEventRun.tenant_id == tenant, PlannerEventRun.greeting_task_id == task_id)
             .with_for_update()
         )
-        if event is None or task.contact_id != event.contact_id:
+        if event is None:
+            event = await session.scalar(
+                select(PlannerEventRun)
+                .join(
+                    PlannerEventGroup,
+                    (PlannerEventGroup.run_id == PlannerEventRun.id)
+                    & (PlannerEventGroup.tenant_id == PlannerEventRun.tenant_id),
+                )
+                .where(PlannerEventGroup.tenant_id == tenant, PlannerEventGroup.greeting_task_id == task_id)
+                .with_for_update(of=PlannerEventRun)
+            )
+        if event is None or task.contact_id is None:
             raise EventPlanningUnavailable("event_unavailable")
+        if task.contact_id != event.contact_id:
+            claim = await session.scalar(
+                select(PlannerEventClaim.id).where(
+                    PlannerEventClaim.tenant_id == tenant,
+                    PlannerEventClaim.contact_id == task.contact_id,
+                    PlannerEventClaim.run_id == event.id,
+                    PlannerEventClaim.event_type == event.event_type,
+                    PlannerEventClaim.year == event.year,
+                )
+            )
+            if claim is None:
+                raise EventPlanningUnavailable("event_unavailable")
         workspace = await session.scalar(select(Tenant).where(Tenant.id == tenant))
         if workspace is None:
             raise EventPlanningUnavailable("event_unavailable")
         return await crm_greetings_service.generate_greeting_draft(
             tenant_id=tenant,
             actor_id=identity[1],
-            contact_id=event.contact_id,
+            contact_id=task.contact_id,
             event_type=event.event_type,
             year=event.year,
             tz_name=workspace.timezone,

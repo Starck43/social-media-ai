@@ -249,3 +249,186 @@ async def test_generation_and_merge_lock_order_avoids_deadlock(personal_world, m
             if not task.done():
                 task.cancel()
         await asyncio.gather(running, merging, return_exceptions=True)
+
+
+async def test_both_merged_groups_keep_greeting_actions(personal_world, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.services.planner.events import event_planning_service
+
+    world = personal_world
+    with owner_scope(world):
+        source = await Contact.objects.create(display_name="Synthetic source", birthday="03-04")
+        survivor = await Contact.objects.create(display_name="Synthetic survivor", birthday="03-04")
+    await configure(world)
+    assert (await fire(world))["created"] == 2
+    async with async_session_maker() as session:
+        original = set(
+            (
+                await session.scalars(
+                    select(PlannerEventRun.greeting_task_id).where(PlannerEventRun.tenant_id == world.tenants[0].id)
+                )
+            ).all()
+        )
+    assert len(original) == 2
+    await merge(world, source.id, survivor.id)
+    generate = AsyncMock(return_value={"draft_text": "synthetic", "send_enabled": False})
+    monkeypatch.setattr(crm_greetings_service, "generate_greeting_draft", generate)
+    with owner_scope(world):
+        async with async_session_maker() as session, session.begin():
+            assert await event_planning_service.greeting_task_ids(list(original), session=session) == original
+            for task_id in original:
+                result = await event_planning_service.draft_for_task(task_id, session=session)
+                assert result["send_enabled"] is False
+    assert generate.await_count == 2
+    assert all(call.kwargs["contact_id"] == survivor.id for call in generate.await_args_list)
+
+
+async def test_repeated_merge_and_unmerge_preserves_all_groups(personal_world, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.services.planner.events import event_planning_service
+
+    world = personal_world
+    with owner_scope(world):
+        first = await Contact.objects.create(display_name="Synthetic first", birthday="03-04")
+        second = await Contact.objects.create(display_name="Synthetic second", birthday="03-04")
+        third = await Contact.objects.create(display_name="Synthetic third", birthday="03-04")
+    await configure(world)
+    assert (await fire(world))["created"] == 3
+    original = {task.id for task in await task_rows(world)}
+    assert len(original) == 9
+    result1 = await merge(world, first.id, second.id)
+    result2 = await merge(world, second.id, third.id)
+    assert (await fire(world))["created"] == 0
+    tasks = await task_rows(world)
+    assert {task.id for task in tasks} == original
+    assert all(task.contact_id == third.id for task in tasks)
+    fake = AsyncMock(return_value={"send_enabled": False})
+    monkeypatch.setattr(crm_greetings_service, "generate_greeting_draft", fake)
+    with owner_scope(world):
+        async with async_session_maker() as session, session.begin():
+            greeting_ids = await event_planning_service.greeting_task_ids(list(original), session=session)
+            assert len(greeting_ids) == 3
+            for task_id in greeting_ids:
+                await event_planning_service.draft_for_task(task_id, session=session)
+    assert fake.await_count == 3
+    await unmerge(world, result2["journal_id"])
+    await unmerge(world, result1["journal_id"])
+    assert (await fire(world))["created"] == 0
+    assert {task.id for task in await task_rows(world)} == original
+
+
+async def test_merge_first_serializes_generation(personal_world, monkeypatch):
+    import app.services.contacts.reconcile as reconcile
+
+    world = personal_world
+    with owner_scope(world):
+        source = await Contact.objects.create(display_name="Synthetic source", birthday="03-04")
+        survivor = await Contact.objects.create(display_name="Synthetic survivor")
+    await configure(world)
+    reached, proceed = asyncio.Event(), asyncio.Event()
+    original = reconcile._record_audit
+
+    async def paused_audit(*args, **kwargs):
+        reached.set()
+        await proceed.wait()
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(reconcile, "_record_audit", paused_audit)
+    merging = asyncio.create_task(merge(world, source.id, survivor.id))
+    await asyncio.wait_for(reached.wait(), timeout=10)
+    running = asyncio.create_task(fire(world))
+    try:
+        await asyncio.sleep(0.1)
+        assert not running.done()
+        proceed.set()
+        _, generated = await asyncio.wait_for(asyncio.gather(merging, running), timeout=10)
+        assert generated["created"] == 1
+        assert (await fire(world))["created"] == 0
+        tasks = await task_rows(world)
+        assert len(tasks) == 3 and all(task.contact_id == survivor.id for task in tasks)
+    finally:
+        proceed.set()
+        for task in (merging, running):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(merging, running, return_exceptions=True)
+
+
+async def test_deleting_extra_group_task_preserves_closed_event(personal_world):
+    from app.models.planner.events import PlannerEventGroup
+
+    world = personal_world
+    with owner_scope(world):
+        source = await Contact.objects.create(display_name="Synthetic source", birthday="03-04")
+        survivor = await Contact.objects.create(display_name="Synthetic survivor", birthday="03-04")
+    await configure(world)
+    assert (await fire(world))["created"] == 2
+    await merge(world, source.id, survivor.id)
+    async with async_session_maker() as session:
+        group = await session.scalar(
+            select(PlannerEventGroup).where(PlannerEventGroup.tenant_id == world.tenants[0].id)
+        )
+        group_id, root_id = group.id, group.root_task_id
+    async with async_session_maker() as session, session.begin():
+        await session.execute(
+            delete(PlannerTask).where(PlannerTask.id == root_id, PlannerTask.tenant_id == world.tenants[0].id)
+        )
+    async with async_session_maker() as session:
+        group = await session.get(PlannerEventGroup, group_id)
+        assert group is not None and group.root_task_id is None and group.greeting_task_id is None
+    assert (await fire(world))["created"] == 0
+
+
+async def test_erasing_enabler_disables_without_reassignment(personal_world):
+    from app.models import User
+    from app.models.planner import PlannerEventSettings
+
+    world = personal_world
+    with owner_scope(world):
+        contact = await Contact.objects.create(display_name="Synthetic event", birthday="03-04")
+    await configure(world)
+    assert (await fire(world))["created"] == 1
+    async with async_session_maker() as session, session.begin():
+        await session.execute(delete(User).where(User.id == world.users[0].id))
+    async with async_session_maker() as session:
+        config = await session.get(PlannerEventSettings, world.tenants[0].id)
+        run = await session.scalar(select(PlannerEventRun).where(PlannerEventRun.contact_id == contact.id))
+        assert config.owner_user_id is None
+        assert run is not None and run.root_task_id is None and run.greeting_task_id is None
+    assert (await fire(world)) == {"status": "disabled", "created": 0}
+
+
+async def test_claim_cannot_point_to_a_different_event_or_workspace(personal_world):
+    from sqlalchemy.exc import IntegrityError
+    from app.models.planner.events import PlannerEventClaim
+
+    world = personal_world
+    with owner_scope(world):
+        contact = await Contact.objects.create(display_name="Synthetic event", birthday="03-04")
+    await configure(world)
+    assert (await fire(world))["created"] == 1
+    async with async_session_maker() as session:
+        run = await session.scalar(select(PlannerEventRun).where(PlannerEventRun.contact_id == contact.id))
+        run_id, event_type, year = run.id, run.event_type, run.year
+    with pytest.raises(IntegrityError):
+        async with async_session_maker() as session, session.begin():
+            session.add(
+                PlannerEventClaim(
+                    tenant_id=world.tenants[0].id,
+                    contact_id=contact.id,
+                    run_id=run_id,
+                    event_type=event_type,
+                    year=year + 1,
+                )
+            )
+    with pytest.raises(IntegrityError):
+        async with async_session_maker() as session, session.begin():
+            session.add(
+                PlannerEventClaim(
+                    tenant_id=world.tenants[1].id,
+                    contact_id=contact.id,
+                    run_id=run_id,
+                    event_type=event_type,
+                    year=year,
+                )
+            )

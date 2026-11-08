@@ -53,7 +53,9 @@ class GreetingDraftOutput(BusinessSchema):
     ai_generated: bool = True
 
 
-def resolve_workspace_today(reference_date: date | datetime | None = None, tz_name: str = DEFAULT_WORKSPACE_TIMEZONE) -> date:
+def resolve_workspace_today(
+    reference_date: date | datetime | None = None, tz_name: str = DEFAULT_WORKSPACE_TIMEZONE
+) -> date:
     """Resolve current date in the workspace timezone."""
     if isinstance(reference_date, datetime):
         try:
@@ -99,7 +101,9 @@ def next_occurrence_date(raw_date: str | None, *, today: date) -> tuple[date | N
         return None, None, None
 
     days_until = (candidate - today).days
-    years_turning = (candidate.year - origin_year) if (origin_year is not None and candidate.year >= origin_year) else None
+    years_turning = (
+        (candidate.year - origin_year) if (origin_year is not None and candidate.year >= origin_year) else None
+    )
     return candidate, days_until, years_turning
 
 
@@ -512,6 +516,18 @@ class CrmGreetingsService:
             "draft_text": row.draft_text_encrypted,
             "send_enabled": False,
         }
+
+    async def send_greeting(self, **kwargs: Any) -> dict[str, Any]:
+        """Schedule an approved greeting through the P15-T05 outbox with D15 consent enforcement (P14-T05)."""
+        from app.services.crm.messaging import crm_messaging_service
+
+        return await crm_messaging_service.send_greeting(**kwargs)
+
+    async def get_greeting_delivery_status(self, **kwargs: Any) -> dict[str, Any]:
+        """Synchronize and return greeting delivery status from the P15-T05 outbox (P14-T05)."""
+        from app.services.crm.messaging import crm_messaging_service
+
+        return await crm_messaging_service.get_greeting_delivery_status(**kwargs)
 
 
 crm_greetings_service = CrmGreetingsService()

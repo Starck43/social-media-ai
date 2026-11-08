@@ -1,14 +1,14 @@
-"""REST endpoints for Bitrix24 connections, sync, CRM cards and greeting drafts.
+"""REST endpoints for Bitrix24 connections, sync, CRM cards, greetings, and batch messaging.
 
-Mounted at `/api/v1/integrations/bitrix` (P14-T01..T04).
+Mounted at `/api/v1/integrations/bitrix` (P14-T01..T06).
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from pydantic import Field
 
 from app.api.deps import require_model_perm
@@ -18,6 +18,7 @@ from app.models import User
 from app.schemas.business import BusinessSchema
 from app.services.crm.cards import crm_contact_card_service
 from app.services.crm.greetings import crm_greetings_service
+from app.services.crm.messaging import crm_messaging_service
 from app.services.crm.sync import bitrix_sync_service
 from app.services.user.auth import get_authenticated_user
 from app.types import ActionType
@@ -239,9 +240,161 @@ class GreetingDraftOut(BusinessSchema):
     send_enabled: bool = False
 
 
+class GreetingSendRequest(BusinessSchema):
+    greeting_id: int | None = Field(default=None, gt=0)
+    contact_id: int | None = Field(default=None, gt=0)
+    event_type: str = Field(default="birthday", pattern=r"^(birthday|anniversary)$")
+    year: int | None = Field(default=None, ge=1970, le=2100)
+    channel: str | None = Field(default=None, pattern=r"^(email|telegram|max)$")
+    connection_id: int = Field(..., gt=0)
+    identity_id: int | None = Field(default=None, gt=0)
+    scheduled_at: datetime | None = None
+    ttl_seconds: int = Field(default=86400, ge=60, le=2592000)
+    timezone: str = Field(default="Europe/Moscow", min_length=1, max_length=64)
+    idempotency_key: str | None = Field(default=None, max_length=96)
+
+
+class GreetingSendOut(BusinessSchema):
+    id: int
+    tenant_id: int
+    contact_id: int
+    event_type: str
+    event_date: date
+    year: int
+    channel: str
+    status: str
+    command_id: int | None = None
+    outbox_message_id: int
+    outbox_target_id: int
+    outbox_state: str
+    scheduled_at: datetime | None = None
+    unsubscribe_url: str
+    send_enabled: bool = True
+
+
+class GreetingDeliveryStatusOut(BusinessSchema):
+    id: int
+    tenant_id: int
+    contact_id: int
+    event_type: str
+    event_date: date
+    year: int
+    channel: str | None = None
+    status: str
+    command_id: int | None = None
+    sent_at: datetime | None = None
+    outbox_message_id: int | None = None
+    outbox_target_id: int | None = None
+    outbox_state: str | None = None
+    provider_message_id: str | None = None
+    error_code: str | None = None
+
+
+class ManualConsentRecordRequest(BusinessSchema):
+    channel: str = Field(..., pattern=r"^(email|telegram|max)$")
+    purpose: Literal["transactional", "greeting", "marketing"] = "marketing"
+    action: Literal["grant", "withdraw"] = "grant"
+    basis: str = Field(..., min_length=1, max_length=500)
+    source_evidence: str = Field(..., min_length=1, max_length=2000)
+    occurred_at: datetime | None = None
+
+
+class ManualConsentRecordOut(BusinessSchema):
+    id: int
+    tenant_id: int
+    contact_id: int
+    channel: str
+    purpose: str
+    action: str
+    granted_at: datetime | None = None
+    withdrawn_at: datetime | None = None
+    recorded_by_user_id: int
+    audit_event_id: int | None = None
+
+
+class BatchSendRequest(BusinessSchema):
+    contact_ids: list[int] = Field(..., min_length=1, max_length=500)
+    channel: str = Field(..., pattern=r"^(email|telegram|max)$")
+    connection_id: int = Field(..., gt=0)
+    subject_template: str = Field(default="", max_length=500)
+    body_template: str = Field(..., min_length=1, max_length=16000)
+    purpose: Literal["marketing", "greeting"] = "marketing"
+    scheduled_at: datetime | None = None
+    ttl_seconds: int = Field(default=86400, ge=60, le=2592000)
+    timezone: str = Field(default="Europe/Moscow", min_length=1, max_length=64)
+    idempotency_key: str = Field(..., pattern=r"^[A-Za-z0-9_.:-]{1,96}$")
+
+
+class BatchTargetItemOut(BusinessSchema):
+    contact_id: int
+    status: str
+    reason: str | None = None
+    outbox_message_id: int | None = None
+    outbox_target_id: int | None = None
+    command_id: int | None = None
+    provider_message_id: str | None = None
+    error_code: str | None = None
+    unsubscribe_url: str | None = None
+
+
+class BatchSendOut(BusinessSchema):
+    batch_id: int
+    tenant_id: int
+    channel: str
+    purpose: str
+    state: str
+    requested_count: int
+    scheduled_count: int
+    skipped_no_consent_count: int
+    skipped_no_consent_contact_ids: list[int] = Field(default_factory=list)
+    skipped_no_route_count: int
+    skipped_no_route_contact_ids: list[int] = Field(default_factory=list)
+    coverage_warning: str | None = None
+    counts: dict[str, int] = Field(default_factory=dict)
+    items: list[BatchTargetItemOut] = Field(default_factory=list)
+
+
+class BatchStatusOut(BusinessSchema):
+    batch_id: int
+    tenant_id: int
+    channel: str
+    purpose: str
+    state: str
+    requested_count: int
+    scheduled_count: int
+    skipped_no_consent_count: int
+    skipped_no_consent_contact_ids: list[int] = Field(default_factory=list)
+    skipped_no_route_count: int
+    skipped_no_route_contact_ids: list[int] = Field(default_factory=list)
+    coverage_warning: str | None = None
+    counts: dict[str, int] = Field(default_factory=dict)
+    items: list[BatchTargetItemOut] = Field(default_factory=list)
+
+
+class OneClickUnsubscribeRequest(BusinessSchema):
+    token: str = Field(..., min_length=8, max_length=1024)
+
+
+class OneClickUnsubscribeOut(BusinessSchema):
+    unsubscribed: bool = True
+    tenant_id: int
+    contact_id: int
+    channel: str
+    purpose: str
+    withdrawn_at: datetime
+    cancelled_outbox_targets: int = 0
+    message: str
+
+
 router = APIRouter(
     tags=["CRM"],
     dependencies=[Depends(require_business_scope), Depends(require_model_perm("source", ActionType.VIEW))],
+    route_class=BusinessRoute,
+)
+
+# Public router (mounted without API_AUTH): one-click unsubscribe requires no login (D16).
+public_router = APIRouter(
+    tags=["CRM"],
     route_class=BusinessRoute,
 )
 
@@ -421,6 +574,36 @@ async def get_bitrix_crm_contact_card(
         raise _bitrix_http_error(exc) from None
 
 
+@router.post(
+    "/contacts/{contact_id}/consents",
+    response_model=ManualConsentRecordOut,
+    status_code=201,
+    dependencies=[Depends(require_model_perm("contact", ActionType.UPDATE))],
+)
+async def record_bitrix_contact_consent(
+    body: ManualConsentRecordRequest,
+    request: Request,
+    contact_id: int = Path(gt=0),
+    current_user: User = Depends(get_authenticated_user),
+):
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        data = await crm_messaging_service.record_manual_consent(
+            tenant_id=tenant_id,
+            actor_id=current_user.id,
+            contact_id=contact_id,
+            channel=body.channel,
+            purpose=body.purpose,
+            action=body.action,
+            basis=body.basis,
+            source_evidence=body.source_evidence,
+            occurred_at=body.occurred_at,
+        )
+        return ManualConsentRecordOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise _bitrix_http_error(exc) from None
+
+
 @router.get("/greetings/upcoming", response_model=UpcomingGreetingEventsOut)
 async def list_bitrix_upcoming_greetings(
     request: Request,
@@ -468,4 +651,139 @@ async def create_bitrix_greeting_draft(
         raise _bitrix_http_error(exc) from None
 
 
+@router.post(
+    "/greetings/send",
+    response_model=GreetingSendOut,
+    dependencies=[Depends(require_model_perm("comms.outbox", ActionType.CONFIGURE))],
+)
+async def send_bitrix_greeting(
+    body: GreetingSendRequest,
+    request: Request,
+    current_user: User = Depends(get_authenticated_user),
+):
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        data = await crm_greetings_service.send_greeting(
+            tenant_id=tenant_id,
+            actor_id=current_user.id,
+            connection_id=body.connection_id,
+            greeting_id=body.greeting_id,
+            contact_id=body.contact_id,
+            event_type=body.event_type,
+            year=body.year,
+            channel=body.channel,
+            identity_id=body.identity_id,
+            scheduled_at=body.scheduled_at,
+            ttl_seconds=body.ttl_seconds,
+            timezone_name=body.timezone,
+            idempotency_key=body.idempotency_key,
+        )
+        return GreetingSendOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise _bitrix_http_error(exc) from None
+
+
+@router.get(
+    "/greetings/{greeting_id}/status",
+    response_model=GreetingDeliveryStatusOut,
+    dependencies=[Depends(require_model_perm("comms.outbox", ActionType.VIEW))],
+)
+async def get_bitrix_greeting_delivery_status(
+    request: Request,
+    greeting_id: int = Path(gt=0),
+    current_user: User = Depends(get_authenticated_user),
+):
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        data = await crm_greetings_service.get_greeting_delivery_status(
+            tenant_id=tenant_id,
+            actor_id=current_user.id,
+            greeting_id=greeting_id,
+        )
+        return GreetingDeliveryStatusOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise _bitrix_http_error(exc) from None
+
+
+@router.post(
+    "/messaging/batch",
+    response_model=BatchSendOut,
+    status_code=202,
+    dependencies=[Depends(require_model_perm("comms.outbox", ActionType.CONFIGURE))],
+)
+async def send_bitrix_batch_messages(
+    body: BatchSendRequest,
+    request: Request,
+    current_user: User = Depends(get_authenticated_user),
+):
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        data = await crm_messaging_service.send_batch_messages(
+            tenant_id=tenant_id,
+            actor_id=current_user.id,
+            contact_ids=body.contact_ids,
+            channel=body.channel,
+            connection_id=body.connection_id,
+            subject_template=body.subject_template,
+            body_template=body.body_template,
+            purpose=body.purpose,
+            scheduled_at=body.scheduled_at,
+            ttl_seconds=body.ttl_seconds,
+            timezone_name=body.timezone,
+            idempotency_key=body.idempotency_key,
+        )
+        return BatchSendOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise _bitrix_http_error(exc) from None
+
+
+@router.get(
+    "/messaging/status/{batch_id}",
+    response_model=BatchStatusOut,
+    dependencies=[Depends(require_model_perm("comms.outbox", ActionType.VIEW))],
+)
+async def get_bitrix_batch_messaging_status(
+    request: Request,
+    batch_id: int = Path(gt=0),
+    current_user: User = Depends(get_authenticated_user),
+):
+    tenant_id = getattr(request.state, "tenant_id", None)
+    try:
+        data = await crm_messaging_service.get_batch_status(
+            tenant_id=tenant_id,
+            actor_id=current_user.id,
+            batch_id=batch_id,
+        )
+        return BatchStatusOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise _bitrix_http_error(exc) from None
+
+
+@public_router.get("/messaging/unsubscribe", response_model=OneClickUnsubscribeOut)
+async def get_one_click_unsubscribe(
+    token: str = Query(..., min_length=8, max_length=1024),
+):
+    try:
+        data = await crm_messaging_service.process_one_click_unsubscribe(token)
+        return OneClickUnsubscribeOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise _bitrix_http_error(exc) from None
+
+
+@public_router.post("/messaging/unsubscribe", response_model=OneClickUnsubscribeOut)
+async def post_one_click_unsubscribe(
+    token: str | None = Query(default=None, max_length=1024),
+    body: OneClickUnsubscribeRequest | None = Body(default=None),
+):
+    resolved_token = token or (body.token if body is not None else "")
+    if not resolved_token:
+        raise HTTPException(status_code=422)
+    try:
+        data = await crm_messaging_service.process_one_click_unsubscribe(resolved_token)
+        return OneClickUnsubscribeOut.model_validate(data)
+    except Bitrix24Error as exc:
+        raise _bitrix_http_error(exc) from None
+
+
 validate_business_routes(router)
+validate_business_routes(public_router)

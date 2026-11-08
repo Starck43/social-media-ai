@@ -117,9 +117,16 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/integrations/bitrix/contacts | list_bitrix_crm_contacts_api_v1_integrations_bitrix_contacts_get |
 | POST | /api/v1/integrations/bitrix/contacts/sync | trigger_bitrix_contacts_sync_api_v1_integrations_bitrix_contacts_sync_post |
 | GET | /api/v1/integrations/bitrix/contacts/sync/status | get_bitrix_contacts_sync_status_api_v1_integrations_bitrix_contacts_sync_status_get |
+| POST | /api/v1/integrations/bitrix/contacts/{contact_id}/consents | record_bitrix_contact_consent_api_v1_integrations_bitrix_contacts__contact_id__consents_post |
 | GET | /api/v1/integrations/bitrix/contacts/{crm_entity_id} | get_bitrix_crm_contact_card_api_v1_integrations_bitrix_contacts__crm_entity_id__get |
 | POST | /api/v1/integrations/bitrix/greetings/draft | create_bitrix_greeting_draft_api_v1_integrations_bitrix_greetings_draft_post |
+| POST | /api/v1/integrations/bitrix/greetings/send | send_bitrix_greeting_api_v1_integrations_bitrix_greetings_send_post |
 | GET | /api/v1/integrations/bitrix/greetings/upcoming | list_bitrix_upcoming_greetings_api_v1_integrations_bitrix_greetings_upcoming_get |
+| GET | /api/v1/integrations/bitrix/greetings/{greeting_id}/status | get_bitrix_greeting_delivery_status_api_v1_integrations_bitrix_greetings__greeting_id__status_get |
+| POST | /api/v1/integrations/bitrix/messaging/batch | send_bitrix_batch_messages_api_v1_integrations_bitrix_messaging_batch_post |
+| GET | /api/v1/integrations/bitrix/messaging/status/{batch_id} | get_bitrix_batch_messaging_status_api_v1_integrations_bitrix_messaging_status__batch_id__get |
+| GET | /api/v1/integrations/bitrix/messaging/unsubscribe | get_one_click_unsubscribe_api_v1_integrations_bitrix_messaging_unsubscribe_get |
+| POST | /api/v1/integrations/bitrix/messaging/unsubscribe | post_one_click_unsubscribe_api_v1_integrations_bitrix_messaging_unsubscribe_post |
 | GET | /api/v1/llm/llm-models/ | list_llm_models_api_v1_llm_llm_models__get |
 | POST | /api/v1/llm/llm-models/ | create_llm_model_api_v1_llm_llm_models__post |
 | DELETE | /api/v1/llm/llm-models/{model_id} | delete_llm_model_api_v1_llm_llm_models__model_id__delete |

@@ -46,6 +46,8 @@ router.include_router(outbox.router, dependencies=API_AUTH)
 router.include_router(communication.router, prefix="/communication", tags=["communication"], dependencies=API_AUTH)
 router.include_router(commands.router, dependencies=API_AUTH)
 router.include_router(bitrix.router, prefix="/integrations/bitrix", tags=["CRM"], dependencies=API_AUTH)
+# Public (no API_AUTH): signed one-click unsubscribe token authenticates the action without login (D16).
+router.include_router(bitrix.public_router, prefix="/integrations/bitrix", tags=["CRM"])
 router.include_router(user.router, prefix="/users", tags=["user"], dependencies=API_AUTH)
 router.include_router(roles.router, prefix="/users/roles", tags=["user"], dependencies=API_AUTH)
 router.include_router(auth.router, prefix="/auth", tags=["auth"])

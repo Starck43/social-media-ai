@@ -181,3 +181,71 @@ async def test_event_generated_while_merged_stays_closed_after_unmerge(personal_
     await unmerge(world, result["journal_id"])
     assert (await fire(world))["created"] == 0
     assert {task.id for task in await task_rows(world)} == original
+
+
+async def test_contact_set_null_is_visible_in_deleting_transaction_and_after_commit(personal_world):
+    """A concurrent snapshot sees both old rows, never a committed dangling reference."""
+    world = personal_world
+    with owner_scope(world):
+        contact = await Contact.objects.create(display_name="Synthetic MVCC erasure", birthday="03-04")
+    await configure(world)
+    assert (await fire(world))["created"] == 1
+    async with async_session_maker() as session:
+        run_id = await session.scalar(select(PlannerEventRun.id).where(PlannerEventRun.contact_id == contact.id))
+    async with async_session_maker() as deleting, async_session_maker() as observing:
+        async with deleting.begin():
+            await deleting.execute(
+                delete(Contact).where(Contact.id == contact.id, Contact.tenant_id == world.tenants[0].id)
+            )
+            inside = await deleting.scalar(select(PlannerEventRun.contact_id).where(PlannerEventRun.id == run_id))
+            assert inside is None
+            old_pair = (
+                await observing.execute(
+                    select(PlannerEventRun.contact_id, Contact.id)
+                    .outerjoin(Contact, Contact.id == PlannerEventRun.contact_id)
+                    .where(PlannerEventRun.id == run_id)
+                )
+            ).one()
+            assert old_pair == (contact.id, contact.id)
+        after = (
+            await observing.execute(
+                select(PlannerEventRun.contact_id, Contact.id)
+                .outerjoin(Contact, Contact.id == PlannerEventRun.contact_id)
+                .where(PlannerEventRun.id == run_id)
+            )
+        ).one()
+        assert after == (None, None)
+
+
+async def test_generation_and_merge_lock_order_avoids_deadlock(personal_world, monkeypatch):
+    """Generation holds tenant/contact locks before the merge can take either."""
+    world = personal_world
+    with owner_scope(world):
+        source = await Contact.objects.create(display_name="Synthetic source", birthday="03-04")
+        survivor = await Contact.objects.create(display_name="Synthetic survivor")
+    await configure(world)
+    listed, proceed = asyncio.Event(), asyncio.Event()
+    original = crm_greetings_service.list_upcoming_events
+
+    async def paused_list(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        listed.set()
+        await proceed.wait()
+        return result
+
+    monkeypatch.setattr(crm_greetings_service, "list_upcoming_events", paused_list)
+    running = asyncio.create_task(fire(world))
+    await asyncio.wait_for(listed.wait(), timeout=10)
+    merging = asyncio.create_task(merge(world, source.id, survivor.id))
+    try:
+        await asyncio.sleep(0.1)
+        assert not merging.done(), "merge should wait for the generator's tenant lock"
+        proceed.set()
+        result, merged = await asyncio.wait_for(asyncio.gather(running, merging), timeout=10)
+        assert result["created"] == 1 and merged["source_contact_id"] == source.id
+    finally:
+        proceed.set()
+        for task in (running, merging):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(running, merging, return_exceptions=True)

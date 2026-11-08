@@ -111,7 +111,7 @@ class EventPlanningService:
 
         from app.core.access_catalog import workspace_grants
         from app.core.permissions import permission_scope
-        from app.models import Tenant, TenantUser, User, WorkspaceRole
+        from app.models import Contact, Tenant, TenantUser, User, WorkspaceRole
         from app.models.planner.events import PlannerEventRun, PlannerEventSettings
         from app.services.crm.greetings import crm_greetings_service
         from app.services.planner.contracts import TaskCreate
@@ -155,6 +155,12 @@ class EventPlanningService:
         ):
             return {"status": "owner_unavailable", "created": 0}
 
+        # Merge and unmerge take the tenant lock before sorted contact locks.
+        # Lock before listing, so the event snapshot cannot race a merge or
+        # erasure. This locks the workspace contacts until the caller commits.
+        await session.execute(
+            select(Contact.id).where(Contact.tenant_id == tenant).order_by(Contact.id.asc()).with_for_update()
+        )
         timezone = workspace.timezone
         with permission_scope(user, is_owner=(role == "owner"), member_grants=grants):
             events = await crm_greetings_service.list_upcoming_events(

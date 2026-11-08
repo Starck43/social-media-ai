@@ -43,6 +43,9 @@ class FakeSession:
         assert self.values, "unexpected query"
         return self.values.pop(0)
 
+    async def execute(self, query):
+        self.queries.append(query)
+
     def add(self, value):
         self.added.append(value)
 
@@ -104,7 +107,8 @@ async def test_run_locks_authority_creates_parent_and_steps_once(monkeypatch):
     assert gift.due_date == date(2027, 12, 27) and greeting.due_date == date(2028, 1, 2)
     assert all(call.kwargs["session"] is session for call in create.await_args_list)
     assert fetch.await_args.kwargs["emit_notifications"] is False
-    assert all(query._for_update_arg is not None for query in session.queries[1:6])
+    assert all(query._for_update_arg is not None for query in session.queries[1:7])
+    assert "ORDER BY" in str(session.queries[6])
 
 
 async def test_preexisting_ledger_skips_event(monkeypatch):

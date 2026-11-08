@@ -33,6 +33,7 @@ from app.models.communications.message import ContactChannelStat, MessageThread,
 from app.models.contacts.core import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
 from app.models.crm.entity import CrmEntity
 from app.models.managers.contact_manager import ContactUnavailable
+from app.models.tenancy import Tenant
 from app.types import ActionType
 
 logger = logging.getLogger("app.audit.comms")
@@ -424,6 +425,10 @@ async def merge_contacts(
         raise ContactMergeError("Cannot merge a contact into itself")
     if not isinstance(reason, str) or not reason.strip():
         raise ContactMergeError("Merge reason is required")
+
+    # Planner writes lock the tenant before contacts. Match that order so the
+    # merge journal's tenant FK cannot deadlock with event generation.
+    await session.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
 
     # Lock in ascending ID order to serialize concurrent merges on the same pair
     locked_by_id: dict[int, Contact] = {}
@@ -834,6 +839,9 @@ async def unmerge_contacts(
     tenant_id = _require_reconcile_permission(ActionType.UPDATE)
     if type(journal_id) is not int or journal_id <= 0:
         raise ContactMergeError("journal_id must be a positive integer")
+
+    # Match generation and merge: tenant first, then contact IDs ascending.
+    await session.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
 
     journal = (
         await session.execute(

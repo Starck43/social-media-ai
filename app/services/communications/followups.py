@@ -56,30 +56,42 @@ def is_in_quiet_hours(
     dt: datetime,
     start_hour: int = DEFAULT_QUIET_START,
     end_hour: int = DEFAULT_QUIET_END,
+    *,
+    start_minute: int = 0,
+    end_minute: int = 0,
 ) -> bool:
-    """Check if a datetime falls within the quiet hours window (e.g., 21:00–08:00)."""
-    h = dt.hour
-    if start_hour > end_hour:  # Crosses midnight (e.g., 21 -> 8)
-        return h >= start_hour or h < end_hour
-    return start_hour <= h < end_hour
+    """Check local wall time against the one shared quiet-hours window."""
+    current = dt.hour * 60 + dt.minute
+    start, end = start_hour * 60 + start_minute, end_hour * 60 + end_minute
+    if start > end:
+        return current >= start or current < end
+    return start <= current < end
 
 
 def adjust_for_quiet_hours(
     dt: datetime,
     start_hour: int = DEFAULT_QUIET_START,
     end_hour: int = DEFAULT_QUIET_END,
+    *,
+    start_minute: int = 0,
+    end_minute: int = 0,
 ) -> datetime:
-    """If dt falls into quiet hours, roll forward to the end of quiet hours (08:00)."""
-    if not is_in_quiet_hours(dt, start_hour=start_hour, end_hour=end_hour):
+    """Defer local wall time to the window's end; old hour-only calls stay valid."""
+    if not is_in_quiet_hours(
+        dt, start_hour=start_hour, end_hour=end_hour, start_minute=start_minute, end_minute=end_minute
+    ):
         return dt
 
     # If hour >= start_hour (e.g., 22:00), rolls forward to next day at end_hour
     # If hour < end_hour (e.g., 04:00), rolls forward to same day at end_hour
-    if dt.hour >= start_hour:
+    if (
+        start_hour * 60 + start_minute > end_hour * 60 + end_minute
+        and dt.hour * 60 + dt.minute >= start_hour * 60 + start_minute
+    ):
         next_day = dt + timedelta(days=1)
-        return next_day.replace(hour=end_hour, minute=0, second=0, microsecond=0)
+        return next_day.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
     else:
-        return dt.replace(hour=end_hour, minute=0, second=0, microsecond=0)
+        return dt.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
 
 
 def create_followup_item(

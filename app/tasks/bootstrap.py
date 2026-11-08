@@ -26,6 +26,7 @@ DEFAULT_TASKS = {
     "hourly-learn": ("30 * * * *", "learn", {"min_messages": 8}),
     "weekly-reflect": ("0 5 * * 1", "reflect", {}),
     "comms-outbox-dispatch": ("* * * * *", "comms.outbox.dispatch", {}),
+    "planner-reminders-dispatch": ("* * * * *", "planner.reminders.dispatch", {}),
     "comms-email-sync": ("*/15 * * * *", "comms.email.sync", {}),
     "planner-events-daily": ("0 6 * * *", "planner.events.daily", {}),
 }

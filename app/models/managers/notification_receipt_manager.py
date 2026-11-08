@@ -67,11 +67,14 @@ class NotificationReceiptManager(BaseManager):
         severity="info",
         dedup_key=None,
         expires_at=None,
+        session=None,
     ):
         """Trusted producer: explicit active recipients in the event's origin workspace.
 
         Empty recipients keep an archive event, never broadcast. Event + receipts
-        are committed together. No automatic migration of historical shared flags.
+        are committed together. An explicit session lets a trusted producer
+        include that publication in its own transaction. No automatic migration
+        of historical shared flags.
         """
         from app.models import Notification, Tenant, TenantUser, User
 
@@ -87,7 +90,7 @@ class NotificationReceiptManager(BaseManager):
             raise ValueError("Invalid notification lifecycle")
         if expires_at is not None and (expires_at.tzinfo is None or expires_at <= datetime.now(timezone.utc)):
             raise ValueError("Notification expiry must be in the future")
-        async with self._get_owned_session() as session:
+        async with self._get_owned_session(session) as session:
             if not await session.scalar(select(Tenant.id).where(Tenant.id == tenant_id, Tenant.is_active.is_(True))):
                 raise PermissionError("Inactive notification origin")
             allowed = (

@@ -11,6 +11,13 @@ from app.core.permissions import get_current_user, has_permission
 from app.integrations.bitrix24.client import Bitrix24Error
 from app.services.planner.contracts import TaskCreate, TaskReschedule, TaskUpdate, TaskVersion
 from app.services.planner.events import EventPlanningUnavailable, event_planning_service
+from app.services.planner.reminder_contracts import (
+    ReminderCreate,
+    ReminderReschedule,
+    ReminderSnooze,
+    ReminderVersion,
+)
+from app.services.planner.reminders import reminder_service
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable, planner_service
 from app.types import ActionType
 from app.web.deps import ensure_csrf, render
@@ -18,6 +25,22 @@ from app.web.deps import ensure_csrf, render
 router = APIRouter()
 STATUS_LABELS = {"todo": "К выполнению", "in_progress": "В работе", "done": "Готово", "cancelled": "Отменено"}
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий", "critical": "Критический"}
+REMINDER_ERROR_LABELS = {
+    "recipient_unavailable": "Получатель или его доступ к задаче недоступен",
+    "task_closed": "Задача закрыта; напоминание не отправлено",
+    "quiet_hours": "Перенесено до окончания тихих часов",
+    "tasks_disabled": "В настройках отключены уведомления о задачах",
+    "invalid_preferences": "Не удалось прочитать настройки уведомлений",
+}
+DELIVERY_ERROR_LABELS = {
+    "outcome_unconfirmed": "Результат отправки не подтверждён; повторной отправки не будет",
+    "recipient_or_task_unavailable": "Получатель или его доступ к задаче недоступен",
+    "channel_not_implemented": "Канал пока недоступен; напоминание сохранено во входящих",
+    "personal_telegram_unavailable": "Личный Telegram не подключён",
+    "quiet_hours": "Отправка перенесена до окончания тихих часов",
+    "tasks_disabled": "В настройках отключены уведомления о задачах",
+    "invalid_preferences": "Не удалось прочитать настройки уведомлений",
+}
 
 
 async def invoke(operation):
@@ -49,6 +72,7 @@ async def planner_page(
         greeting_ids = await invoke(
             event_planning_service.greeting_task_ids([item.id for item in page["items"]], session=session)
         )
+    reminders = await invoke(reminder_service.list(task_id)) if task_id is not None and can_remind(actor) else []
     return render(
         request,
         "web/planner.html",
@@ -59,12 +83,20 @@ async def planner_page(
         priority_labels=PRIORITY_LABELS,
         can_create=has_permission(actor, "plannertask", ActionType.CREATE),
         can_update=has_permission(actor, "plannertask", ActionType.UPDATE),
+        can_remind=can_remind(actor),
+        reminders=reminders,
+        reminder_error_labels=REMINDER_ERROR_LABELS,
+        delivery_error_labels=DELIVERY_ERROR_LABELS,
         can_delete=has_permission(actor, "plannertask", ActionType.DELETE),
         can_draft_greeting=has_permission(actor, "source", ActionType.CREATE),
         event_settings=event_settings,
         greeting_ids=greeting_ids,
         **page,
     )
+
+
+def can_remind(actor):
+    return has_permission(actor, "plannertask", ActionType.UPDATE)
 
 
 async def form_values(request):
@@ -84,7 +116,7 @@ async def form_values(request):
                 values[key] = int(raw)
             else:
                 raise HTTPException(422, "Invalid identifier")
-    for key in ("due_at", "due_date", "recurrence"):
+    for key in ("due_at", "due_date", "recurrence", "remind_at"):
         if values.get(key) == "":
             values[key] = None
     if "tags" in values:
@@ -147,3 +179,41 @@ async def change_task(
         raise HTTPException(422, "Invalid planner fields") from None
     await invoke(work)
     return RedirectResponse("/app/planner", status_code=303)
+
+
+@router.post("/planner-reminders/{task_id}/create")
+async def create_reminder(request: Request, task_id: int = Path(gt=0)):
+    actor = get_current_user()
+    if not can_remind(actor):
+        raise HTTPException(403, "Planner access denied")
+    values = await form_values(request)
+    try:
+        data = ReminderCreate.model_validate(values)
+    except ValidationError:
+        raise HTTPException(422, "Invalid reminder fields") from None
+    await invoke(reminder_service.create(task_id, data))
+    return RedirectResponse(f"/app/planner/{task_id}/edit#reminders", status_code=303)
+
+
+@router.post("/planner-reminders/{reminder_id}/{operation}")
+async def change_reminder(
+    request: Request,
+    reminder_id: int = Path(gt=0),
+    operation: Literal["snooze", "reschedule", "cancel"] = "cancel",
+):
+    actor = get_current_user()
+    if not can_remind(actor):
+        raise HTTPException(403, "Planner access denied")
+    values = await form_values(request)
+    try:
+        if operation == "snooze":
+            work = reminder_service.snooze(reminder_id, ReminderSnooze.model_validate(values))
+        elif operation == "reschedule":
+            work = reminder_service.reschedule(reminder_id, ReminderReschedule.model_validate(values))
+        else:
+            data = ReminderVersion.model_validate(values)
+            work = reminder_service.cancel(reminder_id, data.expected_version)
+    except ValidationError:
+        raise HTTPException(422, "Invalid reminder fields") from None
+    result = await invoke(work)
+    return RedirectResponse(f"/app/planner/{result.task_id}/edit#reminders", status_code=303)

@@ -80,6 +80,36 @@
             <button class="ui-control min-h-[44px]" type="submit">Перенести эту и будущие задачи</button>
         </form>
         <a class="ui-control inline-flex min-h-[44px]" href="/app/planner">Вернуться к списку</a>
+        <section id="reminders" class="space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4" aria-labelledby="reminders-heading">
+            <h3 id="reminders-heading" class="font-semibold">Напоминания для вас</h3>
+            <p class="ui-muted text-sm">Напоминания доставляются через общий центр уведомлений. Недоступный канал сохраняет напоминание и показывает состояние доставки.</p>
+            {% if can_remind %}
+            <form method="post" action="/app/planner-reminders/{{ editing.id }}/create" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <label>Когда<select class="ui-control w-full mt-2" name="preset" required><option value="day">За 1 день</option><option value="week">За 1 неделю</option><option value="month">За 1 месяц</option><option value="custom">Своя дата и время</option></select></label>
+                <label>Своя дата и время · ISO 8601<input class="ui-control w-full mt-2" name="remind_at" placeholder="2026-11-10T09:00:00+03:00"></label>
+                <label>Канал<select class="ui-control w-full mt-2" name="channel"><option value="inbox">Центр уведомлений</option><option value="telegram">Личный Telegram · при подключении</option><option value="vk">VK · пока недоступен</option><option value="email">Email · пока недоступен</option><option value="max">MAX · пока недоступен</option></select></label>
+                <div><button class="ui-control min-h-[44px] mt-6" type="submit">Добавить напоминание</button></div>
+            </form>
+            {% endif %}
+            <ul class="space-y-3">
+                {% for reminder in reminders %}
+                <li class="border-t border-slate-200 dark:border-slate-700 pt-3 space-y-2">
+                    <p><strong>{{ {'day': 'За день', 'week': 'За неделю', 'month': 'За месяц', 'custom': 'Своя дата'}[reminder.preset] }}</strong> · {{ reminder.channel }} · {{ {'pending': 'ожидает срока', 'deferred': 'доставка отложена', 'delivered': 'входящее уведомление создано', 'cancelled': 'отменено'}[reminder.state] }} · <time datetime="{{ reminder.remind_at.isoformat() }}">{{ reminder.remind_at|human_dt }}</time>{% if reminder.late %} · с опозданием{% endif %}</p>
+                    {% if reminder.delivery_state %}<p class="ui-muted">Внешняя доставка: {{ {'pending': 'ожидает отправки', 'sending': 'отправляется', 'sent': 'отправлено', 'blocked': 'заблокировано', 'unknown': 'результат не подтверждён'}[reminder.delivery_state] }}{% if reminder.delivery_error_code %} · {{ delivery_error_labels.get(reminder.delivery_error_code, 'Доставка недоступна') }}{% endif %}</p>{% endif %}
+                    {% if reminder.snoozed_until %}<p class="ui-muted">Отложено до {{ reminder.snoozed_until|human_dt }}</p>{% endif %}
+                    {% if reminder.last_error %}<p class="text-amber-700 dark:text-amber-300" role="status">Напоминание: {{ reminder_error_labels.get(reminder.last_error, 'Не удалось запланировать доставку') }}</p>{% endif %}
+                    {% if can_remind and reminder.state in ['pending', 'deferred', 'delivered'] %}
+                    <div class="flex flex-wrap gap-2">
+                        <form method="post" action="/app/planner-reminders/{{ reminder.id }}/snooze" class="flex gap-2"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ reminder.version }}"><label class="sr-only" for="snooze-{{ reminder.id }}">Отложить</label><select id="snooze-{{ reminder.id }}" class="ui-control" name="preset"><option value="hour">На 1 час</option><option value="day">На 1 день</option><option value="week">На 1 неделю</option></select><button class="ui-control min-h-[44px]" type="submit">Отложить</button></form>
+                        <form method="post" action="/app/planner-reminders/{{ reminder.id }}/reschedule" class="flex gap-2"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ reminder.version }}"><label class="sr-only" for="reschedule-{{ reminder.id }}">Перенести напоминание</label><input id="reschedule-{{ reminder.id }}" class="ui-control" name="remind_at" required placeholder="2026-11-10T09:00:00+03:00"><button class="ui-control min-h-[44px]" type="submit">Перенести</button></form>
+                        <form method="post" action="/app/planner-reminders/{{ reminder.id }}/cancel"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ reminder.version }}"><button class="ui-control min-h-[44px]" type="submit">Отменить</button></form>
+                    </div>
+                    {% endif %}
+                </li>
+                {% else %}<li class="ui-muted" role="status">Напоминаний пока нет.</li>{% endfor %}
+            </ul>
+        </section>
     </section>
     {% elif can_create %}
     <section class="ui-card space-y-4" aria-labelledby="create-heading">

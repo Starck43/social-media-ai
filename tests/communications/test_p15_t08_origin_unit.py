@@ -140,3 +140,53 @@ def test_reply_header_approval_value_changes_with_exact_reference():
     one = verified_email_headers(inbound, message_id, ["<one@example.invalid>"])
     two = verified_email_headers(inbound, message_id, ["<two@example.invalid>"])
     assert digest({"reply": one.approval_value()}) != digest({"reply": two.approval_value()})
+
+
+def evidence_rows():
+    thread, inbound, identity = rows()
+    message = NS(
+        id=19, tenant_id=1, contact_id=2, purpose="transactional", reply_thread_id=11, reply_inbound_message_id=12
+    )
+    target = NS(tenant_id=1, message_id=19, channel="email", connection_id=3, identity_id=13)
+    return message, target, thread, inbound, identity
+
+
+def test_d15_candidate_requires_same_inbound_route():
+    from app.services.communications.reply import reply_exemption_candidate
+
+    message, target, thread, inbound, identity = evidence_rows()
+    assert reply_exemption_candidate(message, target, thread, inbound, [identity]) is True
+
+
+@pytest.mark.parametrize(
+    "obj,field,value",
+    [
+        ("message", "purpose", "marketing"),
+        ("message", "purpose", "greeting"),
+        ("message", "tenant_id", 9),
+        ("message", "contact_id", 9),
+        ("message", "reply_thread_id", 9),
+        ("message", "reply_inbound_message_id", 9),
+        ("target", "tenant_id", 9),
+        ("target", "message_id", 9),
+        ("target", "channel", "telegram"),
+        ("target", "connection_id", 9),
+        ("target", "identity_id", 9),
+        ("inbound", "direction", "outbound"),
+        ("identity", "verified", False),
+    ],
+)
+def test_d15_candidate_rejects_changed_or_nonreply_evidence(obj, field, value):
+    from app.services.communications.reply import reply_exemption_candidate
+
+    message, target, thread, inbound, identity = evidence_rows()
+    setattr({"message": message, "target": target, "inbound": inbound, "identity": identity}[obj], field, value)
+    assert reply_exemption_candidate(message, target, thread, inbound, [identity]) is False
+
+
+def test_d15_missing_binding_does_not_exempt_existing_outbox_message():
+    from app.services.communications.reply import reply_exemption_candidate
+
+    message, target, thread, inbound, identity = evidence_rows()
+    del message.reply_thread_id
+    assert reply_exemption_candidate(message, target, thread, inbound, [identity]) is False

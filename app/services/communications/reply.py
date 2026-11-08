@@ -128,3 +128,29 @@ def verified_email_headers(inbound, provider_message_id, provider_references) ->
     if len(" ".join(references)) > 998:
         raise ReplyUnavailable("reply_headers_unavailable")
     return ReplyHeaders(provider_message_id, tuple(references))
+
+
+def reply_exemption_candidate(message, target, thread, inbound, identities: Iterable) -> bool:
+    """Check structural D15 evidence only; never an authorization or approval.
+
+    Rows must be freshly loaded and locked by the trusted outbox transaction.
+    This fail-closed predicate is insufficient on its own: caller must verify
+    current permissions and the approval binding of this exact source and route,
+    both at scheduling and immediately before provider I/O. It does not permit
+    a switched destination without independent matching inbound evidence.
+    """
+    try:
+        origin = select_email_origin(thread, inbound, identities)
+        return bool(
+            message.purpose == "transactional"
+            and message.tenant_id == thread.tenant_id == target.tenant_id
+            and message.contact_id == origin.contact_id
+            and getattr(message, "reply_thread_id", None) == origin.thread_id
+            and getattr(message, "reply_inbound_message_id", None) == origin.inbound_message_id
+            and target.message_id == message.id
+            and target.channel == origin.channel
+            and target.connection_id == origin.connection_id
+            and target.identity_id == origin.identity_id
+        )
+    except (ReplyUnavailable, AttributeError):
+        return False

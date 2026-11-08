@@ -17,8 +17,12 @@ every source; one narrow question, then continue on what does not depend on it.
 `git fetch --prune origin` before reading and again before publishing.
 `origin/dev` is the base and the truth — not local `dev`, not `HEAD`, not an
 earlier fetch. Read as `git show origin/dev:<path>` until your branch exists.
-Push only your own task branch; never write to `dev` or the owner's checkout.
-State the synchronized base SHA in the first commit and the PR body.
+Two `origin` writes are yours: the claim commit (registry paths only —
+`ROADMAP.md`, `docs/tasks/<id>.md`, phase link — on current `origin/dev`, before
+any solution edit, fast-forward only, never force) and your own task branch.
+Solution publication and merge stay with the owner. Never touch another row, the
+owner's checkout, or their local branches. State the base SHA in the first commit
+and the PR body.
 
 ## Read, in order
 

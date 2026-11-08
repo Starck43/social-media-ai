@@ -94,3 +94,160 @@ async def test_concurrent_restore_only_one_wins(version_world):
         assert sum(isinstance(item, DocumentConflict) for item in results) == 1
         assert sum(not isinstance(item, Exception) for item in results) == 1
         assert (await document_service.get(doc.id, boundary="local_only")).version == 3
+
+
+def decision(doc, target):
+    return {
+        **expected(doc),
+        "expected_hash": doc.content_hash,
+        "expected_status": doc.status,
+        "target": target,
+    }
+
+
+async def test_restore_preserves_approved_history_and_invalidates_current(version_world):
+    with scoped(version_world):
+        doc = await create("original")
+        changed = await document_service.update(
+            doc.id, {**expected(doc), "body_text": "approved body"}, boundary="local_only"
+        )
+        pending = await document_service.transition(doc.id, decision(changed, "in_review"), boundary="local_only")
+        approved = await document_service.transition(doc.id, decision(pending, "approved"), boundary="local_only")
+        restored = await version_service.restore(
+            doc.id, doc.current_revision_id, expected(approved), boundary="local_only"
+        )
+        assert restored.version == 3 and restored.body_text == "original"
+        assert restored.approval_invalidated and restored.approved_by is None
+        async with async_session_maker() as session:
+            revisions = (
+                await session.scalars(
+                    select(DocumentRevision)
+                    .where(DocumentRevision.document_id == doc.id)
+                    .order_by(DocumentRevision.version)
+                )
+            ).all()
+            assert [(r.version, r.body_text) for r in revisions] == [
+                (1, "original"),
+                (2, "approved body"),
+                (3, "original"),
+            ]
+            assert revisions[1].status == "approved" and revisions[1].approved_by is not None
+            assert revisions[0].id == doc.current_revision_id and revisions[1].id == approved.current_revision_id
+
+
+async def test_restore_racing_edit_has_one_winner(version_world):
+    with scoped(version_world):
+        doc = await create("first")
+        second = await document_service.update(doc.id, {**expected(doc), "body_text": "second"}, boundary="local_only")
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                version_service.restore(doc.id, doc.current_revision_id, expected(second), boundary="local_only"),
+                document_service.update(doc.id, {**expected(second), "body_text": "third"}, boundary="local_only"),
+                return_exceptions=True,
+            ),
+            timeout=15,
+        )
+        assert sum(isinstance(r, DocumentConflict) for r in results) == 1
+        assert sum(not isinstance(r, Exception) for r in results) == 1
+        assert (await document_service.get(doc.id, boundary="local_only")).version == 3
+
+
+async def test_membership_revocation_serializes_before_restore(version_world):
+    from sqlalchemy import update
+
+    from app.models import TenantUser
+
+    with scoped(version_world):
+        doc = await create("first")
+        second = await document_service.update(doc.id, {**expected(doc), "body_text": "second"}, boundary="local_only")
+        member_id = version_world.memberships[0].id
+        async with async_session_maker() as session:
+            transaction = await session.begin()
+            await session.execute(update(TenantUser).where(TenantUser.id == member_id).values(is_active=False))
+            task = asyncio.create_task(
+                version_service.restore(doc.id, doc.current_revision_id, expected(second), boundary="local_only")
+            )
+            try:
+                with pytest.raises(asyncio.TimeoutError):
+                    await asyncio.wait_for(asyncio.shield(task), timeout=0.3)
+                await transaction.commit()
+                with pytest.raises(PermissionError):
+                    await asyncio.wait_for(task, timeout=10)
+            finally:
+                if transaction.is_active:
+                    await transaction.rollback()
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                async with async_session_maker() as restore, restore.begin():
+                    await restore.execute(update(TenantUser).where(TenantUser.id == member_id).values(is_active=True))
+        assert (await document_service.get(doc.id, boundary="local_only")).version == 2
+
+
+async def test_boundary_denies_cloud_history_and_restoration(version_world):
+    with scoped(version_world):
+        doc = await document_service.create(
+            {"title": "synthetic cloud", "document_type": "memo", "body_text": "original", "data_boundary": "cloud"}
+        )
+        with pytest.raises(DocumentUnavailable):
+            await version_service.list(doc.id, boundary="cloud")
+        with pytest.raises(DocumentUnavailable):
+            await version_service.diff(doc.id, doc.current_revision_id, doc.current_revision_id, boundary="cloud")
+        with pytest.raises(DocumentUnavailable):
+            await version_service.restore(doc.id, doc.current_revision_id, expected(doc), boundary="local_only")
+        assert (await document_service.get(doc.id, boundary="cloud")).version == 1
+
+
+async def test_http_history_access_and_web_csrf_with_real_database(version_world):
+    """Exercise real dependencies/services with injected identity, not production auth middleware."""
+    from fastapi import FastAPI, Request
+    from httpx import ASGITransport, AsyncClient
+
+    from app.admin.csrf import CSRFTokenManager
+    from app.api.v1.endpoints.documents import router as api_router
+    from app.core.tenant_context import current_tenant_id
+    from app.services.user.auth import get_authenticated_user
+    from app.web.documents import router as web_router
+
+    app = FastAPI()
+    app.state.csrf_manager = CSRFTokenManager("synthetic-test-secret")
+    app.include_router(api_router, prefix="/api/v1")
+    app.include_router(web_router, prefix="/app")
+    actor = version_world.users[0]
+
+    async def identity():
+        return actor
+
+    app.dependency_overrides[get_authenticated_user] = identity
+
+    @app.middleware("http")
+    async def inject_request_state(request: Request, call_next):
+        request.state.api_user = actor
+        request.state.tenant_id = current_tenant_id()
+        return await call_next(request)
+
+    with scoped(version_world):
+        doc = await create("first")
+        second = await document_service.update(doc.id, {**expected(doc), "body_text": "second"}, boundary="local_only")
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            url = f"/api/v1/documents/{doc.id}/versions"
+            response = await client.get(url, params={"boundary": "local_only"})
+            assert response.status_code == 200 and len(response.json()["items"]) == 2
+            assert (await client.get(url, params={"boundary": "cloud"})).status_code == 404
+            form = {
+                "boundary": "local_only",
+                "expected_revision_id": str(second.current_revision_id),
+                "expected_updated_at": second.updated_at.isoformat(),
+            }
+            restore_url = f"/app/documents/manage/{doc.id}/restore/{doc.current_revision_id}"
+            assert (await client.post(restore_url, data={**form, "_csrf": "invalid"})).status_code == 403
+            assert (await document_service.get(doc.id, boundary="local_only")).version == 2
+            response = await client.post(restore_url, data={**form, "_csrf": app.state.csrf_manager.generate_token()})
+            assert response.status_code == 303
+            assert (await document_service.get(doc.id, boundary="local_only")).version == 3
+        with scoped(version_world, 1):
+            # Keep the injected identity identical: the foreign owner is not this actor.
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.get(url, params={"boundary": "local_only"})
+                assert response.status_code in (403, 404)
+                assert "first" not in response.text and "second" not in response.text

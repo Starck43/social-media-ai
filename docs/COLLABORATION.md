@@ -254,6 +254,14 @@ and evidence; all instructions, feedback and questions go through PR comments.
 One custodian applies those status comments to fresh ROADMAP/task cards; remote
 branches do not publish competing registry copies.
 
+An assignment issue is the lane's channel, not its state: status, owner and
+evidence live in ROADMAP and the card. The auditor who accepts the task closes
+that issue during the same closeout, citing the merge commit and the audit link;
+an executor never closes it, because its lane ends at merge. A paused or deferred
+task keeps its issue open with the owner decision and the resume point recorded
+there. Closing an issue without an accepted result, or leaving an accepted one
+open, is a registry defect the next auditor fixes like any other.
+
 For a task-ID assignment, the remote agent resolves its repository from the
 checkout/card and creates or locates the PR. Ask the owner for a repository or PR
 link only when project context cannot resolve it; never require the owner to find

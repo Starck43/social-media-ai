@@ -27,7 +27,9 @@ Key invariants:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -475,6 +477,9 @@ async def _maybe_await(res: Any) -> Any:
     return res
 
 
+PerSourceCollectorFn = Callable[[int, ChildScope, DelegationCaps], Awaitable[Mapping[str, Any]] | Mapping[str, Any]]
+
+
 async def execute_delegated_research(
     *,
     task_id: int,
@@ -484,7 +489,8 @@ async def execute_delegated_research(
     origin: OriginScope,
     caps: DelegationCaps | None = None,
     steps: tuple[str, ...] = STEP_ORDER,
-    collector_fn: Callable[[ChildScope, DelegationCaps], Awaitable[dict[str, Any]] | dict[str, Any]],
+    collector_fn: Callable[[ChildScope, DelegationCaps], Awaitable[dict[str, Any]] | dict[str, Any]] | None = None,
+    per_source_collector_fn: PerSourceCollectorFn | None = None,
     analyzer_fn: Callable[[ChildScope, dict[str, Any], DelegationCaps], Awaitable[dict[str, Any]] | dict[str, Any]],
     synthesizer_fn: Callable[
         [ChildScope, dict[str, Any], dict[str, Any], DelegationCaps], Awaitable[dict[str, Any]] | dict[str, Any]
@@ -508,6 +514,8 @@ async def execute_delegated_research(
         raise DelegationAdmissionError("delegation_job_identity_invalid")
     if not isinstance(goal, str) or not goal.strip():
         raise DelegationAdmissionError("delegation_goal_required")
+    if collector_fn is None and per_source_collector_fn is None:
+        raise DelegationAdmissionError("delegation_collector_required")
 
     origin.validate()
     effective_caps = caps or DelegationCaps()
@@ -691,16 +699,76 @@ async def execute_delegated_research(
         ),
         caps=effective_caps,
     )
+    collect_semaphore = asyncio.Semaphore(effective_caps.max_concurrency)
 
     async def _do_collect() -> dict[str, Any]:
-        raw = await _maybe_await(collector_fn(collector_scope, effective_caps))
+        if per_source_collector_fn is not None:
+            if len(collector_scope.source_ids) > effective_caps.max_fan_out:
+                raise DelegationCapExceededError("delegation_collect_fan_out_exceeded")
+            in_flight = 0
+            peak_in_flight = 0
+
+            async def _collect_one_source(src_id: int) -> Mapping[str, Any]:
+                nonlocal in_flight, peak_in_flight
+                async with collect_semaphore:
+                    in_flight += 1
+                    if in_flight > peak_in_flight:
+                        peak_in_flight = in_flight
+                    if in_flight > effective_caps.max_concurrency:
+                        in_flight -= 1
+                        raise DelegationCapExceededError("delegation_concurrency_exceeded")
+                    try:
+                        out = await _maybe_await(per_source_collector_fn(src_id, collector_scope, effective_caps))
+                        return out if isinstance(out, Mapping) else {}
+                    finally:
+                        in_flight -= 1
+
+            source_results = await asyncio.gather(*(_collect_one_source(sid) for sid in collector_scope.source_ids))
+            agg_items: list[Any] = []
+            agg_per_source: list[dict[str, Any]] = []
+            agg_errors = 0
+            agg_rate_limited = 0
+            agg_tokens = 0
+            agg_cost = 0.0
+            for sid, sres in zip(collector_scope.source_ids, source_results):
+                outcome_str = str(sres.get("outcome") or "collected")
+                agg_per_source.append({"source_id": sid, "outcome": outcome_str})
+                if isinstance(sres.get("items"), list):
+                    agg_items.extend(sres["items"][: effective_caps.max_items_per_source])
+                agg_errors += int(sres.get("error") or (1 if outcome_str == "error" else 0))
+                agg_rate_limited += int(sres.get("rate_limited") or (1 if outcome_str == "rate_limited" else 0))
+                agg_tokens += int(sres.get("tokens_used") or 0)
+                agg_cost += float(sres.get("cost_usd") or 0.0)
+            raw: Mapping[str, Any] = {
+                "items": agg_items,
+                "per_source": agg_per_source,
+                "concurrent_workers": max(1, peak_in_flight),
+                "error": agg_errors,
+                "rate_limited": agg_rate_limited,
+                "tokens_used": agg_tokens,
+                "cost_usd": agg_cost,
+            }
+        else:
+            assert collector_fn is not None
+            async with collect_semaphore:
+                raw = await _maybe_await(collector_fn(collector_scope, effective_caps))
+
         raw_items = raw.get("items") if isinstance(raw.get("items"), list) else []
         per_source = raw.get("per_source") if isinstance(raw.get("per_source"), list) else []
         if len(per_source) > effective_caps.max_fan_out:
             raise DelegationCapExceededError("delegation_collect_fan_out_exceeded")
-        concurrent_workers = int(raw.get("concurrent_workers") or 1)
-        if concurrent_workers > effective_caps.max_concurrency:
-            raise DelegationCapExceededError("delegation_concurrency_exceeded")
+        if "concurrent_workers" in raw and raw.get("concurrent_workers") is not None:
+            raw_workers = raw.get("concurrent_workers")
+            if (
+                isinstance(raw_workers, bool)
+                or not isinstance(raw_workers, (int, float))
+                or math.isnan(raw_workers)
+                or math.isinf(raw_workers)
+                or int(raw_workers) != raw_workers
+                or int(raw_workers) < 1
+                or int(raw_workers) > effective_caps.max_concurrency
+            ):
+                raise DelegationCapExceededError("delegation_concurrency_exceeded")
 
         sanitized_items: list[dict[str, Any]] = []
         injection_count = 0
@@ -1020,7 +1088,7 @@ def project_delegated_run_for_workspace(
         "total_steps": len(STEP_ORDER),
         "steps": projected_steps,
         "can_cancel": bool(can_cancel and is_active),
-        "cancel_url": f"/chat/workspace/tasks/{task_id}/cancel" if (can_cancel and is_active) else None,
+        "cancel_url": f"/app/chat/workspace/tasks/{task_id}/cancel" if (can_cancel and is_active) else None,
         "task_url": f"/app/tasks/{task_id}",
     }
 

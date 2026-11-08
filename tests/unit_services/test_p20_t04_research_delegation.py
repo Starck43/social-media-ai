@@ -369,6 +369,20 @@ def test_tenant_isolation_and_child_privilege_escalation_refused():
             ),
         )
 
+    # 8. Step/role mismatch refused when explicit role does not match step
+    with pytest.raises(DelegationAdmissionError, match="delegation_step_role_mismatch"):
+        narrow_child_scope(
+            origin,
+            ChildScopeRequest(
+                role="synthesizer",
+                step="collect",
+                actor_id=10,
+                tenant_id=7,
+                source_ids=(101,),
+                data_boundary="company",
+            ),
+        )
+
 
 @pytest.mark.asyncio
 async def test_hostile_source_prompt_injection_neutralized_and_cannot_grant_tools():
@@ -445,6 +459,64 @@ async def test_budget_exhaustion_stops_execution_before_overspend():
             },
             synthesizer_fn=lambda *_a: {"summary": "unreachable"},
         )
+
+
+@pytest.mark.asyncio
+async def test_bounded_source_concurrency_limiter_and_concurrency_cap_validation():
+    """Verify asyncio.Semaphore throttles per-source fan-out to max_concurrency and rejects invalid concurrent_workers."""
+    import asyncio
+
+    origin = _make_origin(source_ids=(101, 102, 103))
+    caps = DelegationCaps(max_fan_out=3, max_concurrency=2)
+    in_flight = 0
+    peak_in_flight = 0
+
+    async def per_source_collector(source_id: int, _scope: ChildScope, _caps: DelegationCaps) -> dict[str, Any]:
+        nonlocal in_flight, peak_in_flight
+        in_flight += 1
+        peak_in_flight = max(peak_in_flight, in_flight)
+        try:
+            await asyncio.sleep(0.01)
+            return {
+                "outcome": "collected",
+                "items": [{"source_id": source_id, "external_id": f"p_{source_id}", "text": f"Пост {source_id}"}],
+                "tokens_used": 100,
+                "cost_usd": 0.001,
+            }
+        finally:
+            in_flight -= 1
+
+    outcome = await execute_delegated_research(
+        task_id=42,
+        job_id=507,
+        attempt=1,
+        goal="Проверка семафора параллельного сбора",
+        origin=origin,
+        caps=caps,
+        per_source_collector_fn=per_source_collector,
+        analyzer_fn=lambda _s, _col, _c: {"findings": [], "tokens_used": 200, "cost_usd": 0.002},
+        synthesizer_fn=lambda *_a: {"summary": "Готово", "tokens_used": 200, "cost_usd": 0.002},
+    )
+    assert outcome["status"] == "ok"
+    assert peak_in_flight == 2
+
+    for bad_workers in (3, 0, -1, float("nan"), float("inf"), True, "invalid"):
+        with pytest.raises(DelegationCapExceededError, match="delegation_concurrency_exceeded"):
+            await execute_delegated_research(
+                task_id=42,
+                job_id=508,
+                attempt=1,
+                goal="Проверка валидации concurrent_workers",
+                origin=_make_origin(source_ids=(101,)),
+                caps=caps,
+                collector_fn=lambda _s, _c, bw=bad_workers: {
+                    "per_source": [{"source_id": 101, "outcome": "collected"}],
+                    "items": [{"source_id": 101, "external_id": "1", "text": "Пост"}],
+                    "concurrent_workers": bw,
+                },
+                analyzer_fn=lambda *_a: {"findings": []},
+                synthesizer_fn=lambda *_a: {"summary": "unreachable"},
+            )
 
 
 @pytest.mark.asyncio
@@ -654,7 +726,7 @@ async def test_cancellation_partial_failure_and_chat_workspace_projection(monkey
     assert projected["completed_steps"] == 1
     assert projected["total_steps"] == 3
     assert projected["can_cancel"] is True
-    assert projected["cancel_url"] == "/chat/workspace/tasks/42/cancel"
+    assert projected["cancel_url"] == "/app/chat/workspace/tasks/42/cancel"
     assert [s["step"] for s in projected["steps"]] == list(STEP_ORDER)
     assert projected["steps"][0]["status"] == "partial"
     assert projected["steps"][1]["status"] == "started"
@@ -672,22 +744,22 @@ async def test_cancellation_partial_failure_and_chat_workspace_projection(monkey
     assert "progress" in card_by_type
     prog_card = card_by_type["progress"]
     assert prog_card["can_cancel"] is True
-    assert prog_card["cancel_url"] == "/chat/workspace/tasks/42/cancel"
+    assert prog_card["cancel_url"] == "/app/chat/workspace/tasks/42/cancel"
     assert len(prog_card["steps"]) == 3
-    assert any(a["kind"] == "cancel" and a["href"] == "/chat/workspace/tasks/42/cancel" for a in prog_card["actions"])
+    assert any(
+        a["kind"] == "cancel" and a["href"] == "/app/chat/workspace/tasks/42/cancel" for a in prog_card["actions"]
+    )
     assert "draft" in card_by_type
     assert card_by_type["draft"]["status"] == "draft_only"
 
-    # Verify the emitted cancel_url matches the real registered route on app.web.chat.router via TestClient
-    from fastapi import FastAPI
+    # Verify the emitted cancel_url matches the real registered route on app.main.app (web_router -> chat -> workspace)
     from fastapi.testclient import TestClient
+    from starlette.requests import Request
 
     import app.models as models_mod
-    from app.web.chat import router as chat_router
     import app.web.chat_workspace as cw_mod
-
-    app = FastAPI()
-    app.include_router(chat_router)
+    from app.main import app as real_app
+    from app.web.middleware import TenantUIMiddleware
 
     updated_jobs: list[tuple[int, dict[str, Any]]] = []
     fake_job = NS(
@@ -715,23 +787,26 @@ async def test_cancellation_partial_failure_and_chat_workspace_projection(monkey
     async def fake_selected_task(_req, tid: int):
         return definition if tid == 42 else None
 
+    async def fake_tenant_ui_call(self, scope, receive, send):
+        if scope["type"] == "http":
+            req = Request(scope)
+            req.state.web_user = NS(id=10)
+            req.state.tenant_id = 7
+            req.state.web_perms = NS(
+                can_open_chat=True,
+                can=lambda res, act="view": (res, act) in {("agenttask", "view"), ("agenttask", "update")},
+            )
+        await self.app(scope, receive, send)
+
     monkeypatch.setattr(cw_mod, "selected_task", fake_selected_task)
     monkeypatch.setattr(models_mod, "Job", NS(id=NS(desc=lambda: None), objects=FakeJobManager()))
+    monkeypatch.setattr(TenantUIMiddleware, "__call__", fake_tenant_ui_call)
 
-    @app.middleware("http")
-    async def _inject_web_state(request, call_next):
-        request.state.web_user = NS(id=10)
-        request.state.tenant_id = 7
-        request.state.web_perms = NS(
-            can_open_chat=True,
-            can=lambda res, act="view": (res, act) in {("agenttask", "view"), ("agenttask", "update")},
-        )
-        return await call_next(request)
-
-    client = TestClient(app)
+    client = TestClient(real_app)
     resp = client.post(prog_card["cancel_url"])
     assert resp.status_code == 200
     assert resp.json()["cancelled"] is True
+    assert client.post("/chat/workspace/tasks/42/cancel").status_code == 404
     assert len(updated_jobs) == 1
     assert updated_jobs[0][0] == 506
     assert updated_jobs[0][1]["status"] == "cancelled"

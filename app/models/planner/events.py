@@ -31,6 +31,8 @@ class PlannerEventRun(Base, TenantScopedMixin, TimestampMixin):
             name="uq_planner_event_year",
         ),
         UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_greeting_task"),
+        UniqueConstraint("tenant_id", "id", name="uq_planner_event_tenant_id"),
+        UniqueConstraint("tenant_id", "id", "event_type", "year", name="uq_planner_event_claim_target"),
         ForeignKeyConstraint(
             ["tenant_id", "contact_id"],
             [f"{S}.contacts.tenant_id", f"{S}.contacts.id"],
@@ -65,5 +67,74 @@ class PlannerEventRun(Base, TenantScopedMixin, TimestampMixin):
     contact_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.contacts.id", ondelete="SET NULL"))
     event_type: Mapped[str] = mapped_column(String(20), nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
+    root_task_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.planner_tasks.id", ondelete="SET NULL"))
+    greeting_task_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.planner_tasks.id", ondelete="SET NULL"))
+
+
+class PlannerEventClaim(Base, TenantScopedMixin, TimestampMixin):
+    """A contact's closed event key; retained across merge and unmerge."""
+
+    __tablename__ = "planner_event_claims"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "contact_id", "event_type", "year", name="uq_planner_event_claim"),
+        ForeignKeyConstraint(
+            ["tenant_id", "contact_id"], [f"{S}.contacts.tenant_id", f"{S}.contacts.id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id", "event_type", "year"],
+            [
+                f"{S}.planner_event_runs.tenant_id",
+                f"{S}.planner_event_runs.id",
+                f"{S}.planner_event_runs.event_type",
+                f"{S}.planner_event_runs.year",
+            ],
+            ondelete="CASCADE",
+            deferrable=True,
+            initially="DEFERRED",
+            name="fk_planner_event_claim_run",
+        ),
+        CheckConstraint("event_type IN ('birthday', 'anniversary')", name="ck_planner_event_claim_type"),
+        CheckConstraint("year >= 1970 AND year <= 2100", name="ck_planner_event_claim_year"),
+        {"schema": S},
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    run_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PlannerEventGroup(Base, TenantScopedMixin, TimestampMixin):
+    """Additional task group preserved when two closed events coalesce."""
+
+    __tablename__ = "planner_event_groups"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_group_greeting"),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            [f"{S}.planner_event_runs.tenant_id", f"{S}.planner_event_runs.id"],
+            ondelete="CASCADE",
+            deferrable=True,
+            initially="DEFERRED",
+            name="fk_planner_event_group_run",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "root_task_id"],
+            [f"{S}.planner_tasks.tenant_id", f"{S}.planner_tasks.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name="fk_planner_event_group_root_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "greeting_task_id"],
+            [f"{S}.planner_tasks.tenant_id", f"{S}.planner_tasks.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name="fk_planner_event_group_greeting_tenant",
+        ),
+        {"schema": S},
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(Integer, nullable=False)
     root_task_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.planner_tasks.id", ondelete="SET NULL"))
     greeting_task_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.planner_tasks.id", ondelete="SET NULL"))

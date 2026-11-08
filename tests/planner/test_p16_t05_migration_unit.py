@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy import UniqueConstraint
 
-from app.models.planner.events import PlannerEventRun, PlannerEventSettings
+from app.models.planner.events import PlannerEventClaim, PlannerEventGroup, PlannerEventRun, PlannerEventSettings
 
 __source_only__ = True
 
@@ -57,7 +57,7 @@ def test_downgrade_locks_and_refuses_data_loss(monkeypatch, has_data):
         op.drop_table.assert_not_called()
     else:
         rev.downgrade()
-        assert op.drop_table.call_count == 2
+        assert op.drop_table.call_count == 4
     assert "LOCK TABLE" in str(connection.execute.call_args_list[0].args[0])
 
 
@@ -72,8 +72,13 @@ def test_upgrade_columns_and_constraints_match_models(monkeypatch):
 
     monkeypatch.setattr(rev, "op", SimpleNamespace(create_table=create_table))
     rev.upgrade()
-    assert set(captured) == {"planner_event_settings", "planner_event_runs"}
-    for model in (PlannerEventSettings, PlannerEventRun):
+    assert set(captured) == {
+        "planner_event_settings",
+        "planner_event_runs",
+        "planner_event_claims",
+        "planner_event_groups",
+    }
+    for model in (PlannerEventSettings, PlannerEventRun, PlannerEventClaim, PlannerEventGroup):
         table = model.__table__
         elements, kwargs = captured[table.name]
         columns = {element.name: element for element in elements if isinstance(element, sa.Column)}

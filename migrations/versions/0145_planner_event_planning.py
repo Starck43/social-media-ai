@@ -50,6 +50,8 @@ def upgrade():
             name="uq_planner_event_year",
         ),
         sa.UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_greeting_task"),
+        sa.UniqueConstraint("tenant_id", "id", name="uq_planner_event_tenant_id"),
+        sa.UniqueConstraint("tenant_id", "id", "event_type", "year", name="uq_planner_event_claim_target"),
         sa.ForeignKeyConstraint(
             ["tenant_id", "contact_id"],
             [f"{s}.contacts.tenant_id", f"{s}.contacts.id"],
@@ -76,6 +78,72 @@ def upgrade():
         schema=s,
     )
 
+    op.create_table(
+        "planner_event_claims",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("tenant_id", sa.Integer, sa.ForeignKey(f"{s}.tenants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("contact_id", sa.Integer, nullable=False),
+        sa.Column("run_id", sa.Integer, nullable=False),
+        sa.Column("event_type", sa.String(20), nullable=False),
+        sa.Column("year", sa.Integer, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.UniqueConstraint("tenant_id", "contact_id", "event_type", "year", name="uq_planner_event_claim"),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "contact_id"], [f"{s}.contacts.tenant_id", f"{s}.contacts.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "run_id", "event_type", "year"],
+            [
+                f"{s}.planner_event_runs.tenant_id",
+                f"{s}.planner_event_runs.id",
+                f"{s}.planner_event_runs.event_type",
+                f"{s}.planner_event_runs.year",
+            ],
+            ondelete="CASCADE",
+            deferrable=True,
+            initially="DEFERRED",
+            name="fk_planner_event_claim_run",
+        ),
+        sa.CheckConstraint("event_type IN ('birthday', 'anniversary')", name="ck_planner_event_claim_type"),
+        sa.CheckConstraint("year >= 1970 AND year <= 2100", name="ck_planner_event_claim_year"),
+        schema=s,
+    )
+    op.create_table(
+        "planner_event_groups",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("tenant_id", sa.Integer, sa.ForeignKey(f"{s}.tenants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("run_id", sa.Integer, nullable=False),
+        sa.Column("root_task_id", sa.Integer, sa.ForeignKey(f"{s}.planner_tasks.id", ondelete="SET NULL")),
+        sa.Column("greeting_task_id", sa.Integer, sa.ForeignKey(f"{s}.planner_tasks.id", ondelete="SET NULL")),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_group_greeting"),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            [f"{s}.planner_event_runs.tenant_id", f"{s}.planner_event_runs.id"],
+            ondelete="CASCADE",
+            deferrable=True,
+            initially="DEFERRED",
+            name="fk_planner_event_group_run",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "root_task_id"],
+            [f"{s}.planner_tasks.tenant_id", f"{s}.planner_tasks.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name="fk_planner_event_group_root_tenant",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "greeting_task_id"],
+            [f"{s}.planner_tasks.tenant_id", f"{s}.planner_tasks.id"],
+            deferrable=True,
+            initially="DEFERRED",
+            name="fk_planner_event_group_greeting_tenant",
+        ),
+        schema=s,
+    )
+
 
 def downgrade():
     bind = op.get_bind()
@@ -86,5 +154,7 @@ def downgrade():
     bind.execute(sa.text(f"LOCK TABLE {runs}, {config} IN ACCESS EXCLUSIVE MODE"))
     if bind.execute(sa.text(f"SELECT EXISTS (SELECT 1 FROM {runs}) OR EXISTS (SELECT 1 FROM {config})")).scalar():
         raise RuntimeError("Downgrade would discard event-planning settings or run identities")
+    op.drop_table("planner_event_groups", schema=settings.DB_SCHEMA)
+    op.drop_table("planner_event_claims", schema=settings.DB_SCHEMA)
     op.drop_table("planner_event_runs", schema=settings.DB_SCHEMA)
     op.drop_table("planner_event_settings", schema=settings.DB_SCHEMA)

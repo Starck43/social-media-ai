@@ -1,6 +1,6 @@
 """Planner model; task mutation goes through the typed transactional service."""
 
-from .events import PlannerEventRun, PlannerEventSettings
+from .events import PlannerEventClaim, PlannerEventGroup, PlannerEventRun, PlannerEventSettings
 from .task import PlannerTask
 
-__all__ = ["PlannerTask", "PlannerEventRun", "PlannerEventSettings"]
+__all__ = ["PlannerTask", "PlannerEventRun", "PlannerEventSettings", "PlannerEventClaim", "PlannerEventGroup"]

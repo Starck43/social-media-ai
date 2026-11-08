@@ -25,6 +25,15 @@ def test_revision_and_database_identity_constraints():
     rev = migration()
     assert (rev.revision, rev.down_revision) == ("0145", "0144")
     assert PlannerEventSettings.__table__.c.owner_user_id.nullable
+    assert PlannerEventRun.__table__.c.contact_id.nullable
+    contact_fks = {
+        tuple(f.parent.name for f in fk.elements): fk for fk in PlannerEventRun.__table__.foreign_key_constraints
+    }
+    assert contact_fks[("contact_id",)].ondelete == "SET NULL"
+    assert contact_fks[("tenant_id", "contact_id")].deferrable
+    assert contact_fks[("tenant_id", "contact_id")].initially == "DEFERRED"
+    annual = next(c for c in PlannerEventRun.__table__.constraints if c.name == "uq_planner_event_year")
+    assert annual.dialect_options["postgresql"]["nulls_not_distinct"] is True
     unique = {
         tuple(column.name for column in constraint.columns)
         for constraint in PlannerEventRun.__table__.constraints

@@ -21,12 +21,20 @@ class PlannerEventSettings(Base, TimestampMixin):
 class PlannerEventRun(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "planner_event_runs"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "contact_id", "event_type", "year", name="uq_planner_event_year"),
+        UniqueConstraint(
+            "tenant_id",
+            "contact_id",
+            "event_type",
+            "year",
+            name="uq_planner_event_year",
+            postgresql_nulls_not_distinct=True,
+        ),
         UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_greeting_task"),
         ForeignKeyConstraint(
             ["tenant_id", "contact_id"],
             [f"{S}.contacts.tenant_id", f"{S}.contacts.id"],
-            ondelete="CASCADE",
+            deferrable=True,
+            initially="DEFERRED",
             name="fk_planner_event_contact",
         ),
         # Global single-column SET NULL keeps the ledger when a task is deleted;
@@ -51,7 +59,9 @@ class PlannerEventRun(Base, TenantScopedMixin, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # NULL marks an orphaned ledger row after contact deletion. The global FK
+    # clears only contact_id; the deferred composite FK enforces tenant isolation.
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.contacts.id", ondelete="SET NULL"))
     event_type: Mapped[str] = mapped_column(String(20), nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     root_task_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.planner_tasks.id", ondelete="SET NULL"))

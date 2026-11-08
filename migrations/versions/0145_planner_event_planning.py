@@ -2,8 +2,8 @@
 
 Revision ID: 0145
 Revises: 0144
-Deleting a contact removes its event ledger; the planner task remains with its
-contact link cleared under the existing planner FK. Deleting a generated task
+Deleting a contact leaves its event ledger orphaned with contact_id NULL; the
+planner task remains with its contact link cleared under the existing planner FK. Deleting a generated task
 clears its ledger reference, retaining idempotency. Deleting the enabling user
 sets the settings owner to NULL, disabling generation without reassignment.
 Downgrade refuses to discard settings or run identities.
@@ -34,19 +34,27 @@ def upgrade():
         "planner_event_runs",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("tenant_id", sa.Integer, sa.ForeignKey(f"{s}.tenants.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("contact_id", sa.Integer, nullable=False),
+        sa.Column("contact_id", sa.Integer, sa.ForeignKey(f"{s}.contacts.id", ondelete="SET NULL"), nullable=True),
         sa.Column("event_type", sa.String(20), nullable=False),
         sa.Column("year", sa.Integer, nullable=False),
         sa.Column("root_task_id", sa.Integer, sa.ForeignKey(f"{s}.planner_tasks.id", ondelete="SET NULL")),
         sa.Column("greeting_task_id", sa.Integer, sa.ForeignKey(f"{s}.planner_tasks.id", ondelete="SET NULL")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.UniqueConstraint("tenant_id", "contact_id", "event_type", "year", name="uq_planner_event_year"),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "contact_id",
+            "event_type",
+            "year",
+            name="uq_planner_event_year",
+            postgresql_nulls_not_distinct=True,
+        ),
         sa.UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_greeting_task"),
         sa.ForeignKeyConstraint(
             ["tenant_id", "contact_id"],
             [f"{s}.contacts.tenant_id", f"{s}.contacts.id"],
-            ondelete="CASCADE",
+            deferrable=True,
+            initially="DEFERRED",
             name="fk_planner_event_contact",
         ),
         sa.ForeignKeyConstraint(

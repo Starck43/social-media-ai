@@ -5,82 +5,64 @@ description: Execute one bounded task from ROADMAP.md remotely via a GitHub PR l
 
 # Remote task execution
 
-Read this skill before claiming or starting any single task from
-[ROADMAP.md](../../../ROADMAP.md) remotely. Governing rules:
-[AGENTS.md](../../../AGENTS.md) and [docs/COLLABORATION.md](../../../docs/COLLABORATION.md).
+Governing rules: [AGENTS.md](../../../AGENTS.md), [docs/COLLABORATION.md](../../../docs/COLLABORATION.md).
 
----
+Invocation is one line: «take task `<Pxx-Tyy>` and apply this skill». The ID
+resolves everything; never ask the dispatcher for a summary, the rules or the
+checks — read them from the files below. Ask only when a fact is absent from
+every source; one narrow question, then continue on what does not depend on it.
 
-## 1. Orientation
+## Base
 
-1. Read fresh `dev` HEAD and open PRs touching the target files.
-2. Locate the task row in `ROADMAP.md` and its linked active card in
-   `docs/tasks/<id>.md`; read its acceptance criteria, dependencies and owned paths.
-   Load only the relevant parent-phase context if the card needs it.
-3. Read only the relevant subsystem doc from
-   [docs/DOCS_INDEX.md](../../../docs/DOCS_INDEX.md) and its call sites.
-4. Verify no other agent currently owns the row and no blocked
-   dependency is unresolved.
+`git fetch --prune origin` before reading and again before publishing.
+`origin/dev` is the base and the truth — not local `dev`, not `HEAD`, not an
+earlier fetch. Read as `git show origin/dev:<path>` until your branch exists.
+Two `origin` writes are yours: the claim commit (registry paths only —
+`ROADMAP.md`, `docs/tasks/<id>.md`, phase link — on current `origin/dev`, before
+any solution edit, fast-forward only, never force) and your own task branch.
+Solution publication and merge stay with the owner. Never touch another row, the
+owner's checkout, or their local branches. State the base SHA in the first commit
+and the PR body.
 
+## Read, in order
 
-## 2. Claim
+1. `ROADMAP.md` row for the ID — status, owner, dialogue, complexity, dependencies.
+2. `docs/tasks/<pxx-tyy>.md` in full — scope, owned paths, acceptance, required
+   checks, owner decisions. This is the specification; nothing outside it is in scope.
+3. `docs/DOCS_INDEX.md` — the one row for your subsystem, then that document and
+   the call sites you touch.
+4. Accepted contracts the card names (`docs/audit/...`) — only the needed section.
+5. `tests/AGENTS.md` before any test work.
+6. `gh pr list --state open` — overlaps on your owned paths.
 
-- Set the `ROADMAP.md` row to `IN_PROGRESS` with owner and dialogue; create/update
-  the linked task card with scope before solution edits. Preserve other rows.
-- Keep current status in `ROADMAP.md`; parent phases carry active-card links and
-  accepted summaries, not duplicate status rows.
-- State the synchronized `dev` base SHA in the first commit message.
+Do not preload other cards, phases, `PRODUCT_PLAN.md`, audit history, or all of
+`BUSINESS_MODULES.md`. Record what you actually read (path + purpose) in the card
+or PR — that is evidence.
 
+## Execute
 
-## 3. Implementation rules
+- Claim: row `IN_PROGRESS` with owner and dialogue, card updated, before edits.
+- Own worktree and one thematic branch from `origin/dev`; Draft PR to `dev`.
+- Follow `pyproject.toml` style (Black + isort, 120), reuse existing
+  managers/services/ORM models, no ad-hoc sessions, no non-Alembic migrations,
+  no refactors, no Celery/Redis/Streamlit. Keep approval gates, dry runs and
+  fail-closed checks intact.
+- Stay inside owned paths; edits outside them are a separate labelled commit
+  checked against open PRs.
 
-- Create one thematic branch from fresh `dev`; open a Draft PR to `dev`.
-- Follow current architecture, ORM/service conventions and
-  `pyproject.toml` style (Black + isort, line 120).
-- Reuse existing managers/services/ORM models; no ad-hoc DB sessions.
-- No Alembic-outside migrations; no unrelated refactors; no frozen
-  paths (Celery/Redis/Streamlit).
-- Preserve all existing approval gates, dry-run defaults and fail-closed
-  authorization checks.
+## Test
 
+No database on the remote lane. Run only DB-exempt tests, explicit paths,
+`--noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header`,
+boundaries replaced by explicit mocks. Hand every DB/integration scenario to the
+local runner: exact branch, SHA, commands, scenarios, listed under **Deferred
+scenarios** in the PR body. Never report a deferred scenario as passed, and call
+mocked evidence mocked.
 
-## 4. Testing
+## Hand off
 
-Apply the **remote no-database exception** (mirrored from
-`.agents/skills/remote/SKILL.md`):
-
-- Run only genuinely DB-exempt tests in an isolated sandbox venv.
-- Explicit test paths, no real secrets or external sends:
-  `--noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header`.
-- Replace DB/LLM/provider boundaries with explicit mocks.
-- Hand all shared-DB and integration validation to the local OpenCode
-  test-runner with exact branch, SHA, commands and acceptance criteria.
-- Pin tested SHA; record exact scopes, counts and known limitations in
-  `.agents/tmp/test-report.md` (transient; not committed).
-
-
-## 5. PR and handoff
-
-- Keep PR **Draft** until all required evidence is recorded.
-- Before marking READY the PR description must carry:
-  tested SHA, exact test paths/scopes, passed/failed/skipped counts,
-  execution route, deferred scenarios.
-- Update the task card with evidence and set the `ROADMAP.md` row to `READY` only
-  after every required check passes. Keep the parent phase's active-card link; do
-  not duplicate status there. Never self-accept as `DONE` or delete the row — that
-  is the auditor's job after review.
-- Synchronize `ROADMAP.md` and owned `docs/` edits with fresh `dev`
-  immediately before publish; state the synchronized SHA.
-
-
-## 6. Closeout checklist
-
-- [ ] Branch created from fresh `dev`, open Draft PR
-- [ ] Task claimed in ROADMAP.md and linked task card
-- [ ] Implementation follows architecture/conventions
-- [ ] Isolated remote tests pass with explicit mocks
-- [ ] Local DB/integration validation handed off to OpenCode
-- [ ] PR description carries durable test fingerprint
-- [ ] Task card and ROADMAP row marked READY with evidence
-- [ ] ROADMAP.md synchronized to fresh dev before publish
-- [ ] No secrets/.env/migrations outside Alembic committed
+Draft until the PR body carries tested SHA, exact test paths, passed/failed/
+skipped counts, execution route and deferred scenarios. Then update the card and
+set the row `READY`; do not duplicate status in the phase, do not self-accept and
+do not delete the row — the auditor does that. Fetch again and state the SHA you
+synchronized to.

@@ -49,8 +49,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P2
 
 
-- [P20-T07](docs/tasks/p20-t07.md) «Сегодня»: read-time attention and decisions home — **IN_PROGRESS** · Starck43 (codex) · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C4`
-- [P20-T08](docs/tasks/p20-t08.md) Chat workspace: context panel, inline cards and chat dock — **IN_PROGRESS** · Starck43 (codex) · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P2` · `C4`
 
 - [P8-T33](docs/tasks/p8-t33.md) Additional VK search categories — **IN_PROGRESS** · notion-ai-p8-t33 · [chat](https://app.notion.com/chat?t=40a3d3cc6f4080648d4000a9e3177cc4) · `P2` · `C4`
 - [P8-T46](docs/tasks/p8-t46.md) VK video search category — **IN_PROGRESS** · notion-ai-p8-t46 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
@@ -69,8 +67,8 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 
 - [P14-T08](docs/tasks/p14-t08.md) Bitrix24 on-premise authorization form on top of the P14-T09 seam — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resumes with P14-T09) · `P2` · `C3`
 
-- [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **feature on top of the P15 transport** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
-- [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **feature on top of the P15 transport; opt-in required (D15)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
+- [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **feature on top of the P15 transport** — **IN_PROGRESS** · Starck43 (codex) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C3`
+- [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **feature on top of the P15 transport; opt-in required (D15)** — **IN_PROGRESS** · Starck43 (codex) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P2` · `C4`
 
 ### Priority P3
 
@@ -80,11 +78,10 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P20-T10](docs/tasks/p20-t10.md) Unified task surface: my to-dos, agent assignments and calendar — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T11](docs/tasks/p20-t11.md) Team work through connected task systems — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
-- [P20-T04](docs/tasks/p20-t04.md) Bounded specialist delegation for research — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
 - [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
-- [P16-T02](docs/tasks/p16-t02.md) Reminders, snooze and multi-channel notifications — **no second sender (D18/D19/D20)** — **IN_PROGRESS** (paused by the owner 2026-11-08) · Codex · `codex resume 01a1b62c-1322-7180-bb78-6e22558372a9` · `P3` · `C3`
+- [P16-T02](docs/tasks/p16-t02.md) Reminders, snooze and multi-channel notifications — **no second sender (D18/D19/D20)** — **IN_PROGRESS** · Codex · `codex resume 01a1b62c-1322-7180-bb78-6e22558372a9` · `P3` · `C3`
 - [P16-T03](docs/tasks/p16-t03.md) Calendar connections and Google Calendar two-way sync — **the calendar owns events and recurrence (D24)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P16-T04](docs/tasks/p16-t04.md) Yandex Calendar two-way sync over CalDAV — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P16-T05](docs/tasks/p16-t05.md) Event planning: birthday tasks and templates — **IN_PROGRESS** · notion-ai-p16-t05 · [dialogue](https://app.notion.com/chat?t=4116c57ee76f8018a86500a9740094e4) · `P3` · `C3`
@@ -93,12 +90,11 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P17-T03](docs/tasks/p17-t03.md) Natural-language queries, result formatting, export and history — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P17-T04](docs/tasks/p17-t04.md) 1C write commands with preview, approval and audit — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P17-T05](docs/tasks/p17-t05.md) 1C role-based access policy and audit views — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
-- [P18-T04](docs/tasks/p18-t04.md) Text extraction and OCR with resource limits — **IN_PROGRESS** · opencode-p18-t04 · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P18-T07](docs/tasks/p18-t07.md) Packaging, signing and auto-update for Windows, macOS and Linux — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P19-T03](docs/tasks/p19-t03.md) Version history, diff and restore — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P19-T03](docs/tasks/p19-t03.md) Version history, diff and restore — **IN_PROGRESS** · notion-ai-p19-t03 · [dialogue](https://app.notion.com/chat?t=412f361cdc9980be837800a92521bf76) · `P3` · `C3`
 - [P19-T04](docs/tasks/p19-t04.md) Document approval workflow bound to an immutable revision hash — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P19-T06](docs/tasks/p19-t06.md) Document search — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C2`

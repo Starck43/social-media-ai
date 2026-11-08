@@ -4,13 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "social-media-ai-local-connector"
-version = "0.1.1"
-description = "Local-only selected-folder connector development scaffold"
+version = "0.2.0"
+description = "Local-only selected-folder connector development scaffold with bounded extraction and OCR"
 requires-python = ">=3.11"
-dependencies = ["watchdog>=4.0"]
+dependencies = [
+    "watchdog>=4.0",
+    "pypdf>=5",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "Pillow>=10",
+]
 
 [tool.setuptools]
-packages = ["local_connector"]
+packages = ["local_connector", "local_connector.extract"]
 
 [tool.setuptools.package-dir]
 local_connector = "."

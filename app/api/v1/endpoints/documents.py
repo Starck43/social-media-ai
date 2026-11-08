@@ -1,8 +1,11 @@
 """Tenant-scoped business document and template CRUD."""
 
+from datetime import datetime
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import Depends, HTTPException, Path, Query
+from fastapi.responses import JSONResponse
 
 from app.api.deps import require_model_perm
 from app.api.v1.conventions import business_router, validate_business_routes
@@ -20,6 +23,7 @@ from app.services.knowledge.document_contracts import (
     TemplateVersion,
 )
 from app.services.knowledge.documents import DocumentConflict, DocumentUnavailable, document_service
+from app.services.knowledge.search import document_search_service
 from app.services.knowledge.versions import RestoreRequest, RevisionDiff, RevisionOut, version_service
 from app.types import ActionType
 
@@ -81,11 +85,61 @@ async def delete_template(request: TemplateVersion, template_id: int = Path(gt=0
     return await invoke(document_service.delete_template(template_id, request))
 
 
-@router.get("", response_model=BusinessPage[DocumentOut])
+@router.get(
+    "",
+    response_model=BusinessPage[DocumentOut],
+    description=(
+        "Search document metadata only (title, type, status, tags, counterparty, author and visible case title). "
+        "Document body content search is unavailable."
+    ),
+)
 async def list_documents(
-    boundary: Boundary = "cloud", limit: int = Query(50, ge=1, le=100), before_id: int | None = Query(None, gt=0)
+    boundary: Boundary = "cloud",
+    limit: int = Query(50, ge=1, le=100),
+    before_id: int | None = Query(None, gt=0),
+    q: str | None = Query(None, min_length=1, max_length=200),
+    document_type: str | None = Query(None, pattern="^(letter|claim_response|contract|memo)$"),
+    status: str | None = Query(None, pattern="^(draft|in_review|approved|rejected|revision_requested)$"),
+    tag: str | None = Query(None, min_length=1, max_length=60),
+    contact_id: int | None = Query(None, gt=0),
+    case_evidence_id: int | None = Query(None, gt=0),
+    author: str | None = Query(None, min_length=1, max_length=150),
+    revision_from: datetime | None = None,
+    revision_to: datetime | None = None,
+    content_search: bool = False,
 ):
-    return await invoke(document_service.list(boundary=boundary, limit=limit, before_id=before_id))
+    if content_search:
+        request_id = uuid4().hex
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "content_search_unavailable",
+                "message": "Content search is unavailable; document search covers metadata only.",
+                "request_id": request_id,
+            },
+            headers={"X-Request-ID": request_id},
+        )
+    if q is None and all(
+        value is None
+        for value in (document_type, status, tag, contact_id, case_evidence_id, author, revision_from, revision_to)
+    ):
+        return await invoke(document_service.list(boundary=boundary, limit=limit, before_id=before_id))
+    return await invoke(
+        document_search_service.search(
+            q=q,
+            boundary=boundary,
+            limit=limit,
+            before_id=before_id,
+            document_type=document_type,
+            status=status,
+            tag=tag,
+            contact_id=contact_id,
+            case_evidence_id=case_evidence_id,
+            author=author,
+            revision_from=revision_from,
+            revision_to=revision_to,
+        )
+    )
 
 
 @router.post(

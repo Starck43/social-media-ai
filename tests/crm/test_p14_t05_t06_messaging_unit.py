@@ -1,4 +1,4 @@
-"""P14-T05 & P14-T06 SQLite, PostgreSQL, and HTTP contract tests for greeting delivery, batch messaging, consent, and unsubscribe.
+"""P14-T05 & P14-T06 unit, SQLite, and HTTP contract tests for greeting delivery, batch messaging, consent, and unsubscribe.
 
 Covers:
 - P14-T05 (`CrmGreetingsService.send_greeting` / `CrmMessagingService.send_greeting`):

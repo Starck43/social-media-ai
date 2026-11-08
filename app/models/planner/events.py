@@ -21,13 +21,14 @@ class PlannerEventSettings(Base, TimestampMixin):
 class PlannerEventRun(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "planner_event_runs"
     __table_args__ = (
+        # A non-NULL contact is unique per event/year. Orphans remain separate
+        # so erasing a second contact cannot be blocked by a prior erasure.
         UniqueConstraint(
             "tenant_id",
             "contact_id",
             "event_type",
             "year",
             name="uq_planner_event_year",
-            postgresql_nulls_not_distinct=True,
         ),
         UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_greeting_task"),
         ForeignKeyConstraint(

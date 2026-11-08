@@ -41,13 +41,13 @@ def upgrade():
         sa.Column("greeting_task_id", sa.Integer, sa.ForeignKey(f"{s}.planner_tasks.id", ondelete="SET NULL")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        # Keep live event keys unique, but allow multiple anonymous orphans.
         sa.UniqueConstraint(
             "tenant_id",
             "contact_id",
             "event_type",
             "year",
             name="uq_planner_event_year",
-            postgresql_nulls_not_distinct=True,
         ),
         sa.UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_greeting_task"),
         sa.ForeignKeyConstraint(

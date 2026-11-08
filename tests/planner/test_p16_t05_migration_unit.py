@@ -33,7 +33,7 @@ def test_revision_and_database_identity_constraints():
     assert contact_fks[("tenant_id", "contact_id")].deferrable
     assert contact_fks[("tenant_id", "contact_id")].initially == "DEFERRED"
     annual = next(c for c in PlannerEventRun.__table__.constraints if c.name == "uq_planner_event_year")
-    assert annual.dialect_options["postgresql"]["nulls_not_distinct"] is True
+    assert annual.dialect_options["postgresql"]["nulls_not_distinct"] is not True
     unique = {
         tuple(column.name for column in constraint.columns)
         for constraint in PlannerEventRun.__table__.constraints

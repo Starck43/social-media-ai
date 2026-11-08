@@ -42,6 +42,9 @@ PUBLIC_API_PATHS = frozenset(
         "/api/v1/auth/register",
         "/api/v1/health",
         "/api/v1/social/callback",
+        # One-click unsubscribe is authenticated by an HMAC-SHA256 signed token
+        # bound to (tenant_id, contact_id, channel, purpose) — requires no login (D16).
+        "/api/v1/integrations/bitrix/messaging/unsubscribe",
     }
 )
 

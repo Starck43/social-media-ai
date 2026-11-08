@@ -200,8 +200,16 @@ def sanitize_card_payload(value):
     return value
 
 
-def build_task_cards(definition: dict, result: dict | None, *, can_view_results: bool) -> list[dict]:
-    """Build typed inline cards (plan_preview, progress, result) from a canonical task snapshot."""
+def build_task_cards(
+    definition: dict,
+    result: dict | None,
+    *,
+    can_view_results: bool,
+    can_cancel: bool = False,
+) -> list[dict]:
+    """Build typed inline cards (plan_preview, progress, result, draft) from a canonical task snapshot."""
+    from app.services.research_delegation import project_delegated_run_for_workspace
+
     snap = task_snapshot(definition, result, can_view_results=can_view_results)
     task_id = snap["id"]
     task_url = snap["task_url"]
@@ -235,23 +243,44 @@ def build_task_cards(definition: dict, result: dict | None, *, can_view_results:
         )
     )
 
+    delegated = project_delegated_run_for_workspace(
+        task_id,
+        snap["name"],
+        result if isinstance(result, dict) else None,
+        can_cancel=can_cancel,
+    )
+
     latest = snap.get("latest")
     if isinstance(latest, dict):
         status = latest.get("status", "unavailable")
-        if status in {"pending", "running"} or isinstance(latest.get("progress"), dict):
+        if status in {"pending", "running"} or isinstance(latest.get("progress"), dict) or delegated is not None:
+            progress_actions = [
+                {"kind": "link", "label": "Управление запуском", "href": task_url},
+            ]
+            if isinstance(delegated, dict) and delegated.get("can_cancel") and delegated.get("cancel_url"):
+                progress_actions.append(
+                    {
+                        "kind": "cancel",
+                        "label": "Отменить запуск",
+                        "href": delegated["cancel_url"],
+                    }
+                )
             cards.append(
                 sanitize_card_payload(
                     {
                         "id": f"progress:task:{task_id}",
                         "card_type": "progress",
                         "title": f"Выполнение: {snap['name']}",
-                        "status": status,
+                        "status": delegated["status"] if isinstance(delegated, dict) else status,
                         "progress": latest.get("progress"),
+                        "steps": delegated.get("steps") if isinstance(delegated, dict) else None,
+                        "completed_steps": delegated.get("completed_steps") if isinstance(delegated, dict) else None,
+                        "total_steps": delegated.get("total_steps") if isinstance(delegated, dict) else None,
+                        "can_cancel": bool(delegated.get("can_cancel")) if isinstance(delegated, dict) else False,
+                        "cancel_url": delegated.get("cancel_url") if isinstance(delegated, dict) else None,
                         "authoritative_ref": f"agent_task:{task_id}",
                         "authoritative_url": task_url,
-                        "actions": [
-                            {"kind": "link", "label": "Управление запуском", "href": task_url},
-                        ],
+                        "actions": progress_actions,
                     }
                 )
             )
@@ -285,6 +314,26 @@ def build_task_cards(definition: dict, result: dict | None, *, can_view_results:
                 }
             )
         )
+        if can_view_results and isinstance(result, dict) and isinstance(result.get("draft"), dict):
+            draft_data = result["draft"]
+            cards.append(
+                sanitize_card_payload(
+                    {
+                        "id": f"draft:task:{task_id}",
+                        "card_type": "draft",
+                        "title": f"Черновик отчёта: {snap['name']}",
+                        "status": str(draft_data.get("delivery_state") or "draft_only"),
+                        "summary": str(draft_data.get("summary") or "")[:400],
+                        "limitations": "; ".join(str(n) for n in (draft_data.get("coverage_notes") or [])[:3])[:240],
+                        "requires_human_approval": True,
+                        "authoritative_ref": f"agent_task:{task_id}",
+                        "authoritative_url": task_url,
+                        "actions": [
+                            {"kind": "link", "label": "Открыть черновик", "href": task_url},
+                        ],
+                    }
+                )
+            )
     return cards
 
 
@@ -439,7 +488,15 @@ async def workspace_cards(
         except PermissionError:
             return JSONResponse({"error": "Доступ к задаче изменился", "cards": []}, status_code=403)
         can_view_results = perms_can(request, "source", "view") and perms_can(request, "aianalytics", "view")
-        cards.extend(build_task_cards(definition, result, can_view_results=can_view_results))
+        can_cancel = perms_can(request, "agenttask", "update")
+        cards.extend(
+            build_task_cards(
+                definition,
+                result,
+                can_view_results=can_view_results,
+                can_cancel=can_cancel,
+            )
+        )
 
     if context_type or context_id or boundary:
         from fastapi import HTTPException
@@ -478,6 +535,7 @@ async def workspace_panel(
     tenant_id = request.state.tenant_id
     user = request.state.web_user
     can_view_tasks = perms_can(request, "agenttask", "view")
+    can_update_tasks = perms_can(request, "agenttask", "update")
     can_view_results = perms_can(request, "source", "view") and perms_can(request, "aianalytics", "view")
 
     resolved_context = None
@@ -497,6 +555,7 @@ async def workspace_panel(
         try:
             from app.core.tenant_context import tenant_scope
             from app.models import AgentTask
+            from app.services.research_delegation import project_delegated_run_for_workspace
             from app.services.task_results import task_result
 
             with tenant_scope(tenant_id):
@@ -509,13 +568,34 @@ async def workspace_panel(
                     safe_prog = None
                     if isinstance(progress, dict):
                         safe_prog = {k: progress.get(k) for k in ("phase", "total", "completed", "updated_at")}
+                    row_name = str(getattr(row, "name", f"Задача #{row.id}"))[:160]
+                    delegated = project_delegated_run_for_workspace(
+                        row.id,
+                        row_name,
+                        res if isinstance(res, dict) else None,
+                        can_cancel=can_update_tasks,
+                    )
+                    is_active = status in {"pending", "running"} or (
+                        isinstance(delegated, dict) and delegated.get("status") in {"pending", "running", "started"}
+                    )
                     runs.append(
                         sanitize_card_payload(
                             {
                                 "id": row.id,
-                                "name": str(getattr(row, "name", f"Задача #{row.id}"))[:160],
-                                "status": status,
+                                "name": row_name,
+                                "status": delegated["status"] if isinstance(delegated, dict) else status,
                                 "progress": safe_prog,
+                                "steps": delegated.get("steps") if isinstance(delegated, dict) else None,
+                                "completed_steps": (
+                                    delegated.get("completed_steps") if isinstance(delegated, dict) else None
+                                ),
+                                "total_steps": delegated.get("total_steps") if isinstance(delegated, dict) else None,
+                                "can_cancel": bool(can_update_tasks and is_active),
+                                "cancel_url": (
+                                    f"/app/chat/workspace/tasks/{row.id}/cancel"
+                                    if (can_update_tasks and is_active)
+                                    else None
+                                ),
                                 "task_url": f"/app/tasks/{row.id}",
                             }
                         )
@@ -599,6 +679,64 @@ async def workspace_panel(
             "runs": runs,
             "materials": materials,
             "can_view_results": can_view_results,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/tasks/{task_id}/cancel")
+async def workspace_cancel_task_run(request: Request, task_id: int):
+    """Cancel an active task or delegated research run in the existing Job run history."""
+    denied = workspace_denied(request)
+    if denied is not None:
+        return denied
+    if not perms_can(request, "agenttask", "update"):
+        return JSONResponse({"error": "Недостаточно прав для отмены запуска"}, status_code=403)
+    if task_id <= 0:
+        return JSONResponse({"error": "Задача недоступна"}, status_code=404)
+
+    try:
+        definition = await selected_task(request, task_id)
+    except PermissionError:
+        return JSONResponse({"error": "Доступ к задаче изменился"}, status_code=403)
+    if definition is None:
+        return JSONResponse({"error": "Задача недоступна"}, status_code=404)
+
+    from app.core.tenant_context import tenant_scope
+    from app.models import Job
+
+    with tenant_scope(request.state.tenant_id):
+        job = (
+            await Job.objects.filter(
+                tenant_id=request.state.tenant_id,
+                agent_task_id=task_id,
+            )
+            .order_by(Job.id.desc())
+            .first()
+        )
+        if job is None or getattr(job, "status", None) not in {"pending", "running"}:
+            return JSONResponse(
+                {
+                    "task_id": task_id,
+                    "cancelled": False,
+                    "status": getattr(job, "status", "unavailable") if job is not None else "unavailable",
+                },
+                status_code=409,
+                headers={"Cache-Control": "no-store"},
+            )
+        new_result = dict(job.result) if isinstance(getattr(job, "result", None), dict) else {}
+        if isinstance(new_result.get("pipeline"), dict) and isinstance(new_result["pipeline"].get("delegation"), dict):
+            new_result["pipeline"] = dict(new_result["pipeline"])
+            new_result["pipeline"]["delegation"] = dict(new_result["pipeline"]["delegation"])
+            new_result["pipeline"]["delegation"]["state"] = "cancelled"
+        await Job.objects.update(job.id, status="cancelled", result=new_result)
+
+    return JSONResponse(
+        {
+            "task_id": task_id,
+            "job_id": job.id,
+            "cancelled": True,
+            "status": "cancelled",
         },
         headers={"Cache-Control": "no-store"},
     )

@@ -751,7 +751,7 @@ def test_sensitive_inputs_not_in_repr():
     expected_sensitive = {
         MailAccount: {"account_login", "app_password"},
         BotAccount: {"token"},
-        EmailRequest: {"recipient", "subject", "text"},
+        EmailRequest: {"recipient", "subject", "text", "in_reply_to", "references"},
         BotRecipient: {"user_id"},
     }
     samples = (MAIL, account(TELEGRAM), REQUEST, RECIPIENT)

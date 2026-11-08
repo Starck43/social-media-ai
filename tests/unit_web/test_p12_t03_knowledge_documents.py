@@ -68,6 +68,7 @@ def _build_base_template_context() -> dict:
     perms = NS(
         can=lambda *args: True,
         can_manage_workspace=lambda *a: False,
+        can_open_chat=False,
         is_owner=False,
         is_superuser_role=False,
         workspace_role="viewer",

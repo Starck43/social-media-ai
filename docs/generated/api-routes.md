@@ -101,7 +101,10 @@ and execution permissions remain in the handwritten references and code.
 | DELETE | /api/v1/documents/{document_id} | delete_document_api_v1_documents__document_id__delete |
 | GET | /api/v1/documents/{document_id} | get_document_api_v1_documents__document_id__get |
 | PATCH | /api/v1/documents/{document_id} | update_document_api_v1_documents__document_id__patch |
+| POST | /api/v1/documents/{document_id}/restore/{revision_id} | restore_version_api_v1_documents__document_id__restore__revision_id__post |
 | POST | /api/v1/documents/{document_id}/transition | transition_document_api_v1_documents__document_id__transition_post |
+| GET | /api/v1/documents/{document_id}/versions | list_versions_api_v1_documents__document_id__versions_get |
+| GET | /api/v1/documents/{document_id}/versions/diff | diff_versions_api_v1_documents__document_id__versions_diff_get |
 | GET | /api/v1/files/connectors | devices_api_v1_files_connectors_get |
 | POST | /api/v1/files/connectors/pairings | begin_api_v1_files_connectors_pairings_post |
 | POST | /api/v1/files/connectors/pairings/{pairing_id}/confirm | confirm_api_v1_files_connectors_pairings__pairing_id__confirm_post |

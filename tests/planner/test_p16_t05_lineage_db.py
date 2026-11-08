@@ -167,3 +167,17 @@ async def test_two_contact_deletions_preserve_both_orphan_runs(personal_world):
         )
         assert len(runs) == 2 and all(run.contact_id is None for run in runs)
     assert len(await task_rows(world)) == 6
+
+
+async def test_event_generated_while_merged_stays_closed_after_unmerge(personal_world):
+    world = personal_world
+    with owner_scope(world):
+        source = await Contact.objects.create(display_name="Synthetic source", birthday="03-04")
+        survivor = await Contact.objects.create(display_name="Synthetic survivor", birthday="03-04")
+    await configure(world)
+    result = await merge(world, source.id, survivor.id)
+    assert (await fire(world))["created"] == 1
+    original = {task.id for task in await task_rows(world)}
+    await unmerge(world, result["journal_id"])
+    assert (await fire(world))["created"] == 0
+    assert {task.id for task in await task_rows(world)} == original

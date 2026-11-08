@@ -84,6 +84,9 @@ def upgrade():
         sa.Column("tenant_id", sa.Integer, sa.ForeignKey(f"{s}.tenants.id", ondelete="CASCADE"), nullable=False),
         sa.Column("contact_id", sa.Integer, nullable=False),
         sa.Column("run_id", sa.Integer, nullable=False),
+        # Set on the copy a merge creates for the survivor: the contact whose
+        # closed event this claim now stands for until an unmerge hands it back.
+        sa.Column("originated_contact_id", sa.Integer, nullable=True),
         sa.Column("event_type", sa.String(20), nullable=False),
         sa.Column("year", sa.Integer, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -114,10 +117,23 @@ def upgrade():
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("tenant_id", sa.Integer, sa.ForeignKey(f"{s}.tenants.id", ondelete="CASCADE"), nullable=False),
         sa.Column("run_id", sa.Integer, nullable=False),
+        # The contact whose closed event this group was before the merge moved it.
+        sa.Column("origin_contact_id", sa.Integer, nullable=False),
+        # The closed key, so a contact that closed the same key twice is separated.
+        sa.Column("event_type", sa.String(20), nullable=False),
+        sa.Column("year", sa.Integer, nullable=False),
+        # The run that held these tasks before the merge moved them here; an
+        # unmerge puts them back rather than inferring current ownership.
+        sa.Column("origin_run_id", sa.Integer, nullable=True),
         sa.Column("root_task_id", sa.Integer, sa.ForeignKey(f"{s}.planner_tasks.id", ondelete="SET NULL")),
         sa.Column("greeting_task_id", sa.Integer, sa.ForeignKey(f"{s}.planner_tasks.id", ondelete="SET NULL")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.UniqueConstraint(
+            "tenant_id", "origin_contact_id", "event_type", "year", name="uq_planner_event_group_origin"
+        ),
+        sa.CheckConstraint("event_type IN ('birthday', 'anniversary')", name="ck_planner_event_group_type"),
+        sa.CheckConstraint("year >= 1970 AND year <= 2100", name="ck_planner_event_group_year"),
         sa.UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_group_greeting"),
         sa.ForeignKeyConstraint(
             ["tenant_id", "run_id"],

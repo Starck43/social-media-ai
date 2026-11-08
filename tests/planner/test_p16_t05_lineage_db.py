@@ -77,10 +77,30 @@ async def test_unmerge_does_not_regenerate_previously_closed_event(personal_worl
         survivor = await Contact.objects.create(display_name="Synthetic survivor")
     await configure(world)
     assert (await fire(world))["created"] == 1
+    original = {task.id: task.version for task in await task_rows(world)}
+    async with async_session_maker() as session:
+        run_id = await session.scalar(select(PlannerEventRun.id).where(PlannerEventRun.contact_id == source.id))
     result = await merge(world, source.id, survivor.id)
     await unmerge(world, result["journal_id"])
     assert (await fire(world))["created"] == 0
-    assert len(await task_rows(world)) == 3
+    tasks = await task_rows(world)
+    # The restored contact gets back its own closed event, tasks and run.
+    assert {task.id for task in tasks} == set(original)
+    assert all(task.contact_id == source.id for task in tasks)
+    assert all(task.version == original[task.id] + 2 for task in tasks)
+    async with async_session_maker() as session:
+        runs = list(
+            (
+                await session.scalars(select(PlannerEventRun).where(PlannerEventRun.tenant_id == world.tenants[0].id))
+            ).all()
+        )
+        assert [(run.id, run.contact_id) for run in runs] == [(run_id, source.id)]
+        assert runs[0].root_task_id in original and runs[0].greeting_task_id in original
+        assert not await session.scalar(
+            select(PlannerTask.id).where(
+                PlannerTask.tenant_id == world.tenants[0].id, PlannerTask.contact_id == survivor.id
+            )
+        )
 
 
 async def test_both_event_groups_preserved_on_merge_without_recreation(personal_world):
@@ -284,7 +304,56 @@ async def test_both_merged_groups_keep_greeting_actions(personal_world, monkeypa
     assert all(call.kwargs["contact_id"] == survivor.id for call in generate.await_args_list)
 
 
-async def test_repeated_merge_and_unmerge_preserves_all_groups(personal_world, monkeypatch):
+async def test_unmerge_returns_only_the_restored_contacts_own_group(personal_world):
+    """Two events coalesced on one survivor split back by recorded origin."""
+    world = personal_world
+    with owner_scope(world):
+        source = await Contact.objects.create(display_name="Synthetic source", birthday="03-04")
+        survivor = await Contact.objects.create(display_name="Synthetic survivor", birthday="03-04")
+    await configure(world)
+    assert (await fire(world))["created"] == 2
+    original = {task.id for task in await task_rows(world)}
+    assert len(original) == 6
+    result = await merge(world, source.id, survivor.id)
+    assert (await fire(world))["created"] == 0
+    async with async_session_maker() as session:
+        runs = list(
+            (
+                await session.scalars(select(PlannerEventRun).where(PlannerEventRun.tenant_id == world.tenants[0].id))
+            ).all()
+        )
+        assert len(runs) == 1 and runs[0].contact_id == survivor.id
+    await unmerge(world, result["journal_id"])
+    tasks = await task_rows(world)
+    assert {task.id for task in tasks} == original
+    by_contact = {}
+    for task in tasks:
+        by_contact.setdefault(task.contact_id, set()).add(task.id)
+    assert set(by_contact) == {source.id, survivor.id}
+    assert all(len(ids) == 3 for ids in by_contact.values())
+    async with async_session_maker() as session:
+        runs = list(
+            (
+                await session.scalars(select(PlannerEventRun).where(PlannerEventRun.tenant_id == world.tenants[0].id))
+            ).all()
+        )
+        # A run already backing the survivor's own event is never taken from it.
+        assert sorted((run.contact_id, run.event_type, run.year) for run in runs) == [
+            (source.id, "birthday", 2032),
+            (survivor.id, "birthday", 2032),
+        ]
+        for run in runs:
+            owned = {
+                task.id
+                for task in tasks
+                if task.contact_id == run.contact_id and run.root_task_id in (task.id, task.parent_id)
+            }
+            assert run.root_task_id in owned and run.greeting_task_id in owned
+    assert (await fire(world))["created"] == 0
+    assert {task.id for task in await task_rows(world)} == original
+
+
+async def test_repeated_merge_and_unmerge_keeps_each_contacts_tasks(personal_world, monkeypatch):
     from unittest.mock import AsyncMock
 
     from app.services.planner.events import event_planning_service
@@ -301,22 +370,33 @@ async def test_repeated_merge_and_unmerge_preserves_all_groups(personal_world, m
     result1 = await merge(world, first.id, second.id)
     result2 = await merge(world, second.id, third.id)
     assert (await fire(world))["created"] == 0
-    tasks = await task_rows(world)
-    assert {task.id for task in tasks} == original
-    assert all(task.contact_id == third.id for task in tasks)
+    assert all(task.contact_id == third.id for task in await task_rows(world))
     fake = AsyncMock(return_value={"send_enabled": False})
     monkeypatch.setattr(crm_greetings_service, "generate_greeting_draft", fake)
     with owner_scope(world):
         async with async_session_maker() as session, session.begin():
             greeting_ids = await event_planning_service.greeting_task_ids(list(original), session=session)
             assert len(greeting_ids) == 3
-            for task_id in greeting_ids:
-                await event_planning_service.draft_for_task(task_id, session=session)
-    assert fake.await_count == 3
     await unmerge(world, result2["journal_id"])
     await unmerge(world, result1["journal_id"])
     assert (await fire(world))["created"] == 0
-    assert {task.id for task in await task_rows(world)} == original
+    tasks = await task_rows(world)
+    assert {task.id for task in tasks} == original
+    by_contact = {}
+    for task in tasks:
+        by_contact.setdefault(task.contact_id, set()).add(task.id)
+    # Every contact receives exactly its own group; nothing is regenerated.
+    assert set(by_contact) == {first.id, second.id, third.id}
+    assert all(len(ids) == 3 for ids in by_contact.values())
+    with owner_scope(world):
+        async with async_session_maker() as session, session.begin():
+            returned = await event_planning_service.greeting_task_ids(list(original), session=session)
+            assert returned == greeting_ids
+            for task_id in returned:
+                await event_planning_service.draft_for_task(task_id, session=session)
+    assert fake.await_count == 3
+    assert all(call.kwargs["contact_id"] in {first.id, second.id, third.id} for call in fake.await_args_list)
+    assert (await fire(world))["created"] == 0
 
 
 async def test_merge_first_serializes_generation(personal_world, monkeypatch):

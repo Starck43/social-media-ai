@@ -1,6 +1,6 @@
 """Private per-workspace event-planning configuration and durable run identities."""
 
-from sqlalchemy import CheckConstraint, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, CheckConstraint, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
@@ -100,15 +100,21 @@ class PlannerEventClaim(Base, TenantScopedMixin, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     run_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Set on the copy a merge creates for the survivor: the contact whose closed
+    # event this claim now stands for, until an unmerge hands it back.
+    originated_contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     event_type: Mapped[str] = mapped_column(String(20), nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class PlannerEventGroup(Base, TenantScopedMixin, TimestampMixin):
-    """Additional task group preserved when two closed events coalesce."""
+    """A task group recorded when a contact's closed event moved to a survivor."""
 
     __tablename__ = "planner_event_groups"
     __table_args__ = (
+        # One recorded group per merged contact and event key: an unmerge finds
+        # exactly the tasks and the run that contact brought.
+        UniqueConstraint("tenant_id", "origin_contact_id", "event_type", "year", name="uq_planner_event_group_origin"),
         UniqueConstraint("tenant_id", "greeting_task_id", name="uq_planner_event_group_greeting"),
         ForeignKeyConstraint(
             ["tenant_id", "run_id"],
@@ -132,9 +138,19 @@ class PlannerEventGroup(Base, TenantScopedMixin, TimestampMixin):
             initially="DEFERRED",
             name="fk_planner_event_group_greeting_tenant",
         ),
+        CheckConstraint("event_type IN ('birthday', 'anniversary')", name="ck_planner_event_group_type"),
+        CheckConstraint("year >= 1970 AND year <= 2100", name="ck_planner_event_group_year"),
         {"schema": S},
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     run_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The contact whose closed event this group was before the merge moved it.
+    origin_contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The closed key, so a contact that closed the same key twice is separated.
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The run that held these tasks before the merge moved them here; an unmerge
+    # puts them back rather than inferring ownership from the current rows.
+    origin_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     root_task_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.planner_tasks.id", ondelete="SET NULL"))
     greeting_task_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.planner_tasks.id", ondelete="SET NULL"))

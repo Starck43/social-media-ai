@@ -146,7 +146,7 @@ def test_dispatch_job_is_bootstrapped_each_minute():
     assert DEFAULT_TASKS["planner-reminders-dispatch"] == ("* * * * *", "planner.reminders.dispatch", {})
 
 
-def test_planner_edit_template_shows_personal_reminder_controls_and_safe_delivery_state():
+def test_merged_planner_template_keeps_event_forms_and_reminder_controls_safe():
     from bs4 import BeautifulSoup
 
     from app.web.deps import templates
@@ -180,13 +180,16 @@ def test_planner_edit_template_shows_personal_reminder_controls_and_safe_deliver
         section="planner",
         view="list",
         editing=task,
-        items=[],
+        items=[task],
         status_labels=STATUS_LABELS,
         priority_labels=PRIORITY_LABELS,
         can_create=False,
         can_update=True,
         can_remind=True,
         can_delete=False,
+        can_draft_greeting=True,
+        event_settings=SimpleNamespace(can_configure=True, enabled=True),
+        greeting_ids={3},
         reminders=[item],
         reminder_error_labels=REMINDER_ERROR_LABELS,
         delivery_error_labels=DELIVERY_ERROR_LABELS,
@@ -197,7 +200,12 @@ def test_planner_edit_template_shows_personal_reminder_controls_and_safe_deliver
     soup = BeautifulSoup(html, "html.parser")
     assert "blocked" not in soup.text and "channel_not_implemented" not in soup.text
     assert "заблокировано" in soup.text and "Канал пока недоступен" in soup.text
+    assert soup.select_one('form[action="/app/planner/events/settings"]')
+    assert soup.select_one('form[action="/app/planner/events/3/draft"]')
     forms = soup.select('#reminders form[method="post"]')
     assert len(forms) == 4
     assert all(form.select_one('input[name="_csrf"]')["value"] == "synthetic-csrf" for form in forms)
     assert all(form.select_one('input[name="expected_version"]')["value"] == "1" for form in forms[1:])
+    all_forms = soup.select('form[method="post"]')
+    assert len(all_forms) == 7
+    assert all(form.select_one('input[name="_csrf"]')["value"] == "synthetic-csrf" for form in all_forms)

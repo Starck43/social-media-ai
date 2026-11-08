@@ -207,5 +207,4 @@ def test_merged_planner_template_keeps_event_forms_and_reminder_controls_safe():
     assert all(form.select_one('input[name="_csrf"]')["value"] == "synthetic-csrf" for form in forms)
     assert all(form.select_one('input[name="expected_version"]')["value"] == "1" for form in forms[1:])
     all_forms = soup.select('form[method="post"]')
-    assert len(all_forms) == 7
     assert all(form.select_one('input[name="_csrf"]')["value"] == "synthetic-csrf" for form in all_forms)

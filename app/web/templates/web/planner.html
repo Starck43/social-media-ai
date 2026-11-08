@@ -24,6 +24,17 @@
         <p class="ui-muted text-sm">Доска показывает текущую страницу, до 50 задач. Завершение повтора создаёт только следующий срок.</p>
     </section>
 
+    {% if event_settings is defined and event_settings.can_configure %}
+    <section class="ui-card space-y-3" aria-labelledby="event-planning-heading">
+        <h2 id="event-planning-heading" class="font-semibold">Планирование памятных дат</h2>
+        <p class="ui-muted text-sm">{% if event_settings.enabled %}Включено. Задачи принадлежат пользователю, включившему планирование.{% else %}Выключено. Включивший пользователь станет владельцем задач.{% endif %} При утрате доступа создание задач остановится; отправки нет.</p>
+        <form method="post" action="/app/planner/events/settings">
+            <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="enabled" value="{{ 'off' if event_settings.enabled else 'on' }}">
+            <button type="submit" class="ui-control min-h-[44px]">{{ 'Выключить' if event_settings.enabled else 'Включить' }} планирование</button>
+        </form>
+    </section>
+    {% endif %}
+
     {% if editing and can_update %}
     <section class="ui-card space-y-4" aria-labelledby="edit-heading">
         <h2 id="edit-heading" class="text-lg font-semibold">Изменить задачу №{{ editing.id }}</h2>
@@ -108,6 +119,7 @@
                 {% if item.recurrence %}<p class="ui-muted text-sm break-words" style="overflow-wrap:anywhere">Повтор: {{ item.recurrence }}</p>{% endif %}
                 {% if item.description %}<p class="break-words whitespace-pre-wrap" style="overflow-wrap:anywhere">{{ item.description }}</p>{% endif %}
                 <div class="flex flex-wrap gap-2">
+                    {% if can_draft_greeting and item.id in greeting_ids %}<form method="post" action="/app/planner/events/{{ item.id }}/draft"><input type="hidden" name="_csrf" value="{{ csrf }}"><button type="submit" class="ui-control min-h-[44px]">Создать черновик поздравления</button></form>{% endif %}
                     {% if can_update and item.status not in ['done','cancelled'] %}
                     <a class="ui-control inline-flex min-h-[44px]" href="/app/planner/{{ item.id }}/edit">Изменить</a>
                     <form method="post" action="/app/planner/{{ item.id }}/complete"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><button type="submit" class="ui-control min-h-[44px]">Завершить</button></form>

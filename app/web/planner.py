@@ -6,8 +6,11 @@ from fastapi import APIRouter, HTTPException, Path, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
 
+from app.core.database import async_session_maker
 from app.core.permissions import get_current_user, has_permission
+from app.integrations.bitrix24.client import Bitrix24Error
 from app.services.planner.contracts import TaskCreate, TaskReschedule, TaskUpdate, TaskVersion
+from app.services.planner.events import EventPlanningUnavailable, event_planning_service
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable, planner_service
 from app.types import ActionType
 from app.web.deps import ensure_csrf, render
@@ -41,6 +44,11 @@ async def planner_page(
     page = await invoke(planner_service.list(limit=50, before_id=before_id))
     editing = await invoke(planner_service.get(task_id)) if task_id is not None else None
     actor = get_current_user()
+    async with async_session_maker() as session, session.begin():
+        event_settings = await invoke(event_planning_service.is_enabled(session=session))
+        greeting_ids = await invoke(
+            event_planning_service.greeting_task_ids([item.id for item in page["items"]], session=session)
+        )
     return render(
         request,
         "web/planner.html",
@@ -52,6 +60,9 @@ async def planner_page(
         can_create=has_permission(actor, "plannertask", ActionType.CREATE),
         can_update=has_permission(actor, "plannertask", ActionType.UPDATE),
         can_delete=has_permission(actor, "plannertask", ActionType.DELETE),
+        can_draft_greeting=has_permission(actor, "source", ActionType.CREATE),
+        event_settings=event_settings,
+        greeting_ids=greeting_ids,
         **page,
     )
 
@@ -90,6 +101,33 @@ async def create_task(request: Request):
         raise HTTPException(422, "Invalid planner fields") from None
     await invoke(planner_service.create(data))
     return RedirectResponse("/app/planner", status_code=303)
+
+
+@router.post("/planner/events/settings")
+async def set_event_settings(request: Request):
+    values = await form_values(request)
+    if set(values) != {"enabled"} or values["enabled"] not in {"on", "off"}:
+        raise HTTPException(422, "Invalid event planning setting")
+    async with async_session_maker() as session, session.begin():
+        await invoke(event_planning_service.set_enabled(values["enabled"] == "on", session=session))
+    return RedirectResponse("/app/planner", status_code=303)
+
+
+@router.post("/planner/events/{task_id}/draft")
+async def create_event_draft(request: Request, task_id: int = Path(gt=0)):
+    values = await form_values(request)
+    if values:
+        raise HTTPException(422, "Unexpected fields")
+    try:
+        async with async_session_maker() as session, session.begin():
+            draft = await event_planning_service.draft_for_task(task_id, session=session)
+    except (PlannerUnavailable, EventPlanningUnavailable):
+        raise HTTPException(404, "Event unavailable") from None
+    except PermissionError:
+        raise HTTPException(403, "Greeting draft access denied") from None
+    except Bitrix24Error as exc:
+        raise HTTPException(exc.status_code, exc.code) from None
+    return render(request, "web/planner_event_draft.html", section="planner", draft=draft)
 
 
 @router.post("/planner/{task_id}/{operation}")

@@ -645,6 +645,22 @@ async def test_web_page_permissions_and_context(monkeypatch):
     monkeypatch.setattr(web.planner_service, "get", AsyncMock(return_value=tasks._projection(row())))
     monkeypatch.setattr(web, "has_permission", lambda *args: False)
     monkeypatch.setattr(web, "get_current_user", lambda: None)
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        def begin(self):
+            return self
+
+    monkeypatch.setattr(web, "async_session_maker", FakeSession)
+    monkeypatch.setattr(
+        web.event_planning_service, "is_enabled", AsyncMock(return_value={"enabled": False, "can_configure": False})
+    )
+    monkeypatch.setattr(web.event_planning_service, "greeting_task_ids", AsyncMock(return_value=set()))
     contexts = []
 
     def render(request, name, **context):

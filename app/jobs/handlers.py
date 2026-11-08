@@ -2157,6 +2157,12 @@ async def handle_email_sync(payload: dict[str, Any]) -> dict[str, Any]:
     return await execute(payload)
 
 
+async def handle_planner_events(payload: dict[str, Any]) -> dict[str, Any]:
+    from app.jobs.job_handlers.planner_events import handle_planner_events as execute
+
+    return await execute(payload)
+
+
 HANDLERS = {
     "collect": handle_collect,
     "digest": handle_digest,
@@ -2165,4 +2171,5 @@ HANDLERS = {
     "learn": handle_learn,
     "reflect": handle_reflect,
     "comms.email.sync": handle_email_sync,
+    "planner.events.daily": handle_planner_events,
 }

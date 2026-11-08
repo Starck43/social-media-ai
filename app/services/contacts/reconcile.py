@@ -33,6 +33,7 @@ from app.models.communications.message import ContactChannelStat, MessageThread,
 from app.models.contacts.core import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
 from app.models.crm.entity import CrmEntity
 from app.models.managers.contact_manager import ContactUnavailable
+from app.models.tenancy import Tenant
 from app.types import ActionType
 
 logger = logging.getLogger("app.audit.comms")
@@ -425,6 +426,10 @@ async def merge_contacts(
     if not isinstance(reason, str) or not reason.strip():
         raise ContactMergeError("Merge reason is required")
 
+    # Planner writes lock the tenant before contacts. Match that order so the
+    # merge journal's tenant FK cannot deadlock with event generation.
+    await session.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
+
     # Lock in ascending ID order to serialize concurrent merges on the same pair
     locked_by_id: dict[int, Contact] = {}
     for cid in sorted((source_contact_id, target_contact_id)):
@@ -778,6 +783,9 @@ async def merge_contacts(
         target.last_active_at = source.last_active_at
         target.last_active_channel = source.last_active_channel
 
+    from app.services.planner.events import merge_event_lineage
+
+    await merge_event_lineage(session, tenant_id=tenant_id, source_id=source_contact_id, target_id=target_contact_id)
     source.merged_into_id = target_contact_id
 
     snapshot = {
@@ -834,6 +842,9 @@ async def unmerge_contacts(
     tenant_id = _require_reconcile_permission(ActionType.UPDATE)
     if type(journal_id) is not int or journal_id <= 0:
         raise ContactMergeError("journal_id must be a positive integer")
+
+    # Match generation and merge: tenant first, then contact IDs ascending.
+    await session.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
 
     journal = (
         await session.execute(
@@ -899,6 +910,9 @@ async def unmerge_contacts(
     if _snapshot_stats(current_stats) != _expected_merged_stats(snapshot):
         raise ContactMergeConflictError("Channel observations cannot be restored safely")
 
+    from app.services.planner.events import unmerge_event_lineage
+
+    await unmerge_event_lineage(session, tenant_id=tenant_id, source_id=source_id, target_id=target_id)
     _restore_contact_fields(source, snapshot["source_before"])
     _restore_contact_fields(target, snapshot["target_before"])
 

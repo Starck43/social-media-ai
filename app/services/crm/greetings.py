@@ -107,6 +107,13 @@ def next_occurrence_date(raw_date: str | None, *, today: date) -> tuple[date | N
     return candidate, days_until, years_turning
 
 
+def _contact_event_value(raw: str | None, has_year: bool) -> str | None:
+    """Bridge the Contact manager's MM-DD storage to CRM's --MM-DD parser."""
+    if raw and not has_year and len(raw) == 5 and raw[2] == "-":
+        return "--" + raw
+    return raw
+
+
 def build_allowlisted_greeting_context(
     *,
     display_name: str,
@@ -269,8 +276,15 @@ class CrmGreetingsService:
                 company_title = companies_by_ext.get((linked_crm.connection_id, linked_crm.company_external_id))
 
             raw_events = (
-                ("birthday", contact.birthday_encrypted or pf.get("birthday")),
-                ("anniversary", contact.anniversary_encrypted or pf.get("anniversary")),
+                (
+                    "birthday",
+                    _contact_event_value(contact.birthday_encrypted, contact.birthday_has_year) or pf.get("birthday"),
+                ),
+                (
+                    "anniversary",
+                    _contact_event_value(contact.anniversary_encrypted, contact.anniversary_has_year)
+                    or pf.get("anniversary"),
+                ),
             )
 
             for event_type, raw_val in raw_events:
@@ -396,9 +410,12 @@ class CrmGreetingsService:
         pf = linked_crm.personal_fields if linked_crm is not None else {}
 
         raw_date = (
-            (contact.birthday_encrypted or pf.get("birthday"))
+            (_contact_event_value(contact.birthday_encrypted, contact.birthday_has_year) or pf.get("birthday"))
             if event_type == "birthday"
-            else (contact.anniversary_encrypted or pf.get("anniversary"))
+            else (
+                _contact_event_value(contact.anniversary_encrypted, contact.anniversary_has_year)
+                or pf.get("anniversary")
+            )
         )
         today = resolve_workspace_today(reference_date, tz_name=tz_name)
         ev_date, _, years_turning = next_occurrence_date(raw_date, today=today)

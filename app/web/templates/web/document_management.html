@@ -17,6 +17,33 @@
   <p class="text-sm">Версия {{ editing.version }} · {{ editing.status }}{% if editing.approval_invalidated %} · прежнее согласование отменено{% endif %}</p>
   <p class="text-xs ui-muted">Контакт: {{ editing.contact_id or '—' }} · Доказательство по делу: {{ editing.case_evidence_id or '—' }} · Владелец: {{ editing.owner_user_id or '—' }}</p>
   <p class="text-xs ui-muted break-all">{{ editing.content_hash }}</p>
+  {% if boundary == 'local_only' %}
+  <section class="space-y-3" aria-label="История версий">
+    <h3 class="font-semibold">История версий</h3>
+    <p class="text-xs ui-muted">История доступна только в локальной границе: прежняя граница версии не сохранялась. Восстановление доступно только для локального документа; оно создаёт новую версию и отменяет согласование.</p>
+    {% if history["items"] %}
+    <form method="get" action="/app/documents/manage/{{ editing.id }}" class="space-y-2">
+      <input type="hidden" name="boundary" value="local_only">
+      <label>От <select class="ui-control" name="from_id">{% for rev in history["items"] %}<option value="{{ rev.id }}">v{{ rev.version }}</option>{% endfor %}</select></label>
+      <label>До <select class="ui-control" name="to_id">{% for rev in history["items"] %}<option value="{{ rev.id }}">v{{ rev.version }}</option>{% endfor %}</select></label>
+      <label>Сравнение <select class="ui-control" name="granularity"><option value="line">По строкам</option><option value="word">По словам</option></select></label>
+      <button class="ui-control" type="submit">Сравнить</button>
+    </form>
+    {% for rev in history["items"] %}
+    <div class="space-y-1"><p>v{{ rev.version }} · {{ rev.created_at }} · автор: {{ rev.author_user_id or rev.author or '—' }} · {{ rev.change_description or '—' }}</p>
+      {% if can_update and editing.data_boundary == 'local_only' %}
+      <form method="post" action="/app/documents/manage/{{ editing.id }}/restore/{{ rev.id }}">
+        <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="local_only">
+        <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_updated_at" value="{{ editing.updated_at.isoformat() }}">
+        <button class="ui-control" type="submit">Восстановить как новую версию</button>
+      </form>{% endif %}
+    </div>
+    {% endfor %}
+    {% if history.next_before_id %}<a href="?boundary=local_only&amp;history_before={{ history.next_before_id }}">Предыдущие версии →</a>{% endif %}
+    {% else %}<p>Версий нет.</p>{% endif %}
+    {% if diff %}<div aria-label="Сравнение версий">{% for part in diff.parts %}<div><b>{{ part.operation }}</b>{% if part.before %}<pre class="whitespace-pre-wrap">{{ part.before }}</pre>{% endif %}{% if part.after and part.operation != 'equal' %}<pre class="whitespace-pre-wrap">{{ part.after }}</pre>{% endif %}</div>{% endfor %}</div>{% endif %}
+  </section>
+  {% else %}<p class="text-xs ui-muted">Для истории версий выберите локальную границу данных.</p>{% endif %}
   {% if can_update %}
   <form method="post" action="/app/documents/manage/{{ editing.id }}/edit" class="space-y-3">
     <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">

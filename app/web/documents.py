@@ -95,14 +95,31 @@ async def manage_documents(
     document_id: int | None = None,
     boundary: str = Query("cloud", pattern="^(local_only|company|cloud)$"),
     before_id: int | None = Query(None, gt=0),
+    history_before: int | None = Query(None, gt=0),
+    from_id: int | None = Query(None, gt=0),
+    to_id: int | None = Query(None, gt=0),
+    granularity: str = Query("line", pattern="^(line|word)$"),
 ):
     from app.core.permissions import get_current_user, has_permission
     from app.services.knowledge.documents import document_service
+    from app.services.knowledge.versions import version_service
     from app.types import ActionType
 
     page = await _business_invoke(document_service.list(boundary=boundary, before_id=before_id))
     editing = await _business_invoke(document_service.get(document_id, boundary=boundary)) if document_id else None
     templates = await _business_invoke(document_service.list_templates())
+    history = None
+    diff = None
+    if editing and boundary == "local_only":
+        history = await _business_invoke(version_service.list(document_id, boundary=boundary, before_id=history_before))
+        if (from_id is None) != (to_id is None):
+            from fastapi import HTTPException
+
+            raise HTTPException(422, "Выберите две версии")
+        if from_id is not None:
+            diff = await _business_invoke(
+                version_service.diff(document_id, from_id, to_id, boundary=boundary, granularity=granularity)
+            )
     actor = get_current_user()
     return render(
         request,
@@ -111,6 +128,8 @@ async def manage_documents(
         items=page["items"],
         next_before_id=page["next_before_id"],
         editing=editing,
+        history=history,
+        diff=diff,
         templates=templates["items"],
         can_create=has_permission(actor, "source", ActionType.CREATE),
         can_update=has_permission(actor, "source", ActionType.UPDATE),
@@ -203,3 +222,19 @@ async def create_document_template(request: Request):
         raise HTTPException(422, "Некорректный шаблон") from None
     await _business_invoke(document_service.create_template(data))
     return _back(boundary)
+
+
+@router.post("/documents/manage/{document_id}/restore/{revision_id}")
+async def restore_business_document(request: Request, document_id: int, revision_id: int):
+    from fastapi import HTTPException
+    from pydantic import ValidationError
+
+    from app.services.knowledge.versions import RestoreRequest, version_service
+
+    boundary, values = await _business_form(request)
+    try:
+        data = RestoreRequest.model_validate(values)
+    except ValidationError:
+        raise HTTPException(422, "Некорректная версия") from None
+    await _business_invoke(version_service.restore(document_id, revision_id, data, boundary=boundary))
+    return _back(boundary, document_id)

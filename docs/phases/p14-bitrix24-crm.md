@@ -2,14 +2,14 @@
 
 [Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p14)
 
-**Phase status: PLANNED** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
+**Phase status: IN_PROGRESS.** Core T01–T06 are accepted as of 2026-11-08; the separately deferred on-premise authorization task P14-T08 remains tracked in ROADMAP. Registration: [P13-T01 accepted](../audit/p13-t01.md).
 Owner estimate (TZ): 3–4 weeks — not a repository commitment.
 
 **Goal:** Connect Bitrix24 portals, keep contacts/companies/leads/deals synchronized, show upcoming birthdays and anniversaries with AI greeting drafts, then — after the communication hub — send approved greetings and consented batch messages.
 
 ## Baseline: done and arriving
 
-- In `dev`: `PlatformType.BITRIX24`, catalog descriptor with incoming-webhook method and icon (P12-T02/T10), Settings connections UI (P12-T07). No adapter, sync or data model.
+- Accepted core: Bitrix24 connection, incremental sync, encrypted contact cards, upcoming events and greeting drafts ([T01–T04](../audit/p13-t04-p14-t04-business-crm.md)); approved greeting delivery and consented batch messaging through the P15 outbox ([T05](../audit/p14-t05.md), [T06](../audit/p14-t06.md)).
 - Depends on P13 (PII, contact core, rate limits, OAuth, commands). Sending depends on [P15-T05](../tasks/p15-t05.md)/T06.
 
 ## Adapted requirements
@@ -41,8 +41,8 @@ TZ criteria with adaptations: OAuth connection (T01); automatic 15-min sync (T02
 2. [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md) — Bitrix24 read-only incremental sync of contacts, companies, leads and deals · `P2` · `C4` · depends: [P14-T01 accepted](../audit/p13-t04-p14-t04-business-crm.md), [P13-T07 accepted](../audit/p13-t07.md)
 3. [P14-T03 accepted](../audit/p13-t04-p14-t04-business-crm.md) — CRM contact cards and duplicate candidates · `P2` · `C3` · depends: [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md)
 4. [P14-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md) — Upcoming events and AI greeting drafts · `P2` · `C3` · depends: [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md)
-5. [P14-T05](../tasks/p14-t05.md) — Approved greeting delivery via email, Telegram and MAX · `P3` · `C3` · depends: [P14-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md), [P15-T05](../tasks/p15-t05.md) persistent outbox, [P15-T06](../audit/p15-t06.md) channel senders, [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
-6. [P14-T06](../tasks/p14-t06.md) — Batch messaging with personalization, consent and unsubscribe · `P3` · `C4` · depends: [P14-T05](../tasks/p14-t05.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
+5. [P14-T05 accepted](../audit/p14-t05.md) — DONE 2026-11-08: consented operator-approved greetings through the existing outbox. Accepted SHA `c125cbc23e4f70d124f46e438c28f715ce59680d` (commit date 2026-11-08).
+6. [P14-T06 accepted](../audit/p14-t06.md) — DONE 2026-11-08: personalized consented campaigns, durable replay and public one-click unsubscribe. Accepted SHA `c125cbc23e4f70d124f46e438c28f715ce59680d` (commit date 2026-11-08).
 
 ## Dependencies and gates
 

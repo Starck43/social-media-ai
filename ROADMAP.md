@@ -67,8 +67,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 
 - [P14-T08](docs/tasks/p14-t08.md) Bitrix24 on-premise authorization form on top of the P14-T09 seam — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resumes with P14-T09) · `P2` · `C3`
 
-- [P14-T05](docs/tasks/p14-t05.md) Approved greeting delivery via email, Telegram and MAX — **feature on top of the P15 transport** — **READY** · Starck43 (codex) · [dialogue](https://github.com/Starck43/social-media-ai/pull/444#issuecomment-6721364783) · `P2` · `C3`
-- [P14-T06](docs/tasks/p14-t06.md) Batch messaging with personalization, consent and unsubscribe — **feature on top of the P15 transport; opt-in required (D15)** — **READY** · Starck43 (codex) · [dialogue](https://github.com/Starck43/social-media-ai/pull/444#issuecomment-6721364783) · `P2` · `C4`
 
 ### Priority P3
 

@@ -43,7 +43,7 @@ from app.services.research_delegation import (
     select_execution_path,
 )
 from app.services.task_pipeline import PipelineReviewRequired
-from app.web.chat_workspace import build_task_cards, workspace_cancel_task_run
+from app.web.chat_workspace import build_task_cards
 
 __source_only__ = True
 
@@ -315,7 +315,6 @@ def test_tenant_isolation_and_child_privilege_escalation_refused():
     narrowed = narrow_child_scope(
         origin,
         ChildScopeRequest(
-            role="collector",
             step="collect",
             actor_id=10,
             tenant_id=7,
@@ -324,6 +323,7 @@ def test_tenant_isolation_and_child_privilege_escalation_refused():
         ),
     )
     assert narrowed.data_boundary == "local_only"
+    assert narrowed.role == "collector"
 
     # 5. Depth > 1 (nested sub-agent spawning) refused
     with pytest.raises(DelegationCapExceededError, match="delegation_depth_exceeded"):
@@ -654,7 +654,7 @@ async def test_cancellation_partial_failure_and_chat_workspace_projection(monkey
     assert projected["completed_steps"] == 1
     assert projected["total_steps"] == 3
     assert projected["can_cancel"] is True
-    assert projected["cancel_url"] == "/app/chat/workspace/tasks/42/cancel"
+    assert projected["cancel_url"] == "/chat/workspace/tasks/42/cancel"
     assert [s["step"] for s in projected["steps"]] == list(STEP_ORDER)
     assert projected["steps"][0]["status"] == "partial"
     assert projected["steps"][1]["status"] == "started"
@@ -672,15 +672,22 @@ async def test_cancellation_partial_failure_and_chat_workspace_projection(monkey
     assert "progress" in card_by_type
     prog_card = card_by_type["progress"]
     assert prog_card["can_cancel"] is True
-    assert prog_card["cancel_url"] == "/app/chat/workspace/tasks/42/cancel"
+    assert prog_card["cancel_url"] == "/chat/workspace/tasks/42/cancel"
     assert len(prog_card["steps"]) == 3
-    assert any(a["kind"] == "cancel" for a in prog_card["actions"])
+    assert any(a["kind"] == "cancel" and a["href"] == "/chat/workspace/tasks/42/cancel" for a in prog_card["actions"])
     assert "draft" in card_by_type
     assert card_by_type["draft"]["status"] == "draft_only"
 
-    # Test POST /app/chat/workspace/tasks/42/cancel endpoint
+    # Verify the emitted cancel_url matches the real registered route on app.web.chat.router via TestClient
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
     import app.models as models_mod
+    from app.web.chat import router as chat_router
     import app.web.chat_workspace as cw_mod
+
+    app = FastAPI()
+    app.include_router(chat_router)
 
     updated_jobs: list[tuple[int, dict[str, Any]]] = []
     fake_job = NS(
@@ -711,18 +718,20 @@ async def test_cancellation_partial_failure_and_chat_workspace_projection(monkey
     monkeypatch.setattr(cw_mod, "selected_task", fake_selected_task)
     monkeypatch.setattr(models_mod, "Job", NS(id=NS(desc=lambda: None), objects=FakeJobManager()))
 
-    req = NS(
-        state=NS(
-            web_user=NS(id=10),
-            tenant_id=7,
-            web_perms=NS(
-                can_open_chat=True,
-                can=lambda res, act="view": (res, act) in {("agenttask", "view"), ("agenttask", "update")},
-            ),
+    @app.middleware("http")
+    async def _inject_web_state(request, call_next):
+        request.state.web_user = NS(id=10)
+        request.state.tenant_id = 7
+        request.state.web_perms = NS(
+            can_open_chat=True,
+            can=lambda res, act="view": (res, act) in {("agenttask", "view"), ("agenttask", "update")},
         )
-    )
-    resp = await workspace_cancel_task_run(req, 42)
+        return await call_next(request)
+
+    client = TestClient(app)
+    resp = client.post(prog_card["cancel_url"])
     assert resp.status_code == 200
+    assert resp.json()["cancelled"] is True
     assert len(updated_jobs) == 1
     assert updated_jobs[0][0] == 506
     assert updated_jobs[0][1]["status"] == "cancelled"

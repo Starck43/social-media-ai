@@ -592,7 +592,7 @@ async def workspace_panel(
                                 "total_steps": delegated.get("total_steps") if isinstance(delegated, dict) else None,
                                 "can_cancel": bool(can_update_tasks and is_active),
                                 "cancel_url": (
-                                    f"/app/chat/workspace/tasks/{row.id}/cancel"
+                                    f"/chat/workspace/tasks/{row.id}/cancel"
                                     if (can_update_tasks and is_active)
                                     else None
                                 ),

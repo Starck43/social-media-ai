@@ -259,12 +259,12 @@ class OriginScope:
 class ChildScopeRequest:
     """Requested specialist step scope to be validated against OriginScope."""
 
-    role: str
     step: str
     actor_id: int
     tenant_id: int
     source_ids: tuple[int, ...]
     data_boundary: str
+    role: str | None = None
     depth: int = 1
     permissions: frozenset[tuple[str, str]] = field(default_factory=frozenset)
     tools: frozenset[str] = field(default_factory=frozenset)
@@ -296,13 +296,18 @@ def narrow_child_scope(
     effective_caps = caps or DelegationCaps()
     effective_caps.validate()
 
-    if request.step in UNSUPPORTED_WEB_RESEARCH_STEPS or request.role in UNSUPPORTED_WEB_RESEARCH_STEPS:
+    if request.step in UNSUPPORTED_WEB_RESEARCH_STEPS or (
+        request.role is not None and request.role in UNSUPPORTED_WEB_RESEARCH_STEPS
+    ):
         raise DelegationAdmissionError("delegation_web_research_unavailable_before_p20_t12")
-    if request.step not in STEP_TO_ROLE or request.role not in SPECIALIST_ROLES:
+    if request.step not in STEP_TO_ROLE:
         raise DelegationAdmissionError("delegation_role_or_step_unsupported")
     expected_role = STEP_TO_ROLE[request.step]  # type: ignore[index]
-    if request.role != expected_role:
-        raise DelegationAdmissionError("delegation_step_role_mismatch")
+    if request.role is not None:
+        if request.role not in SPECIALIST_ROLES:
+            raise DelegationAdmissionError("delegation_role_or_step_unsupported")
+        if request.role != expected_role:
+            raise DelegationAdmissionError("delegation_step_role_mismatch")
 
     if type(request.depth) is not int or request.depth < 1 or request.depth > effective_caps.max_depth:
         raise DelegationCapExceededError("delegation_depth_exceeded")
@@ -693,6 +698,9 @@ async def execute_delegated_research(
         per_source = raw.get("per_source") if isinstance(raw.get("per_source"), list) else []
         if len(per_source) > effective_caps.max_fan_out:
             raise DelegationCapExceededError("delegation_collect_fan_out_exceeded")
+        concurrent_workers = int(raw.get("concurrent_workers") or 1)
+        if concurrent_workers > effective_caps.max_concurrency:
+            raise DelegationCapExceededError("delegation_concurrency_exceeded")
 
         sanitized_items: list[dict[str, Any]] = []
         injection_count = 0
@@ -1012,7 +1020,7 @@ def project_delegated_run_for_workspace(
         "total_steps": len(STEP_ORDER),
         "steps": projected_steps,
         "can_cancel": bool(can_cancel and is_active),
-        "cancel_url": f"/app/chat/workspace/tasks/{task_id}/cancel" if (can_cancel and is_active) else None,
+        "cancel_url": f"/chat/workspace/tasks/{task_id}/cancel" if (can_cancel and is_active) else None,
         "task_url": f"/app/tasks/{task_id}",
     }
 

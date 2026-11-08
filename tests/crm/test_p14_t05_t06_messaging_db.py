@@ -53,6 +53,20 @@ from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F40
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 UTC = timezone.utc
+_ORIGINAL_DATETIME = datetime
+
+
+class _FrozenDateTimeMeta(type(_ORIGINAL_DATETIME)):
+    def __instancecheck__(cls, instance):
+        return isinstance(instance, _ORIGINAL_DATETIME)
+
+
+class _FrozenDateTime(_ORIGINAL_DATETIME, metaclass=_FrozenDateTimeMeta):
+    current: datetime
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.current.astimezone(tz) if tz else cls.current.replace(tzinfo=None)
 
 
 def scope(world, workspace: int = 0) -> ExitStack:
@@ -350,15 +364,11 @@ async def test_db_unsubscribe_cancels_current_year_outbox_and_preserves_prior_ye
     contact_mgr = ContactManager()
     now = datetime(2020, 5, 4, 12, 0, tzinfo=UTC)
 
-    class FrozenDateTime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return now.astimezone(tz) if tz else now.replace(tzinfo=None)
-
     # OutboxStore independently reads the wall clock while validating approval TTL.
     # Freeze both outbox and approval-ledger clocks so this remains valid on any date.
-    monkeypatch.setattr(outbox_store_module, "datetime", FrozenDateTime)
-    monkeypatch.setattr(ledger, "datetime", FrozenDateTime)
+    _FrozenDateTime.current = now
+    monkeypatch.setattr(outbox_store_module, "datetime", _FrozenDateTime)
+    monkeypatch.setattr(ledger, "datetime", _FrozenDateTime)
 
     with scope(messaging_world, 0):
         async with async_session_maker() as session, session.begin():
@@ -437,14 +447,9 @@ async def test_db_batch_replay_after_clock_jump_reuses_durable_message(messaging
     now = datetime.now(UTC)
     replay_at = now + timedelta(hours=26)
 
-    class FrozenDateTime(datetime):
-        current = now
-
-        @classmethod
-        def now(cls, tz=None):
-            return cls.current.astimezone(tz) if tz else cls.current.replace(tzinfo=None)
-
-    monkeypatch.setattr(outbox_store_module, "datetime", FrozenDateTime)
+    _FrozenDateTime.current = now
+    monkeypatch.setattr(outbox_store_module, "datetime", _FrozenDateTime)
+    monkeypatch.setattr(ledger, "datetime", _FrozenDateTime)
     idem = f"{messaging_world.tag}-durable-replay"
     request = {
         "tenant_id": ref.tenant_a,
@@ -490,7 +495,7 @@ async def test_db_batch_replay_after_clock_jump_reuses_durable_message(messaging
             )
             first_token = first_item["unsubscribe_url"].split("token=", 1)[1]
 
-    FrozenDateTime.current = replay_at
+    _FrozenDateTime.current = replay_at
     with scope(messaging_world, 0):
         async with async_session_maker() as session, session.begin():
             replay = await messaging_svc.send_batch_messages(**request, now=replay_at, session=session)

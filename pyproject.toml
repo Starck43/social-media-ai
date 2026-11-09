@@ -50,6 +50,7 @@ dependencies = [
     # Active SlowAPI storage constructs the Redis backend at import time.
     "redis==8.1.0",
     "sqladmin==0.32.0",
+    "icalendar==7.3.0",
 ]
 
 [project.optional-dependencies]

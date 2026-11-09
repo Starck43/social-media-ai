@@ -170,7 +170,10 @@ class PlannerService:
     @with_db_session
     async def get(self, task_id, session):
         identity = await self._actor(session, ActionType.VIEW)
-        return _projection(await self._task(session, task_id, identity))
+        from app.services.calendar.service import authoritative_task_projection
+
+        row = await self._task(session, task_id, identity)
+        return await authoritative_task_projection(row, _projection(row), session, identity)
 
     @with_db_session
     async def list(self, session, *, limit=50, before_id=None, status=None):
@@ -189,8 +192,11 @@ class PlannerService:
         if status is not None:
             query = query.where(PlannerTask.status == status)
         rows = list((await session.scalars(query.order_by(PlannerTask.id.desc()).limit(limit + 1))).all())
+        from app.services.calendar.service import authoritative_task_projection
+
+        items = [await authoritative_task_projection(row, _projection(row), session, identity) for row in rows[:limit]]
         return {
-            "items": [_projection(row) for row in rows[:limit]],
+            "items": items,
             "limit": limit,
             "next_before_id": rows[limit - 1].id if len(rows) > limit else None,
         }

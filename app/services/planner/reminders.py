@@ -36,6 +36,8 @@ def _month_before(value: datetime) -> datetime:
 
 def reminder_time(request: ReminderCreate, task: PlannerTask, *, now: datetime) -> datetime:
     """Resolve a preset in the task's timezone; persist the resulting instant in UTC."""
+    if getattr(task, "recurrence_source", "planner") != "planner" and request.preset != "custom":
+        raise PlannerConflict("calendar_relative_reminder_requires_provider")
     if request.preset == "custom":
         assert request.remind_at is not None
         return request.remind_at.astimezone(UTC)
@@ -334,7 +336,37 @@ class PlannerReminderService:
                     await session.commit()
                     return "skipped"
 
-                deferred_to, reason = await reminder_notifications.allowed_at(session, user.id, task.timezone, now)
+                schedule_task = task
+                if task.recurrence_source == "calendar":
+                    try:
+                        if reminder.preset != "custom":
+                            raise PlannerConflict("calendar_relative_reminder_requires_provider")
+                        from types import SimpleNamespace
+
+                        from app.services.calendar.service import authoritative_task_projection
+                        from app.services.planner.tasks import _projection as task_projection
+
+                        schedule = await authoritative_task_projection(
+                            task, task_projection(task), session, (tenant_id, user.id, role)
+                        )
+                        schedule_task = SimpleNamespace(
+                            tenant_id=tenant_id,
+                            id=task.id,
+                            due_at=schedule.due_at,
+                            due_date=schedule.due_date,
+                            timezone=schedule.timezone,
+                        )
+                    except (PlannerConflict, PlannerUnavailable, PermissionError):
+                        reminder.state = "deferred"
+                        reminder.next_attempt_at = now + timedelta(hours=1)
+                        reminder.last_error = "calendar_source_schedule_unavailable"
+                        reminder.version += 1
+                        await session.commit()
+                        return "deferred"
+
+                deferred_to, reason = await reminder_notifications.allowed_at(
+                    session, user.id, schedule_task.timezone, now
+                )
                 if deferred_to is not None:
                     reminder.state = "deferred"
                     reminder.next_attempt_at = deferred_to.astimezone(UTC)
@@ -344,13 +376,13 @@ class PlannerReminderService:
                     return "deferred"
 
                 notification = await reminder_notifications.publish(
-                    session=session, reminder=reminder, task=task, now=now
+                    session=session, reminder=reminder, task=schedule_task, now=now
                 )
                 reminder.state = "delivered"
                 reminder.sent_at = now
                 reminder.notification_id = notification.id
                 reminder.last_error = None
-                reminder.late = self._is_late(task, now)
+                reminder.late = self._is_late(schedule_task, now)
                 reminder.version += 1
                 await session.commit()
                 return "sent"

@@ -557,6 +557,10 @@ async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, A
         from app.jobs.job_handlers.planner_reminders import handle_planner_reminders
 
         handler = handle_planner_reminders
+    if handler is None and job.job_type == "calendar.sync":
+        from app.jobs.job_handlers.calendar_sync import handle_calendar_sync
+
+        handler = handle_calendar_sync
     if not handler:
         # A missing handler is not a transient execution failure. Stop this row
         # for operator inspection instead of spending its remaining attempts.

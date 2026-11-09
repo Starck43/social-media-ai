@@ -27,6 +27,7 @@ SENSITIVE_FIELDS = frozenset(
         "TELEGRAM_SESSION",
         "MAX_BOT_TOKEN",
         "YOOKASSA_SECRET_KEY",
+        "GOOGLE_CALENDAR_CLIENT_SECRET",
     }
 )
 

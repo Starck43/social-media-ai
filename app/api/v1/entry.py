@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     action_audit,
     auth,
     bitrix,
+    calendar,
     commands,
     communication,
     connector_accounts,
@@ -41,6 +42,7 @@ API_AUTH = [Depends(get_authenticated_user)]
 
 router.include_router(contacts.router, prefix="/contacts", tags=["contacts"], dependencies=API_AUTH)
 router.include_router(planner.router, dependencies=API_AUTH)
+router.include_router(calendar.router, dependencies=API_AUTH)
 router.include_router(documents.router, dependencies=API_AUTH)
 router.include_router(outbox.router, dependencies=API_AUTH)
 router.include_router(communication.router, prefix="/communication", tags=["communication"], dependencies=API_AUTH)

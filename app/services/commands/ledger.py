@@ -102,6 +102,8 @@ def _is_capability_enabled(spec: CapabilitySpec) -> bool:
         "comms.telegram.bot_send.v1": "P15_TELEGRAM_BOT_SEND",
         "comms.max.bot_send.v1": "P15_MAX_BOT_SEND",
     }.get(spec.code)
+    if spec.code == "calendar.event_write.v1":
+        return settings.CALENDAR_EVENT_WRITE_ENABLED
     if prefix is not None:
         return os.environ.get(f"{prefix}_ENABLED", "0") == "1" and os.environ.get(f"{prefix}_KILL", "0") == "0"
     return spec.enabled_by_default
@@ -415,8 +417,13 @@ class BusinessCommandLedger:
         spec = get_capability(cmd.capability)
         # Outbox transports have a separate pre-I/O durable claim transaction.
         # Never send or manufacture a success via this generic adapter path.
-        if cmd.capability in {"comms.email.send.v1", "comms.telegram.bot_send.v1", "comms.max.bot_send.v1"}:
-            raise CommandDenied("Transport commands execute only through the persistent outbox")
+        if cmd.capability in {
+            "comms.email.send.v1",
+            "comms.telegram.bot_send.v1",
+            "comms.max.bot_send.v1",
+            "calendar.event_write.v1",
+        }:
+            raise CommandDenied("This capability executes only through its persistent domain dispatcher")
         # Fail-closed rechecks at execution time: membership, role, capability, kill switch, connection, TTL, hash.
         await _verify_member_grant(session, tenant_id, actor_id, spec)
         if cmd.approved_user_id is None:

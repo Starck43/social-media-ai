@@ -25,6 +25,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.core.access_catalog import workspace_grants
@@ -88,7 +89,10 @@ def resolve_client_credentials(method: OAuthMethod, provider_id: str) -> tuple[s
             return cid, csec
     id_key, secret_key = method.client_config_keys
     client_id = str(getattr(settings, id_key, "") or "").strip() if id_key else ""
-    client_secret = str(getattr(settings, secret_key, "") or "").strip() if secret_key else ""
+    raw_secret = getattr(settings, secret_key, "") if secret_key else ""
+    client_secret = (
+        raw_secret.get_secret_value() if isinstance(raw_secret, SecretStr) else str(raw_secret or "")
+    ).strip()
     if not client_id or not client_secret:
         raise OAuthFlowError("oauth_client_not_configured")
     return client_id, client_secret

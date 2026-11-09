@@ -47,8 +47,8 @@ The DDL requested in #448, reviewed and limited to:
 
 ## Collision resolution (2026-11-09)
 
-- P19-T04 was allocated `0146` shortly before this record and had already run a full
-  isolated cycle at that revision. Its file was renumbered to `0144` because this task had
-  not written its migration file yet; the cycle evidence it produced stays valid.
+- P19-T04 was allocated `0146` shortly before this record. This task kept `0146` because it
+  had not written its migration file yet; P19-T04 moved on to `0144` and then to `0147`
+  (see its allocation record). `0146` is not reused for anything else.
 - `0146` here is fixed: no other task may take it. If this task is abandoned, report it and
   the number is returned to the auditor instead of being reassigned silently.

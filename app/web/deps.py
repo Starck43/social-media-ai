@@ -274,6 +274,7 @@ def render(request: Request, name: str, status_code: int = 200, **extra: Any):
         "workspaces": getattr(request.state, "workspaces", []) or [],
         "tenant": getattr(request.state, "tenant", None),
         "unread_notifications": getattr(request.state, "unread_notifications", 0) or 0,
+        "pending_approvals_count": getattr(request.state, "pending_approvals_count", 0) or 0,
         # Personal connections this person must act on; empty in a healthy setup.
         "connection_alerts": getattr(request.state, "connection_alerts", []) or [],
         "perms": perms,

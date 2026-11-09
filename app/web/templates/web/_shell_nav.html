@@ -56,7 +56,7 @@
 <nav id="nav-{{ menu_id }}" class="shell-daily-nav" aria-label="Основные разделы">
 {% if tenant %}{% set ns = namespace(group='') %}{% for item in nav if item.key != 'settings' %}
 {% set group_label = item.group_label|default('') %}{% if group_label and group_label != ns.group %}{% set ns.group = group_label %}<h2 class="shell-nav-group">{{ group_label }}</h2>{% endif %}
-{% if item.ready %}<a href="{{ item.href }}" aria-label="{{ item.label }}" data-tooltip="{{ item.label }}" {% if section == item.key %}aria-current="page"{% endif %}>{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }}</span></a>
+{% if item.ready %}<a href="{{ item.href }}" aria-label="{{ item.label }}" data-tooltip="{{ item.label }}" {% if section == item.key %}aria-current="page"{% endif %}>{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }}</span>{% if item.key == 'actions' and pending_approvals_count|default(0) > 0 %}<span class="ml-auto rounded-full bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-200" data-nav-approvals-badge>{{ pending_approvals_count }}</span>{% endif %}</a>
 {% else %}<span class="shell-unavailable" aria-disabled="true">{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }} · скоро</span></span>{% endif %}
 {% endfor %}{% endif %}
 </nav>

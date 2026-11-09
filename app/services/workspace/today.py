@@ -582,6 +582,9 @@ class TodayProjection:
                 logger.warning("Today pending_actions provider failed", exc_info=True)
 
             try:
+                from app.core.tenant_context import tenant_scope
+                from app.services.commands.approval_inbox import CAPABILITY_REGISTRY, approval_inbox
+
                 command_items: list[dict[str, Any]] = []
                 for cmd in await self.repo.pending_commands(self.workspace_id, limit=PROVIDER_LIMIT):
                     if getattr(cmd, "tenant_id", None) != self.workspace_id or not _positive_int(
@@ -592,11 +595,28 @@ class TodayProjection:
                     if self.scope == "mine" and actor_uid is not None and actor_uid != self.user_id:
                         continue
                     state = str(getattr(cmd, "state", "")).lower()
-                    if state not in {"previewed", "approved", "unknown"}:
+                    if state not in {"draft", "previewed", "approved", "unknown"}:
                         continue
+                    cap_code = str(getattr(cmd, "capability", "") or "")
+                    projected = None
+                    if cap_code in CAPABILITY_REGISTRY:
+                        with tenant_scope(self.workspace_id):
+                            projected = approval_inbox.project_command(
+                                cmd,
+                                perms=self.perms,
+                                now=self.now,
+                            )
+                        if projected is None:
+                            continue
+                        if projected.status not in {"pending", "approved", "unknown"}:
+                            continue
                     snap = getattr(cmd, "preview_snapshot", None) or {}
-                    summary_txt = str(snap.get("summary") or getattr(cmd, "capability", "Команда"))[:160]
-                    is_unknown = state == "unknown"
+                    summary_txt = (
+                        projected.preview_text
+                        if projected is not None
+                        else str(snap.get("summary") or cap_code or "Команда")[:160]
+                    )
+                    is_unknown = (projected.status == "unknown") if projected is not None else (state == "unknown")
                     command_items.append(
                         {
                             "item_key": f"decision:command:{self.workspace_id}:{cmd.id}",
@@ -606,14 +626,25 @@ class TodayProjection:
                             "summary": (
                                 "Статус внешнего вызова не подтверждён — требуется сверка"
                                 if is_unknown
-                                else "Черновик команды ожидает подтверждения"
+                                else (
+                                    projected.reason_for_review
+                                    if projected is not None
+                                    else "Черновик команды ожидает подтверждения"
+                                )
                             ),
-                            "status_label": "Требует сверки" if is_unknown else "На подтверждении",
+                            "status_label": (
+                                "Требует сверки"
+                                if is_unknown
+                                else (projected.status_label if projected is not None else "На подтверждении")
+                            ),
                             "href": "/app/commands",
+                            "authoritative_url": f"/app/commands/{cmd.id}",
                             "chat_url": "/app/chat",
                             "created_at": _iso_or_empty(getattr(cmd, "created_at", None)),
-                            "stale_or_unavailable": is_unknown,
+                            "stale_or_unavailable": is_unknown or bool(projected and projected.is_stale_payload),
                             "marker_label": "Статус не подтверждён" if is_unknown else "",
+                            "payload_hash": projected.payload_hash if projected is not None else getattr(cmd, "payload_hash", None),
+                            "redacted": bool(projected.redacted) if projected is not None else False,
                         }
                     )
                     if len(command_items) >= PROVIDER_LIMIT:

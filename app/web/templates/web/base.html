@@ -67,6 +67,7 @@
             </div>
             <div id="page-actions" class="shell-page-actions">{% block page_actions %}{% endblock %}</div>
             <div class="shell-navbar-tools">
+                {% if pending_approvals_count|default(0) > 0 %}<a href="/app/commands?status=pending" class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200" data-pending-approvals-badge aria-label="На согласовании: {{ pending_approvals_count }}"><span>На согласовании</span><span class="rounded-full bg-amber-200 px-1.5 font-mono text-[11px] dark:bg-amber-900">{{ pending_approvals_count }}</span></a>{% endif %}
                 {% if panel_content|trim %}<button type="button" class="shell-icon-button" data-dialog-open="context-panel" aria-label="Открыть контекстную панель">{{ icon('document') }}</button>{% endif %}
 
             </div>

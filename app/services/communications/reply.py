@@ -242,3 +242,198 @@ def fetch_email_reply_headers(client, inbound, allowed_folders) -> ReplyHeaders:
         return verified_email_headers(inbound, message_id, references)
     except (AttributeError, ValueError, TypeError, OSError, imaplib.IMAP4.error, ImapSyncError):
         raise ReplyUnavailable("reply_headers_unavailable") from None
+
+
+def _read_origin_headers(connection, secret, inbound):
+    """Fetch from the server-owned account, never from a request-supplied client."""
+    from app.integrations.email.imap_sync import (
+        _close_imap_client,
+        _open_pinned_imap_client,
+        get_imap_folders,
+    )
+    from app.utils.crypto import decrypt_secret
+
+    config = connection.config if isinstance(connection.config, dict) else {}
+    login = config.get("account_login")
+    if not isinstance(login, str) or not login:
+        raise ReplyUnavailable("reply_origin_unavailable")
+    client = _open_pinned_imap_client(connection.provider_id, login, decrypt_secret(secret.secret_encrypted))
+    try:
+        return fetch_email_reply_headers(client, inbound, get_imap_folders(connection))
+    finally:
+        _close_imap_client(client)
+
+
+async def reply_authority(session, tenant, actor_id):
+    """Re-read and lock membership and D14 grants, without bypass or cached grants."""
+    from sqlalchemy import select
+
+    from app.core.access_catalog import workspace_grants
+    from app.models import TenantUser, WorkspaceRole
+    from app.services.communications.outbox_store import actor_authority
+    from app.types import ActionType
+
+    await actor_authority(session, tenant, actor_id, ActionType.UPDATE)
+    member = await session.scalar(
+        select(TenantUser)
+        .where(TenantUser.tenant_id == tenant, TenantUser.user_id == actor_id, TenantUser.is_active.is_(True))
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    role = (
+        await session.scalar(
+            select(WorkspaceRole.codename).where(WorkspaceRole.id == member.role_id).with_for_update(read=True)
+        )
+        if member is not None
+        else None
+    )
+    grants = workspace_grants(role)
+    if any((resource, ActionType.VIEW) not in grants for resource in ("contact", "unifiedmessage")):
+        raise PermissionError("reply_denied")
+
+
+async def create_reply_draft(session, *, thread_id, inbound_message_id, subject, body, timezone, idempotency_key):
+    """Create one email reply draft and encrypted provenance, without scheduling or sending.
+
+    Caller owns the session transaction. The sender/account, identity, source and
+    wire headers are loaded from locked server-owned records, never caller input.
+    A missing, changed or unsupported source is a refusal, not a generic message.
+    While dispatch integration is unfinished, outbox refuses all such drafts.
+    """
+    import asyncio
+    import json
+    import re
+    from datetime import datetime
+    from datetime import timezone as tz
+
+    from sqlalchemy import select
+
+    from app.models import ContactIdentity
+    from app.models.communications.message import MessageThread, UnifiedMessage
+    from app.models.communications.outbox import OutboxMessage, OutboxReplyEvidence, OutboxTarget
+    from app.services.communications import outbox as transitions
+    from app.services.communications.outbox_contracts import DraftIn
+    from app.services.communications.outbox_store import (
+        OutboxConflict,
+        content_digest,
+        current_actor,
+        digest,
+        projection,
+        resolve_route,
+        targets_for,
+    )
+    from app.types import ActionType
+
+    if not _positive(thread_id) or not _positive(inbound_message_id):
+        raise ValueError("invalid_reply_source")
+    if not isinstance(idempotency_key, str) or re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", idempotency_key) is None:
+        raise ValueError("invalid_idempotency_key")
+    tenant, actor = await current_actor(session, ActionType.UPDATE, serialize=True)
+    await reply_authority(session, tenant, actor)
+    thread = await session.scalar(
+        select(MessageThread)
+        .where(MessageThread.tenant_id == tenant, MessageThread.id == thread_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    inbound = await session.scalar(
+        select(UnifiedMessage)
+        .where(UnifiedMessage.tenant_id == tenant, UnifiedMessage.id == inbound_message_id)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    if thread is None or inbound is None or not _positive(thread.contact_id):
+        raise ReplyUnavailable("reply_origin_unavailable")
+    identities = list(
+        (
+            await session.scalars(
+                select(ContactIdentity)
+                .where(ContactIdentity.tenant_id == tenant, ContactIdentity.contact_id == thread.contact_id)
+                .with_for_update(read=True)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    )
+    origin = select_email_origin(thread, inbound, identities)
+    request = DraftIn(
+        contact_id=origin.contact_id,
+        subject=subject,
+        body=body,
+        purpose="transactional",
+        timezone=timezone,
+        targets=[{"channel": "email", "connection_id": origin.connection_id, "identity_id": origin.identity_id}],
+    )
+    request_hash = digest(
+        {
+            "kind": "thread_reply_v1",
+            "thread": thread_id,
+            "inbound": inbound_message_id,
+            "draft": request.model_dump(mode="json"),
+        }
+    )
+    existing = await session.scalar(
+        select(OutboxMessage)
+        .where(
+            OutboxMessage.tenant_id == tenant,
+            OutboxMessage.author_id == actor,
+            OutboxMessage.idempotency_key == idempotency_key,
+        )
+        .with_for_update()
+    )
+    if existing is not None:
+        if existing.request_hash != request_hash or existing.reply_evidence_required is not True:
+            raise OutboxConflict("outbox_idempotency_mismatch")
+        evidence = await session.scalar(
+            select(OutboxReplyEvidence)
+            .where(OutboxReplyEvidence.tenant_id == tenant, OutboxReplyEvidence.outbox_message_id == existing.id)
+            .with_for_update(read=True)
+        )
+        if evidence is None or evidence.thread_id != thread_id or evidence.inbound_message_id != inbound_message_id:
+            raise OutboxConflict("reply_evidence_unavailable")
+        return projection(existing, await targets_for(session, existing))
+
+    message = OutboxMessage(
+        tenant_id=tenant,
+        author_id=actor,
+        contact_id=origin.contact_id,
+        idempotency_key=idempotency_key,
+        request_hash=request_hash,
+        subject_encrypted=request.subject or None,
+        content_encrypted=request.body,
+        content_hash="",
+        state="validated",
+        purpose="transactional",
+        reply_evidence_required=True,
+        timezone=request.timezone,
+    )
+    target = OutboxTarget(
+        tenant_id=tenant,
+        channel="email",
+        connection_id=origin.connection_id,
+        identity_id=origin.identity_id,
+        attempts=0,
+        state="validated",
+        idempotency_key=digest([tenant, actor, idempotency_key, 0])[7:],
+    )
+    recipient, credential, connection, secret = await resolve_route(
+        session, message, target, datetime.now(tz.utc), consent=False
+    )
+    # Pinned account access is blocking; do not block the event loop. The transaction
+    # retains the same locked connection and source until the evidence is persisted.
+    headers = await asyncio.to_thread(_read_origin_headers, connection, secret, inbound)
+    target.recipient_encrypted, target.credential_hash = recipient, credential
+    target.content_hash = transitions.compute_message_hash(recipient, "email", request.subject, request.body)
+    message.content_hash = content_digest(message, [target])
+    evidence = OutboxReplyEvidence(
+        tenant_id=tenant,
+        thread_id=origin.thread_id,
+        inbound_message_id=origin.inbound_message_id,
+        headers_encrypted=json.dumps(headers.approval_value(), sort_keys=True, separators=(",", ":")),
+    )
+    session.add(message)
+    await session.flush()
+    target.message_id = evidence.outbox_message_id = message.id
+    session.add(target)
+    session.add(evidence)
+    await session.flush()
+    return projection(message, [target])

@@ -143,7 +143,10 @@ async def test_foreign_inbound_fails_without_reading_provider_or_writing(monkeyp
 
 @pytest.mark.asyncio
 async def test_same_key_replays_only_matching_persisted_reply(monkeypatch):
+    from app.services.communications.ingest import hash_message_id
+
     thread, inbound, identity = source_rows()
+    inbound.external_message_id_hash = hash_message_id("<id@example.invalid>")
     monkeypatch.setattr(outbox_store, "current_actor", AsyncMock(return_value=(7, 3)))
     monkeypatch.setattr(reply, "reply_authority", AsyncMock())
     monkeypatch.setattr(
@@ -166,6 +169,9 @@ async def test_same_key_replays_only_matching_persisted_reply(monkeypatch):
     replay = FakeSession([thread, inbound, message, evidence], [identity])
     assert (await call(replay))["id"] == message.id
     assert not replay.added
+    evidence.headers_encrypted = evidence.headers_encrypted.replace("<id@example.invalid>", "<other@example.invalid>")
+    with pytest.raises(reply.ReplyUnavailable, match="reply_evidence_unavailable"):
+        await call(FakeSession([thread, inbound, message, evidence], [identity]))
     message.reply_evidence_required = False
     with pytest.raises(outbox_store.OutboxConflict, match="outbox_idempotency_mismatch"):
         await call(FakeSession([thread, inbound, message], [identity]))

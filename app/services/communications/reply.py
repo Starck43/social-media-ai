@@ -421,7 +421,14 @@ async def create_reply_draft(session, *, thread_id, inbound_message_id, subject,
         )
         if evidence is None or evidence.thread_id != thread_id or evidence.inbound_message_id != inbound_message_id:
             raise OutboxConflict("reply_evidence_unavailable")
-        return projection(existing, await targets_for(session, existing))
+        targets = await targets_for(session, existing)
+        if len(targets) != 1:
+            raise OutboxConflict("reply_evidence_unavailable")
+        headers = verified_reply_evidence(existing, targets[0], thread, inbound, identities, evidence)
+        proof = {"thread_id": thread_id, "inbound_message_id": inbound_message_id, "headers": headers.approval_value()}
+        if existing.content_hash != content_digest(existing, targets, proof):
+            raise OutboxConflict("outbox_intent_mismatch")
+        return projection(existing, targets)
 
     message = OutboxMessage(
         tenant_id=tenant,

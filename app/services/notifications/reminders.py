@@ -49,7 +49,7 @@ def _now(value):
 class ReminderNotifications:
     async def destination(self, event, user_id):
         from app.models.planner import PlannerReminder
-        from app.services.planner.tasks import PlannerUnavailable, planner_service
+        from app.services.planner.tasks import PlannerConflict, PlannerUnavailable, planner_service
 
         async with async_session_maker() as session:
             task_id = await session.scalar(
@@ -63,7 +63,7 @@ class ReminderNotifications:
             return None
         try:
             await planner_service.get(task_id)
-        except (PlannerUnavailable, PermissionError):
+        except (PlannerConflict, PlannerUnavailable, PermissionError):
             return None
         return f"/app/planner/{task_id}/edit#reminders"
 

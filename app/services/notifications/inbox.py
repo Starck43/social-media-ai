@@ -39,6 +39,11 @@ class PersonalInbox:
             self._grants[event.tenant_id] = await manager.member_grants(membership)
         if event.related_entity_type is None:
             return "/app/"
+        if event.related_entity_type == "planner_reminder":
+            from .reminders import reminder_notifications
+
+            with tenant_scope(event.tenant_id):
+                return await reminder_notifications.destination(event, self.user.id)
         # A receipt is personal and workspace membership was freshly checked.
         # Only this exact event kind gets a fixed, server-owned settings route.
         if (

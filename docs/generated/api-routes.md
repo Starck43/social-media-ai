@@ -151,12 +151,17 @@ and execution permissions remain in the handwritten references and code.
 | DELETE | /api/v1/notifications/{notification_id} | delete_notification_api_v1_notifications__notification_id__delete |
 | GET | /api/v1/notifications/{notification_id} | get_notification_api_v1_notifications__notification_id__get |
 | POST | /api/v1/notifications/{notification_id}/mark-read | mark_notification_as_read_api_v1_notifications__notification_id__mark_read_post |
+| POST | /api/v1/planner/reminders/{reminder_id}/cancel | cancel_reminder_api_v1_planner_reminders__reminder_id__cancel_post |
+| POST | /api/v1/planner/reminders/{reminder_id}/reschedule | reschedule_reminder_api_v1_planner_reminders__reminder_id__reschedule_post |
+| POST | /api/v1/planner/reminders/{reminder_id}/snooze | snooze_reminder_api_v1_planner_reminders__reminder_id__snooze_post |
 | GET | /api/v1/planner/tasks | list_tasks_api_v1_planner_tasks_get |
 | POST | /api/v1/planner/tasks | create_task_api_v1_planner_tasks_post |
 | DELETE | /api/v1/planner/tasks/{task_id} | delete_task_api_v1_planner_tasks__task_id__delete |
 | GET | /api/v1/planner/tasks/{task_id} | get_task_api_v1_planner_tasks__task_id__get |
 | PATCH | /api/v1/planner/tasks/{task_id} | update_task_api_v1_planner_tasks__task_id__patch |
 | POST | /api/v1/planner/tasks/{task_id}/complete | complete_task_api_v1_planner_tasks__task_id__complete_post |
+| GET | /api/v1/planner/tasks/{task_id}/reminders | list_reminders_api_v1_planner_tasks__task_id__reminders_get |
+| POST | /api/v1/planner/tasks/{task_id}/reminders | create_reminder_api_v1_planner_tasks__task_id__reminders_post |
 | POST | /api/v1/planner/tasks/{task_id}/reschedule | reschedule_task_api_v1_planner_tasks__task_id__reschedule_post |
 | GET | /api/v1/social/callback | vk_callback_api_v1_social_callback_get |
 | GET | /api/v1/social/start | vk_oauth_start_api_v1_social_start_get |

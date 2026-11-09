@@ -16,6 +16,14 @@ from app.services.planner.contracts import (
     TaskUpdate,
     TaskVersion,
 )
+from app.services.planner.reminder_contracts import (
+    ReminderCreate,
+    ReminderOut,
+    ReminderReschedule,
+    ReminderSnooze,
+    ReminderVersion,
+)
+from app.services.planner.reminders import reminder_service
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable, planner_service
 from app.types import ActionType
 
@@ -93,6 +101,48 @@ async def complete_task(request: TaskVersion, task_id: int = Path(gt=0)):
 )
 async def delete_task(request: TaskVersion, task_id: int = Path(gt=0)):
     return await invoke(planner_service.delete(task_id, request.expected_version))
+
+
+@router.get("/tasks/{task_id}/reminders", response_model=list[ReminderOut])
+async def list_reminders(task_id: int = Path(gt=0)):
+    return await invoke(reminder_service.list(task_id))
+
+
+@router.post(
+    "/tasks/{task_id}/reminders",
+    response_model=ReminderOut,
+    status_code=201,
+    dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
+)
+async def create_reminder(request: ReminderCreate, task_id: int = Path(gt=0)):
+    return await invoke(reminder_service.create(task_id, request))
+
+
+@router.post(
+    "/reminders/{reminder_id}/snooze",
+    response_model=ReminderOut,
+    dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
+)
+async def snooze_reminder(request: ReminderSnooze, reminder_id: int = Path(gt=0)):
+    return await invoke(reminder_service.snooze(reminder_id, request))
+
+
+@router.post(
+    "/reminders/{reminder_id}/reschedule",
+    response_model=ReminderOut,
+    dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
+)
+async def reschedule_reminder(request: ReminderReschedule, reminder_id: int = Path(gt=0)):
+    return await invoke(reminder_service.reschedule(reminder_id, request))
+
+
+@router.post(
+    "/reminders/{reminder_id}/cancel",
+    response_model=ReminderOut,
+    dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
+)
+async def cancel_reminder(request: ReminderVersion, reminder_id: int = Path(gt=0)):
+    return await invoke(reminder_service.cancel(reminder_id, request.expected_version))
 
 
 validate_business_routes(router)

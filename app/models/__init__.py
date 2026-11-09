@@ -68,8 +68,8 @@ from .llm import (
     LLMOutcomeEvent,
     LLMProvider,
 )
-from .notifications import DigestRun, Notification, NotificationPreference, NotificationReceipt
-from .planner import PlannerEventRun, PlannerEventSettings, PlannerTask
+from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
+from .planner import PlannerEventRun, PlannerEventSettings, PlannerReminder, PlannerTask
 from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
@@ -87,6 +87,8 @@ __all__ = [
     "PlannerTask",
     "PlannerEventRun",
     "PlannerEventSettings",
+    "PlannerReminder",
+    "NotificationDelivery",
     "OutboxMessage",
     "OutboxTarget",
     "CrmEntity",

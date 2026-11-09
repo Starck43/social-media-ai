@@ -1,6 +1,14 @@
-"""D14 outbox entrypoints: UPDATE drafts/cancellation; explicit CONFIGURE approval."""
+"""D14 outbox entrypoints: UPDATE drafts/cancellation; explicit CONFIGURE approval.
+
+`/reply` is the thread-reply surface (P15-T08): it creates a draft whose provenance
+is read from locked server records, never from the request body.
+"""
+
+from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from pydantic import Field, StrictInt, field_validator
 
 from app.api.deps import require_model_perm
 from app.api.v1.conventions import (
@@ -9,10 +17,11 @@ from app.api.v1.conventions import (
     require_idempotency_key,
     validate_business_routes,
 )
-from app.schemas.business import BusinessPage
+from app.schemas.business import BusinessPage, BusinessSchema
 from app.services.communications.outbox import CommunicationError
 from app.services.communications.outbox_contracts import DraftIn, MessageOut, ScheduleIn
 from app.services.communications.outbox_store import OutboxConflict, OutboxUnavailable, outbox_store
+from app.services.communications.reply import ReplyUnavailable, create_reply_draft
 from app.types import ActionType
 
 router = APIRouter(
@@ -26,7 +35,7 @@ router = APIRouter(
 async def invoke(operation):
     try:
         return await operation
-    except OutboxUnavailable:
+    except (OutboxUnavailable, ReplyUnavailable):
         raise HTTPException(404) from None
     except (OutboxConflict, CommunicationError):
         raise HTTPException(409) from None
@@ -45,6 +54,47 @@ async def invoke(operation):
 )
 async def create_outbox_draft(body: DraftIn, idempotency_key: str = Depends(require_idempotency_key)):
     return await invoke(outbox_store.draft(body, idempotency_key))
+
+
+class ReplyIn(BusinessSchema):
+    """Reply content only: the source thread, sender and headers come from the server."""
+
+    thread_id: StrictInt = Field(gt=0)
+    inbound_message_id: StrictInt = Field(gt=0)
+    subject: str = Field(default="", max_length=998)
+    body: str = Field(min_length=1, max_length=1000000)
+    timezone: str = Field(default="UTC")
+    purpose: Literal["transactional"] = "transactional"
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_zone(cls, value):
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError("invalid_timezone") from None
+        return value
+
+
+@router.post(
+    "/reply",
+    response_model=MessageOut,
+    status_code=201,
+    openapi_extra={"x-creates-command": True},
+    dependencies=[Depends(require_model_perm("comms.outbox", ActionType.UPDATE))],
+)
+async def create_thread_reply(body: ReplyIn, idempotency_key: str = Depends(require_idempotency_key)):
+    """One email reply draft bound to verified inbound provenance; scheduling stays separate."""
+    return await invoke(
+        create_reply_draft(
+            thread_id=body.thread_id,
+            inbound_message_id=body.inbound_message_id,
+            subject=body.subject,
+            body=body.body,
+            timezone=body.timezone,
+            idempotency_key=idempotency_key,
+        )
+    )
 
 
 @router.post(

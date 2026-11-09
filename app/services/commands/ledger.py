@@ -423,7 +423,11 @@ class BusinessCommandLedger:
             "comms.max.bot_send.v1",
             "calendar.event_write.v1",
         }:
-            raise CommandDenied("This capability executes only through its persistent domain dispatcher")
+            raise CommandDenied(
+                "Calendar commands execute only through the persistent calendar dispatcher"
+                if cmd.capability == "calendar.event_write.v1"
+                else "Transport commands execute only through the persistent outbox"
+            )
         # Fail-closed rechecks at execution time: membership, role, capability, kill switch, connection, TTL, hash.
         await _verify_member_grant(session, tenant_id, actor_id, spec)
         if cmd.approved_user_id is None:

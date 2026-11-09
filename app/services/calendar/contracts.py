@@ -21,7 +21,14 @@ class EventInput(BusinessSchema):
     @field_validator("recurrence")
     @classmethod
     def recurrence_lines(cls, value):
-        if any("\r" in line or "\n" in line or not line.startswith(("RRULE:", "RDATE:", "EXDATE:")) for line in value):
+        if any(
+            len(line) > 4096
+            or "\x00" in line
+            or "\r" in line
+            or "\n" in line
+            or not line.startswith(("RRULE:", "RDATE:", "EXDATE:"))
+            for line in value
+        ):
             raise ValueError("invalid_calendar_recurrence")
         return value
 

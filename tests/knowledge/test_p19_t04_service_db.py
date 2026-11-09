@@ -21,6 +21,7 @@ from app.services.knowledge.approvals import ApprovalConflict, approval_service
 from app.services.knowledge.document_contracts import DocumentCreate
 from app.services.knowledge.documents import document_service
 from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F401
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 
@@ -44,7 +45,7 @@ async def approval_world(personal_world, monkeypatch):  # noqa: F811
     monkeypatch.setattr(
         notification_service, "messenger_service", SimpleNamespace(send_notification=messenger), raising=False
     )
-    assert settings.DB_SCHEMA == "test_schema_p19t04"
+    require_isolated_schema()
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
     ids = [tenant.id for tenant in personal_world.tenants]
     try:

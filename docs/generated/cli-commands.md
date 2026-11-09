@@ -18,6 +18,9 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main collection | Manage task-scoped collection lanes |
 | python -m cli.main collection import | Import VK communities and people from a pasted list as wall lanes. Identity resolution only: VK is read (groups.getById, users.get), content is never collected and nothing is written to VK. |
 | python -m cli.main collection lanes | Plan (and optionally apply) task-scoped collection lanes for a task. |
+| python -m cli.main communications | Thread replies: preview and draft |
+| python -m cli.main communications reply-draft | Create one email reply draft; approval and scheduling stay in the outbox surface. |
+| python -m cli.main communications reply-preview | Show the verified source of a reply: contact, connection and sender identity. |
 | python -m cli.main credentials | Manage platform credentials (tenant vault) |
 | python -m cli.main credentials disable | Deactivate the newest matching personal credential without deleting it. |
 | python -m cli.main credentials list | List a user's personal vault credentials. Secrets are never printed. |
@@ -27,6 +30,10 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main digest | Digest operations |
 | python -m cli.main digest run | Build and publish a digest directly (not idempotent). |
 | python -m cli.main digest send-now | Build and publish a digest right now (manual run, not idempotent). |
+| python -m cli.main documents | Document version history, diff and restore |
+| python -m cli.main documents diff | Show the plain-text diff between two revisions. |
+| python -m cli.main documents history | List document revisions (id, version, hash, author, created, change). |
+| python -m cli.main documents restore | Restore a revision as a new current revision; history is never rewritten. |
 | python -m cli.main learn | Extract durable facts from recent chat into memory directly. |
 | python -m cli.main llm | Manage LLM providers and models |
 | python -m cli.main llm model-add | Create an LLM model. |

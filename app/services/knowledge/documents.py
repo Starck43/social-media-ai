@@ -591,15 +591,10 @@ class DocumentService:
             validate_review_transition(status, data.target)
         except ValueError:
             raise DocumentConflict("invalid_transition") from None
-        # TEMPORARY P19-T01 ONLY: delete this rule when P19-T04 introduces its
-        # assigned approver and dedicated permission; never extend/inherit it.
-        # _actor locks and re-reads the active user, workspace, membership and
-        # workspace role in this same transaction, before the document lock.
+        # Decisions require a revision-bound approval request and its dedicated
+        # authorization; never bypass that workflow via the legacy transition.
         if data.target in {STATUS_APPROVED, STATUS_REJECTED, STATUS_REVISION_REQUESTED}:
-            if identity[2] != "owner":
-                raise PermissionError("document_decision_denied")
-            revision.decision_actor_user_id = identity[1]
-            revision.approved_by = f"user:{identity[1]}" if data.target == STATUS_APPROVED else None
+            raise DocumentConflict("approval_request_required")
         revision.status = data.target
         doc.updated_at = datetime.now(timezone.utc)
         await session.flush()

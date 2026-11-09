@@ -25,7 +25,9 @@ spec.loader.exec_module(migration)
 
 def test_one_head_and_reserved_parent():
     graph = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert graph.get_heads() == ["0148"]
+    heads = graph.get_heads()
+    assert len(heads) == 1
+    assert "0148" in {revision.revision for revision in graph.walk_revisions(base="base", head=heads[0])}
     assert migration.revision == "0148" and migration.down_revision == "0147"
 
 

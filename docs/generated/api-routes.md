@@ -56,6 +56,7 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/communication/inbox/mark-read | post_communication_mark_read_api_v1_communication_inbox_mark_read_post |
 | GET | /api/v1/communication/inbox/threads/{thread_id} | get_communication_thread_detail_api_v1_communication_inbox_threads__thread_id__get |
 | POST | /api/v1/communication/outbox/draft | create_outbox_draft_api_v1_communication_outbox_draft_post |
+| POST | /api/v1/communication/outbox/reply | create_thread_reply_api_v1_communication_outbox_reply_post |
 | POST | /api/v1/communication/outbox/schedule | schedule_outbox_api_v1_communication_outbox_schedule_post |
 | GET | /api/v1/communication/outbox/scheduled | list_scheduled_outbox_api_v1_communication_outbox_scheduled_get |
 | DELETE | /api/v1/communication/outbox/scheduled/{message_id} | cancel_scheduled_outbox_api_v1_communication_outbox_scheduled__message_id__delete |
@@ -105,6 +106,7 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/dashboard/trends/{source_id} | get_source_trends_api_v1_dashboard_trends__source_id__get |
 | GET | /api/v1/documents | list_documents_api_v1_documents_get |
 | POST | /api/v1/documents | create_document_api_v1_documents_post |
+| GET | /api/v1/documents/approvals/pending | pending_approvals_api_v1_documents_approvals_pending_get |
 | GET | /api/v1/documents/templates | list_templates_api_v1_documents_templates_get |
 | POST | /api/v1/documents/templates | create_template_api_v1_documents_templates_post |
 | DELETE | /api/v1/documents/templates/{template_id} | delete_template_api_v1_documents_templates__template_id__delete |
@@ -113,6 +115,8 @@ and execution permissions remain in the handwritten references and code.
 | DELETE | /api/v1/documents/{document_id} | delete_document_api_v1_documents__document_id__delete |
 | GET | /api/v1/documents/{document_id} | get_document_api_v1_documents__document_id__get |
 | PATCH | /api/v1/documents/{document_id} | update_document_api_v1_documents__document_id__patch |
+| POST | /api/v1/documents/{document_id}/approvals/{approval_id}/{action} | decide_approval_api_v1_documents__document_id__approvals__approval_id___action__post |
+| POST | /api/v1/documents/{document_id}/request-approval | request_approval_api_v1_documents__document_id__request_approval_post |
 | POST | /api/v1/documents/{document_id}/restore/{revision_id} | restore_version_api_v1_documents__document_id__restore__revision_id__post |
 | POST | /api/v1/documents/{document_id}/transition | transition_document_api_v1_documents__document_id__transition_post |
 | GET | /api/v1/documents/{document_id}/versions | list_versions_api_v1_documents__document_id__versions_get |

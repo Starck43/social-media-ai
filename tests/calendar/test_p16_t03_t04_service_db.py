@@ -46,13 +46,14 @@ from app.services.planner.reminders import reminder_service
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable, planner_service
 from app.utils.crypto import encrypt_secret
 from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F401
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 
 
 @pytest.fixture(autouse=True)
 def calendar_test_schema_gate(monkeypatch):
-    assert settings.DB_SCHEMA == "test_schema", "calendar database tests are test_schema only"
+    require_isolated_schema()
     assert resolve_permission_key("planner.task.update") is not None, "planner access catalog is required"
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
 

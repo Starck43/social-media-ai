@@ -61,8 +61,8 @@ def xml_rows(response):
                     if prop is None:
                         raise ValueError
                     properties.update({node.tag: node for node in prop})
-            if not properties:
-                raise ValueError
+            # Unsupported optional properties (for example ctag) may be 404.
+            # Required discovery/event properties are checked by their caller.
             rows.append((resource_path(href), properties))
         return rows
     except (ValueError, ET.ParseError):

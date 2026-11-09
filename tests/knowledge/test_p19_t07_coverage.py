@@ -9,7 +9,7 @@ Targets in ``app/services/knowledge/documents.py``:
 * ``list`` -> skip legacy documents whose ``current_revision_id`` points at no
   readable revision (``DocumentUnavailable``).
 
-Requires an exclusive PostgreSQL ``test_schema``; runs serially by design.
+Requires an isolated PostgreSQL schema (``DB_TEST_SCHEMA``); the guard refuses the working one.
 """
 
 from contextlib import ExitStack
@@ -18,13 +18,13 @@ import pytest
 from sqlalchemy import delete, func, select
 
 from app.core.access_catalog import workspace_grants
-from app.core.config import settings
 from app.core.database import async_session_maker
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import DocumentRevision, KnowledgeDocument
 from app.services.knowledge.documents import DocumentConflict, document_service
 from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F401
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 
@@ -40,7 +40,7 @@ def scoped(world, workspace=0):
 
 @pytest.fixture
 async def coverage_world(personal_world):  # noqa: F811
-    assert settings.DB_SCHEMA == "test_schema"
+    require_isolated_schema()
     ids = [tenant.id for tenant in personal_world.tenants]
     try:
         yield personal_world

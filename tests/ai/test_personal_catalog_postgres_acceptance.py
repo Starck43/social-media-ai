@@ -61,6 +61,7 @@ from app.services.ai.personal_catalog import (
     set_default_model,
 )
 from app.types import SourceType
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 
@@ -317,7 +318,7 @@ async def test_source_replacement_rejects_foreign_and_other_task_owned_rows(owne
 
 
 async def test_database_catalog_has_composite_fk_and_ownership_guards():
-    assert settings.DB_SCHEMA == "test_schema", "STOP: schema redirect changed"
+    require_isolated_schema()
     async with async_session_maker() as session:
         foreign_keys = await session.run_sync(
             lambda sync: inspect(sync.bind).get_foreign_keys("llm_models", schema=settings.DB_SCHEMA)

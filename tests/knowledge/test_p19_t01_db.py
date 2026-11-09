@@ -22,6 +22,7 @@ from app.models.knowledge import DocumentTemplate
 from app.services.knowledge.document_contracts import DocumentCreate
 from app.services.knowledge.documents import DocumentUnavailable, document_service
 from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F401
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 
@@ -37,7 +38,7 @@ def scope(world, workspace=0):
 
 @pytest.fixture
 async def doc_world(personal_world, monkeypatch):  # noqa: F811
-    assert settings.DB_SCHEMA == "test_schema"
+    require_isolated_schema()
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
     world = personal_world
     ids = [tenant.id for tenant in world.tenants]

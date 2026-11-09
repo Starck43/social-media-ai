@@ -33,10 +33,9 @@ async def pg_boundaries(monkeypatch):
         target.hostname not in {"localhost", "127.0.0.1", "::1"}
         or (target.port or 5432) != 5432
         or target.path != "/social_manager"
-        or settings.DB_SCHEMA != "test_schema"
     ):
-        raise RuntimeError("P11-T13 requires the approved local social_manager/test_schema target")
-    assert all(model.__table__.schema == "test_schema" for model in (Tenant, AgentTask, Source))
+        raise RuntimeError("P11-T13 requires the approved local social_manager target")
+    assert all(model.__table__.schema == settings.DB_SCHEMA for model in (Tenant, AgentTask, Source))
     prefix = "p11-t13-" + uuid4().hex
     engine = database.async_engine
     connection = await engine.connect()

@@ -463,3 +463,62 @@ async def create_reply_draft(session, *, thread_id, inbound_message_id, subject,
     session.add(evidence)
     await session.flush()
     return projection(message, [target])
+
+
+async def load_verified_reply(session, message, targets):
+    """Lock and verify persisted provenance and fresh D14 authority for D15.
+
+    This returns data for approval binding, not authorization to send. The
+    outbox must still verify its approval, route snapshot and current consent
+    policy at the appropriate transaction boundaries.
+    """
+    from sqlalchemy import select
+
+    from app.models import ContactIdentity
+    from app.models.communications.message import MessageThread, UnifiedMessage
+    from app.models.communications.outbox import OutboxReplyEvidence
+
+    if getattr(message, "reply_evidence_required", False) is not True or len(targets) != 1:
+        raise ReplyUnavailable("reply_evidence_unavailable")
+    await reply_authority(session, message.tenant_id, message.author_id)
+    evidence = await session.scalar(
+        select(OutboxReplyEvidence)
+        .where(
+            OutboxReplyEvidence.tenant_id == message.tenant_id,
+            OutboxReplyEvidence.outbox_message_id == message.id,
+        )
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    if evidence is None:
+        raise ReplyUnavailable("reply_evidence_unavailable")
+    thread = await session.scalar(
+        select(MessageThread)
+        .where(MessageThread.tenant_id == message.tenant_id, MessageThread.id == evidence.thread_id)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    inbound = await session.scalar(
+        select(UnifiedMessage)
+        .where(UnifiedMessage.tenant_id == message.tenant_id, UnifiedMessage.id == evidence.inbound_message_id)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    if thread is None or inbound is None:
+        raise ReplyUnavailable("reply_evidence_unavailable")
+    identities = list(
+        (
+            await session.scalars(
+                select(ContactIdentity)
+                .where(ContactIdentity.tenant_id == message.tenant_id, ContactIdentity.contact_id == message.contact_id)
+                .with_for_update(read=True)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    )
+    headers = verified_reply_evidence(message, targets[0], thread, inbound, identities, evidence)
+    return {
+        "thread_id": evidence.thread_id,
+        "inbound_message_id": evidence.inbound_message_id,
+        "headers": headers.approval_value(),
+    }

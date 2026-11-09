@@ -166,3 +166,39 @@ async def test_same_key_replays_only_matching_persisted_reply(monkeypatch):
     message.reply_evidence_required = False
     with pytest.raises(outbox_store.OutboxConflict, match="outbox_idempotency_mismatch"):
         await call(FakeSession([thread, inbound, message], [identity]))
+
+
+@pytest.mark.asyncio
+async def test_load_verified_reply_rechecks_authority_and_exact_evidence(monkeypatch):
+    import json
+
+    from app.services.communications.ingest import hash_message_id
+
+    thread, inbound, identity = source_rows()
+    inbound.external_message_id_hash = hash_message_id("<id@example.invalid>")
+    message = NS(id=50, tenant_id=7, author_id=3, contact_id=2, purpose="transactional", reply_evidence_required=True)
+    target = NS(tenant_id=7, message_id=50, channel="email", connection_id=3, identity_id=13)
+    evidence = NS(
+        tenant_id=7,
+        outbox_message_id=50,
+        thread_id=11,
+        inbound_message_id=12,
+        headers_encrypted=json.dumps({"in_reply_to": "<id@example.invalid>", "references": ["<id@example.invalid>"]}),
+    )
+    check = AsyncMock()
+    monkeypatch.setattr(reply, "reply_authority", check)
+    session = FakeSession([evidence, thread, inbound], [identity])
+    proof = await reply.load_verified_reply(session, message, [target])
+    check.assert_awaited_once_with(session, 7, 3)
+    assert proof == {
+        "thread_id": 11,
+        "inbound_message_id": 12,
+        "headers": {"in_reply_to": "<id@example.invalid>", "references": ["<id@example.invalid>"]},
+    }
+    with pytest.raises(reply.ReplyUnavailable):
+        await reply.load_verified_reply(FakeSession([], []), message, [target, target])
+    with pytest.raises(reply.ReplyUnavailable):
+        await reply.load_verified_reply(FakeSession([None], []), message, [target])
+    check.side_effect = PermissionError("reply_denied")
+    with pytest.raises(PermissionError):
+        await reply.load_verified_reply(FakeSession([], []), message, [target])

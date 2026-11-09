@@ -29,6 +29,7 @@ from .knowledge import router as knowledge_router
 from .notifications import router as notifications_router
 from .onboarding import router as onboarding_router
 from .planner import router as planner_router
+from .reply import router as reply_router
 from .scenarios import router as scenarios_router
 from .settings import router as settings_router
 from .settings_llm import router as settings_llm_router
@@ -53,6 +54,7 @@ web_router.include_router(connections_router)
 web_router.include_router(connector_accounts_router)
 web_router.include_router(contacts_router)
 web_router.include_router(planner_router)
+web_router.include_router(reply_router)
 web_router.include_router(digests_router)
 web_router.include_router(documents_router)
 web_router.include_router(file_catalog_router)

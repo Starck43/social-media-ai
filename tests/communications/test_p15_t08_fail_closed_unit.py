@@ -36,8 +36,16 @@ def test_required_evidence_cannot_claim_or_deliver_without_verified_evidence(cla
 
 def test_marker_alone_never_makes_an_item_sendable():
     """The flag is a requirement, not a credential: without evidence, dispatch is refused."""
-    message = SimpleNamespace(reply_evidence_required=True)
-    with pytest.raises(module.OutboxConflict):
+    message = SimpleNamespace(
+        author_id=3,
+        contact_id=2,
+        subject_encrypted="Re: test",
+        content_encrypted="hello",
+        purpose="transactional",
+        timezone="UTC",
+        reply_evidence_required=True,
+    )
+    with pytest.raises(module.OutboxConflict, match="reply_evidence_unavailable"):
         module.content_digest(message, [], None)
 
 

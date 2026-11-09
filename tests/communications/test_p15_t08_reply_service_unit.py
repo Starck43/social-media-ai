@@ -186,7 +186,9 @@ async def test_load_verified_reply_rechecks_authority_and_exact_evidence(monkeyp
         outbox_message_id=50,
         thread_id=11,
         inbound_message_id=12,
-        headers_encrypted=json.dumps({"in_reply_to": "<id@example.invalid>", "references": ["<id@example.invalid>"]}),
+        headers_encrypted=json.dumps(
+            {"version": 1, "in_reply_to": "<id@example.invalid>", "references": ["<id@example.invalid>"]}
+        ),
     )
     check = AsyncMock()
     monkeypatch.setattr(reply, "reply_authority", check)

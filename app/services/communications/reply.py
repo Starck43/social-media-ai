@@ -172,10 +172,15 @@ def verified_reply_evidence(message, target, thread, inbound, identities: Iterab
         if not isinstance(raw, str) or len(raw) > 32768:
             raise ValueError("invalid evidence")
         value = json.loads(raw)
-        if not isinstance(value, dict) or set(value) != {"in_reply_to", "references"}:
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"version", "in_reply_to", "references"}
+            or type(value["version"]) is not int
+            or value["version"] != 1
+        ):
             raise ValueError("invalid evidence")
         headers = verified_email_headers(inbound, value["in_reply_to"], value["references"])
-        if headers.approval_value() != value:
+        if headers.approval_value() != {"in_reply_to": value["in_reply_to"], "references": value["references"]}:
             raise ValueError("noncanonical evidence")
         return headers
     except (ValueError, TypeError, KeyError, ReplyUnavailable):
@@ -462,7 +467,7 @@ async def create_reply_draft(session, *, thread_id, inbound_message_id, subject,
         tenant_id=tenant,
         thread_id=origin.thread_id,
         inbound_message_id=origin.inbound_message_id,
-        headers_encrypted=json.dumps(headers.approval_value(), sort_keys=True, separators=(",", ":")),
+        headers_encrypted=json.dumps({"version": 1, **headers.approval_value()}, sort_keys=True, separators=(",", ":")),
     )
     session.add(message)
     await session.flush()

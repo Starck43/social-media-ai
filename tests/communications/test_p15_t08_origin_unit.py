@@ -206,15 +206,22 @@ def test_saved_evidence_requires_exact_validated_headers_and_source_hash():
     message, target, thread, inbound, identity, evidence = evidence_rows()
     inbound.external_message_id_hash = hash_message_id("<id@example.invalid>")
     original = {"in_reply_to": "<id@example.invalid>", "references": ["<root@example.invalid>", "<id@example.invalid>"]}
-    evidence.headers_encrypted = json.dumps(original)
+    evidence.headers_encrypted = json.dumps({"version": 1, **original})
     assert verified_reply_evidence(message, target, thread, inbound, [identity], evidence).approval_value() == original
+    for bad_version in (None, True, 2):
+        record = dict(original)
+        if bad_version is not None:
+            record["version"] = bad_version
+        evidence.headers_encrypted = json.dumps(record)
+        with pytest.raises(ReplyUnavailable, match="^reply_evidence_unavailable$"):
+            verified_reply_evidence(message, target, thread, inbound, [identity], evidence)
     for bad in (
         {"in_reply_to": "<other@example.invalid>", "references": ["<other@example.invalid>"]},
         {"in_reply_to": "<id@example.invalid>", "references": []},
         {"in_reply_to": "<id@example.invalid>", "references": ["<id@example.invalid>", "<id@example.invalid>"]},
         {**original, "extra": "value"},
     ):
-        evidence.headers_encrypted = json.dumps(bad)
+        evidence.headers_encrypted = json.dumps({"version": 1, **bad})
         with pytest.raises(ReplyUnavailable, match="^reply_evidence_unavailable$"):
             verified_reply_evidence(message, target, thread, inbound, [identity], evidence)
 
@@ -230,5 +237,5 @@ def test_thirty_prior_references_roundtrip_when_source_id_is_appended():
     inbound.external_message_id_hash = hash_message_id(message_id)
     original = verified_email_headers(inbound, message_id, [f"<{n}@x.test>" for n in range(30)])
     assert len(original.references) == 31
-    evidence.headers_encrypted = json.dumps(original.approval_value())
+    evidence.headers_encrypted = json.dumps({"version": 1, **original.approval_value()})
     assert verified_reply_evidence(message, target, thread, inbound, [identity], evidence) == original

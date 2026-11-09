@@ -478,7 +478,8 @@ class CalendarService:
     async def preview(self, request, idempotency_key, session):
         identity = await planner_service._actor(session, ActionType.UPDATE)
         conn = await self._connection(session, request.connection_id, identity)
-        self._writable(conn, identity)
+        if request.operation != "resolve_remote":
+            self._writable(conn, identity)
         choice = await self._choice(session, identity)
         if choice.connection_id != conn.id:
             raise PlannerConflict("calendar_choice_required")
@@ -605,7 +606,7 @@ class CalendarService:
             if cmd is None or cmd.capability != CAPABILITY or cmd.state != "approved":
                 raise PlannerConflict("calendar_command_unavailable")
             spec = get_capability(CAPABILITY)
-            if not _is_capability_enabled(spec):
+            if cmd.payload.get("operation") != "resolve_remote" and not _is_capability_enabled(spec):
                 raise CommandDenied("calendar_capability_disabled")
             await _verify_member_grant(session, identity[0], identity[1], spec)
             await _verify_member_grant(session, identity[0], cmd.approved_user_id, spec)
@@ -619,7 +620,8 @@ class CalendarService:
             ):
                 raise CommandDenied("calendar_approval_invalid")
             conn = await self._connection(session, cmd.connection_id, identity)
-            self._writable(conn, identity)
+            if cmd.payload.get("operation") != "resolve_remote":
+                self._writable(conn, identity)
             choice = await self._choice(session, identity)
             if choice.connection_id != conn.id:
                 raise PlannerConflict("calendar_choice_changed")

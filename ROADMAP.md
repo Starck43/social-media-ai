@@ -97,7 +97,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P19-T04](docs/tasks/p19-t04.md) Document approval workflow bound to an immutable revision hash — **IN_PROGRESS** · notion-ai-p19-t04 · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C4`
 - [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **IN_PROGRESS** · notion-ai-p19-t05 · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C3`
 - [P19-T07](docs/tasks/p19-t07.md) `app/services/knowledge` to the 80% coverage gate — **TODO** · unassigned · — · `P3` · `C2`
-- [P19-T08](docs/tasks/p19-t08.md) Version history beyond web and API: operator CLI and a safe chat surface — **TODO** · unassigned · — · `P3` · `C3`
+- [P19-T08](docs/tasks/p19-t08.md) Version history beyond web and API: operator CLI and a safe chat surface — **IN_PROGRESS** · opencode-local · — · `P3` · `C3`
 
 
 ## Deferred by explicit owner decision

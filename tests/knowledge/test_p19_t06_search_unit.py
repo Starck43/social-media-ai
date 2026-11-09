@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.dialects import postgresql
 
+from app.core.config import settings
 from app.services.knowledge import search as mod
 from app.types import ActionType
 
@@ -77,7 +78,7 @@ async def test_sql_scopes_workspace_acl_boundary_and_current_revision_before_pag
     result = await service.search(q="memo", boundary="company", limit=3, session=session)
 
     sql = str(compiled(session))
-    normalized_sql = sql.replace('"', "").replace("test_schema.", "")
+    normalized_sql = sql.replace('"', "").replace(f"{settings.DB_SCHEMA}.", "")
     assert result == {"items": ["safe-output"], "limit": 3, "next_before_id": None}
     assert "knowledge_documents.tenant_id" in sql
     assert "knowledge_documents.acl_scope" in sql
@@ -114,7 +115,7 @@ async def test_filters_bind_current_revision_metadata_and_visible_case_scope(sea
     )
 
     sql = str(compiled(session))
-    normalized_sql = sql.replace('"', "").replace("test_schema.", "")
+    normalized_sql = sql.replace('"', "").replace(f"{settings.DB_SCHEMA}.", "")
     params = compiled(session).params
     assert "knowledge_documents.document_type" in sql
     assert "document_revisions.status IN" in normalized_sql

@@ -68,16 +68,14 @@
     <button class="ui-control" type="submit">Передать на рассмотрение</button>
   </form>
   {% endif %}
-  {% if editing.status == 'in_review' %}
-  <p class="text-xs ui-muted">Решение может принять только активный owner с правом изменения источников. Это не электронная подпись и документ не отправляется.</p>
-  {% for target, label in [('approved','Согласовать'),('rejected','Отклонить'),('revision_requested','Вернуть на доработку')] %}
-  <form method="post" action="/app/documents/manage/{{ editing.id }}/transition">
+  {% if editing.status in ['draft', 'in_review'] %}
+  <form method="post" action="/app/documents/manage/{{ editing.id }}/request-approval" class="space-y-2">
     <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
-    <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_updated_at" value="{{ editing.updated_at.isoformat() }}">
-    <input type="hidden" name="expected_hash" value="{{ editing.content_hash }}"><input type="hidden" name="expected_status" value="{{ editing.status }}"><input type="hidden" name="target" value="{{ target }}">
-    <button class="ui-control" type="submit">{{ label }}</button>
+    <input type="hidden" name="expected_revision_id" value="{{ editing.current_revision_id }}"><input type="hidden" name="expected_hash" value="{{ editing.content_hash }}"><input type="hidden" name="idempotency_key" value="{{ approval_key }}">
+    <label>Согласующий (ID) <input class="ui-control" name="approver_user_id" type="number" min="1" required></label>
+    <label>Срок с часовым поясом (например, 2026-12-31T18:00:00+03:00) <input class="ui-control" name="expires_at" required></label>
+    <button class="ui-control" type="submit">Запросить согласование</button>
   </form>
-  {% endfor %}
   {% endif %}
   <form method="post" action="/app/documents/manage/{{ editing.id }}/edit" class="space-y-2">
     <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}">
@@ -108,6 +106,12 @@
   {% endif %}
 </section>
 {% endif %}
+<section class="ui-card space-y-3"><h2 class="font-semibold">Ожидают вашего решения</h2>
+{% for item in pending["items"] %}<div><p>Документ <a href="/app/documents/manage/{{ item.document_id }}?boundary={{ boundary }}">{{ item.document_id }}</a> · версия {{ item.revision_id }} · срок {{ item.expires_at }}</p>
+{% for decision, label in [('approved','Согласовать'),('rejected','Отклонить'),('revision_requested','Вернуть на доработку')] %}
+<form method="post" action="/app/documents/manage/{{ item.document_id }}/approvals/{{ item.id }}/decision"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="boundary" value="{{ boundary }}"><input type="hidden" name="decision" value="{{ decision }}"><button class="ui-control" type="submit">{{ label }}</button></form>
+{% endfor %}</div>{% else %}<p>Нет ожидающих согласований.</p>{% endfor %}
+</section>
 <section class="ui-card space-y-3"><h2 class="font-semibold">Документы</h2>
 {% for item in items %}<p><a href="/app/documents/manage/{{ item.id }}?boundary={{ boundary }}">{{ item.title }}</a> · {{ item.status }} · v{{ item.version }}</p>{% else %}<p>Документов в выбранной границе нет.</p>{% endfor %}
 {% if next_before_id %}<p class="text-xs"><a href="/app/documents/manage?boundary={{ boundary }}&amp;before_id={{ next_before_id }}">Следующие документы →</a></p>{% endif %}

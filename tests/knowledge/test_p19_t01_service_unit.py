@@ -190,32 +190,20 @@ async def test_transition_validates_exact_revision_status_and_hash(monkeypatch, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("target", ["approved", "rejected", "revision_requested"])
-async def test_owner_decision_is_bound_to_actor_and_locked_revision(monkeypatch, snapshot, target):
+@pytest.mark.parametrize("role", ["owner", "manager"])
+async def test_direct_decision_requires_assigned_approval(monkeypatch, snapshot, target, role):
     doc, rev = snapshot
     rev.status = "in_review"
     service = service_fixture(monkeypatch, doc, rev)
+    service._actor.return_value = (1, 2, role, ("public", "collection.source.view"))
     session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
     data = {**version(doc, rev), "expected_hash": rev.content_hash, "expected_status": "in_review", "target": target}
-    result = await service.transition(10, data, session=session)
-    assert result.status == target and result.decision_actor_user_id == 2
-    assert rev.approved_by == ("user:2" if target == "approved" else None)
-    assert service._doc.await_args.kwargs["lock"] is True
-    assert service._revision.await_args.kwargs["lock"] is True
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("target", ["approved", "rejected", "revision_requested"])
-async def test_nonowner_cannot_make_final_review_decision(monkeypatch, snapshot, target):
-    doc, rev = snapshot
-    rev.status = "in_review"
-    service = service_fixture(monkeypatch, doc, rev)
-    service._actor.return_value = (1, 2, "manager", ("public", "collection.source.view"))
-    session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
-    data = {**version(doc, rev), "expected_hash": rev.content_hash, "expected_status": "in_review", "target": target}
-    with pytest.raises(PermissionError):
+    with pytest.raises(mod.DocumentConflict, match="approval_request_required"):
         await service.transition(10, data, session=session)
     assert rev.status == "in_review" and rev.approved_by is None and rev.decision_actor_user_id is None
     session.flush.assert_not_awaited()
+    assert service._doc.await_args.kwargs["lock"] is True
+    assert service._revision.await_args.kwargs["lock"] is True
 
 
 @pytest.mark.asyncio

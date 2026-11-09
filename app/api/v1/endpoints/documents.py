@@ -10,6 +10,8 @@ from fastapi.responses import JSONResponse
 from app.api.deps import require_model_perm
 from app.api.v1.conventions import business_router, validate_business_routes
 from app.schemas.business import BusinessPage, BusinessSchema
+from app.services.knowledge.approval_contracts import ApprovalComment, ApprovalOut, ApprovalRequest
+from app.services.knowledge.approvals import ApprovalConflict, approval_service
 from app.services.knowledge.document_contracts import (
     Boundary,
     DocumentCreate,
@@ -39,7 +41,7 @@ async def invoke(operation):
         return await operation
     except DocumentUnavailable:
         raise HTTPException(404) from None
-    except DocumentConflict:
+    except (DocumentConflict, ApprovalConflict):
         raise HTTPException(409) from None
     except PermissionError:
         raise HTTPException(403) from None
@@ -150,6 +152,47 @@ async def list_documents(
 )
 async def create_document(request: DocumentCreate):
     return await invoke(document_service.create(request))
+
+
+@router.get(
+    "/approvals/pending",
+    response_model=BusinessPage[ApprovalOut],
+    dependencies=[Depends(require_model_perm("documentapproval", ActionType.CONFIGURE))],
+)
+async def pending_approvals(
+    boundary: Boundary = "cloud", limit: int = Query(50, ge=1, le=100), before_id: int | None = Query(None, gt=0)
+):
+    return await invoke(approval_service.pending(boundary=boundary, limit=limit, before_id=before_id))
+
+
+@router.post(
+    "/{document_id}/request-approval",
+    response_model=ApprovalOut,
+    status_code=201,
+    dependencies=[Depends(require_model_perm("source", ActionType.UPDATE))],
+)
+async def request_approval(request: ApprovalRequest, document_id: int = Path(gt=0), boundary: Boundary = "cloud"):
+    return await invoke(approval_service.request(document_id, request, boundary=boundary))
+
+
+@router.post(
+    "/{document_id}/approvals/{approval_id}/{action}",
+    response_model=ApprovalOut,
+    dependencies=[Depends(require_model_perm("documentapproval", ActionType.CONFIGURE))],
+)
+async def decide_approval(
+    request: ApprovalComment,
+    action: Literal["approve", "reject", "request-revision"],
+    document_id: int = Path(gt=0),
+    approval_id: int = Path(gt=0),
+    boundary: Boundary = "cloud",
+):
+    decision = {"approve": "approved", "reject": "rejected", "request-revision": "revision_requested"}[action]
+    return await invoke(
+        approval_service.decide(
+            document_id, approval_id, {"decision": decision, "comment": request.comment}, boundary=boundary
+        )
+    )
 
 
 @router.get("/{document_id}", response_model=DocumentOut)

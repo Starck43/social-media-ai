@@ -5,7 +5,9 @@ ownership. The owner must inventory before/after and run the migration cycle.
 """
 
 import asyncio
+import os
 from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from cryptography.fernet import Fernet
@@ -185,6 +187,21 @@ def decision_payload(doc, target):
     }
 
 
+async def request_for(doc, user_id):
+    from app.services.knowledge.approvals import approval_service
+
+    return await approval_service.request(
+        doc.id,
+        {
+            "approver_user_id": user_id,
+            "expected_revision_id": doc.current_revision_id,
+            "expected_hash": doc.content_hash,
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+            "idempotency_key": f"p19-t01-{doc.id}",
+        },
+    )
+
+
 @pytest.mark.parametrize("target", ["approved", "rejected", "revision_requested"])
 async def test_owner_decides_exact_revision_and_revoked_membership_fails(doc_world, target):
     from app.models import TenantUser
@@ -198,6 +215,9 @@ async def test_owner_decides_exact_revision_and_revoked_membership_fails(doc_wor
         stale["expected_hash"] = "sha256:" + "0" * 64
         with pytest.raises(DocumentConflict):
             await document_service.transition(doc.id, stale)
+        approval = await request_for(pending, world.users[0].id)
+        from app.services.knowledge.approvals import ApprovalConflict, approval_service
+
         # The scope intentionally retains its old owner grants after membership
         # revocation: the service must reread the membership from the database.
         member_id = world.memberships[0].id
@@ -205,15 +225,20 @@ async def test_owner_decides_exact_revision_and_revoked_membership_fails(doc_wor
             await session.execute(update(TenantUser).where(TenantUser.id == member_id).values(is_active=False))
         try:
             with pytest.raises(PermissionError):
-                await document_service.transition(doc.id, decision_payload(pending, target))
+                await approval_service.decide(doc.id, approval["id"], {"decision": target})
         finally:
             async with async_session_maker() as session, session.begin():
                 await session.execute(update(TenantUser).where(TenantUser.id == member_id).values(is_active=True))
-        decided = await document_service.transition(doc.id, decision_payload(pending, target))
-        assert decided.status == target and decided.decision_actor_user_id == world.users[0].id
-        assert decided.approved_by == (f"user:{world.users[0].id}" if target == "approved" else None)
-        with pytest.raises(DocumentConflict):
-            await document_service.transition(doc.id, decision_payload(pending, target))
+        decided = await approval_service.decide(doc.id, approval["id"], {"decision": target})
+        assert decided["status"] == target
+        current = await document_service.get(doc.id)
+        assert current.decision_actor_user_id == world.users[0].id
+        assert current.approved_by == (f"user:{world.users[0].id}" if target == "approved" else None)
+        assert await approval_service.decide(doc.id, approval["id"], {"decision": target}) == decided
+        with pytest.raises(ApprovalConflict):
+            await approval_service.decide(
+                doc.id, approval["id"], {"decision": "rejected" if target != "rejected" else "approved"}
+            )
 
 
 async def test_concurrent_owner_revocation_serializes_before_decision(doc_world):
@@ -223,11 +248,14 @@ async def test_concurrent_owner_revocation_serializes_before_decision(doc_world)
     doc = await create_doc(world)
     with scope(world):
         pending = await document_service.transition(doc.id, decision_payload(doc, "in_review"))
+        approval = await request_for(pending, world.users[0].id)
+        from app.services.knowledge.approvals import approval_service
+
         member_id = world.memberships[0].id
         async with async_session_maker() as session:
             transaction = await session.begin()
             await session.execute(update(TenantUser).where(TenantUser.id == member_id).values(is_active=False))
-            task = asyncio.create_task(document_service.transition(doc.id, decision_payload(pending, "approved")))
+            task = asyncio.create_task(approval_service.decide(doc.id, approval["id"], {"decision": "approved"}))
             try:
                 # The revoker holds the membership row lock until commit.
                 with pytest.raises(asyncio.TimeoutError):
@@ -256,7 +284,11 @@ async def test_document_and_template_crud_and_edit_invalidates_decision(doc_worl
         assert (await document_service.get(doc.id)).body_text == "first"
         assert any(item.id == doc.id for item in (await document_service.list())["items"])
         pending = await document_service.transition(doc.id, decision_payload(doc, "in_review"))
-        approved = await document_service.transition(doc.id, decision_payload(pending, "approved"))
+        from app.services.knowledge.approvals import approval_service
+
+        approval = await request_for(pending, world.users[0].id)
+        await approval_service.decide(doc.id, approval["id"], {"decision": "approved"})
+        approved = await document_service.get(doc.id)
         changed = await document_service.update(
             doc.id,
             {
@@ -304,7 +336,10 @@ async def test_user_deletion_clears_document_references_without_removing_documen
             DocumentCreate(title="synthetic", document_type="memo", body_text="retained", data_boundary="cloud")
         )
         pending = await document_service.transition(doc.id, decision_payload(doc, "in_review"))
-        await document_service.transition(doc.id, decision_payload(pending, "rejected"))
+        from app.services.knowledge.approvals import approval_service
+
+        approval = await request_for(pending, user.id)
+        await approval_service.decide(doc.id, approval["id"], {"decision": "rejected"})
     async with async_session_maker() as session, session.begin():
         await session.execute(delete(User).where(User.id == user.id))
     with scope(world):
@@ -314,21 +349,24 @@ async def test_user_deletion_clears_document_references_without_removing_documen
         assert remaining.decision_actor_user_id is None
 
 
-async def test_owner_demoted_to_manager_cannot_decide_with_stale_session(doc_world):
+async def test_owner_demoted_to_viewer_cannot_decide_with_stale_session(doc_world):
     from app.models import TenantUser
 
     world = doc_world
     doc = await create_doc(world)
     with scope(world):
         pending = await document_service.transition(doc.id, decision_payload(doc, "in_review"))
+        from app.services.knowledge.approvals import approval_service
+
+        approval = await request_for(pending, world.users[0].id)
         member_id = world.memberships[0].id
         async with async_session_maker() as session, session.begin():
             await session.execute(
-                update(TenantUser).where(TenantUser.id == member_id).values(role_id=world.roles["manager"].id)
+                update(TenantUser).where(TenantUser.id == member_id).values(role_id=world.roles["viewer"].id)
             )
         try:
             with pytest.raises(PermissionError):
-                await document_service.transition(doc.id, decision_payload(pending, "approved"))
+                await approval_service.decide(doc.id, approval["id"], {"decision": "approved"})
         finally:
             async with async_session_maker() as session, session.begin():
                 await session.execute(

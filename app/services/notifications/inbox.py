@@ -39,6 +39,23 @@ class PersonalInbox:
             self._grants[event.tenant_id] = await manager.member_grants(membership)
         if event.related_entity_type is None:
             return "/app/"
+        if event.related_entity_type == "document_approval":
+            # An inbox receipt alone is not document access: re-check current
+            # workspace membership, source rights, ACL and boundary on open.
+            if not positive_id(event.related_entity_id):
+                return None
+            from app.core.permissions import permission_scope
+            from app.services.knowledge.documents import DocumentUnavailable, document_service
+
+            try:
+                with (
+                    tenant_scope(event.tenant_id),
+                    permission_scope(self.user, member_grants=self._grants[event.tenant_id]),
+                ):
+                    document = await document_service.get(event.related_entity_id, boundary="local_only")
+            except (DocumentUnavailable, PermissionError):
+                return None
+            return f"/app/documents/manage/{document.id}?boundary={document.data_boundary}"
         if event.related_entity_type == "planner_reminder":
             from .reminders import reminder_notifications
 

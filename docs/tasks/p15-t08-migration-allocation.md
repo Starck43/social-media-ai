@@ -53,3 +53,28 @@ The DDL requested in #448, reviewed and limited to:
 - Final assignment: **`0149`**, parent **`0148`** — P19-T04's approval migration, which lands
   in `dev` first. The two tasks chain rather than both taking the head, so neither creates a
   second head.
+
+## Superseded numbering (2026-11-09, owner-directed)
+
+- The numbers in this note are **history, not a reservation**. Under the
+  [migration numbering rules](../COLLABORATION.md#migration-numbering-and-parallel-tasks)
+  a task writes a placeholder revision and the number is assigned at merge.
+- P19-T04 and P15-T08 both follow the live `dev` head `0147` and both ship a
+  placeholder revision. The agent that integrates them in `dev` assigns the next
+  free numbers in integration order, rewrites only `revision`/`down_revision`,
+  and records the landed number in the audit note.
+- Do not ask the auditor for a number and do not wait for one. A green cycle on
+  the task's own isolated schema is the evidence; changing only the numbering
+  needs no new cycle, only the single-head check.
+
+## Superseded numbering (2026-11-09, owner-directed)
+
+- The numbers above are **history, not a reservation**. Under the
+  [migration numbering rules](../COLLABORATION.md#migration-numbering-and-parallel-tasks)
+  a task writes a placeholder revision and the number is assigned at merge.
+- Both tasks follow the live `dev` head and ship a placeholder revision. The
+  integrator assigns the next free numbers in integration order, rewrites only
+  `revision`/`down_revision`, and records the landed number in the audit note.
+- Do not ask the auditor for a number and do not wait for one. A green cycle on
+  the task's own isolated schema is the evidence; changing only the numbering
+  needs no new cycle, only the single-head check.

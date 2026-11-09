@@ -59,7 +59,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-17](docs/tasks/q-17.md) Web test-suite debt in `tests/unit_web/` — **OPEN** · unassigned · raised while closing [P12-T16](docs/audit/p12-t16.md) · `P2` · `C3`
 - [P11-T31](docs/tasks/p11-t31.md) `tests/notifications/` stale fixtures against the current tenant and role contract — **TODO** · unassigned · — · `P2` · `C3`
-- [P11-T32](docs/tasks/p11-t32.md) `--cov-config=/dev/null` aborted coverage collection on `bot_actions` — reproduce or close — **TODO** · unassigned · — · `P2` · `C2`
 - [P11-T33](docs/tasks/p11-t33.md) DB tests refuse any schema but the literal `test_schema` — **TODO** · unassigned · — · `P2` · `C2`
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: remaining roadmap after the accepted increment (provider byte authority, native original open, local-only execution, approved file actions) — **TODO** (increment accepted 2026-11-03, `6433ae6a`/`48caea61`) · unassigned · [increment audit](docs/audit/p12-t12-increment.md) · `P2` · `C5`

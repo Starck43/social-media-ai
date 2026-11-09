@@ -10,6 +10,7 @@ from .commands import (
     communications,
     credentials,
     direct,
+    documents,
     llm,
     pii,
     roles,
@@ -43,6 +44,7 @@ app.add_typer(llm.app, name="llm", help="Manage LLM providers and models")
 app.add_typer(chains.app, name="chains", help="Manage topic chains")
 app.add_typer(scenarios.app, name="scenarios", help="Manage agent scenarios")
 app.add_typer(collection.app, name="collection", help="Manage task-scoped collection lanes")
+app.add_typer(documents.app, name="documents", help="Document version history, diff and restore")
 app.command(name="collect")(collect.collect_cmd)
 
 # Direct job-type commands at top level: `cli.main analyze|prune|learn|reflect`.

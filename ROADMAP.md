@@ -95,7 +95,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P19-T04](docs/tasks/p19-t04.md) Document approval workflow bound to an immutable revision hash — **IN_PROGRESS** · notion-ai-p19-t04 · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C4`
 - [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **IN_PROGRESS** · notion-ai-p19-t05 · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C3`
-- [P19-T08](docs/tasks/p19-t08.md) Version history beyond web and API: operator CLI and a safe chat surface — **IN_PROGRESS** · opencode-local · [PR #453](https://github.com/Starck43/social-media-ai/pull/453) · `P3` · `C3`
 - [P19-T09](docs/tasks/p19-t09.md) `retrieval.py` boundary predicate contradicts its documented ACL contract — **TODO** · unassigned · raised while closing [P19-T07](docs/audit/p19-t07.md) · `P3` · `C2`
 
 

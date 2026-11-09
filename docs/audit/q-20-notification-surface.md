@@ -80,7 +80,7 @@ already in the tree, and the user-facing notifications P16-T02 wants to add.
 
 - **Two later tasks will want the same answers.** Notifications for planner
   ([P16-T02](../tasks/p16-t02.md)) and calendar reminders
-  ([P16-T03](../tasks/p16-t03.md)) are the same mechanism at two call sites; the
+  ([P16-T03](https://github.com/Starck43/social-media-ai/blob/dd7571ebf940c6e2eecb2e3903373ec13858dcee/docs/tasks/p16-t03.md)) are the same mechanism at two call sites; the
   second one must not repeat D18.
 
 - **D19 protects the consent table.** Reusing `contact_consents` for staff would

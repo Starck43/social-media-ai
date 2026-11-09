@@ -187,6 +187,7 @@ async def actor_authority(session, tenant, actor_id, action, *, serialize=False)
         select(TenantUser)
         .where(TenantUser.tenant_id == tenant, TenantUser.user_id == actor_id, TenantUser.is_active.is_(True))
         .with_for_update(read=True)
+        .execution_options(populate_existing=True)
     )
     role = (
         None
@@ -212,21 +213,20 @@ async def current_actor(session, action, *, serialize=False):
     return tenant, actor.id
 
 
-async def targets_for(session, message):
-    return list(
-        (
-            await session.scalars(
-                select(OutboxTarget)
-                .where(OutboxTarget.tenant_id == message.tenant_id, OutboxTarget.message_id == message.id)
-                .order_by(OutboxTarget.id)
-            )
-        ).all()
+async def targets_for(session, message, *, lock=False):
+    query = (
+        select(OutboxTarget)
+        .where(OutboxTarget.tenant_id == message.tenant_id, OutboxTarget.message_id == message.id)
+        .order_by(OutboxTarget.id)
     )
+    if lock:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    return list((await session.scalars(query)).all())
 
 
 async def owned_message(session, tenant, message_id, *, lock=False):
     query = select(OutboxMessage).where(OutboxMessage.tenant_id == tenant, OutboxMessage.id == message_id)
-    row = await session.scalar(query.with_for_update() if lock else query)
+    row = await session.scalar(query.with_for_update().execution_options(populate_existing=True) if lock else query)
     if row is None:
         raise OutboxUnavailable("outbox_unavailable")
     return row
@@ -246,6 +246,7 @@ async def resolve_route(session, message, target, now, *, consent=True):
         select(Contact)
         .where(Contact.tenant_id == tenant, Contact.id == message.contact_id, Contact.merged_into_id.is_(None))
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     identity = await session.scalar(
         select(ContactIdentity)
@@ -255,6 +256,7 @@ async def resolve_route(session, message, target, now, *, consent=True):
             ContactIdentity.id == target.identity_id,
         )
         .with_for_update(read=True)
+        .execution_options(populate_existing=True)
     )
     if (
         contact is None
@@ -272,6 +274,7 @@ async def resolve_route(session, message, target, now, *, consent=True):
             WorkspaceConnection.owner_user_id == message.author_id,
         )
         .with_for_update(read=True)
+        .execution_options(populate_existing=True)
     )
     if (
         connection is None
@@ -285,6 +288,7 @@ async def resolve_route(session, message, target, now, *, consent=True):
         select(WorkspaceConnectionSecret)
         .where(WorkspaceConnectionSecret.connection_id == connection.id)
         .with_for_update(read=True)
+        .execution_options(populate_existing=True)
     )
     if secret is None or not secret.secret_encrypted:
         raise OutboxUnavailable("outbox_secret_unavailable")
@@ -320,8 +324,23 @@ async def resolve_route(session, message, target, now, *, consent=True):
     return identity.value_encrypted, credential_hash, connection, secret
 
 
-async def verify_snapshot(session, message, target, now):
-    recipient, credential, connection, secret = await resolve_route(session, message, target, now)
+async def verified_reply_for_outbox(session, message, targets):
+    if getattr(message, "reply_evidence_required", False) is not True:
+        return None
+    from app.core.pii import PIIError
+    from app.services.communications.reply import ReplyUnavailable, load_verified_reply
+
+    try:
+        return await load_verified_reply(session, message, targets)
+    except (ReplyUnavailable, PIIError):
+        raise OutboxConflict("reply_evidence_unavailable") from None
+
+
+async def verify_snapshot(session, message, target, now, *, reply_evidence=None):
+    # Only evidence freshly verified by the server may exempt a reply from D15.
+    recipient, credential, connection, secret = await resolve_route(
+        session, message, target, now, consent=reply_evidence is None
+    )
     if recipient != target.recipient_encrypted or credential != target.credential_hash:
         raise OutboxConflict("outbox_route_changed")
     return connection, secret
@@ -391,17 +410,18 @@ class OutboxStore:
         # Explicit CONFIGURE, never inherited from UPDATE or an approval status.
         tenant, actor = await current_actor(session, ActionType.CONFIGURE)
         message = await owned_message(session, tenant, request.message_id, lock=True)
-        # Until reply provenance is integrated, a marker is a denial, not consent.
-        # Reject even idempotent schedules rather than accepting missing evidence.
+        # Staged integration remains disabled until confirmed replies are recorded
+        # and the complete reply path has passed its integration checks.
         if message.reply_evidence_required:
             raise OutboxConflict("outbox_reply_not_implemented")
-        targets = await targets_for(session, message)
+        targets = await targets_for(session, message, lock=True)
+        reply_evidence = await verified_reply_for_outbox(session, message, targets)
         now = datetime.now(UTC)
         scheduled = due_after_quiet_hours(request.scheduled_at, message.timezone)
         if (
             message.author_id != actor
             or message.content_hash != request.expected_content_hash
-            or message.content_hash != content_digest(message, targets)
+            or message.content_hash != content_digest(message, targets, reply_evidence)
         ):
             raise OutboxConflict("outbox_intent_mismatch")
         if message.state == "approved" and message.scheduled_at == scheduled:
@@ -414,7 +434,7 @@ class OutboxStore:
         message.scheduled_at, message.approved_by, message.approval_expires_at = scheduled, actor, expires
         message.approved_hash = approval_digest(message)
         for target in targets:
-            await verify_snapshot(session, message, target, now)
+            await verify_snapshot(session, message, target, now, reply_evidence=reply_evidence)
             approved = transitions.approve_outbox_item(target_item(message, target), str(actor), expires.isoformat())
             capability = CAPABILITIES[target.channel]
             # Ledger contains hashes/references only, never body, subject or recipient.
@@ -509,18 +529,18 @@ async def command_rows(session, message, target):
     return command, rows
 
 
-def verify_approval(message, targets, target, command, command_targets, now, *, claimed=False):
-    # Invoked on both claim and immediately before provider I/O. No caller-set
-    # marker can grant D15 while reply provenance is not yet wired through.
+def verify_approval(message, targets, target, command, command_targets, now, *, claimed=False, reply_evidence=None):
+    # Keep delivery disabled until the complete reply path is ready.
     if getattr(message, "reply_evidence_required", False):
         raise OutboxConflict("outbox_reply_not_implemented")
+    # Bind the fresh, verified provenance and exact wire headers to approval.
     state = "claimed" if claimed else "approved"
     expected_payload = {"outbox_id": message.id, "target_id": target.id, "intent_hash": message.approved_hash}
     if (
         message.approved_by != message.author_id
         or message.approval_expires_at is None
         or now >= instant(message.approval_expires_at)
-        or message.content_hash != content_digest(message, targets)
+        or message.content_hash != content_digest(message, targets, reply_evidence)
         or message.approved_hash != approval_digest(message)
         or target.state != state
         or target.attempts != int(claimed)
@@ -618,7 +638,7 @@ class OutboxDispatcher:
             message = await session.scalar(query)
             if message is None:
                 return None
-            targets = await targets_for(session, message)
+            targets = await targets_for(session, message, lock=True)
             target = next((t for t in targets if t.state == "approved" and t.dispatch_after <= now), None)
             if target is None:
                 return None
@@ -631,8 +651,9 @@ class OutboxDispatcher:
             command, children = await command_rows(session, message, target)
             try:
                 await actor_authority(session, tenant, message.author_id, ActionType.CONFIGURE)
-                verify_approval(message, targets, target, command, children, now)
-                await verify_snapshot(session, message, target, now)
+                reply_evidence = await verified_reply_for_outbox(session, message, targets)
+                verify_approval(message, targets, target, command, children, now, reply_evidence=reply_evidence)
+                await verify_snapshot(session, message, target, now, reply_evidence=reply_evidence)
                 claimed = transitions.claim_outbox_item(target_item(message, target), now.isoformat())
             except (PermissionError, OutboxConflict, OutboxUnavailable, transitions.CommunicationError):
                 target.state = transitions.reject_approved_item(target_item(message, target))["state"]
@@ -664,7 +685,7 @@ class OutboxDispatcher:
         # never permission to send again, even within CLAIM_GRACE.
         async with self.session_factory() as session, session.begin():
             message = await owned_message(session, tenant, message_id, lock=True)
-            targets = await targets_for(session, message)
+            targets = await targets_for(session, message, lock=True)
             target = next((t for t in targets if t.id == target_id), None)
             if (
                 target is None
@@ -677,7 +698,7 @@ class OutboxDispatcher:
             await session.flush()
         async with self.session_factory() as session, session.begin():
             message = await owned_message(session, tenant, message_id, lock=True)
-            targets = await targets_for(session, message)
+            targets = await targets_for(session, message, lock=True)
             target = next((t for t in targets if t.id == target_id), None)
             if target is None or target.state != "claimed" or target.claim_token != token:
                 return False
@@ -689,8 +710,11 @@ class OutboxDispatcher:
             command, children = await command_rows(session, message, target)
             try:
                 await actor_authority(session, tenant, message.author_id, ActionType.CONFIGURE)
-                verify_approval(message, targets, target, command, children, now, claimed=True)
-                connection, secret = await verify_snapshot(session, message, target, now)
+                reply_evidence = await verified_reply_for_outbox(session, message, targets)
+                verify_approval(
+                    message, targets, target, command, children, now, claimed=True, reply_evidence=reply_evidence
+                )
+                connection, secret = await verify_snapshot(session, message, target, now, reply_evidence=reply_evidence)
                 account = MailAccount(
                     SendBinding(
                         tenant, connection.id, connection.owner_user_id, message.author_id, active=True, verified=True
@@ -709,7 +733,11 @@ class OutboxDispatcher:
                     result = await self.sender(
                         account,
                         EmailRequest(
-                            target.recipient_encrypted, message.subject_encrypted or "", message.content_encrypted
+                            target.recipient_encrypted,
+                            message.subject_encrypted or "",
+                            message.content_encrypted,
+                            in_reply_to=reply_evidence["headers"]["in_reply_to"] if reply_evidence else None,
+                            references=tuple(reply_evidence["headers"]["references"]) if reply_evidence else (),
                         ),
                     )
                 except Exception:
@@ -742,7 +770,7 @@ class OutboxDispatcher:
             )
             count = 0
             for message in messages:
-                targets = await targets_for(session, message)
+                targets = await targets_for(session, message, lock=True)
                 for target in targets:
                     if target.state == "claimed" and instant(target.claimed_at) <= now - CLAIM_GRACE:
                         await persist_outcome(

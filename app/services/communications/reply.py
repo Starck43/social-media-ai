@@ -114,7 +114,8 @@ def verified_email_headers(inbound, provider_message_id, provider_references) ->
         or not isinstance(getattr(inbound, "external_message_id_hash", None), str)
         or hash_message_id(provider_message_id) != inbound.external_message_id_hash
         or not isinstance(provider_references, (list, tuple))
-        or len(provider_references) > 30
+        or len(provider_references) > 31
+        or (len(provider_references) == 31 and provider_message_id not in provider_references)
     ):
         raise ReplyUnavailable("reply_headers_unavailable")
     references = []
@@ -130,23 +131,23 @@ def verified_email_headers(inbound, provider_message_id, provider_references) ->
     return ReplyHeaders(provider_message_id, tuple(references))
 
 
-def reply_exemption_candidate(message, target, thread, inbound, identities: Iterable) -> bool:
-    """Check structural D15 evidence only; never an authorization or approval.
+def reply_exemption_candidate(message, target, thread, inbound, identities: Iterable, evidence) -> bool:
+    """Check persisted structural evidence only; never authorization or approval.
 
     Rows must be freshly loaded and locked by the trusted outbox transaction.
-    This fail-closed predicate is insufficient on its own: caller must verify
-    current permissions and the approval binding of this exact source and route,
-    both at scheduling and immediately before provider I/O. It does not permit
-    a switched destination without independent matching inbound evidence.
+    The caller must also verify current permissions, exact headers and approval,
+    both at scheduling and immediately before provider I/O.
     """
     try:
         origin = select_email_origin(thread, inbound, identities)
         return bool(
-            message.purpose == "transactional"
-            and message.tenant_id == thread.tenant_id == target.tenant_id
+            message.reply_evidence_required is True
+            and message.purpose == "transactional"
+            and message.tenant_id == evidence.tenant_id == thread.tenant_id == target.tenant_id
             and message.contact_id == origin.contact_id
-            and getattr(message, "reply_thread_id", None) == origin.thread_id
-            and getattr(message, "reply_inbound_message_id", None) == origin.inbound_message_id
+            and evidence.outbox_message_id == message.id
+            and evidence.thread_id == origin.thread_id
+            and evidence.inbound_message_id == origin.inbound_message_id
             and target.message_id == message.id
             and target.channel == origin.channel
             and target.connection_id == origin.connection_id
@@ -154,6 +155,31 @@ def reply_exemption_candidate(message, target, thread, inbound, identities: Iter
         )
     except (ReplyUnavailable, AttributeError):
         return False
+
+
+def verified_reply_evidence(message, target, thread, inbound, identities: Iterable, evidence) -> ReplyHeaders:
+    """Validate the stored wire headers and structural provenance, but not authorization.
+
+    Only use freshly loaded, transaction-locked rows. D15 additionally requires
+    current rights and a digest-bound approval at scheduling and dispatch.
+    """
+    import json
+
+    if not reply_exemption_candidate(message, target, thread, inbound, identities, evidence):
+        raise ReplyUnavailable("reply_evidence_unavailable")
+    try:
+        raw = evidence.headers_encrypted
+        if not isinstance(raw, str) or len(raw) > 32768:
+            raise ValueError("invalid evidence")
+        value = json.loads(raw)
+        if not isinstance(value, dict) or set(value) != {"in_reply_to", "references"}:
+            raise ValueError("invalid evidence")
+        headers = verified_email_headers(inbound, value["in_reply_to"], value["references"])
+        if headers.approval_value() != value:
+            raise ValueError("noncanonical evidence")
+        return headers
+    except (ValueError, TypeError, KeyError, ReplyUnavailable):
+        raise ReplyUnavailable("reply_evidence_unavailable") from None
 
 
 def fetch_email_reply_headers(client, inbound, allowed_folders) -> ReplyHeaders:

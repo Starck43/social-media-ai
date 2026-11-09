@@ -144,18 +144,17 @@ def test_reply_header_approval_value_changes_with_exact_reference():
 
 def evidence_rows():
     thread, inbound, identity = rows()
-    message = NS(
-        id=19, tenant_id=1, contact_id=2, purpose="transactional", reply_thread_id=11, reply_inbound_message_id=12
-    )
+    message = NS(id=19, tenant_id=1, contact_id=2, purpose="transactional", reply_evidence_required=True)
     target = NS(tenant_id=1, message_id=19, channel="email", connection_id=3, identity_id=13)
-    return message, target, thread, inbound, identity
+    evidence = NS(tenant_id=1, outbox_message_id=19, thread_id=11, inbound_message_id=12)
+    return message, target, thread, inbound, identity, evidence
 
 
 def test_d15_candidate_requires_same_inbound_route():
     from app.services.communications.reply import reply_exemption_candidate
 
-    message, target, thread, inbound, identity = evidence_rows()
-    assert reply_exemption_candidate(message, target, thread, inbound, [identity]) is True
+    message, target, thread, inbound, identity, evidence = evidence_rows()
+    assert reply_exemption_candidate(message, target, thread, inbound, [identity], evidence) is True
 
 
 @pytest.mark.parametrize(
@@ -165,8 +164,11 @@ def test_d15_candidate_requires_same_inbound_route():
         ("message", "purpose", "greeting"),
         ("message", "tenant_id", 9),
         ("message", "contact_id", 9),
-        ("message", "reply_thread_id", 9),
-        ("message", "reply_inbound_message_id", 9),
+        ("message", "reply_evidence_required", False),
+        ("evidence", "tenant_id", 9),
+        ("evidence", "outbox_message_id", 9),
+        ("evidence", "thread_id", 9),
+        ("evidence", "inbound_message_id", 9),
         ("target", "tenant_id", 9),
         ("target", "message_id", 9),
         ("target", "channel", "telegram"),
@@ -179,14 +181,54 @@ def test_d15_candidate_requires_same_inbound_route():
 def test_d15_candidate_rejects_changed_or_nonreply_evidence(obj, field, value):
     from app.services.communications.reply import reply_exemption_candidate
 
-    message, target, thread, inbound, identity = evidence_rows()
-    setattr({"message": message, "target": target, "inbound": inbound, "identity": identity}[obj], field, value)
-    assert reply_exemption_candidate(message, target, thread, inbound, [identity]) is False
+    message, target, thread, inbound, identity, evidence = evidence_rows()
+    setattr(
+        {"message": message, "target": target, "inbound": inbound, "identity": identity, "evidence": evidence}[obj],
+        field,
+        value,
+    )
+    assert reply_exemption_candidate(message, target, thread, inbound, [identity], evidence) is False
 
 
-def test_d15_missing_binding_does_not_exempt_existing_outbox_message():
+def test_d15_missing_evidence_does_not_exempt_existing_outbox_message():
     from app.services.communications.reply import reply_exemption_candidate
 
-    message, target, thread, inbound, identity = evidence_rows()
-    del message.reply_thread_id
-    assert reply_exemption_candidate(message, target, thread, inbound, [identity]) is False
+    message, target, thread, inbound, identity, evidence = evidence_rows()
+    assert reply_exemption_candidate(message, target, thread, inbound, [identity], None) is False
+
+
+def test_saved_evidence_requires_exact_validated_headers_and_source_hash():
+    import json
+
+    from app.services.communications.ingest import hash_message_id
+    from app.services.communications.reply import ReplyUnavailable, verified_reply_evidence
+
+    message, target, thread, inbound, identity, evidence = evidence_rows()
+    inbound.external_message_id_hash = hash_message_id("<id@example.invalid>")
+    original = {"in_reply_to": "<id@example.invalid>", "references": ["<root@example.invalid>", "<id@example.invalid>"]}
+    evidence.headers_encrypted = json.dumps(original)
+    assert verified_reply_evidence(message, target, thread, inbound, [identity], evidence).approval_value() == original
+    for bad in (
+        {"in_reply_to": "<other@example.invalid>", "references": ["<other@example.invalid>"]},
+        {"in_reply_to": "<id@example.invalid>", "references": []},
+        {"in_reply_to": "<id@example.invalid>", "references": ["<id@example.invalid>", "<id@example.invalid>"]},
+        {**original, "extra": "value"},
+    ):
+        evidence.headers_encrypted = json.dumps(bad)
+        with pytest.raises(ReplyUnavailable, match="^reply_evidence_unavailable$"):
+            verified_reply_evidence(message, target, thread, inbound, [identity], evidence)
+
+
+def test_thirty_prior_references_roundtrip_when_source_id_is_appended():
+    import json
+
+    from app.services.communications.ingest import hash_message_id
+    from app.services.communications.reply import verified_email_headers, verified_reply_evidence
+
+    message, target, thread, inbound, identity, evidence = evidence_rows()
+    message_id = "<id@x.test>"
+    inbound.external_message_id_hash = hash_message_id(message_id)
+    original = verified_email_headers(inbound, message_id, [f"<{n}@x.test>" for n in range(30)])
+    assert len(original.references) == 31
+    evidence.headers_encrypted = json.dumps(original.approval_value())
+    assert verified_reply_evidence(message, target, thread, inbound, [identity], evidence) == original

@@ -410,10 +410,6 @@ class OutboxStore:
         # Explicit CONFIGURE, never inherited from UPDATE or an approval status.
         tenant, actor = await current_actor(session, ActionType.CONFIGURE)
         message = await owned_message(session, tenant, request.message_id, lock=True)
-        # Staged integration remains disabled until confirmed replies are recorded
-        # and the complete reply path has passed its integration checks.
-        if message.reply_evidence_required:
-            raise OutboxConflict("outbox_reply_not_implemented")
         targets = await targets_for(session, message, lock=True)
         reply_evidence = await verified_reply_for_outbox(session, message, targets)
         now = datetime.now(UTC)
@@ -530,9 +526,10 @@ async def command_rows(session, message, target):
 
 
 def verify_approval(message, targets, target, command, command_targets, now, *, claimed=False, reply_evidence=None):
-    # Keep delivery disabled until the complete reply path is ready.
-    if getattr(message, "reply_evidence_required", False):
-        raise OutboxConflict("outbox_reply_not_implemented")
+    # A reply carries the provenance verified at this moment, or it does not leave at
+    # all: the marker alone authorizes nothing (D15).
+    if getattr(message, "reply_evidence_required", False) and reply_evidence is None:
+        raise OutboxConflict("reply_evidence_unavailable")
     # Bind the fresh, verified provenance and exact wire headers to approval.
     state = "claimed" if claimed else "approved"
     expected_payload = {"outbox_id": message.id, "target_id": target.id, "intent_hash": message.approved_hash}

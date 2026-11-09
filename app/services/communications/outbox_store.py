@@ -386,6 +386,10 @@ class OutboxStore:
         # Explicit CONFIGURE, never inherited from UPDATE or an approval status.
         tenant, actor = await current_actor(session, ActionType.CONFIGURE)
         message = await owned_message(session, tenant, request.message_id, lock=True)
+        # Until reply provenance is integrated, a marker is a denial, not consent.
+        # Reject even idempotent schedules rather than accepting missing evidence.
+        if message.reply_evidence_required:
+            raise OutboxConflict("outbox_reply_not_implemented")
         targets = await targets_for(session, message)
         now = datetime.now(UTC)
         scheduled = due_after_quiet_hours(request.scheduled_at, message.timezone)
@@ -501,6 +505,10 @@ async def command_rows(session, message, target):
 
 
 def verify_approval(message, targets, target, command, command_targets, now, *, claimed=False):
+    # Invoked on both claim and immediately before provider I/O. No caller-set
+    # marker can grant D15 while reply provenance is not yet wired through.
+    if getattr(message, "reply_evidence_required", False):
+        raise OutboxConflict("outbox_reply_not_implemented")
     state = "claimed" if claimed else "approved"
     expected_payload = {"outbox_id": message.id, "target_id": target.id, "intent_hash": message.approved_hash}
     if (

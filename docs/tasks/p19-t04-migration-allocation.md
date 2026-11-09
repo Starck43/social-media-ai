@@ -42,15 +42,17 @@ Exactly the DDL proposed in the P19-T04 card, reviewed and accepted for allocati
 |---|---|---|
 | `0143` | P16-T02 | spent, in `dev` |
 | `0144` | P19-T04 approval | allocated 2026-11-09, not merged |
+| `0146` | P15-T08 reply evidence | allocated 2026-11-09, not merged |
 | next free | — | `0147` |
 
 ## Renumber note (2026-11-09)
 
 - The first allocation gave this task `0146`. P15-T08's reply-evidence request landed after
   it and was allocated the same number — a real collision, reported independently by both
-  executors. P19-T04 had already rehearsed a full isolated-schema cycle on a branch that
-  contains `0146`, while P15-T08 had not written its file yet, so the auditor moved this
-  task to the revision its own rehearsal already exercised: **`0144`**.
+  executors. P19-T04 had rehearsed a full isolated-schema cycle on a branch whose file was written as
+  `0146`, while P15-T08 had not written its file yet, so the auditor moved this task to
+  **`0144`** — the revision its rehearsal actually ran (`0143 → 0144 → 0143`), leaving the
+  file rename as the only change.
 - `0144` is on no other branch, is still empty on `dev`, and `0146` is now reserved for P15-T08
   only. The task must rebase onto `dev` head, regenerate its migration file as `0144`, and
   re-run the cycle; a stale file still named `0146` must not be pushed.

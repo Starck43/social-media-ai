@@ -47,6 +47,8 @@ The DDL requested in #448, reviewed and limited to:
 
 ## Collision resolution (2026-11-09)
 
-- P19-T04 was allocated `0146` shortly before this record and had already rehearsed it on a
-  local branch. Since this task had not written its migration file, the fixed number stays
-  `0146` here and P19-T04 moved to `0144`. `0146` must not be reused for anything else.
+- P19-T04 was allocated `0146` shortly before this record and had already run a full
+  isolated cycle at that revision. Its file was renumbered to `0144` because this task had
+  not written its migration file yet; the cycle evidence it produced stays valid.
+- `0146` here is fixed: no other task may take it. If this task is abandoned, report it and
+  the number is returned to the auditor instead of being reassigned silently.

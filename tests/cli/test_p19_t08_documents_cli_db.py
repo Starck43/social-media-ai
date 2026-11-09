@@ -1,4 +1,4 @@
-"""P19-T08: the operator CLI surface against `test_schema`.
+"""P19-T08: the operator CLI surface against an isolated test schema.
 
 The commands run through the same `versions` service, the same workspace and
 the same permission check as `/api/v1/documents`: history/diff are reads,
@@ -108,7 +108,7 @@ async def history_versions(document_id):
 
 @pytest.fixture
 async def document_world(personal_world):  # noqa: F811
-    assert settings.DB_SCHEMA == "test_schema"
+    assert settings.DB_SCHEMA and settings.DB_SCHEMA != "public"
     ids = [tenant.id for tenant in personal_world.tenants]
     try:
         yield personal_world

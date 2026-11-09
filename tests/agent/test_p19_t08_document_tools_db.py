@@ -1,4 +1,4 @@
-"""P19-T08: the chat surface against `test_schema` with real access checks.
+"""P19-T08: the chat surface against an isolated test schema with real access checks.
 
 Happy path plus a refusal per read tool: a caller without document access in
 the workspace gets the service's own `permission_denied`, and a caller with the
@@ -60,7 +60,7 @@ async def revision_count(document_id, tenant_id):
 
 @pytest.fixture
 async def document_world(personal_world):  # noqa: F811
-    assert settings.DB_SCHEMA == "test_schema"
+    assert settings.DB_SCHEMA and settings.DB_SCHEMA != "public"
     ids = [tenant.id for tenant in personal_world.tenants]
     try:
         yield personal_world

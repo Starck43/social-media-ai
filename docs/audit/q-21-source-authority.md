@@ -69,7 +69,7 @@ reference plus what is genuinely ours.
 
 - **Outbound writes become the hard part.** Two-way sync means writing into a source
   we do not own; the approval, `If-Match` and conflict rules already in
-  [P16-T03](../tasks/p16-t03.md) apply unchanged and must not be relaxed because a
+  [P16-T03](https://github.com/Starck43/social-media-ai/blob/dd7571ebf940c6e2eecb2e3903373ec13858dcee/docs/tasks/p16-t03.md) apply unchanged and must not be relaxed because a
   second provider was added.
 
 ## Consequences worth remembering for D26
@@ -113,7 +113,7 @@ table, no new migration beyond the one each task already needs.
 registry of source objects is real, but the first calendar does not need it: with one
 provider, `(tenant_id, connection_id, external_id)` inside the module is already the
 registry. It becomes a table when the **second** consumer arrives
-([P16-T04](../tasks/p16-t04.md), Yandex next to Google). Building it before then would
+([P16-T04](https://github.com/Starck43/social-media-ai/blob/dd7571ebf940c6e2eecb2e3903373ec13858dcee/docs/tasks/p16-t04.md), Yandex next to Google). Building it before then would
 be an abstraction with one caller and no test that can fail for the right reason.
 
 **Cheap — one stored choice per capability.** D26 is a tenant-scoped row the user
@@ -158,7 +158,7 @@ and per moment by the agent in [P15-T07](p15-t07.md), bounded only by consent
 | Task | The source decides | We keep | Forbidden |
 | --- | --- | --- | --- |
 | [P16-T01](../tasks/p16-t01.md) planner tasks | nothing yet — no external task system is connected | the task itself, its recurrence, its status, its visibility | a mirrored copy of a Bitrix24 task or calendar event |
-| [P16-T03](../tasks/p16-t03.md)/[P16-T04](../tasks/p16-t04.md) calendar | event times, recurrence, attendees, which calendar | our link, our per-connection consent ([D4](q-18-owner-decisions.md)), our per-event audit | a second calendar model that re-computes recurrence once the connection exists |
+| [P16-T03](https://github.com/Starck43/social-media-ai/blob/dd7571ebf940c6e2eecb2e3903373ec13858dcee/docs/tasks/p16-t03.md)/[P16-T04](https://github.com/Starck43/social-media-ai/blob/dd7571ebf940c6e2eecb2e3903373ec13858dcee/docs/tasks/p16-t04.md) calendar | event times, recurrence, attendees, which calendar | our link, our per-connection consent ([D4](q-18-owner-decisions.md)), our per-event audit | a second calendar model that re-computes recurrence once the connection exists |
 | [P14-T01..T04](p13-t04-p14-t04-business-crm.md) greetings | birthdays/anniversaries and contact facts from Bitrix24 | the draft text and the once-per-year ledger | a copy of the contact's events |
 | [P14-T02](p13-t04-p14-t04-business-crm.md) CRM sync | entity fields, deletion, ownership | the link and the sync position | a third party's field values served from our copy when the portal answers |
 | P16-T01/T03 together | which source owns a field of a shared object | the registry entry and the read-time merge | a merged event or task stored as a new object |
@@ -172,7 +172,7 @@ and per moment by the agent in [P15-T07](p15-t07.md), bounded only by consent
 
 - **Recurrence moves once, and the storage decides whether it is cheap.** Until a
   calendar connection exists, the planner computes its own RRULE subset. The moment
-  [P16-T03](../tasks/p16-t03.md) lands, a task connected to a calendar event reads the
+  [P16-T03](https://github.com/Starck43/social-media-ai/blob/dd7571ebf940c6e2eecb2e3903373ec13858dcee/docs/tasks/p16-t03.md) lands, a task connected to a calendar event reads the
   recurrence from the calendar and stops computing it. That is a call-site change
   **only if** the planner never expands a rule into pre-created occurrences and carries
   a `recurrence_source` column from its first migration

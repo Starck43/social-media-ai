@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from app.core.permissions import set_current_user
 from app.core.tenant_context import tenant_scope
 from app.integrations.oauth import OAuthFlowError, workspace_oauth
+from app.services.calendar.contracts import CalendarError
+from app.services.planner.tasks import PlannerUnavailable
 
 from .deps import add_flash
 
@@ -36,6 +38,8 @@ def _scope(request: Request) -> tuple[int, int]:
 async def oauth_start(request: Request, provider_id: str):
     try:
         tenant_id, actor_id = _scope(request)
+        if provider_id == "google_calendar":
+            raise OAuthFlowError("calendar_selection_required")
         with tenant_scope(tenant_id):
             started = await workspace_oauth.start_authorization(
                 tenant_id=tenant_id,
@@ -52,14 +56,20 @@ async def oauth_callback(request: Request, provider_id: str, state: str = "", co
     try:
         tenant_id, actor_id = _scope(request)
         with tenant_scope(tenant_id):
-            await workspace_oauth.complete_callback(
-                tenant_id=tenant_id,
-                actor_id=actor_id,
-                provider_id=provider_id,
-                state_token=state,
-                code=code,
-            )
-    except OAuthFlowError:
+            if provider_id == "google_calendar":
+                from app.services.calendar.contracts import CallbackInput
+                from app.services.calendar.service import calendar_service
+
+                await calendar_service.callback_google(CallbackInput(state=state, code=code))
+            else:
+                await workspace_oauth.complete_callback(
+                    tenant_id=tenant_id,
+                    actor_id=actor_id,
+                    provider_id=provider_id,
+                    state_token=state,
+                    code=code,
+                )
+    except (OAuthFlowError, CalendarError, PlannerUnavailable, PermissionError, ValueError):
         add_flash(request, "error", "Не удалось подтвердить OAuth-авторизацию провайдера.")
         return RedirectResponse(BACK, status_code=302)
     add_flash(request, "success", "Интеграция OAuth успешно подключена.")

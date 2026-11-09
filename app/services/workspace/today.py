@@ -375,6 +375,11 @@ class TodayRepository:
             .limit(limit * 3)
         )
 
+    async def planner_schedule(self, task_id: int):
+        from app.services.planner.tasks import planner_service
+
+        return await planner_service.get(task_id)
+
     async def followups(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
         from app.models import KnowledgeSnippet
 
@@ -730,8 +735,17 @@ class TodayProjection:
                     status = str(getattr(ptask, "status", "todo")).lower()
                     if status not in {"todo", "in_progress"}:
                         continue
-                    due_d = getattr(ptask, "due_date", None)
-                    due_at = getattr(ptask, "due_at", None)
+                    source_unavail = False
+                    schedule = ptask
+                    if getattr(ptask, "recurrence_source", "planner") != "planner":
+                        try:
+                            schedule_reader = getattr(self.repo, "planner_schedule", None)
+                            schedule = await schedule_reader(ptask.id) if schedule_reader is not None else None
+                        except Exception:
+                            schedule = None
+                        source_unavail = schedule is None
+                    due_d = getattr(schedule, "due_date", None)
+                    due_at = getattr(schedule, "due_at", None)
                     due_day = due_d or (due_at.date() if isinstance(due_at, datetime) else None)
                     if due_day is not None and due_day > today_date:
                         continue
@@ -741,7 +755,6 @@ class TodayProjection:
                         or getattr(ptask, "title", None)
                         or f"Задача #{ptask.id}"
                     )[:140]
-                    source_unavail = getattr(ptask, "recurrence_source", "planner") != "planner"
                     items.append(
                         {
                             "item_key": f"plan:planner:{self.workspace_id}:{ptask.id}",
@@ -753,7 +766,11 @@ class TodayProjection:
                                 if is_overdue
                                 else ("Срок сегодня" if due_day == today_date else "В плане к выполнению")
                             ),
-                            "status_label": "Просрочено" if is_overdue else "На сегодня",
+                            "status_label": (
+                                "Источник недоступен"
+                                if source_unavail
+                                else ("Просрочено" if is_overdue else "На сегодня")
+                            ),
                             "href": f"/app/planner/{ptask.id}/edit",
                             "chat_url": "/app/chat",
                             "created_at": _iso_or_empty(due_at or due_d),

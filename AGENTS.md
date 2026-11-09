@@ -67,6 +67,12 @@ carry only task-specific additions, not copies of these common rules.
   Public test records require explicit Superuser approval. Public migrations need
   full test-schema validation and separate apply authorization. Alembic only;
   [database safeguards](docs/COLLABORATION.md#database) apply after failed runs too.
+- Migrations are numbered at merge, not in advance: write a placeholder revision,
+  point `down_revision` at the live `dev` head, and let the integrator assign the
+  number ([rules](docs/COLLABORATION.md#migration-numbering-and-parallel-tasks)).
+  Run the cycle once on the task's own isolated schema; a renumber that changes no
+  DDL needs only the head check, and a green isolated cycle is already the
+  `test_schema` precondition for a public apply.
 - Reuse ORM managers/services and transactions. Fail closed; recheck tenant/actor
   rights at execution. Preserve confirmation/dry-run, payer/usage evidence and
   secrets. Mock paid providers and external writes during tests.

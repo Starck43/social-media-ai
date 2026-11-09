@@ -6,10 +6,12 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Identity,
     Index,
     Integer,
     String,
@@ -52,6 +54,9 @@ class OutboxMessage(Base, TenantScopedMixin, TimestampMixin):
     content_hash: Mapped[str] = mapped_column(String(71), nullable=False)
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="draft")
     purpose: Mapped[str] = mapped_column(String(20), nullable=False)
+    reply_evidence_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     timezone: Mapped[str] = mapped_column(String(100), nullable=False)
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_by: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.users.id", ondelete="RESTRICT"))
@@ -117,4 +122,38 @@ class OutboxTarget(Base, TenantScopedMixin, TimestampMixin):
     delivery_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     provider_message_id: Mapped[str | None] = mapped_column(String(255))
     error_code: Mapped[str | None] = mapped_column(String(64))
+    pii_updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")
+
+
+class OutboxReplyEvidence(Base, TenantScopedMixin, TimestampMixin):
+    """Encrypted, tenant-scoped evidence; absence never authorizes a reply."""
+
+    __tablename__ = "outbox_reply_evidence"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "outbox_message_id", name="uq_outbox_reply_evidence_message"),
+        ForeignKeyConstraint(
+            ["tenant_id", "outbox_message_id"],
+            [f"{S}.outbox_messages.tenant_id", f"{S}.outbox_messages.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "thread_id"],
+            [f"{S}.message_threads.tenant_id", f"{S}.message_threads.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "inbound_message_id"],
+            [f"{S}.unified_messages.tenant_id", f"{S}.unified_messages.id"],
+            ondelete="CASCADE",
+        ),
+        Index("ix_outbox_reply_evidence_thread", "tenant_id", "thread_id"),
+        Index("ix_outbox_reply_evidence_inbound", "tenant_id", "inbound_message_id"),
+        {"schema": S},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    outbox_message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    thread_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    inbound_message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    headers_encrypted: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
     pii_updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")

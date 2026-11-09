@@ -34,7 +34,14 @@ from .collection import (
     Platform,
     Source,
 )
-from .communications import ContactChannelStat, MessageThread, OutboxMessage, OutboxTarget, UnifiedMessage
+from .communications import (
+    ContactChannelStat,
+    MessageThread,
+    OutboxMessage,
+    OutboxReplyEvidence,
+    OutboxTarget,
+    UnifiedMessage,
+)
 from .contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
 from .crm import CrmEntity, GreetingHistory
 from .file_workspace import FileCatalogObject, FileCatalogObservation, FileCatalogScan
@@ -58,7 +65,7 @@ from .integrations import (
     WorkspaceConnection,
     WorkspaceConnectionSecret,
 )
-from .knowledge import DocumentRevision, KnowledgeDocument, KnowledgeSnippet
+from .knowledge import DocumentApproval, DocumentRevision, KnowledgeDocument, KnowledgeSnippet
 from .llm import (
     LLMAttempt,
     LLMBudgetDay,
@@ -69,6 +76,7 @@ from .llm import (
     LLMProvider,
 )
 from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
+from .calendar import CalendarChoice, CalendarEvent, SourceObject
 from .planner import PlannerEventRun, PlannerEventSettings, PlannerReminder, PlannerTask
 from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
@@ -85,11 +93,15 @@ __all__ = [
     "UnifiedMessage",
     "ContactChannelStat",
     "PlannerTask",
+    "CalendarChoice",
+    "CalendarEvent",
+    "SourceObject",
     "PlannerEventRun",
     "PlannerEventSettings",
     "PlannerReminder",
     "NotificationDelivery",
     "OutboxMessage",
+    "OutboxReplyEvidence",
     "OutboxTarget",
     "CrmEntity",
     "GreetingHistory",
@@ -103,6 +115,7 @@ __all__ = [
     "KnowledgeSnippet",
     "KnowledgeDocument",
     "DocumentRevision",
+    "DocumentApproval",
     # Base classes
     "Base",
     "TimestampMixin",

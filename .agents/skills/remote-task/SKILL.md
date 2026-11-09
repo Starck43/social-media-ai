@@ -43,6 +43,32 @@ or PR — that is evidence.
 
 - Claim: row `IN_PROGRESS` with owner and dialogue, card updated, before edits.
 - Own worktree and one thematic branch from `origin/dev`; Draft PR to `dev`.
+
+### Publish early, publish often
+
+The lane's workspace can be restored from an older snapshot at any moment; a
+reset destroys the worktree, the branch and its local objects together, and
+nothing local survives it. Local-only work is therefore not work.
+
+- Push the task branch to `origin` with the **first useful edit**, however
+  unfinished, and open the Draft PR at the same time. No waiting for a green
+  suite, a complete feature or a tidy history.
+- Commit each independently green portion — one focused test, one surface, one
+  migration step — instead of one large commit at the end. Never hold more than
+  about one check cycle of work only on disk.
+- Push after every such commit. `--force-with-lease` on your own branch only;
+  never force-push `dev` or a branch someone else owns.
+- Keep the Draft PR body current (tested SHA, what passes, what is still
+  deferred) so a resumed session can continue from `origin` alone: fetch, read
+  the PR, find the last pushed SHA. Record in the card that the branch is
+  pushed and its SHA, so recovery never depends on a local reflog.
+- Draft status is a workflow flag, not a publication veto: the early push
+  publishes a branch, not an accepted solution. Hand off and merge rules below
+  still apply.
+
+A reset is a normal operating condition, not an incident: when the worktree
+returns from an older snapshot, re-create it from `origin/<task-branch>`, never
+re-implement what already reached the remote, and state the recovered SHA.
 - Follow `pyproject.toml` style (Black + isort, 120), reuse existing
   managers/services/ORM models, no ad-hoc sessions, no non-Alembic migrations,
   no refactors, no Celery/Redis/Streamlit. Keep approval gates, dry runs and

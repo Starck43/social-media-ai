@@ -311,6 +311,45 @@ Superuser approval for that scope; a DB role/agent identity does not grant appro
 Use resolved schemas/Alembic context, qualified DDL and existing manager/session
 conventions; no ad-hoc engines, runtime DDL or unsafe search-path assumptions.
 
+## Migration numbering and parallel tasks
+
+Task cards describe the migration a task needs; they do not hold a number in
+advance. The number is metadata about integration order, not part of the design,
+so it is resolved once, at merge, instead of being negotiated between agents.
+
+1. **No pre-reservation.** A task writes its migration with a stable placeholder
+   revision (a descriptive string such as `p19t04_document_approval`) and sets
+   `down_revision` to the **live** head: run
+   `ScriptDirectory.from_config(cfg).get_heads()` on the current `dev`, never rely
+   on a remembered number or a file listing read earlier in the session (R-20 in
+   [BUSINESS_MODULES](BUSINESS_MODULES.md)).
+2. **Numbering happens at merge.** Whoever integrates assigns the next free
+   numeric revision and rewrites `down_revision` in the same commit. The body of
+   the migration does not change. The audit note records the number that landed,
+   so the history says which revision is real.
+3. **Parallel tasks chain.** Two tasks that both follow the current head do not
+   both take it. The first integrated takes the next number after the head; the
+   second takes the one after that and points at the first. Chain order is
+   integration order, not claim order.
+4. **A dependent task does not wait for a number.** If task B needs task A's
+   schema, B records the dependency in its card, builds against A's placeholder
+   revision locally, and integrates after A. It never polls the auditor for a
+   number, and no agent allocates one it cannot see in `dev`.
+5. **Cycle evidence is earned once, at the graph that lands.** Run upgrade,
+   empty downgrade, refused downgrade with data and a single-head check on the
+   task's own isolated schema, against the chain that will actually be merged.
+   A renumber that changes only `revision`/`down_revision` — not the operation
+   body — does not require a fresh cycle; re-run only the head check.
+6. **Public is not a second rehearsal.** [Database](#database) already requires
+   full validation of the same revisions on an isolated schema before any public
+   apply. A green isolated cycle is that validation, so `public` is a separate
+   authorized deployment action, not an extra test round.
+
+An allocation note under `docs/tasks/` stays useful only while a task is open;
+it records the placeholder and its dependency, not a promise of a future number.
+The [reservation register](tasks/p19-t04-migration-allocation.md) is history, not
+a lock file.
+
 ## State transitions
 
 A state-changing method is not safe for concurrent callers merely because it

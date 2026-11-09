@@ -28,6 +28,7 @@ DEFAULT_TASKS = {
     "comms-outbox-dispatch": ("* * * * *", "comms.outbox.dispatch", {}),
     "planner-reminders-dispatch": ("* * * * *", "planner.reminders.dispatch", {}),
     "comms-email-sync": ("*/15 * * * *", "comms.email.sync", {}),
+    "calendar-sync": ("*/5 * * * *", "calendar.sync", {}),
     "planner-events-daily": ("0 6 * * *", "planner.events.daily", {}),
 }
 

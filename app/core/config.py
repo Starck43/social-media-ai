@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     TOKEN_URL: str = f"{API_V1_STR}/auth/login"
     # Public links (including unsubscribe URLs) require an explicitly configured host.
     PUBLIC_BASE_URL: str = ""
+    CALENDAR_EVENT_WRITE_ENABLED: bool = False
+    KILL_CALENDAR_EVENT_WRITE: bool = False
+    GOOGLE_CALENDAR_CLIENT_ID: str = ""
+    GOOGLE_CALENDAR_CLIENT_SECRET: SecretStr = Field(default=SecretStr(""), repr=False, exclude=True)
     UNSUBSCRIBE_TOKEN_TTL_SECONDS: int = Field(default=90 * 86400, ge=60)
 
     # JWT настройки: only HMAC with SECRET_KEY; asymmetric algorithms are refused

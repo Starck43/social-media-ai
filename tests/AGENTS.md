@@ -22,7 +22,11 @@ relevant [test](../docs/COLLABORATION.md#tests) or
   run with `scripts/ci/schema_inventory.py <schema> <file>` and compare with
   `--diff`; a spot check of "existing objects still present" does not prove the
   run added nothing. Do not bypass `conftest` or parallelize without proving
-  isolation. A suite whose own autouse guard forbids any `app` import cannot run
+  isolation. Prefer an isolated schema owned by the task over the shared
+  `test_schema`: duplicates there break on the first table the checkout does not
+  map, and every such failure is a bootstrap error, not a test result — report it
+  as a schema-access problem instead of debugging the fixtures. A suite whose own
+  autouse guard forbids any `app` import cannot run
   under the root conftest; it is skipped there with that reason and runs as
   `PYTHONPATH=.:tests pytest <file> --noconftest -p no:cacheprovider -o addopts=""`
   (today only `tests/api/test_http_user_response_privacy.py`, see its audit).

@@ -296,10 +296,31 @@ LOCAL_GATEWAY = replace(
     auth_protocol="Парный mTLS (планируется)",
 )
 
+GOOGLE_CALENDAR = Provider(
+    id="google_calendar",
+    platform="calendar",
+    label="Google Calendar",
+    methods=tuple(
+        OAuthMethod(
+            id=method_id,
+            label="Google Calendar",
+            fields=(),
+            authorize_url="https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+            token_url="https://oauth2.googleapis.com/token",
+            scopes=("https://www.googleapis.com/auth/" + scope,),
+            client_config_keys=("GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET"),
+            allowed_hosts=("accounts.google.com", "oauth2.googleapis.com"),
+        )
+        for method_id, scope in (("oauth2", "calendar.events"), ("oauth2_readonly", "calendar.events.readonly"))
+    ),
+)
+
+
 PROVIDERS: Mapping[str, Provider] = MappingProxyType(
     {
         p.id: p
         for p in (
+            GOOGLE_CALENDAR,
             VK,
             TELEGRAM,
             MAILRU,

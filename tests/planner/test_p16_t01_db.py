@@ -24,6 +24,7 @@ from app.models.planner import PlannerTask
 from app.services.planner.contracts import TaskCreate, TaskReschedule, TaskUpdate
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable, planner_service
 from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F401
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 ANCHOR = date(2099, 1, 31)
@@ -31,7 +32,7 @@ ANCHOR = date(2099, 1, 31)
 
 @pytest.fixture(autouse=True)
 def planner_integration_gate(monkeypatch):
-    assert settings.DB_SCHEMA == "test_schema", "planner integration is test_schema only"
+    require_isolated_schema()
     assert resolve_permission_key("planner.task.create") is not None, "post-#391 catalog wiring required"
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
 

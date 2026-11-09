@@ -155,3 +155,6 @@ class DocumentTemplate(TenantScopedMixin, TimestampMixin, Base):
     variables_schema: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
+
+
+from .approval import DocumentApproval  # noqa: E402,F401

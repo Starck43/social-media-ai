@@ -777,6 +777,7 @@ async def test_api_exact_routes_explicit_configure_and_safe_errors(monkeypatch):
     paths = {route.path for route in api.router.routes}
     assert paths == {
         "/communication/outbox/draft",
+        "/communication/outbox/reply",
         "/communication/outbox/schedule",
         "/communication/outbox/scheduled",
         "/communication/outbox/scheduled/{message_id}",

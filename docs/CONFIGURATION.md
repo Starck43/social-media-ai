@@ -293,6 +293,44 @@ optional compatibility profile.
 |---|---|---|
 | `REDIS_URL` | `redis://localhost:6379/0` | Active admin SlowAPI rate-limit storage and frozen Celery compatibility. The Redis Python dependency remains core; this does not authorize starting Redis/Celery. |
 
+### Calendar connections
+
+Google Calendar OAuth uses the deployment's `GOOGLE_CALENDAR_CLIENT_ID` and
+`GOOGLE_CALENDAR_CLIENT_SECRET`; its registered callback must match
+`PUBLIC_BASE_URL` plus `/app/settings/oauth/google_calendar/callback`, and
+`PUBLIC_BASE_URL` must be an externally reachable HTTPS URL. Choose the
+read-only OAuth scope (`calendar.events.readonly`) when event writes are not
+needed. The writable scope is `calendar.events`; per-connection write consent
+is still required. Connecting explicitly authorizes calendar reads and starts
+the connection's scheduled sync. Yandex uses an application password supplied
+for that connection and the fixed `https://caldav.yandex.ru` endpoint; it has
+no deployment-level endpoint override. `POST /api/v1/calendar/discover/yandex`
+uses those credentials to list available calendars without saving the credentials
+or creating a connection; connect only after selecting a returned calendar.
+When the selected calendar has no locally indexed events, event listing checks
+provider availability: it returns an empty list only when the provider confirms
+the calendar is empty, reports `sync_required` when events need initial indexing,
+and reports the source unavailable when it cannot verify the provider.
+
+Planner-to-calendar writes use the existing `calendar.event_write.v1` business
+capability, which is disabled by default. Set
+`CALENDAR_EVENT_WRITE_ENABLED=true` to enable it after review. Set
+`KILL_CALENDAR_EVENT_WRITE=true` to block writes; the command ledger rechecks
+this kill switch at execution, and it takes precedence over enablement. These
+flags control writes only; they do not disable reads or scheduled sync. A
+connected calendar is read after explicit connection consent; disconnect that
+connection to stop its sync. No live Google or Yandex provider call is part of
+local configuration validation.
+
+For calendar-owned planner tasks, deadline-relative reminder presets are
+unavailable because the provider controls the schedule. Custom-time reminders
+remain supported; dispatch reads the current provider schedule and timezone for
+quiet-hour and late labeling, and defers delivery when the source is unavailable.
+An event write with an uncertain outcome is never resent: use the separately
+approved `resolve_remote` read/accept command to reconcile the current provider
+event. This is read-only, remains available when event writes are disabled or
+the connection is read-only, and does not retry the original write.
+
 ### JWT / Authentication
 
 | Variable | Default | Description |

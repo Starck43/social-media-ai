@@ -13,11 +13,12 @@ from alembic.operations import Operations
 
 from app.core.config import settings
 from app.core.database import engine
+from tests.support.schema_guard import require_isolated_schema
 
 
 @pytest.fixture
 def migration():
-    assert settings.DB_SCHEMA == "test_schema"
+    require_isolated_schema()
     spec = importlib.util.spec_from_file_location(
         "q16_migration", Path("migrations/versions/0120_shared_platform_config.py")
     )

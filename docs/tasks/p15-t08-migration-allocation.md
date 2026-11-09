@@ -44,3 +44,9 @@ The DDL requested in #448, reviewed and limited to:
 | `0143` | P16-T02 | spent, in `dev` |
 | `0146` | P15-T08 reply evidence | allocated 2026-11-09, not merged |
 | next free | — | `0147` |
+
+## Collision resolution (2026-11-09)
+
+- P19-T04 was allocated `0146` shortly before this record and had already rehearsed it on a
+  local branch. Since this task had not written its migration file, the fixed number stays
+  `0146` here and P19-T04 moved to `0144`. `0146` must not be reused for anything else.

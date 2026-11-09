@@ -580,6 +580,10 @@ class CalendarService:
             },
             session=session,
         )
+        if request.operation != "upsert":
+            item_command = await session.get(BusinessCommand, command["id"])
+            item_command.approval_policy = "per_item"
+            command["approval_policy"] = "per_item"
         if request.operation == "upsert":
             command = await self.ledger.approve_command(
                 command["id"], expected_payload_hash=command["payload_hash"], session=session

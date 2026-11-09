@@ -444,6 +444,13 @@ class CalendarService:
         rows = list((await session.scalars(query.order_by(CalendarEvent.id.desc()).limit(limit + 1))).all())
         try:
             adapter = await self._adapter(session, conn, identity)
+            if not rows and before_id is None:
+                # An empty identity inventory is not proof of an empty source.
+                # Confirm availability before displaying an empty calendar; a
+                # non-empty provider requires discovery sync, not a false empty.
+                discovered, _ = await adapter.pull(None)
+                if any(not item["deleted"] for item in discovered):
+                    return {"state": "sync_required", "items": None, "next_before_id": None}
             result = []
             for row in rows[:limit]:
                 _, source = await self._event(session, row.id, conn)

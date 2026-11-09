@@ -307,6 +307,10 @@ for that connection and the fixed `https://caldav.yandex.ru` endpoint; it has
 no deployment-level endpoint override. `POST /api/v1/calendar/discover/yandex`
 uses those credentials to list available calendars without saving the credentials
 or creating a connection; connect only after selecting a returned calendar.
+When the selected calendar has no locally indexed events, event listing checks
+provider availability: it returns an empty list only when the provider confirms
+the calendar is empty, reports `sync_required` when events need initial indexing,
+and reports the source unavailable when it cannot verify the provider.
 
 Planner-to-calendar writes use the existing `calendar.event_write.v1` business
 capability, which is disabled by default. Set

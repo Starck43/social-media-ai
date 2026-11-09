@@ -355,6 +355,38 @@ async def test_unavailable_source_never_looks_empty_or_advances_sync_cursor(cale
             assert "cursor" not in conn.config
 
 
+async def test_empty_event_inventory_distinguishes_unavailable_nonempty_and_genuinely_empty_source(calendar_world):
+    world = calendar_world
+    connection_id = await connection(world)
+    adapter = Adapter(pull=CalendarError("source_unavailable"))
+    svc = service(adapter)
+    with scope(world):
+        await svc.choose(connection_id)
+        unavailable = await svc.events()
+        assert unavailable == {"state": "source_unavailable", "items": None, "next_before_id": None}
+
+        adapter.pull_result = (
+            [
+                {
+                    "external_id": "unindexed-provider-event",
+                    "etag": "v1",
+                    "deleted": False,
+                    "payload": {},
+                }
+            ],
+            "provider-cursor",
+        )
+        populated = await svc.events()
+        assert populated == {"state": "sync_required", "items": None, "next_before_id": None}
+
+        adapter.pull_result = ([], "empty-provider-cursor")
+        genuinely_empty = await svc.events()
+        assert genuinely_empty == {"state": "available", "items": [], "next_before_id": None}
+        async with async_session_maker() as session:
+            conn = await session.get(WorkspaceConnection, connection_id)
+            assert "cursor" not in conn.config
+
+
 async def test_repeated_sync_reuses_shared_source_identity_and_missing_live_event_is_tombstone(calendar_world):
     world = calendar_world
     connection_id = await connection(world)

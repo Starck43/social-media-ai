@@ -449,7 +449,15 @@ async def create_reply_draft(session, *, thread_id, inbound_message_id, subject,
     headers = await asyncio.to_thread(_read_origin_headers, connection, secret, inbound)
     target.recipient_encrypted, target.credential_hash = recipient, credential
     target.content_hash = transitions.compute_message_hash(recipient, "email", request.subject, request.body)
-    message.content_hash = content_digest(message, [target])
+    message.content_hash = content_digest(
+        message,
+        [target],
+        {
+            "thread_id": origin.thread_id,
+            "inbound_message_id": origin.inbound_message_id,
+            "headers": headers.approval_value(),
+        },
+    )
     evidence = OutboxReplyEvidence(
         tenant_id=tenant,
         thread_id=origin.thread_id,

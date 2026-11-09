@@ -71,29 +71,34 @@ def due_after_quiet_hours(value, zone):
     return adjust_for_quiet_hours(instant(value).astimezone(ZoneInfo(zone))).astimezone(UTC)
 
 
-def content_digest(message, targets):
+def content_digest(message, targets, reply_evidence=None):
     # Exact JSON, not the legacy stripped/lowercased pure hash alone. Newlines,
     # whitespace and case in recipient/content/credential identity remain bound.
-    return digest(
-        {
-            "author": message.author_id,
-            "contact": message.contact_id,
-            "subject": message.subject_encrypted or "",
-            "body": message.content_encrypted,
-            "purpose": message.purpose,
-            "timezone": message.timezone,
-            "targets": [
-                {
-                    "channel": t.channel,
-                    "connection": t.connection_id,
-                    "identity": t.identity_id,
-                    "recipient": t.recipient_encrypted,
-                    "credential": t.credential_hash,
-                }
-                for t in targets
-            ],
-        }
-    )
+    payload = {
+        "author": message.author_id,
+        "contact": message.contact_id,
+        "subject": message.subject_encrypted or "",
+        "body": message.content_encrypted,
+        "purpose": message.purpose,
+        "timezone": message.timezone,
+        "targets": [
+            {
+                "channel": t.channel,
+                "connection": t.connection_id,
+                "identity": t.identity_id,
+                "recipient": t.recipient_encrypted,
+                "credential": t.credential_hash,
+            }
+            for t in targets
+        ],
+    }
+    if getattr(message, "reply_evidence_required", False) is True:
+        if reply_evidence is None:
+            raise OutboxConflict("reply_evidence_unavailable")
+        payload["reply_evidence"] = reply_evidence
+    elif reply_evidence is not None:
+        raise OutboxConflict("reply_evidence_unexpected")
+    return digest(payload)
 
 
 def approval_digest(message):

@@ -111,6 +111,9 @@ async def test_reply_draft_stages_verified_source_and_evidence_in_encrypted_mode
     assert (evidence.tenant_id, evidence.thread_id, evidence.inbound_message_id) == (7, 11, 12)
     assert '"in_reply_to":"<message@example.invalid>"' in evidence.headers_encrypted
     assert target.connection_id == 3 and target.identity_id == 13
+    assert message.content_hash == outbox_store.content_digest(
+        message, [target], {"thread_id": 11, "inbound_message_id": 12, "headers": headers.approval_value()}
+    )
 
 
 @pytest.mark.asyncio

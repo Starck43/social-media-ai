@@ -154,3 +154,91 @@ def reply_exemption_candidate(message, target, thread, inbound, identities: Iter
         )
     except (ReplyUnavailable, AttributeError):
         return False
+
+
+def fetch_email_reply_headers(client, inbound, allowed_folders) -> ReplyHeaders:
+    """Read exact source headers via an authenticated, caller-bound IMAP client.
+
+    The trusted caller owns tenant/permission checks, a fresh connection and
+    source-row lock, and creates `client` through the pinned IMAP adapter. Neither
+    the client nor folder list may come from a request. UIDVALIDITY is mandatory:
+    unknown or reset epochs fail closed instead of matching a recycled UID. This
+    helper only performs a bounded, read-only PEEK; it never authorizes or sends.
+    """
+    import imaplib
+    import re
+    from email import policy
+    from email.parser import BytesHeaderParser
+
+    from app.integrations.email.imap_sync import ImapSyncError, validate_folder_list
+
+    try:
+        original_id = inbound.original_id
+        if not isinstance(original_id, str) or not isinstance(allowed_folders, tuple):
+            raise ReplyUnavailable("reply_headers_unavailable")
+        folder, uidvalidity, uid = original_id.rsplit(":", 2)
+        if (
+            validate_folder_list([folder]) != (folder,)
+            or folder not in allowed_folders
+            or not uidvalidity.isascii()
+            or not uidvalidity.isdecimal()
+            or not uid.isascii()
+            or not uid.isdecimal()
+            or len(uidvalidity) > 10
+            or len(uid) > 10
+            or not (0 < int(uidvalidity) <= 4294967295)
+            or not (0 < int(uid) <= 4294967295)
+        ):
+            raise ReplyUnavailable("reply_headers_unavailable")
+        status, _ = client.select(folder, readonly=True)
+        responses = getattr(client, "untagged_responses", None) or {}
+        epochs = responses.get("UIDVALIDITY") or responses.get(b"UIDVALIDITY")
+        if status != "OK" or not epochs or not isinstance(epochs[-1], bytes):
+            raise ReplyUnavailable("reply_headers_unavailable")
+        epoch = epochs[-1]
+        if not epoch.isdigit() or len(epoch) > 10 or int(epoch) != int(uidvalidity):
+            raise ReplyUnavailable("reply_headers_unavailable")
+        # The partial fetch bounds the response even when the provider has giant headers.
+        spec = "(UID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID REFERENCES)]<0.16385>)"
+        status, items = client.uid("FETCH", uid, spec)
+        if status != "OK" or not isinstance(items, (list, tuple)):
+            raise ReplyUnavailable("reply_headers_unavailable")
+        results = [item for item in items if item not in (None, b")", b"")]
+        if len(results) != 1 or not isinstance(results[0], tuple) or len(results[0]) != 2:
+            raise ReplyUnavailable("reply_headers_unavailable")
+        metadata, raw = results[0]
+        if (
+            not isinstance(metadata, bytes)
+            or len(metadata) > 4096
+            or not isinstance(raw, bytes)
+            or not (0 < len(raw) <= 16384)
+            or not raw.endswith(b"\r\n\r\n")
+        ):
+            raise ReplyUnavailable("reply_headers_unavailable")
+        found = re.findall(rb"\bUID\s+(\d+)\b", metadata, flags=re.IGNORECASE)
+        if len(found) != 1 or len(found[0]) > 10 or int(found[0]) != int(uid):
+            raise ReplyUnavailable("reply_headers_unavailable")
+        # Reject non-ASCII, controls, parser defects, duplicate headers and extra fields.
+        if any(byte not in (9, 10, 13) and not 32 <= byte <= 126 for byte in raw):
+            raise ReplyUnavailable("reply_headers_unavailable")
+        parsed = BytesHeaderParser(policy=policy.default).parsebytes(raw)
+        fields = list(parsed.raw_items())
+        if (
+            parsed.defects
+            or parsed.get_payload()
+            or any(name.lower() not in {"message-id", "references"} for name, _ in fields)
+        ):
+            raise ReplyUnavailable("reply_headers_unavailable")
+        message_ids = [value for name, value in fields if name.lower() == "message-id"]
+        refs = [value for name, value in fields if name.lower() == "references"]
+        if len(message_ids) != 1 or len(refs) > 1:
+            raise ReplyUnavailable("reply_headers_unavailable")
+
+        def unfold(value):
+            return re.sub(r"\r?\n[ \t]+", " ", value).strip(" \t")
+
+        message_id = unfold(message_ids[0])
+        references = unfold(refs[0]).split() if refs else []
+        return verified_email_headers(inbound, message_id, references)
+    except (AttributeError, ValueError, TypeError, OSError, imaplib.IMAP4.error, ImapSyncError):
+        raise ReplyUnavailable("reply_headers_unavailable") from None

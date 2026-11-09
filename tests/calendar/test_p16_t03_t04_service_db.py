@@ -170,7 +170,7 @@ async def connection(world, *, workspace=0, user=0, provider="google_calendar", 
                 label="Synthetic calendar",
                 account_key=f"calendar-{workspace}-{user}-{provider}-{uuid.uuid4().hex}",
                 config={
-                    "calendar_id": "primary",
+                    "calendar_id": "/calendars/alice/work/" if provider == "yandex_calendar" else "primary",
                     "read_only": read_only,
                     "write_consent": consent,
                     "consented_by": world.users[user].id,

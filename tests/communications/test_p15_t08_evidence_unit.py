@@ -12,8 +12,8 @@ from cli.commands.pii import REGISTRY
 def test_reply_evidence_revision_has_one_head_and_fixed_parent():
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     assert len(script.get_heads()) == 1
-    assert "0146" in {revision.revision for revision in script.walk_revisions()}
-    assert script.get_revision("0146").down_revision == "0143"
+    assert "0149" in {revision.revision for revision in script.walk_revisions()}
+    assert script.get_revision("0149").down_revision == "0148"
 
 
 def test_reply_evidence_model_has_approved_columns_and_encryption():

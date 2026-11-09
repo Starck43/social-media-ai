@@ -32,6 +32,7 @@ app = typer.Typer(name="pii", help="Rotate the personal-data encryption key")
 # owns encrypted columns (P13-T07 is the first); nothing is discovered by name
 # guessing, because a wrong guess would re-encrypt the wrong column.
 REGISTRY: tuple[tuple[str, str, str | None], ...] = (
+    ("document_approvals", "comment_encrypted", None),
     ("outbox_messages", "subject_encrypted", None),
     ("outbox_messages", "content_encrypted", None),
     ("outbox_targets", "recipient_encrypted", None),

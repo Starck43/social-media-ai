@@ -557,6 +557,7 @@ GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
     *(
         GuardTrigger(table, "contact_pii_marker", "bump_contact_pii_marker", ("INSERT", "UPDATE"))
         for table in (
+            "document_approvals",
             "contacts",
             "contact_identities",
             "contact_consents",

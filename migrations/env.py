@@ -101,6 +101,8 @@ def on_version_apply(
         # Running the generic scanner here would make the mapped table a
         # second, uncatalogued model type on legacy upgrade paths.
         "0141",
+        # 0148 owns its own approval resource, permissions and presets.
+        "0148",
     }:
         return
     from scripts.migrations.register_model_types import register_model_types

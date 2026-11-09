@@ -29,6 +29,7 @@ RESOURCES = (
     ),
     _resource("contacts.contact", "Contact", "contacts", "VIEW CREATE UPDATE DELETE EXPORT", True),
     _resource("planner.task", "PlannerTask", "planner_tasks", "VIEW CREATE UPDATE DELETE", True),
+    _resource("documents.approval", "DocumentApproval", "document_approvals", "CONFIGURE", True),
     _resource("comms.message", "UnifiedMessage", "unified_messages", "VIEW CREATE UPDATE DELETE", True),
     _resource("comms.outbox", "OutboxMessage", "outbox_messages", "VIEW UPDATE CONFIGURE", True),
     _resource("identity.user", "User", "users", "VIEW CREATE UPDATE DELETE"),
@@ -116,6 +117,7 @@ _OLD_DOMAINS = {
     "comms": (),
     "integrations": (),
     "planner": (),
+    "documents": (),
 }
 _ALIASES = {
     f"{old}.{r.model_name}.{a.db_value}": (r, a)
@@ -178,6 +180,8 @@ def workspace_grants(codename):
         elif role == WorkspaceRoleType.MANAGER:
             if r.key in ("collection.source", "analysis.scenario", "scheduling.task", "planner.task"):
                 actions = set(r.actions)
+            elif r.key == "documents.approval":
+                actions = {ActionType.CONFIGURE}
             elif r.key == "comms.message":
                 actions = set(r.actions) - {ActionType.DELETE}
             elif r.key == "comms.outbox":

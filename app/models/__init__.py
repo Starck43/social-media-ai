@@ -58,7 +58,7 @@ from .integrations import (
     WorkspaceConnection,
     WorkspaceConnectionSecret,
 )
-from .knowledge import DocumentRevision, KnowledgeDocument, KnowledgeSnippet
+from .knowledge import DocumentApproval, DocumentRevision, KnowledgeDocument, KnowledgeSnippet
 from .llm import (
     LLMAttempt,
     LLMBudgetDay,
@@ -107,6 +107,7 @@ __all__ = [
     "KnowledgeSnippet",
     "KnowledgeDocument",
     "DocumentRevision",
+    "DocumentApproval",
     # Base classes
     "Base",
     "TimestampMixin",

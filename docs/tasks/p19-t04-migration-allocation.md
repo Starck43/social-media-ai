@@ -88,3 +88,20 @@ Exactly the DDL proposed in the P19-T04 card, reviewed and accepted for allocati
 - Do not ask the auditor for a number and do not wait for one. A green cycle on
   the task's own isolated schema is the evidence; changing only the numbering
   needs no new cycle, only the single-head check.
+
+## Integration record: migration 0148
+
+At the owner's request, the approval schema package is integrated separately to
+unblock a dependent task. Revision `0148` follows `0147`; the table, model,
+`documents.approval.CONFIGURE` catalog and owner/admin/manager grants are one
+package. This is not completion or acceptance of P19-T04, which remains
+`IN_PROGRESS`: workflow, notifications, API/UI and end-to-end checks remain.
+
+On a disposable local PostgreSQL 16 database and an exclusively owned schema,
+the exact package was upgraded from the real baseline through `0147`, upgraded
+to `0148`, downgraded empty to `0147`, upgraded again and refused downgrade with
+an approval row (the row and revision remained intact). After cleanup the owned
+schema and database were removed, and public and owned-schema inventories
+matched their initial state. No provider calls or public-schema migrations.
+`tests/knowledge/test_p19_t04_migration_unit.py`: 5 passed; generated reference
+check passed. The head check is `['0148']`.

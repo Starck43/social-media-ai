@@ -156,8 +156,16 @@ class FakeTodaySourceRepository:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("state", ["source_unavailable", "reauth_required", "task_scope_required", "rate_limited"])
-async def test_today_keeps_unavailable_connected_task_source_visible(state):
+@pytest.mark.parametrize(
+    ("state", "caption"),
+    [
+        ("source_unavailable", "недоступ"),
+        ("reauth_required", "повтор"),
+        ("task_scope_required", "повтор"),
+        ("rate_limited", "временно ограничил"),
+    ],
+)
+async def test_today_keeps_unavailable_connected_task_source_visible(state, caption):
     repository = FakeTodaySourceRepository({"state": state, "items": [], "next_cursor": None})
     projection = TodayProjection(
         workspace_id=4,
@@ -172,7 +180,7 @@ async def test_today_keeps_unavailable_connected_task_source_visible(state):
     item = next(row for row in section.items if row["kind"] == "external_task_source")
     assert item["stale_or_unavailable"] is True
     assert item["href"] == "/app/task-hub/sources"
-    assert "недоступ" in item["title"].lower() or "повтор" in item["title"].lower()
+    assert caption in item["title"].lower()
     assert repository.requested_limit == 5
 
 

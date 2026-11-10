@@ -368,7 +368,10 @@ async def test_projection_cursor_drains_pages_and_streams_without_drop_or_repeat
     assert set(ids) == set(range(1, 61)) | (set(range(61, 73)) - {65})
     assert calls.count(("assigned", 0)) == 3
     assert calls.count(("assigned", 50)) == 1
-    assert calls.count(("watched", 0)) == 1
+    # The final page is fetched again to resume its index after the prior call
+    # returned ten assigned plus ten watched tasks.
+    assert calls.count(("watched", 0)) == 2
+    assert len(calls) == 6
     created_references = [obj for page_session in page_sessions for obj in page_session.added]
     assert len(created_references) == 71
     assert {obj.external_id for obj in created_references} == {

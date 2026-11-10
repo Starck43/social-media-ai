@@ -75,13 +75,13 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 
 - [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T03](docs/tasks/p20-t03.md) Unified approval inbox on existing ledgers — **IN_PROGRESS** · codex-review · [resume measurements](docs/tasks/p20-t03-resume.md) · [review](https://github.com/Starck43/social-media-ai/pull/450#issuecomment-6749627992) · `P3` · `C4`
-- [P20-T09](docs/tasks/p20-t09.md) Inbox triage and agent-suggested replies — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T09](docs/tasks/p20-t09.md) Inbox triage and agent-suggested replies — **IN_PROGRESS** · ai-studio-argon · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T10](docs/tasks/p20-t10.md) Unified task surface: my to-dos, agent assignments and calendar — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T11](docs/tasks/p20-t11.md) Team work through connected task systems — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
-- [P15-T14](docs/tasks/p15-t14.md) Attachment delivery at the outbox seam (owner decision 2026-11-09) — **IN_PROGRESS** · opencode-local · — · `P3` · `C4`
+- [P15-T14](docs/tasks/p15-t14.md) Attachment delivery at the outbox seam (owner decision 2026-11-09) — **IN_PROGRESS** · notion-ai-p15-t14 · [PR #451](https://github.com/Starck43/social-media-ai/pull/451) · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C4`
 - [P17-T01](docs/tasks/p17-t01.md) 1C connection: OData/HTTP-service endpoints, credentials and health — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P17-T02](docs/tasks/p17-t02.md) 1C read-only data extraction from catalogs, documents and registers — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P17-T03](docs/tasks/p17-t03.md) Natural-language queries, result formatting, export and history — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`

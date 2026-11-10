@@ -51,6 +51,22 @@ build; a card is not blocked on a decision any more.
   of [BUSINESS_MODULES](../BUSINESS_MODULES.md) D8.
 - D9 — **answered (owner, 2026-11-04)**: PostgreSQL plus the existing private
   storage from P12-T12; S3-compatible storage only after a measured need.
+  **Clarified (owner, 2026-11-10):** S3 belongs in the project as a connector for
+  the future, not as a postponed storage choice — other people do keep files
+  there. "Only after a measured need" constrains when S3 becomes the *default*
+  byte store, never whether an S3 connection can exist in the catalog. Rendering
+  and outbox work (P15-T14, P19-T05) must not assume PostgreSQL is the only byte
+  source: the reference carries a location the reader resolves, so a later S3
+  source does not change the outbox or approval contract.
+- D9a — **answered (owner, 2026-11-10)**: rendered DOCX/PDF attachment bytes are
+  **not** stored in PostgreSQL; they live in a transient filesystem spool from
+  render until dispatch plus a TTL and are then deleted. Long-term storage is the
+  tenant's own cloud or local store. Limits are configurable with defaults:
+  `ATTACHMENT_MAX_FILE_BYTES` 5 MiB per file, `ATTACHMENT_MAX_TOTAL_BYTES` 10 MiB
+  per message, `ATTACHMENT_SPOOL_TTL_SECONDS` 900, `ATTACHMENT_STORAGE_DIR` the
+  system temp directory. Rationale: thousands of tenants would bloat the database
+  for bytes needed for minutes. Implementation and the restart guarantee are in
+  [CONFIGURATION](../CONFIGURATION.md) and `app/services/attachments/`.
 
 ## Authorizations that outlive the register
 
@@ -82,3 +98,10 @@ These stand as authorizations for future tasks:
   signing and notarization are a follow-up task, not part of P18-T07 acceptance.
 - D7's consent wording still needs a legal review before the first live campaign;
   the reviewer is not blocked by it.
+- D9a supersedes an earlier record. Commit `bb702f45` ("Record owner artifact
+  storage decision and P19-T05 DDL request") had recorded the opposite: rendered
+  bytes stored encrypted in PostgreSQL with a new hash-read service and a
+  `document_export_artifacts` table. The owner re-answered the same question on
+  2026-11-10 and chose the transient spool. That DDL request is withdrawn and gets
+  no revision number; both cards carry a SUPERSEDED banner. Kept in history so the
+  discarded design stays traceable — it is not an open alternative.

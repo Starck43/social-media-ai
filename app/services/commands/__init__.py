@@ -55,4 +55,3 @@ __all__ = [
     "get_capability",
     "serialize_command",
 ]
-

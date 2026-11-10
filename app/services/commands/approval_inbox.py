@@ -16,17 +16,19 @@ Boundaries enforced in this increment:
 
 from __future__ import annotations
 
-import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping
+from typing import Any, AsyncIterator, Iterable, Mapping
 
 from sqlalchemy import select
 
 from app.core.access_catalog import workspace_grants
+from app.core.database import async_session_maker
 from app.core.permissions import get_current_user
 from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
-from app.models.actions.business_command import BusinessCommand
+from app.models.actions.business_command import BusinessCommand, BusinessCommandTarget
+from app.models.contacts.core import Contact
 from app.models.identity.user import User
 from app.models.tenancy.tenant import Tenant
 from app.models.tenancy.tenant_user import TenantUser
@@ -38,6 +40,7 @@ from app.services.commands.ledger import (
     CommandDenied,
     CommandNotFound,
     command_ledger,
+    serialize_command,
 )
 from app.services.commands.registry import (
     CAPABILITY_REGISTRY,
@@ -58,6 +61,31 @@ DISABLED_PROJECTION_SOURCES: tuple[str, ...] = (
 )
 OUTBOX_PROJECTION_ENABLED: bool = False
 DOCUMENT_PROJECTION_ENABLED: bool = False
+
+# F2: the generic P13-T04 review workflow is only wired for the capability whose
+# owning workflow is the ledger itself. Every other registered capability belongs
+# to a workflow that is still disabled (outbox P15-T05, documents P19-T04,
+# calendar P16-T03, 1C P17-T04) or whose generic cancel would desynchronize the
+# owning service's child records (`comms.batch_campaign.v1` owns per-contact
+# outbox sends, so a generic reject must not touch it). Unsupported capabilities
+# are omitted from the list and refused on get/approve/reject/execute/reconcile
+# without reaching the ledger; their owning services keep their own authority.
+INBOX_SUPPORTED_CAPABILITIES: frozenset[str] = frozenset({"crm.greeting_send.v1"})
+_PENDING_COUNT_PAGE_SIZE = 100
+UNSUPPORTED_CAPABILITY_REASONS: dict[str, str] = {
+    "comms.batch_campaign.v1": (
+        "the campaign workflow owns its per-contact outbox sends; a generic cancel would desynchronize them"
+    ),
+    "calendar.event_write.v1": "the calendar owns events and recurrence (D24); its projection is disabled",
+    "onec.document_write.v1": "1C writes are not wired into this inbox (P17-T04)",
+    "documents.delivery_send.v1": "document delivery belongs to the P19-T04 approval workflow",
+    "comms.email.send.v1": "transport executes only through the persistent outbox (P15-T05)",
+    "comms.telegram.bot_send.v1": "transport executes only through the persistent outbox (P15-T05)",
+    "comms.max.bot_send.v1": "transport executes only through the persistent outbox (P15-T05)",
+}
+
+# F3: the only target reference shape this inbox can verify against an owned row.
+_CONTACT_TARGET_PREFIX = "contact"
 
 INBOX_STATUSES: tuple[str, ...] = (
     "pending",
@@ -115,33 +143,8 @@ _SENSITIVE_KEY_SUBSTRINGS: tuple[str, ...] = (
     "client_secret",
 )
 
-_TARGET_SENSITIVE_KEYS: frozenset[str] = frozenset(
-    {
-        "phone",
-        "email",
-        "recipient",
-        "recipients",
-        "address",
-        "body",
-        "text",
-        "draft_text",
-        "message",
-        "content",
-        "contact_name",
-        "full_name",
-    }
-)
-
-_COMMAND_LOCKS: dict[tuple[int, int], asyncio.Lock] = {}
-
-
-def _get_command_lock(tenant_id: int, command_id: int) -> asyncio.Lock:
-    key = (int(tenant_id), int(command_id))
-    lock = _COMMAND_LOCKS.get(key)
-    if lock is None:
-        lock = asyncio.Lock()
-        _COMMAND_LOCKS[key] = lock
-    return lock
+# F4: single-use review clicks are enforced by the ledger's database row lock,
+# not by a process-local asyncio lock, which cannot span processes.
 
 
 def _require_inbox_tenant() -> int:
@@ -149,6 +152,71 @@ def _require_inbox_tenant() -> int:
     if is_bypass() or type(tenant_id) is not int or tenant_id <= 0:
         raise TenantContextError("Approval inbox requires an explicit workspace scope")
     return tenant_id
+
+
+@asynccontextmanager
+async def _inbox_session(session: Any = None) -> AsyncIterator[Any]:
+    """Yield the caller's session, or an internally owned one when none was supplied.
+
+    F1: an omitted session used to skip the actor, membership and role-grant
+    checks entirely. The inbox now always has a session to resolve them from, so
+    `session=None` can never widen what the caller may see or act on.
+    """
+    if session is not None:
+        yield session
+        return
+    async with async_session_maker() as owned:
+        yield owned
+
+
+@asynccontextmanager
+async def _inbox_mutation_session(session: Any = None) -> AsyncIterator[Any]:
+    """Own a transaction only when the inbox also owns the session.
+
+    A caller-provided AsyncSession may already be in a transaction. The caller
+    retains transaction ownership; our row lock and ledger mutation still use
+    that same session/transaction.
+    """
+    if session is not None:
+        yield session
+        return
+    async with async_session_maker() as owned:
+        async with owned.begin():
+            yield owned
+
+
+def _is_inbox_supported(capability: str) -> bool:
+    """F2: whether the generic P13-T04 review workflow may serve this capability."""
+    return capability in INBOX_SUPPORTED_CAPABILITIES
+
+
+def _unsupported_message(capability: str) -> str:
+    reason = UNSUPPORTED_CAPABILITY_REASONS.get(capability, "its owning workflow is not wired into this inbox")
+    return f"Capability '{capability}' is not supported by the approval inbox: {reason}"
+
+
+def _contact_target_id(target_ref: str) -> int | None:
+    """Parse `contact:<positive-id>`; anything else is not a verifiable target."""
+    if not isinstance(target_ref, str):
+        return None
+    prefix, _, raw_id = target_ref.strip().partition(":")
+    if prefix.strip().lower() != _CONTACT_TARGET_PREFIX:
+        return None
+    token = raw_id.strip()
+    if not token.isdigit():
+        return None
+    contact_id = int(token)
+    return contact_id if contact_id > 0 else None
+
+
+def _is_canonical_payload_hash(value: Any) -> bool:
+    """F4: a review click must bind the exact canonical hash, not a prefix or a guess."""
+    if not isinstance(value, str):
+        return False
+    token = value.strip()
+    if not token.startswith("sha256:") or len(token) != 71:
+        return False
+    return all(char in "0123456789abcdef" for char in token[7:])
 
 
 def _utcnow() -> datetime:
@@ -210,42 +278,57 @@ def _can_view_inbox(perms: Any) -> bool:
     )
 
 
-def _can_view_capability(perms: Any, spec: CapabilitySpec, session_grants: frozenset[tuple[str, ActionType]] | None = None) -> bool:
+def _can_view_capability(
+    perms: Any, spec: CapabilitySpec, session_grants: frozenset[tuple[str, ActionType]] | None = None
+) -> bool:
+    """May the viewer see this capability's items.
+
+    F1: the capability's own resource grant is mandatory. `botaction` VIEW and a
+    platform superuser role are not substitutes for it, so a caller who may open
+    the inbox still sees nothing of a capability the active role does not grant.
+    """
     if session_grants is not None:
-        if (
-            (spec.required_resource, spec.required_action) not in session_grants
-            and (spec.required_resource, ActionType.VIEW) not in session_grants
-            and ("botaction", ActionType.VIEW) not in session_grants
-        ):
+        if (spec.required_resource, spec.required_action) not in session_grants and (
+            spec.required_resource,
+            ActionType.VIEW,
+        ) not in session_grants:
             return False
     if perms is None:
         return True
     if not _can_view_inbox(perms):
         return False
-    return (
-        _perms_allows(perms, spec.required_resource, spec.required_action)
-        or _perms_allows(perms, spec.required_resource, ActionType.VIEW)
+    return _perms_allows(perms, spec.required_resource, spec.required_action) or _perms_allows(
+        perms, spec.required_resource, ActionType.VIEW
     )
 
 
-def _can_act_on_capability(perms: Any, spec: CapabilitySpec, session_grants: frozenset[tuple[str, ActionType]] | None = None) -> bool:
+def _can_act_on_capability(
+    perms: Any, spec: CapabilitySpec, session_grants: frozenset[tuple[str, ActionType]] | None = None
+) -> bool:
     if session_grants is not None:
         if (spec.required_resource, spec.required_action) not in session_grants:
             return False
     if perms is None:
         return True
     if not (
-        _perms_allows(perms, "botaction", ActionType.UPDATE)
-        or _perms_allows(perms, "botaction", ActionType.CREATE)
+        _perms_allows(perms, "botaction", ActionType.UPDATE) or _perms_allows(perms, "botaction", ActionType.CREATE)
     ):
         return False
     return _perms_allows(perms, spec.required_resource, spec.required_action)
 
 
-async def _load_actor_session_grants(session: Any, tenant_id: int) -> frozenset[tuple[str, ActionType]] | None:
-    """Resolve the active actor's workspace role grants from `session` when available."""
+async def _load_actor_session_grants(
+    session: Any, tenant_id: int, *, for_update: bool = False
+) -> frozenset[tuple[str, ActionType]]:
+    """Resolve the active actor's workspace role grants from real ORM queries.
+
+    F1: fail closed. A missing or inactive actor, an inactive workspace, an
+    inactive membership, a membership without a role, or a role with no grants
+    all resolve to an empty grant set, which denies every capability. `session`
+    is always a real session because `_inbox_session()` supplies an owned one.
+    """
     if session is None:
-        return None
+        return frozenset()
     actor = get_current_user()
     if actor is None or not getattr(actor, "is_active", False) or type(getattr(actor, "id", None)) is not int:
         return frozenset()
@@ -256,15 +339,15 @@ async def _load_actor_session_grants(session: Any, tenant_id: int) -> frozenset[
     tenant_ok = (
         await session.execute(select(Tenant.id).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)))
     ).scalar_one_or_none()
-    member = (
-        await session.execute(
-            select(TenantUser).where(
-                TenantUser.tenant_id == tenant_id,
-                TenantUser.user_id == actor_id,
-                TenantUser.is_active.is_(True),
-            )
-        )
-    ).scalar_one_or_none()
+    member_stmt = select(TenantUser).where(
+        TenantUser.tenant_id == tenant_id,
+        TenantUser.user_id == actor_id,
+        TenantUser.channel == "web",
+        TenantUser.is_active.is_(True),
+    )
+    if for_update:
+        member_stmt = member_stmt.with_for_update(read=True).execution_options(populate_existing=True)
+    member = (await session.execute(member_stmt)).scalar_one_or_none()
     if user_ok is None or tenant_ok is None or member is None or member.role_id is None:
         return frozenset()
     role_code = (
@@ -280,16 +363,27 @@ def _can_read_target_details(
     accessible_targets: set[str] | None,
     session_grants: frozenset[tuple[str, ActionType]] | None = None,
 ) -> tuple[bool, bool]:
-    """Return `(target_accessible, can_read_details)` for the command's target_refs."""
+    """Return `(target_accessible, can_read_details)` for the command's target_refs.
+
+    F3: this is a strict gate, not a redaction hint. When the caller cannot read
+    the command's own resource or any one of its targets, the item is omitted
+    from the list and refused on detail/mutation. Field-name redaction is never
+    the fallback, because summaries, outcomes and receipts can carry the same
+    secrets under keys nobody enumerated.
+
+    `accessible_targets` can only narrow this decision: it is a caller-supplied
+    hint and never proves access on its own. Row-level proof comes from
+    `_verify_contact_targets()` against tenant-owned `Contact` rows.
+    """
     if accessible_targets is not None:
         all_accessible = all(ref in accessible_targets for ref in (target_refs or []))
         if not all_accessible:
             return False, False
     if session_grants is not None:
-        if (
-            (spec.required_resource, spec.required_action) not in session_grants
-            and (spec.required_resource, ActionType.VIEW) not in session_grants
-        ):
+        if (spec.required_resource, spec.required_action) not in session_grants and (
+            spec.required_resource,
+            ActionType.VIEW,
+        ) not in session_grants:
             return False, False
     if perms is None:
         return True, True
@@ -302,32 +396,64 @@ def _can_read_target_details(
         prefix = ref.split(":", 1)[0].strip().lower() if ":" in ref else ""
         if prefix in {"contact", "crm_contact", "deal"}:
             if not (
-                _perms_allows(perms, "contact", ActionType.VIEW)
-                or _perms_allows(perms, "contact", ActionType.UPDATE)
+                _perms_allows(perms, "contact", ActionType.VIEW) or _perms_allows(perms, "contact", ActionType.UPDATE)
             ):
                 return False, False
     return True, True
 
 
-def _redact_mapping(data: Any, *, redact_target_fields: bool) -> Any:
-    """Recursively redact secrets and, when required, target-specific PII fields."""
+def _redact_secrets(data: Any) -> Any:
+    """Recursively replace credential-shaped keys for a viewer who may read the item.
+
+    F3: target-scoped PII is no longer masked here. An inaccessible target means
+    the whole item is withheld, so this pass only removes credentials that no
+    reviewer should ever see in a preview or outcome payload.
+    """
     if isinstance(data, dict):
         out: dict[str, Any] = {}
         for key, value in data.items():
             key_str = str(key)
-            key_lower = key_str.lower()
-            if any(token in key_lower for token in _SENSITIVE_KEY_SUBSTRINGS):
+            if any(token in key_str.lower() for token in _SENSITIVE_KEY_SUBSTRINGS):
                 out[key_str] = "[REDACTED]"
-            elif redact_target_fields and key_lower in _TARGET_SENSITIVE_KEYS:
-                out[key_str] = "[СКРЫТО ПО ПРАВАМ ДОСТУПА]"
             else:
-                out[key_str] = _redact_mapping(value, redact_target_fields=redact_target_fields)
+                out[key_str] = _redact_secrets(value)
         return out
     if isinstance(data, list):
-        if redact_target_fields:
-            return ["[СКРЫТО ПО ПРАВАМ ДОСТУПА]" for _ in data]
-        return [_redact_mapping(item, redact_target_fields=False) for item in data]
+        return [_redact_secrets(item) for item in data]
     return data
+
+
+async def _verify_contact_targets(session: Any, tenant_id: int, target_refs: list[str], *, lock: bool = False) -> bool:
+    """F3: prove every target is a live contact owned by the active tenant.
+
+    Accepted shape is `contact:<positive-id>`; the row must exist in `contacts`
+    for this tenant and must not be merged into another contact. An unknown,
+    malformed, missing or cross-tenant target makes the whole command
+    inaccessible, so nothing about it is projected.
+    """
+    refs = list(target_refs or [])
+    if not refs:
+        return False
+    contact_ids: list[int] = []
+    for ref in refs:
+        contact_id = _contact_target_id(ref)
+        if contact_id is None:
+            return False
+        contact_ids.append(contact_id)
+    stmt = (
+        select(Contact.id)
+        .where(
+            Contact.tenant_id == tenant_id,
+            Contact.id.in_(contact_ids),
+            Contact.merged_into_id.is_(None),
+        )
+        .order_by(Contact.id)
+    )
+    if lock:
+        stmt = stmt.with_for_update(read=True)
+    rows = (await session.execute(stmt)).scalars()
+    found = {int(row) for row in rows.all()}
+    return found == set(contact_ids)
 
 
 def _compute_is_stale(cmd: BusinessCommand | Mapping[str, Any]) -> bool:
@@ -386,14 +512,7 @@ def _build_preview_summary(
     payload_hash: str,
     target_refs: list[str],
     safe_preview: dict[str, Any],
-    *,
-    redacted: bool,
 ) -> str:
-    if redacted:
-        return (
-            f"Содержимое скрыто: нет прав чтения целевого объекта "
-            f"(версия v{capability_version}, хеш {payload_hash[:19]}…)"
-        )
     for key in ("summary", "subject", "title", "preview", "text", "draft_text", "message"):
         val = safe_preview.get(key)
         if isinstance(val, str) and val.strip():
@@ -559,7 +678,7 @@ class ApprovalInboxService:
     def __init__(self, ledger: BusinessCommandLedger | None = None) -> None:
         self._ledger = ledger or command_ledger
 
-    def project_command(
+    async def project_command(
         self,
         cmd: BusinessCommand | Mapping[str, Any],
         *,
@@ -567,14 +686,25 @@ class ApprovalInboxService:
         accessible_targets: set[str] | None = None,
         session_grants: frozenset[tuple[str, ActionType]] | None = None,
         now: datetime | None = None,
+        session: Any = None,
     ) -> ApprovalInboxItem | None:
-        """Project a single `BusinessCommand` or serialized command dict for the active viewer."""
+        """Project a single command for the active viewer, or None when withheld.
+
+        Returns None when the command is outside the active tenant, its capability
+        is not served by this generic review workflow (F2), the viewer lacks the
+        capability's own resource grant (F1), or any target is not a live
+        tenant-owned contact (F3). A withheld item leaves no preview, outcome or
+        receipt field behind to be redacted later.
+        """
         tenant_id = _require_inbox_tenant()
         cmd_tenant_id = _get_field(cmd, "tenant_id")
         if cmd_tenant_id != tenant_id:
             return None
         capability = str(_get_field(cmd, "capability") or "")
         if capability not in CAPABILITY_REGISTRY:
+            return None
+        # F2: only capabilities whose owning workflow is this ledger's own.
+        if not _is_inbox_supported(capability):
             return None
         spec = get_capability(capability)
         if not _can_view_capability(perms, spec, session_grants=session_grants):
@@ -601,8 +731,12 @@ class ApprovalInboxService:
             accessible_targets,
             session_grants=session_grants,
         )
-        redacted = not can_read_details
-        can_act = _can_act_on_capability(perms, spec, session_grants=session_grants) and target_accessible
+        # F3: withhold the item instead of masking its fields.
+        if not (target_accessible and can_read_details):
+            return None
+        if not await _verify_contact_targets(session, tenant_id, raw_targets):
+            return None
+        can_act = _can_act_on_capability(perms, spec, session_grants=session_grants)
 
         status, is_stale = _classify_status(cmd, now=ref_now)
         status_label = STATUS_LABELS_RU.get(status, status)
@@ -622,18 +756,14 @@ class ApprovalInboxService:
         if isinstance(payload_dict, Mapping) and payload_dict and "payload" not in raw_preview_source:
             raw_preview_source["payload"] = dict(payload_dict)
 
-        safe_preview = _redact_mapping(raw_preview_source, redact_target_fields=redacted)
+        safe_preview = _redact_secrets(raw_preview_source)
         if not isinstance(safe_preview, dict):
             safe_preview = {}
 
-        if redacted:
-            visible_targets = [f"[скрыто:{idx + 1}]" for idx in range(len(raw_targets))]
-            target_summary = f"Цели скрыты по правам доступа ({len(raw_targets)})"
-        else:
-            visible_targets = raw_targets
-            target_summary = ", ".join(raw_targets[:3])
-            if len(raw_targets) > 3:
-                target_summary = f"{target_summary} (+{len(raw_targets) - 3})"
+        visible_targets = raw_targets
+        target_summary = ", ".join(raw_targets[:3])
+        if len(raw_targets) > 3:
+            target_summary = f"{target_summary} (+{len(raw_targets) - 3})"
 
         source_label = (
             f"Журнал команд P13-T04 · подключение #{connection_id}"
@@ -647,7 +777,6 @@ class ApprovalInboxService:
             payload_hash,
             raw_targets,
             safe_preview,
-            redacted=redacted,
         )
         reason_for_review = _build_reason_for_review(
             raw_state,
@@ -657,31 +786,32 @@ class ApprovalInboxService:
             is_stale=is_stale,
         )
 
-        can_approve = bool(status == "pending" and can_act and not is_stale)
+        # The normalized status collapses `draft`/`previewed` into `pending` and
+        # `claimed`/`unknown` into `unknown`. Only a `previewed` row may be
+        # approved and only an `unknown` row may be reconciled, so a draft or a
+        # claimed row never becomes actionable through the normalized status.
+        can_approve = bool(status == "pending" and can_act and not is_stale and raw_state == "previewed")
         can_reject = bool(status in {"pending", "approved"} and can_act)
-        can_execute = bool(
-            status == "approved"
-            and can_act
-            and not is_stale
-            and approved_payload_hash == payload_hash
-        )
-        can_reconcile = bool(status == "unknown" and can_act)
+        can_execute = bool(status == "approved" and can_act and not is_stale and approved_payload_hash == payload_hash)
+        can_reconcile = bool(status == "unknown" and can_act and raw_state == "unknown")
         actionable = bool(can_approve or can_reject or can_reconcile)
 
         raw_target_rows = _get_field(cmd, "targets") or []
         projected_targets: list[dict[str, Any]] = []
         for idx, trow in enumerate(raw_target_rows):
-            t_dict = dict(trow) if isinstance(trow, Mapping) else {
-                "id": getattr(trow, "id", idx + 1),
-                "target_ref": getattr(trow, "target_ref", ""),
-                "target_idempotency_key": getattr(trow, "target_idempotency_key", ""),
-                "state": getattr(trow, "state", "pending"),
-                "provider_receipt": getattr(trow, "provider_receipt", None),
-                "error_code": getattr(trow, "error_code", None),
-                "executed_at": _iso_or_none(getattr(trow, "executed_at", None)),
-            }
-            if redacted:
-                t_dict["target_ref"] = f"[скрыто:{idx + 1}]"
+            t_dict = (
+                dict(trow)
+                if isinstance(trow, Mapping)
+                else {
+                    "id": getattr(trow, "id", idx + 1),
+                    "target_ref": getattr(trow, "target_ref", ""),
+                    "target_idempotency_key": getattr(trow, "target_idempotency_key", ""),
+                    "state": getattr(trow, "state", "pending"),
+                    "provider_receipt": getattr(trow, "provider_receipt", None),
+                    "error_code": getattr(trow, "error_code", None),
+                    "executed_at": _iso_or_none(getattr(trow, "executed_at", None)),
+                }
+            )
             projected_targets.append(t_dict)
 
         outcome_raw = _get_field(cmd, "outcome_summary")
@@ -707,7 +837,7 @@ class ApprovalInboxService:
             target_count=len(raw_targets),
             target_summary=target_summary or "—",
             target_accessible=target_accessible,
-            redacted=redacted,
+            redacted=False,
             payload_hash=payload_hash,
             approved_payload_hash=str(approved_payload_hash) if approved_payload_hash is not None else None,
             is_stale_payload=is_stale,
@@ -741,65 +871,132 @@ class ApprovalInboxService:
         limit: int = 50,
         before_id: int | None = None,
         status_filter: str | None = None,
+        raw_states: set[str] | frozenset[str] | None = None,
         actionable_only: bool = False,
         perms: Any = None,
         accessible_targets: set[str] | None = None,
         now: datetime | None = None,
         session: Any = None,
     ) -> dict[str, Any]:
-        """List permission-filtered approval inbox items for the active tenant."""
+        """List permission-filtered approval inbox items for the active tenant.
+
+        The active actor's membership and role grants are always resolved from the
+        database (F1); an omitted session is replaced by an owned one, never by a
+        skip. Items whose capability this workflow does not serve (F2) or whose
+        targets are not live tenant-owned contacts (F3) are omitted entirely.
+        """
         tenant_id = _require_inbox_tenant()
         bounded_limit = max(1, min(int(limit), 100))
         if not _can_view_inbox(perms):
             return {"items": [], "limit": bounded_limit, "next_before_id": None}
 
-        session_grants = await _load_actor_session_grants(session, tenant_id)
-        if session_grants is not None and not session_grants:
-            return {"items": [], "limit": bounded_limit, "next_before_id": None}
+        async with _inbox_session(session) as active_session:
+            session_grants = await _load_actor_session_grants(active_session, tenant_id)
+            if not session_grants:
+                return {"items": [], "limit": bounded_limit, "next_before_id": None}
 
-        page = await self._ledger.list_commands(
-            limit=bounded_limit,
-            before_id=before_id,
-            session=session,
-        )
-        raw_commands = page.get("items", []) if isinstance(page, Mapping) else list(page or [])
-        next_before_id = page.get("next_before_id") if isinstance(page, Mapping) else None
-
-        normalized_filter = (status_filter or "").strip().lower()
-        if normalized_filter in {"all", ""}:
-            normalized_filter = ""
-
-        # If session has ORM objects in `.commands`, prefer ORM rows so `payload` is available for hash check.
-        orm_commands_by_id: dict[int, BusinessCommand] = {}
-        if session is not None and hasattr(session, "commands") and isinstance(session.commands, Mapping):
-            orm_commands_by_id = {
-                int(k): v for k, v in session.commands.items() if getattr(v, "tenant_id", None) == tenant_id
-            }
-
-        items: list[dict[str, Any]] = []
-        for raw_cmd in raw_commands:
-            cid = _get_field(raw_cmd, "id")
-            source_obj = orm_commands_by_id.get(int(cid), raw_cmd) if cid is not None else raw_cmd
-            projected = self.project_command(
-                source_obj,
-                perms=perms,
-                accessible_targets=accessible_targets,
-                session_grants=session_grants,
-                now=now,
+            stmt = select(BusinessCommand).where(
+                BusinessCommand.tenant_id == tenant_id,
+                BusinessCommand.capability.in_(INBOX_SUPPORTED_CAPABILITIES),
             )
-            if projected is None:
-                continue
-            if actionable_only and not projected.actionable:
-                continue
-            if normalized_filter and projected.status != normalized_filter:
-                continue
-            items.append(projected.to_dict())
+            if raw_states:
+                stmt = stmt.where(BusinessCommand.state.in_(tuple(raw_states)))
+            if before_id is not None:
+                stmt = stmt.where(BusinessCommand.id < before_id)
+            rows = list(
+                (await active_session.execute(stmt.order_by(BusinessCommand.id.desc()).limit(bounded_limit + 1)))
+                .scalars()
+                .all()
+            )
+            has_more = len(rows) > bounded_limit
+            commands = rows[:bounded_limit]
+            next_before_id = int(commands[-1].id) if has_more and commands else None
+
+            command_ids = [int(cmd.id) for cmd in commands]
+            targets_by_command: dict[int, list[BusinessCommandTarget]] = {}
+            if command_ids:
+                target_rows = (
+                    (
+                        await active_session.execute(
+                            select(BusinessCommandTarget)
+                            .where(
+                                BusinessCommandTarget.tenant_id == tenant_id,
+                                BusinessCommandTarget.command_id.in_(command_ids),
+                            )
+                            .order_by(BusinessCommandTarget.command_id, BusinessCommandTarget.id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                for target in target_rows:
+                    targets_by_command.setdefault(int(target.command_id), []).append(target)
+            raw_commands = [serialize_command(cmd, targets_by_command.get(int(cmd.id), [])) for cmd in commands]
+
+            # The ledger serializes commands without `payload`; load the stored ORM
+            # payload so the canonical stale/hash check runs on persisted data.
+            payloads = await self._load_orm_payloads(
+                active_session,
+                tenant_id,
+                [int(_get_field(cmd, "id")) for cmd in raw_commands if _get_field(cmd, "id") is not None],
+            )
+
+            normalized_filter = (status_filter or "").strip().lower()
+            if normalized_filter in {"all", ""}:
+                normalized_filter = ""
+
+            items: list[dict[str, Any]] = []
+            for raw_cmd in raw_commands:
+                cid = _get_field(raw_cmd, "id")
+                if cid is None:
+                    continue
+                stored_payload = payloads.get(int(cid))
+                # F1: a command whose stored payload cannot be read is not projected.
+                if stored_payload is None:
+                    continue
+                source_obj = dict(raw_cmd) if isinstance(raw_cmd, Mapping) else raw_cmd
+                if isinstance(source_obj, dict):
+                    source_obj["payload"] = stored_payload
+                projected = await self.project_command(
+                    source_obj,
+                    perms=perms,
+                    accessible_targets=accessible_targets,
+                    session_grants=session_grants,
+                    now=now,
+                    session=active_session,
+                )
+                if projected is None:
+                    continue
+                if actionable_only and not projected.actionable:
+                    continue
+                if normalized_filter and projected.status != normalized_filter:
+                    continue
+                items.append(projected.to_dict())
 
         return {
             "items": items,
             "limit": bounded_limit,
             "next_before_id": next_before_id,
         }
+
+    @staticmethod
+    async def _load_orm_payloads(session: Any, tenant_id: int, command_ids: list[int]) -> dict[int, dict[str, Any]]:
+        """Load stored payloads for the given commands, tenant-fenced."""
+        if not command_ids:
+            return {}
+        rows = (
+            await session.execute(
+                select(BusinessCommand.id, BusinessCommand.payload).where(
+                    BusinessCommand.tenant_id == tenant_id,
+                    BusinessCommand.id.in_(command_ids),
+                )
+            )
+        ).all()
+        payloads: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            row_id, row_payload = row[0], row[1]
+            payloads[int(row_id)] = dict(row_payload) if isinstance(row_payload, Mapping) else {}
+        return payloads
 
     async def get_item(
         self,
@@ -810,32 +1007,44 @@ class ApprovalInboxService:
         now: datetime | None = None,
         session: Any = None,
     ) -> dict[str, Any]:
-        """Return one projected item by ID or raise CommandNotFound / CommandDenied."""
+        """Return one projected item by ID or raise CommandNotFound / CommandDenied.
+
+        A capability this workflow does not serve is refused explicitly (F2). A
+        command whose target is not a live tenant-owned contact is reported as
+        not-found (F3), so the caller learns nothing about an item it may not read.
+        """
         tenant_id = _require_inbox_tenant()
         if not _can_view_inbox(perms):
             raise CommandDenied("Viewer does not have permission to view the approval inbox")
 
-        session_grants = await _load_actor_session_grants(session, tenant_id)
-        data = await self._ledger.get_command(int(command_id), session=session)
-        spec = get_capability(str(data["capability"]))
-        if not _can_view_capability(perms, spec, session_grants=session_grants):
-            raise CommandDenied(f"Viewer lacks permission for capability '{data['capability']}'")
+        async with _inbox_session(session) as active_session:
+            session_grants = await _load_actor_session_grants(active_session, tenant_id)
+            if not session_grants:
+                raise CommandDenied("Active workspace membership with a role grant is required")
 
-        source_obj: Any = data
-        if session is not None and hasattr(session, "commands") and isinstance(session.commands, Mapping):
-            orm_cmd = session.commands.get(int(command_id))
-            if orm_cmd is not None and getattr(orm_cmd, "tenant_id", None) == tenant_id:
-                merged = dict(data)
-                merged["payload"] = dict(getattr(orm_cmd, "payload", {}) or {})
-                source_obj = merged
+            data = await self._ledger.get_command(int(command_id), session=active_session)
+            capability = str(data["capability"])
+            if not _is_inbox_supported(capability):
+                raise CommandDenied(_unsupported_message(capability))
+            spec = get_capability(capability)
+            if not _can_view_capability(perms, spec, session_grants=session_grants):
+                raise CommandDenied(f"Viewer lacks permission for capability '{capability}'")
 
-        projected = self.project_command(
-            source_obj,
-            perms=perms,
-            accessible_targets=accessible_targets,
-            session_grants=session_grants,
-            now=now,
-        )
+            payloads = await self._load_orm_payloads(active_session, tenant_id, [int(command_id)])
+            stored_payload = payloads.get(int(command_id))
+            if stored_payload is None:
+                raise CommandNotFound("Business command not found in current tenant")
+            source_obj: Any = dict(data)
+            source_obj["payload"] = stored_payload
+
+            projected = await self.project_command(
+                source_obj,
+                perms=perms,
+                accessible_targets=accessible_targets,
+                session_grants=session_grants,
+                now=now,
+                session=active_session,
+            )
         if projected is None:
             raise CommandNotFound("Business command not found in current tenant")
         return projected.to_dict()
@@ -848,18 +1057,58 @@ class ApprovalInboxService:
         now: datetime | None = None,
         session: Any = None,
     ) -> int:
-        """Count actionable pending items for the header/navigation badge."""
+        """Count authorized actionable pending items without scanning history.
+
+        Candidates are restricted in SQL to this inbox's one supported capability
+        and the ledger's pending states. Each candidate still passes through the
+        same permission, canonical-payload and tenant-owned-target checks as the
+        list projection.
+        """
+        total = 0
+        before_id: int | None = None
         try:
-            page = await self.list_items(
-                limit=100,
-                status_filter="pending",
-                actionable_only=True,
-                perms=perms,
-                accessible_targets=accessible_targets,
-                now=now,
-                session=session,
-            )
-            return len(page.get("items", []))
+            async with _inbox_session(session) as active_session:
+                while True:
+                    tenant_id = _require_inbox_tenant()
+                    if not _can_view_inbox(perms):
+                        break
+                    session_grants = await _load_actor_session_grants(active_session, tenant_id)
+                    if not session_grants:
+                        break
+                    stmt = (
+                        select(BusinessCommand)
+                        .where(
+                            BusinessCommand.tenant_id == tenant_id,
+                            BusinessCommand.capability.in_(INBOX_SUPPORTED_CAPABILITIES),
+                            BusinessCommand.state.in_(("draft", "previewed")),
+                        )
+                        .order_by(BusinessCommand.id.desc())
+                        .limit(_PENDING_COUNT_PAGE_SIZE)
+                    )
+                    if before_id is not None:
+                        stmt = stmt.where(BusinessCommand.id < before_id)
+                    candidates = list((await active_session.execute(stmt)).scalars().all())
+                    if not candidates:
+                        break
+                    command_ids = [int(cmd.id) for cmd in candidates]
+                    payloads = await self._load_orm_payloads(active_session, tenant_id, command_ids)
+                    for cmd in candidates:
+                        payload = payloads.get(int(cmd.id))
+                        if payload is None:
+                            continue
+                        cmd.payload = payload
+                        projection = await self.project_command(
+                            cmd,
+                            perms=perms,
+                            accessible_targets=accessible_targets,
+                            session_grants=session_grants,
+                            now=now,
+                            session=active_session,
+                        )
+                        if projection is not None and projection.status == "pending" and projection.actionable:
+                            total += 1
+                    before_id = int(candidates[-1].id)
+            return total
         except Exception:
             return 0
 
@@ -879,6 +1128,77 @@ class ApprovalInboxService:
                 "Approval cannot trigger automatic execution; execution requires a separate explicit call (P20-T03)"
             )
 
+    async def _lock_command_row(self, active_session: Any, tenant_id: int, command_id: int) -> Any:
+        """F4: take the ledger's own row lock before any authorization decision.
+
+        The lock is the database row lock the ledger already uses, so a repeated
+        concurrent click in another process waits here and then loses with
+        `CommandConflict` instead of double-approving. No process-local lock is
+        used for correctness.
+        """
+        return (
+            await active_session.execute(
+                select(BusinessCommand)
+                .where(BusinessCommand.tenant_id == tenant_id, BusinessCommand.id == int(command_id))
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+
+    async def _authorize_mutation(
+        self,
+        active_session: Any,
+        command_id: int,
+        *,
+        perms: Any,
+        accessible_targets: set[str] | None,
+        action_label: str,
+    ) -> tuple[dict[str, Any], CapabilitySpec, frozenset[tuple[str, ActionType]]]:
+        """Authorize a single-item mutation while the row lock is held.
+
+        F2 and F3 live here so no mutation path can bypass them: a capability this
+        workflow does not serve is refused, and a target that is not a live
+        tenant-owned contact is refused before `approve_command`/
+        `reject_command`/`execute_command`/`reconcile_unknown` is called. F1's
+        actor, membership and role-grant checks run against the same session and
+        transaction the mutation will use.
+        """
+        tenant_id = _require_inbox_tenant()
+        session_grants = await _load_actor_session_grants(active_session, tenant_id, for_update=True)
+        if not session_grants:
+            raise CommandDenied("Active workspace membership with a role grant is required")
+        locked = await self._lock_command_row(active_session, tenant_id, command_id)
+        if locked is None:
+            raise CommandNotFound("Command not found")
+        cmd = await self._ledger.get_command(int(command_id), session=active_session)
+        # The ORM object was loaded under FOR UPDATE above. Bind all later
+        # authorization/projection checks to its stored payload, never a
+        # serialized preview or a caller-supplied hash alone.
+        locked_payload = dict(getattr(locked, "payload", {}) or {})
+        cmd["payload"] = locked_payload
+        actual_hash = canonical_payload_hash(str(cmd["capability"]), list(cmd.get("target_refs") or []), locked_payload)
+        if actual_hash != str(cmd.get("payload_hash") or ""):
+            raise CommandConflict("Command payload changed since preview; reload before review")
+        capability = str(cmd["capability"])
+        if not _is_inbox_supported(capability):
+            raise CommandDenied(_unsupported_message(capability))
+        spec = get_capability(capability)
+        if not _can_act_on_capability(perms, spec, session_grants=session_grants):
+            raise CommandDenied(f"Reviewer lacks permission to {action_label} capability '{capability}'")
+        target_refs = list(cmd.get("target_refs") or [])
+        target_accessible, can_read_details = _can_read_target_details(
+            perms,
+            spec,
+            target_refs,
+            accessible_targets,
+            session_grants=session_grants,
+        )
+        if not (target_accessible and can_read_details):
+            raise CommandDenied("Reviewer does not have access to one or more command targets")
+        if not await _verify_contact_targets(active_session, tenant_id, target_refs, lock=True):
+            raise CommandDenied("Reviewer does not have access to one or more command targets")
+        return cmd, spec, session_grants
+
     async def approve_item(
         self,
         command_id: int,
@@ -893,34 +1213,32 @@ class ApprovalInboxService:
         now: datetime | None = None,
         session: Any = None,
     ) -> dict[str, Any]:
-        """Approve a single exact command item through `command_ledger.approve_command`."""
+        """Approve a single exact command item through `command_ledger.approve_command`.
+
+        F4: authorization, target verification, capability support and the exact
+        canonical hash are all checked while the ledger row lock is held, in the
+        same transaction the ledger then mutates. A repeated concurrent click
+        waits on that lock and loses with `CommandConflict`.
+        """
         tenant_id = _require_inbox_tenant()
         self._guard_prohibited_options(
             always_allow=always_allow,
             bulk_command_ids=bulk_command_ids,
             auto_execute=auto_execute,
         )
-        if not isinstance(expected_payload_hash, str) or not expected_payload_hash.strip():
-            raise CommandConflict("expected_payload_hash is required to approve a command")
+        if not _is_canonical_payload_hash(expected_payload_hash):
+            raise CommandConflict("A canonical sha256 payload hash is required to approve a command")
 
-        lock = _get_command_lock(tenant_id, int(command_id))
-        async with lock:
-            session_grants = await _load_actor_session_grants(session, tenant_id)
-            cmd = await self._ledger.get_command(int(command_id), session=session)
-            spec = get_capability(str(cmd["capability"]))
-            if not _can_act_on_capability(perms, spec, session_grants=session_grants):
-                raise CommandDenied(f"Reviewer lacks permission to approve capability '{cmd['capability']}'")
-            target_accessible, _ = _can_read_target_details(
-                perms,
-                spec,
-                list(cmd.get("target_refs") or []),
-                accessible_targets,
-                session_grants=session_grants,
+        async with _inbox_mutation_session(session) as active_session:
+            cmd, _spec, session_grants = await self._authorize_mutation(
+                active_session,
+                command_id,
+                perms=perms,
+                accessible_targets=accessible_targets,
+                action_label="approve",
             )
-            if not target_accessible:
-                raise CommandDenied("Reviewer does not have access to one or more command targets")
-
-            # Single-use review click: a repeated click on an already approved item raises CommandConflict.
+            if str(cmd.get("payload_hash")) != expected_payload_hash.strip():
+                raise CommandConflict("Command payload changed since preview; reload before approving")
             if str(cmd.get("state")) == "approved":
                 raise CommandConflict("Command is already approved; repeated approval click rejected")
 
@@ -928,16 +1246,19 @@ class ApprovalInboxService:
                 int(command_id),
                 expected_payload_hash=expected_payload_hash.strip(),
                 ttl_seconds=ttl_seconds,
-                session=session,
+                session=active_session,
             )
-            projected = self.project_command(
-                approved_cmd,
+            projected = await self.project_command(
+                {**approved_cmd, "payload": cmd["payload"]},
                 perms=perms,
                 accessible_targets=accessible_targets,
                 session_grants=session_grants,
                 now=now,
+                session=active_session,
             )
-            return projected.to_dict() if projected is not None else approved_cmd
+            if projected is None:
+                raise CommandNotFound("Command is no longer available")
+            return projected.to_dict()
 
     async def reject_item(
         self,
@@ -952,40 +1273,49 @@ class ApprovalInboxService:
         now: datetime | None = None,
         session: Any = None,
     ) -> dict[str, Any]:
-        """Reject/cancel a single command item through `command_ledger.reject_command`."""
+        """Reject/cancel a single command item through `command_ledger.reject_command`.
+
+        F4: a reject click must bind the exact canonical hash too, so a reviewer
+        cannot cancel a payload they never saw. Authorization and target
+        verification run under the same row lock as the mutation.
+        """
         tenant_id = _require_inbox_tenant()
         self._guard_prohibited_options(
             always_allow=always_allow,
             bulk_command_ids=bulk_command_ids,
             auto_execute=False,
         )
-        lock = _get_command_lock(tenant_id, int(command_id))
-        async with lock:
-            session_grants = await _load_actor_session_grants(session, tenant_id)
-            cmd = await self._ledger.get_command(int(command_id), session=session)
-            spec = get_capability(str(cmd["capability"]))
-            if not _can_act_on_capability(perms, spec, session_grants=session_grants):
-                raise CommandDenied(f"Reviewer lacks permission to reject capability '{cmd['capability']}'")
-            if expected_payload_hash is not None and expected_payload_hash.strip():
-                if str(cmd.get("payload_hash")) != expected_payload_hash.strip():
-                    raise CommandConflict("Command payload changed since preview; reload before rejecting")
+        if not _is_canonical_payload_hash(expected_payload_hash):
+            raise CommandConflict("A canonical sha256 payload hash is required to reject a command")
+
+        async with _inbox_mutation_session(session) as active_session:
+            cmd, _spec, session_grants = await self._authorize_mutation(
+                active_session,
+                command_id,
+                perms=perms,
+                accessible_targets=accessible_targets,
+                action_label="reject",
+            )
+            if str(cmd.get("payload_hash")) != expected_payload_hash.strip():
+                raise CommandConflict("Command payload changed since preview; reload before rejecting")
 
             rejected_cmd = await self._ledger.reject_command(
                 int(command_id),
-                session=session,
+                session=active_session,
             )
-            projected = self.project_command(
-                rejected_cmd,
+            projected = await self.project_command(
+                {**rejected_cmd, "payload": cmd["payload"]},
                 perms=perms,
                 accessible_targets=accessible_targets,
                 session_grants=session_grants,
                 now=now,
+                session=active_session,
             )
             if projected is not None:
                 out = projected.to_dict()
                 out["rejection_reason"] = reason
                 return out
-            return rejected_cmd
+            raise CommandNotFound("Command is no longer available")
 
     async def execute_item(
         self,
@@ -1000,40 +1330,33 @@ class ApprovalInboxService:
     ) -> dict[str, Any]:
         """Execute a previously approved command item through `command_ledger.execute_command`."""
         tenant_id = _require_inbox_tenant()
-        lock = _get_command_lock(tenant_id, int(command_id))
-        async with lock:
-            session_grants = await _load_actor_session_grants(session, tenant_id)
-            cmd = await self._ledger.get_command(int(command_id), session=session)
-            spec = get_capability(str(cmd["capability"]))
-            if not _can_act_on_capability(perms, spec, session_grants=session_grants):
-                raise CommandDenied(f"Caller lacks permission to execute capability '{cmd['capability']}'")
-            target_accessible, _ = _can_read_target_details(
-                perms,
-                spec,
-                list(cmd.get("target_refs") or []),
-                accessible_targets,
-                session_grants=session_grants,
+        async with _inbox_mutation_session(session) as active_session:
+            cmd, _spec, session_grants = await self._authorize_mutation(
+                active_session,
+                command_id,
+                perms=perms,
+                accessible_targets=accessible_targets,
+                action_label="execute",
             )
-            if not target_accessible:
-                raise CommandDenied("Caller does not have access to one or more command targets")
             if str(cmd.get("state")) == "cancelled":
                 raise CommandConflict("Rejected or cancelled command cannot be executed")
             if expected_payload_hash is not None and expected_payload_hash.strip():
-                if str(cmd.get("payload_hash")) != expected_payload_hash.strip():
+                if cmd["payload_hash"] != expected_payload_hash.strip():
                     raise CommandDenied("Payload hash mismatch; modified commands require a new preview and approval")
 
             executed_cmd = await self._ledger.execute_command(
                 int(command_id),
                 adapter=adapter,
                 now=now,
-                session=session,
+                session=active_session,
             )
-            projected = self.project_command(
-                executed_cmd,
+            projected = await self.project_command(
+                {**executed_cmd, "payload": cmd["payload"]},
                 perms=perms,
                 accessible_targets=accessible_targets,
                 session_grants=session_grants,
                 now=now,
+                session=active_session,
             )
             return projected.to_dict() if projected is not None else executed_cmd
 
@@ -1050,28 +1373,31 @@ class ApprovalInboxService:
     ) -> dict[str, Any]:
         """Reconcile an `unknown` command outcome through `command_ledger.reconcile_unknown`."""
         tenant_id = _require_inbox_tenant()
-        lock = _get_command_lock(tenant_id, int(command_id))
-        async with lock:
-            session_grants = await _load_actor_session_grants(session, tenant_id)
-            cmd = await self._ledger.get_command(int(command_id), session=session)
-            spec = get_capability(str(cmd["capability"]))
-            if not _can_act_on_capability(perms, spec, session_grants=session_grants):
-                raise CommandDenied(f"Caller lacks permission to reconcile capability '{cmd['capability']}'")
-
+        async with _inbox_mutation_session(session) as active_session:
+            cmd, _spec, session_grants = await self._authorize_mutation(
+                active_session,
+                command_id,
+                perms=perms,
+                accessible_targets=accessible_targets,
+                action_label="reconcile",
+            )
             reconciled_cmd = await self._ledger.reconcile_unknown(
                 int(command_id),
                 resolved_state=resolved_state,
                 provider_receipts=provider_receipts,
-                session=session,
+                session=active_session,
             )
-            projected = self.project_command(
-                reconciled_cmd,
+            projected = await self.project_command(
+                {**reconciled_cmd, "payload": cmd["payload"]},
                 perms=perms,
                 accessible_targets=accessible_targets,
                 session_grants=session_grants,
                 now=now,
+                session=active_session,
             )
-            return projected.to_dict() if projected is not None else reconciled_cmd
+            if projected is None:
+                raise CommandNotFound("Command is no longer available")
+            return projected.to_dict()
 
     async def project_for_today(
         self,
@@ -1083,9 +1409,15 @@ class ApprovalInboxService:
         now: datetime | None = None,
         session: Any = None,
     ) -> list[dict[str, Any]]:
-        """Project actionable command ledger items into the Today `decisions` section (P20-T07)."""
+        """Project actionable command ledger items into the Today `decisions` section (P20-T07).
+
+        F6: Today reads the same authorized projection as the inbox, so an
+        unsupported capability or an unverifiable target never reaches the page.
+        """
         page = await self.list_items(
             limit=25,
+            raw_states={"draft", "previewed", "unknown", "claimed"},
+            actionable_only=True,
             perms=perms,
             accessible_targets=accessible_targets,
             now=now,
@@ -1095,14 +1427,18 @@ class ApprovalInboxService:
         for item in page.get("items", []):
             if item["status"] not in {"pending", "unknown"}:
                 continue
-            if scope == "mine" and actor_id is not None and item["requester_user_id"] != int(actor_id):
-                if not item["can_approve"] and not item["can_reconcile"]:
+            if scope == "mine":
+                if type(actor_id) is not int or actor_id <= 0:
+                    continue
+                if item["requester_user_id"] != actor_id:
                     continue
             cid = item["command_id"]
             decisions.append(
                 {
                     "key": f"command:{cid}",
                     "id": cid,
+                    "tenant_id": item["tenant_id"],
+                    "requester_user_id": item["requester_user_id"],
                     "title": f"{item['type_label']} #{cid}",
                     "summary": item["preview_text"],
                     "status": item["status"],
@@ -1134,6 +1470,8 @@ class ApprovalInboxService:
         """Project actionable command items into the Chat 'Ждут решения' tab and inline decision cards (P20-T08)."""
         page = await self.list_items(
             limit=20,
+            raw_states={"draft", "previewed", "approved", "unknown", "claimed"},
+            actionable_only=True,
             perms=perms,
             accessible_targets=accessible_targets,
             now=now,
@@ -1150,9 +1488,11 @@ class ApprovalInboxService:
                     "command_id": cid,
                     "card_type": "approval_decision",
                     "title": f"{item['type_label']} #{cid}",
-                    "summary": f"{item['preview_text']} · Цели: {item['target_summary']}"
-                    if item["target_summary"]
-                    else item["preview_text"],
+                    "summary": (
+                        f"{item['preview_text']} · Цели: {item['target_summary']}"
+                        if item["target_summary"]
+                        else item["preview_text"]
+                    ),
                     "status": item["status"],
                     "status_label": item["status_label"],
                     "reason_for_review": item["reason_for_review"],

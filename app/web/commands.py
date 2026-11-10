@@ -54,8 +54,6 @@ async def commands_page(
             status_filter=status_val,
             perms=perms,
         )
-        pending_count = sum(1 for item in page.get("items", []) if item.get("status") == "pending" and item.get("actionable"))
-        request.state.pending_approvals_count = pending_count
     except (PermissionError, CommandDenied, TenantContextError):
         raise HTTPException(403, "Command ledger access denied") from None
     except CommandError:
@@ -175,7 +173,7 @@ async def command_reject_action(
     bulk_str = _str_param(bulk_ids).strip()
     parsed_bulk = [int(x) for x in bulk_str.split(",") if x.strip().isdigit()] if bulk_str else None
     reason_str = _str_param(reason, "user_rejected").strip() or "user_rejected"
-    hash_str = _str_param(expected_payload_hash).strip() or None
+    hash_str = _str_param(expected_payload_hash).strip()
 
     try:
         rejected = await approval_inbox.reject_item(

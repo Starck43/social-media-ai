@@ -5,7 +5,7 @@ the messenger chat: same tenants, same agent, same database — reached through
 web memberships (`tenant_users.user_id`, see `app/web/middleware.py`).
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from .actions import router as actions_router
 from .analytics import router as analytics_router
@@ -19,6 +19,7 @@ from .connections import router as connections_router
 from .connector_accounts import router as connector_accounts_router
 from .contacts import router as contacts_router
 from .dashboard import router as dashboard_router
+from .deps import pending_approvals_badge
 from .digests import router as digests_router
 from .documents import router as documents_router
 from .file_catalog import router as file_catalog_router
@@ -40,7 +41,13 @@ from .telegram_login import router as telegram_login_router
 from .trusted_hosts import router as trusted_hosts_router
 from .vk import router as vk_router
 
-web_router = APIRouter(prefix="/app", tags=["web"])
+web_router = APIRouter(
+    prefix="/app",
+    tags=["web"],
+    # F5: every authenticated page carries the same authorized badge count. The
+    # dependency no-ops for anonymous requests, so login/register stay clean.
+    dependencies=[Depends(pending_approvals_badge)],
+)
 web_router.include_router(auth_router)
 web_router.include_router(actions_router)
 web_router.include_router(billing_router)

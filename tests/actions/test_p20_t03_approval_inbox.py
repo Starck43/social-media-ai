@@ -20,6 +20,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -40,7 +41,7 @@ from app.core.tenant_context import tenant_scope
 from app.models.actions.business_command import BusinessCommand, BusinessCommandTarget
 from app.models.audit.action_audit_event import ActionAuditEvent
 from app.services.commands import (
-     CAPABILITY_REGISTRY,
+    CAPABILITY_REGISTRY,
     DEFAULT_TTL_SECONDS,
     DISABLED_PROJECTION_SOURCES,
     DOCUMENT_PROJECTION_ENABLED,
@@ -54,9 +55,129 @@ from app.services.commands import (
     CommandNotFound,
     CommandTimeoutUnknown,
     approval_inbox,
-    format_bot_decision_link,
 )
+
+inbox_module = importlib.import_module("app.services.commands.approval_inbox")
+from app.services.commands import format_bot_decision_link
 from tests.actions.test_p13_t04_unit import FakeCommandSession
+
+
+class _FakeResult:
+    """SQLAlchemy-shaped result double: `.scalar_one_or_none()`, `.scalars()`, `.all()`."""
+
+    def __init__(self, rows: list[Any]) -> None:
+        self._rows = rows
+
+    def scalar_one_or_none(self) -> Any:
+        return self._rows[0] if self._rows else None
+
+    def scalars(self) -> "_FakeResult":
+        return self
+
+    def all(self) -> list[Any]:
+        return list(self._rows)
+
+
+class InboxCommandSession(FakeCommandSession):
+    """`FakeCommandSession` plus the two inbox-specific statements.
+
+    The inbox issues two statement shapes the ledger double does not answer:
+    the `(id, payload)` lookup used for the canonical hash check, and the
+    tenant-owned contact lookup that proves a target exists. Both are real
+    production queries, so they are answered here rather than by a production
+    branch written for a fake.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        # (tenant_id, contact_id) -> merged_into_id (None when live)
+        self.contacts: dict[tuple[int, int], int | None] = {}
+
+    def add_contact(self, tenant_id: int, contact_id: int, *, merged_into_id: int | None = None) -> None:
+        self.contacts[(tenant_id, contact_id)] = merged_into_id
+
+    def begin(self) -> "_FakeTransaction":
+        return _FakeTransaction()
+
+    async def execute(self, stmt: Any) -> Any:
+        tables = {getattr(f, "name", "") for f in stmt.get_final_froms()}
+        params = stmt.compile().params
+
+        id_list = next(
+            (value for key, value in params.items() if key.startswith("id_") and isinstance(value, (list, tuple, set))),
+            None,
+        )
+        if tables == {"business_commands"} and id_list is not None:
+            tenant_id = params.get("tenant_id_1")
+            wanted = {int(value) for value in id_list}
+            return _FakeResult(
+                [
+                    (cmd.id, dict(cmd.payload or {}))
+                    for cmd in self.commands.values()
+                    if cmd.tenant_id == tenant_id and cmd.id in wanted
+                ]
+            )
+
+        if (
+            tables == {"business_commands"}
+            and "ORDER BY" in str(stmt)
+            and any("state" in key or "capability" in key for key in params)
+        ):
+            tenant_id = params.get("tenant_id_1")
+            list_params = {key: set(value) for key, value in params.items() if isinstance(value, (tuple, list, set))}
+            capabilities = next((value for key, value in list_params.items() if "capability" in key), None)
+            states = next((value for key, value in list_params.items() if "state" in key), None)
+            before_id = params.get("id_1")
+            limit = next((value for key, value in params.items() if "param" in key and isinstance(value, int)), 101)
+            rows = [cmd for cmd in self.commands.values() if cmd.tenant_id == tenant_id]
+            if capabilities is not None:
+                rows = [cmd for cmd in rows if cmd.capability in capabilities]
+            if states is not None:
+                rows = [cmd for cmd in rows if cmd.state in states]
+            if before_id is not None:
+                rows = [cmd for cmd in rows if cmd.id < before_id]
+            rows.sort(key=lambda cmd: cmd.id or 0, reverse=True)
+            return _FakeResult(rows[:limit])
+
+        if "contacts" in tables:
+            tenant_id = params.get("tenant_id_1")
+            wanted = next(
+                (
+                    value
+                    for key, value in params.items()
+                    if key.startswith("id_") and isinstance(value, (tuple, list, set))
+                ),
+                params.get("id_1"),
+            )
+            wanted_ids = {int(value) for value in wanted} if isinstance(wanted, (list, tuple, set)) else {int(wanted)}
+            return _FakeResult(
+                [
+                    contact_id
+                    for (row_tenant, contact_id), merged in self.contacts.items()
+                    if row_tenant == tenant_id and contact_id in wanted_ids and merged is None
+                ]
+            )
+
+        if "business_command_targets" in tables and isinstance(params.get("command_id_1"), (tuple, list, set)):
+            tenant_id = params.get("tenant_id_1")
+            wanted = {int(value) for value in params["command_id_1"]}
+            rows = [
+                target
+                for target in self.targets.values()
+                if target.tenant_id == tenant_id and target.command_id in wanted
+            ]
+            rows.sort(key=lambda target: (target.command_id, target.id or 0))
+            return _FakeResult(rows)
+
+        return await super().execute(stmt)
+
+
+class _FakeTransaction:
+    async def __aenter__(self) -> "_FakeTransaction":
+        return self
+
+    async def __aexit__(self, *_exc: Any) -> bool:
+        return False
 
 
 class FakeWebPerms:
@@ -185,7 +306,8 @@ def test_p20_t03_scope_boundaries_and_bot_link_contract() -> None:
 @pytest.mark.asyncio
 async def test_cross_tenant_and_unauthorized_viewers_filtered_and_denied() -> None:
     """Cross-tenant and unauthorized viewers cannot see or act on commands."""
-    session = FakeCommandSession()
+    session = InboxCommandSession()
+    session.add_contact(10, 10)
     ledger = BusinessCommandLedger()
     inbox = ApprovalInboxService(ledger=ledger)
 
@@ -250,9 +372,113 @@ async def test_cross_tenant_and_unauthorized_viewers_filtered_and_denied() -> No
 
 
 @pytest.mark.asyncio
-async def test_inaccessible_targets_redaction_and_approval_denial() -> None:
-    """Reviewers without target read access see redacted target/PII fields and cannot approve or execute."""
-    session = FakeCommandSession()
+async def test_raw_state_gates_approve_and_reconcile_beyond_normalized_status() -> None:
+    """`can_approve` requires raw `previewed`; `can_reconcile` requires raw `unknown`.
+
+    The normalized status collapses `draft`/`previewed` into `pending` and
+    `claimed`/`unknown` into `unknown`, so the raw state must gate both actions
+    on its own: a draft row is not approvable and a claimed row is not
+    reconcilable even though their normalized statuses say otherwise.
+    """
+    session = InboxCommandSession()
+    session.add_contact(10, 11)
+    session.add_contact(10, 12)
+    ledger = BusinessCommandLedger()
+    inbox = ApprovalInboxService(ledger=ledger)
+
+    with tenant_scope(10):
+        previewed = await ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="gate-previewed",
+            target_refs=["contact:11"],
+            payload={"subject": "Previewed"},
+            session=session,
+        )
+        other = await ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="gate-claimed",
+            target_refs=["contact:12"],
+            payload={"subject": "Claimed"},
+            session=session,
+        )
+
+        # Baseline: a genuinely previewed row is approvable and not reconcilable.
+        base = await inbox.get_item(previewed["id"], session=session)
+        assert base["raw_state"] == "previewed"
+        assert base["status"] == "pending"
+        assert base["can_approve"] is True
+        assert base["can_reconcile"] is False
+
+        # A draft row normalizes to `pending` but must not be approvable.
+        session.commands[previewed["id"]].state = "draft"
+        draft_view = await inbox.get_item(previewed["id"], session=session)
+        assert draft_view["raw_state"] == "draft"
+        assert draft_view["status"] == "pending"
+        assert draft_view["can_approve"] is False
+
+        # A claimed row normalizes to `unknown` but must not be reconcilable.
+        session.commands[other["id"]].state = "claimed"
+        claimed_view = await inbox.get_item(other["id"], session=session)
+        assert claimed_view["raw_state"] == "claimed"
+        assert claimed_view["status"] == "unknown"
+        assert claimed_view["can_reconcile"] is False
+
+        # Baseline: a genuinely unknown row is reconcilable.
+        session.commands[other["id"]].state = "unknown"
+        unknown_view = await inbox.get_item(other["id"], session=session)
+        assert unknown_view["raw_state"] == "unknown"
+        assert unknown_view["status"] == "unknown"
+        assert unknown_view["can_reconcile"] is True
+
+
+@pytest.mark.asyncio
+async def test_today_mine_scope_excludes_another_requester_even_when_viewer_can_act() -> None:
+    """Mine is requester-owned; owner action rights do not widen it to teammate commands."""
+    session = InboxCommandSession()
+    session.add_contact(10, 21)
+    session.add_contact(10, 22)
+    inbox = ApprovalInboxService(ledger=BusinessCommandLedger())
+
+    with tenant_scope(10):
+        set_current_user(SimpleNamespace(id=101, is_active=True))
+        own = await inbox._ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="today-mine-own",
+            target_refs=["contact:21"],
+            payload={"subject": "Own"},
+            session=session,
+        )
+        set_current_user(SimpleNamespace(id=102, is_active=True))
+        teammate = await inbox._ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="today-mine-teammate",
+            target_refs=["contact:22"],
+            payload={"subject": "Teammate"},
+            session=session,
+        )
+        set_current_user(SimpleNamespace(id=101, is_active=True))
+
+        mine = await inbox.project_for_today(
+            perms=FakeWebPerms(is_owner=True), scope="mine", actor_id=101, session=session
+        )
+        no_actor = await inbox.project_for_today(
+            perms=FakeWebPerms(is_owner=True), scope="mine", actor_id=None, session=session
+        )
+        team = await inbox.project_for_today(
+            perms=FakeWebPerms(is_owner=True), scope="team", actor_id=101, session=session
+        )
+
+    assert [item["id"] for item in mine] == [own["id"]]
+    assert [item["requester_user_id"] for item in mine] == [101]
+    assert no_actor == []
+    assert {item["id"] for item in team} == {own["id"], teammate["id"]}
+
+
+@pytest.mark.asyncio
+async def test_inaccessible_targets_omitted_and_mutations_refused_before_ledger() -> None:
+    """F3: an unverifiable target withholds the item and blocks approve/reject pre-mutation."""
+    session = InboxCommandSession()
+    session.add_contact(10, 777)
     ledger = BusinessCommandLedger()
     inbox = ApprovalInboxService(ledger=ledger)
 
@@ -284,22 +510,21 @@ async def test_inaccessible_targets_redaction_and_approval_denial() -> None:
         assert full_item["safe_preview"]["payload"]["api_key"] == "[REDACTED]"
         assert full_item["safe_preview"]["recipient"] == "ivan@example.com"
 
-        # When target is inaccessible to reviewer, target refs and PII fields are redacted and approval is blocked
-        redacted_item = await inbox.get_item(
-            cmd_id,
-            accessible_targets={"contact:999"},
-            session=session,
-        )
-        assert redacted_item["redacted"] is True
-        assert redacted_item["target_accessible"] is False
-        assert redacted_item["can_approve"] is False
-        assert redacted_item["can_execute"] is False
-        assert redacted_item["target_refs"] == ["[скрыто:1]"]
-        assert "Содержимое скрыто" in redacted_item["preview_text"]
-        assert "ivan@example.com" not in json.dumps(redacted_item["safe_preview"], ensure_ascii=False)
-        assert "+79990001122" not in json.dumps(redacted_item["safe_preview"], ensure_ascii=False)
-        assert "Секретный текст поздравления" not in json.dumps(redacted_item["safe_preview"], ensure_ascii=False)
+        # A caller-supplied hint can only narrow access: the item is withheld entirely.
+        hidden_page = await inbox.list_items(accessible_targets={"contact:999"}, session=session)
+        assert hidden_page["items"] == []
+        assert await inbox.count_pending(accessible_targets={"contact:999"}, session=session) == 0
+        with pytest.raises(CommandNotFound):
+            await inbox.get_item(cmd_id, accessible_targets={"contact:999"}, session=session)
 
+        # A target that is not a live tenant-owned contact is withheld too, with no hint at all.
+        session.contacts[(10, 777)] = 5  # merged into another contact
+        assert (await inbox.list_items(session=session))["items"] == []
+        with pytest.raises(CommandNotFound):
+            await inbox.get_item(cmd_id, session=session)
+        session.contacts[(10, 777)] = None
+
+        # Mutations refuse before the ledger is touched, leaving the row previewed.
         with pytest.raises(CommandDenied, match="access to one or more command targets"):
             await inbox.approve_item(
                 cmd_id,
@@ -307,20 +532,49 @@ async def test_inaccessible_targets_redaction_and_approval_denial() -> None:
                 accessible_targets={"contact:999"},
                 session=session,
             )
+        assert session.commands[cmd_id].state == "previewed"
+        assert session.commands[cmd_id].approved_user_id is None
+
+        with pytest.raises(CommandDenied, match="access to one or more command targets"):
+            await inbox.reject_item(
+                cmd_id,
+                expected_payload_hash=created["payload_hash"],
+                accessible_targets={"contact:999"},
+                session=session,
+            )
+        assert session.commands[cmd_id].state == "previewed"
+
+        # No preview, outcome or receipt text from the withheld item reaches any surface.
+        today_decisions = await inbox.project_for_today(accessible_targets={"contact:999"}, session=session)
+        chat_decisions = await inbox.project_for_chat_decisions(accessible_targets={"contact:999"}, session=session)
+        assert today_decisions == []
+        assert chat_decisions == []
+        leaked = json.dumps([today_decisions, chat_decisions, hidden_page], ensure_ascii=False)
+        for secret in (
+            "ivan@example.com",
+            "+79990001122",
+            "Секретный текст поздравления",
+            "super-secret-key",
+            "tok-123",
+            "Поздравление для Иван Петров",
+        ):
+            assert secret not in leaked
 
 
 @pytest.mark.asyncio
 async def test_stale_payload_expired_ttl_revoked_approval_and_prohibited_options() -> None:
     """Stale payload hash, expired TTL, revoked membership, always_allow, bulk, and auto_execute are denied."""
-    session = FakeCommandSession()
+    session = InboxCommandSession()
+    session.add_contact(10, 1)
+    session.add_contact(10, 5)
     ledger = BusinessCommandLedger()
     inbox = ApprovalInboxService(ledger=ledger)
 
     with tenant_scope(10):
         created = await ledger.preview_command(
-            capability="comms.batch_campaign.v1",
+            capability="crm.greeting_send.v1",
             idempotency_key="camp-stale",
-            target_refs=["contact:1", "contact:2"],
+            target_refs=["contact:1"],
             payload={"subject": "Original offer"},
             session=session,
         )
@@ -337,10 +591,17 @@ async def test_stale_payload_expired_ttl_revoked_approval_and_prohibited_options
 
         # 2. Stale/mismatched expected_payload_hash is rejected on approve and reject
         stale_hash = "sha256:" + "f" * 64
-        with pytest.raises(CommandDenied, match="Payload hash mismatch"):
+        with pytest.raises(CommandConflict, match="payload changed"):
             await inbox.approve_item(cmd_id, expected_payload_hash=stale_hash, session=session)
         with pytest.raises(CommandConflict, match="payload changed"):
             await inbox.reject_item(cmd_id, expected_payload_hash=stale_hash, session=session)
+
+        # 2b. A non-canonical hash is refused outright, so a review click always binds the exact payload.
+        for bad_hash in ("", "sha256:short", "sha256:" + "F" * 64, "md5:" + "f" * 64):
+            with pytest.raises(CommandConflict, match="canonical sha256"):
+                await inbox.approve_item(cmd_id, expected_payload_hash=bad_hash, session=session)
+            with pytest.raises(CommandConflict, match="canonical sha256"):
+                await inbox.reject_item(cmd_id, expected_payload_hash=bad_hash, session=session)
 
         # 3. Valid single-item approval succeeds and keeps state == 'approved' (no automatic execution)
         approved = await inbox.approve_item(
@@ -380,39 +641,35 @@ async def test_stale_payload_expired_ttl_revoked_approval_and_prohibited_options
         assert tampered_view["status"] == "expired"
         assert tampered_view["can_execute"] is False
 
-        with pytest.raises(CommandDenied, match="payload changed"):
+        with pytest.raises(CommandConflict, match="payload changed since preview"):
             await inbox.execute_item(cid2, expected_payload_hash=created2["payload_hash"], session=session)
 
 
 @pytest.mark.asyncio
 async def test_concurrent_repeated_clicks_rejected_and_unknown_reconciliation() -> None:
-    """Concurrent/repeated approve clicks, rejected execution refusal, and unknown outcome reconciliation."""
-    session = FakeCommandSession()
+    """Repeated approve clicks, rejected execution refusal, and unknown outcome reconciliation."""
+    session = InboxCommandSession()
+    session.add_contact(10, 100)
     ledger = BusinessCommandLedger()
     inbox = ApprovalInboxService(ledger=ledger)
 
     with tenant_scope(10):
         created = await ledger.preview_command(
-            capability="onec.document_write.v1",
+            capability="crm.greeting_send.v1",
             idempotency_key="onec-conc",
-            target_refs=["onec:order:100"],
+            target_refs=["contact:100"],
             payload={"total": "5000.00"},
             session=session,
         )
         cmd_id = created["id"]
         phash = created["payload_hash"]
 
-        # Concurrent approve clicks: one succeeds, the second raises CommandConflict
-        results = await asyncio.gather(
-            inbox.approve_item(cmd_id, expected_payload_hash=phash, session=session),
-            inbox.approve_item(cmd_id, expected_payload_hash=phash, session=session),
-            return_exceptions=True,
-        )
-        successes = [r for r in results if isinstance(r, dict)]
-        conflicts = [r for r in results if isinstance(r, CommandConflict)]
-        assert len(successes) == 1
-        assert len(conflicts) == 1
-        assert successes[0]["status"] == "approved"
+        # A repeated click loses with CommandConflict; the row is approved exactly once.
+        # (Cross-process single-use is proven by the DB module against a real row lock.)
+        first = await inbox.approve_item(cmd_id, expected_payload_hash=phash, session=session)
+        assert first["status"] == "approved"
+        with pytest.raises(CommandConflict, match="already approved"):
+            await inbox.approve_item(cmd_id, expected_payload_hash=phash, session=session)
 
         # Timeout during separate execute -> enters 'unknown' state
         adapter_calls = 0
@@ -441,13 +698,14 @@ async def test_concurrent_repeated_clicks_rejected_and_unknown_reconciliation() 
         reconciled = await inbox.reconcile_item(
             cmd_id,
             resolved_state="succeeded",
-            provider_receipts={"onec:order:100": "1c-receipt-100"},
+            provider_receipts={"contact:100": "1c-receipt-100"},
             session=session,
         )
         assert reconciled["status"] == "executed"
         assert reconciled["raw_state"] == "succeeded"
 
         # Rejected item cannot be executed
+        session.add_contact(10, 88)
         to_reject = await ledger.preview_command(
             capability="crm.greeting_send.v1",
             idempotency_key="greet-reject",
@@ -474,8 +732,10 @@ async def test_web_commands_csrf_accessibility_and_unified_surfaces(monkeypatch:
     from app.services.workspace.today import TodayProjection
     from app.web import chat_workspace as chat_ws_mod
     from app.web import commands as web_commands_mod
+    from app.web import deps as web_deps_mod
 
-    session = FakeCommandSession()
+    session = InboxCommandSession()
+    session.add_contact(10, 10)
     ledger = BusinessCommandLedger()
     inbox = ApprovalInboxService(ledger=ledger)
 
@@ -493,6 +753,9 @@ async def test_web_commands_csrf_accessibility_and_unified_surfaces(monkeypatch:
         phash = created["payload_hash"]
 
         # Bind web module and global approval_inbox to our test session
+        async def _count_pending(**kwargs: Any) -> int:
+            return await inbox.count_pending(session=session, **kwargs)
+
         async def _list_items(**kwargs: Any) -> dict[str, Any]:
             return await inbox.list_items(session=session, **kwargs)
 
@@ -512,11 +775,14 @@ async def test_web_commands_csrf_accessibility_and_unified_surfaces(monkeypatch:
         monkeypatch.setattr(web_commands_mod.approval_inbox, "get_item", _get_item)
         monkeypatch.setattr(web_commands_mod.approval_inbox, "approve_item", _approve_item)
         monkeypatch.setattr(web_commands_mod.approval_inbox, "reject_item", _reject_item)
+        monkeypatch.setattr(approval_inbox, "count_pending", _count_pending)
         monkeypatch.setattr(approval_inbox, "project_for_chat_decisions", _project_chat)
         monkeypatch.setattr(approval_inbox, "get_item", _get_item)
 
         # 1. Surface 1 & 3: GET /app/commands renders accessible table + header & nav pending badge
         req_list = _make_web_request("/app/commands")
+        # The shared dependency populates the badge on every authenticated page.
+        await web_deps_mod.pending_approvals_badge(req_list)
         resp_list = await web_commands_mod.commands_page(req_list, before_id=None, status=None)
         html_list = resp_list.body.decode("utf-8")
         assert resp_list.status_code == 200
@@ -543,8 +809,16 @@ async def test_web_commands_csrf_accessibility_and_unified_surfaces(monkeypatch:
             async def pending_actions(self, *_a: Any, **_kw: Any) -> list[Any]:
                 return []
 
-            async def pending_commands(self, *_a: Any, **_kw: Any) -> list[Any]:
-                return list(session.commands.values())
+            async def command_decisions(
+                self, workspace_id: int, user_id: int, perms: Any, scope: str, now: datetime
+            ) -> list[dict[str, Any]]:
+                return await inbox.project_for_today(
+                    perms=perms,
+                    scope=scope,
+                    actor_id=user_id,
+                    now=now,
+                    session=session,
+                )
 
             async def pending_outbox(self, *_a: Any, **_kw: Any) -> list[Any]:
                 return []
@@ -555,6 +829,7 @@ async def test_web_commands_csrf_accessibility_and_unified_surfaces(monkeypatch:
             perms=FakeWebPerms(is_owner=True),
             repository=_RepoStub(),
         )
+
         decisions_sec = await today_proj.build_decisions_section()
         assert len(decisions_sec.items) == 1
         assert decisions_sec.items[0]["kind"] == "command"
@@ -563,7 +838,9 @@ async def test_web_commands_csrf_accessibility_and_unified_surfaces(monkeypatch:
 
         # 3. Surface 4: Chat 'Ждут решения' tab and inline decision card
         req_chat = _make_web_request("/app/chat/workspace/panel", accept="application/json")
-        panel_resp = await chat_ws_mod.workspace_panel(req_chat, task_id=None, context_type=None, context_id=None, boundary=None)
+        panel_resp = await chat_ws_mod.workspace_panel(
+            req_chat, task_id=None, context_type=None, context_id=None, boundary=None
+        )
         panel_data = json.loads(panel_resp.body.decode("utf-8"))
         assert len(panel_data["decisions"]) == 1
         assert panel_data["decisions"][0]["authoritative_url"] == f"/app/commands/{cmd_id}"
@@ -580,6 +857,30 @@ async def test_web_commands_csrf_accessibility_and_unified_surfaces(monkeypatch:
         assert len(cards_data["cards"]) == 1
         assert cards_data["cards"][0]["card_type"] == "decision"
         assert cards_data["cards"][0]["authoritative_url"] == f"/app/commands/{cmd_id}"
+
+        # Command context cannot bypass the cloud boundary or omit its id.
+        get_item_calls = 0
+
+        async def _counted_get(cid: int, **kwargs: Any) -> dict[str, Any]:
+            nonlocal get_item_calls
+            get_item_calls += 1
+            return await _get_item(cid, **kwargs)
+
+        monkeypatch.setattr(approval_inbox, "get_item", _counted_get)
+        for invalid_context in (
+            (str(cmd_id), "local_only"),
+            (str(cmd_id), "unknown"),
+            (None, "cloud"),
+        ):
+            bad_context = await chat_ws_mod.workspace_cards(
+                req_chat,
+                task_id=None,
+                context_type="command",
+                context_id=invalid_context[0],
+                boundary=invalid_context[1],
+            )
+            assert bad_context.status_code == 404
+        assert get_item_calls == 0
 
         # 4. CSRF protection on POST /app/commands/{id}/approve and /reject
         req_bad_csrf = _make_web_request(
@@ -633,3 +934,284 @@ async def test_web_commands_csrf_accessibility_and_unified_surfaces(monkeypatch:
             expected_payload_hash=phash,
         )
         assert repeat_resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_unsupported_capability_omitted_and_blocked_through_get_and_mutations() -> None:
+    """F2: only `crm.greeting_send.v1` is served; every other capability is refused pre-ledger."""
+    assert inbox_module.INBOX_SUPPORTED_CAPABILITIES == frozenset({"crm.greeting_send.v1"})
+    for code in CAPABILITY_REGISTRY:
+        assert code in inbox_module.INBOX_SUPPORTED_CAPABILITIES or code in inbox_module.UNSUPPORTED_CAPABILITY_REASONS
+
+    session = InboxCommandSession()
+    session.add_contact(10, 1)
+    session.add_contact(10, 2)
+    session.add_contact(10, 10)
+    ledger = BusinessCommandLedger()
+    inbox = ApprovalInboxService(ledger=ledger)
+
+    with tenant_scope(10):
+        batch = await ledger.preview_command(
+            capability="comms.batch_campaign.v1",
+            idempotency_key="camp-unsupported",
+            target_refs=["contact:1", "contact:2"],
+            payload={"subject": "Original offer"},
+            session=session,
+        )
+        batch_id = batch["id"]
+        supported = await ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="greet-supported",
+            target_refs=["contact:10"],
+            payload={"subject": "Поздравляем"},
+            session=session,
+        )
+
+        # Listing omits the unsupported command and keeps the supported one.
+        page = await inbox.list_items(session=session)
+        assert [item["command_id"] for item in page["items"]] == [supported["id"]]
+        assert await inbox.count_pending(session=session) == 1
+
+        # Detail refuses explicitly rather than pretending the row is absent.
+        with pytest.raises(CommandDenied, match="not supported by the approval inbox"):
+            await inbox.get_item(batch_id, session=session)
+
+        # Every mutation refuses before the ledger is called, so the batch is untouched.
+        for call in (
+            lambda: inbox.approve_item(batch_id, expected_payload_hash=batch["payload_hash"], session=session),
+            lambda: inbox.reject_item(batch_id, expected_payload_hash=batch["payload_hash"], session=session),
+            lambda: inbox.execute_item(batch_id, expected_payload_hash=batch["payload_hash"], session=session),
+            lambda: inbox.reconcile_item(batch_id, resolved_state="succeeded", session=session),
+        ):
+            with pytest.raises(CommandDenied, match="not supported by the approval inbox"):
+                await call()
+
+        assert session.commands[batch_id].state == "previewed"
+        assert session.commands[batch_id].approved_user_id is None
+        assert session.commands[batch_id].approved_payload_hash is None
+
+
+class _OwnedSessionContext:
+    """Minimal async context manager standing in for `async_session_maker()`."""
+
+    def __init__(self, session: Any) -> None:
+        self._session = session
+
+    async def __aenter__(self) -> Any:
+        return self._session
+
+    async def __aexit__(self, *_exc: Any) -> bool:
+        return False
+
+
+@pytest.mark.asyncio
+async def test_authorization_without_caller_session_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F1: an omitted session resolves an owned one and still requires actor, member and grant."""
+    session = InboxCommandSession()
+    session.add_contact(10, 10)
+    ledger = BusinessCommandLedger()
+    inbox = ApprovalInboxService(ledger=ledger)
+
+    with tenant_scope(10):
+        created = await ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="greet-owned-session",
+            target_refs=["contact:10"],
+            payload={"subject": "Юбилей"},
+            session=session,
+        )
+        cmd_id = created["id"]
+        phash = created["payload_hash"]
+
+        # The owned session is the same double, so no production branch exists for the test.
+        monkeypatch.setattr(inbox_module, "async_session_maker", lambda: _OwnedSessionContext(session))
+
+        # An owner-role membership sees the item even though the caller passed no session.
+        owner_page = await inbox.list_items()
+        assert [item["command_id"] for item in owner_page["items"]] == [cmd_id]
+
+        # No active actor: nothing is listed and detail/mutations fail closed.
+        set_current_user(None)
+        try:
+            assert (await inbox.list_items())["items"] == []
+            with pytest.raises(CommandDenied):
+                await inbox.get_item(cmd_id)
+            with pytest.raises(CommandDenied):
+                await inbox.approve_item(cmd_id, expected_payload_hash=phash)
+            with pytest.raises(CommandDenied):
+                await inbox.reject_item(cmd_id, expected_payload_hash=phash)
+        finally:
+            set_current_user(SimpleNamespace(id=101, is_active=True))
+
+        # An inactive membership is the same as no membership.
+        session.memberships[(10, 101)] = (False, 1)
+        assert (await inbox.list_items())["items"] == []
+        with pytest.raises(CommandDenied, match="membership"):
+            await inbox.get_item(cmd_id)
+        with pytest.raises(CommandDenied, match="membership"):
+            await inbox.approve_item(cmd_id, expected_payload_hash=phash)
+        session.memberships[(10, 101)] = (True, 1)
+
+        # A role without the capability's resource grant cannot see or approve it, even
+        # though it may open the inbox (`botaction` VIEW is not a substitute).
+        session.memberships[(10, 101)] = (True, 2)  # role 2 == viewer
+        inbox_perms = FakeWebPerms(grants={("botaction", "view")}, is_owner=False)
+        assert (await inbox.list_items(perms=inbox_perms))["items"] == []
+        with pytest.raises(CommandDenied):
+            await inbox.get_item(cmd_id, perms=inbox_perms)
+        act_perms = FakeWebPerms(grants={("botaction", "update")}, is_owner=False)
+        with pytest.raises(CommandDenied):
+            await inbox.approve_item(cmd_id, expected_payload_hash=phash, perms=act_perms)
+        assert session.commands[cmd_id].state == "previewed"
+
+
+@pytest.mark.asyncio
+async def test_missing_stored_payload_and_unknown_target_shapes_are_withheld() -> None:
+    """F1/F3: a command without a readable payload row or with an unverifiable target is hidden."""
+    session = InboxCommandSession()
+    ledger = BusinessCommandLedger()
+    inbox = ApprovalInboxService(ledger=ledger)
+
+    with tenant_scope(10):
+        # No contact row exists for this target, so it must never be projected.
+        created = await ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="greet-missing-contact",
+            target_refs=["contact:404"],
+            payload={"subject": "Кому-то"},
+            session=session,
+        )
+        assert (await inbox.list_items(session=session))["items"] == []
+        with pytest.raises(CommandNotFound):
+            await inbox.get_item(created["id"], session=session)
+
+        # Malformed and non-contact target shapes are refused the same way.
+        for bad_ref in ("contact:0", "contact:abc", "deal:5", "contact"):
+            session.add_contact(10, 5)
+            bad = await ledger.preview_command(
+                capability="crm.greeting_send.v1",
+                idempotency_key=f"greet-bad-{bad_ref}",
+                target_refs=[bad_ref],
+                payload={"subject": "Bad target"},
+                session=session,
+            )
+            assert (await inbox.list_items(session=session))["items"] == []
+            with pytest.raises(CommandNotFound):
+                await inbox.get_item(bad["id"], session=session)
+
+        # A cross-tenant contact id is not proof of access either.
+        session.add_contact(20, 900)
+        cross = await ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="greet-cross-contact",
+            target_refs=["contact:900"],
+            payload={"subject": "Чужой контакт"},
+            session=session,
+        )
+        assert (await inbox.list_items(session=session))["items"] == []
+        with pytest.raises(CommandNotFound):
+            await inbox.get_item(cross["id"], session=session)
+
+        # A command whose stored payload row cannot be read is withheld (fail closed).
+        session.add_contact(10, 11)
+        orphan = await ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="greet-orphan",
+            target_refs=["contact:11"],
+            payload={"subject": "Без нагрузки"},
+            session=session,
+        )
+        orphan_id = orphan["id"]
+        del session.commands[orphan_id]
+        assert (await inbox.list_items(session=session))["items"] == []
+        with pytest.raises(CommandNotFound):
+            await inbox.get_item(orphan_id, session=session)
+
+
+@pytest.mark.asyncio
+async def test_badge_counts_every_authorized_page_and_never_leaks_to_anonymous(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F5: the badge walks all pages, and an anonymous request keeps it at zero."""
+    from app.web import deps as web_deps_mod
+
+    session = InboxCommandSession()
+    ledger = BusinessCommandLedger()
+    inbox = ApprovalInboxService(ledger=ledger)
+
+    with tenant_scope(10):
+        for index in range(3):
+            contact_id = 200 + index
+            session.add_contact(10, contact_id)
+            await ledger.preview_command(
+                capability="crm.greeting_send.v1",
+                idempotency_key=f"greet-badge-{index}",
+                target_refs=[f"contact:{contact_id}"],
+                payload={"subject": f"Поздравление {index}"},
+                session=session,
+            )
+
+        # Force a one-row SQL candidate page so the count must follow the cursor.
+        monkeypatch.setattr(inbox_module, "_PENDING_COUNT_PAGE_SIZE", 1)
+        assert await inbox.count_pending(session=session) == 3
+
+        # The shared dependency sets the count for an authenticated page.
+        req = _make_web_request("/app/dashboard")
+
+        async def _count_pending(**kwargs: Any) -> int:
+            return await inbox.count_pending(session=session, **kwargs)
+
+        monkeypatch.setattr(approval_inbox, "count_pending", _count_pending)
+        await web_deps_mod.pending_approvals_badge(req)
+        assert req.state.pending_approvals_count == 3
+
+        json_req = _make_web_request("/app/chat/workspace/panel", accept="application/json")
+        await web_deps_mod.pending_approvals_badge(json_req)
+        assert json_req.state.pending_approvals_count == 0
+        post_req = _make_web_request("/app/commands/1/approve", method="POST", accept="text/html")
+        await web_deps_mod.pending_approvals_badge(post_req)
+        assert post_req.state.pending_approvals_count == 0
+
+        # Anonymous requests never reach the projection and keep a zero badge.
+        anon = _make_web_request("/app/login")
+        anon.state.web_user = None
+        anon.state.web_perms = None
+        await web_deps_mod.pending_approvals_badge(anon)
+        assert anon.state.pending_approvals_count == 0
+
+        # A viewer without the capability grant sees no count either.
+        session.memberships[(10, 101)] = (True, 2)
+        restricted = _make_web_request("/app/dashboard", perms=FakeWebPerms(grants=set(), is_owner=False))
+        await web_deps_mod.pending_approvals_badge(restricted)
+        assert restricted.state.pending_approvals_count == 0
+
+
+@pytest.mark.asyncio
+async def test_today_and_chat_skip_recent_finished_commands_before_page_limit() -> None:
+    """Recent finished ledger rows cannot hide older pending decisions from small surfaces."""
+    session = InboxCommandSession()
+    session.add_contact(10, 300)
+    inbox = ApprovalInboxService(ledger=BusinessCommandLedger())
+
+    with tenant_scope(10):
+        pending = await inbox._ledger.preview_command(
+            capability="crm.greeting_send.v1",
+            idempotency_key="greet-old-pending",
+            target_refs=["contact:300"],
+            payload={"subject": "Older pending"},
+            session=session,
+        )
+        # Fill more than Today/Chat's page size with newer completed rows.
+        for index in range(25):
+            finished = await inbox._ledger.preview_command(
+                capability="crm.greeting_send.v1",
+                idempotency_key=f"greet-finished-{index}",
+                target_refs=["contact:300"],
+                payload={"subject": f"Finished {index}"},
+                session=session,
+            )
+            session.commands[finished["id"]].state = "succeeded"
+
+        today = await inbox.project_for_today(session=session, scope="all")
+        chat = await inbox.project_for_chat_decisions(session=session)
+
+    assert [item["id"] for item in today] == [pending["id"]]
+    assert [item["command_id"] for item in chat] == [pending["id"]]

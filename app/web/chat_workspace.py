@@ -408,7 +408,9 @@ def build_decision_cards(
                     "title": str(item.get("title") or "Ожидает решения")[:160],
                     "status": str(item.get("status") or "pending"),
                     "status_label": str(item.get("status_label") or item.get("status") or "pending"),
-                    "summary": str(item.get("summary") or item.get("reason_for_review") or item.get("reason") or "")[:300],
+                    "summary": str(item.get("summary") or item.get("reason_for_review") or item.get("reason") or "")[
+                        :300
+                    ],
                     "reason_for_review": str(item.get("reason_for_review") or item.get("reason") or "")[:300],
                     "payload_hash": item.get("payload_hash"),
                     "expires_at": item.get("approval_expires_at") or item.get("expires_at") or item.get("due_iso"),
@@ -501,12 +503,15 @@ async def workspace_cards(
             )
         )
 
-    if context_type == "command" and context_id:
+    if context_type == "command":
         from app.core.permissions import set_current_user
         from app.core.tenant_context import tenant_scope
         from app.services.commands import CommandDenied, CommandNotFound, approval_inbox
 
-        if not str(context_id).isdigit() or int(context_id) <= 0:
+        # F6: a local-only or unknown boundary must never reach the inbox lookup.
+        if str(boundary or "cloud").strip().lower() != "cloud":
+            return JSONResponse({"error": "Команда недоступна", "cards": []}, status_code=404)
+        if context_id is None or not str(context_id).isdigit() or int(context_id) <= 0:
             return JSONResponse({"error": "Команда недоступна", "cards": []}, status_code=404)
         try:
             set_current_user(getattr(request.state, "web_user", None))

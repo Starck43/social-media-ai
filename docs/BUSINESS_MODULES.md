@@ -149,7 +149,12 @@ Each item records what changes and why; phase plans already apply them.
     instead of the unmaintained Whoosh, `pypdf` instead of deprecated PyPDF2).
 18. **R-18 Document storage.** No object storage exists today; text/structured
     content stays in PostgreSQL and binary originals reuse the P12-T12 private
-    storage contracts (decision D9 for S3-compatible storage later).
+    storage contracts (decision D9 for S3-compatible storage later). S3-compatible
+    storage is nonetheless a planned connector in the project (owner clarification
+    2026-11-10, D9), because users may already keep files there; it is not a
+    default byte store until a measured need. An attachment or document reference
+    therefore names where its bytes live and is resolved by a reader, so adding
+    an S3 source later needs no change to the approval or outbox contracts.
 19. **R-19 Signatures.** A product approval click is not a legally recognized
     electronic signature; qualified signature providers need separate legal and
     security review (already a product boundary).

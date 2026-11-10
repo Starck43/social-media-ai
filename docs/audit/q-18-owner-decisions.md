@@ -51,6 +51,13 @@ build; a card is not blocked on a decision any more.
   of [BUSINESS_MODULES](../BUSINESS_MODULES.md) D8.
 - D9 — **answered (owner, 2026-11-04)**: PostgreSQL plus the existing private
   storage from P12-T12; S3-compatible storage only after a measured need.
+  **Clarified (owner, 2026-11-10):** S3 belongs in the project as a connector for
+  the future, not as a postponed storage choice — other people do keep files
+  there. "Only after a measured need" constrains when S3 becomes the *default*
+  byte store, never whether an S3 connection can exist in the catalog. Rendering
+  and outbox work (P15-T14, P19-T05) must not assume PostgreSQL is the only byte
+  source: the reference carries a location the reader resolves, so a later S3
+  source does not change the outbox or approval contract.
 
 ## Authorizations that outlive the register
 

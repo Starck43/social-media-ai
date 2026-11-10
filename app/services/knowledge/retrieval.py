@@ -67,6 +67,27 @@ def build_knowledge_snippet(
     }
 
 
+def _boundary_level(value: Any) -> int | None:
+    """Return the clearance level of a boundary name, or None when it is unknown."""
+    if value is None:
+        return None
+    return BOUNDARY_LEVELS.get(str(value).strip().lower())
+
+
+def _meets_required_clearance(snippet: dict[str, Any], required_level: int) -> bool:
+    """One predicate for both retrieval gates.
+
+    `local_only=1 < company=2 < cloud=3` ranks how far a snippet may travel, so a
+    destination that requires ``cloud`` clearance only accepts cloud-cleared
+    content: `local_only` evidence never reaches it. A destination that requires
+    only ``local_only`` accepts every snippet, which is not a leak - the stricter
+    destination may see content cleared for wider use. A missing or unknown
+    snippet boundary fails closed.
+    """
+    level = _boundary_level(snippet.get("data_boundary") or snippet.get("boundary"))
+    return level is not None and level >= required_level
+
+
 def filter_snippets_by_acl(
     snippets: Iterable[dict[str, Any]],
     user_scopes: Iterable[str] | None,
@@ -78,20 +99,23 @@ def filter_snippets_by_acl(
     - If user_scopes is None, only 'public' snippets are returned.
     - If user has specific scopes, snippets with matching scope or 'public' are allowed.
     - Trusted callers may explicitly supply wildcard '*' scopes access all ACL scopes.
-    - Snippets exceeding allowed_boundary are strictly excluded (e.g. 'local_only' cannot leak
-      to 'cloud' queries).
+    - `allowed_boundary` is the clearance the *destination* requires, not an upper
+      cutoff for the snippet: a snippet is kept only when its own boundary is at or
+      above it. ``allowed_boundary="cloud"`` therefore returns cloud-cleared
+      snippets only, so 'company' and 'local_only' evidence cannot leak into a
+      cloud prompt; ``allowed_boundary="local_only"`` returns every boundary
+      because a local destination is the stricter one. An unknown
+      `allowed_boundary` returns nothing.
     """
-    max_level = BOUNDARY_LEVELS.get(str(allowed_boundary).lower())
-    if max_level is None:
+    required_level = _boundary_level(allowed_boundary)
+    if required_level is None:
         return []
     scope_set = set(user_scopes or [])
     has_wildcard = "*" in scope_set or "admin" in scope_set
 
     result: list[dict[str, Any]] = []
     for s in snippets:
-        snippet_boundary = str(s.get("data_boundary") or s.get("boundary") or "").lower()
-        snippet_level = BOUNDARY_LEVELS.get(snippet_boundary)
-        if snippet_level is None or snippet_level < max_level:
+        if not _meets_required_clearance(s, required_level):
             continue
 
         snippet_acl = str(s.get("acl_scope") or "").strip()
@@ -138,14 +162,18 @@ def assemble_llm_citations_context(
     snippets: Iterable[dict[str, Any]],
     allowed_boundary: str = "cloud",
 ) -> str:
-    """Assemble verified citation blocks for LLM prompt context."""
+    """Assemble citation blocks for LLM prompt context under the same clearance gate.
+
+    `allowed_boundary` means exactly what it means in `filter_snippets_by_acl`: the
+    clearance the destination requires, so the default ``cloud`` prompt never
+    receives 'company' or 'local_only' evidence. Passing these blocks to a cloud
+    model is a separate transport decision the caller still owns.
+    """
+    required_level = _boundary_level(allowed_boundary)
+    if required_level is None:
+        return ""
     blocks: list[str] = []
-    safe = [
-        s
-        for s in snippets
-        if BOUNDARY_LEVELS.get(s.get("data_boundary", s.get("boundary")), 0)
-        >= BOUNDARY_LEVELS.get(allowed_boundary, 99)
-    ]
+    safe = [s for s in snippets if _meets_required_clearance(s, required_level)]
     for idx, s in enumerate(safe, start=1):
         title = s.get("title", "Документ")
         source = s.get("source_name", s.get("source", "Unknown"))

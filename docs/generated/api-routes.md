@@ -63,6 +63,11 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/communication/outbox/scheduled | list_scheduled_outbox_api_v1_communication_outbox_scheduled_get |
 | DELETE | /api/v1/communication/outbox/scheduled/{message_id} | cancel_scheduled_outbox_api_v1_communication_outbox_scheduled__message_id__delete |
 | GET | /api/v1/communication/outbox/{message_id} | get_outbox_message_api_v1_communication_outbox__message_id__get |
+| GET | /api/v1/communication/threads/{thread_id}/triage | get_communication_thread_triage_api_v1_communication_threads__thread_id__triage_get |
+| POST | /api/v1/communication/threads/{thread_id}/triage/override | post_communication_thread_triage_override_api_v1_communication_threads__thread_id__triage_override_post |
+| POST | /api/v1/communication/threads/{thread_id}/triage/reply-draft | post_communication_thread_triage_reply_draft_api_v1_communication_threads__thread_id__triage_reply_draft_post |
+| GET | /api/v1/communication/triage | get_communication_triage_list_api_v1_communication_triage_get |
+| GET | /api/v1/communication/triage/evaluation | get_communication_triage_evaluation_api_v1_communication_triage_evaluation_get |
 | GET | /api/v1/connector-accounts | list_reusable_accounts_api_v1_connector_accounts_get |
 | GET | /api/v1/connector-accounts/grants | list_workspace_grants_api_v1_connector_accounts_grants_get |
 | POST | /api/v1/connector-accounts/grants/{grant_id}/detach | detach_workspace_grant_api_v1_connector_accounts_grants__grant_id__detach_post |

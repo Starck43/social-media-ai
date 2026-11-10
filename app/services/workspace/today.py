@@ -420,9 +420,9 @@ class TodayRepository:
         return await task_manager.dashboard_upcoming(workspace_id, limit=limit, include_sources=show_sources)
 
     async def unread_threads(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
-        from app.models import MessageThread
+        from app.models import MessageThread, ThreadTriageDecision
 
-        return (
+        threads = list(
             await MessageThread.objects.filter(
                 tenant_id=workspace_id,
                 is_archived=False,
@@ -430,6 +430,21 @@ class TodayRepository:
             .order_by(MessageThread.id.desc())
             .limit(limit * 3)
         )
+        if threads:
+            try:
+                decisions = await ThreadTriageDecision.objects.filter(tenant_id=workspace_id).limit(limit * 6)
+                by_thread = {
+                    int(d.thread_id): d
+                    for d in decisions
+                    if getattr(d, "tenant_id", None) == workspace_id and _positive_int(getattr(d, "thread_id", None))
+                }
+                for th in threads:
+                    tid = getattr(th, "id", None)
+                    if _positive_int(tid) and int(tid) in by_thread:
+                        th.triage_override = by_thread[int(tid)]
+            except Exception:
+                pass
+        return threads
 
     async def personal_connections(self, user_id: int) -> list[Any]:
         from app.services.social.connections import statuses_needing_action
@@ -885,61 +900,68 @@ class TodayProjection:
         can_view_contact = _can(self.perms, "contact", "view")
         items: list[dict[str, Any]] = []
         for th in rows:
-            if getattr(th, "tenant_id", None) != self.workspace_id or not _positive_int(getattr(th, "id", None)):
-                continue
-            if bool(getattr(th, "is_archived", False)):
-                continue
-            unread = int(getattr(th, "unread_count", 0) or 0)
-            if unread <= 0:
-                continue
             try:
+                if getattr(th, "tenant_id", None) != self.workspace_id or not _positive_int(getattr(th, "id", None)):
+                    continue
+                if bool(getattr(th, "is_archived", False)):
+                    continue
+                unread = int(getattr(th, "unread_count", 0) or 0)
+                if unread <= 0:
+                    continue
                 triaged = triage_thread_record(
                     th,
                     tenant_id=self.workspace_id,
                     user_id=self.user_id,
                     can_view_contact=can_view_contact,
                 )
+                channel = str(getattr(th, "channel", "email") or "email")
+                subject = str(
+                    getattr(th, "subject_encrypted", None) or getattr(th, "subject", None) or f"Диалог #{th.id}"
+                )[:120]
+                unavail = bool(getattr(th, "is_unavailable", False) or getattr(th, "unavailable_at", None) is not None)
+                items.append(
+                    {
+                        "item_key": f"reply:thread:{self.workspace_id}:{th.id}",
+                        "provider": "communications.inbox_triage",
+                        "kind": "thread",
+                        "id": th.id,
+                        "channel": channel,
+                        "title": subject,
+                        "summary": f"Канал: {channel.upper()} · Непрочитанных: {unread} · {triaged.category_label}: {triaged.reason}",
+                        "status_label": f"{unread} непрочит.",
+                        "triage_category": triaged.category,
+                        "triage_label": triaged.category_label,
+                        "triage_reason": triaged.reason,
+                        "triage_basis": triaged.basis,
+                        "is_model_fact": triaged.is_model_fact,
+                        "recommended_priority": triaged.recommended_priority,
+                        "priority_basis": triaged.priority_basis,
+                        "data_boundary": triaged.data_boundary,
+                        "authoritative_ref": triaged.authoritative_ref,
+                        "proposals": [p.to_dict() for p in triaged.proposals],
+                        "href": f"/app/communications?thread_id={th.id}",
+                        "chat_url": "/app/chat?"
+                        + urlencode(
+                            {
+                                "context_type": "communication",
+                                "context_id": str(th.id),
+                                "boundary": "cloud",
+                            }
+                        ),
+                        "created_at": _iso_or_empty(getattr(th, "last_message_at", None)),
+                        "stale_or_unavailable": unavail,
+                        "marker_label": "Источник недоступен (только метаданные)" if unavail else "",
+                    }
+                )
             except InboxItemUnavailable:
                 continue
-            channel = str(getattr(th, "channel", "email") or "email")
-            subject = str(getattr(th, "subject_encrypted", None) or getattr(th, "subject", None) or f"Диалог #{th.id}")[
-                :120
-            ]
-            unavail = bool(getattr(th, "is_unavailable", False) or getattr(th, "unavailable_at", None) is not None)
-            items.append(
-                {
-                    "item_key": f"reply:thread:{self.workspace_id}:{th.id}",
-                    "provider": "communications.inbox_triage",
-                    "kind": "thread",
-                    "id": th.id,
-                    "channel": channel,
-                    "title": subject,
-                    "summary": f"Канал: {channel.upper()} · Непрочитанных: {unread} · {triaged.category_label}: {triaged.reason}",
-                    "status_label": f"{unread} непрочит.",
-                    "triage_category": triaged.category,
-                    "triage_label": triaged.category_label,
-                    "triage_reason": triaged.reason,
-                    "triage_basis": triaged.basis,
-                    "is_model_fact": triaged.is_model_fact,
-                    "recommended_priority": triaged.recommended_priority,
-                    "priority_basis": triaged.priority_basis,
-                    "data_boundary": triaged.data_boundary,
-                    "authoritative_ref": triaged.authoritative_ref,
-                    "proposals": [p.to_dict() for p in triaged.proposals],
-                    "href": f"/app/communications?thread_id={th.id}",
-                    "chat_url": "/app/chat?"
-                    + urlencode(
-                        {
-                            "context_type": "communication",
-                            "context_id": str(th.id),
-                            "boundary": "cloud",
-                        }
-                    ),
-                    "created_at": _iso_or_empty(getattr(th, "last_message_at", None)),
-                    "stale_or_unavailable": unavail,
-                    "marker_label": "Источник недоступен (только метаданные)" if unavail else "",
-                }
-            )
+            except Exception:
+                logger.warning(
+                    "Today awaiting_reply skipped thread %s after triage error",
+                    getattr(th, "id", None),
+                    exc_info=True,
+                )
+                continue
         section.items, section.hidden_count = self._apply_actor_state(items)
         return section
 

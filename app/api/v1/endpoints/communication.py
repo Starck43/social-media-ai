@@ -606,13 +606,14 @@ async def post_communication_thread_triage_override(
     current_user: User = Depends(get_authenticated_user),
 ):
     try:
-        async with async_session_maker() as session:
+        async with async_session_maker() as session, session.begin():
             # Verify thread exists and belongs to the active tenant before recording override
             await triage_thread(session, thread_id)
             tenant_id = current_tenant_id()
             if tenant_id is None:
                 raise PermissionError("Missing tenant context")
-            decision = record_user_triage_override(
+            decision = await record_user_triage_override(
+                session,
                 tenant_id=int(tenant_id),
                 user_id=int(current_user.id),
                 thread_id=thread_id,

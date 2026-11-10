@@ -37,7 +37,7 @@ from sqlalchemy import select
 
 from app.core.permissions import get_current_user, has_permission
 from app.core.tenant_context import current_tenant_id
-from app.models.communications.message import MessageThread, UnifiedMessage
+from app.models.communications.message import MessageThread, ThreadTriageDecision, UnifiedMessage
 from app.models import WorkspaceConnection
 from app.services.communications.followups import create_followup_item
 from app.services.communications.inbox import (
@@ -88,10 +88,6 @@ PROPOSAL_KINDS: tuple[str, ...] = (
 REVOKED_CONNECTION_STATUSES = frozenset(
     {"revoked", "disabled", "disconnected", "error", "deleted", "unauthorized"}
 )
-
-# Per-tenant, per-user decision overrides: (tenant_id, user_id, thread_id) -> dict
-# Stored as user decisions (never as model facts).
-_USER_TRIAGE_DECISIONS: dict[tuple[int, int, int], dict[str, Any]] = {}
 
 PROMPT_INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"ignore\s+(?:all\s+|previous\s+|prior\s+|above\s+)?instructions", re.IGNORECASE),
@@ -517,6 +513,7 @@ def build_thread_proposals(
     inbound_message_id: int | None,
     last_message_at: str | None,
     prompt_injection_detected: bool = False,
+    reason: str | None = None,
 ) -> tuple[TriageProposal, ...]:
     """Generate editable, non-executing proposals for the triaged thread."""
     safe_subject = sanitize_untrusted_text(subject, max_length=140) or f"Диалог #{thread_id}"
@@ -546,18 +543,21 @@ def build_thread_proposals(
     proposals: list[TriageProposal] = []
 
     if category in (TRIAGE_NEEDS_REPLY, TRIAGE_UNCERTAIN):
+        channel_note = CHANNEL_BADGES.get(channel, {}).get("label", channel.upper())
+        safe_reason = sanitize_untrusted_text(reason or "", max_length=140)
+        reason_clause = f" ({safe_reason})" if safe_reason else ""
         suggested_body = (
             f"Здравствуйте{', ' + counterparty if contact_display_name else ''}!\n\n"
-            f"Спасибо за сообщение по теме «{safe_subject}». "
-            "Мы изучили ваш запрос и подготовили ответ. Пожалуйста, уточните, если потребуются дополнительные детали."
+            f"По вашему обращению в канале {channel_note} по теме «{safe_subject}»{reason_clause}: "
+            "приняли вопрос в работу. Ниже подготовлен стартовый ответ — отредактируйте детали перед согласованием в Outbox."
         )
         proposals.append(
             TriageProposal(
                 proposal_id=f"proposal:reply_draft:{thread_id}",
                 kind=PROPOSAL_REPLY_DRAFT,
                 label="Черновик ответа",
-                title=f"Черновик ответа: {reply_subject[:100]}",
-                summary="Попадает в Outbox (P15-T05) как обычный черновик; отправка только после отдельного одобрения.",
+                title=f"Стартовый черновик ответа: {reply_subject[:100]}",
+                summary="Стартовый черновик по метаданным (D3/D11) попадает в Outbox (P15-T05); отправка только после отдельного одобрения.",
                 fields={
                     "thread_id": thread_id,
                     "inbound_message_id": inbound_message_id,
@@ -633,7 +633,64 @@ def build_thread_proposals(
     return tuple(proposals)
 
 
-def record_user_triage_override(
+def _normalize_override_record(
+    override: Any,
+    *,
+    tenant_id: int,
+    thread_id: int,
+    fallback_user_id: int | None = None,
+) -> dict[str, Any] | None:
+    """Normalize a `ThreadTriageDecision` ORM row or dict into a validated user-decision dictionary."""
+    if override is None:
+        return None
+    ov_tenant = override.get("tenant_id") if isinstance(override, dict) else getattr(override, "tenant_id", None)
+    ov_thread = override.get("thread_id") if isinstance(override, dict) else getattr(override, "thread_id", None)
+    if ov_tenant != tenant_id or ov_thread != thread_id:
+        return None
+    raw_cat = override.get("category") if isinstance(override, dict) else getattr(override, "category", None)
+    norm_cat = str(raw_cat or "").strip().lower()
+    if norm_cat not in TRIAGE_CATEGORIES:
+        return None
+    raw_reason = (
+        override.get("reason") or override.get("reason_encrypted")
+        if isinstance(override, dict)
+        else (getattr(override, "reason_encrypted", None) or getattr(override, "reason", None))
+    )
+    clean_reason = sanitize_untrusted_text(
+        str(raw_reason or f"Категория изменена пользователем на «{TRIAGE_LABELS[norm_cat]}»."),
+        max_length=240,
+    )
+    decided_by = (
+        override.get("recorded_by_user_id") or override.get("decided_by_user_id") or override.get("user_id")
+        if isinstance(override, dict)
+        else (getattr(override, "decided_by_user_id", None) or getattr(override, "user_id", None))
+    )
+    eff_user_id = int(decided_by) if _positive_int(decided_by) else (int(fallback_user_id) if _positive_int(fallback_user_id) else 0)
+    raw_updated = override.get("updated_at") if isinstance(override, dict) else getattr(override, "updated_at", None)
+    if isinstance(raw_updated, datetime):
+        dt = raw_updated if raw_updated.tzinfo else raw_updated.replace(tzinfo=timezone.utc)
+        updated_iso = dt.astimezone(timezone.utc).isoformat()
+    elif isinstance(raw_updated, str) and raw_updated.strip():
+        updated_iso = raw_updated.strip()
+    else:
+        updated_iso = _utc_now().isoformat()
+    return {
+        "tenant_id": tenant_id,
+        "user_id": eff_user_id,
+        "thread_id": thread_id,
+        "category": norm_cat,
+        "category_label": TRIAGE_LABELS[norm_cat],
+        "reason": clean_reason,
+        "basis": "user_override",
+        "source": "user_decision",
+        "is_model_fact": False,
+        "recorded_by_user_id": eff_user_id,
+        "updated_at": updated_iso,
+    }
+
+
+async def record_user_triage_override(
+    session: Any,
     *,
     tenant_id: int,
     user_id: int,
@@ -641,7 +698,7 @@ def record_user_triage_override(
     category: str,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    """Record a user correction as an explicit user decision, never as a model fact."""
+    """Persist a user classification correction in `thread_triage_decisions` (`is_model_fact=False`)."""
     if not all(_positive_int(v) for v in (tenant_id, user_id, thread_id)):
         raise ValueError("invalid_override_scope")
     norm_cat = str(category or "").strip().lower()
@@ -651,34 +708,61 @@ def record_user_triage_override(
         reason or f"Категория изменена пользователем на «{TRIAGE_LABELS[norm_cat]}».",
         max_length=240,
     )
-    decision = {
-        "tenant_id": tenant_id,
-        "user_id": user_id,
-        "thread_id": thread_id,
-        "category": norm_cat,
-        "category_label": TRIAGE_LABELS[norm_cat],
-        "reason": clean_reason,
-        "basis": "user_override",
-        "source": "user_decision",
-        "is_model_fact": False,
-        "recorded_by_user_id": user_id,
-        "updated_at": _utc_now().isoformat(),
-    }
-    _USER_TRIAGE_DECISIONS[(tenant_id, user_id, thread_id)] = decision
-    return dict(decision)
+    now_dt = _utc_now()
+    existing = (
+        await session.execute(
+            select(ThreadTriageDecision)
+            .where(
+                ThreadTriageDecision.tenant_id == tenant_id,
+                ThreadTriageDecision.thread_id == thread_id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.category = norm_cat
+        existing.reason_encrypted = clean_reason
+        existing.decided_by_user_id = user_id
+        existing.updated_at = now_dt
+        existing.pii_updated_at = int(getattr(existing, "pii_updated_at", 1) or 1) + 1
+        row = existing
+    else:
+        row = ThreadTriageDecision(
+            tenant_id=tenant_id,
+            thread_id=thread_id,
+            decided_by_user_id=user_id,
+            category=norm_cat,
+            reason_encrypted=clean_reason,
+            created_at=now_dt,
+            updated_at=now_dt,
+            pii_updated_at=1,
+        )
+        session.add(row)
+    await session.flush()
+    normalized = _normalize_override_record(row, tenant_id=tenant_id, thread_id=thread_id, fallback_user_id=user_id)
+    assert normalized is not None
+    return normalized
 
 
-def get_user_triage_override(tenant_id: int, user_id: int | None, thread_id: int) -> dict[str, Any] | None:
-    """Return a recorded user triage correction for `(tenant_id, user_id, thread_id)` if present."""
-    if not _positive_int(tenant_id) or not _positive_int(user_id) or not _positive_int(thread_id):
+async def get_user_triage_override(
+    session: Any,
+    tenant_id: int,
+    thread_id: int,
+    *,
+    user_id: int | None = None,
+) -> dict[str, Any] | None:
+    """Load a persisted user triage correction for `(tenant_id, thread_id)` from `thread_triage_decisions`."""
+    if not _positive_int(tenant_id) or not _positive_int(thread_id):
         return None
-    found = _USER_TRIAGE_DECISIONS.get((tenant_id, int(user_id), thread_id))
-    return dict(found) if isinstance(found, dict) else None
-
-
-def clear_user_triage_overrides() -> None:
-    """Reset in-memory overrides (for isolated unit testing)."""
-    _USER_TRIAGE_DECISIONS.clear()
+    row = (
+        await session.execute(
+            select(ThreadTriageDecision).where(
+                ThreadTriageDecision.tenant_id == tenant_id,
+                ThreadTriageDecision.thread_id == thread_id,
+            )
+        )
+    ).scalar_one_or_none()
+    return _normalize_override_record(row, tenant_id=tenant_id, thread_id=thread_id, fallback_user_id=user_id)
 
 
 def _is_connection_revoked(connection: Any, thread: Any = None) -> bool:
@@ -735,6 +819,7 @@ def triage_thread_record(
     allow_paid_model: bool = False,
     budget_allowed: bool = True,
     budget_remaining: float | None = None,
+    override: dict[str, Any] | Any | None = None,
 ) -> ThreadTriageResult:
     """Pure/in-memory triage evaluation of a validated thread record with D3/D11/budget guards."""
     th_tenant = (
@@ -933,10 +1018,20 @@ def triage_thread_record(
                     "Сбой модели при классификации диалога; применён детерминированный базовый классификатор."
                 )
 
-    override = get_user_triage_override(tenant_id, user_id, th_id)
-    if override is not None:
-        category = str(override["category"])
-        reason = str(override["reason"])
+    raw_override = (
+        override
+        if override is not None
+        else (thread.get("triage_override") if isinstance(thread, dict) else getattr(thread, "triage_override", None))
+    )
+    norm_override = _normalize_override_record(
+        raw_override,
+        tenant_id=tenant_id,
+        thread_id=int(th_id),
+        fallback_user_id=user_id,
+    )
+    if norm_override is not None:
+        category = str(norm_override["category"])
+        reason = str(norm_override["reason"])
         confidence = 1.0
         basis = "user_override"
         is_model_fact = False
@@ -960,6 +1055,7 @@ def triage_thread_record(
         inbound_message_id=inbound_message_id,
         last_message_at=last_message_at,
         prompt_injection_detected=prompt_injection_detected,
+        reason=reason,
     )
 
     from urllib.parse import urlencode
@@ -1006,7 +1102,22 @@ def triage_thread_record(
         model_failure=model_failure,
         budget_denied=budget_denied,
         model_notice=model_notice,
-        connection_status="active",
+        connection_status=(
+            str(
+                (connection.get("status") if isinstance(connection, dict) else getattr(connection, "status", None))
+                or "active"
+            )
+            .strip()
+            .lower()
+            if connection is not None
+            else (
+                "active"
+                if _positive_int(
+                    thread.get("connection_id") if isinstance(thread, dict) else getattr(thread, "connection_id", None)
+                )
+                else "unlinked"
+            )
+        ),
         stale_or_unavailable=any_unavailable,
         proposals=proposals,
         authoritative_ref=f"communication_thread:{th_id}",
@@ -1088,6 +1199,8 @@ async def triage_thread(
         .all()
     )
 
+    override = await get_user_triage_override(session, tenant_id, thread_id, user_id=user_id)
+
     result = triage_thread_record(
         thread,
         tenant_id=tenant_id,
@@ -1102,6 +1215,7 @@ async def triage_thread(
         allow_paid_model=allow_paid_model,
         budget_allowed=budget_allowed,
         budget_remaining=budget_remaining,
+        override=override,
     )
     return result.to_dict()
 
@@ -1203,6 +1317,32 @@ async def list_triaged_threads(
             if getattr(m, "tenant_id", None) == tenant_id and m.thread_id in msgs_by_thread:
                 msgs_by_thread[int(m.thread_id)].append(m)
 
+    overrides_by_thread: dict[int, dict[str, Any]] = {}
+    if thread_ids:
+        ov_rows = list(
+            (
+                await session.execute(
+                    select(ThreadTriageDecision).where(
+                        ThreadTriageDecision.tenant_id == tenant_id,
+                        ThreadTriageDecision.thread_id.in_(thread_ids),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for ov in ov_rows:
+            ov_tid = getattr(ov, "thread_id", None)
+            if getattr(ov, "tenant_id", None) == tenant_id and _positive_int(ov_tid):
+                norm_ov = _normalize_override_record(
+                    ov,
+                    tenant_id=tenant_id,
+                    thread_id=int(ov_tid),
+                    fallback_user_id=user_id,
+                )
+                if norm_ov is not None:
+                    overrides_by_thread[int(ov_tid)] = norm_ov
+
     counts: dict[str, int] = {cat: 0 for cat in TRIAGE_CATEGORIES}
     items: list[dict[str, Any]] = []
     skipped_revoked = 0
@@ -1233,6 +1373,7 @@ async def list_triaged_threads(
                 allow_paid_model=allow_paid_model,
                 budget_allowed=budget_allowed,
                 budget_remaining=budget_remaining,
+                override=overrides_by_thread.get(int(th.id)),
             )
         except InboxItemUnavailable:
             skipped_revoked += 1

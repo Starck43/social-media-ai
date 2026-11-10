@@ -9,6 +9,7 @@ and evidence drawer handoff (`data_boundary` respected). Also mounts `/app/conta
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Path, Query, Request
@@ -35,6 +36,7 @@ from app.services.knowledge.workspace import snippet_rows
 from app.web.contacts_merge import router as contacts_merge_router
 from app.web.deps import ensure_csrf, perms_can, render
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 router.include_router(contacts_merge_router)
 
@@ -97,7 +99,7 @@ async def communications_page(
                         if isinstance(tid, int):
                             triage_by_thread[tid] = item
                 except Exception:  # noqa: BLE001
-                    pass
+                    logger.warning("Failed to list triaged threads on communications page", exc_info=True)
 
                 if norm_triage_cat is not None:
                     inbox_threads = [
@@ -112,13 +114,14 @@ async def communications_page(
                         try:
                             selected_thread_triage = await triage_thread(session, int(active_thread_id))
                         except Exception:  # noqa: BLE001
+                            logger.warning("Failed to triage selected thread %s", active_thread_id, exc_info=True)
                             selected_thread_triage = None
                 if tab == "contacts_merge":
                     merge_suggestions = await suggest_contact_merges(session, limit=50)
         except (PermissionError, TenantContextError):
             raise HTTPException(status_code=403) from None
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("Failed to load communications page data", exc_info=True)
 
     return render(
         request,
@@ -171,20 +174,20 @@ async def update_thread_triage_decision(
         return JSONResponse({"ok": False, "error": "invalid_category"}, status_code=400)
 
     try:
-        async with async_session_maker() as session:
+        async with async_session_maker() as session, session.begin():
             await triage_thread(session, thread_id)
+            decision = await record_user_triage_override(
+                session,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                thread_id=thread_id,
+                category=norm_cat,
+                reason=reason or None,
+            )
     except PermissionError:
         return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
     except InboxItemUnavailable:
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
-
-    decision = record_user_triage_override(
-        tenant_id=tenant_id,
-        user_id=user_id,
-        thread_id=thread_id,
-        category=norm_cat,
-        reason=reason or None,
-    )
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
         return JSONResponse({"ok": True, "decision": decision}, status_code=200)

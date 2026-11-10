@@ -72,6 +72,7 @@ def bind_managers(models):
     models.UnifiedMessage.objects = comms_managers.UnifiedMessageManager()
     models.MessageThread.objects = comms_managers.MessageThreadManager()
     models.ContactChannelStat.objects = comms_managers.ContactChannelStatManager()
+    models.ThreadTriageDecision.objects = BaseManager(models.ThreadTriageDecision)
     models.OutboxMessage.objects = BaseManager(models.OutboxMessage)
     models.OutboxTarget.objects = BaseManager(models.OutboxTarget)
     models.TrustedOutboundHost.objects = import_module(

@@ -40,6 +40,7 @@ from .communications import (
     OutboxMessage,
     OutboxReplyEvidence,
     OutboxTarget,
+    ThreadTriageDecision,
     UnifiedMessage,
 )
 from .contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
@@ -90,6 +91,7 @@ __all__ = [
     "ContactConsent",
     "ContactMergeJournal",
     "MessageThread",
+    "ThreadTriageDecision",
     "UnifiedMessage",
     "ContactChannelStat",
     "PlannerTask",

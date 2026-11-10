@@ -695,40 +695,46 @@ async def workspace_panel(
     except Exception:
         pass
 
-    # P20-T09: project inbox triage reply/action proposals into «Ждут решения» when communication context is active
+    # P20-T09: project inbox triage reply/action proposals into «Ждут решения» when communication context is active.
+    # Always resolve the real thread via `resolved_context["thread_id"]` and `triage_thread`;
+    # if `thread_id` is absent or cannot be resolved, emit no card.
     if (
         isinstance(resolved_context, dict)
         and str(resolved_context.get("type") or resolved_context.get("context_type") or "") == "communication"
         and perms_can(request, "comms.message", "view")
     ):
-        try:
-            from app.services.communications.triage import classify_thread_baseline, TRIAGE_LABELS
+        raw_thread_id = resolved_context.get("thread_id")
+        if type(raw_thread_id) is int and raw_thread_id > 0:
+            try:
+                from app.core.database import async_session_maker
+                from app.core.permissions import set_current_user
+                from app.core.tenant_context import tenant_scope
+                from app.services.communications.triage import triage_thread
 
-            ctx_id_val = resolved_context.get("id") or resolved_context.get("context_id")
-            ctx_title = str(resolved_context.get("title") or f"Диалог #{ctx_id_val}")
-            triage_pred = classify_thread_baseline(
-                subject=ctx_title,
-                unread_count=1,
-                message_count=1,
-                last_direction="inbound",
-            )
-            cat = str(triage_pred["category"])
-            cat_label = TRIAGE_LABELS.get(cat, cat)
-            auth_ref = str(resolved_context.get("ref") or f"communication:{ctx_id_val}")
-            auth_href = str(resolved_context.get("href") or f"/app/communications?thread_id={ctx_id_val}")
-            decisions.append(
-                {
-                    "id": f"triage:communication:{ctx_id_val}",
-                    "title": f"{cat_label}: {ctx_title[:120]}",
-                    "summary": f"{triage_pred['reason']} (Предложение черновика в Outbox — отправка только после согласования)",
-                    "status": "pending",
-                    "context_key": auth_ref,
-                    "authoritative_ref": auth_ref,
-                    "authoritative_url": auth_href,
-                }
-            )
-        except Exception:
-            pass
+                with tenant_scope(tenant_id):
+                    set_current_user(user)
+                    async with async_session_maker() as session:
+                        triaged = await triage_thread(session, raw_thread_id)
+                resolved_tid = int(triaged["thread_id"])
+                cat_label = str(triaged["category_label"])
+                triage_subject = str(triaged.get("subject") or f"Диалог #{resolved_tid}")
+                triage_reason = str(triaged.get("reason") or "")
+                auth_ref = str(triaged.get("authoritative_ref") or f"communication_thread:{resolved_tid}")
+                auth_href = str(triaged.get("authoritative_url") or f"/app/communications?thread_id={resolved_tid}")
+                ctx_ref = str(resolved_context.get("ref") or auth_ref)
+                decisions.append(
+                    {
+                        "id": f"triage:communication:{resolved_tid}",
+                        "title": f"{cat_label}: {triage_subject[:120]}",
+                        "summary": f"{triage_reason} (Предложение черновика в Outbox — отправка только после согласования)",
+                        "status": "pending",
+                        "context_key": ctx_ref,
+                        "authoritative_ref": auth_ref,
+                        "authoritative_url": auth_href,
+                    }
+                )
+            except Exception:
+                pass
 
     context_key = None
     if task_id:

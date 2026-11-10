@@ -144,7 +144,7 @@
                 {% endif %}
 
                 <form method="post" action="/app/communications/threads/{{ selected_thread_triage.thread_id }}/triage" class="flex flex-wrap items-end gap-2 pt-1" data-triage-override-form>
-                    <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
                     <div>
                         <label for="triage-override-cat" class="block ui-muted mb-1">Исправить классификацию (наше решение)</label>
                         <select id="triage-override-cat" name="category" class="ui-control text-xs">
@@ -173,7 +173,7 @@
                         <p class="ui-muted">{{ prop.summary }}</p>
                         {% if prop.kind == "reply_draft" and prop.fields.inbound_message_id %}
                         <form method="post" action="/app/communications/reply" class="space-y-2" data-triage-reply-draft-form>
-                            <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
+                            <input type="hidden" name="_csrf" value="{{ csrf }}">
                             <input type="hidden" name="thread_id" value="{{ selected_thread_triage.thread_id }}">
                             <input type="hidden" name="inbound_message_id" value="{{ prop.fields.inbound_message_id }}">
                             <input type="text" name="subject" value="{{ prop.fields.subject }}" class="ui-control w-full text-xs" aria-label="Тема черновика ответа">

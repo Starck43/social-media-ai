@@ -64,8 +64,9 @@ summary.
   PR comment) publishes the switch only when every required acceptance check
   passed, with the [Evidence](#evidence) record in the card or linked PR body.
   Actionable failure keeps the row IN_PROGRESS.
-- `READY → DONE`: the auditor applies the [Acceptance](#acceptance) steps; the
-  row and card are removed, the audit record and phase line remain.
+- `READY → DONE`: the auditor applies the [Acceptance](#acceptance) steps only
+  after verified integration into fresh `origin/dev`; the row and card are
+  removed, the audit record and phase line remain.
 - rejected, correctable: back to IN_PROGRESS; the auditor returns findings,
   required checks and a recommended fix. Remote findings ride PR comments,
   never the PR body, which stays executor-owned.
@@ -99,7 +100,12 @@ commands/results and resume commit into the task card or PR body, then delete
 scratch files at closeout. A path on one machine is not visible to another
 checkout. For local commands, name the tested SHA and branch/worktree; distinguish
 migration/command success from application-test results. A clean `dev` status
-does not mean tests passed.
+does not mean tests passed. Required DB/integration scenarios are acceptance
+checks, not an optional supplement to unit tests. Record their exact commands,
+scenario counts, tested SHA and DB target/cleanup separately from unit/mock
+results. Green unit tests cannot replace a failing or unrun DB scenario. A remote
+handoff remains IN_PROGRESS until the local runner's evidence is linked and all
+required checks pass (or the owner explicitly waives a named check).
 
 ## Acceptance
 
@@ -109,22 +115,44 @@ and risk. No routine retest for a docs-only review; full suites need owner reque
 No executor self-acceptance. `audit <ID>` / skill selection is enough; `/audit`
 works only if an interface explicitly maps it to the skill.
 
-On success, in one registry update:
+On successful review, verify integration **before** publishing DONE or removing
+any open row/card:
 
-1. Write `docs/audit/<id>.md`: verdict, completion date, accepted source SHA,
-   key corrections, affected files (including tests), checks/limitations and dialogue.
-   Consolidate useful card evidence here; do not retain redundant active cards.
-   Also record branch/worktree disposition — deleted because integrated, or
-   retained with its owner and next action ([cleanup](COLLABORATION.md#git-and-cleanup)).
-2. Replace the parent plan's task link with that audit link and brief DONE/date
-   summary. Remove the ROADMAP row and task card; repair inbound active references.
-   For an orphan, only the audit remains. Keep historical references as history.
-3. When every phase item is accepted, mark PHASE DONE/date; replace detailed plan
-   with a short outcome per task/audit link, history pointer, accepted SHA and its
-   actual commit date. Do not invent missing historical metadata.
-4. Synchronize the scoped registry update with local/origin dev as under Tasks.
-   Where acceptance is the merge authorization (see below), merge the accepted
-   PR, delete its branch and record the merge commit here in the same closeout.
+1. Confirm the accepted SHA is still the PR head and the merge conditions below
+   hold. Perform the authorized merge; a rejected command, queued merge or closed
+   PR is not integration. Never close a PR as a substitute for merging it.
+2. Read `gh pr view <number> --json state,mergedAt,mergeCommit,headRefOid,baseRefName`.
+   Require `state=MERGED`, non-null `mergedAt` and merge commit, target `dev`, and
+   the accepted head. Fetch `origin` again; prove that merge commit is an ancestor
+   of `origin/dev` with `git merge-base --is-ancestor <merge-sha> origin/dev`.
+   Inspect `git ls-tree origin/dev -- <delivered-file>` for each delivered path,
+   including migrations, and compare the delivered content with the accepted
+   revision (deletions must be absent). A listing alone proves presence, not
+   content equivalence. Resolve any discrepancy before closeout.
+3. Only after those checks, publish one scoped registry update: write
+   `docs/audit/<id>.md` with verdict, completion date, accepted source SHA, PR,
+   verified merge commit, integration commands/results, corrections, affected
+   files, checks/limitations and dialogue. Consolidate useful card evidence.
+   Record branch/worktree disposition under [cleanup](#git-and-cleanup); delete
+   only verified-integrated owned artifacts.
+4. Replace the parent task link with the audit link and brief DONE/date summary;
+   remove the ROADMAP row/card and repair inbound active references. An orphan
+   leaves only its audit. When every phase item is accepted, compact its plan to
+   outcomes/audit links, history pointer, accepted SHA and actual commit date.
+5. Synchronize that registry update with local/origin dev as under Tasks.
+
+If a merge or verification fails, retain the row/card and resume branch, record
+review success separately from missing integration, and report the actual failure.
+Keep READY only while its required checks remain valid; actionable corrections
+return to IN_PROGRESS, and an inability to proceed follows the BLOCKED rules below.
+Do not publish DONE or delete recovery artifacts. If a premature acceptance was
+already published, correct the registry with the actual integration state and
+resume point; a closed PR never supplies missing merge evidence.
+
+An explicitly authorized direct integration has no PR `mergedAt`: record that
+exception and authorization, prove accepted ancestry (or reviewed squash/rebase
+equivalence), and verify the fresh dev tree as above. A failed PR merge does not
+itself authorize this alternative.
 
 Before integrating or deferring solution work, the executor reports the exact
 branch/commit or PR and asks the owner for one choice: merge to dev; continue on
@@ -137,8 +165,9 @@ READY is executor evidence and grants nothing. A successful audit acceptance
 carries it out in the same closeout: the accepted SHA is the PR head; the audit
 was performed on that exact revision with its required checks recorded; the PR
 targets `dev` and has no conflicts or outstanding change requests. Then the
-auditor merges with the normal merge strategy, deletes the merged branch and the
-task's owned worktrees, and records the merge commit in `docs/audit/<id>.md`.
+auditor merges with the normal merge strategy, verifies integration as above,
+then deletes the merged branch and the task's owned worktrees and records the
+merge evidence in `docs/audit/<id>.md`.
 Acceptance never authorizes a force-push, a production or schema mutation, or
 publishing unrelated local commits.
 
@@ -294,6 +323,20 @@ tests, migrations, setup and cleanup are sequential. Use the existing claim/lock
 and inspect active runners; no pytest alone does not exclude other writers.
 Preserve unrelated schemas/reference data; back up retained evidence before
 necessary destructive reset. Do not fake migration history or edit applied DDL.
+
+Before branch DB checks, fetch origin and compare the Alembic head derived from
+fresh `origin/dev` (`ScriptDirectory.from_config(cfg).get_heads()` in a dev-based
+checkout) with the resolved shared `test_schema.alembic_version` and the candidate's
+migration graph. Record the SHAs and observed revisions. An unexplained shared
+schema/dev mismatch is a baseline/integration failure, not evidence of a branch
+defect: stop bootstrap, identify the missing integration or leftover migration,
+and reconcile under exclusive ownership and existing migration permissions.
+Never stamp past the mismatch, copy unmerged migrations into dev, or reset another
+run's schema to make a branch pass. An explicitly assigned task-isolated schema
+may run the candidate migration cycle; record its dev baseline and expected task
+head separately. Before releasing a shared target, verify its agreed dev baseline
+again or record the explicit ownership handoff for a still-active task head.
+
 
 After success/failure/interruption, stop surviving processes, remove all synthetic
 records (including separately committed fixtures), and verify none remain.

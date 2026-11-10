@@ -157,3 +157,37 @@ class OutboxReplyEvidence(Base, TenantScopedMixin, TimestampMixin):
     inbound_message_id: Mapped[int] = mapped_column(Integer, nullable=False)
     headers_encrypted: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
     pii_updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")
+
+
+class OutboxAttachmentRef(Base, TenantScopedMixin, TimestampMixin):
+    """Reference to transient spooled bytes; never the bytes and never a path.
+
+    Ordering is the delivery order of the approved attachment set. `position`
+    restarts at zero for each outbox item, and the pair is unique so a retry
+    rewrites the same slot instead of appending. The bytes themselves live in
+    `app.services.attachments` only from render until dispatch plus the TTL, so
+    this row can outlive them: a missing spool file is a recorded refusal, never a
+    silent re-render (owner decision D9a).
+    """
+
+    __tablename__ = "outbox_attachment_refs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "outbox_message_id", "position", name="uq_outbox_attachment_slot"),
+        ForeignKeyConstraint(
+            ["tenant_id", "outbox_message_id"],
+            [f"{S}.outbox_messages.tenant_id", f"{S}.outbox_messages.id"],
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("position >= 0", name="ck_outbox_attachment_position"),
+        CheckConstraint("size_bytes > 0", name="ck_outbox_attachment_size"),
+        CheckConstraint("char_length(sha256) = 64", name="ck_outbox_attachment_hash"),
+        Index("ix_outbox_attachment_message", "tenant_id", "outbox_message_id"),
+        {"schema": S},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    outbox_message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size: Mapped[int] = mapped_column("size_bytes", Integer, nullable=False)
+    mime: Mapped[str] = mapped_column(String(128), nullable=False)

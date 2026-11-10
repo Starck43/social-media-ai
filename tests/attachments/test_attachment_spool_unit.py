@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 
 from app.core.config import Settings
 from app.services.attachments.policy import resolved_spool
@@ -18,7 +19,13 @@ PDF = b"%PDF-1.7\nsynthetic document bytes\n"
 
 @pytest.fixture
 def spool(tmp_path: Path) -> AttachmentSpool:
-    return AttachmentSpool(tmp_path / "spool", max_file_bytes=1024, max_total_bytes=2048, ttl_seconds=600)
+    return AttachmentSpool(
+        tmp_path / "spool",
+        max_file_bytes=1024,
+        max_total_bytes=2048,
+        ttl_seconds=600,
+        encryption_key=Fernet.generate_key().decode("ascii"),
+    )
 
 
 def test_put_then_read_returns_exact_bytes_and_hash(spool):
@@ -74,10 +81,11 @@ def test_file_over_cap_is_refused_before_writing(spool):
 def test_total_set_over_cap_is_refused(spool):
     spool.put(1, "cmd_1", 0, b"x" * 1024, mime="application/pdf")
 
+    spool.put(1, "cmd_1", 1, b"y" * 1024, mime="application/pdf")
     with pytest.raises(SpoolRejected, match="attachment_set_too_large"):
-        spool.put(1, "cmd_1", 1, b"y" * 1024, mime="application/pdf")
+        spool.put(1, "cmd_1", 2, b"z", mime="application/pdf")
 
-    assert not (spool.root_dir / "t_1" / "cmd_1" / "p1").exists()
+    assert not (spool.root_dir / "t_1" / "cmd_1" / "p2").exists()
 
 
 def test_empty_bytes_and_bad_mime_are_refused(spool):
@@ -147,7 +155,14 @@ def test_resolved_spool_follows_settings(tmp_path):
 
 def test_default_root_is_outside_static_and_private(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    spool = AttachmentSpool(None, max_file_bytes=1024, max_total_bytes=2048, ttl_seconds=60)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    spool = AttachmentSpool(
+        None,
+        max_file_bytes=1024,
+        max_total_bytes=2048,
+        ttl_seconds=60,
+        encryption_key=Fernet.generate_key().decode("ascii"),
+    )
     spool.put(1, "cmd_1", 0, PDF, mime="application/pdf")
 
     assert "static" not in str(spool.root_dir)

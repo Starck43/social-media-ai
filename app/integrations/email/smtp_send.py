@@ -13,10 +13,16 @@ from email.utils import formatdate, make_msgid
 from email_validator import EmailNotValidError, validate_email
 
 from app.channels.senders.activation import admission_code
-from app.channels.senders.contracts import EMAIL, EmailRequest, MailAccount, SendBinding, SendResult
+from app.channels.senders.contracts import EMAIL, EmailAttachment, EmailRequest, MailAccount, SendBinding, SendResult
 from app.channels.senders.network import TIMEOUT_SECONDS, open_tls_socket
 from app.core.outbound import OutboundRefusal, OutboundTarget, StaticPolicy, acquire_outbound_target
 from app.integrations.catalog import PROVIDERS
+from app.services.communications.attachments import (
+    AttachmentRef,
+    AttachmentRejected,
+    attach_to_message,
+    validate_attachment_set,
+)
 
 _MAIL_PROVIDERS = frozenset({"mailru_mail", "yandex_mail"})
 _MESSAGE_ID = re.compile(r"<[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+>")
@@ -104,6 +110,20 @@ def _prepare(account: MailAccount, request: EmailRequest) -> tuple[bytes, str]:
         message["References"] = " ".join(request.references)
     # Keep a 7-bit wire body: do not assume or silently require SMTPUTF8/8BITMIME.
     message.set_content(request.text, cte="quoted-printable")
+    if not isinstance(request.attachments, tuple):
+        raise ValueError("invalid_attachment")
+    if request.attachments:
+        if any(
+            type(item) is not EmailAttachment or type(item.reference) is not AttachmentRef
+            for item in request.attachments
+        ):
+            raise ValueError("invalid_attachment")
+        try:
+            validate_attachment_set((item.reference for item in request.attachments), "email")
+            for item in request.attachments:
+                attach_to_message(message, item.reference, item.content)
+        except AttachmentRejected:
+            raise ValueError("invalid_attachment") from None
     return message.as_bytes(), message_id
 
 

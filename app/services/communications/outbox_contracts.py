@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import AwareDatetime, Field, StrictInt, field_validator, model_validator
 
 from app.schemas.business import BusinessSchema
+from app.services.communications.attachments import AttachmentRef
 
 
 class TargetIn(BusinessSchema):
@@ -22,6 +23,7 @@ class DraftIn(BusinessSchema):
     purpose: Literal["transactional", "greeting", "marketing"] = "transactional"
     timezone: str = "UTC"
     targets: list[TargetIn] = Field(min_length=1, max_length=20)
+    attachments: list[AttachmentRef] = Field(default_factory=list, max_length=10)
 
     @field_validator("timezone")
     @classmethod

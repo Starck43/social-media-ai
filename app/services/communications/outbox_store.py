@@ -16,7 +16,14 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from app.channels.senders.contracts import EMAIL, EmailRequest, MailAccount, SendBinding, SendResult
+from app.channels.senders.contracts import (
+    EMAIL,
+    EmailAttachment,
+    EmailRequest,
+    MailAccount,
+    SendBinding,
+    SendResult,
+)
 from app.core.access_catalog import workspace_grants
 from app.core.database import async_session_maker, with_db_session
 from app.core.permissions import get_current_user
@@ -34,10 +41,17 @@ from app.models import (
     WorkspaceRole,
 )
 from app.models.actions.business_command import BusinessCommand, BusinessCommandTarget
-from app.models.communications.outbox import OutboxMessage, OutboxTarget
+from app.models.communications.outbox import OutboxAttachmentRef, OutboxMessage, OutboxTarget
+from app.services.attachments import SpoolRejected, attachment_spool
 from app.services.commands.ledger import _is_capability_enabled, command_ledger
 from app.services.commands.registry import canonical_payload_hash, get_capability
 from app.services.communications import outbox as transitions
+from app.services.communications.attachments import (
+    AttachmentRef,
+    AttachmentRejected,
+    attach_to_message,
+    validate_attachment_set,
+)
 from app.services.communications.followups import adjust_for_quiet_hours
 from app.services.communications.outbox_contracts import DraftIn, ScheduleIn
 from app.types import ActionType
@@ -71,7 +85,17 @@ def due_after_quiet_hours(value, zone):
     return adjust_for_quiet_hours(instant(value).astimezone(ZoneInfo(zone))).astimezone(UTC)
 
 
-def content_digest(message, targets, reply_evidence=None):
+def attachment_digest(refs):
+    """Bind the approved attachment set: order, exact bytes and MIME type.
+
+    An edited set must not approve under the previous hash, so this is part of
+    `content_digest`, not a side table. The list order is the delivery order, so
+    the sequence itself carries `position`.
+    """
+    return [{"position": index, "sha256": r.sha256, "size": r.size, "mime": r.mime} for index, r in enumerate(refs)]
+
+
+def content_digest(message, targets, reply_evidence=None, attachments=None):
     # Exact JSON, not the legacy stripped/lowercased pure hash alone. Newlines,
     # whitespace and case in recipient/content/credential identity remain bound.
     payload = {
@@ -92,6 +116,10 @@ def content_digest(message, targets, reply_evidence=None):
             for t in targets
         ],
     }
+    # Only present when the set is non-empty, so existing hashes stay stable.
+    bound = attachment_digest(attachments or ())
+    if bound:
+        payload["attachments"] = bound
     if getattr(message, "reply_evidence_required", False) is True:
         if reply_evidence is None:
             raise OutboxConflict("reply_evidence_unavailable")
@@ -232,6 +260,61 @@ async def owned_message(session, tenant, message_id, *, lock=False):
     return row
 
 
+async def attachments_for(session, message, *, lock=False):
+    """The approved attachment set in delivery order. Empty is a valid answer."""
+    query = (
+        select(OutboxAttachmentRef)
+        .where(
+            OutboxAttachmentRef.tenant_id == message.tenant_id,
+            OutboxAttachmentRef.outbox_message_id == message.id,
+        )
+        .order_by(OutboxAttachmentRef.position)
+    )
+    if lock:
+        query = query.with_for_update()
+    return list((await session.scalars(query)).all())
+
+
+def _spool_item_id(message_id):
+    """Stable spool scope for one outbox item; the spool validates the alphabet."""
+    return f"outbox_{message_id}"
+
+
+def _load_attachment_payload(tenant, message, refs):
+    """Read every approved attachment from the spool and recheck its hash.
+
+    Fails closed. A missing, corrupt or mismatched file is a recorded refusal for
+    the whole item: a partial set is never delivered, and nothing is re-rendered.
+    """
+    if not refs:
+        return ()
+    item_id = _spool_item_id(message.id)
+    payload = []
+    for ref in refs:
+        try:
+            data = attachment_spool.read(tenant, item_id, ref.position, expected_sha256=ref.sha256)
+        except SpoolRejected as exc:
+            raise OutboxConflict(f"attachment_unavailable:{exc}") from None
+        verified = AttachmentRef(sha256=ref.sha256, size=ref.size, mime=ref.mime)
+        validate_attachment_set([verified], "email")
+        payload.append(EmailAttachment(reference=verified, content=data))
+    return tuple(payload)
+
+
+def _discard_attachment_payload(tenant, message):
+    """Deterministic cleanup; a failed discard must never mask the send outcome."""
+    try:
+        attachment_spool.discard(tenant, _spool_item_id(message.id))
+    except (SpoolRejected, OSError):
+        pass
+
+
+def _discard_if_terminal(tenant, message, targets):
+    # The spool is message-scoped; another target may still need the same bytes.
+    if not any(t.state in {"validated", "approved", "claimed"} for t in targets):
+        _discard_attachment_payload(tenant, message)
+
+
 async def resolve_route(session, message, target, now, *, consent=True):
     """Resolve fresh DB authority, never caller-provided flags or installation tokens.
 
@@ -354,7 +437,15 @@ class OutboxStore:
             raise ValueError("invalid_idempotency_key")
         # Tenant lock serializes competing inserts; DB unique key is the final fence.
         tenant, actor = await current_actor(session, ActionType.UPDATE, serialize=True)
-        request_hash = digest(request.model_dump(mode="json"))
+        # Attachment references are part of the request identity: a different set
+        # under the same idempotency key is a mismatch, not a silent rewrite.
+        request_data = request.model_dump(mode="json")
+        request_data.pop("attachments")
+        if request.attachments:
+            request_data["attachments"] = attachment_digest(
+                [AttachmentRef(sha256=a.sha256, size=a.size, mime=a.mime) for i, a in enumerate(request.attachments)]
+            )
+        request_hash = digest(request_data)
         existing = await session.scalar(
             select(OutboxMessage).where(
                 OutboxMessage.tenant_id == tenant,
@@ -366,6 +457,11 @@ class OutboxStore:
             if existing.request_hash != request_hash:
                 raise OutboxConflict("outbox_idempotency_mismatch")
             return projection(existing, await targets_for(session, existing))
+        if request.attachments:
+            # Refuse a set the spool itself would reject, before anything is stored.
+            validate_attachment_set(
+                request.attachments, request.targets[0].channel if len(request.targets) == 1 else "email"
+            )
         message = OutboxMessage(
             tenant_id=tenant,
             author_id=actor,
@@ -395,12 +491,29 @@ class OutboxStore:
                 recipient, target.channel, request.subject, request.body
             )
             targets.append(target)
-        message.content_hash = content_digest(message, targets)
+        message.content_hash = content_digest(
+            message,
+            targets,
+            attachments=(
+                AttachmentRef(sha256=a.sha256, size=a.size, mime=a.mime) for i, a in enumerate(request.attachments)
+            ),
+        )
         session.add(message)
         await session.flush()
         for target in targets:
             target.message_id = message.id
             session.add(target)
+        for position, ref in enumerate(request.attachments):
+            session.add(
+                OutboxAttachmentRef(
+                    tenant_id=tenant,
+                    outbox_message_id=message.id,
+                    position=position,
+                    sha256=ref.sha256,
+                    size=ref.size,
+                    mime=ref.mime,
+                )
+            )
         await session.flush()
         return projection(message, targets)
 
@@ -411,13 +524,15 @@ class OutboxStore:
         tenant, actor = await current_actor(session, ActionType.CONFIGURE)
         message = await owned_message(session, tenant, request.message_id, lock=True)
         targets = await targets_for(session, message, lock=True)
+        # Reply-evidence refusal stays first, matching claim()/deliver() order.
         reply_evidence = await verified_reply_for_outbox(session, message, targets)
+        attachment_refs = await attachments_for(session, message, lock=True)
         now = datetime.now(UTC)
         scheduled = due_after_quiet_hours(request.scheduled_at, message.timezone)
         if (
             message.author_id != actor
             or message.content_hash != request.expected_content_hash
-            or message.content_hash != content_digest(message, targets, reply_evidence)
+            or message.content_hash != content_digest(message, targets, reply_evidence, attachments=attachment_refs)
         ):
             raise OutboxConflict("outbox_intent_mismatch")
         if message.state == "approved" and message.scheduled_at == scheduled:
@@ -500,6 +615,7 @@ class OutboxStore:
                 for child in children:
                     child.state = "cancelled"
         rollup(message, targets)
+        _discard_if_terminal(tenant, message, targets)
         await session.flush()
         return projection(message, targets)
 
@@ -525,7 +641,9 @@ async def command_rows(session, message, target):
     return command, rows
 
 
-def verify_approval(message, targets, target, command, command_targets, now, *, claimed=False, reply_evidence=None):
+def verify_approval(
+    message, targets, target, command, command_targets, now, *, claimed=False, reply_evidence=None, attachments=()
+):
     # A reply carries the provenance verified at this moment, or it does not leave at
     # all: the marker alone authorizes nothing (D15).
     if getattr(message, "reply_evidence_required", False) and reply_evidence is None:
@@ -537,7 +655,7 @@ def verify_approval(message, targets, target, command, command_targets, now, *, 
         message.approved_by != message.author_id
         or message.approval_expires_at is None
         or now >= instant(message.approval_expires_at)
-        or message.content_hash != content_digest(message, targets, reply_evidence)
+        or message.content_hash != content_digest(message, targets, reply_evidence, attachments=attachments)
         or message.approved_hash != approval_digest(message)
         or target.state != state
         or target.attempts != int(claimed)
@@ -598,6 +716,7 @@ async def persist_outcome(session, message, targets, target, result, now):
             child.provider_receipt = target.provider_message_id[:160] if target.provider_message_id else None
     rollup(message, targets)
     await session.flush()
+    _discard_if_terminal(message.tenant_id, message, targets)
 
 
 class OutboxDispatcher:
@@ -649,7 +768,17 @@ class OutboxDispatcher:
             try:
                 await actor_authority(session, tenant, message.author_id, ActionType.CONFIGURE)
                 reply_evidence = await verified_reply_for_outbox(session, message, targets)
-                verify_approval(message, targets, target, command, children, now, reply_evidence=reply_evidence)
+                attachment_refs = await attachments_for(session, message, lock=True)
+                verify_approval(
+                    message,
+                    targets,
+                    target,
+                    command,
+                    children,
+                    now,
+                    reply_evidence=reply_evidence,
+                    attachments=attachment_refs,
+                )
                 await verify_snapshot(session, message, target, now, reply_evidence=reply_evidence)
                 claimed = transitions.claim_outbox_item(target_item(message, target), now.isoformat())
             except (PermissionError, OutboxConflict, OutboxUnavailable, transitions.CommunicationError):
@@ -660,6 +789,7 @@ class OutboxDispatcher:
                     for child in children:
                         child.state, child.error_code = "failed", target.error_code
                 rollup(message, targets)
+                _discard_if_terminal(tenant, message, targets)
                 return {"denied": True}
             target.state, target.attempts = claimed["state"], claimed["attempts_count"]
             target.claimed_at, target.claim_token = now, str(uuid4())
@@ -708,9 +838,23 @@ class OutboxDispatcher:
             try:
                 await actor_authority(session, tenant, message.author_id, ActionType.CONFIGURE)
                 reply_evidence = await verified_reply_for_outbox(session, message, targets)
+                attachment_refs = await attachments_for(session, message, lock=True)
                 verify_approval(
-                    message, targets, target, command, children, now, claimed=True, reply_evidence=reply_evidence
+                    message,
+                    targets,
+                    target,
+                    command,
+                    children,
+                    now,
+                    claimed=True,
+                    reply_evidence=reply_evidence,
+                    attachments=attachment_refs,
                 )
+                if message.content_hash != content_digest(
+                    message, targets, reply_evidence, attachments=attachment_refs
+                ):
+                    raise OutboxConflict("outbox_attachment_set_changed")
+                attachment_payload = _load_attachment_payload(tenant, message, attachment_refs)
                 connection, secret = await verify_snapshot(session, message, target, now, reply_evidence=reply_evidence)
                 account = MailAccount(
                     SendBinding(
@@ -721,7 +865,14 @@ class OutboxDispatcher:
                     decrypt_secret(secret.secret_encrypted),
                     send_enabled=connection.config.get("send_enabled") is True,
                 )
-            except (PermissionError, OutboxConflict, OutboxUnavailable, ValueError, RuntimeError):
+            except OutboxConflict as exc:
+                code = (
+                    "attachment_unavailable"
+                    if str(exc).startswith("attachment_unavailable:")
+                    else "outbox_authority_changed"
+                )
+                result = SendResult("blocked", code)
+            except (PermissionError, OutboxUnavailable, ValueError, RuntimeError):
                 result = SendResult("blocked", "outbox_authority_changed")
             else:
                 # Locks span I/O to serialize connection/consent/actor revocation.
@@ -735,6 +886,7 @@ class OutboxDispatcher:
                             message.content_encrypted,
                             in_reply_to=reply_evidence["headers"]["in_reply_to"] if reply_evidence else None,
                             references=tuple(reply_evidence["headers"]["references"]) if reply_evidence else (),
+                            attachments=attachment_payload,
                         ),
                     )
                 except Exception:
